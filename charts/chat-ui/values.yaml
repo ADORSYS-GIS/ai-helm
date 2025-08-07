@@ -1,0 +1,358 @@
+db:
+  enabled: true
+  instances: 2
+  storage:
+    size: 10Gi
+    storageClass: ai-ebs
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1"
+
+owu:
+  nameOverride: web
+  replicaCount: 2
+  image:
+    tag: "latest"
+    pullPolicy: "Always"
+  persistence:
+    enabled: false
+  podLabels:
+    app: open-web-ui
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - open-web-ui
+          topologyKey: "kubernetes.io/hostname"
+  ollama:
+    enabled: false
+  openaiBaseApiUrl: "http://litellm.litellm.svc.cluster.local:4000"
+  extraEnvVars:
+    - name: RESET_CONFIG_ON_START
+      value: "True"
+
+    - name: CONTENT_EXTRACTION_ENGINE
+      value: "Tika"
+    - name: TIKA_SERVER_URL
+      value: "http://tika:9998"
+
+#    - name: VECTOR_DB
+#      value: "chroma"
+#    - name: CHROMA_HTTP_HOST
+#      value: "chromadb"
+
+    - name: DEFAULT_MODELS
+      value: "o4-mini"
+
+    - name: TOOL_SERVER_CONNECTIONS
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-tools
+          key: tools.json
+
+    - name: WEBUI_URL
+      value: "https://ai.kivoyo.com"
+
+    - name: REDIS_URL
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-redis-secret
+          key: redis-url
+    - name: ENABLE_WEBSOCKET_SUPPORT
+      value: "True"
+    - name: WEBSOCKET_MANAGER
+      value: "redis"
+    - name: WEBSOCKET_REDIS_URL
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-redis-secret
+          key: redis-url
+
+    - name: OPENAI_API_KEYS
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-keys
+          key: openai-api-keys
+
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: chat-ui-pg-app
+          key: uri
+
+    - name: OAUTH_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-oidc
+          key: oauth_client_id
+    - name: OAUTH_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-oidc
+          key: oauth_client_secret
+    - name: OPENID_PROVIDER_URL
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-oidc
+          key: openid_provider_url
+    - name: OAUTH_PROVIDER_NAME
+      value: "Adorsys SSO"
+    - name: OAUTH_SCOPES
+      value: "openid email profile"
+
+    - name: ENABLE_PERSISTENT_CONFIG
+      value: "False"
+
+    - name: ENABLE_LOGIN_FORM
+      value: "False"
+
+    - name: USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS
+      value: "True"
+    - name: USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS
+      value: "True"
+
+    - name: WEBUI_NAME
+      value: "Adorsys AI"
+    - name: ENABLE_REALTIME_CHAT_SAVE
+      value: "True"
+    - name: ENABLE_CHANNELS
+      value: "True"
+    - name: DEFAULT_USER_ROLE
+      value: "user"
+    - name: TASK_MODEL
+      value: "o4-mini"
+    - name: TASK_MODEL_EXTERNAL
+      value: "o4-mini"
+    - name: ENABLE_AUTOCOMPLETE_GENERATION
+      value: "True"
+    - name: AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH
+      value: "15"
+    - name: ENABLE_COMMUNITY_SHARING
+      value: "False"
+    - name: WEBUI_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-config
+          key: webui-secret-key
+
+    - name: ENABLE_WEB_SEARCH
+      value: "True"
+    - name: WEB_SEARCH_TRUST_ENV
+      value: "True"
+    - name: WEB_SEARCH_RESULT_COUNT
+      value: "5"
+    - name: WEB_SEARCH_CONCURRENT_REQUESTS
+      value: "10"
+    - name: ENABLE_RAG_WEB_SEARCH
+      value: "True"
+    - name: WEB_SEARCH_ENGINE
+      value: "brave"
+    - name: BRAVE_SEARCH_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-config
+          key: brave-search-api-key
+
+    - name: AUDIO_STT_ENGINE
+      value: "openai"
+    - name: AUDIO_STT_MODEL
+      value: "whisper-1"
+    - name: AUDIO_STT_OPENAI_API_BASE_URL
+      value: "http://litellm.litellm.svc.cluster.local:4000"
+    - name: AUDIO_STT_OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-keys
+          key: litellm-openai-api-key
+
+    - name: AUDIO_TTS_ENGINE
+      value: "openai"
+    - name: AUDIO_TTS_MODEL
+      value: "tts-1"
+    - name: AUDIO_TTS_OPENAI_API_BASE_URL
+      value: "http://litellm.litellm.svc.cluster.local:4000"
+    - name: AUDIO_TTS_OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-keys
+          key: litellm-openai-api-key
+
+    - name: ENABLE_IMAGE_GENERATION
+      value: "True"
+    - name: IMAGE_GENERATION_ENGINE
+      value: "openai"
+    - name: IMAGE_GENERATION_MODEL
+      value: "dall-e-3"
+    - name: IMAGE_SIZE
+      value: "1024x1024"
+    - name: IMAGES_OPENAI_API_BASE_URL
+      value: "http://litellm.litellm.svc.cluster.local:4000"
+    - name: IMAGES_OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-keys
+          key: litellm-openai-api-key
+
+    - name: RAG_EMBEDDING_ENGINE
+      value: "openai"
+    - name: RAG_EMBEDDING_MODEL
+      value: "text-embedding-3-small"
+    - name: ENABLE_RAG_HYBRID_SEARCH
+      value: "True"
+    - name: RAG_TOP_K
+      value: "5"
+    - name: RAG_TOP_K_RERANKER
+      value: "5"
+    - name: RAG_FULL_CONTEXT
+      value: "False"
+    - name: RAG_OPENAI_API_BASE_URL
+      value: "http://litellm.litellm.svc.cluster.local:4000"
+    - name: RAG_OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: open-web-ui-keys
+          key: litellm-openai-api-key
+
+    - name: TITLE_GENERATION_PROMPT_TEMPLATE
+      value: |
+        ### Task:
+        Generate a concise, 3-5 word title with an emoji summarizing the chat history.
+        
+        ### Guidelines:
+        - The title should clearly represent the main theme or subject of the conversation.
+        - Always use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
+        - Write the title in the chat's primary language; default to English if multilingual.
+        - Prioritize accuracy over excessive creativity; keep it clear and simple.
+        - The title should be short and funny.
+        - The emoji should come first.
+        
+        ### Output:
+        JSON format: { "title": "<emoji> your concise title here" }
+        ### Examples:
+        - { "title": "📉 Stock Market Trends" },
+        - { "title": "🍪 Perfect Chocolate Chip Recipe" },
+        - { "title": "🎧 Evolution of Music Streaming" },
+        - { "title": "👨🏿‍💻 Remote Work Productivity Tips" },
+        - { "title": "🧠 Artificial Intelligence in Healthcare" },
+        - { "title": "🎮 Video Game Development Insights" }
+        ### Chat History:
+        <chat_history>
+        {{MESSAGES:END:2}}
+        </chat_history>
+    - name: DEFAULT_FOLLOW_UP_GENERATION_PROMPT_TEMPLATE
+      value: |
+        ### Task:
+        Suggest 3-5 relevant follow-up questions or prompts that the user might naturally ask next in this conversation as a **user**, based on the chat history, to help continue or deepen the discussion.
+        ### Guidelines:
+        - Write all follow-up questions from the user’s point of view, directed to the assistant.
+        - Make questions concise, clear, and directly related to the discussed topic(s).
+        - Only suggest follow-ups that make sense given the chat content and do not repeat what was already covered.
+        - If the conversation is very short or not specific, suggest more general (but relevant) follow-ups the user might ask.
+        - Use the conversation's primary language; default to English if multilingual.
+        - Response must be a JSON array of strings, no extra text or formatting.
+        - Always use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
+        - Questions should be open minded and funny
+        
+        ### Output:
+        JSON format: { "follow_ups": ["📉 Question 1?", "🎮 Question 2?", "🎧 Question 3?"] }
+        
+        ### Chat History:
+        <chat_history>
+        {{MESSAGES:END:6}}
+        </chat_history>"
+  
+  ingress:
+    enabled: true
+    host: ai.kivoyo.com
+    class: alb
+    annotations:
+      alb.ingress.kubernetes.io/tags: Environment=dev,Owner=adorsys-gis
+      alb.ingress.kubernetes.io/load-balancer-name: web-adorsys-gis
+      alb.ingress.kubernetes.io/listen-ports: |
+        [
+          {
+            "HTTP":80
+          },
+          {
+            "HTTPS": 443
+          }
+        ]
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/scheme: "internet-facing"
+      alb.ingress.kubernetes.io/target-type: "ip"
+      alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:eu-central-1:571075516563:certificate/980a6ebb-a87e-4cfb-b8bf-3d0e5da5acf5"
+      external-dns.alpha.kubernetes.io/hostname: "ai.kivoyo.com"
+      alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+      alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+      alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+      alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
+  websocket:
+    enabled: false
+    url: null
+    redis:
+      enabled: false
+  extraEnvFrom:
+    - secretRef:
+        name: open-web-ui-keys
+    - secretRef:
+        name: open-web-ui-s3
+  sso:
+    enabled: true
+    enableSignup: true
+    mergeAccountsByEmail: true
+  pipelines:
+    replicaCount: 1
+    podLabels:
+      app: dep-for-pipeline
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - dep-for-pipeline
+            topologyKey: "kubernetes.io/hostname"
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: ai-efs
+      accessModes:
+        - ReadWriteMany
+
+tika:
+  fullnameOverride: tika
+  enabled: true
+  replicaCount: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: "app.kubernetes.io/name"
+                operator: In
+                values:
+                  - tika
+          topologyKey: "kubernetes.io/hostname"
+
+
+chromadb:
+  enabled: true
+  fullnameOverride: chromadb
+  replicaCount: 2
+  chromadb:
+    allowReset: "true"
+    auth:
+      type: "false"
+    data:
+      storageClass: ai-ebs
+      volumeSize: 10Gi

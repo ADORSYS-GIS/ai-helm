@@ -1,0 +1,34 @@
+apiVersion: v2
+
+name: chat-ui
+description: A description
+version: 0.0.1
+appVersion: v0.0.1
+type: application
+
+keywords:
+  - llm
+  - chat
+  - web-ui
+  - open-webui
+
+dependencies:
+  - name: open-webui
+    version: '*'
+    repository: https://helm.openwebui.com
+    alias: owu
+    condition: owu.enabled
+
+  - name: common
+    version: '*'
+    repository: https://charts.bitnami.com/bitnami
+    
+  - condition: tika.enabled
+    name: tika
+    repository: https://apache.jfrog.io/artifactory/tika
+    version: '*'
+    
+  - name: chromadb
+    version: '*'
+    condition: tika.enabled
+    repository: https://amikos-tech.github.io/chromadb-chart/
