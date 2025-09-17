@@ -1,0 +1,25 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: {{ .Values.inferenceService.name }}
+  namespace: {{ .Values.inferenceService.namespace }}
+  labels:
+{{ include "lmcache-kserve-inference.labels" . | indent 4 }}
+spec:
+  predictor:
+    containers:
+      - name: kserve-container
+        image: "{{ .Values.inferenceService.model.image }}"
+        imagePullPolicy: {{ .Values.inferenceService.model.imagePullPolicy }}
+        env:
+          - name: "LMCACHE_CHUNK_SIZE"
+            value: {{ .Values.lmcache.chunkSize | quote }}
+          - name: "LMCACHE_LOCAL_CPU"
+            value: {{ .Values.lmcache.localCpu | quote }}
+        resources:
+{{ toYaml .Values.inferenceService.resources | indent 10 }}
+    model:
+      modelFormat:
+        name: "vllm" # Specify the serving runtime
+      storageUri: {{ .Values.inferenceService.model.storageUri | quote }}
+      protocol: "openai_v1"

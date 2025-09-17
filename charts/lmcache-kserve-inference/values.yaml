@@ -1,0 +1,46 @@
+global:
+  version: "latest"
+  labels:
+    app: lmcache-kserve-inference
+    team: adorsys-gis
+
+inferenceService:
+  name: "lmcache-inference-service"
+  namespace: "default"
+  replicaCount: 1
+  model:
+    image: "lmcache/vllm-openai:latest"
+    imagePullPolicy: IfNotPresent
+    storageUri: "gs://your-bucket/model"
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  
+lmcache:
+  chunkSize: "256"
+  localCpu: "True"
+
+httpRoute:
+  enabled: false
+
+ingress:
+  enabled: false
+  annotations: {}
+  hosts:
+    - host: lmcache.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: lmcache-example-com-secret
+      hosts:
+        - lmcache.example.com
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
