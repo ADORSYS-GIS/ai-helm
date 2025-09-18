@@ -6,7 +6,6 @@ global:
 
 inferenceService:
   name: "lmcache-inference-service"
-  namespace: "default"
   replicaCount: 1
   model:
     image: "lmcache/vllm-openai:latest"
@@ -14,15 +13,23 @@ inferenceService:
     storageUri: "gs://your-bucket/model"
   resources:
     requests:
-      memory: "2Gi"
-      cpu: "1000m"
-    limits:
       memory: "4Gi"
       cpu: "2000m"
+      nvidia.com/gpu: "1"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+      nvidia.com/gpu: "1"
   
 lmcache:
   chunkSize: "256"
   localCpu: "True"
+  localDisk: ""  # Set to "file:///path/to/cache" to enable
+  maxLocalDiskSize: "0.0"  # GB, set > 0 to enable disk caching
+  remoteUrl: ""  # Set to "protocol://host:port" to enable
+  enableP2P: "False"
+  lookupUrl: ""  # Required if enableP2P is True
+  distributedUrl: ""  # Required if enableP2P is True
 
 httpRoute:
   enabled: false

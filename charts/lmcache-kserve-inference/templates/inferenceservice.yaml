@@ -2,7 +2,7 @@ apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
   name: {{ .Values.inferenceService.name }}
-  namespace: {{ .Values.inferenceService.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "lmcache-kserve-inference.labels" . | indent 4 }}
 spec:
@@ -16,6 +16,26 @@ spec:
             value: {{ .Values.lmcache.chunkSize | quote }}
           - name: "LMCACHE_LOCAL_CPU"
             value: {{ .Values.lmcache.localCpu | quote }}
+          {{- if .Values.lmcache.localDisk }}
+          - name: "LMCACHE_LOCAL_DISK"
+            value: {{ .Values.lmcache.localDisk | quote }}
+          {{- end }}
+          {{- if ne .Values.lmcache.maxLocalDiskSize "0.0" }}
+          - name: "LMCACHE_MAX_LOCAL_DISK_SIZE"
+            value: {{ .Values.lmcache.maxLocalDiskSize | quote }}
+          {{- end }}
+          {{- if .Values.lmcache.remoteUrl }}
+          - name: "LMCACHE_REMOTE_URL"
+            value: {{ .Values.lmcache.remoteUrl | quote }}
+          {{- end }}
+          {{- if eq .Values.lmcache.enableP2P "True" }}
+          - name: "LMCACHE_ENABLE_P2P"
+            value: {{ .Values.lmcache.enableP2P | quote }}
+          - name: "LMCACHE_LOOKUP_URL"
+            value: {{ .Values.lmcache.lookupUrl | quote }}
+          - name: "LMCACHE_DISTRIBUTED_URL"
+            value: {{ .Values.lmcache.distributedUrl | quote }}
+          {{- end }}
         resources:
 {{ toYaml .Values.inferenceService.resources | indent 10 }}
     model:
