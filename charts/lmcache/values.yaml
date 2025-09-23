@@ -1,10 +1,12 @@
 global:
   nameOverride: ""
+  labels:
+    app: lmcache
+    team: adorsys-gis
 
 controllers:
   main:
     replicas: 1
-
 
     containers:
       main:
@@ -16,8 +18,8 @@ controllers:
         env:
           LMCACHE_CHUNK_SIZE: "256"
           LMCACHE_LOCAL_CPU: "True"
-          LMCACHE_LOCAL_DISK: ""
-          LMCACHE_MAX_LOCAL_DISK_SIZE: "0.0"
+          LMCACHE_LOCAL_DISK: "file:///tmp/lmcache"
+          LMCACHE_MAX_LOCAL_DISK_SIZE: "2.0"
           LMCACHE_REMOTE_URL: ""
           LMCACHE_ENABLE_P2P: "False"
           LMCACHE_LOOKUP_URL: ""
@@ -58,6 +60,7 @@ controllers:
 service:
   main:
     controller: main
+    type: ClusterIP
     ports:
       http:
         port: 80
@@ -65,7 +68,7 @@ service:
 
 serviceAccount:
   create: false
-  name: ""
+  name: "default"
 
 ingress:
   main:
@@ -101,4 +104,3 @@ ingress:
       - secretName: cache-ai-kivoyo-com-secret
         hosts:
           - cache.ai.kivoyo.com
-
