@@ -1,27 +1,22 @@
+# App-template v4.x.x compatible configuration
 global:
   nameOverride: ""
-  labels:
-    app: lmcache
-    team: adorsys-gis
 
 controllers:
   main:
-    replicas: 1
-
     containers:
       main:
         image:
           repository: "lmcache/vllm-openai"
           tag: "2025-03-10"
           pullPolicy: IfNotPresent
-
         env:
           LMCACHE_CHUNK_SIZE: "256"
           LMCACHE_LOCAL_CPU: "True"
-          LMCACHE_LOCAL_DISK: "file:///tmp/lmcache"
-          LMCACHE_MAX_LOCAL_DISK_SIZE: "2.0"
-          LMCACHE_ENABLE_P2P: "False"
-
+          LMCACHE_LOCAL_DISK: "False"
+          LMCACHE_REMOTE_BACKEND: "redis"
+          LMCACHE_REDIS_HOST: "{{ .Values.redis.host }}"
+          LMCACHE_REDIS_PORT: "{{ .Values.redis.port }}"
         probes:
           liveness:
             enabled: true
@@ -43,7 +38,6 @@ controllers:
               periodSeconds: 5
               timeoutSeconds: 3
               failureThreshold: 3
-
         resources:
           requests:
             memory: "4Gi"
@@ -62,10 +56,6 @@ service:
       http:
         port: 80
         targetPort: 8000
-
-serviceAccount:
-  create: false
-  name: "default"
 
 ingress:
   main:
@@ -101,3 +91,10 @@ ingress:
       - secretName: cache-ai-kivoyo-com-secret
         hosts:
           - cache.ai.kivoyo.com
+
+rbac:
+  roles: []
+
+redis:
+  host: "redis-master.redis.svc.cluster.local"
+  port: 6379
