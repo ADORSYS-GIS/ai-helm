@@ -1,100 +1,101 @@
 # App-template v4.x.x compatible configuration
-global:
-  nameOverride: ""
+app-template:
+  global:
+    nameOverride: ""
 
-controllers:
-  main:
-    containers:
-      main:
-        image:
-          repository: "lmcache/vllm-openai"
-          tag: "2025-03-10"
-          pullPolicy: IfNotPresent
-        env:
-          LMCACHE_CHUNK_SIZE: "256"
-          LMCACHE_LOCAL_CPU: "True"
-          LMCACHE_LOCAL_DISK: "False"
-          LMCACHE_REMOTE_BACKEND: "redis"
-          LMCACHE_REDIS_HOST: "{{ .Values.redis.host }}"
-          LMCACHE_REDIS_PORT: "{{ .Values.redis.port }}"
-        probes:
-          liveness:
-            enabled: true
-            spec:
-              httpGet:
-                path: "/health"
-                port: 8000
-              initialDelaySeconds: 30
-              periodSeconds: 10
-              timeoutSeconds: 5
-              failureThreshold: 3
-          readiness:
-            enabled: true
-            spec:
-              httpGet:
-                path: "/health"
-                port: 8000
-              initialDelaySeconds: 5
-              periodSeconds: 5
-              timeoutSeconds: 3
-              failureThreshold: 3
-        resources:
-          requests:
-            memory: "4Gi"
-            cpu: "2000m"
-            nvidia.com/gpu: "1"
-          limits:
-            memory: "8Gi"
-            cpu: "4000m"
-            nvidia.com/gpu: "1"
+  controllers:
+    main:
+      containers:
+        main:
+          image:
+            repository: "lmcache/vllm-openai"
+            tag: "2025-03-10"
+            pullPolicy: IfNotPresent
+          env:
+            LMCACHE_CHUNK_SIZE: "256"
+            LMCACHE_LOCAL_CPU: "True"
+            LMCACHE_LOCAL_DISK: "False"
+            LMCACHE_REMOTE_BACKEND: "redis"
+            LMCACHE_REDIS_HOST: "{{ .Values.redis.host }}"
+            LMCACHE_REDIS_PORT: "{{ .Values.redis.port }}"
+          probes:
+            liveness:
+              enabled: true
+              spec:
+                httpGet:
+                  path: "/health"
+                  port: 8000
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+            readiness:
+              enabled: true
+              spec:
+                httpGet:
+                  path: "/health"
+                  port: 8000
+                initialDelaySeconds: 5
+                periodSeconds: 5
+                timeoutSeconds: 3
+                failureThreshold: 3
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2000m"
+              nvidia.com/gpu: "1"
+            limits:
+              memory: "8Gi"
+              cpu: "4000m"
+              nvidia.com/gpu: "1"
 
-service:
-  main:
-    controller: main
-    type: ClusterIP
-    ports:
-      http:
-        port: 80
-        targetPort: 8000
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          port: 80
+          targetPort: 8000
 
-ingress:
-  main:
-    enabled: false
-    className: alb
-    annotations:
-      alb.ingress.kubernetes.io/tags: Environment=dev,Owner=adorsys-gis
-      alb.ingress.kubernetes.io/load-balancer-name: lmcache-adorsys-gis
-      alb.ingress.kubernetes.io/listen-ports: |
-        [
-          {
-            "HTTP":80
-          },
-          {
-            "HTTPS": 443
-          }
-        ]
-      alb.ingress.kubernetes.io/ssl-redirect: "443"
-      alb.ingress.kubernetes.io/scheme: "internet-facing"
-      alb.ingress.kubernetes.io/target-type: "ip"
-      alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:eu-central-1:571075516563:certificate/980a6ebb-a87e-4cfb-b8bf-3d0e5da5acf5"
-      external-dns.alpha.kubernetes.io/hostname: "cache.ai.kivoyo.com"
-      alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
-      alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
-      alb.ingress.kubernetes.io/healthy-threshold-count: "2"
-      alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
-    hosts:
-      - host: cache.ai.kivoyo.com
-        paths:
-          - path: /
-            pathType: Prefix
-    tls:
-      - secretName: cache-ai-kivoyo-com-secret
-        hosts:
-          - cache.ai.kivoyo.com
+  ingress:
+    main:
+      enabled: false
+      className: alb
+      annotations:
+        alb.ingress.kubernetes.io/tags: Environment=dev,Owner=adorsys-gis
+        alb.ingress.kubernetes.io/load-balancer-name: lmcache-adorsys-gis
+        alb.ingress.kubernetes.io/listen-ports: |
+          [
+            {
+              "HTTP":80
+            },
+            {
+              "HTTPS": 443
+            }
+          ]
+        alb.ingress.kubernetes.io/ssl-redirect: "443"
+        alb.ingress.kubernetes.io/scheme: "internet-facing"
+        alb.ingress.kubernetes.io/target-type: "ip"
+        alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:eu-central-1:571075516563:certificate/980a6ebb-a87e-4cfb-b8bf-3d0e5da5acf5"
+        external-dns.alpha.kubernetes.io/hostname: "cache.ai.kivoyo.com"
+        alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+        alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+        alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+        alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
+      hosts:
+        - host: cache.ai.kivoyo.com
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: cache-ai-kivoyo-com-secret
+          hosts:
+            - cache.ai.kivoyo.com
 
-rbac:
-  roles: []
+  rbac:
+    roles: {}
 
-redis:
-  host: "redis-master.redis.svc.cluster.local"
-  port: 6379
+  redis:
+    host: "redis-master.redis.svc.cluster.local"
+    port: 6379
