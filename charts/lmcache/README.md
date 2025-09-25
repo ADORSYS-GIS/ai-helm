@@ -1,144 +1,104 @@
-# LMCache
+# LMCache Helm Chart
 
-A Helm chart to deploy LMCache - a high-performance KV cache management system for LLMs.
+A Helm chart to deploy LMCache, a high-performance KV cache management system for LLMs.
 
-## Overview
+This chart uses the [bjw-s/app-template](https://github.com/bjw-s/helm-charts/tree/main/charts/library/app-template) chart as a library to deploy a pre-configured LMCache instance.
 
-LMCache is an LLM serving engine extension that reduces Time to First Token (TTFT) and increases throughput by storing and reusing KV caches across multiple storage locations (GPU, CPU DRAM, Local Disk). This chart deploys LMCache as a standalone service that can be integrated with various LLM serving engines like vLLM.
+## Prerequisites
 
-## Infrastructure Requirements
-
-### Platform Support
-- **Linux NVIDIA GPU platform** (required)
-- **Kubernetes cluster**
-- **Docker Engine 27.0+** (for container deployment)
-
-### LMCache Infrastructure Components
-
-1. **Storage Backends**:
-   - CPU memory caching (enabled by default)
-   - Optional disk caching
-   - Optional remote storage (Redis, S3, etc.)
-
-2. **Optional Components**:
-   - **P2P Sharing**: For distributed KV cache sharing across instances
-   - **Lookup Server**: For global KV cache coordination
-   - **Remote Storage**: Redis, S3, or other backends for persistent caching
-
-### Resource Requirements
-- **Memory**: Minimum 4Gi (configurable via `deployment.resources`)
-- **CPU**: Minimum 2000m (2 CPU cores)
-- **GPU**: NVIDIA GPU required for inference workloads
-- **Storage**: Additional disk space if local disk caching is enabled
+- Kubernetes 1.16+
+- Helm 3.2.0+
+- NVIDIA GPU resources available in the cluster.
 
 ## Installation
 
-```bash
-helm install lmcache ./lmcache
-```
+1.  **Add the bjw-s Helm repository:**
+
+    ```sh
+    helm repo add bjw-s https://bjw-s.github.io/helm-charts
+    ```
+
+2.  **Update your local Helm chart repository cache:**
+
+    ```sh
+    helm repo update
+    ```
+
+3.  **Install the LMCache chart:**
+
+    Navigate to the root of the `ai-helm` repository and run:
+
+    ```sh
+    helm install my-lmcache ./charts/lmcache
+    ```
 
 ## Configuration
 
-### Key Configuration Options
+This chart acts as a configuration wrapper for the `app-template` chart. All configuration parameters are set under the `app-template` key in the `values.yaml` file.
 
-- `deployment.image.repository`: Container image (default: `lmcache/vllm-openai`)
-- `deployment.image.tag`: Image tag (default: `latest`)
-- `deployment.resources`: CPU, memory, and GPU resource limits
-- `lmcache.chunkSize`: LMCache chunk size (default: "256")
-- `lmcache.localCpu`: Enable CPU caching (default: "True")
-- `service.type`: Kubernetes service type (default: `ClusterIP`)
-- `ingress.enabled`: Enable ingress for external access
+For a complete list of all available configuration options, please see the official [app-template documentation](https://bjw-s.github.io/helm-charts/docs/app-template).
 
-### LMCache Environment Variables
+### Key LMCache Parameters
 
-The chart configures LMCache through environment variables:
-- `LMCACHE_CHUNK_SIZE`: Size of cache chunks
-- `LMCACHE_LOCAL_CPU`: Enable/disable CPU caching
-- `LMCACHE_LOCAL_DISK`: Path for local disk caching
-- `LMCACHE_MAX_LOCAL_DISK_SIZE`: Maximum disk cache size in GB
-- `LMCACHE_REMOTE_URL`: Remote storage backend URL
-- `LMCACHE_ENABLE_P2P`: Enable peer-to-peer cache sharing
-- `LMCACHE_LOOKUP_URL`: P2P lookup server URL
-- `LMCACHE_DISTRIBUTED_URL`: P2P distributed coordination URL
+The following table shows the most important parameters for configuring the LMCache application, located within the `app-template` object in `values.yaml`.
 
-### Example Configuration
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `app-template.controllers.main.containers.main.image.repository` | The container image repository. | `lmcache/vllm-openai` |
+| `app-template.controllers.main.containers.main.image.tag` | The container image tag. | `2025-03-10` |
+| `app-template.controllers.main.containers.main.env.LMCACHE_CHUNK_SIZE` | Size of the KV cache chunks. | `256` |
+| `app-template.controllers.main.containers.main.env.LMCACHE_LOCAL_CPU` | Enable or disable local CPU caching. | `True` |
+| `app-template.controllers.main.containers.main.resources` | Container resource requests and limits. | See `values.yaml` |
+| `app-template.service.main.ports.http.port` | The port for the Kubernetes service. | `80` |
+| `app-template.ingress.main.enabled` | Enable or disable the Kubernetes ingress. | `false` |
+| `app-template.redis.host` | The hostname of the Redis backend. | `redis-master.redis.svc.cluster.local` |
+| `app-template.redis.port` | The port for the Redis backend. | `6379` |
 
-```yaml
-deployment:
-  image:
-    repository: "lmcache/vllm-openai"
-    tag: "latest"
-  resources:
-    requests:
-      memory: "4Gi"
-      cpu: "2000m"
-      nvidia.com/gpu: "1"
-    limits:
-      memory: "8Gi"
-      cpu: "4000m"
-      nvidia.com/gpu: "1"
+### Example `values.yaml`
 
-lmcache:
-  chunkSize: "512"
-  localCpu: "True"
-  localDisk: "file:///tmp/lmcache"
-  maxLocalDiskSize: "10.0"
-
-service:
-  type: LoadBalancer
-  port: 80
-```
-
-## Advanced Configuration
-
-### Storage Backends
-
-LMCache supports multiple storage backends:
-
-1. **CPU RAM** (default): Fast access, limited by system memory
-2. **Local Disk**: Persistent storage, configurable size limit
-3. **Remote Storage**: Redis, S3, or other external backends
-4. **P2P Sharing**: Distributed cache sharing across multiple instances
-
-### Health Checks
-
-The chart includes configurable health checks:
-- **Liveness Probe**: Ensures the container is running
-- **Readiness Probe**: Ensures the service is ready to accept traffic
-
-### Autoscaling
-
-Enable horizontal pod autoscaling:
+Here is an example of a minimal `values.yaml` configuration:
 
 ```yaml
-autoscaling:
-  enabled: true
-  minReplicas: 1
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 80
+app-template:
+  controllers:
+    main:
+      containers:
+        main:
+          image:
+            repository: "lmcache/vllm-openai"
+            tag: "2025-03-10"
+          env:
+            LMCACHE_CHUNK_SIZE: "512"
+            LMCACHE_REMOTE_BACKEND: "redis"
+            LMCACHE_REDIS_HOST: "{{ .Values.redis.host }}"
+            LMCACHE_REDIS_PORT: "{{ .Values.redis.port }}"
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "4000m"
+              nvidia.com/gpu: "1"
+            limits:
+              nvidia.com/gpu: "1"
+
+  service:
+    main:
+      ports:
+        http:
+          port: 8080
+
+  ingress:
+    main:
+      enabled: true
+      hosts:
+        - host: lmcache.example.com
+          paths:
+            - path: /
+
+  redis:
+    host: "my-redis-host.example.com"
+    port: 6379
 ```
-
-## Deployment Notes
-
-1. **GPU Resources**: Ensure NVIDIA GPU operator is installed for GPU access
-2. **Storage**: Configure persistent volumes if using local disk caching
-3. **Networking**: Use ingress or LoadBalancer for external access
-4. **Security**: Configure security contexts and RBAC as needed
-
-## Integration with LLM Serving Engines
-
-LMCache can be integrated with various LLM serving engines:
-- **vLLM**: Use the `lmcache/vllm-openai` image
-- **KServe**: Deploy alongside KServe InferenceServices
-- **Custom Engines**: Configure environment variables for integration
-
-## Troubleshooting
-
-- **Undefined Symbol Errors**: Ensure torch versions match between LMCache and serving engine
-- **GPU Access**: Verify NVIDIA GPU operator is installed in the cluster
-- **Cache Performance**: Monitor cache hit rates and adjust chunk size accordingly
-- **Storage Issues**: Check disk space and permissions for local disk caching
 
 ## Values
 
-See `values.yaml` for all available configuration options.
+For a full list of configurable values, see the `values.yaml` file and the [app-template documentation](https://bjw-s.github.io/helm-charts/docs/app-template).
