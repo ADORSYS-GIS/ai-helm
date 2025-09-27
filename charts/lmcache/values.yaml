@@ -1,100 +1,137 @@
-app-template:
-  global:
-    nameOverride: ""
+# Default values for lmcache.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
 
-  controllers:
-    main:
-      containers:
-        main:
-          image:
-            repository: "lmcache/vllm-openai"
-            tag: "2025-03-10"
-            pullPolicy: IfNotPresent
-          env:
-            LMCACHE_CHUNK_SIZE: "256"
-            LMCACHE_LOCAL_CPU: "True"
-            LMCACHE_LOCAL_DISK: "False"
-            LMCACHE_REMOTE_BACKEND: "redis"
-            LMCACHE_REDIS_HOST: "{{ .Values.redis.host }}"
-            LMCACHE_REDIS_PORT: "{{ .Values.redis.port }}"
-          probes:
-            liveness:
-              enabled: true
-              spec:
-                httpGet:
-                  path: "/health"
-                  port: 8000
-                initialDelaySeconds: 30
-                periodSeconds: 10
-                timeoutSeconds: 5
-                failureThreshold: 3
-            readiness:
-              enabled: true
-              spec:
-                httpGet:
-                  path: "/health"
-                  port: 8000
-                initialDelaySeconds: 5
-                periodSeconds: 5
-                timeoutSeconds: 3
-                failureThreshold: 3
-          resources:
-            requests:
-              memory: "4Gi"
-              cpu: "2000m"
-              nvidia.com/gpu: "1"
-            limits:
-              memory: "8Gi"
-              cpu: "4000m"
-              nvidia.com/gpu: "1"
+global:
+  nameOverride: ""
+  fullnameOverride: ""
 
-  service:
-    main:
-      controller: main
-      type: ClusterIP
-      ports:
-        http:
-          port: 80
-          targetPort: 8000
+controllers:
+  main:
+    # -- Controller deployment strategy.
+    strategy: RollingUpdate
 
-  ingress:
-    main:
-      enabled: false
-      className: alb
-      annotations:
-        alb.ingress.kubernetes.io/tags: Environment=dev,Owner=adorsys-gis
-        alb.ingress.kubernetes.io/load-balancer-name: lmcache-adorsys-gis
-        alb.ingress.kubernetes.io/listen-ports: |
-          [
-            {
-              "HTTP":80
-            },
-            {
-              "HTTPS": 443
-            }
-          ]
-        alb.ingress.kubernetes.io/ssl-redirect: "443"
-        alb.ingress.kubernetes.io/scheme: "internet-facing"
-        alb.ingress.kubernetes.io/target-type: "ip"
-        alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:eu-central-1:571075516563:certificate/980a6ebb-a87e-4cfb-b8bf-3d0e5da5acf5"
-        external-dns.alpha.kubernetes.io/hostname: "cache.ai.kivoyo.com"
-        alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
-        alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
-        alb.ingress.kubernetes.io/healthy-threshold-count: "2"
-        alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
-      hosts:
-        - host: cache.ai.kivoyo.com
-          paths:
-            - path: /
-              pathType: Prefix
-      tls:
-        - secretName: cache-ai-kivoyo-com-secret
-          hosts:
-            - cache.ai.kivoyo.com
+    # -- Annotations for the controller pods.
+    annotations: {}
 
-  rbac:
-    roles: {}
+    # -- Pod security context.
+    podSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      fsGroupChangePolicy: "OnRootMismatch"
 
-  redis:
-    host: "redis-master.redis.svc.cluster.local"
-    port: 6379
+    containers:
+      main:
+        # -- Container image repository.
+        image:
+          repository: "lmcache/vllm-openai"
+          # -- Container image tag.
+          tag: "2025-03-10"
+        # -- Container image pull policy.
+        pullPolicy: IfNotPresent
+
+        # -- Environment variables for the container.
+        env:
+          LMCACHE_USE_EXPERIMENTAL: "True"
+          LMCACHE_CONFIG_FILE: "/etc/lmcache/lmcache_config.yaml"
+          LMCACHE_LOG_LEVEL: "info"
+
+        # -- Probes for the container.
+        probes:
+          liveness:
+            enabled: true
+            spec:
+              httpGet:
+                path: "/health"
+                port: 8000
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            spec:
+              httpGet:
+                path: "/health"
+                port: 8000
+              initialDelaySeconds: 5
+              periodSeconds: 5
+              timeoutSeconds: 3
+              failureThreshold: 3
+
+        # -- Resource requests and limits for the container.
+        # We recommend adjusting these values based on your workload.
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2000m"
+            nvidia.com/gpu: "1"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+            nvidia.com/gpu: "1"
+
+# -- LMCache configuration.
+lmcache:
+  enabled: true
+  chunk_size: 256
+  local:
+    cpu:
+      size: 1024
+    disk:
+      path: "/tmp/lmcache"
+      size: 1024
+  remote_url: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+
+# -- Service configuration.
+service:
+  main:
+    controller: main
+    type: ClusterIP
+    ports:
+      http:
+        port: 80
+        targetPort: 8000
+
+# -- Ingress configuration.
+ingress:
+  main:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # kubernetes.io/tls-acme: "true"
+    hosts:
+      - host: chart-example.local
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls: []
+    #  - secretName: chart-example-tls
+    #    hosts:
+    #      - chart-example.local
+
+# -- Persistence configuration.
+persistence:
+  lmcache-config:
+    type: configMap
+    mountPath: /etc/lmcache
+
+# -- Node selector configuration.
+nodeSelector: {}
+
+# -- Tolerations configuration.
+tolerations: []
+
+# -- Affinity configuration.
+affinity: {}
+
+# -- RBAC configuration.
+rbac:
+  roles: {}
+
+# -- Redis configuration.
+redis:
+  host: "redis-master.redis.svc.cluster.local"
+  port: 6379
