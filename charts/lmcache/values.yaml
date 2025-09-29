@@ -20,7 +20,7 @@ controllers:
         image:
           repository: "lmcache/vllm-openai"
           # -- Container image tag.
-          tag: "2025-03-10"
+          tag: "0.1.0" # Use semantic versioning for image tags (e.0.0)
           # -- Container image pull policy.
           pullPolicy: IfNotPresent
 
@@ -82,7 +82,7 @@ lmcache:
     disk:
       path: "/tmp/lmcache"
       size: 1024
-  remote_url: "redis://redis-master.redis.svc.cluster.local:6379"
+  remote_url: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
 
 # -- Service configuration.
 service:
@@ -127,15 +127,15 @@ configMaps:
     enabled: true
     data:
       lmcache_config.yaml: |
-        enabled: true
-        chunk_size: 256
+        enabled: {{ .Values.lmcache.enabled }}
+        chunk_size: {{ .Values.lmcache.chunk_size }}
         local:
           cpu:
-            size: 1024
+            size: {{ .Values.lmcache.local.cpu.size }}
           disk:
-            path: "/tmp/lmcache"
-            size: 1024
-        remote_url: "redis://redis-master.redis.svc.cluster.local:6379"
+            path: "{{ .Values.lmcache.local.disk.path }}"
+            size: {{ .Values.lmcache.local.disk.size }}
+        remote_url: "{{ .Values.lmcache.remote_url }}"
 
 # -- Node selector configuration.
 nodeSelector: {}
