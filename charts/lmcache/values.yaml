@@ -83,34 +83,7 @@ service:
 
 ingress:
   main:
-    enabled: true
-    className: alb
-    annotations:
-      alb.ingress.kubernetes.io/tags: Environment=dev,Owner=adorsys-gis
-      alb.ingress.kubernetes.io/load-balancer-name: lmcache-adorsys-gis
-      alb.ingress.kubernetes.io/listen-ports: |
-        [
-          {
-            "HTTP":80
-          },
-          {
-            "HTTPS": 443
-          }
-        ]
-      alb.ingress.kubernetes.io/ssl-redirect: "443"
-      alb.ingress.kubernetes.io/scheme: "internet-facing"
-      alb.ingress.kubernetes.io/target-type: "ip"
-      alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:eu-central-1:571075516563:certificate/980a6ebb-a87e-4cfb-b8bf-3d0e5da5acf5"
-      external-dns.alpha.kubernetes.io/hostname: "lmcache.ai.kivoyo.com"
-      alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
-      alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
-      alb.ingress.kubernetes.io/healthy-threshold-count: "2"
-      alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
-    hosts:
-      - host: lmcache.ai.kivoyo.com
-        paths:
-          - path: /
-            pathType: Prefix
+    enabled: false
 
 persistence:
   lmcache-config:
