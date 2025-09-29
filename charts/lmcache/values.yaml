@@ -14,13 +14,6 @@ controllers:
     # -- Annotations for the controller pods.
     annotations: {}
 
-    # -- Pod security context.
-    podSecurityContext:
-      runAsUser: 1000
-      runAsGroup: 1000
-      fsGroup: 1000
-      fsGroupChangePolicy: "OnRootMismatch"
-
     containers:
       main:
         # -- Container image repository.
@@ -28,8 +21,8 @@ controllers:
           repository: "lmcache/vllm-openai"
           # -- Container image tag.
           tag: "2025-03-10"
-        # -- Container image pull policy.
-        pullPolicy: IfNotPresent
+          # -- Container image pull policy.
+          pullPolicy: IfNotPresent
 
         # -- Environment variables for the container.
         env:
@@ -72,6 +65,13 @@ controllers:
             cpu: "4000m"
             nvidia.com/gpu: "1"
 
+podOptions:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: "OnRootMismatch"
+
 # -- LMCache configuration.
 lmcache:
   enabled: true
@@ -82,7 +82,7 @@ lmcache:
     disk:
       path: "/tmp/lmcache"
       size: 1024
-  remote_url: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+  remote_url: "redis://redis-master.redis.svc.cluster.local:6379"
 
 # -- Service configuration.
 service:
@@ -116,7 +116,26 @@ ingress:
 persistence:
   lmcache-config:
     type: configMap
-    mountPath: /etc/lmcache
+    name: lmcache-config
+    advancedMounts:
+      main:
+        main:
+          - path: /etc/lmcache
+
+configMaps:
+  lmcache-config:
+    enabled: true
+    data:
+      lmcache_config.yaml: |
+        enabled: true
+        chunk_size: 256
+        local:
+          cpu:
+            size: 1024
+          disk:
+            path: "/tmp/lmcache"
+            size: 1024
+        remote_url: "redis://redis-master.redis.svc.cluster.local:6379"
 
 # -- Node selector configuration.
 nodeSelector: {}
