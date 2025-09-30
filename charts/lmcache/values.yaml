@@ -14,12 +14,13 @@ lmcache:
         main:
           image:
             repository: "lmcache/vllm-openai"
-            tag: "0.1.0"
-            pullPolicy: IfNotPresent
+            tag: "0.3.7"
+            pullPolicy: IfNotPresenst
 
           env:
             LMCACHE_USE_EXPERIMENTAL: "True"
             LMCACHE_CONFIG_FILE: "/etc/lmcache/lmcache_config.yaml"
+            LMCACHE_LOG_LEVEL: "info"
 
           probes:
             liveness:
@@ -67,7 +68,7 @@ lmcache:
       disk:
         path: "/var/lib/lmcache"
         size: 10240
-    remote_url: "redis://{{ .Values.lmcache.redis.host }}:{{ .Values.lmcache.redis.port }}"
+    remote_url: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
     cache_strategy: "multi_tier"
 
   service:
@@ -123,6 +124,13 @@ lmcache:
   tolerations: []
   affinity: {}
 
-  redis:
-    host: "redis-master.redis.svc.cluster.local"
-    port: 6379
+tolerations: []
+
+affinity: {}
+
+rbac:
+  roles: {}
+
+redis:
+  host: "redis-master.redis.svc.cluster.local"
+  port: 6379
