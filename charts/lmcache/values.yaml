@@ -7,27 +7,35 @@ lmcache:
     main:
       strategy: RollingUpdate
 
-      annotations: {}
-
       containers:
         main:
           image:
-            repository: "lmcache/vllm-openai"
-            tag: "0.3.7"
+            repository: "kserve/huggingfaceserver"
+            tag: "v0.15.1-gpu"
             pullPolicy: IfNotPresent
+
+          command:
+            - "lmcache_experimental_server"
+          args:
+            - "0.0.0.0"
+            - "8080"
 
           env:
             LMCACHE_USE_EXPERIMENTAL: "True"
             LMCACHE_CONFIG_FILE: "/etc/lmcache/lmcache_config.yaml"
+
+          ports:
+            - name: http
+              containerPort: 8080
 
           probes:
             liveness:
               enabled: true
               spec:
                 httpGet:
-                  path: "/health"
-                  port: 8000
-                initialDelaySeconds: 30
+                  path: "/readyz"
+                  port: 8080
+                initialDelaySeconds: 60
                 periodSeconds: 10
                 timeoutSeconds: 5
                 failureThreshold: 3
@@ -35,37 +43,14 @@ lmcache:
               enabled: true
               spec:
                 httpGet:
-                  path: "/health"
-                  port: 8000
-                initialDelaySeconds: 5
+                  path: "/readyz"
+                  port: 8080
+                initialDelaySeconds: 30
                 periodSeconds: 5
                 timeoutSeconds: 3
                 failureThreshold: 3
 
-          resources:
-            requests:
-              memory: "4Gi"
-              cpu: "2000m"
-            limits:
-              memory: "8Gi"
-              cpu: "4000m"
-
-  podOptions:
-    securityContext:
-      runAsUser: 1000
-      runAsGroup: 1000
-      fsGroup: 1000
-      fsGroupChangePolicy: "OnRootMismatch"
-
-  enabled: true
-  chunk_size: 256
-  local:
-    cpu:
-      size: 2048
-    disk:
-      path: "/var/lib/lmcache"
-      size: 10240
-  remote_url: "redis://{{ .Values.lmcache.redis.host }}:{{ .Values.lmcache.redis.port }}"
+  remote_url: "lmcache://lmcache.lmcache.svc.cluster.local:8080"
   cache_strategy: "multi_tier"
 
   service:
@@ -74,53 +59,14 @@ lmcache:
       type: ClusterIP
       ports:
         http:
-          port: 80
-          targetPort: 8000
-
-  ingress:
-    main:
-      enabled: false
-
-  persistence:
-    lmcache-config:
-      type: configMap
-      name: lmcache-config
-      advancedMounts:
-        main:
-          main:
-            - path: /etc/lmcache
-    lmcache-disk:
-      enabled: true
-      type: persistentVolumeClaim
-      storageClass: standard
-      accessMode: ReadWriteOnce
-      size: 50Gi
-      advancedMounts:
-        main:
-          main:
-            - path: /var/lib/lmcache
-              readOnly: false
-
-  configMaps:
-    lmcache-config:
-      enabled: true
-      data:
-        lmcache_config.yaml: |
-          enabled: {{ .Values.enabled }}
-          chunk_size: {{ .Values.chunk_size }}
-          cache_strategy: "{{ .Values.cache_strategy }}"
-          local:
-            cpu:
-              size: {{ .Values.local.cpu.size }}
-            disk:
-              path: "{{ .Values.local.disk.path }}"
-              size: {{ .Values.local.disk.size }}
-          remote_url: "{{ .Values.remote_url }}"
+          port: 8080
+          targetPort: 8080
 
   nodeSelector: {}
   tolerations: []
   affinity: {}
 
-  redis:
-    host: "redis-master.redis.svc.cluster.local"
-    port: 6379
+  persistence:
+    lmcache-disk:
+      type: emptyDir
+      enabled: false
