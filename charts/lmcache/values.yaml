@@ -1,4 +1,3 @@
-
 lmcache:
   global:
     nameOverride: ""
@@ -20,7 +19,6 @@ lmcache:
           env:
             LMCACHE_USE_EXPERIMENTAL: "True"
             LMCACHE_CONFIG_FILE: "/etc/lmcache/lmcache_config.yaml"
-            LMCACHE_LOG_LEVEL: "info"
 
           probes:
             liveness:
@@ -68,7 +66,7 @@ lmcache:
       disk:
         path: "/var/lib/lmcache"
         size: 10240
-    remote_url: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+    remote_url: "redis://{{ .Values.lmcache.redis.host }}:{{ .Values.lmcache.redis.port }}"
     cache_strategy: "multi_tier"
 
   service:
@@ -124,13 +122,6 @@ lmcache:
   tolerations: []
   affinity: {}
 
-tolerations: []
-
-affinity: {}
-
-rbac:
-  roles: {}
-
-redis:
-  host: "redis-master.redis.svc.cluster.local"
-  port: 6379
+  redis:
+    host: "redis-master.redis.svc.cluster.local"
+    port: 6379
