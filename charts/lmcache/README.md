@@ -1,8 +1,8 @@
-# app-template
+# lmcache Helm Chart
 
 ![Version: 4.3.0](https://img.shields.io/badge/Version-4.3.0-informational?style=flat-square)
 
-A common powered chart template. This can be useful for small projects that don't have their own chart.
+This Helm chart deploys the `lmcache` application using the `bjw-s/app-template`.
 
 ## Requirements
 
@@ -10,43 +10,31 @@ Kubernetes: `>=1.28.0-0`
 
 ## Dependencies
 
-| Repository                               | Name   | Version |
-| ---------------------------------------- | ------ | ------- |
-| https://bjw-s-labs.github.io/helm-charts | common | 4.3.0   |
+| Repository                               | Name         | Version |
+| ---------------------------------------- | ------------ | ------- |
+| https://bjw-s-labs.github.io/helm-charts | app-template | 4.3.0   |
 
 ## Installing the Chart
 
-### Helm repository
+To install the chart with the release name `my-release`:
 
 ```bash
-# Add the repository
-helm repo add bjw-s {{template "custom.helm.url"}}
-
-# Install the chart
-helm install bjw-s app-template -f values.yaml
-```
-
-### OCI
-
-```bash
-# Install the chart
-helm install oci://ghcr.io/bjw-s-labs/helm/app-template -f values.yaml
+helm repo add bjw-s https://bjw-s-labs.github.io/helm-charts
+helm install my-release adorsys/lmcache
 ```
 
 ## Configuration
 
-Read through the [values.yaml](../../library/common/values.yaml) file of the [common library](../../library/common/) chart. It has several commented out suggested values.
-The [CI tests](../../library/common-test/ci) contain a number of scenarios that may prove useful as well.
+The following table lists the configurable parameters of the `lmcache` chart and their default values.
 
-## Upgrade instructions
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `lmcache.controllers.main.containers.main.image.repository` | Image repository for the `lmcache` container. | `lmcache/vllm-openai` |
+| `lmcache.controllers.main.containers.main.image.tag` | Image tag for the `lmcache` container. | `0.1.0` |
+| `lmcache.service.main.ports.http.port` | The port for the HTTP service. | `80` |
+| `lmcache.ingress.main.enabled` | Enable or disable the ingress. | `false` |
 
-Upgrade instructions can be found in the [documentation](https://bjw-s-labs.github.io/helm-charts/docs/app-template/#upgrade-instructions).
-
-## Support
-
-- See the [Docs](http://bjw-s-labs.github.io/helm-charts/docs/)
-- Open an [issue](https://github.com/bjw-s-labs/helm-charts/issues/new/choose)
-- Join the home-operations [Discord](https://discord.gg/home-operations) community
+For more configuration options, please refer to the `values.yaml` file and the [bjw-s app-template documentation](https://bjw-s-labs.github.io/helm-charts/docs/app-template/).
 
 ---
 
