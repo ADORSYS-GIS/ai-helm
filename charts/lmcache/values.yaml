@@ -14,7 +14,7 @@ lmcache:
           image:
             repository: "lmcache/vllm-openai"
             tag: "0.3.7"
-            pullPolicy: IfNotPresenst
+            pullPolicy: IfNotPresent
 
           env:
             LMCACHE_USE_EXPERIMENTAL: "True"
@@ -57,17 +57,16 @@ lmcache:
       fsGroup: 1000
       fsGroupChangePolicy: "OnRootMismatch"
 
-  lmcache:
-    enabled: true
-    chunk_size: 256
-    local:
-      cpu:
-        size: 2048
-      disk:
-        path: "/var/lib/lmcache"
-        size: 10240
-    remote_url: "redis://{{ .Values.lmcache.redis.host }}:{{ .Values.lmcache.redis.port }}"
-    cache_strategy: "multi_tier"
+  enabled: true
+  chunk_size: 256
+  local:
+    cpu:
+      size: 2048
+    disk:
+      path: "/var/lib/lmcache"
+      size: 10240
+  remote_url: "redis://{{ .Values.lmcache.redis.host }}:{{ .Values.lmcache.redis.port }}"
+  cache_strategy: "multi_tier"
 
   service:
     main:
@@ -107,16 +106,16 @@ lmcache:
       enabled: true
       data:
         lmcache_config.yaml: |
-          enabled: {{ .Values.lmcache.enabled }}
-          chunk_size: {{ .Values.lmcache.chunk_size }}
-          cache_strategy: "{{ .Values.lmcache.cache_strategy }}"
+          enabled: {{ .Values.enabled }}
+          chunk_size: {{ .Values.chunk_size }}
+          cache_strategy: "{{ .Values.cache_strategy }}"
           local:
             cpu:
-              size: {{ .Values.lmcache.local.cpu.size }}
+              size: {{ .Values.local.cpu.size }}
             disk:
-              path: "{{ .Values.lmcache.local.disk.path }}"
-              size: {{ .Values.lmcache.local.disk.size }}
-          remote_url: "{{ .Values.lmcache.remote_url }}"
+              path: "{{ .Values.local.disk.path }}"
+              size: {{ .Values.local.disk.size }}
+          remote_url: "{{ .Values.remote_url }}"
 
   nodeSelector: {}
   tolerations: []
