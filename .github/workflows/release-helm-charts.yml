@@ -54,10 +54,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run chart-releaser
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/fix-workflow'
         uses: helm/chart-releaser-action@v1.6.0
         with:
           charts_dir: charts
-          skip_existing: true
+          charts: ${{ steps.find-charts.outputs.changed_charts }}
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
