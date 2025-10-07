@@ -1,37 +1,30 @@
 name: Release Helm Charts
-
 on:
   push:
     branches:
       - fix/helm-release-workflow
     paths:
       - "charts/**"
-
 permissions:
   contents: write
   packages: write
-
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout code
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
       
-      # Step 2: Set up Helm
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.14.0
-
-      # Step 3: Set up chart-testing
+      
       - name: Set up chart-testing
         uses: helm/chart-testing-action@v2.6.1
       
-      # Step 4: Detect changed charts
       - name: Detect changed charts
         id: changed-charts
         run: |
@@ -44,8 +37,7 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No charts changed"
           fi
-      
-      # Step 5: Add repositories from chart dependencies automatically
+
       - name: Add Repos from Charts Automatically
         if: steps.changed-charts.outputs.changed == 'true'
         run: |
@@ -61,7 +53,6 @@ jobs:
           done
           helm repo update
       
-      # Step 6: Build chart dependencies
       - name: Build chart dependencies
         if: steps.changed-charts.outputs.changed == 'true'
         run: |
@@ -71,14 +62,13 @@ jobs:
               helm dependency build "$dir"
             fi
           done
+
       - name: Configure Git
         if: steps.changed-charts.outputs.changed == 'true'
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-
-      # Step 7: Run chart-releaser to package the charts
       - name: Run chart-releaser
         if: steps.changed-charts.outputs.changed == 'true'
         uses: helm/chart-releaser-action@v1.6.0
@@ -87,16 +77,28 @@ jobs:
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 8: Copy .tgz files to the page directory (for GitHub Pages)
-      - name: Copy .tgz files to page directory
+      - name: Cache .tgz files
+        uses: actions/cache@v2
+        with:
+          path: ./page/charts
+          key: ${{ runner.os }}-helm-charts-${{ hashFiles('charts/**/*.tgz') }}
+          restore-keys: |
+            ${{ runner.os }}-helm-charts-
+      
+      - name: Download Helm chart .tgz files from GitHub Releases
         if: steps.changed-charts.outputs.changed == 'true'
         run: |
-          mkdir -p ./page
-          cp ./charts/*.tgz ./page/
-          ls -la ./page  # Verify that .tgz files are copied to the page directory
-
-      # Step 9: Create the landing page (index.html)
-      - name: Create landing page (index.html)
+          # GitHub API URL for releases
+          RELEASES_API_URL="https://api.github.com/repos/${{ github.repository }}/releases"
+          
+          # Fetch the latest release data from GitHub API and extract .tgz file URLs
+          release_assets=$(curl -s "$RELEASES_API_URL" | jq -r '.[0].assets[] | select(.name | endswith(".tgz")) | .browser_download_url')
+          
+          # Download .tgz files using parallel download (xargs)
+          mkdir -p ./page/charts
+          echo "$release_assets" | xargs -n 1 -P 5 -I % curl -L -o "./page/charts/$(basename %)" %
+      
+      - name: Create landing page
         run: |
           mkdir -p ./page
           cat > ./page/index.html << 'EOF'
@@ -108,22 +110,12 @@ jobs:
           <body>
               <h1>Helm Charts Repository</h1>
               <p>Add this repository:</p>
-              <pre>helm repo add ai-helm https://adorsys-gis.github.io/ai-helm/</pre>
+              <pre>helm repo add ai-helm https://adorsys-gis-github.io/ai-helm/</pre>
               <p><a href="index.yaml">View index.yaml</a></p>
           </body>
           </html>
           EOF
-
-      # Step 10: Commit and push the changes to the gh-pages branch
-      - name: Commit and push to gh-pages branch
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ./page
-          git commit -m "Add .tgz charts and index.html"
-          git push origin gh-pages
-
-      # Step 11: Deploy to GitHub Pages
+      
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
