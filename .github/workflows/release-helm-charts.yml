@@ -71,6 +71,12 @@ jobs:
               helm dependency build "$dir"
             fi
           done
+      - name: Configure Git
+        if: steps.changed-charts.outputs.changed == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
 
       # Step 7: Run chart-releaser to package the charts
       - name: Run chart-releaser
