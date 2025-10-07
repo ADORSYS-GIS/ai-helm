@@ -2,7 +2,7 @@ name: Release Helm Charts
 on:
   push:
     branches:
-      - fix/helm-release-workflow
+      - main
     paths:
       - "charts/**"
 permissions:
@@ -48,7 +48,7 @@ jobs:
               continue
             fi
             name=$(basename "$repo" | tr -cd '[:alnum:]-')
-            echo "Adding repo: $name -> "$repo""
+            echo "Adding repo: $name -> $repo"
             helm repo add "$name" "$repo"
           done
           helm repo update
@@ -74,7 +74,6 @@ jobs:
         uses: helm/chart-releaser-action@v1.6.0
         with:
           charts_dir: charts
-          config: ./.github/cr.yaml # Optional: specify a config file for chart-releaser
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
@@ -100,6 +99,6 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .cr-index/
+          publish_dir: ./page
           publish_branch: gh-pages
           keep_files: true
