@@ -54,7 +54,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run chart-releaser
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/deploy-to-github-pages'
         uses: helm/chart-releaser-action@v1.6.0
         with:
           charts_dir: charts
@@ -63,7 +63,7 @@ jobs:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/fix-workflow'
+        if: github.ref == 'refs/heads/deploy-to-github-pages'
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
