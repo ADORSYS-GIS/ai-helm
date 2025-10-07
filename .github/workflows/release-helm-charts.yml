@@ -3,16 +3,53 @@ name: Release Helm Charts
 on:
   push:
     branches:
-      - "**"
+      - "fix-workflow"
     paths:
       - "charts/**"
 
 permissions:
   contents: write
   packages: write
+  pages: write
+  id-token: write
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      charts: ${{ steps.changes.outputs.charts }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed charts
+        id: changes
+        run: |
+          # Get all charts that were modified in this commit
+          changed_charts=""
+          for chart_dir in charts/*; do
+            if [ -f "$chart_dir/Chart.yaml" ]; then
+              # Check if any files in this chart directory were modified
+              if git diff --name-only HEAD~1 HEAD | grep -q "^$chart_dir/"; then
+                chart_name=$(basename "$chart_dir")
+                changed_charts="$changed_charts $chart_dir"
+                echo "Chart changed: $chart_name"
+              fi
+            fi
+          done
+
+          # If no specific charts changed, process all charts (for dependency changes)
+          if [ -z "$changed_charts" ]; then
+            changed_charts=$(find charts -name Chart.yaml -exec dirname {} \; | tr '\n' ' ')
+            echo "No specific charts changed, processing all charts"
+          fi
+
+          echo "charts=$changed_charts" >> $GITHUB_OUTPUT
+
   release:
+    needs: detect-changes
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -53,19 +90,28 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Run chart-releaser
-        if: github.ref == 'refs/heads/fix-workflow'
+      - name: Run chart-releaser for changed charts
+        if: needs.detect-changes.outputs.charts != ''
         uses: helm/chart-releaser-action@v1.6.0
         with:
           charts_dir: charts
-          charts: ${{ steps.find-charts.outputs.changed_charts }}
+
+          chart_repo_url: "https://adorsys-gis.github.io/ai-helm"
+
+          path: ${{ needs.detect-changes.outputs.charts }}
+          skip_existing: true
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  deploy-pages:
+    needs: release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/fix-workflow'
+    steps:
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/fix-workflow'
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
-          publish_branch: gh-
+          publish_branch: gh-pages
+          force_orphan: true
