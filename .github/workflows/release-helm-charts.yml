@@ -37,7 +37,7 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No charts changed"
           fi
-
+      
       - name: Add Repos from Charts Automatically
         if: steps.changed-charts.outputs.changed == 'true'
         run: |
@@ -48,7 +48,7 @@ jobs:
               continue
             fi
             name=$(basename "$repo" | tr -cd '[:alnum:]-')
-            echo "Adding repo: $name -> $repo"
+            echo "Adding repo: $name -> "$repo""
             helm repo add "$name" "$repo"
           done
           helm repo update
@@ -62,41 +62,21 @@ jobs:
               helm dependency build "$dir"
             fi
           done
-
+      
       - name: Configure Git
         if: steps.changed-charts.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
+      
       - name: Run chart-releaser
         if: steps.changed-charts.outputs.changed == 'true'
         uses: helm/chart-releaser-action@v1.6.0
         with:
           charts_dir: charts
+          config: ./.github/cr.yaml # Optional: specify a config file for chart-releaser
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cache .tgz files
-        uses: actions/cache@v2
-        with:
-          path: ./page/charts
-          key: ${{ runner.os }}-helm-charts-${{ hashFiles('charts/**/*.tgz') }}
-          restore-keys: |
-            ${{ runner.os }}-helm-charts-
-      
-      - name: Download Helm chart .tgz files from GitHub Releases
-        if: steps.changed-charts.outputs.changed == 'true'
-        run: |
-          # GitHub API URL for releases
-          RELEASES_API_URL="https://api.github.com/repos/${{ github.repository }}/releases"
-          
-          # Fetch the latest release data from GitHub API and extract .tgz file URLs
-          release_assets=$(curl -s "$RELEASES_API_URL" | jq -r '.[0].assets[] | select(.name | endswith(".tgz")) | .browser_download_url')
-          
-          # Download .tgz files using parallel download (xargs)
-          mkdir -p ./page/charts
-          echo "$release_assets" | xargs -n 1 -P 5 -I % curl -L -o "./page/charts/$(basename %)" %
       
       - name: Create landing page
         run: |
@@ -120,6 +100,6 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./page
+          publish_dir: .cr-index/
           publish_branch: gh-pages
           keep_files: true
