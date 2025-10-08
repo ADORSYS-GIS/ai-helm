@@ -22,31 +22,49 @@ jobs:
           version: v3.14.0
       - name: Add Repos from Charts Automatically
         run: |
+          set -e
           repos=$(find charts -name 'Chart.yaml' -exec yq e '.dependencies[].repository' {} \; | sort -u)
           for repo in $repos; do
+            # Note: Currently only detects oci:// format
+            # Expand this if we add Azure (*.azurecr.io) or other OCI registries
             if [[ "$repo" == oci://* ]]; then
               echo "Skipping OCI registry: $repo"
               continue
             fi
             name=$(basename "$repo" | tr -cd '[:alnum:]-')
+            if [ -z "$name" ]; then
+              echo "Error: Could not generate valid name for $repo"
+              exit 1
+            fi
             echo "Adding repo: $name -> $repo"
-            helm repo add "$name" "$repo"
+            helm repo add "$name" "$repo" || { echo "Failed to add $repo"; exit 1; }
           done
-          helm repo update
+          helm repo update || { echo "Failed to update repos"; exit 1; }
+      - name: Lint charts
+        run: |
+          set -e
+          for dir in charts/*; do
+            if [ -f "$dir/Chart.yaml" ]; then
+              echo "Linting $dir"
+              helm lint "$dir" || { echo "Linting failed for $dir"; exit 1; }
+            fi
+          done
       - name: Build chart dependencies
         run: |
+          set -e
           for dir in charts/*; do
             if [ -f "$dir/Chart.yaml" ]; then
               echo "Building dependencies for $dir"
-              helm dependency build "$dir"
+              helm dependency build "$dir" || { echo "Failed to build $dir"; exit 1; }
             fi
           done
       - name: Configure Git
+        if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Run chart-releaser
-        if: github.ref == 'refs/heads/fix-helm-release-workflow'
+        if: github.ref == 'refs/heads/main'
         uses: helm/chart-releaser-action@v1.6.0
         with:
           charts_dir: charts
