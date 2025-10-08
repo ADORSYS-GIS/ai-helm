@@ -2,7 +2,7 @@ name: Release Helm Charts
 on:
   push:
     branches:
-      - fix-helm-release-workflow
+      - main
     paths:
       - "charts/**"
 permissions:
@@ -25,11 +25,13 @@ jobs:
       - name: Detect changed charts
         id: changed-charts
         run: |
-          changed=$(ct list-changed --target-branch main --chart-dirs charts)
-          if [[ -n "$changed" ]]; then
+          # Get list of changed files in charts directory
+          changed_files=$(git diff --name-only HEAD~1 HEAD -- charts/ || echo "")
+          
+          if [[ -n "$changed_files" ]]; then
             echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Changed charts:"
-            echo "$changed"
+            echo "Changed files in charts:"
+            echo "$changed_files"
           else
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No charts changed"
