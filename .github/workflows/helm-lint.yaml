@@ -25,7 +25,7 @@ jobs:
           path: ~/.cache/helm
           key: ${{ runner.os }}-helm-${{ hashFiles('**/Chart.yaml') }}
 
-            - name: Lint & validate charts
+      - name: Lint & validate charts
         run: |
           set -e
           find ./charts -name "Chart.yaml" -type f | while read chart_file; do
@@ -37,23 +37,6 @@ jobs:
             # Download dependencies (fixes missing deps issue)
             echo "📦 Updating dependencies for $chart_name..."
             helm dependency update "$chart_dir"
-
-            [[ -f "$chart_dir/values.yaml" ]] || echo "⚠️  Missing values.yaml"
-
-            helm lint "$chart_dir" --strict
-            helm template "$chart_name" "$chart_dir" --dry-run > /dev/null
-            echo "✅ $chart_name OK"
-          done
-
-
-      - name: Lint & validate charts
-        run: |
-          set -e
-          find ./charts -name "Chart.yaml" -type f | while read chart_file; do
-            chart_dir=$(dirname "$chart_file")
-            chart_name=$(yq eval '.name' "$chart_file")
-            chart_version=$(yq eval '.version' "$chart_file")
-            echo "🔍 $chart_name ($chart_version)"
 
             [[ -f "$chart_dir/values.yaml" ]] || echo "⚠️  Missing values.yaml"
 
