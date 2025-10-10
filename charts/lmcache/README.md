@@ -1,4 +1,4 @@
-# lmcache Helm Chart
+#  lmcache Helm Chart
 
 ![Version: 4.3.0](https://img.shields.io/badge/Version-4.3.0-informational?style=flat-square)
 
