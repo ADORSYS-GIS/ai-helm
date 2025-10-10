@@ -1,0 +1,50 @@
+name: Lint Helm Charts
+on:
+  push:
+    branches:
+      - "**"  
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Helm & yq
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.4
+      - uses: mikefarah/yq@v4
+
+      - name: Cache Helm
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/helm
+          key: ${{ runner.os }}-helm-${{ hashFiles('**/Chart.yaml') }}
+
+      - name: Lint & validate charts
+        run: |
+          set -e
+          find ./charts -name "Chart.yaml" -type f | while read chart_file; do
+            chart_dir=$(dirname "$chart_file")
+            chart_name=$(yq eval '.name' "$chart_file")
+            chart_version=$(yq eval '.version' "$chart_file")
+            echo "🔍 $chart_name ($chart_version)"
+
+            # Download dependencies (fixes missing deps issue)
+            echo "📦 Updating dependencies for $chart_name..."
+            helm dependency update "$chart_dir"
+
+            [[ -f "$chart_dir/values.yaml" ]] || echo "⚠️  Missing values.yaml"
+
+            helm lint "$chart_dir" --strict
+            helm template "$chart_name" "$chart_dir" --dry-run > /dev/null
+            echo "✅ $chart_name OK"
+          done
+
+      - name: Summary
+        if: always()
+        run: echo "📊 Helm linting completed with status:${{ job.status }}"
