@@ -1,2 +1,2 @@
-# Helm Chart for LiteLLM
+# The Helm Chart for LiteLLM
 
