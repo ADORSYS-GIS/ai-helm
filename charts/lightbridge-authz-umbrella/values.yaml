@@ -24,3 +24,28 @@ lightbridge-config:
     pullPolicy: IfNotPresent
   configData:
     exampleKey: exampleValue  # override default config if needed
+  
+  tlsPolicies:
+    google:
+      enabled: true
+      validation:
+        certSecret: "google-tls-cert" 
+    openai:
+      enabled: true
+      validation:
+        certSecret: "openai-tls-cert"
+  providers:
+    lightbridge-authz:
+      providers:
+        lightbridge-authz: true
+  clientTraffic:
+    enabled: true
+    targetRef:
+      group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg  # Replace with your actual Gateway name
+    enableProxyProtocol: true
+    tcpKeepalive:
+      idleTime: 10s
+      interval: 5s
+      probes: 3
