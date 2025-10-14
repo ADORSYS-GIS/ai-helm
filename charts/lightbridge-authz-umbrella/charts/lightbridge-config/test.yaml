@@ -1,0 +1,823 @@
+---
+# Source: lightbridge-config/templates/route.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: miaou-lightbridge-config
+  namespace: test
+spec:
+  parentRefs:
+    -
+      group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public-gw
+  rules:
+    - matches:
+        - headers:
+            - name: x-ai-eg-model
+              value: gpt-5
+      backendRefs:
+        - name: openai-teamA
+    - matches:
+        - headers:
+            - name: x-ai-eg-model
+              value: gpt-5-mini
+      backendRefs:
+        - name: openai-teamA
+    - matches:
+        - headers:
+            - name: x-ai-eg-model
+              value: gemini-2.5-pro
+      backendRefs:
+        - name: google-main
+    - matches:
+        - headers:
+            - name: x-ai-eg-model
+              value: gemini-2.5-flash
+      backendRefs:
+        - name: google-main
+    - matches:
+        - headers:
+            - name: x-ai-eg-model
+              value: gemini-2.0-flash
+      backendRefs:
+        - name: google-main
+---
+# Source: lightbridge-config/templates/backends.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: google-team
+  namespace: test
+spec:
+  schema:
+
+    name: GCPVertexAI
+  backendRef:
+    name: google-team
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: lightbridge-config/templates/backends.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: openai-teamA
+  namespace: test
+spec:
+  schema:
+
+    name: OpenAI
+    version: v1
+  backendRef:
+    name: openai-teamA
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: lightbridge-config/templates/backends.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: google-team
+  namespace: test
+spec:
+  endpoints:
+    - fqdn:
+        hostname: us-central1-aiplatform.googleapis.com
+        port: 443
+---
+# Source: lightbridge-config/templates/backends.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: openai-teamA
+  namespace: test
+spec:
+  endpoints:
+    - fqdn:
+        hostname: api.openai.com
+        port: 443
+---
+# Source: lightbridge-config/templates/backend-security-policy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: google-team
+  namespace: test
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: google-team
+
+
+
+  type: GCPCredentials
+  gcpCredentials:
+    projectName: some-project-name
+    region: eu-central-1
+    credentialsFile:
+      secretRef:
+        name: some-secret
+---
+# Source: lightbridge-config/templates/backend-security-policy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: openai-teamA
+  namespace: test
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: openai-teamA
+
+
+
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: some-secret
+      namespace: test
+---
+# Source: lightbridge-config/templates/backend-tls-policy.yaml
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: google-tls
+  namespace: test
+spec:
+  targetRefs:
+
+
+  validation:
+
+    hostname: us-central1-aiplatform.googleapis.com
+    wellKnownCACertificates: System
+---
+# Source: lightbridge-config/templates/backend-tls-policy.yaml
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: openai-tls
+  namespace: test
+spec:
+  targetRefs:
+
+
+  validation:
+
+    hostname: api.openai.com
+    wellKnownCACertificates: System
+---
+# Source: lightbridge-config/templates/rl-local-burst.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: rl-local-burst
+  namespace: test
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: miaou-lightbridge-config
+  rateLimit:
+    type: Local
+    local:
+      tokenBucket:
+        maxTokens: 500
+        tokensPerFill: 500
+        fillInterval: 60s
+---
+# Source: lightbridge-config/templates/rl-requests.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: rl-requests
+  namespace: test
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: miaou-lightbridge-config
+  rateLimit:
+    type: Global
+    global:
+      timeZone: Europe/Berlin
+      rules:
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: developer } ]
+            - headers: [ { name: x-ai-eg-model, value: gpt-5 } ]
+          limit:
+            requests: 120
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: developer } ]
+            - headers: [ { name: x-ai-eg-model, value: gpt-5-mini } ]
+          limit:
+            requests: 200
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: developer } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.5-pro } ]
+          limit:
+            requests: 120
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: developer } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.5-flash } ]
+          limit:
+            requests: 200
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: developer } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.0-flash } ]
+          limit:
+            requests: 240
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: employee } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.5-flash } ]
+          limit:
+            requests: 40
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: employee } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.0-flash } ]
+          limit:
+            requests: 60
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: free } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.5-flash } ]
+          limit:
+            requests: 20
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: free } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.0-flash } ]
+          limit:
+            requests: 30
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: guru } ]
+            - headers: [ { name: x-ai-eg-model, value: gpt-5 } ]
+          limit:
+            requests: 600
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: guru } ]
+            - headers: [ { name: x-ai-eg-model, value: gpt-5-mini } ]
+          limit:
+            requests: 600
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: guru } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.5-pro } ]
+          limit:
+            requests: 600
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: guru } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.5-flash } ]
+          limit:
+            requests: 600
+            unit: Minute
+        - clientSelectors:
+            - headers: [ { name: x-custom-lightbridge-authz-user-id, type: Distinct } ]
+            - headers: [ { name: x-custom-lightbridge-authz-tier, value: guru } ]
+            - headers: [ { name: x-ai-eg-model, value: gemini-2.0-flash } ]
+          limit:
+            requests: 600
+            unit: Minute
+---
+# Source: lightbridge-config/templates/rl-tokens.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: rl-tokens
+  namespace: test
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: miaou-lightbridge-config
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gpt-5 }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gpt-5
+          limit:
+            requests: 80000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gpt-5 }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gpt-5
+          limit:
+            requests: 2000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gpt-5-mini }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gpt-5-mini
+          limit:
+            requests: 60000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gpt-5-mini }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gpt-5-mini
+          limit:
+            requests: 3000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-pro }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-pro
+          limit:
+            requests: 80000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-pro }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-pro
+          limit:
+            requests: 2000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-flash }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-flash
+          limit:
+            requests: 60000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-flash }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-flash
+          limit:
+            requests: 3000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.0-flash }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.0-flash
+          limit:
+            requests: 80000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: developer }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.0-flash }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.0-flash
+          limit:
+            requests: 4000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: employee }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-flash }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-flash
+          limit:
+            requests: 30000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: employee }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-flash }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-flash
+          limit:
+            requests: 600000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: employee }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.0-flash }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.0-flash
+          limit:
+            requests: 40000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: employee }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.0-flash }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.0-flash
+          limit:
+            requests: 800000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: free }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-flash }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-flash
+          limit:
+            requests: 15000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: free }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-flash }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-flash
+          limit:
+            requests: 150000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: free }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.0-flash }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.0-flash
+          limit:
+            requests: 20000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: free }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.0-flash }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.0-flash
+          limit:
+            requests: 200000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gpt-5 }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gpt-5
+          limit:
+            requests: 350000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gpt-5 }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gpt-5
+          limit:
+            requests: 20000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gpt-5-mini }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gpt-5-mini
+          limit:
+            requests: 350000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gpt-5-mini }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gpt-5-mini
+          limit:
+            requests: 20000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-pro }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-pro
+          limit:
+            requests: 350000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-pro }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-pro
+          limit:
+            requests: 20000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-flash }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-flash
+          limit:
+            requests: 350000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.5-flash }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.5-flash
+          limit:
+            requests: 20000000
+            unit: Month
+        # minute window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.0-flash }]
+            # extra selector to collapse models into one bucket:
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.0-flash
+          limit:
+            requests: 350000
+            unit: Minute
+        # monthly window
+        - clientSelectors:
+            - headers: [{ name: x-custom-lightbridge-authz-user-id, type: Distinct }]
+            - headers: [{ name: x-custom-lightbridge-authz-tier, value: guru }]
+            - headers: [{ name: x-ai-eg-model, value: gemini-2.0-flash }]
+            - genericKeys:
+                - key: model_bucket
+                  value: gemini-2.0-flash
+          limit:
+            requests: 20000000
+            unit: Month
+---
+# Source: lightbridge-config/templates/client-traffic-policy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: client-tuning
+  namespace: test
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: miaou-lightbridge-config
+  retry:
+    attempts: 1
+    perTryTimeout: 8s
+    retriableStatusCodes: [429, 502, 503, 504]
+  responseHeaderModifier:
+    set:
+      - name: x-lightbridge-tier
+        value: "%REQ(X-CUSTOM-LIGHTBRIDGE-AUTHZ-TIER-0)%"
+      - name: x-lightbridge-tenant
+        value: "%REQ(X-CUSTOM-LIGHTBRIDGE-AUTHZ-TENANT-0)%"
+      - name: x-fallback-model
+        value: "gemini-2.0-flash"
+---
+# Source: lightbridge-config/templates/guard-securitypolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: ai-guard
+  namespace: test
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: miaou-lightbridge-config
+  authz:
+    rbac:
+      allow:
+        rules:
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: developer
+                  - name: x-ai-eg-model
+                    value: gpt-5
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: developer
+                  - name: x-ai-eg-model
+                    value: gpt-5-mini
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: developer
+                  - name: x-ai-eg-model
+                    value: gemini-2.5-pro
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: developer
+                  - name: x-ai-eg-model
+                    value: gemini-2.5-flash
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: developer
+                  - name: x-ai-eg-model
+                    value: gemini-2.0-flash
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: employee
+                  - name: x-ai-eg-model
+                    value: gemini-2.5-flash
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: employee
+                  - name: x-ai-eg-model
+                    value: gemini-2.0-flash
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: free
+                  - name: x-ai-eg-model
+                    value: gemini-2.5-flash
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: free
+                  - name: x-ai-eg-model
+                    value: gemini-2.0-flash
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: guru
+                  - name: x-ai-eg-model
+                    value: gpt-5
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: guru
+                  - name: x-ai-eg-model
+                    value: gpt-5-mini
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: guru
+                  - name: x-ai-eg-model
+                    value: gemini-2.5-pro
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: guru
+                  - name: x-ai-eg-model
+                    value: gemini-2.5-flash
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true
+          - when:
+              - headers:
+                  - name: x-custom-lightbridge-authz-tier
+                    value: guru
+                  - name: x-ai-eg-model
+                    value: gemini-2.0-flash
+                  - name: x-custom-lightbridge-authz-tenant
+                    present: true
+                  - name: x-custom-lightbridge-authz-user-id
+                    present: true

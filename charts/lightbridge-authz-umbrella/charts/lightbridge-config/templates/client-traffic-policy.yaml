@@ -1,0 +1,19 @@
+{{- if .Values.clientTraffic.enabled }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: client-buffer-limit
+  namespace: {{ .Release.Namespace | default "default" }}
+spec:
+  targetRefs:
+    - group: {{ .Values.clientTraffic.targetRef.group }}
+      kind: {{ .Values.clientTraffic.targetRef.kind }}
+      name: {{ .Values.clientTraffic.targetRef.name }}
+  {{- with .Values.clientTraffic.enableProxyProtocol }}
+  enableProxyProtocol: {{ . }}
+  {{- end }}
+  {{- with .Values.clientTraffic.tcpKeepalive }}
+  tcpKeepalive:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,12 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: provider-fallback
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: provider-fallback # HTTPRoute is created with the same name as AIGatewayRoute
+  retry:
+    {{ include "common.tplvalues.render" ( dict "value" .Values.retry "context" $ ) | nindent 4 }}
