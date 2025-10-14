@@ -1,0 +1,17 @@
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: {{ include "common.names.fullname" $ }}
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  parentRefs:
+    - {{ include "common.tplvalues.render" ( dict "value" .Values.gatewayRef "context" $ ) | nindent 6 }}
+  rules:
+  {{- range .Values.models }}
+    - matches:
+        - headers:
+            - name: {{ include "H.model" $ }}
+              value: {{ include "common.tplvalues.render" ( dict "value" .name "context" $ ) }}
+      backendRefs:
+        - name: {{ include "common.tplvalues.render" ( dict "value" .backend "context" $ ) }}
+  {{- end }}
