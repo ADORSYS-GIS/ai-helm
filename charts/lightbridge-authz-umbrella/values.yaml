@@ -8,18 +8,23 @@ lightbridge-authz:
   enabled: true
   replicaCount: 1
   image:
-    repository: adorsys/lightbridge-authz
+    repository: registry072/lightbridge-authz
     tag: latest
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
     port: 80
+  secret:
+    enabled: true
+    databaseUrl: "postgres://postgres:postgres@my-postgres-postgresql.default.svc.cluster.local:5432/lightbridge_authz"
+    jwksUrl: "https://your-auth-server.com/certs"
+
 
 lightbridge-config:
-  enabled: true
+  enabled: false
   replicaCount: 1
   image:
-    repository: adorsys/lightbridge-config
+    repository: registry072/lightbridge-authz
     tag: latest
     pullPolicy: IfNotPresent
   configData:
