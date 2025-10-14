@@ -1,0 +1,186 @@
+gatewayRef:
+  group: gateway.networking.k8s.io
+  kind: Gateway
+  name: public-gw
+
+headers:
+  user: x-custom-lightbridge-authz-user-id
+  tier: x-custom-lightbridge-authz-tier
+  tenant: x-custom-lightbridge-authz-tenant
+  model: x-ai-eg-model                # set by Envoy AI Gateway from the JSON body
+
+denyByDefault: true                   # guard blocks unless tier+model are allowed
+
+# point to existing Secrets (chart won’t create them)
+providers:
+  openai-team-a:
+    enabled: true
+    type: openai
+    schema:
+      name: OpenAI
+      version: "v1"
+    endpoints:
+      - fqdn:
+          hostname: api.openai.com
+          port: 443
+    auth:
+      enabled: true
+      secret_name: some-secret
+      projectName: ~ # only works if type=google
+      region: ~  # only works if type=google or type=aws
+
+  google-team:
+    enabled: true
+    type: google
+    schema:
+      name: GCPVertexAI
+    endpoints:
+      - fqdn:
+          hostname: us-central1-aiplatform.googleapis.com
+          port: 443
+    auth:
+      enabled: true
+      secret_name: some-secret
+      projectName: some-project-name
+      region: eu-central-1
+
+tlsPolicies:
+  openai:
+    enabled: true
+    providers:
+      openai-team-a: true
+    validation:
+      wellKnownCACertificates: "System"
+      hostname: api.openai.com
+  google:
+    enabled: true
+    providers:
+      google-team: true
+    validation:
+      wellKnownCACertificates: "System"
+      hostname: us-central1-aiplatform.googleapis.com
+
+
+# logical models (as clients send them in "model")
+# backend: one of providers above
+# group: for shared budgets (e.g., all ollama share "ollama")
+models:
+  - { name: gpt-5,              backend: openai-team-a }
+  - { name: gpt-5-mini,         backend: openai-team-a }
+  - { name: gemini-2.5-pro,     backend: google-main }
+  - { name: gemini-2.5-flash,   backend: google-main }
+  - { name: gemini-2.0-flash,   backend: google-main }
+
+# per-tier allow-lists and budgets (fill numbers you want)
+# "*" means "all models" for that map
+tiers:
+  free:
+    allow:
+      - gemini-2.0-flash
+      - gemini-2.5-flash
+    reqPerMin:
+      gemini-2.0-flash: 30
+      gemini-2.5-flash: 20
+    tokensPerMin:
+      gemini-2.0-flash: 20000
+      gemini-2.5-flash: 15000
+    tokensPerMonth:
+      gemini-2.0-flash: 200000
+      gemini-2.5-flash: 150000
+
+  employee:
+    allow:
+      - gemini-2.0-flash
+      - gemini-2.5-flash
+    reqPerMin:
+      gemini-2.0-flash: 60
+      gemini-2.5-flash: 40
+    tokensPerMin:
+      gemini-2.0-flash: 40000
+      gemini-2.5-flash: 30000
+    tokensPerMonth:
+      gemini-2.0-flash: 800000
+      gemini-2.5-flash: 600000
+
+  developer:
+    allow:
+      - gpt-5
+      - gpt-5-mini
+      - gemini-2.5-pro
+      - gemini-2.5-flash
+      - gemini-2.0-flash
+    reqPerMin:
+      gpt-5: 120
+      gpt-5-mini: 200
+      gemini-2.5-pro: 120
+      gemini-2.5-flash: 200
+      gemini-2.0-flash: 240
+    tokensPerMin:
+      gpt-5: 80000
+      gpt-5-mini: 60000
+      gemini-2.5-pro: 80000
+      gemini-2.5-flash: 60000
+      gemini-2.0-flash: 80000
+    tokensPerMonth:
+      gpt-5: 2000000
+      gpt-5-mini: 3000000
+      gemini-2.5-pro: 2000000
+      gemini-2.5-flash: 3000000
+      gemini-2.0-flash: 4000000
+
+  guru:
+    allow: [ "*" ]
+    reqPerMin: { "*": 600 }
+    tokensPerMin: { "*": 350000 }
+    tokensPerMonth: { "*": 20000000 }
+
+# local burst limiter (per Envoy pod)
+localBurst:
+  enabled: true
+  maxTokens: 500
+  tokensPerFill: 500
+  fillInterval: 60s
+
+# headers to expose back to clients
+exposeHeaders:
+  enabled: true
+  response:
+    - { name: x-lightbridge-tier, valueFromHeader: x-custom-lightbridge-authz-tier }
+    - { name: x-lightbridge-tenant, valueFromHeader: x-custom-lightbridge-authz-tenant }
+    - { name: x-fallback-model, value: gemini-2.0-flash }  # hint for clients
+
+security:
+  enabled: true
+  extAuth:
+    http:
+      backendRefs:
+        - name: grpc-ext-auth
+          port: 3001
+      headersToBackend: ["x-current-user"]
+
+retry:
+  # This ensures that only one attempt is made per priority.
+  # For example, if the primary backend fails, it will not retry on the same backend.
+  numAttemptsPerPriority: 1
+  numRetries: 5
+  perRetry:
+    backOff:
+      baseInterval: 100ms
+      maxInterval: 10s
+    timeout: 30s
+  retryOn:
+    httpStatusCodes:
+      - 500
+    triggers:
+      - connect-failure
+      - retriable-status-codes
+
+clientTraffic:
+  enabled: true
+  enableProxyProtocol: true
+  tcpKeepalive:
+    idleTime: 20m
+    interval: 60s
+    probes: 3
+  connection:
+    bufferLimit: 50Mi

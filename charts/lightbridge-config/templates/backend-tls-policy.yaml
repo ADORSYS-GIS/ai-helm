@@ -1,0 +1,25 @@
+{{- range $tls_name, $tls_value := .Values.tlsPolicies }}
+{{ with $tls_value }}
+{{ if .enabled }}
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: {{ $tls_name }}-tls
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  targetRefs:
+    {{- range $name, $p := $.Values.providers }}
+    {{- range $p_name, $p_value := .providers }}
+    {{ if and $p_value (eq $name $p_name) }}
+    - group: 'gateway.envoyproxy.io'
+      kind: Backend
+      name: {{ $name }}
+    {{ end }}
+    {{ end }}
+    {{ end }}
+  validation:
+    {{ include "common.tplvalues.render" ( dict "value" .validation "context" $ ) | nindent 4 }}
+---
+{{ end }}
+{{ end -}}
+{{ end -}}
