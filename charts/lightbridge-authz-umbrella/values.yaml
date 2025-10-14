@@ -1,0 +1,56 @@
+# Global values
+global:
+  namespace: lightbridge
+  imagePullPolicy: IfNotPresent
+
+# Sub-chart overrides
+lightbridge-authz:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: registry072/lightbridge-authz
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  secret:
+    enabled: true
+    databaseUrl: "postgres://postgres:postgres@my-postgres-postgresql.default.svc.cluster.local:5432/lightbridge_authz"
+    jwksUrl: "https://your-auth-server.com/certs"
+
+
+lightbridge-config:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: registry072/lightbridge-authz
+    tag: latest
+    pullPolicy: IfNotPresent
+  configData:
+    exampleKey: exampleValue  # override default config if needed
+  
+  tlsPolicies:
+    google:
+      enabled: true
+      validation:
+        certSecret: "google-tls-cert" 
+    openai:
+      enabled: true
+      validation:
+        certSecret: "openai-tls-cert"
+  providers:
+    lightbridge-authz:
+      providers:
+        lightbridge-authz: true
+  clientTraffic:
+    enabled: true
+    targetRef:
+      group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg  # Replace with your actual Gateway name
+    enableProxyProtocol: true
+    tcpKeepalive:
+      idleTime: 10s
+      interval: 5s
+      probes: 3
