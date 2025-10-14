@@ -1,0 +1,24 @@
+{{- if .Values.config.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lightbridge-authz.fullname" . }}-config
+  labels:
+    {{- include "lightbridge-authz.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      rest:
+        address: "{{ .Values.config.server.rest.address }}"
+        port: {{ .Values.config.server.rest.port }}
+      grpc:
+        address: "{{ .Values.config.server.grpc.address }}"
+        port: {{ .Values.config.server.grpc.port }}
+    logging:
+      level: "{{ .Values.config.logging.level }}"
+    database:
+      url: "$DATABASE_URL"
+      pool_size: {{ .Values.config.database.pool_size }}
+    oauth2:
+      jwks_url: "$JWKS_URL"
+{{- end }}
