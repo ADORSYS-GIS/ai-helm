@@ -9,23 +9,22 @@ lightbridge-authz:
   fullnameOverride: "lightbridge-authz"
   replicaCount: 1
   image:
-    repository: registry072/lightbridge-authz
+    repository: ghcr.io/franck-sorel/lightbridge-authz
     tag: latest
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
     port: 80
   secret:
-    enabled: true
-    databaseUrl: "postgres://postgres:postgres@my-postgres-postgresql.default.svc.cluster.local:5432/lightbridge_authz"
-    jwksUrl: "https://your-auth-server.com/certs"
+    create: false
+    name: lightbridge-authz-prod-secrets
 
 
 lightbridge-config:
   enabled: false
   replicaCount: 1
   image:
-    repository: registry072/lightbridge-authz
+    repository: ghcr.io/franck-sorel/lightbridge-authz
     tag: latest
     pullPolicy: IfNotPresent
   configData:
