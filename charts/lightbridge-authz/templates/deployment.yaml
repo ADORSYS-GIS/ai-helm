@@ -38,12 +38,12 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "lightbridge-authz.fullname" . }}-secret
+                  name: {{ .Values.secret.name | default (printf "%s-secret" (include "lightbridge-authz.fullname" .)) }}
                   key: DATABASE_URL
             - name: JWKS_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "lightbridge-authz.fullname" . }}-secret
+                  name: {{ .Values.secret.name | default (printf "%s-secret" (include "lightbridge-authz.fullname" .)) }}
                   key: JWKS_URL
           volumeMounts:
             - name: config-template
