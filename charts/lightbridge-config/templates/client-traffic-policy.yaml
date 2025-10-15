@@ -5,10 +5,12 @@ metadata:
   name: client-buffer-limit
   namespace: {{ .Release.Namespace | default "default" }}
 spec:
+  {{- if .Values.clientTraffic.targetRef }}
   targetRefs:
     - group: {{ .Values.clientTraffic.targetRef.group }}
       kind: {{ .Values.clientTraffic.targetRef.kind }}
       name: {{ .Values.clientTraffic.targetRef.name }}
+  {{- end }}
   {{- with .Values.clientTraffic.enableProxyProtocol }}
   enableProxyProtocol: {{ . }}
   {{- end }}
