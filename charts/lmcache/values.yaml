@@ -1,0 +1,65 @@
+lmcache:
+  global:
+    nameOverride: ""
+    fullnameOverride: ""
+
+  controllers:
+    main:
+      strategy: RollingUpdate
+
+      containers:
+        main:
+          image:
+            repository: "kserve/huggingfaceserver"
+            tag: "v0.15.1-gpu"
+            pullPolicy: IfNotPresent
+
+          command:
+            - "lmcache_experimental_server"
+          args:
+            - "0.0.0.0"
+            - "8080"
+
+          ports:
+            - name: http
+              containerPort: 8080
+
+          probes:
+            liveness:
+              enabled: true
+              spec:
+                httpGet:
+                  path: "/readyz"
+                  port: 8080
+                initialDelaySeconds: 60
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+            readiness:
+              enabled: true
+              spec:
+                httpGet:
+                  path: "/readyz"
+                  port: 8080
+                initialDelaySeconds: 30
+                periodSeconds: 5
+                timeoutSeconds: 3
+                failureThreshold: 3
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          port: 8080
+          targetPort: 8080
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  persistence:
+    lmcache-disk:
+      type: emptyDir
+      enabled: false
