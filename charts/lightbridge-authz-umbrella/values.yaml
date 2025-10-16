@@ -5,29 +5,24 @@ global:
 
 # Sub-chart overrides
 lightbridge-authz:
-  replicaCount: 1
-  image:
-    repository: ghcr.io/franck-sorel/lightbridge-authz
-    tag: latest
-    pullPolicy: IfNotPresent
+  enabled: true
+  app-template:
+    enabled: true
+  controllers:
+    main:
+      containers:
+        main:
+          image:
+            repository: ghcr.io/franck-sorel/lightbridge-authz
+            tag: latest
   service:
-    type: ClusterIP
-    port: 80
-  secret:
-    create: false
-    name: lightbridge-authz-prod-secrets
-
+    main:
+      ports:
+        http:
+          port: 80
 
 lightbridge-config:
   enabled: false
-  replicaCount: 1
-  image:
-    repository: ghcr.io/franck-sorel/lightbridge-authz
-    tag: latest
-    pullPolicy: IfNotPresent
-  configData:
-    exampleKey: exampleValue  # override default config if needed
-  
   tlsPolicies:
     google:
       enabled: true
