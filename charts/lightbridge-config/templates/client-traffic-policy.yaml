@@ -2,8 +2,9 @@
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: ClientTrafficPolicy
 metadata:
-  name: client-buffer-limit
-  namespace: {{ .Release.Namespace | default "default" }}
+  name: {{ include "common.names.fullname" . }}-client-traffic
+  namespace: {{ include "common.names.namespace" . }}
+  labels: {{- include "common.labels.standard" . | nindent 4 }}
 spec:
   {{- if .Values.clientTraffic.targetRef }}
   targetRefs:

@@ -6,6 +6,7 @@ kind: AIServiceBackend
 metadata:
   name: {{ $name }}
   namespace: {{ include "common.names.namespace" $ }}
+  labels: {{- include "common.labels.standard" $ | nindent 4 }}
 spec:
   schema:
     {{ include "common.tplvalues.render" ( dict "value" .schema "context" $ ) | nindent 4 }}
@@ -21,6 +22,7 @@ kind: Backend
 metadata:
   name: {{ $name }}
   namespace: {{ include "common.names.namespace" $ }}
+  labels: {{- include "common.labels.standard" $ | nindent 4 }}
 spec:
   endpoints: {{ include "common.tplvalues.render" ( dict "value" .endpoints "context" $ ) | nindent 4 }}
 {{ end }}
