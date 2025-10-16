@@ -1,6 +1,7 @@
 {{- range $name, $p := .Values.providers }}
 {{ with $p }}
 {{ if .enabled }}
+{{ if .endpoints }}
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: AIServiceBackend
 metadata:
@@ -14,8 +15,6 @@ spec:
     name: {{ $name }}
     kind: Backend
     group: gateway.envoyproxy.io
-
-{{ if .endpoints }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend

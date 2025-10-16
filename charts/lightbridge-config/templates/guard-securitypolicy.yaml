@@ -17,16 +17,10 @@ spec:
             {{- if eq (include "allowed" (dict "tier" $tierName "model" $model.name "context" $) ) "true" }}
           - when:
               - headers:
-                  - name: {{ include "H.tier" $ }}
+                  - name: {{ $.Values.headers.tier }}
                     value: {{ $tierName }}
-                  - name: {{ include "H.model" $ }}
+                  - name: {{ $.Values.headers.model }}
                     value: {{ $model.name }}
-            {{- if $.Values.headers.tenant }}
-                  - name: {{ include "H.tenant" $ }}
-                    present: true
-            {{- end }}
-                  - name: {{ include "H.user" $ }}
-                    present: true
             {{- end }}
           {{- end }}
         {{- end }}

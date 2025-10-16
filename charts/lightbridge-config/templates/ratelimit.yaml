@@ -1,0 +1,49 @@
+{{- define "ratelimit.policy" -}}
+{{- $policy := .policy }}
+{{- $context := .context }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: {{ include "common.names.fullname" $context }}-rl-{{ $policy.type }}
+  namespace: {{ include "common.names.namespace" $context }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "common.names.fullname" $context }}
+  rateLimit:
+    type: Global
+    global:
+      rules:
+      {{- range $tierName, $_ := $context.Values.tiers }}
+        {{- range $i, $model := $context.Values.models }}
+          {{- if eq (include "allowed" (dict "tier" $tierName "model" $model.name "context" $context) ) "true" }}
+        - clientSelectors:
+            - headers: [ { name: {{ include "H.user" $context }}, type: Distinct } ]
+            - headers: [ { name: {{ include "H.tier" $context }}, value: {{ $tierName }} } ]
+            - headers: [ { name: {{ include "H.model" $context }}, value: {{ $model.name }} } ]
+          limit:
+            requests: {{ include "limit.get" (dict "tier" $tierName "kind" $policy.perMin "model" $model.name "context" $context) | int }}
+            unit: Minute
+          {{- if $policy.cost }}
+          cost:
+            {{- $policy.cost | toYaml | nindent 12 }}
+          {{- end }}
+        - clientSelectors:
+            - headers: [ { name: {{ include "H.user" $context }}, type: Distinct } ]
+            - headers: [ { name: {{ include "H.tier" $context }}, value: {{ $tierName }} } ]
+            - headers: [ { name: {{ include "H.model" $context }}, value: {{ $model.name }} } ]
+          limit:
+            requests: {{ include "limit.get" (dict "tier" $tierName "kind" $policy.perMonth "model" $model.name "context" $context) }}
+            unit: Month
+          {{- if $policy.cost }}
+          cost:
+            {{- $policy.cost | toYaml | nindent 12 }}
+          {{- end }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+{{- end -}}
+{{- include "ratelimit.policy" (dict "policy" .Values.rateLimitPolicies.requests "context" .) -}}
+---
+{{- include "ratelimit.policy" (dict "policy" .Values.rateLimitPolicies.tokens "context" .) -}}
