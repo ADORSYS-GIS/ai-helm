@@ -1,55 +1,55 @@
-controllers:
-  main:
-    enabled: true
-    replicaCount: 1
-    containers:
-      main:
-        image:
-          repository: ghcr.io/adorsys-gis/lite-llm-customer
-          tag: latest
-          pullPolicy: IfNotPresent
-        env:
-          - name: LITELLM_PROXY_URL
-            valueFrom:
-              secretKeyRef:
-                name: litellm-credentials-secret
-                key: LITELLM_PROXY_URL
-          - name: LITELLM_API_KEY
-            valueFrom:
-              secretKeyRef:
-                name: litellm-credentials-secret
-                key: LITELLM_API_KEY
-          - name: NEXTAUTH_SECRET
-            valueFrom:
-              secretKeyRef:
-                name: litellm-credentials-secret
-                key: NEXT_AUTH_SECRET
-          - name: ADMIN_EMAIL
-            valueFrom:
-              secretKeyRef:
-                name: litellm-credentials-secret
-                key: ADMIN_EMAIL
-          - name: ADMIN_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: litellm-credentials-secret
-                key: ADMIN_PASSWORD
-          - name: NODE_ENV
-            valueFrom:
-              secretKeyRef:
-                name: litellm-credentials-secret
-                key: NODE_ENV
-        ports:
-          - containerPort: 3000
-            protocol: TCP
-command:
-  - /bin/sh
-  - -c
-  - SKIP_ENV_VALIDATION=1 yarn start
+app-template:
+  controllers:
+    main:
+      enabled: true
+      containers:
+        main:
+          image:
+            repository: ghcr.io/adorsys-gis/lite-llm-customer
+            tag: latest
+            pullPolicy: IfNotPresent
+          env:
+            - name: LITELLM_PROXY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-credentials-secret
+                  key: LITELLM_PROXY_URL
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-credentials-secret
+                  key: LITELLM_API_KEY
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-credentials-secret
+                  key: NEXT_AUTH_SECRET
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-credentials-secret
+                  key: ADMIN_EMAIL
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-credentials-secret
+                  key: ADMIN_PASSWORD
+            - name: NODE_ENV
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-credentials-secret
+                  key: NODE_ENV
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+  command:
+    - /bin/sh
+    - -c
+    - SKIP_ENV_VALIDATION=1 yarn start
 
-service:
-  main:
-    controller: main
-    ports:
-      http:
-        port: 3000
+  service:
+    main:
+      controller: main
+      ports:
+        http:
+          port: 3000
