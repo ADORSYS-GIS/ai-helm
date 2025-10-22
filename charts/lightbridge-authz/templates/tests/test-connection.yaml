@@ -1,9 +1,13 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: "{{ include "common.names.fullname" . }}-test-connection"
+  name: "{{ .Release.Name }}-{{ .Chart.Name }}-test-connection"
   labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: "{{ .Chart.AppVersion }}"
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
   annotations:
     "helm.sh/hook": test
 spec:
@@ -11,5 +15,5 @@ spec:
     - name: wget
       image: busybox
       command: ['wget']
-      args: ['{{ include "common.names.fullname" . }}:{{ index .Values "app-template" "service" "main" "ports" "http" "port" }}']
+      args: ['{{ .Release.Name }}-{{ .Chart.Name }}:{{ index .Values "app-template" "service" "main" "ports" "http" "port" }}']
   restartPolicy: Never
