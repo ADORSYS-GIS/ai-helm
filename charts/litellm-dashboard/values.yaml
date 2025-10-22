@@ -42,6 +42,31 @@ app-template:
           ports:
             - containerPort: 3000
               protocol: TCP
+
+          # 🩺 Health and Readiness Probes
+          probes:
+            liveness:
+              enabled: true
+              custom: false
+              spec:
+                httpGet:
+                  path: /health
+                  port: http
+                initialDelaySeconds: 10
+                periodSeconds: 10
+                timeoutSeconds: 3
+                failureThreshold: 3
+            readiness:
+              enabled: true
+              custom: false
+              spec:
+                httpGet:
+                  path: /health
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 5
+                timeoutSeconds: 3
+                failureThreshold: 3
   command:
     - /bin/sh
     - -c
