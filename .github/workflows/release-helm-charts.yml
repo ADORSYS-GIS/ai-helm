@@ -27,28 +27,45 @@ jobs:
 
       - name: Add Repos from Charts Automatically
         run: |
-          repos=$(find charts -name 'Chart.yaml' -exec yq e '.dependencies[].repository' {} \; | sort -u)
-          for repo in $repos; do
-            if [[ "$repo" == oci://* ]]; then
-              echo "Skipping OCI registry: $repo"
-              continue
-            fi
-            name=$(basename "$repo" | tr -cd '[:alnum:]-')
-            echo "Adding repo: $name -> $repo"
-            helm repo add "$name" "$repo"
-          done
-          helm repo update
+          set -e
+            repos=$(find charts -name 'Chart.yaml' -exec yq e '.dependencies[].repository' {} \; | sort -u)
+            for repo in $repos; do
+              if [[ "$repo" == oci://* ]]; then
+                echo "Skipping OCI registry: $repo"
+                continue
+              fi
+              name=$(basename "$repo" | tr -cd '[:alnum:]-')
+              if [ -z "$name" ]; then
+                echo "Error: Could not generate valid name for $repo"
+                exit 1
+              fi
+              echo "Adding repo: $name -> $repo"
+              helm repo add "$name" "$repo" || { echo "Failed to add $repo"; exit 1; }
+            done
+            helm repo update || { echo "Failed to update repos"; exit 1; }
 
       - name: Build chart dependencies
         run: |
+           set -e
+            for dir in charts/*; do
+              if [ -f "$dir/Chart.yaml" ]; then
+                echo "Building dependencies for $dir"
+                helm dependency build "$dir" || { echo "Failed to build $dir"; exit 1; }
+              fi
+            done
+      
+      - name: Lint charts
+        run: |
+          set -e
           for dir in charts/*; do
             if [ -f "$dir/Chart.yaml" ]; then
-              echo "Building dependencies for $dir"
-              helm dependency build "$dir"
+              echo "Linting $dir"
+              helm lint "$dir" || { echo "Linting failed for $dir"; exit 1; }
             fi
           done
 
       - name: Configure Git
+        if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
