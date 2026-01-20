@@ -1,0 +1,77 @@
+# Global backend definitions
+backends:
+  gcp-primary:
+    resourceName: gcp-backend-svc
+    schema: OpenAI
+    fqdn:
+      hostname: api.ai.kivoyo.com
+      port: 443
+    apiKeySecret: sk-7GbI_Dt-n0Plh5DLL4gFTg
+    tlsHostname: api.ai.kivoyo.com
+  fw-primary:
+    resourceName: fw-backend-svc
+    schema: OpenAI
+    prefix: /inference/v1
+    fqdn:
+      hostname: api.fireworks.ai
+      port: 443
+    apiKeySecret: fw_6rqLvqUUn77CKbzEAEKikx
+    tlsHostname: api.fireworks.ai
+  fallback-node:
+    resourceName: global-fallback-svc
+    schema: OpenAI  # Assuming fallback is OpenAI-like
+    # prefix: /v1
+    fqdn:
+      hostname: api.ai.kivoyo.com
+      port: 443
+    apiKeySecret: sk-7GbI_Dt-n0Plh5DLL4gFTg
+    tlsHostname: api.ai.kivoyo.com
+
+# The base blueprint for routes
+app-template:
+  bjws-app:
+    targetRefs:
+      default-gw:
+        group: gateway.networking.k8s.io
+        kind: Gateway
+        name: ai-gateway
+    # Default backend behavior if not overridden
+    defaultPriority: 0
+    defaultWeight: 50
+
+# Specific Model Routes
+models:
+  gemini-2-0-lite:
+    enabled: true
+    template: bjws-app  # Inherits settings from the blueprint
+    modelMatch: "gemini-2.0-lite"
+    backends:
+      gcp-01: 
+        enabled: true
+        ref: gcp-primary
+        modelNameOverride: "gpt-5"
+        priority: 0
+        weight: 50
+      gcp-02: 
+        enabled: true
+        ref: gcp-primary
+        modelNameOverride: "gpt-5-mini"
+        priority: 0
+        weight: 50
+      aws-failover:
+        enabled: false # This will not count toward the '2 backend' limit
+        ref: fw-primary
+        priority: 1
+
+  claude-sonnet:
+    enabled: true
+    template: bjws-app
+    backends:
+      aws-01:
+        enabled: true
+        ref: fw-primary
+        modelNameOverride: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct"
+      aws-02:
+        enabled: true
+        ref: fw-primary
+        modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
