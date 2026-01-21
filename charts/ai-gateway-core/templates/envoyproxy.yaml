@@ -1,0 +1,132 @@
+{{- if .Values.envoyProxy.enabled }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ .Values.envoyProxy.name }}
+  {{- with .Values.envoyProxy.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.envoyProxy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  provider:
+    type: {{ .Values.envoyProxy.provider.type }}
+    {{- if eq .Values.envoyProxy.provider.type "Kubernetes" }}
+    kubernetes:
+      envoyDeployment:
+        {{- if .Values.envoyProxy.provider.kubernetes.envoyDeployment.replicas }}
+        replicas: {{ .Values.envoyProxy.provider.kubernetes.envoyDeployment.replicas }}
+        {{- end }}
+        {{- $pod := .Values.envoyProxy.provider.kubernetes.envoyDeployment.pod }}
+        {{- if or $pod.labels $pod.annotations $pod.securityContext $pod.tolerations $pod.nodeSelector $pod.affinity }}
+        pod:
+          {{- with $pod.labels }}
+          labels:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $pod.annotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $pod.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $pod.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $pod.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $pod.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+        {{- $container := .Values.envoyProxy.provider.kubernetes.envoyDeployment.container }}
+        {{- if or $container.resources $container.securityContext $container.env $container.volumeMounts }}
+        container:
+          {{- with $container.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $container.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $container.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $container.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+        {{- with .Values.envoyProxy.provider.kubernetes.envoyDeployment.volumes }}
+        volumes:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- $svc := .Values.envoyProxy.provider.kubernetes.envoyService }}
+      {{- if or $svc.type $svc.annotations $svc.loadBalancerIP $svc.externalTrafficPolicy }}
+      envoyService:
+        {{- if $svc.type }}
+        type: {{ $svc.type }}
+        {{- end }}
+        {{- with $svc.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- if $svc.loadBalancerIP }}
+        loadBalancerIP: {{ $svc.loadBalancerIP }}
+        {{- end }}
+        {{- if $svc.externalTrafficPolicy }}
+        externalTrafficPolicy: {{ $svc.externalTrafficPolicy }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+  {{- with .Values.envoyProxy.logging }}
+  {{- if .level }}
+  logging:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.envoyProxy.telemetry }}
+  {{- if or .accessLog .metrics .tracing }}
+  telemetry:
+    {{- with .accessLog }}
+    accessLog:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .metrics }}
+    metrics:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .tracing }}
+    tracing:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.envoyProxy.bootstrap }}
+  bootstrap:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.envoyProxy.shutdown }}
+  {{- if or .drainTimeout .minDrainDuration }}
+  shutdown:
+    {{- if .drainTimeout }}
+    drainTimeout: {{ .drainTimeout }}
+    {{- end }}
+    {{- if .minDrainDuration }}
+    minDrainDuration: {{ .minDrainDuration }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end }}
