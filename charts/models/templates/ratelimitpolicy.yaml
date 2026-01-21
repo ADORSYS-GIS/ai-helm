@@ -1,0 +1,33 @@
+{{- if .Values.rateLimitPolicy.enabled }}
+{{- range $routeName, $routeConfig := .Values.models }}
+{{- if $routeConfig.enabled }}
+{{- $rateLimit := $routeConfig.rateLimit | default $.Values.rateLimitPolicy.defaults }}
+{{- if $rateLimit }}
+---
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: {{ $routeName }}-ratelimit
+  {{- with $.Values.rateLimitPolicy.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $.Values.rateLimitPolicy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  targetRef:
+    group: aigateway.envoyproxy.io
+    kind: AIGatewayRoute
+    name: {{ $routeName }}
+  limits:
+    {{- if $routeConfig.rateLimit }}
+    {{- toYaml $routeConfig.rateLimit.limits | nindent 4 }}
+    {{- else }}
+    {{- toYaml $.Values.rateLimitPolicy.defaults.limits | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

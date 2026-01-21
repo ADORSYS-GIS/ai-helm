@@ -1,4 +1,17 @@
-# Global backend definitions
+gatewayRef:
+  name: ai-gateway
+
+rateLimitPolicy:
+  enabled: true
+  labels: {}
+  annotations: {}
+  defaults:
+    limits:
+      default:
+        rates:
+          - limit: 100
+            window: 1m
+
 backends:
   gcp-primary:
     resourceName: gcp-backend-svc
@@ -6,7 +19,9 @@ backends:
     fqdn:
       hostname: api.ai.kivoyo.com
       port: 443
-    apiKeySecret: sk-7GbI_Dt-n0Plh5DLL4gFTg
+    apiKeySecretRef:
+      name: gcp-backend-apikey-secret
+      key: apiKey
     tlsHostname: api.ai.kivoyo.com
   fw-primary:
     resourceName: fw-backend-svc
@@ -15,34 +30,31 @@ backends:
     fqdn:
       hostname: api.fireworks.ai
       port: 443
-    apiKeySecret: fw_6rqLvqUUn77CKbzEAEKikx
+    apiKeySecretRef:
+      name: fw-primary-apikey
+      key: apiKey
     tlsHostname: api.fireworks.ai
   fallback-node:
     resourceName: global-fallback-svc
-    schema: OpenAI  # Assuming fallback is OpenAI-like
-    # prefix: /v1
+    schema: OpenAI
     fqdn:
       hostname: api.ai.kivoyo.com
       port: 443
-    apiKeySecret: sk-7GbI_Dt-n0Plh5DLL4gFTg
+    apiKeySecretRef:
+      name: gcp-primary-apikey
+      key: apiKey
     tlsHostname: api.ai.kivoyo.com
 
-# The base blueprint for routes
-app-template:
-    targetRefs:
-      default-gw:
-        group: gateway.networking.k8s.io
-        kind: Gateway
-        name: ai-gateway
-    # Default backend behavior if not overridden
-    defaultPriority: 0
-    defaultWeight: 50
-
-# Specific Model Routes
 models:
   gemini-2-0-lite:
     enabled: true
     modelMatch: "gemini-2.0-lite"
+    rateLimit:
+      limits:
+        gemini-limit:
+          rates:
+            - limit: 50
+              window: 1m
     backends:
       gcp-01: 
         enabled: true
@@ -57,7 +69,7 @@ models:
         priority: 0
         weight: 50
       aws-failover:
-        enabled: false # This will not count toward the '2 backend' limit
+        enabled: false
         ref: fw-primary
         priority: 1
 
