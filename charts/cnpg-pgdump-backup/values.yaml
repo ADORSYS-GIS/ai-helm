@@ -1,0 +1,273 @@
+## @section Global Configuration
+## @param fullnameOverride Full name override
+## @param nameOverride Name override
+
+global:
+  # -- Full name override
+  fullnameOverride: ""
+  # -- Name override
+  nameOverride: ""
+
+# -- Global image registry, repository, and tag
+image:
+  # -- Global image registry
+  registry: ""
+  # -- Global image repository
+  repository: "ghcr.io/itbm/postgresql-backup-s3"
+  # -- Global image tag
+  tag: "latest"
+  # -- Global image digest (alternative to tag)
+  digest: ""
+  # -- Global image pull policy
+  pullPolicy: IfNotPresent
+
+# -- Global labels applied to all resources
+globalLabels: {}
+  # app.kubernetes.io/part-of: cnpg-pgdump-backup
+
+# -- Global annotations applied to all resources
+globalAnnotations: {}
+  # description: "PostgreSQL backup and restore for CloudNativePG"
+
+# -- Image pull secrets
+imagePullSecrets: []
+
+## @section CNPG Cluster Configuration
+cnpg:
+  # -- Secret name containing CNPG connection details (must contain: host, port, username, password)
+  secretName: "litellm-pg-app"
+  # -- Database name to backup
+  # database: ""
+  # -- CNPG cluster service name (for service discovery)
+  serviceName: ""
+
+## @section S3 Storage Configuration
+s3:
+  # -- S3 prefix/path within bucket
+  prefix: ""
+  # -- AWS region (if not set, will use S3_REGION_NAME from secret)
+  region: ""
+  # -- S3 endpoint URL (optional, for MinIO or other S3-compatible storage)
+  endpoint: ""
+  # -- REQUIRED: Secret name containing S3 credentials (created by Terraform with S3_* keys)
+  secretName: "open-web-ui-s3"
+  # -- S3 storage class (optional)
+  storageClass: ""
+
+## @section RBAC Configuration
+rbac:
+  # -- Create RBAC resources (ServiceAccount, Role, RoleBinding)
+  create: true
+  # -- Service account name (defaults to fullname)
+  serviceAccountName: ""
+  # -- Additional role rules
+  extraRules: []
+  # -- Pod security policy name (if using PSP)
+  pspEnabled: false
+  pspName: ""
+
+## @section Backup Controller (CronJob)
+controllers:
+  cronjob:
+    # -- Enable scheduled backup CronJob
+    enabled: true
+    # -- Controller identifier (used for labels)
+    identifier: "cnpg-backup"
+    # -- CronJob schedule (default: daily at 9:45 AM)
+    schedule: "45 9 * * *"
+    # -- Concurrency policy (Forbid, Replace, Allow)
+    concurrencyPolicy: Forbid
+    # -- Number of successful jobs to keep
+    successfulJobsHistoryLimit: 3
+    # -- Number of failed jobs to keep
+    failedJobsHistoryLimit: 3
+    # -- Starting deadline seconds
+    startingDeadlineSeconds: 30
+    # -- TimeZone for the CronJob
+    timezone: ""
+    # -- Suspend the CronJob
+    suspend: false
+    # -- TTL seconds after job finishes
+    ttlSecondsAfterFinished: null
+    # -- CronJob annotations
+    annotations: {}
+    # -- CronJob labels
+    labels: {}
+    # -- Pod annotations
+    podAnnotations: {}
+    # -- Pod labels
+    podLabels: {}
+    # -- Pod security context
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 999
+      runAsGroup: 999
+      fsGroup: 999
+    # -- Container security context
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+    # -- Node selector
+    nodeSelector: {}
+    # -- Tolerations
+    tolerations: []
+    # -- Affinity
+    affinity: {}
+    # -- Topology spread constraints
+    topologySpreadConstraints: []
+    # -- Resources
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+    # -- Liveness probe
+    livenessProbe: null
+    # -- Readiness probe
+    readinessProbe: null
+    # -- Startup probe
+    startupProbe: null
+    # -- Termination grace period seconds
+    terminationGracePeriodSeconds: 30
+    # -- Image specification
+    image:
+      # -- Image registry
+      registry: ""
+      # -- Image repository
+      repository: "ghcr.io/itbm/postgresql-backup-s3"
+      # -- Image tag
+      tag: "latest"
+      # -- Image digest
+      digest: ""
+      # -- Image pull policy
+      pullPolicy: IfNotPresent
+    # -- Service account name (overrides rbac.serviceAccountName)
+    serviceAccountName: ""
+    # -- Automount service account token
+    automountServiceAccountToken: true
+
+  job:
+    # -- Enable restore Job
+    enabled: true
+    # -- Controller identifier (used for labels)
+    identifier: "cnpg-restore"
+    # -- Job annotations
+    annotations:
+      helm.sh/hook: post-install
+      helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
+    # -- Job labels
+    labels: {}
+    # -- Pod annotations
+    podAnnotations: {}
+    # -- Pod labels
+    podLabels: {}
+    # -- Pod security context
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 999
+      runAsGroup: 999
+      fsGroup: 999
+    # -- Container security context
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+    # -- Node selector
+    nodeSelector: {}
+    # -- Tolerations
+    tolerations: []
+    # -- Affinity
+    affinity: {}
+    # -- Topology spread constraints
+    topologySpreadConstraints: []
+    # -- Resources
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    # -- Termination grace period seconds
+    terminationGracePeriodSeconds: 30
+    # -- TTL seconds after job finishes
+    ttlSecondsAfterFinished: 300
+    # -- Backoff limit for job retries
+    backoffLimit: 4
+    # -- Service account name (overrides rbac.serviceAccountName)
+    serviceAccountName: ""
+    # -- Automount service account token
+    automountServiceAccountToken: true
+    # -- Image specification
+    image:
+      # -- Image registry
+      registry: ""
+      # -- Image repository
+      repository: "ghcr.io/itbm/postgresql-backup-s3"
+      # -- Image tag
+      tag: "latest"
+      # -- Image digest
+      digest: ""
+      # -- Image pull policy
+      pullPolicy: IfNotPresent
+
+## @section Restore Configuration
+restore:
+  # -- Enable restore functionality
+  enabled: true
+  # -- S3 object key to restore (empty = manual trigger required via --set)
+  object: ""
+  # -- Create a backup before restoring (for safety)
+  backupBeforeRestore: false
+  # -- Ignore warnings and proceed with restore
+  force: false
+
+## @section Legacy Configuration (Deprecated - use controllers instead)
+# @deprecated Use controllers.cronjob instead
+backup:
+  # -- Enable scheduled backups
+  enabled: true
+  # -- Cron schedule (default: daily at 2 AM)
+  schedule: "0 2 * * *"
+  # -- PostgreSQL backup image for backup/restore jobs
+  image: ghcr.io/itbm/postgresql-backup-s3:latest
+  # -- Image pull policy
+  imagePullPolicy: IfNotPresent
+  # -- Number of days to retain backups in S3 (0 = no auto-retention, use S3 lifecycle rules)
+  retentionDays: 0
+  # -- Number of successful jobs to keep
+  successfulJobsHistoryLimit: 3
+  # -- Number of failed jobs to keep
+  failedJobsHistoryLimit: 3
+  # -- Concurrency policy (Forbid, Replace, Allow)
+  concurrencyPolicy: Forbid
+  # -- TTL seconds after job finishes
+  ttlSecondsAfterFinished: null
+  # -- Termination grace period seconds
+  terminationGracePeriodSeconds: 30
+  # -- Resources for backup/restore pods
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# @deprecated Use controllers.job instead
+restoreLegacy:
+  # -- Enable restore functionality
+  enabled: true
+  # -- S3 object key to restore (empty = manual trigger required via --set)
+  object: ""
+  # -- Create a backup before restoring (for safety)
+  backupBeforeRestore: false
+  # -- Ignore warnings and proceed with restore
+  force: false
