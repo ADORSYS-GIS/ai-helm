@@ -6,8 +6,6 @@ rateLimitPolicy:
   labels: {}
   annotations: {}
 
-  # ADD: define descriptors used by Limitador
-  # This enables per-user AND per-model rate limiting
   descriptors:
     - key: user
       source: header
@@ -31,6 +29,7 @@ backends:
     fqdn:
       hostname: api.fireworks.ai
       port: 443
+    securityType: APIKey
     apiKeySecretRef:
       name: fw-primary-apikey
       key: apiKey
@@ -42,31 +41,61 @@ backends:
     fqdn:
       hostname: api.fireworks.ai
       port: 443
+    securityType: APIKey
     apiKeySecretRef:
       name: fw-primary-apikey
       key: apiKey
     tlsHostname: api.fireworks.ai
   gpt-01:
-    resourceName: gpt-backend-01-svc
+    resourceName: gpt-01-svc
     schema: OpenAI
     fqdn:
       hostname: api.ai.kivoyo.com
       port: 443
+    securityType: APIKey
     apiKeySecretRef:
       name: gpt-primary-apikey
       key: apiKey
     tlsHostname: api.ai.kivoyo.com
   gpt-02:
-    resourceName: gpt-backend-02-svc
+    resourceName: gpt-02-svc
     schema: OpenAI
     fqdn:
       hostname: api.ai.kivoyo.com
       port: 443
+    securityType: APIKey
     apiKeySecretRef:
       name: gpt-primary-apikey
       key: apiKey
     tlsHostname: api.ai.kivoyo.com
- 
+  gcp-01:
+    resourceName: gcp-01-svc
+    schema: GCPVertexAI
+    fqdn:
+      hostname: us-central1-aiplatform.googleapis.com
+      port: 443
+    type: GCPCredentials
+    gcpCredentials:
+      projectName: kivoyo
+      region: us-central1
+      credentialsFile:
+        secretRef:
+          name: litellm-gcp-service-account-key
+    tlsHostname: us-central1-aiplatform.googleapis.com
+  gcp-02:
+    resourceName: gcp-02-svc
+    schema: GCPVertexAI
+    fqdn:
+      hostname: us-central1-aiplatform.googleapis.com
+      port: 443
+    type: GCPCredentials
+    gcpCredentials:
+      projectName: kivoyo
+      region: us-central1
+      credentialsFile:
+        secretRef:
+          name: litellm-gcp-service-account-key
+    tlsHostname: us-central1-aiplatform.googleapis.com
 
 models:
   fireworks:
@@ -116,3 +145,27 @@ models:
         enabled: true
         ref: gpt-02
         modelNameOverride: "gpt-5-mini"
+
+  gemini:
+    enabled: true
+
+    rateLimit:
+      scope:
+        - user
+        - model
+
+      limits:
+        default:
+          rates:
+            - limit: 3
+              window: 1m
+
+    backends:
+      gcp-01:
+        enabled: true
+        ref: gcp-01
+        modelNameOverride: "gemini-2.5-flash"
+      gcp-02:
+        enabled: true
+        ref: gcp-02
+        modelNameOverride: "gemini-2.5-pro"
