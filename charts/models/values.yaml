@@ -5,6 +5,17 @@ rateLimitPolicy:
   enabled: true
   labels: {}
   annotations: {}
+
+  # ADD: define descriptors used by Limitador
+  # This enables per-user AND per-model rate limiting
+  descriptors:
+    - key: user
+      source: header
+      headerName: x-user-id   # identifies the user
+    - key: model
+      source: header
+      headerName: x-model     # identifies the model
+
   defaults:
     limits:
       default:
@@ -49,12 +60,19 @@ models:
   gemini-2-0-lite:
     enabled: true
     modelMatch: "gemini-2.0-lite"
+
     rateLimit:
+      # ADD: scope limits to (user × model)
+      scope:
+        - user
+        - model
+
       limits:
-        gemini-limit:
+        default:
           rates:
-            - limit: 50
+            - limit: 2
               window: 1m
+
     backends:
       gcp-01: 
         enabled: true
@@ -75,6 +93,20 @@ models:
 
   claude-sonnet:
     enabled: true
+
+    # ADD: same per (user × model) scope, even without custom limits
+    rateLimit:
+      # ADD: scope limits to (user × model)
+      scope:
+        - user
+        - model
+
+      limits:
+        default:
+          rates:
+            - limit: 3
+              window: 1m
+
     backends:
       aws-01:
         enabled: true
