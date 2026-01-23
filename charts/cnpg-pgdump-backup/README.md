@@ -34,14 +34,13 @@ For testing purposes, you can set up a local PostgreSQL instance using the provi
 kubectl create namespace pgdump-test
 
 # Deploy PostgreSQL test instance
-kubectl apply -f test-manifest/
+kubectl apply -f how-it-works/
 
 # Wait for PostgreSQL to be ready
 kubectl wait --for=condition=ready pod -l app=postgres -n pgdump-test --timeout=300s
 
 # Create S3 secrets (replace with your actual credentials)
-kubectl apply -f s3-secrets.yaml
-kubectl apply -f secrets.yaml
+kubectl apply -f how-it-works/secret.yaml
 ```
 
 ### 2. Create AWS S3 Secret
@@ -49,7 +48,6 @@ kubectl apply -f secrets.yaml
 Create the S3 credentials secret using your actual AWS credentials:
 
 ```bash
-# From test-manifest/create-aws-secret.md
 kubectl create secret generic open-web-ui-s3 \
   -n pgdump-test \
   --from-literal=S3_BUCKET_NAME=kivoyo-backup-postgresdb-test \
@@ -138,11 +136,7 @@ helm upgrade cnpg-backup ./cnpg-pgdump-backup \
 
 ### Manual Job Creation
 
-You can also create restore jobs manually:
-
-```bash
-kubectl apply -f restore-job.yaml
-```
+You can also create restore jobs manually by applying a Job manifest or using kubectl to create jobs based on the Helm template in `templates/job-restore.yaml`.
 
 ## Testing
 
@@ -167,7 +161,7 @@ kubectl exec -n pgdump-test postgres-XXXXX -- psql -U testuser -d testdb -c "SEL
 
 ```bash
 # Remove test PostgreSQL instance
-kubectl delete -f test-manifest/
+kubectl delete -f how-it-works/
 
 # Remove test namespace
 kubectl delete namespace pgdump-test
