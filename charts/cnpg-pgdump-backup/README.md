@@ -25,9 +25,30 @@ This Helm chart provides a complete solution for backing up and restoring Postgr
 
 ## Quick Start
 
-### 1. Set up Test Environment
+### Prerequisites
 
-For testing purposes, you can set up a local PostgreSQL instance using the provided test manifests:
+- AWS account with S3 access
+- kubectl configured to access your Kubernetes cluster
+- Helm 3.0+
+
+### 1. Create an AWS S3 Bucket
+
+1. Log in to the AWS Management Console.
+2. Navigate to the S3 service.
+3. Click "Create bucket".
+4. Enter a unique bucket name (e.g., `my-postgres-backup-test`).
+5. Choose a region (e.g., `us-east-1`).
+6. Keep default settings and create the bucket.
+7. Export the bucket name and region as environment variables:
+
+```bash
+export S3_BUCKET_NAME="my-postgres-backup-test"
+export S3_REGION_NAME="us-east-1"
+```
+
+### 2. Set up Test Environment
+
+For testing purposes, set up a local PostgreSQL instance using the provided test manifests:
 
 ```bash
 # Create test namespace
@@ -39,33 +60,108 @@ kubectl apply -f how-it-works/
 # Wait for PostgreSQL to be ready
 kubectl wait --for=condition=ready pod -l app=postgres -n pgdump-test --timeout=300s
 
-# Create S3 secrets (replace with your actual credentials)
+# Populate the database with test data
+# Uncomment the configmap in how-it-works/configmap.yaml
+kubectl apply -f how-it-works/configmap.yaml
+
+# Create PostgreSQL connection secret
 kubectl apply -f how-it-works/secret.yaml
 ```
 
-### 2. Create AWS S3 Secret
+### 3. Create AWS S3 Secret
 
-Create the S3 credentials secret using your actual AWS credentials:
+Create the S3 credentials secret using your actual AWS credentials and the exported bucket name:
 
 ```bash
+# Ensure you have set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and optionally AWS_SESSION_TOKEN
 kubectl create secret generic open-web-ui-s3 \
   -n pgdump-test \
-  --from-literal=S3_BUCKET_NAME=kivoyo-backup-postgresdb-test \
-  --from-literal=S3_REGION_NAME=eu-north-1 \
+  --from-literal=S3_BUCKET_NAME="$S3_BUCKET_NAME" \
+  --from-literal=S3_REGION_NAME="$S3_REGION_NAME" \
   --from-literal=S3_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
   --from-literal=S3_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
   --from-literal=AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### 3. Install the Helm Chart
+### 4. Install the Helm Chart for Backup
+
+Install the Helm chart to enable scheduled backups:
 
 ```bash
-# Add the chart to your Helm repository or install from local directory
 helm install cnpg-backup ./cnpg-pgdump-backup \
   --namespace pgdump-test \
   --set cnpg.secretName="litellm-pg-app" \
   --set s3.secretName="open-web-ui-s3"
+```
+
+### 5. Test Backup Operation
+
+Wait for the scheduled backup to run (or trigger manually if needed), then verify:
+
+```bash
+# Check backup job status
+kubectl get jobs -n pgdump-test
+
+# View backup logs
+kubectl logs -l app.kubernetes.io/name=cnpg-pgdump-backup -n pgdump-test --tail=50
+
+# Verify backup file in S3 (check AWS console or use AWS CLI)
+aws s3 ls s3://$S3_BUCKET_NAME/ --recursive
+```
+
+### 6. Prepare for Restore Test
+
+To test restore, empty the database and then restore from backup:
+
+```bash
+# Delete the configmap to stop populating data
+kubectl delete configmap postgres-initdb -n pgdump-test
+
+# The deployment.yaml already has the initdb mount commented out, so re-apply to ensure
+kubectl apply -f how-it-works/deployment.yaml
+
+# Wait for PostgreSQL to restart (it will be empty now)
+kubectl wait --for=condition=ready pod -l app=postgres -n pgdump-test --timeout=300s
+
+# Verify database is empty
+kubectl exec -n pgdump-test postgres-XXXXX -- psql -U testuser -d testdb -c "SELECT COUNT(*) FROM test_table;"
+# Should return 0 rows
+```
+
+### 7. Test Restore Operation
+
+1. Find the backup file name from your S3 bucket (via AWS console or CLI).
+2. Export the backup file name as an environment variable:
+
+```bash
+export BACKUP_FILE_NAME="path/to/your/backup/file.sql.gz"
+# Example: export BACKUP_FILE_NAME="backup/testdb_2026-01-22T13:32:02Z.sql.gz"
+```
+
+3. Upgrade the Helm chart to trigger restore:
+
+```bash
+helm upgrade cnpg-backup ./cnpg-pgdump-backup \
+  --namespace pgdump-test \
+  --set restore.object="$BACKUP_FILE_NAME" \
+  --set controllers.cronjob.enabled=false \
+  --set cnpg.secretName="litellm-pg-app" \
+  --set s3.secretName="open-web-ui-s3"
+```
+
+4. Verify restore:
+
+```bash
+# Check restore job status
+kubectl get jobs -n pgdump-test
+
+# View restore logs
+kubectl logs -l app.kubernetes.io/name=cnpg-pgdump-backup -n pgdump-test --tail=50
+
+# Verify data is restored
+kubectl exec -n pgdump-test postgres-XXXXX -- psql -U testuser -d testdb -c "SELECT COUNT(*) FROM test_table;"
+# Should return 10000 rows
 ```
 
 ## Configuration
@@ -116,12 +212,16 @@ kubectl logs -l app.kubernetes.io/name=cnpg-pgdump-backup -n pgdump-test
 
 ### Manual Restore
 
-To perform a restore operation, install the chart with the `restore.object` parameter:
+To perform a restore operation, set the `restore.object` parameter to the S3 key of your backup file:
 
 ```bash
+# Export the backup file name from your S3 bucket
+export BACKUP_FILE_NAME="path/to/your/backup/file.sql.gz"
+
+# Install the chart for restore
 helm install cnpg-restore ./cnpg-pgdump-backup \
   --namespace pgdump-test \
-  --set restore.object="backup/testdb_2026-01-22T13:32:02Z.sql.gz" \
+  --set restore.object="$BACKUP_FILE_NAME" \
   --set controllers.cronjob.enabled=false \
   --set cnpg.secretName="litellm-pg-app" \
   --set s3.secretName="open-web-ui-s3"
@@ -131,7 +231,7 @@ Or upgrade an existing release:
 
 ```bash
 helm upgrade cnpg-backup ./cnpg-pgdump-backup \
-  --set restore.object="backup/your-backup-file.sql.gz"
+  --set restore.object="$BACKUP_FILE_NAME"
 ```
 
 ### Manual Job Creation
@@ -140,21 +240,45 @@ You can also create restore jobs manually by applying a Job manifest or using ku
 
 ## Testing
 
-### Verify Backup Operation
+For detailed testing steps including backup and restore verification, see the [Quick Start](#quick-start) section above.
+
+### General Verification Commands
+
+#### Check Job Status
 
 ```bash
-# Check if backup job completed successfully
+# List all jobs
 kubectl get jobs -n pgdump-test
 
-# View backup logs
-kubectl logs job/manual-backup -n pgdump-test
+# Get detailed job information
+kubectl describe job <job-name> -n pgdump-test
 ```
 
-### Verify Restore Operation
+#### View Logs
 
 ```bash
-# Check database content after restore
-kubectl exec -n pgdump-test postgres-XXXXX -- psql -U testuser -d testdb -c "SELECT * FROM test_table LIMIT 5;"
+# View logs for backup/restore jobs
+kubectl logs -l app.kubernetes.io/name=cnpg-pgdump-backup -n pgdump-test --tail=100
+
+# View logs for a specific job
+kubectl logs job/<job-name> -n pgdump-test
+```
+
+#### Verify Database Content
+
+```bash
+# Connect to PostgreSQL and check data
+kubectl exec -n pgdump-test postgres-XXXXX -- psql -U testuser -d testdb -c "SELECT COUNT(*) FROM test_table;"
+
+# List tables
+kubectl exec -n pgdump-test postgres-XXXXX -- psql -U testuser -d testdb -c "\dt"
+```
+
+#### Verify S3 Backup Files
+
+```bash
+# List backup files in S3 (requires AWS CLI configured)
+aws s3 ls s3://$S3_BUCKET_NAME/ --recursive
 ```
 
 ### Test Environment Cleanup
@@ -165,6 +289,9 @@ kubectl delete -f how-it-works/
 
 # Remove test namespace
 kubectl delete namespace pgdump-test
+
+# Remove Helm release
+helm uninstall cnpg-backup -n pgdump-test
 ```
 
 ## Architecture
