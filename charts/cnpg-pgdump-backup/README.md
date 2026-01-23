@@ -25,12 +25,6 @@ This Helm chart provides a complete solution for backing up and restoring Postgr
 
 ## Quick Start
 
-### Prerequisites
-
-- AWS account with S3 access
-- kubectl configured to access your Kubernetes cluster
-- Helm 3.0+
-
 ### 1. Create an AWS S3 Bucket
 
 1. Log in to the AWS Management Console.
@@ -173,19 +167,20 @@ kubectl exec -n pgdump-test postgres-XXXXX -- psql -U testuser -d testdb -c "SEL
 
 ### Key Configuration Options
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `controllers.cronjob.enabled` | Enable scheduled backups | `true` |
-| `controllers.cronjob.schedule` | Cron schedule for backups | `"45 9 * * *"` |
-| `controllers.job.enabled` | Enable restore jobs | `true` |
-| `restore.object` | S3 object key for restore | `""` |
-| `cnpg.secretName` | Secret containing CNPG connection details | `"litellm-pg-app"` |
-| `s3.secretName` | Secret containing S3 credentials | `"open-web-ui-s3"` |
-| `s3.prefix` | S3 prefix/path within bucket | `""` |
+| Parameter                      | Description                               | Default            |
+| ------------------------------ | ----------------------------------------- | ------------------ |
+| `controllers.cronjob.enabled`  | Enable scheduled backups                  | `true`             |
+| `controllers.cronjob.schedule` | Cron schedule for backups                 | `"45 9 * * *"`     |
+| `controllers.job.enabled`      | Enable restore jobs                       | `true`             |
+| `restore.object`               | S3 object key for restore                 | `""`               |
+| `cnpg.secretName`              | Secret containing CNPG connection details | `"litellm-pg-app"` |
+| `s3.secretName`                | Secret containing S3 credentials          | `"open-web-ui-s3"` |
+| `s3.prefix`                    | S3 prefix/path within bucket              | `""`               |
 
 ### PostgreSQL Connection Secret
 
 Your CNPG secret should contain these keys:
+
 - `host`: PostgreSQL server hostname
 - `port`: PostgreSQL server port
 - `dbname`: Database name
@@ -195,6 +190,7 @@ Your CNPG secret should contain these keys:
 ### S3 Credentials Secret
 
 Your S3 secret should contain these keys:
+
 - `S3_BUCKET_NAME`: S3 bucket name
 - `S3_REGION_NAME`: AWS region
 - `S3_ACCESS_KEY_ID`: AWS access key ID
