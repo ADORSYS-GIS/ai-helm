@@ -73,7 +73,11 @@ kubectl apply -f how-it-works/secret.yaml
 Create the S3 credentials secret using your actual AWS credentials and the exported bucket name:
 
 ```bash
-# Ensure you have set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and optionally AWS_SESSION_TOKEN
+# Export your AWS credentials as environment variables
+export AWS_ACCESS_KEY_ID="your-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+export AWS_SESSION_TOKEN="your-session-token"  # optional
+
 kubectl create secret generic open-web-ui-s3 \
   -n pgdump-test \
   --from-literal=S3_BUCKET_NAME="$S3_BUCKET_NAME" \
@@ -86,11 +90,12 @@ kubectl create secret generic open-web-ui-s3 \
 
 ### 4. Install the Helm Chart for Backup
 
-Install the Helm chart to enable scheduled backups:
+Install the Helm chart to enable scheduled backups (schedule set to every minute for testing):
 
 ```bash
 helm install cnpg-backup ./cnpg-pgdump-backup \
   --namespace pgdump-test \
+  --set controllers.cronjob.schedule="* * * * *" \
   --set cnpg.secretName="litellm-pg-app" \
   --set s3.secretName="open-web-ui-s3"
 ```
