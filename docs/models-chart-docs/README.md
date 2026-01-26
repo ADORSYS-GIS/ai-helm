@@ -11,9 +11,8 @@ This chart deploys the model-specific components for an AI Gateway:
 - **AIGatewayRoute** - Model routing rules with load balancing and failover
 - **BackendSecurityPolicy** - API key authentication policies
 - **BackendTLSPolicy** - TLS configuration for backend connections
-- **BackendTrafficPolicy** - Retry and fallback policies for backend connections
+- **BackendTrafficPolicy** - Retry, fallback, and token-based rate limiting policies for backend connections
 - **Secret** - API key secrets for backend authentication
-- **ConfigMap** - Limitador rate limiting configuration
 
 This chart requires the `ai-gateway-core` chart to be installed first, which provides the Gateway infrastructure.
 
@@ -21,10 +20,10 @@ This chart requires the `ai-gateway-core` chart to be installed first, which pro
 
 - Kubernetes 1.24+
 - Helm 3.0+
-- [Envoy Gateway](https://aigateway.envoyproxy.io/docs/getting-started) installed in the cluster
+- [Envoy Gateway](https://aigateway.envoyproxy.io/docs/getting-started/prerequisites) installed in the cluster with rate limiting enabled
+- [Envoy Ai Gateway](https://aigateway.envoyproxy.io/docs/getting-started/installation) installed too
 - `ai-gateway-core` chart installed
-- `Limitador` deployed (for rate limiting)
-- Redis (for Limitador rate limiting backend)
+- `redis` installed
 
 ## Installation
 
@@ -96,6 +95,7 @@ curl -v -H "Content-Type: application/json" \
   }' \
   $GATEWAY_URL/v1/chat/completions
 ```
+
 **Update model name in respect to the configurations made in the values.yaml file**
 
 ### Screenshots
@@ -114,38 +114,15 @@ Placeholder for testing screenshots:
 |-----------|-------------|---------|
 | `gatewayRef.name` | Name of the Gateway resource (from ai-gateway-core) | `ai-gateway` |
 
-### Rate Limit Policy
+### Envoy Rate Limiting
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `rateLimitPolicy.enabled` | Enable/disable rate limiting | `true` |
-| `rateLimitPolicy.labels` | Additional labels for ConfigMap | `{}` |
-| `rateLimitPolicy.annotations` | Additional annotations for ConfigMap | `{}` |
-| `rateLimitPolicy.descriptors` | Rate limit descriptors (user, model) | See below |
-| `rateLimitPolicy.defaults` | Default rate limits | See below |
+| `envoyRateLimit.enabled` | Enable/disable Envoy rate limiting | `true` |
+| `models.<name>.envoyRateLimit.requests` | Token limit per user per model | `30` |
+| `models.<name>.envoyRateLimit.unit` | Time unit for rate limiting | `Minute` |
 
-Default descriptors:
-```yaml
-descriptors:
-  - key: user
-    source: header
-    headerName: x-user-id   # identifies the user
-  - key: model
-    source: header
-    headerName: x-model     # identifies the model
-```
-
-Default limits:
-```yaml
-defaults:
-  limits:
-    default:
-      rates:
-        - limit: 100
-          window: 1m
-```
-
-The rate limiting configuration is stored in a ConfigMap that can be mounted by Limitador.
+Rate limiting is implemented using Envoy Gateway's built-in global rate limiting. Limits are applied per user per model based on actual token consumption, using metadata from AI Gateway responses.
 
 ### Backend Traffic Policy
 
@@ -157,6 +134,7 @@ The rate limiting configuration is stored in a ConfigMap that can be mounted by 
 | `backendTrafficPolicy.annotations` | Additional annotations | `{}` |
 | `backendTrafficPolicy.targetRefs` | Target resources for the policy | See below |
 | `backendTrafficPolicy.retry` | Retry configuration | See below |
+| `envoyRateLimit.enabled` | Enable Envoy rate limiting (when true, adds rateLimit to policy) | `true` |
 
 Default backend traffic policy:
 ```yaml
@@ -280,11 +258,16 @@ models:
       scope:
         - user
         - model
+        - tokens
 
       limits:
-        default:
+        requests:
           rates:
-            - limit: 5
+            - limit: 3
+              window: 1m
+        tokens:
+          rates:
+            - limit: 50
               window: 1m
         
     backends:
@@ -302,24 +285,20 @@ models:
 
 ## Rate Limiting
 
-Rate limiting is implemented using [Limitador](https://kuadrant.io/docs/limitador/) with configuration stored in a ConfigMap. The ConfigMap contains the limitador-config.yaml file that defines rate limits based on model conditions.
+Rate limiting is implemented using Envoy Gateway's built-in global rate limiting. The chart supports token-based rate limiting per user per model, using AI Gateway metadata to count actual token consumption.
 
 ### Rate Limit Configuration
 
-The rate limits are defined in the ConfigMap data. Example limitador configuration:
+Rate limits are configured per model in the values.yaml file. Each model can have its own token limit per user. The limits are enforced globally across all backends for that model.
 
+Example configuration:
 ```yaml
-limits:
-  - id: limit-gpt-5-nano
-    conditions:
-      - "model == 'gpt-5-nano'"
-    limit: 100
-    seconds: 60
-  - id: limit-gpt-5-nano-mini
-    conditions:
-      - "model == 'gpt-5-nano-mini'"
-    limit: 500
-    seconds: 60
+models:
+  gpt-5:
+    enabled: true
+    envoyRateLimit:
+      requests: 30  # Max 30 tokens per minute per user
+      unit: Minute
 ```
 
 ## Backend Traffic Policies
@@ -328,10 +307,10 @@ Backend traffic policies provide retry and fallback logic for backend connection
 
 ### Disabling Rate Limiting
 
-To disable rate limiting entirely:
+To disable Envoy rate limiting:
 
 ```bash
-helm install models ./charts/models --set rateLimitPolicy.enabled=false
+helm install models ./charts/models --set envoyRateLimit.enabled=false
 ```
 
 ## Model Routing Requirements
@@ -355,8 +334,8 @@ Each enabled model route must have **at least 2 enabled backends**. This is enfo
 │                   │ EnvoyProxy  │                           │
 │                   └─────────────┘                           │
 └─────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
+                            │
+                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      models chart                           │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐ │
@@ -366,7 +345,7 @@ Each enabled model route must have **at least 2 enabled backends**. This is enfo
 │  │BackendSecPol│  │BackendTLSPol│  │       Secret         │ │
 │  └─────────────┘  └─────────────┘  └──────────────────────┘ │
 │  ┌──────────────────────────────────────────────────────────┐│
-│  │                   RateLimitPolicy                        ││
+│  │          BackendTrafficPolicy (Retry + Rate Limit)      ││
 │  └──────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
 ```
