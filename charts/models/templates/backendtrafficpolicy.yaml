@@ -17,4 +17,34 @@ spec:
     {{- toYaml .Values.backendTrafficPolicy.targetRefs | nindent 4 }}
   retry:
     {{- toYaml .Values.backendTrafficPolicy.retry | nindent 4 }}
+  {{- if .Values.envoyRateLimit.enabled }}
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        {{- range $routeName, $routeConfig := .Values.models }}
+        {{- if $routeConfig.enabled }}
+        # Rate limit rule for {{ $routeName }}
+        - clientSelectors:
+            - headers:
+                - name: x-user-id
+                  type: Distinct
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $routeConfig.modelMatch | default $routeName }}
+          limit:
+            requests: {{ $routeConfig.envoyRateLimit.requests }}
+            unit: {{ $routeConfig.envoyRateLimit.unit }}
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_total_token
+        {{- end }}
+        {{- end }}
+  {{- end }}
 {{- end }}

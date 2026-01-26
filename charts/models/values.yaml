@@ -1,44 +1,8 @@
 gatewayRef:
   name: ai-gateway
 
-rateLimitPolicy:
+envoyRateLimit:
   enabled: true
-  labels: {}
-  annotations: {}
-
-  descriptors:
-    - key: user
-      source: header
-      headerName: x-user-id   # identifies the user
-    - key: model
-      source: header
-      headerName: x-model     # identifies the model
-
-  defaults:
-    limits:
-      default:
-        rates:
-          - limit: 100
-            window: 1m
-
-tokenRateLimitPolicy:
-  enabled: true
-  name: global-token-ratelimit
-
-  target: 
-    kind: Gateway
-    name: ai-gateway
-
-  limits:
-    global:
-      tokens: 50
-      window: 1m
-      requests: 2
-      window: 1m
-
-  counter:
-    expression: request.ip
-
 
 backendTrafficPolicy:
   enabled: true
@@ -55,6 +19,7 @@ backendTrafficPolicy:
       backOff:
         baseInterval: 100ms
         maxInterval: 10s
+
       timeout: 30s
     retryOn:
       httpStatusCodes:
@@ -147,25 +112,17 @@ models:
   fireworks-thinking:
     enabled: true
 
-    rateLimit:
-      scope:
-        - user
-        - model
-
-      limits:
-        default:
-          rates:
-          - type: requests
-            limit: 2
-            window: 1m
+    envoyRateLimit:
+      requests: 30000
+      unit: Minute
 
     backends:
-      aws-01:
+      fw-01:
         enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
         priority: 0
-      aws-02:
+      fw-02:
         enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
@@ -174,24 +131,17 @@ models:
   fireworks-instruct:
     enabled: true
 
-    rateLimit:
-      scope:
-        - user
-        - model
-
-      limits:
-        default:
-          rates:
-            - limit: 3
-              window: 1m
+    envoyRateLimit:
+      requests: 30
+      unit: Minute
 
     backends:
-      aws-01:
+      fw-01:
         enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct"
         priority: 0
-      aws-02:
+      fw-02:
         enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct"
@@ -199,25 +149,18 @@ models:
 
   gpt-5:
     enabled: true
-    
-    rateLimit:
-      scope:
-        - user
-        - model
 
-      limits:
-        default:
-          rates:
-            - limit: 5
-              window: 1m
-        
+    envoyRateLimit:
+      requests: 30
+      unit: Minute
+
     backends:
-      aws-01:
+      gpt-01:
         enabled: true
         ref: gpt-01
         modelNameOverride: "gpt-5"
         priority: 0
-      aws-02:
+      gpt-02:
         enabled: true
         ref: gpt-02
         modelNameOverride: "gpt-5"
@@ -226,24 +169,17 @@ models:
   gpt-04:
     enabled: true
 
-    rateLimit:
-      scope:
-        - user
-        - model
-
-      limits:
-        default:
-          rates:
-            - limit: 5
-              window: 1m
+    envoyRateLimit:
+      requests: 30
+      unit: Minute
 
     backends:
-      aws-01:
+      gpt-01:
         enabled: true
         ref: gpt-01
         modelNameOverride: "gpt-4o-mini"
         priority: 0
-      aws-02:
+      gpt-02:
         enabled: true
         ref: gpt-02
         modelNameOverride: "gpt-4o-mini"
@@ -252,16 +188,9 @@ models:
   gemini-flash:
     enabled: true
 
-    rateLimit:
-      scope:
-        - user
-        - model
-
-      limits:
-        default:
-          rates:
-            - limit: 3
-              window: 1m
+    envoyRateLimit:
+      requests: 30
+      unit: Minute
 
     backends:
       gcp-01:
@@ -278,16 +207,9 @@ models:
   gemini-pro:
     enabled: true
 
-    rateLimit:
-      scope:
-        - user
-        - model
-
-      limits:
-        default:
-          rates:
-            - limit: 3
-              window: 1m
+    envoyRateLimit:
+      requests: 30
+      unit: Minute
 
     backends:
       gcp-01:
