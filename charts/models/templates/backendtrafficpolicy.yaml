@@ -1,0 +1,20 @@
+{{- if .Values.backendTrafficPolicy.enabled }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: {{ .Values.backendTrafficPolicy.name }}
+  {{- with .Values.backendTrafficPolicy.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.backendTrafficPolicy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  targetRefs:
+    {{- toYaml .Values.backendTrafficPolicy.targetRefs | nindent 4 }}
+  retry:
+    {{- toYaml .Values.backendTrafficPolicy.retry | nindent 4 }}
+{{- end }}

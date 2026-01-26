@@ -21,6 +21,33 @@ rateLimitPolicy:
           - limit: 100
             window: 1m
 
+backendTrafficPolicy:
+  enabled: true
+  name: backend-retry-policy
+  labels: {}
+  annotations: {}
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: ai-gateway
+  retry:
+    numRetries: 3
+    perRetry:
+      backOff:
+        baseInterval: 100ms
+        maxInterval: 10s
+      timeout: 30s
+    retryOn:
+      httpStatusCodes:
+        - 500
+        - 502
+        - 503
+        - 504
+        - 404
+      triggers:
+        - connect-failure
+        - retriable-status-codes
+
 backends:
   fw-01:
     resourceName: fw-backend-01-svc
@@ -32,7 +59,7 @@ backends:
     securityType: APIKey
     useEnvVars: true
     envSecretRef:
-      name: litellm-fireworks-key
+      name: fireworks-api-key-01
     tlsHostname: api.fireworks.ai
   fw-02:
     resourceName: fw-backend-02-svc
@@ -44,10 +71,10 @@ backends:
     securityType: APIKey
     useEnvVars: true
     envSecretRef:
-      name: litellm-fireworks-key
+      name: fireworks-api-key-02
     tlsHostname: api.fireworks.ai
   gpt-01:
-    resourceName: gpt-01-svc
+    resourceName: gpt-backend-01-svc
     schema: OpenAI
     fqdn:
       hostname: api.ai.kivoyo.com
@@ -55,10 +82,10 @@ backends:
     securityType: APIKey
     useEnvVars: true
     envSecretRef:
-      name: litellm-openai-api-key
+      name: openai-api-key-01
     tlsHostname: api.ai.kivoyo.com
   gpt-02:
-    resourceName: gpt-02-svc
+    resourceName: gpt-backend-02-svc
     schema: OpenAI
     fqdn:
       hostname: api.ai.kivoyo.com
@@ -66,10 +93,10 @@ backends:
     securityType: APIKey
     useEnvVars: true
     envSecretRef:
-      name: litellm-openai-api-key
+      name: openai-api-key-02
     tlsHostname: api.ai.kivoyo.com
   gcp-01:
-    resourceName: gcp-01-svc
+    resourceName: gcp-backend-01-svc
     schema: GCPVertexAI
     fqdn:
       hostname: us-central1-aiplatform.googleapis.com
@@ -80,10 +107,10 @@ backends:
       region: us-central1
       credentialsFile:
         secretRef:
-          name: litellm-gcp-service-account-key
+          name: gcp-service-account-key-01
     tlsHostname: us-central1-aiplatform.googleapis.com
   gcp-02:
-    resourceName: gcp-02-svc
+    resourceName: gcp-backend-02-svc
     schema: GCPVertexAI
     fqdn:
       hostname: us-central1-aiplatform.googleapis.com
@@ -94,11 +121,37 @@ backends:
       region: us-central1
       credentialsFile:
         secretRef:
-          name: litellm-gcp-service-account-key
+          name: gcp-service-account-key-02
     tlsHostname: us-central1-aiplatform.googleapis.com
 
 models:
-  fireworks:
+  fireworks-thinking:
+    enabled: true
+
+    rateLimit:
+      scope:
+        - user
+        - model
+
+      limits:
+        default:
+          rates:
+            - limit: 3
+              window: 1m
+
+    backends:
+      aws-01:
+        enabled: true
+        ref: fw-01
+        modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
+        priority: 0
+      aws-02:
+        enabled: true
+        ref: fw-02
+        modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
+        priority: 1
+
+  fireworks-instruct:
     enabled: true
 
     rateLimit:
@@ -117,12 +170,14 @@ models:
         enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct"
+        priority: 0
       aws-02:
         enabled: true
         ref: fw-02
-        modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
+        modelNameOverride: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct"
+        priority: 1
 
-  gpt:
+  gpt-5:
     enabled: true
 
     rateLimit:
@@ -133,20 +188,48 @@ models:
       limits:
         default:
           rates:
-            - limit: 3
+            - limit: 5
               window: 1m
-
+        
     backends:
       aws-01:
         enabled: true
         ref: gpt-01
         modelNameOverride: "gpt-5"
+        priority: 0
       aws-02:
         enabled: true
         ref: gpt-02
-        modelNameOverride: "gpt-5-mini"
+        modelNameOverride: "gpt-5"
+        priority: 1
+  
+  gpt-04:
+    enabled: true
 
-  gemini:
+    rateLimit:
+      scope:
+        - user
+        - model
+
+      limits:
+        default:
+          rates:
+            - limit: 5
+              window: 1m
+        
+    backends:
+      aws-01:
+        enabled: true
+        ref: gpt-01
+        modelNameOverride: "gpt-4o-mini"
+        priority: 0
+      aws-02:
+        enabled: true
+        ref: gpt-02
+        modelNameOverride: "gpt-4o-mini"
+        priority: 1
+
+  gemini-flash:
     enabled: true
 
     rateLimit:
@@ -165,7 +248,37 @@ models:
         enabled: true
         ref: gcp-01
         modelNameOverride: "gemini-2.5-flash"
+        priority: 0
+      gcp-02:
+        enabled: true
+        ref: gcp-02
+        modelNameOverride: "gemini-2.5-flash"
+        priority: 1
+
+  gemini-pro:
+    enabled: true
+
+    rateLimit:
+      scope:
+        - user
+        - model
+
+      limits:
+        default:
+          rates:
+            - limit: 3
+              window: 1m
+
+    backends:
+      gcp-01:
+        enabled: true
+        ref: gcp-01
+        modelNameOverride: "gemini-2.5-pro"
+        priority: 0
       gcp-02:
         enabled: true
         ref: gcp-02
         modelNameOverride: "gemini-2.5-pro"
+        priority: 1
+
+
