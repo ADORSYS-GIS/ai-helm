@@ -1,0 +1,12 @@
+{{- range $backendName, $backendConfig := .Values.backends }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: {{ $backendConfig.resourceName }}
+spec:
+  endpoints:
+    - fqdn:
+        hostname: {{ $backendConfig.fqdn.hostname }}
+        port: {{ $backendConfig.fqdn.port }}
+{{- end }}

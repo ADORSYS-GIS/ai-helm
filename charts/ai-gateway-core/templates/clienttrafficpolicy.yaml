@@ -1,0 +1,57 @@
+{{- if .Values.clientTrafficPolicy.enabled }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: {{ .Values.clientTrafficPolicy.name }}
+  {{- with .Values.clientTrafficPolicy.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.clientTrafficPolicy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  targetRefs:
+    {{- if .Values.clientTrafficPolicy.targetRefs }}
+    {{- toYaml .Values.clientTrafficPolicy.targetRefs | nindent 4 }}
+    {{- else }}
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+    {{- end }}
+  {{- with .Values.clientTrafficPolicy.connection }}
+  connection:
+    {{- if .bufferLimit }}
+    bufferLimit: {{ .bufferLimit }}
+    {{- end }}
+    {{- if .connectionTimeout }}
+    connectionTimeout: {{ .connectionTimeout }}
+    {{- end }}
+  {{- end }}
+  {{- with .Values.clientTrafficPolicy.http }}
+  http:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.clientTrafficPolicy.timeout }}
+  timeout:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.clientTrafficPolicy.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.clientTrafficPolicy.path }}
+  path:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.clientTrafficPolicy.headers }}
+  headers:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.clientTrafficPolicy.healthCheck }}
+  healthCheck:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

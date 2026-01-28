@@ -1,0 +1,51 @@
+{{- range $routeName, $routeConfig := .Values.models }}
+{{- if $routeConfig.enabled }}
+{{/* Filter and Validate Backends */}}
+{{- $activeBackends := dict -}}
+{{- range $bKey, $bVal := $routeConfig.backends }}
+  {{- if $bVal.enabled }}
+    {{- $_ := set $activeBackends $bKey $bVal -}}
+  {{- end }}
+{{- end }}
+
+{{- if lt (len $activeBackends) 2 }}
+  {{- fail (printf "Route '%s' must have at least 2 enabled backends. Found: %d" $routeName (len $activeBackends)) }}
+{{- end }}
+
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: {{ $routeName }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $.Values.gatewayRef.name }}
+  llmRequestCosts:
+    - metadataKey: prompt_tokens
+      type: InputToken
+    - metadataKey: completion_tokens
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: {{ $routeConfig.modelMatch | default $routeName }}
+      backendRefs:
+        {{- range $bKey, $bVal := $activeBackends }}
+        {{- $backendBase := index $.Values.backends $bVal.ref }}
+        - name: {{ $backendBase.resourceName }}
+          {{- if $bVal.modelNameOverride }}
+          modelNameOverride: {{ $bVal.modelNameOverride }}
+          {{- end }}
+          {{- if hasKey $bVal "weight" }}
+          weight: {{ $bVal.weight }}
+          {{- end }}
+          priority: {{ $bVal.priority | default 0 }}
+        {{- end }}
+{{- end }}
+{{- end }}
