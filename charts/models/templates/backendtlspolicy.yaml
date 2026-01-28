@@ -1,0 +1,15 @@
+{{- range $backendName, $backendConfig := .Values.backends }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ $backendConfig.resourceName }}-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: {{ $backendConfig.resourceName }}
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: {{ $backendConfig.tlsHostname }}
+{{- end }}
