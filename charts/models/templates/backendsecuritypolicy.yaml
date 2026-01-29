@@ -20,16 +20,11 @@ spec:
         {{- if $backendConfig.gcpCredentials.credentialsFile.secretRef.key }}
         key: {{ $backendConfig.gcpCredentials.credentialsFile.secretRef.key }}
         {{- end }}
-  {{- else if $backendConfig.useEnvVars }}
+  {{- else if eq $backendConfig.securityType "APIKey" }}
   type: APIKey
   apiKey:
     secretRef:
-      name: {{ $backendConfig.envSecretRef.name }}
-  {{- else }}
-  type: APIKey
-  apiKey:
-    secretRef:
-      name: {{ $backendConfig.apiKeySecretRef.name }}
-      key: {{ $backendConfig.apiKeySecretRef.key }}
+      name: {{ $backendConfig.secretRef.name }}
+      key: apiKey
   {{- end }}
 {{- end }}
