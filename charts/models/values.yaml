@@ -41,8 +41,7 @@ backends:
       hostname: api.fireworks.ai
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: fireworks-api-key-01
     tlsHostname: api.fireworks.ai
   fw-02:
@@ -54,8 +53,7 @@ backends:
       hostname: api.fireworks.ai
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: fireworks-api-key-02
     tlsHostname: api.fireworks.ai
   openai-01:
@@ -66,8 +64,7 @@ backends:
       hostname: api.openai.com
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: openai-api-key-01
     tlsHostname: api.openai.com
   openai-02:
@@ -78,13 +75,12 @@ backends:
       hostname: api.openai.com
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: openai-api-key-02
     tlsHostname: api.openai.com
-  gcp-01:
+  vertex-ai-01:
     enabled: true
-    resourceName: gcp-backend-01-svc
+    resourceName: vertex-ai-backend-01-svc
     schema: GCPVertexAI
     fqdn:
       hostname: us-central1-aiplatform.googleapis.com
@@ -97,9 +93,9 @@ backends:
         secretRef:
           name: gcp-service-account-key-01
     tlsHostname: us-central1-aiplatform.googleapis.com
-  gcp-02:
+  vertex-ai-02:
     enabled: true
-    resourceName: gcp-backend-02-svc
+    resourceName: vertex-ai-backend-02-svc
     schema: GCPVertexAI
     fqdn:
       hostname: us-central1-aiplatform.googleapis.com
@@ -121,8 +117,7 @@ backends:
       hostname: generativelanguage.googleapis.com
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: google-ai-studio-api-key-01
     tlsHostname: generativelanguage.googleapis.com
   google-ai-studio-02:
@@ -134,8 +129,7 @@ backends:
       hostname: generativelanguage.googleapis.com
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: google-ai-studio-api-key-02
     tlsHostname: generativelanguage.googleapis.com
   anthropic-01:
@@ -147,8 +141,7 @@ backends:
       hostname: api.anthropic.com
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: anthropic-api-key-01
     tlsHostname: api.anthropic.com
   anthropic-02:
@@ -160,8 +153,7 @@ backends:
       hostname: api.anthropic.com
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: anthropic-api-key-02
     tlsHostname: api.anthropic.com
 
@@ -720,14 +712,14 @@ models:
       requests: 50000
       unit: Minute
     backends:
-      gcp-01:
+      vertex-ai-01:
         enabled: true
-        ref: gcp-01
+        ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-flash"
         priority: 0
-      gcp-02:
+      vertex-ai-02:
         enabled: true
-        ref: gcp-02
+        ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-flash"
         priority: 1
 
@@ -737,14 +729,14 @@ models:
       requests: 50000
       unit: Minute
     backends:
-      gcp-01:
+      vertex-ai-01:
         enabled: true
-        ref: gcp-01
+        ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-pro"
         priority: 0
-      gcp-02:
+      vertex-ai-02:
         enabled: true
-        ref: gcp-02
+        ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-pro"
         priority: 1
 
@@ -754,14 +746,14 @@ models:
       requests: 50000
       unit: Minute
     backends:
-      gcp-01:
+      vertex-ai-01:
         enabled: true
-        ref: gcp-01
+        ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-pro"
         priority: 0
-      gcp-02:
+      vertex-ai-02:
         enabled: true
-        ref: gcp-02
+        ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-pro"
         priority: 1
 
@@ -771,14 +763,14 @@ models:
       requests: 50000
       unit: Minute
     backends:
-      gcp-01:
+      vertex-ai-01:
         enabled: true
-        ref: gcp-01
+        ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-pro"
         priority: 0
-      gcp-02:
+      vertex-ai-02:
         enabled: true
-        ref: gcp-02
+        ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-pro"
         priority: 1
 
@@ -788,14 +780,14 @@ models:
       requests: 50000
       unit: Minute
     backends:
-      gcp-01:
+      vertex-ai-01:
         enabled: true
-        ref: gcp-01
+        ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-flash-lite"
         priority: 0
-      gcp-02:
+      vertex-ai-02:
         enabled: true
-        ref: gcp-02
+        ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-flash-lite"
         priority: 1
 
