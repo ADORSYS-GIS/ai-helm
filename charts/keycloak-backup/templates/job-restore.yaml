@@ -17,7 +17,7 @@ metadata:
     {{- if $job.annotations }}
     {{- toYaml $job.annotations | nindent 4 }}
     {{- end }}
-    description: "Keycloak configuration restore job from S3 backup"
+    description: "Keycloak configuration restore job using kc.sh import"
 spec:
   ttlSecondsAfterFinished: {{ $job.ttlSecondsAfterFinished | default 300 }}
   backoffLimit: {{ $job.backoffLimit | default 4 }}
@@ -30,13 +30,6 @@ spec:
             - /bin/sh
             - -c
             - |
-              # Wait for Keycloak to be ready
-              echo "Waiting for Keycloak to be ready..."
-              until curl -sf http://${KC_HOSTNAME}:8080/health/ready > /dev/null 2>&1 || curl -sf http://localhost:8080/health/ready > /dev/null 2>&1; do
-                sleep 5
-              done
-              echo "Keycloak is ready!"
-              
               # Download backup from S3
               echo "Downloading backup from S3..."
               if [ -n "{{ $root.Values.s3.prefix }}" ]; then
@@ -49,48 +42,26 @@ spec:
               echo "Extracting backup..."
               gunzip -c /tmp/restore.json.gz > /tmp/restore.json
               
-              # Extract realm name from filename (format: realm_timestamp.json.gz)
-              REALM_NAME=$(basename {{ .Values.restore.object }} .json.gz | sed 's/_[0-9]*$//')
+              # Determine realm name from backup or use configured realm
+              {{- if .Values.keycloak.realm }}
+              REALM_NAME="{{ .Values.keycloak.realm }}"
+              {{- else }}
+              # Extract realm name from backup file
+              REALM_NAME=$(jq -r '.realm' /tmp/restore.json)
+              {{- end }}
+              
               echo "Restoring realm: $REALM_NAME"
               
-              # Login to Keycloak admin
-              echo "Logging in to Keycloak admin..."
-              export KEYCLOAK_TOKEN=$(curl -s -X POST http://${KC_HOSTNAME}:8080/realms/master/protocol/openid-connect/token \
-                -H "Content-Type: application/x-www-form-urlencoded" \
-                -d "username=${KEYCLOAK_ADMIN}" \
-                -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
-                -d "grant_type=password" \
-                -d "client_id=admin-cli" | jq -r '.access_token')
-              
-              if [ -z "$KEYCLOAK_TOKEN" ] || [ "$KEYCLOAK_TOKEN" = "null" ]; then
-                echo "Failed to get Keycloak token"
-                exit 1
-              fi
-              
-              # Check if realm already exists
-              EXISTING_REALM=$(curl -s -X GET "http://${KC_HOSTNAME}:8080/admin/realms/${REALM_NAME}" \
-                -H "Authorization: Bearer $KEYCLOAK_TOKEN" -w "%{http_code}" -o /dev/null)
-              
-              if [ "$EXISTING_REALM" = "200" ]; then
-                echo "Realm $REALM_NAME already exists. Updating..."
-                # Update existing realm
-                curl -s -X PUT "http://${KC_HOSTNAME}:8080/admin/realms/${REALM_NAME}" \
-                  -H "Authorization: Bearer $KEYCLOAK_TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d @/tmp/restore.json
-                echo "Realm updated successfully!"
-              else
-                echo "Creating new realm: $REALM_NAME"
-                # Create new realm
-                curl -s -X POST "http://${KC_HOSTNAME}:8080/admin/realms" \
-                  -H "Authorization: Bearer $KEYCLOAK_TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d @/tmp/restore.json
-                echo "Realm created successfully!"
-              fi
+              # Use kc.sh import to restore
+              echo "Importing realm configuration using kc.sh..."
+              /opt/keycloak/bin/kc.sh import \
+                --file /tmp/restore.json \
+                --realm $REALM_NAME
               
               # Cleanup
               rm -f /tmp/restore.json.gz /tmp/restore.json
+              
+              echo "Restore completed successfully!"
           env:
             - name: KEYCLOAK_ADMIN
               valueFrom:

@@ -17,7 +17,7 @@ metadata:
     {{- if $cronjob.annotations }}
     {{- toYaml $cronjob.annotations | nindent 4 }}
     {{- end }}
-    description: "Scheduled Keycloak configuration backup job"
+    description: "Scheduled Keycloak full configuration backup using kc.sh export"
 spec:
   schedule: {{ $cronjob.schedule | quote }}
   successfulJobsHistoryLimit: {{ $cronjob.successfulJobsHistoryLimit | default 3 }}
@@ -66,78 +66,54 @@ spec:
                     secretKeyRef:
                       name: {{ $root.Values.s3.secretName }}
                       key: S3_REGION_NAME
-                - name: BACKUP_PREFIX
-                  value: {{ $root.Values.keycloak.realm | default "" }}
               command:
                 - /bin/sh
                 - -c
                 - |
-                  # Wait for Keycloak to be ready
-                  echo "Waiting for Keycloak to be ready..."
-                  until curl -sf http://${KC_HOSTNAME}:8080/health/ready > /dev/null 2>&1 || curl -sf http://localhost:8080/health/ready > /dev/null 2>&1; do
-                    sleep 5
-                  done
-                  echo "Keycloak is ready!"
-                  
-                  # Login to Keycloak admin
-                  echo "Logging in to Keycloak admin..."
-                  export KEYCLOAK_TOKEN=$(curl -s -X POST http://${KC_HOSTNAME}:8080/realms/master/protocol/openid-connect/token \
-                    -H "Content-Type: application/x-www-form-urlencoded" \
-                    -d "username=${KEYCLOAK_ADMIN}" \
-                    -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
-                    -d "grant_type=password" \
-                    -d "client_id=admin-cli" | jq -r '.access_token')
-                  
-                  if [ -z "$KEYCLOAK_TOKEN" ] || [ "$KEYCLOAK_TOKEN" = "null" ]; then
-                    echo "Failed to get Keycloak token"
-                    exit 1
-                  fi
-                  
                   TIMESTAMP=$(date -u +"%Y%m%d_%H%M%S")
                   
-                  {{- if .Values.keycloak.realm }}
-                  # Backup specific realm
-                  REALM="{{ .Values.keycloak.realm }}"
-                  echo "Exporting realm: $REALM"
-                  BACKUP_FILE="${REALM}_${TIMESTAMP}.json.gz"
+                  # Start Keycloak in temporary mode for export
+                  echo "Starting Keycloak for full export..."
                   
-                  curl -s -X GET "http://${KC_HOSTNAME}:8080/admin/realms/${REALM}" \
-                    -H "Authorization: Bearer $KEYCLOAK_TOKEN" | gzip > /tmp/$BACKUP_FILE
+                  {{- if .Values.keycloak.realm }}
+                  # Export specific realm including everything using kc.sh
+                  echo "Exporting realm: {{ .Values.keycloak.realm }} (including users)"
+                  /opt/keycloak/bin/kc.sh export \
+                    --realm {{ .Values.keycloak.realm }} \
+                    --file /tmp/{{ .Values.keycloak.realm }}_${TIMESTAMP}.json \
+                    --users include
+                  
+                  # Compress and upload
+                  gzip -c /tmp/{{ .Values.keycloak.realm }}_${TIMESTAMP}.json > /tmp/{{ .Values.keycloak.realm }}_${TIMESTAMP}.json.gz
                   
                   if [ -n "{{ $root.Values.s3.prefix }}" ]; then
-                    aws s3 cp /tmp/$BACKUP_FILE s3://{{ $root.Values.s3.secretName }}/{{ $root.Values.s3.prefix }}/$BACKUP_FILE
+                    aws s3 cp /tmp/{{ .Values.keycloak.realm }}_${TIMESTAMP}.json.gz s3://{{ $root.Values.s3.secretName }}/{{ $root.Values.s3.prefix }}/
                   else
-                    aws s3 cp /tmp/$BACKUP_FILE s3://${S3_BUCKET}/$BACKUP_FILE
+                    aws s3 cp /tmp/{{ .Values.keycloak.realm }}_${TIMESTAMP}.json.gz s3://${S3_BUCKET}/
                   fi
                   
-                  echo "Exported and uploaded: $BACKUP_FILE"
-                  rm -f /tmp/$BACKUP_FILE
+                  rm -f /tmp/{{ .Values.keycloak.realm }}_${TIMESTAMP}.json.gz
                   
                   {{- else }}
-                  # Backup all realms
-                  echo "Getting list of realms..."
-                  REALMS=$(curl -s -X GET "http://${KC_HOSTNAME}:8080/admin/realms" \
-                    -H "Authorization: Bearer $KEYCLOAK_TOKEN" | jq -r '.[].realm')
+                  # Export all realms including everything using kc.sh
+                  echo "Exporting all realms (including users)..."
+                  /opt/keycloak/bin/kc.sh export \
+                    --file /tmp/all-realms_${TIMESTAMP}.json \
+                    --users include
                   
-                  for REALM in $REALMS; do
-                    echo "Exporting realm: $REALM"
-                    BACKUP_FILE="${REALM}_${TIMESTAMP}.json.gz"
-                    
-                    curl -s -X GET "http://${KC_HOSTNAME}:8080/admin/realms/${REALM}" \
-                      -H "Authorization: Bearer $KEYCLOAK_TOKEN" | gzip > /tmp/$BACKUP_FILE
-                    
-                    if [ -n "{{ $root.Values.s3.prefix }}" ]; then
-                      aws s3 cp /tmp/$BACKUP_FILE s3://{{ $root.Values.s3.secretName }}/{{ $root.Values.s3.prefix }}/$BACKUP_FILE
-                    else
-                      aws s3 cp /tmp/$BACKUP_FILE s3://${S3_BUCKET}/$BACKUP_FILE
-                    fi
-                    
-                    echo "Exported and uploaded: $BACKUP_FILE"
-                    rm -f /tmp/$BACKUP_FILE
-                  done
+                  # Compress and upload
+                  gzip -c /tmp/all-realms_${TIMESTAMP}.json > /tmp/all-realms_${TIMESTAMP}.json.gz
+                  
+                  if [ -n "{{ $root.Values.s3.prefix }}" ]; then
+                    aws s3 cp /tmp/all-realms_${TIMESTAMP}.json.gz s3://{{ $root.Values.s3.secretName }}/{{ $root.Values.s3.prefix }}/
+                  else
+                    aws s3 cp /tmp/all-realms_${TIMESTAMP}.json.gz s3://${S3_BUCKET}/
+                  fi
+                  
+                  rm -f /tmp/all-realms_${TIMESTAMP}.json.gz
                   {{- end }}
                   
-                  echo "Backup completed successfully!"
+                  echo "Full backup completed successfully!"
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
