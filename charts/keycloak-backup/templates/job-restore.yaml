@@ -1,0 +1,139 @@
+{{- if and .Values.controllers.job.enabled .Values.restore.object }}
+{{- include "keycloak-backup.validateValues" . -}}
+{{- $job := .Values.controllers.job -}}
+{{- $root := . -}}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "keycloak-backup.restoreJobName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "keycloak-backup.labels" . | nindent 4 }}
+    {{- if $job.labels }}
+    {{- toYaml $job.labels | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- if $job.annotations }}
+    {{- toYaml $job.annotations | nindent 4 }}
+    {{- end }}
+    description: "Keycloak configuration restore job from S3 backup"
+spec:
+  ttlSecondsAfterFinished: {{ $job.ttlSecondsAfterFinished | default 300 }}
+  backoffLimit: {{ $job.backoffLimit | default 4 }}
+  template:
+    spec:
+      containers:
+        - name: restore
+          image: quay.io/keycloak/keycloak:24.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Wait for Keycloak to be ready
+              echo "Waiting for Keycloak to be ready..."
+              until curl -sf http://${KC_HOSTNAME}:8080/health/ready > /dev/null 2>&1 || curl -sf http://localhost:8080/health/ready > /dev/null 2>&1; do
+                sleep 5
+              done
+              echo "Keycloak is ready!"
+              
+              # Download backup from S3
+              echo "Downloading backup from S3..."
+              if [ -n "{{ $root.Values.s3.prefix }}" ]; then
+                aws s3 cp s3://{{ $root.Values.s3.secretName }}/{{ $root.Values.s3.prefix }}/{{ .Values.restore.object }} /tmp/restore.json.gz
+              else
+                aws s3 cp s3://${S3_BUCKET}/{{ .Values.restore.object }} /tmp/restore.json.gz
+              fi
+              
+              # Extract the backup
+              echo "Extracting backup..."
+              gunzip -c /tmp/restore.json.gz > /tmp/restore.json
+              
+              # Extract realm name from filename (format: realm_timestamp.json.gz)
+              REALM_NAME=$(basename {{ .Values.restore.object }} .json.gz | sed 's/_[0-9]*$//')
+              echo "Restoring realm: $REALM_NAME"
+              
+              # Login to Keycloak admin
+              echo "Logging in to Keycloak admin..."
+              export KEYCLOAK_TOKEN=$(curl -s -X POST http://${KC_HOSTNAME}:8080/realms/master/protocol/openid-connect/token \
+                -H "Content-Type: application/x-www-form-urlencoded" \
+                -d "username=${KEYCLOAK_ADMIN}" \
+                -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
+                -d "grant_type=password" \
+                -d "client_id=admin-cli" | jq -r '.access_token')
+              
+              if [ -z "$KEYCLOAK_TOKEN" ] || [ "$KEYCLOAK_TOKEN" = "null" ]; then
+                echo "Failed to get Keycloak token"
+                exit 1
+              fi
+              
+              # Check if realm already exists
+              EXISTING_REALM=$(curl -s -X GET "http://${KC_HOSTNAME}:8080/admin/realms/${REALM_NAME}" \
+                -H "Authorization: Bearer $KEYCLOAK_TOKEN" -w "%{http_code}" -o /dev/null)
+              
+              if [ "$EXISTING_REALM" = "200" ]; then
+                echo "Realm $REALM_NAME already exists. Updating..."
+                # Update existing realm
+                curl -s -X PUT "http://${KC_HOSTNAME}:8080/admin/realms/${REALM_NAME}" \
+                  -H "Authorization: Bearer $KEYCLOAK_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d @/tmp/restore.json
+                echo "Realm updated successfully!"
+              else
+                echo "Creating new realm: $REALM_NAME"
+                # Create new realm
+                curl -s -X POST "http://${KC_HOSTNAME}:8080/admin/realms" \
+                  -H "Authorization: Bearer $KEYCLOAK_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d @/tmp/restore.json
+                echo "Realm created successfully!"
+              fi
+              
+              # Cleanup
+              rm -f /tmp/restore.json.gz /tmp/restore.json
+          env:
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.keycloak.secretName }}
+                  key: username
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.keycloak.secretName }}
+                  key: password
+            - name: KC_HOSTNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.keycloak.secretName }}
+                  key: hostname
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.s3.secretName }}
+                  key: S3_BUCKET_NAME
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.s3.secretName }}
+                  key: S3_ACCESS_KEY_ID
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.s3.secretName }}
+                  key: S3_SECRET_ACCESS_KEY
+            - name: S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.s3.secretName }}
+                  key: S3_REGION_NAME
+            - name: BACKUP_FILE
+              value: "{{ .Values.restore.object }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      restartPolicy: Never
+{{- end }}
