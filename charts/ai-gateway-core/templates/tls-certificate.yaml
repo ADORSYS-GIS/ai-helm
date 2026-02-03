@@ -1,0 +1,15 @@
+{{- if .Values.tls.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Release.Name }}-tls-cert
+spec:
+  secretName: {{ .Values.tls.secretName }}
+  issuerRef:
+    kind: {{ .Values.tls.issuer.kind }}
+    name: {{ .Values.tls.issuer.name }}-{{ .Values.tls.issuer.environment }}
+  dnsNames:
+{{- range .Values.tls.domains }}
+    - {{ . | quote }}
+{{- end }}
+{{- end }}
