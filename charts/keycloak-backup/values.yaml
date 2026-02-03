@@ -21,7 +21,7 @@ keycloak:
   # -- Secret name containing Keycloak admin credentials (must contain: username, password, hostname)
   secretName: "keycloak-admin"
   # -- Realm to backup (defaults to all realms if not specified)
-  realm: ""
+  realm: "master"
   # -- Keycloak hostname (for internal access within cluster)
   hostname: "keycloak"
 
@@ -48,8 +48,8 @@ controllers:
     enabled: true
     # -- Controller identifier (used for labels)
     identifier: "keycloak-backup"
-    # -- CronJob schedule (default: daily at 2:00 AM)
-    schedule: "0 2 * * *"
+    # -- CronJob schedule (default: every minute for testing)
+    schedule: "* * * * *"
     # -- Concurrency policy (Forbid, Replace, Allow)
     concurrencyPolicy: Forbid
     # -- Number of successful jobs to keep

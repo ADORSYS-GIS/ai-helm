@@ -24,43 +24,38 @@ spec:
   template:
     spec:
       containers:
-        - name: restore
+        - name: importer
           image: quay.io/keycloak/keycloak:24.0
           command:
             - /bin/sh
             - -c
             - |
-              # Download backup from S3
-              echo "Downloading backup from S3..."
-              if [ -n "{{ $root.Values.s3.prefix }}" ]; then
-                aws s3 cp s3://{{ $root.Values.s3.secretName }}/{{ $root.Values.s3.prefix }}/{{ .Values.restore.object }} /tmp/restore.json.gz
-              else
-                aws s3 cp s3://${S3_BUCKET}/{{ .Values.restore.object }} /tmp/restore.json.gz
-              fi
-              
-              # Extract the backup
-              echo "Extracting backup..."
-              gunzip -c /tmp/restore.json.gz > /tmp/restore.json
-              
+              # Wait for backup file
+              echo "Waiting for backup file..."
+              while [ ! -f /backup/restore.json ]; do
+                sleep 2
+              done
+
+              # Create writable directory for Quarkus
+              export QUARKUS_CACHE_DIR=/tmp/quarkus-cache
+              mkdir -p $QUARKUS_CACHE_DIR
+
               # Determine realm name from backup or use configured realm
               {{- if .Values.keycloak.realm }}
               REALM_NAME="{{ .Values.keycloak.realm }}"
               {{- else }}
               # Extract realm name from backup file
-              REALM_NAME=$(jq -r '.realm' /tmp/restore.json)
+              REALM_NAME=$(jq -r '.realm' /backup/restore.json)
               {{- end }}
-              
+
               echo "Restoring realm: $REALM_NAME"
-              
+
               # Use kc.sh import to restore
               echo "Importing realm configuration using kc.sh..."
               /opt/keycloak/bin/kc.sh import \
-                --file /tmp/restore.json \
+                --file /backup/restore.json \
                 --realm $REALM_NAME
-              
-              # Cleanup
-              rm -f /tmp/restore.json.gz /tmp/restore.json
-              
+
               echo "Restore completed successfully!"
           env:
             - name: KEYCLOAK_ADMIN
@@ -78,33 +73,69 @@ spec:
                 secretKeyRef:
                   name: {{ $root.Values.keycloak.secretName }}
                   key: hostname
+          volumeMounts:
+            - name: backup-volume
+              mountPath: /backup
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      initContainers:
+        - name: downloader
+          image: amazon/aws-cli:2.15.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Downloading backup from S3..."
+              {{- if $root.Values.s3.prefix }}
+              aws s3 cp s3://${S3_BUCKET}/{{ $root.Values.s3.prefix }}/{{ .Values.restore.object }} /backup/restore.json
+              {{- else }}
+              aws s3 cp s3://${S3_BUCKET}/{{ .Values.restore.object }} /backup/restore.json
+              {{- end }}
+              echo "Download complete"
+          env:
             - name: S3_BUCKET
               valueFrom:
                 secretKeyRef:
                   name: {{ $root.Values.s3.secretName }}
                   key: S3_BUCKET_NAME
-            - name: S3_ACCESS_KEY_ID
+            - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
                   name: {{ $root.Values.s3.secretName }}
                   key: S3_ACCESS_KEY_ID
-            - name: S3_SECRET_ACCESS_KEY
+            - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ $root.Values.s3.secretName }}
                   key: S3_SECRET_ACCESS_KEY
-            - name: S3_REGION
+            # - name: AWS_SESSION_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: {{ $root.Values.s3.secretName }}
+            #       key: AWS_SESSION_TOKEN
+            - name: AWS_DEFAULT_REGION
               valueFrom:
                 secretKeyRef:
                   name: {{ $root.Values.s3.secretName }}
                   key: S3_REGION_NAME
-            - name: BACKUP_FILE
-              value: "{{ .Values.restore.object }}"
+          volumeMounts:
+            - name: backup-volume
+              mountPath: /backup
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
+      volumes:
+        - name: backup-volume
+          emptyDir: {}
       restartPolicy: Never
 {{- end }}
