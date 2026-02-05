@@ -1,4 +1,5 @@
 {{- range $backendName, $backendConfig := .Values.backends }}
+{{- if not (eq $backendConfig.enabled false) }}
 ---
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: AIServiceBackend
@@ -14,4 +15,5 @@ spec:
     name: {{ $backendConfig.resourceName }}
     kind: Backend
     group: gateway.envoyproxy.io
+{{- end }}
 {{- end }}
