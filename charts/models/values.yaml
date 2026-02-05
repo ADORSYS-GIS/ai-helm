@@ -2,10 +2,8 @@ gatewayRef:
   name: ai-gateway
 
 envoyRateLimit:
-  enabled: true
 
 backendTrafficPolicy:
-  enabled: true
   name: backend-retry-policy
   labels: {}
   annotations: {}
@@ -31,107 +29,88 @@ backendTrafficPolicy:
         - connect-failure
         - retriable-status-codes
 
-backends:
-  fw-01:
-    enabled: true
-    resourceName: fw-backend-01-svc
+backendDefaults:
+  fireworks: &fireworksBackend
     schema: OpenAI
     prefix: /inference/v1
     fqdn:
       hostname: api.fireworks.ai
       port: 443
     securityType: APIKey
-    secretRef:
-      name: fireworks-api-key-01
     tlsHostname: api.fireworks.ai
-  fw-02:
-    enabled: true
-    resourceName: fw-backend-02-svc
-    schema: OpenAI
-    prefix: /inference/v1
-    fqdn:
-      hostname: api.fireworks.ai
-      port: 443
-    securityType: APIKey
-    secretRef:
-      name: fireworks-api-key-02
-    tlsHostname: api.fireworks.ai
-  openai-01:
-    enabled: true
-    resourceName: openai-backend-01-svc
+  openai: &openaiBackend
     schema: OpenAI
     fqdn:
       hostname: api.openai.com
       port: 443
     securityType: APIKey
-    secretRef:
-      name: openai-api-key-01
     tlsHostname: api.openai.com
-  openai-02:
-    enabled: true
-    resourceName: openai-backend-02-svc
-    schema: OpenAI
-    fqdn:
-      hostname: api.openai.com
-      port: 443
-    securityType: APIKey
-    secretRef:
-      name: openai-api-key-02
-    tlsHostname: api.openai.com
-  vertex-ai-01:
-    enabled: true
-    resourceName: vertex-ai-backend-01-svc
+  vertexAi: &vertexAiBackend
     schema: GCPVertexAI
     fqdn:
       hostname: us-central1-aiplatform.googleapis.com
       port: 443
     type: GCPCredentials
-    gcpCredentials:
+    gcpCredentials: &vertexAiCredentials
       projectName: kivoyo
       region: us-central1
-      credentialsFile:
-        secretRef:
-          name: gcp-service-account-key-01
     tlsHostname: us-central1-aiplatform.googleapis.com
-  vertex-ai-02:
-    enabled: true
-    resourceName: vertex-ai-backend-02-svc
-    schema: GCPVertexAI
-    fqdn:
-      hostname: us-central1-aiplatform.googleapis.com
-      port: 443
-    type: GCPCredentials
-    gcpCredentials:
-      projectName: kivoyo
-      region: us-central1
-      credentialsFile:
-        secretRef:
-          name: gcp-service-account-key-02
-    tlsHostname: us-central1-aiplatform.googleapis.com
-  google-ai-studio-01:
-    enabled: true
-    resourceName: google-ai-studio-backend-01-svc
-    schema: OpenAI
-    prefix: v1beta/openai    
-    fqdn:
-      hostname: generativelanguage.googleapis.com
-      port: 443
-    securityType: APIKey
-    secretRef:
-      name: google-ai-studio-api-key-01
-    tlsHostname: generativelanguage.googleapis.com
-  google-ai-studio-02:
-    enabled: true
-    resourceName: google-ai-studio-backend-02-svc
+  googleAiStudio: &googleAiStudioBackend
     schema: OpenAI
     prefix: v1beta/openai
     fqdn:
       hostname: generativelanguage.googleapis.com
       port: 443
     securityType: APIKey
+    tlsHostname: generativelanguage.googleapis.com
+
+backends:
+  fw-01:
+    <<: *fireworksBackend
+    secretRef:
+      name: fireworks-api-key-01
+    resourceName: fw-backend-01-svc
+  fw-02:
+    <<: *fireworksBackend
+    resourceName: fw-backend-02-svc
+    secretRef:
+      name: fireworks-api-key-02
+  openai-01:
+    <<: *openaiBackend
+    resourceName: openai-backend-01-svc
+    secretRef:
+      name: openai-api-key-01
+  openai-02:
+    <<: *openaiBackend
+    resourceName: openai-backend-02-svc
+    secretRef:
+      name: openai-api-key-02
+  vertex-ai-01:
+    <<: *vertexAiBackend
+    resourceName: vertex-ai-backend-01-svc
+    gcpCredentials:
+      <<: *vertexAiCredentials
+      credentialsFile:
+        secretRef:
+          name: gcp-service-account-key-01
+  vertex-ai-02:
+    <<: *vertexAiBackend
+    resourceName: vertex-ai-backend-02-svc
+    gcpCredentials:
+      <<: *vertexAiCredentials
+      credentialsFile:
+        secretRef:
+          name: gcp-service-account-key-02
+  google-ai-studio-01:
+    <<: *googleAiStudioBackend
+    resourceName: google-ai-studio-backend-01-svc
+    secretRef:
+      name: google-ai-studio-api-key-01
+  google-ai-studio-02:
+    <<: *googleAiStudioBackend
+    resourceName: google-ai-studio-backend-02-svc
     secretRef:
       name: google-ai-studio-api-key-02
-    tlsHostname: generativelanguage.googleapis.com
 
 models:
   # Fireworks AI Models
@@ -153,7 +132,6 @@ models:
   #       priority: 1
 
   kimi-k2-instruct-0905:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -166,18 +144,15 @@ models:
         tokens: 420000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/kimi-k2-instruct-0905"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/kimi-k2-instruct-0905"
         priority: 1
 
   kimi-k2-thinking:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -190,18 +165,15 @@ models:
         tokens: 180000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/kimi-k2-thinking"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/kimi-k2-thinking"
         priority: 1
 
   deepseek-v3p1:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -214,18 +186,15 @@ models:
         tokens: 420000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/deepseek-v3p1"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/deepseek-v3p1"
         priority: 1
 
   qwen3-235b-a22b-instruct-2507:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -238,12 +207,10 @@ models:
         tokens: 240000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/qwen3-235b-a22b-instruct-2507"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/qwen3-235b-a22b-instruct-2507"
         priority: 1
@@ -283,7 +250,6 @@ models:
   #       priority: 1
 
   gpt-oss-120b:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -296,18 +262,15 @@ models:
         tokens: 240000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/gpt-oss-120b"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/gpt-oss-120b"
         priority: 1
 
   gpt-oss-20b:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -320,18 +283,15 @@ models:
         tokens: 420000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/gpt-oss-20b"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/gpt-oss-20b"
         priority: 1
 
   qwen3-235b-a22b-thinking-2507:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -344,18 +304,15 @@ models:
         tokens: 180000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/qwen3-235b-a22b-thinking-2507"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/qwen3-235b-a22b-thinking-2507"
         priority: 1
 
   qwen3-coder-30b-a3b-instruct:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -368,18 +325,15 @@ models:
         tokens: 540000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/qwen3-coder-30b-a3b-instruct"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/qwen3-coder-30b-a3b-instruct"
         priority: 1
 
   qwen3-235b-a22b:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -392,18 +346,15 @@ models:
         tokens: 240000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/qwen3-235b-a22b"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/qwen3-235b-a22b"
         priority: 1
 
   glm-4p6:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -416,12 +367,10 @@ models:
         tokens: 420000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/glm-4p6"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/glm-4p6"
         priority: 1
@@ -444,7 +393,6 @@ models:
   #       priority: 1
 
   deepseek-v3p1-terminus:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -457,19 +405,16 @@ models:
         tokens: 420000000
     backends:
       fw-01:
-        enabled: true
         ref: fw-01
         modelNameOverride: "accounts/fireworks/models/deepseek-v3p1-terminus"
         priority: 0
       fw-02:
-        enabled: true
         ref: fw-02
         modelNameOverride: "accounts/fireworks/models/deepseek-v3p1-terminus"
         priority: 1
 
   # OpenAI Models
   o4-mini:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -482,12 +427,10 @@ models:
         tokens: 960000000
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "o4-mini"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "o4-mini"
         priority: 1
@@ -510,7 +453,6 @@ models:
   #       priority: 1
 
   gpt-4-1:
-    enabled: true
     envoyRateLimit:
       requests: 30
       unit: Minute
@@ -523,18 +465,15 @@ models:
         tokens: 420000000
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "gpt-4.1"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "gpt-4.1"
         priority: 1
 
   gpt-4-1-mini:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -547,18 +486,15 @@ models:
         tokens: 960000000
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "gpt-4.1-mini"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "gpt-4.1-mini"
         priority: 1
 
   gpt-5:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -571,18 +507,15 @@ models:
         tokens: 240000000
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "gpt-5"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "gpt-5"
         priority: 1
 
   gpt-5-mini:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -595,18 +528,15 @@ models:
         tokens: 960000000
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "gpt-5-mini"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "gpt-5-mini"
         priority: 1
 
   gpt-5-nano:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -619,12 +549,10 @@ models:
         tokens: 960000000
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "gpt-5-nano"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "gpt-5-nano"
         priority: 1
@@ -647,7 +575,6 @@ models:
   #       priority: 1
 
   text-embedding-3-large:
-    enabled: true 
     envoyRateLimit:
       requests: 10000
       unit: Minute
@@ -660,46 +587,38 @@ models:
         tokens: 3600000000
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "text-embedding-3-large"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "text-embedding-3-large"
         priority: 1
 
   dall-e-3:
-    enabled: true 
     envoyRateLimit:
       requests: 50000
       unit: Minute
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "dall-e-3"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "dall-e-3"
         priority: 1
 
   gpt-image-1:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "gpt-image-1"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "gpt-image-1"
         priority: 1
@@ -722,7 +641,6 @@ models:
   #       priority: 1
 
   gpt-4o-mini-audio: 
-    enabled: true
     envoyRateLimit:
       requests: 10000
       unit: Minute
@@ -735,12 +653,10 @@ models:
         tokens: 144000000
     backends:
       openai-01:
-        enabled: true
         ref: openai-01
         modelNameOverride: "gpt-4o-mini-audio-preview-2024-12-17"
         priority: 0
       openai-02:
-        enabled: true
         ref: openai-02
         modelNameOverride: "gpt-4o-mini-audio-preview-2024-12-17"
         priority: 1
@@ -781,7 +697,6 @@ models:
 
   # Google Gemini Models
   gemini-2-5-flash:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -794,18 +709,15 @@ models:
         tokens: 960000000
     backends:
       vertex-ai-01:
-        enabled: true
         ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-flash"
         priority: 0
       vertex-ai-02:
-        enabled: true
         ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-flash"
         priority: 1
 
   gemini-2-5-pro-reasoning:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -818,18 +730,15 @@ models:
         tokens: 240000000
     backends:
       vertex-ai-01:
-        enabled: true
         ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-pro"
         priority: 0
       vertex-ai-02:
-        enabled: true
         ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-pro"
         priority: 1
 
   gemini-2-5-pro-reasoning-1024:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -842,35 +751,29 @@ models:
         tokens: 240000000
     backends:
       vertex-ai-01:
-        enabled: true
         ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-pro"
         priority: 0
       vertex-ai-02:
-        enabled: true
         ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-pro"
         priority: 1
 
   gemini-3-pro-image-preview:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
     backends:
       vertex-ai-01:
-        enabled: true
         ref: vertex-ai-01
         modelNameOverride: "gemini-3-pro-image-preview"
         priority: 0
       vertex-ai-02:
-        enabled: true
         ref: vertex-ai-02
         modelNameOverride: "gemini-3-pro-image-preview"
         priority: 1
 
   gemini-2-5-flash-lite:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -883,18 +786,15 @@ models:
         tokens: 960000000
     backends:
       vertex-ai-01:
-        enabled: true
         ref: vertex-ai-01
         modelNameOverride: "gemini-2.5-flash-lite"
         priority: 0
       vertex-ai-02:
-        enabled: true
         ref: vertex-ai-02
         modelNameOverride: "gemini-2.5-flash-lite"
         priority: 1
 
   gemini-3-pro:
-    enabled: true
     envoyRateLimit:
       requests: 50000 
       unit: Minute
@@ -907,18 +807,15 @@ models:
         tokens: 240000000
     backends:
       google-ai-studio-01:
-        enabled: true
         ref: google-ai-studio-01
         modelNameOverride: "gemini-3-pro-preview"
         priority: 0
       google-ai-studio-02:
-        enabled: true
         ref: google-ai-studio-02
         modelNameOverride: "gemini-3-pro-preview"
         priority: 1
 
   gemini-3-flash:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -931,18 +828,15 @@ models:
         tokens: 960000000
     backends:
       google-ai-studio-01:
-        enabled: true
         ref: google-ai-studio-01
         modelNameOverride: "gemini-3-flash-preview"
         priority: 0
       google-ai-studio-02:
-        enabled: true
         ref: google-ai-studio-02
         modelNameOverride: "gemini-3-flash-preview"
         priority: 1
 
   gemini-3-flash-thinking:
-    enabled: true
     envoyRateLimit:
       requests: 50000
       unit: Minute
@@ -955,12 +849,10 @@ models:
         tokens: 180000000
     backends:
       google-ai-studio-01:
-        enabled: true
         ref: google-ai-studio-01
         modelNameOverride: "gemini-3-flash-preview"
         priority: 0
       google-ai-studio-02:
-        enabled: true
         ref: google-ai-studio-02
         modelNameOverride: "gemini-3-flash-preview"
         priority: 1
