@@ -1,7 +1,7 @@
 gatewayRef:
   name: ai-gateway
 
-envoyRateLimit:
+envoyRateLimit: {}
 
 backendTrafficPolicy:
   name: backend-retry-policy
@@ -63,6 +63,66 @@ backendDefaults:
       port: 443
     securityType: APIKey
     tlsHostname: generativelanguage.googleapis.com
+
+rateLimitDefaults:
+  request50kPerMinute: &rlRequest50kPerMin
+    requests: 50000
+    unit: Minute
+  request10kPerMinute: &rlRequest10kPerMin
+    requests: 10000
+    unit: Minute
+  request30PerMinute: &rlRequest30PerMin
+    requests: 30
+    unit: Minute
+  token1500k_35m_420m: &tl1500_35m_420m
+    - unit: Day
+      tokens: 1500000
+    - unit: Month
+      tokens: 35000000
+    - unit: Year
+      tokens: 420000000
+  token800k_15m_180m: &tl800_15m_180m
+    - unit: Day
+      tokens: 800000
+    - unit: Month
+      tokens: 15000000
+    - unit: Year
+      tokens: 180000000
+  token1000k_20m_240m: &tl1000_20m_240m
+    - unit: Day
+      tokens: 1000000
+    - unit: Month
+      tokens: 20000000
+    - unit: Year
+      tokens: 240000000
+  token3000k_80m_960m: &tl3000_80m_960m
+    - unit: Day
+      tokens: 3000000
+    - unit: Month
+      tokens: 80000000
+    - unit: Year
+      tokens: 960000000
+  token2000k_45m_540m: &tl2000_45m_540m
+    - unit: Day
+      tokens: 2000000
+    - unit: Month
+      tokens: 45000000
+    - unit: Year
+      tokens: 540000000
+  token10m_300m_3600m: &tl10m_300m_3600m
+    - unit: Day
+      tokens: 10000000
+    - unit: Month
+      tokens: 300000000
+    - unit: Year
+      tokens: 3600000000
+  token500k_12m_144m: &tl500_12m_144m
+    - unit: Day
+      tokens: 500000
+    - unit: Month
+      tokens: 12000000
+    - unit: Year
+      tokens: 144000000
 
 backends:
   fw-01:
@@ -132,16 +192,8 @@ models:
   #       priority: 1
 
   kimi-k2-instruct-0905:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1500000
-      - unit: Month
-        tokens: 35000000
-      - unit: Year
-        tokens: 420000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
         ref: fw-01
@@ -153,16 +205,8 @@ models:
         priority: 1
 
   kimi-k2-thinking:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 800000
-      - unit: Month
-        tokens: 15000000
-      - unit: Year
-        tokens: 180000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl800_15m_180m
     backends:
       fw-01:
         ref: fw-01
@@ -174,16 +218,8 @@ models:
         priority: 1
 
   deepseek-v3p1:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1500000
-      - unit: Month
-        tokens: 35000000
-      - unit: Year
-        tokens: 420000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
         ref: fw-01
@@ -195,16 +231,8 @@ models:
         priority: 1
 
   qwen3-235b-a22b-instruct-2507:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1000000
-      - unit: Month
-        tokens: 20000000
-      - unit: Year
-        tokens: 240000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1000_20m_240m
     backends:
       fw-01:
         ref: fw-01
@@ -250,16 +278,8 @@ models:
   #       priority: 1
 
   gpt-oss-120b:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1000000
-      - unit: Month
-        tokens: 20000000
-      - unit: Year
-        tokens: 240000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1000_20m_240m
     backends:
       fw-01:
         ref: fw-01
@@ -271,16 +291,8 @@ models:
         priority: 1
 
   gpt-oss-20b:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1500000
-      - unit: Month
-        tokens: 35000000
-      - unit: Year
-        tokens: 420000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
         ref: fw-01
@@ -292,16 +304,8 @@ models:
         priority: 1
 
   qwen3-235b-a22b-thinking-2507:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 800000
-      - unit: Month
-        tokens: 15000000
-      - unit: Year
-        tokens: 180000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl800_15m_180m
     backends:
       fw-01:
         ref: fw-01
@@ -313,16 +317,8 @@ models:
         priority: 1
 
   qwen3-coder-30b-a3b-instruct:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 2000000
-      - unit: Month
-        tokens: 45000000
-      - unit: Year
-        tokens: 540000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl2000_45m_540m
     backends:
       fw-01:
         ref: fw-01
@@ -334,16 +330,8 @@ models:
         priority: 1
 
   qwen3-235b-a22b:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1000000
-      - unit: Month
-        tokens: 20000000
-      - unit: Year
-        tokens: 240000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1000_20m_240m
     backends:
       fw-01:
         ref: fw-01
@@ -355,16 +343,8 @@ models:
         priority: 1
 
   glm-4p6:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1500000
-      - unit: Month
-        tokens: 35000000
-      - unit: Year
-        tokens: 420000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
         ref: fw-01
@@ -393,16 +373,8 @@ models:
   #       priority: 1
 
   deepseek-v3p1-terminus:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1500000
-      - unit: Month
-        tokens: 35000000
-      - unit: Year
-        tokens: 420000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
         ref: fw-01
@@ -415,16 +387,8 @@ models:
 
   # OpenAI Models
   o4-mini:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 3000000
-      - unit: Month
-        tokens: 80000000
-      - unit: Year
-        tokens: 960000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       openai-01:
         ref: openai-01
@@ -453,16 +417,8 @@ models:
   #       priority: 1
 
   gpt-4-1:
-    envoyRateLimit:
-      requests: 30
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1500000
-      - unit: Month
-        tokens: 35000000
-      - unit: Year
-        tokens: 420000000
+    envoyRateLimit: *rlRequest30PerMin
+    envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       openai-01:
         ref: openai-01
@@ -474,16 +430,8 @@ models:
         priority: 1
 
   gpt-4-1-mini:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 3000000
-      - unit: Month
-        tokens: 80000000
-      - unit: Year
-        tokens: 960000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       openai-01:
         ref: openai-01
@@ -495,16 +443,8 @@ models:
         priority: 1
 
   gpt-5:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1000000
-      - unit: Month
-        tokens: 20000000
-      - unit: Year
-        tokens: 240000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1000_20m_240m
     backends:
       openai-01:
         ref: openai-01
@@ -516,16 +456,8 @@ models:
         priority: 1
 
   gpt-5-mini:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 3000000
-      - unit: Month
-        tokens: 80000000
-      - unit: Year
-        tokens: 960000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       openai-01:
         ref: openai-01
@@ -537,16 +469,8 @@ models:
         priority: 1
 
   gpt-5-nano:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 3000000
-      - unit: Month
-        tokens: 80000000
-      - unit: Year
-        tokens: 960000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       openai-01:
         ref: openai-01
@@ -575,16 +499,8 @@ models:
   #       priority: 1
 
   text-embedding-3-large:
-    envoyRateLimit:
-      requests: 10000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 10000000
-      - unit: Month
-        tokens: 300000000
-      - unit: Year
-        tokens: 3600000000
+    envoyRateLimit: *rlRequest10kPerMin
+    envoyTokenRateLimits: *tl10m_300m_3600m
     backends:
       openai-01:
         ref: openai-01
@@ -596,9 +512,7 @@ models:
         priority: 1
 
   dall-e-3:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
+    envoyRateLimit: *rlRequest50kPerMin
     backends:
       openai-01:
         ref: openai-01
@@ -610,9 +524,7 @@ models:
         priority: 1
 
   gpt-image-1:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
+    envoyRateLimit: *rlRequest50kPerMin
     backends:
       openai-01:
         ref: openai-01
@@ -641,16 +553,8 @@ models:
   #       priority: 1
 
   gpt-4o-mini-audio: 
-    envoyRateLimit:
-      requests: 10000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 500000
-      - unit: Month
-        tokens: 12000000
-      - unit: Year
-        tokens: 144000000
+    envoyRateLimit: *rlRequest10kPerMin
+    envoyTokenRateLimits: *tl500_12m_144m
     backends:
       openai-01:
         ref: openai-01
@@ -697,16 +601,8 @@ models:
 
   # Google Gemini Models
   gemini-2-5-flash:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 3000000
-      - unit: Month
-        tokens: 80000000
-      - unit: Year
-        tokens: 960000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       vertex-ai-01:
         ref: vertex-ai-01
@@ -718,16 +614,8 @@ models:
         priority: 1
 
   gemini-2-5-pro-reasoning:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1000000
-      - unit: Month
-        tokens: 20000000
-      - unit: Year
-        tokens: 240000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1000_20m_240m
     backends:
       vertex-ai-01:
         ref: vertex-ai-01
@@ -739,16 +627,8 @@ models:
         priority: 1
 
   gemini-2-5-pro-reasoning-1024:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1000000
-      - unit: Month
-        tokens: 20000000
-      - unit: Year
-        tokens: 240000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1000_20m_240m
     backends:
       vertex-ai-01:
         ref: vertex-ai-01
@@ -760,9 +640,7 @@ models:
         priority: 1
 
   gemini-3-pro-image-preview:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
+    envoyRateLimit: *rlRequest50kPerMin
     backends:
       vertex-ai-01:
         ref: vertex-ai-01
@@ -774,16 +652,8 @@ models:
         priority: 1
 
   gemini-2-5-flash-lite:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 3000000
-      - unit: Month
-        tokens: 80000000
-      - unit: Year
-        tokens: 960000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       vertex-ai-01:
         ref: vertex-ai-01
@@ -795,16 +665,8 @@ models:
         priority: 1
 
   gemini-3-pro:
-    envoyRateLimit:
-      requests: 50000 
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 1000000
-      - unit: Month
-        tokens: 20000000
-      - unit: Year
-        tokens: 240000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl1000_20m_240m
     backends:
       google-ai-studio-01:
         ref: google-ai-studio-01
@@ -816,16 +678,8 @@ models:
         priority: 1
 
   gemini-3-flash:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 3000000
-      - unit: Month
-        tokens: 80000000
-      - unit: Year
-        tokens: 960000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
         ref: google-ai-studio-01
@@ -837,16 +691,8 @@ models:
         priority: 1
 
   gemini-3-flash-thinking:
-    envoyRateLimit:
-      requests: 50000
-      unit: Minute
-    envoyTokenRateLimits:
-      - unit: Day
-        tokens: 800000
-      - unit: Month
-        tokens: 15000000
-      - unit: Year
-        tokens: 180000000
+    envoyRateLimit: *rlRequest50kPerMin
+    envoyTokenRateLimits: *tl800_15m_180m
     backends:
       google-ai-studio-01:
         ref: google-ai-studio-01
