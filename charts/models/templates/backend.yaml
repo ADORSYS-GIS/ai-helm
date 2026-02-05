@@ -1,4 +1,5 @@
 {{- range $backendName, $backendConfig := .Values.backends }}
+{{- if $backendConfig.enabled }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
@@ -9,4 +10,5 @@ spec:
     - fqdn:
         hostname: {{ $backendConfig.fqdn.hostname }}
         port: {{ $backendConfig.fqdn.port }}
+{{- end }}
 {{- end }}
