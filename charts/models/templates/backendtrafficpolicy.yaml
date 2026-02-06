@@ -1,4 +1,4 @@
-{{- if .Values.backendTrafficPolicy.enabled }}
+{{- if (default true (dig "enabled" nil (default dict .Values.backendTrafficPolicy))) }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -17,13 +17,13 @@ spec:
     {{- toYaml .Values.backendTrafficPolicy.targetRefs | nindent 4 }}
   retry:
     {{- toYaml .Values.backendTrafficPolicy.retry | nindent 4 }}
-  {{- if .Values.envoyRateLimit.enabled }}
+  {{- if (default true (dig "enabled" nil (default dict .Values.envoyRateLimit))) }}
   rateLimit:
     type: Global
     global:
       rules:
         {{- range $routeName, $routeConfig := .Values.models }}
-        {{- if $routeConfig.enabled }}
+        {{- if (default true $routeConfig.enabled) }}
         # Rate limit rule for {{ $routeName }}
         - clientSelectors:
             - headers:
