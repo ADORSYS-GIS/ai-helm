@@ -1,112 +1,237 @@
-## @section Global Configuration
-## @param fullnameOverride Full name override
-## @param nameOverride Name override
+## @section App Template Chart Values
+app-template:
+  ## @section Global Configuration
+  global:
+    # -- Full name override
+    fullnameOverride: ""
+    # -- Name override
+    nameOverride: ""
+    # -- Global labels applied to all resources
+    labels: {}
+      # app.kubernetes.io/part-of: cnpg-pgdump-backup
+    # -- Global annotations applied to all resources
+    annotations: {}
+      # description: "PostgreSQL backup and restore for CloudNativePG"
 
-global:
-  # -- Full name override
-  fullnameOverride: ""
-  # -- Name override
-  nameOverride: ""
+  ## @section CNPG Cluster Configuration
+  cnpg:
+    # -- Secret name containing CNPG connection details (must contain: host, port, username, password, dbname)
+    secretName: "litellm-pg-app"
 
-# -- Global labels applied to all resources
-globalLabels: {}
-  # app.kubernetes.io/part-of: cnpg-pgdump-backup
+  ## @section S3 Storage Configuration
+  s3:
+    # -- REQUIRED: Secret name containing S3 credentials (created by Terraform with S3_* keys)
+    secretName: "open-web-ui-s3"
 
-# -- Global annotations applied to all resources
-globalAnnotations: {}
-  # description: "PostgreSQL backup and restore for CloudNativePG"
+  ## @section Restore Configuration
+  restore:
+    # -- Enable restore Job (also set restore.object)
+    enabled: false
+    # -- S3 object key to restore (empty = manual trigger required via --set)
+    object: ""
 
-## @section CNPG Cluster Configuration
-cnpg:
-  # -- Secret name containing CNPG connection details (must contain: host, port, username, password)
-  secretName: "litellm-pg-app"
+  ## @section Backup Controller (CronJob)
+  controllers:
+    backup:
+      # -- Enable scheduled backup CronJob
+      enabled: true
+      # -- Controller type
+      type: cronjob
+      # -- CronJob specific settings
+      cronjob:
+        # -- CronJob schedule (default: daily at 1:35 PM)
+        schedule: "35 13 * * *"
+        # -- Concurrency policy (Forbid, Replace, Allow)
+        concurrencyPolicy: Forbid
+        # -- Number of successful jobs to keep
+        successfulJobsHistory: 3
+        # -- Number of failed jobs to keep
+        failedJobsHistory: 3
+        # -- Starting deadline seconds
+        startingDeadlineSeconds: 30
+      pod:
+        # -- Pod security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 999
+          runAsGroup: 999
+          fsGroup: 999
+        # -- Restart policy
+        restartPolicy: OnFailure
+        # -- Termination grace period seconds
+        terminationGracePeriodSeconds: 30
+      containers:
+        backup:
+          image:
+            repository: ghcr.io/itbm/postgresql-backup-s3
+            tag: latest
+            pullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: host
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: port
+            - name: POSTGRES_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: dbname
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: password
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_BUCKET_NAME
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_ACCESS_KEY_ID
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_SECRET_ACCESS_KEY
+            # - name: AWS_SESSION_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: "{{ .Values.s3.secretName }}"
+            #       key: AWS_SESSION_TOKEN
+            - name: S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_REGION_NAME
+          # -- Container security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # -- Resources
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
 
-## @section S3 Storage Configuration
-s3:
-  # -- S3 prefix/path within bucket
-  prefix: ""
-  # -- REQUIRED: Secret name containing S3 credentials (created by Terraform with S3_* keys)
-  secretName: "open-web-ui-s3"
-
-## @section Backup Controller (CronJob)
-controllers:
-  cronjob:
-    # -- Enable scheduled backup CronJob
-    enabled: true
-    # -- Controller identifier (used for labels)
-    identifier: "cnpg-backup"
-    # -- CronJob schedule (default: daily at 9:45 AM)
-    schedule: "35 13 * * *"
-    # -- Concurrency policy (Forbid, Replace, Allow)
-    concurrencyPolicy: Forbid
-    # -- Number of successful jobs to keep
-    successfulJobsHistoryLimit: 3
-    # -- Number of failed jobs to keep
-    failedJobsHistoryLimit: 3
-    # -- Starting deadline seconds
-    startingDeadlineSeconds: 30
-    # -- Pod security context
-    podSecurityContext:
-      runAsNonRoot: true
-      runAsUser: 999
-      runAsGroup: 999
-      fsGroup: 999
-    # -- Container security context
-    securityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop:
-          - ALL
-    # -- Resources
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "256Mi"
-      limits:
-        cpu: "500m"
-        memory: "512Mi"
-    # -- Termination grace period seconds
-    terminationGracePeriodSeconds: 30
-
-  job:
-    # -- Enable restore Job
-    enabled: true
-    # -- Controller identifier (used for labels)
-    identifier: "cnpg-restore"
-    # -- Job annotations
-    annotations:
-      helm.sh/hook: post-install
-      helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
-    # -- Pod security context
-    podSecurityContext:
-      runAsNonRoot: true
-      runAsUser: 999
-      runAsGroup: 999
-      fsGroup: 999
-    # -- Container security context
-    securityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop:
-          - ALL
-    # -- Resources
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "256Mi"
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
-    # -- Termination grace period seconds
-    terminationGracePeriodSeconds: 30
-    # -- TTL seconds after job finishes
-    ttlSecondsAfterFinished: 300
-    # -- Backoff limit for job retries
-    backoffLimit: 4
-
-## @section Restore Configuration
-restore:
-  # -- S3 object key to restore (empty = manual trigger required via --set)
-  object: ""
+    ## @section Restore Controller (Job)
+    restore:
+      # -- Enable restore Job (also set restore.object)
+      enabled: false
+      # -- Controller type
+      type: job
+      # -- Job annotations
+      annotations:
+        helm.sh/hook: post-install
+        helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
+      job:
+        # -- TTL seconds after job finishes
+        ttlSecondsAfterFinished: 300
+        # -- Backoff limit for job retries
+        backoffLimit: 4
+      pod:
+        # -- Pod security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 999
+          runAsGroup: 999
+          fsGroup: 999
+        # -- Restart policy
+        restartPolicy: Never
+        # -- Termination grace period seconds
+        terminationGracePeriodSeconds: 30
+      containers:
+        restore:
+          image:
+            repository: ghcr.io/itbm/postgresql-backup-s3
+            tag: latest
+            pullPolicy: IfNotPresent
+          command:
+            - /restore.sh
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: host
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: port
+            - name: POSTGRES_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: dbname
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.cnpg.secretName }}"
+                  key: password
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_BUCKET_NAME
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_ACCESS_KEY_ID
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_SECRET_ACCESS_KEY
+            # - name: AWS_SESSION_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: "{{ .Values.s3.secretName }}"
+            #       key: AWS_SESSION_TOKEN
+            - name: S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_REGION_NAME
+            - name: BACKUP_FILE
+              value: "{{ .Values.restore.object }}"
+          # -- Container security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # -- Resources
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
