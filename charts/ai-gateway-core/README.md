@@ -74,7 +74,7 @@ listeners:
 | `gatewayConfig.name` | Name of the GatewayConfig | `ai-gateway-tracing` |
 | `gatewayConfig.labels` | Additional labels | `{}` |
 | `gatewayConfig.annotations` | Additional annotations | `{}` |
-| `gatewayConfig.extProc.env` | Environment variables for extProc | `[]` |
+| `gatewayConfig.extProc.kubernetes.env` | Environment variables for extProc | `[]` |
 
 #### Tracing Configuration
 
@@ -84,14 +84,16 @@ Tracing is configured via the `GatewayConfig` resource using OTLP environment va
 gatewayConfig:
   enabled: true
   name: ai-gateway-tracing
-  extProc:
-    env:
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
-      - name: OTEL_SERVICE_NAME
-        value: "ai-gateway"
-      - name: OTEL_EXPORTER_OTLP_PROTOCOL
-        value: "http/protobuf"
+  spec:
+    extProc:
+      kubernetes:
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+          - name: OTEL_SERVICE_NAME
+            value: "ai-gateway"
+          - name: OTEL_EXPORTER_OTLP_PROTOCOL
+            value: "http/protobuf"
 ```
 
 For Grafana Cloud Tempo with authentication, you can add basic auth credentials:
@@ -100,12 +102,14 @@ For Grafana Cloud Tempo with authentication, you can add basic auth credentials:
 gatewayConfig:
   enabled: true
   name: ai-gateway-tracing
-  extProc:
-    env:
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "https://username:api-key@tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
-      - name: OTEL_SERVICE_NAME
-        value: "ai-gateway"
+  spec:
+    extProc:
+      kubernetes:
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://username:api-key@tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+          - name: OTEL_SERVICE_NAME
+            value: "ai-gateway"
 ```
 
 ### EnvoyProxy
@@ -233,12 +237,14 @@ gateway:
 gatewayConfig:
   enabled: true
   name: ai-gateway-tracing
-  extProc:
-    env:
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
-      - name: OTEL_SERVICE_NAME
-        value: "ai-gateway-production"
+  spec:
+    extProc:
+      kubernetes:
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+          - name: OTEL_SERVICE_NAME
+            value: "ai-gateway-production"
 
 envoyProxy:
   enabled: true

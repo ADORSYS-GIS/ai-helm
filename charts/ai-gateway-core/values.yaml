@@ -23,14 +23,16 @@ gatewayConfig:
   name: ai-gateway-tracing
   labels: {}
   annotations: {}
-  extProc:
-    env:
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
-      - name: OTEL_SERVICE_NAME
-        value: "ai-gateway"
-      - name: OTEL_EXPORTER_OTLP_PROTOCOL
-        value: "http/protobuf"
+  spec:
+    extProc:
+      kubernetes:
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+          - name: OTEL_SERVICE_NAME
+            value: "ai-gateway"
+          - name: OTEL_EXPORTER_OTLP_PROTOCOL
+            value: "http/protobuf"
 
 envoyProxy:
   enabled: true
