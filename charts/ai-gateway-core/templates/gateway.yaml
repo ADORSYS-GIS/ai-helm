@@ -8,9 +8,14 @@ metadata:
   labels:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- with .Values.gateway.annotations }}
+  {{- if or .Values.gateway.annotations .Values.gatewayConfig.enabled }}
   annotations:
+    {{- with .Values.gateway.annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.gatewayConfig.enabled }}
+    aigateway.envoyproxy.io/gateway-config: {{ .Values.gatewayConfig.name }}
+    {{- end }}
   {{- end }}
 spec:
   gatewayClassName: {{ .Values.gateway.className | default .Values.gatewayClass.name }}

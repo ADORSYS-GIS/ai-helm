@@ -10,6 +10,7 @@ This chart deploys the foundational infrastructure components required for an AI
 - **Gateway** - The main gateway resource that handles incoming traffic
 - **EnvoyProxy** - Configuration for the Envoy proxy deployment
 - **ClientTrafficPolicy** - Traffic policies for client connections
+- **GatewayConfig** - AI Gateway extension configuration (tracing, processing)
 
 This chart should be installed **before** the `models` chart, which deploys the actual AI model backends and routing rules.
 
@@ -65,6 +66,48 @@ listeners:
     port: 80
 ```
 
+### GatewayConfig
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `gatewayConfig.enabled` | Enable/disable GatewayConfig | `true` |
+| `gatewayConfig.name` | Name of the GatewayConfig | `ai-gateway-tracing` |
+| `gatewayConfig.labels` | Additional labels | `{}` |
+| `gatewayConfig.annotations` | Additional annotations | `{}` |
+| `gatewayConfig.extProc.env` | Environment variables for extProc | `[]` |
+
+#### Tracing Configuration
+
+Tracing is configured via the `GatewayConfig` resource using OTLP environment variables:
+
+```yaml
+gatewayConfig:
+  enabled: true
+  name: ai-gateway-tracing
+  extProc:
+    env:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+      - name: OTEL_SERVICE_NAME
+        value: "ai-gateway"
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: "http/protobuf"
+```
+
+For Grafana Cloud Tempo with authentication, you can add basic auth credentials:
+
+```yaml
+gatewayConfig:
+  enabled: true
+  name: ai-gateway-tracing
+  extProc:
+    env:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "https://username:api-key@tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+      - name: OTEL_SERVICE_NAME
+        value: "ai-gateway"
+```
+
 ### EnvoyProxy
 
 | Parameter | Description | Default |
@@ -109,25 +152,6 @@ listeners:
 | `envoyProxy.telemetry.accessLog` | Access log configuration | `{}` |
 | `envoyProxy.telemetry.metrics` | Metrics configuration | `{}` |
 | `envoyProxy.telemetry.tracing` | Tracing configuration | `{}` |
-
-#### Tracing Configuration
-
-Tracing can be configured to send traces to an OTLP-compatible collector like Grafana Tempo:
-
-```yaml
-envoyProxy:
-  telemetry:
-    tracing:
-      provider:
-        name: Otel
-        otel:
-          endpoint: tempo-prod-10-prod-eu-west-2.grafana.net:443
-          tls:
-            mode: Enabled
-          http:
-            path: /v1/traces
-            hostOverride: tempo-prod-10-prod-eu-west-2.grafana.net
-```
 
 #### Shutdown Configuration
 
@@ -205,6 +229,16 @@ gateway:
         certificateRefs:
           - name: ai-gateway-tls
             kind: Secret
+
+gatewayConfig:
+  enabled: true
+  name: ai-gateway-tracing
+  extProc:
+    env:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+      - name: OTEL_SERVICE_NAME
+        value: "ai-gateway-production"
 
 envoyProxy:
   enabled: true
@@ -297,10 +331,14 @@ clientTrafficPolicy:
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐ │
 │  │ GatewayClass│  │   Gateway   │  │ ClientTrafficPolicy  │ │
 │  └─────────────┘  └─────────────┘  └──────────────────────┘ │
+│         ┌────────────────┴────────────────┐                 │
+│         │       GatewayConfig             │                 │
+│         │ (tracing, extProc settings)     │                 │
+│         └──────────────────────────────────┘                 │
 │                          │                                   │
 │                   ┌──────┴──────┐                           │
-│                   │ EnvoyProxy  │ (optional)                │
-│                   └─────────────┘                           │
+│                   │ EnvoyProxy  │ (optional)                  │
+│                   └─────────────┘                            │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
