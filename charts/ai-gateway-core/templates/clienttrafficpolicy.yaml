@@ -4,6 +4,7 @@ apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: ClientTrafficPolicy
 metadata:
   name: {{ .Values.clientTrafficPolicy.name }}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
   {{- with .Values.clientTrafficPolicy.labels }}
   labels:
     {{- toYaml . | nindent 4 }}
