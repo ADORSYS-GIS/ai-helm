@@ -110,6 +110,25 @@ listeners:
 | `envoyProxy.telemetry.metrics` | Metrics configuration | `{}` |
 | `envoyProxy.telemetry.tracing` | Tracing configuration | `{}` |
 
+#### Tracing Configuration
+
+Tracing can be configured to send traces to an OTLP-compatible collector like Grafana Tempo:
+
+```yaml
+envoyProxy:
+  telemetry:
+    tracing:
+      provider:
+        name: Otel
+        otel:
+          endpoint: tempo-prod-10-prod-eu-west-2.grafana.net:443
+          tls:
+            mode: Enabled
+          http:
+            path: /v1/traces
+            hostOverride: tempo-prod-10-prod-eu-west-2.grafana.net
+```
+
 #### Shutdown Configuration
 
 | Parameter | Description | Default |

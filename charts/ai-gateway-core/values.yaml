@@ -38,7 +38,11 @@ envoyProxy:
         container:
           resources: {}
           securityContext: {}
-          env: []
+          env:
+            - name: GRPC_USER
+              value: "<your-username>"
+            - name: GRPC_PASSWORD
+              value: "<your-api-key>"
           volumeMounts: []
         volumes: []
       envoyService:
@@ -50,7 +54,16 @@ envoyProxy:
   telemetry:
     accessLog: {}
     metrics: {}
-    tracing: {}
+    tracing:
+      provider:
+        name: Otel
+        otel:
+          endpoint: tempo-prod-10-prod-eu-west-2.grafana.net:443
+          tls:
+            mode: Enabled
+          http:
+            path: /tempo
+            hostOverride: tempo-prod-10-prod-eu-west-2.grafana.net
   bootstrap: {}
   shutdown:
     drainTimeout: 30s
