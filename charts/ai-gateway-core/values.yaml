@@ -18,6 +18,20 @@ gateway:
   infrastructure:
     enabled: true
 
+gatewayConfig:
+  enabled: true
+  name: ai-gateway-tracing
+  labels: {}
+  annotations: {}
+  spec:
+    extProc:
+      kubernetes:
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://phoenix-svc.converse-phoenix:6006"
+          - name: OTEL_METRICS_EXPORTER
+            value: "none"
+
 envoyProxy:
   enabled: true
   name: ai-gateway
