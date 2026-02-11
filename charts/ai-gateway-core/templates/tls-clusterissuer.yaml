@@ -1,13 +1,13 @@
-{{- if and .Values.tls.enabled .Values.tls.issuer.enabled }}
+{{- if and .Values.tls.enabled .Values.tls.issuer.create }}
 apiVersion: cert-manager.io/v1
 kind: {{ .Values.tls.issuer.kind }}
 metadata:
-  name: {{ .Values.tls.issuer.name }}-{{ .Values.tls.issuer.environment }}
+  name: {{ .Values.tls.issuer.name }}
 spec:
   acme:
     email: {{ .Values.tls.issuer.email }}
     privateKeySecretRef:
-      name: {{ .Values.tls.issuer.name }}-{{ .Values.tls.issuer.environment }}-key
+      name: {{ .Values.tls.issuer.name }}-key
     server: {{- if eq .Values.tls.issuer.environment "prod" }}
       https://acme-v02.api.letsencrypt.org/directory
     {{- else }}
