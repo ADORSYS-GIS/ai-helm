@@ -1,72 +1,167 @@
-## @section Keycloak Configuration
-keycloak:
-  # -- Keycloak image tag
-  imageTag: "24.0"
-  # -- Secret name containing Keycloak admin credentials (must contain: username, password, hostname)
-  secretName: "keycloak-admin"
-  # -- Realm to backup (defaults to all realms if not specified)
-  realm: "master"
-  # -- Keycloak hostname (for internal access within cluster)
-  hostname: "keycloak"
+keycloak-backup:
+  controllers:
+    main:
+      type: cronjob
+      cronjob:
+        schedule: "0 2 * * *"
+        concurrencyPolicy: Forbid
 
-## @section S3 Storage Configuration
-s3:
-  # -- S3 endpoint URL (empty for AWS S3, set for MinIO/Ceph/Localstack)
-  endpoint: ""
-  # -- S3 prefix/path within bucket
-  prefix: ""
-  # -- Secret name containing S3 credentials
-  secretName: "keycloak-s3"
+      pod:
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
 
-## @section Backup Schedule
-# -- CronJob schedule (default: daily at 2 AM)
-schedule: "0 2 * * *"
+      initContainers:
+        exporter:
+          image:
+            repository: quay.io/keycloak/keycloak
+            tag: "24.0"
+          env:
+            KEYCLOAK_ADMIN:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: username
+            KEYCLOAK_ADMIN_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            KC_HOSTNAME:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: hostname
+            # Optional: Realm to backup (defaults to all if empty)
+            BACKUP_REALM: "master"
 
-## @section Backup CronJob
-cronjob:
-  # -- Enable scheduled backup CronJob
-  enabled: true
-  # -- Concurrency policy (Forbid, Replace, Allow)
-  concurrencyPolicy: "Forbid"
-  # -- Number of successful jobs to keep
-  successfulJobsHistoryLimit: 3
-  # -- Number of failed jobs to keep
-  failedJobsHistoryLimit: 3
-  # -- AWS CLI image tag
-  awsCliImageTag: "2.17.0"
-  # -- Pod security context
-  podSecurityContext:
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
-    fsGroup: 1000
-  # -- Exporter container security context
-  exporterSecurityContext:
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: false
-    capabilities:
-      drop:
-        - ALL
-  # -- Uploader container security context
-  uploaderSecurityContext:
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: true
-    capabilities:
-      drop:
-        - ALL
-  # -- Resources
-  resources:
-    exporter:
-      requests:
-        cpu: "100m"
-        memory: "512Mi"
-      limits:
-        cpu: "1000m"
-        memory: "1Gi"
-    uploader:
-      requests:
-        cpu: "50m"
-        memory: "128Mi"
-      limits:
-        cpu: "200m"
-        memory: "256Mi"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -ex
+
+              # Create writable directory for Quarkus build
+              export QUARKUS_CACHE_DIR=/tmp/quarkus-cache
+              mkdir -p $QUARKUS_CACHE_DIR
+
+              if [ -n "$BACKUP_REALM" ]; then
+                echo "Exporting realm: $BACKUP_REALM"
+                KC_CACHE_DIR=$QUARKUS_CACHE_DIR /opt/keycloak/bin/kc.sh export \
+                  --realm "$BACKUP_REALM" \
+                  --file /exported/realm_backup.json \
+                  --users realm_file --optimized
+              else
+                echo "Exporting all realms"
+                KC_CACHE_DIR=$QUARKUS_CACHE_DIR /opt/keycloak/bin/kc.sh export \
+                  --all \
+                  --file /exported/realm_backup.json \
+                  --users realm_file --optimized
+              fi
+
+              echo "Export complete"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+
+      containers:
+        main:
+          image:
+            repository: amazon/aws-cli
+            tag: "2.17.0"
+          env:
+            S3_BUCKET:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-s3
+                  key: S3_BUCKET_NAME
+            AWS_ACCESS_KEY_ID:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-s3
+                  key: S3_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-s3
+                  key: S3_SECRET_ACCESS_KEY
+            AWS_DEFAULT_REGION:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-s3
+                  key: S3_REGION_NAME
+            # Optional: S3 Endpoint (for MinIO/Localstack)
+            # S3_ENDPOINT: ...
+            # Optional: S3 Prefix
+            S3_PREFIX: ""
+            # Optional: Backup realm naming (used to construct filename)
+            BACKUP_REALM: "master"
+
+          # Load optional secrets EnvVars blindly if they exist in secret
+          envFrom:
+            - secretRef:
+                name: keycloak-s3
+                optional: true
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -ex
+
+              TIMESTAMP=$(date -u +"%Y%m%d_%H%M%S")
+
+              if [ -n "$BACKUP_REALM" ]; then
+                 BACKUP_FILE="${BACKUP_REALM}_${TIMESTAMP}.json"
+              else
+                 BACKUP_FILE="all-realms_${TIMESTAMP}.json"
+              fi
+
+              # Build S3 path with prefix handling
+              if [ -n "$S3_PREFIX" ]; then
+                S3_PATH="${S3_PREFIX}/${BACKUP_FILE}"
+              else
+                S3_PATH="${BACKUP_FILE}"
+              fi
+
+              if [ -n "$S3_ENDPOINT" ]; then
+                aws s3 cp \
+                  --endpoint-url "$S3_ENDPOINT" \
+                  /exported/realm_backup.json \
+                  "s3://${S3_BUCKET}/${S3_PATH}"
+              else
+                aws s3 cp \
+                  /exported/realm_backup.json \
+                  "s3://${S3_BUCKET}/${S3_PATH}"
+              fi
+
+              echo "Uploaded: $BACKUP_FILE"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+
+  persistence:
+    export-volume:
+      type: emptyDir
+      globalMounts:
+        - path: /exported
