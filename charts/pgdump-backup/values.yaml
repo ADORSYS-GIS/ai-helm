@@ -1,0 +1,175 @@
+app-template:
+  postgres:
+    secretName: litellm-pg-app
+
+  s3:
+    secretName: open-web-ui-s3
+
+  restore:
+    enabled: false
+    object: ""
+
+  defaultPodOptions:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 999
+      runAsGroup: 999
+      fsGroup: 999
+    terminationGracePeriodSeconds: 30
+
+  controllers:
+    backup:
+      type: cronjob
+      pod:
+        restartPolicy: OnFailure
+      cronjob:
+        schedule: "35 13 * * *"
+        concurrencyPolicy: Forbid
+        successfulJobsHistory: 3
+        failedJobsHistory: 3
+        startingDeadlineSeconds: 30
+      containers:
+        backup:
+          image:
+            repository: ghcr.io/itbm/postgresql-backup-s3
+            tag: latest
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          env:
+            POSTGRES_HOST:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: host
+            POSTGRES_PORT:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: port
+            POSTGRES_DATABASE:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: dbname
+            POSTGRES_USER:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: username
+            POSTGRES_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: password
+            S3_BUCKET:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_BUCKET_NAME
+            S3_ACCESS_KEY_ID:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_ACCESS_KEY_ID
+            S3_SECRET_ACCESS_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_SECRET_ACCESS_KEY
+            S3_REGION:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_REGION_NAME
+
+    restore:
+      enabled: false
+      type: job
+      annotations:
+        helm.sh/hook: post-install
+        helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
+      job:
+        ttlSecondsAfterFinished: 300
+        backoffLimit: 4
+      pod:
+        restartPolicy: Never
+      containers:
+        restore:
+          image:
+            repository: ghcr.io/itbm/postgresql-backup-s3
+            tag: latest
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /restore.sh
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          env:
+            POSTGRES_HOST:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: host
+            POSTGRES_PORT:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: port
+            POSTGRES_DATABASE:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: dbname
+            POSTGRES_USER:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: username
+            POSTGRES_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.secretName }}"
+                  key: password
+            S3_BUCKET:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_BUCKET_NAME
+            S3_ACCESS_KEY_ID:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_ACCESS_KEY_ID
+            S3_SECRET_ACCESS_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_SECRET_ACCESS_KEY
+            S3_REGION:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: S3_REGION_NAME
+            BACKUP_FILE: "{{ .Values.restore.object }}"
