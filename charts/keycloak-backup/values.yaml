@@ -36,6 +36,28 @@ keycloak-backup:
             # Optional: Realm to backup (defaults to all if empty)
             BACKUP_REALM: "master"
 
+            # Database Configuration (Required for export to work with external DB)
+            KC_DB:
+              value: postgres
+            KC_DB_URL:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db
+                  key: url
+                  optional: true
+            KC_DB_USERNAME:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db
+                  key: username
+                  optional: true
+            KC_DB_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db
+                  key: password
+                  optional: true
+
           command:
             - /bin/sh
             - -c
