@@ -14,7 +14,9 @@ spec:
       namespace: {{ .Values.namespace | default .Release.Namespace }}
       sectionName: http
   hostnames:
-    - {{ index .Values.tls.domains 0 }}
+  {{- range .Values.tls.domains }}
+    - {{ . }}
+  {{- end }}
   rules:
     - filters:
         - type: RequestRedirect
