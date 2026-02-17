@@ -1,0 +1,23 @@
+{{- if and .Values.tls.enabled .Values.tls.issuer.create }}
+apiVersion: cert-manager.io/v1
+kind: {{ .Values.tls.issuer.kind }}
+metadata:
+  name: {{ .Values.tls.issuer.name }}
+spec:
+  acme:
+    email: {{ .Values.tls.issuer.email }}
+    privateKeySecretRef:
+      name: {{ .Values.tls.issuer.name }}-key
+    server: {{- if eq .Values.tls.issuer.environment "prod" }}
+      https://acme-v02.api.letsencrypt.org/directory
+    {{- else }}
+      https://acme-staging-v02.api.letsencrypt.org/directory
+    {{- end }}
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - kind: Gateway
+                name: {{ .Values.gateway.name }}
+                namespace: {{ .Values.namespace | default .Release.Namespace }}
+{{- end }}

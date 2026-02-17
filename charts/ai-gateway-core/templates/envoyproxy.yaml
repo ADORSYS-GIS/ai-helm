@@ -4,6 +4,7 @@ apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: EnvoyProxy
 metadata:
   name: {{ .Values.envoyProxy.name }}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
   {{- with .Values.envoyProxy.labels }}
   labels:
     {{- toYaml . | nindent 4 }}
