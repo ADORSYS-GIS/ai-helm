@@ -13,6 +13,8 @@ spec:
     - name: {{ .Values.gateway.name }}
       namespace: {{ .Values.namespace | default .Release.Namespace }}
       sectionName: http
+  hostnames:
+    - {{ index .Values.tls.domains 0 }}
   rules:
     - filters:
         - type: RequestRedirect
