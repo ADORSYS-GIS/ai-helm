@@ -1,0 +1,19 @@
+{{- if .Values.gatewayConfig.enabled }}
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: GatewayConfig
+metadata:
+  name: {{ .Values.gatewayConfig.name }}
+  {{- with .Values.gatewayConfig.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.gatewayConfig.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.gatewayConfig.spec }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

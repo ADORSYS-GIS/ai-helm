@@ -10,6 +10,7 @@ This chart deploys the foundational infrastructure components required for an AI
 - **Gateway** - The main gateway resource that handles incoming traffic
 - **EnvoyProxy** - Configuration for the Envoy proxy deployment
 - **ClientTrafficPolicy** - Traffic policies for client connections
+- **GatewayConfig** - AI Gateway extension configuration (tracing, processing)
 
 This chart should be installed **before** the `models` chart, which deploys the actual AI model backends and routing rules.
 
@@ -63,6 +64,52 @@ listeners:
   - name: http
     protocol: HTTP
     port: 80
+```
+
+### GatewayConfig
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `gatewayConfig.enabled` | Enable/disable GatewayConfig | `true` |
+| `gatewayConfig.name` | Name of the GatewayConfig | `ai-gateway-tracing` |
+| `gatewayConfig.labels` | Additional labels | `{}` |
+| `gatewayConfig.annotations` | Additional annotations | `{}` |
+| `gatewayConfig.extProc.kubernetes.env` | Environment variables for extProc | `[]` |
+
+#### Tracing Configuration
+
+Tracing is configured via the `GatewayConfig` resource using OTLP environment variables:
+
+```yaml
+gatewayConfig:
+  enabled: true
+  name: ai-gateway-tracing
+  spec:
+    extProc:
+      kubernetes:
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+          - name: OTEL_SERVICE_NAME
+            value: "ai-gateway"
+          - name: OTEL_EXPORTER_OTLP_PROTOCOL
+            value: "http/protobuf"
+```
+
+For Grafana Cloud Tempo with authentication, you can add basic auth credentials:
+
+```yaml
+gatewayConfig:
+  enabled: true
+  name: ai-gateway-tracing
+  spec:
+    extProc:
+      kubernetes:
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://username:api-key@tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+          - name: OTEL_SERVICE_NAME
+            value: "ai-gateway"
 ```
 
 ### EnvoyProxy
@@ -187,6 +234,18 @@ gateway:
           - name: ai-gateway-tls
             kind: Secret
 
+gatewayConfig:
+  enabled: true
+  name: ai-gateway-tracing
+  spec:
+    extProc:
+      kubernetes:
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://tempo-prod-10-prod-eu-west-2.grafana.net/tempo"
+          - name: OTEL_SERVICE_NAME
+            value: "ai-gateway-production"
+
 envoyProxy:
   enabled: true
   name: ai-gateway
@@ -278,10 +337,14 @@ clientTrafficPolicy:
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐ │
 │  │ GatewayClass│  │   Gateway   │  │ ClientTrafficPolicy  │ │
 │  └─────────────┘  └─────────────┘  └──────────────────────┘ │
+│         ┌────────────────┴────────────────┐                 │
+│         │       GatewayConfig             │                 │
+│         │ (tracing, extProc settings)     │                 │
+│         └──────────────────────────────────┘                 │
 │                          │                                   │
 │                   ┌──────┴──────┐                           │
-│                   │ EnvoyProxy  │ (optional)                │
-│                   └─────────────┘                           │
+│                   │ EnvoyProxy  │ (optional)                  │
+│                   └─────────────┘                            │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
