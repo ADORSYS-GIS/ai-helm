@@ -1,0 +1,22 @@
+{{- if and .Values.tls.enabled .Values.tls.redirectToHttps }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyPatchPolicy
+metadata:
+  name: {{ .Release.Name }}-redirect-308
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ .Values.gateway.name }}
+  type: JSONPatch
+  jsonPatches:
+    - type: "type.googleapis.com/envoy.config.route.v3.RouteConfiguration"
+      name: "{{ .Values.namespace | default .Release.Namespace }}/{{ .Values.gateway.name }}/http"
+      operation:
+        # Patching the responseCode to 308 (PERMANENT_REDIRECT)
+        # We target the first virtual host and first route since it's the redirect route
+        op: replace
+        path: /virtualHosts/0/routes/0/redirect/responseCode
+        value: "PERMANENT_REDIRECT"
+{{- end }}
