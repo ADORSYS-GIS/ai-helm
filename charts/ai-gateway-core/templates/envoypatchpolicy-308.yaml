@@ -14,9 +14,15 @@ spec:
     - type: "type.googleapis.com/envoy.config.route.v3.RouteConfiguration"
       name: "{{ .Values.namespace | default .Release.Namespace }}/{{ .Values.gateway.name }}/http"
       operation:
-        # Patching the responseCode to 308 (PERMANENT_REDIRECT)
-        # We target the first virtual host and first route since it's the redirect route
-        op: replace
-        path: /virtualHosts/0/routes/0/redirect/responseCode
+        # Patching indices 1 and 2 which correspond to our actual domains
+        # Index 0 is a wildcard host that doesn't have a redirect
+        op: add
+        path: /virtual_hosts/1/routes/0/redirect/response_code
+        value: "PERMANENT_REDIRECT"
+    - type: "type.googleapis.com/envoy.config.route.v3.RouteConfiguration"
+      name: "{{ .Values.namespace | default .Release.Namespace }}/{{ .Values.gateway.name }}/http"
+      operation:
+        op: add
+        path: /virtual_hosts/2/routes/0/redirect/response_code
         value: "PERMANENT_REDIRECT"
 {{- end }}
