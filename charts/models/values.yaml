@@ -79,36 +79,50 @@ rateLimitDefaults:
       tokens: 1500000
     - unit: Month
       tokens: 35000000
+    - unit: Year
+      tokens: 420000000
   token800k_15m_180m: &tl800_15m_180m
     - unit: Day
       tokens: 800000
     - unit: Month
       tokens: 15000000
+    - unit: Year
+      tokens: 180000000
   token1000k_20m_240m: &tl1000_20m_240m
     - unit: Day
       tokens: 1000000
     - unit: Month
       tokens: 20000000
+    - unit: Year
+      tokens: 240000000
   token3000k_80m_960m: &tl3000_80m_960m
     - unit: Day
       tokens: 3000000
     - unit: Month
       tokens: 80000000
+    - unit: Year
+      tokens: 960000000
   token2000k_45m_540m: &tl2000_45m_540m
     - unit: Day
       tokens: 2000000
     - unit: Month
       tokens: 45000000
+    - unit: Year
+      tokens: 540000000
   token10m_300m_3600m: &tl10m_300m_3600m
     - unit: Day
       tokens: 10000000
     - unit: Month
       tokens: 300000000
+    - unit: Year
+      tokens: 3600000000
   token500k_12m_144m: &tl500_12m_144m
     - unit: Day
       tokens: 500000
     - unit: Month
       tokens: 12000000
+    - unit: Year
+      tokens: 144000000
 
 modelDefaults:
   backendRefs:
@@ -397,8 +411,6 @@ models:
   playground-v2:
       <<: *fireworksModelRateLimits
       envoyTokenRateLimits: *tl1500_35m_420m
-      image:
-        enabled: true
       backends:
         fw-01:
           <<: *fwBackendPrimary
@@ -454,8 +466,6 @@ models:
   stable-diffusion-xl:
       <<: *fireworksModelRateLimits
       envoyTokenRateLimits: *tl1500_35m_420m
-      image:
-        enabled: true
       backends:
         fw-01:
           <<: *fwBackendPrimary
@@ -464,7 +474,6 @@ models:
           <<: *fwBackendSecondary
           modelNameOverride: "accounts/fireworks/models/stable-diffusion-xl-1024-v1-0"
 
-  
   deepseek-v3p1-terminus:
     <<: *fireworksModelRateLimits
     envoyTokenRateLimits: *tl1500_35m_420m
