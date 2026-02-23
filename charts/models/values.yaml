@@ -32,7 +32,7 @@ backendTrafficPolicy:
 backendDefaults:
   fireworks: &fireworksBackend
     schema: OpenAI
-    prefix: /inference/v1
+    prefix: "/inference/v1"
     fqdn:
       hostname: api.fireworks.ai
       port: 443
@@ -213,7 +213,7 @@ backends:
       name: google-ai-studio-api-key-02
 
 models:
-  # Fireworks AI Models
+   # Fireworks AI Models
   # qwen3-coder-480b-a35b-instruct:
   #   <<: *fireworksModelRateLimits
   #   backends:
@@ -343,16 +343,16 @@ models:
         <<: *fwBackendSecondary
         modelNameOverride: "accounts/fireworks/models/qwen3-235b-a22b"
 
-  glm-4p6:
-    <<: *fireworksModelRateLimits
-    envoyTokenRateLimits: *tl1500_35m_420m
-    backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/glm-4p6"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/glm-4p6"
+  # glm-4p6:
+  #   <<: *fireworksModelRateLimits
+  #   envoyTokenRateLimits: *tl1500_35m_420m
+  #   backends:
+  #     fw-01:
+  #       <<: *fwBackendPrimary
+  #       modelNameOverride: "accounts/fireworks/models/glm-4p6"
+  #     fw-02:
+  #       <<: *fwBackendSecondary
+  #       modelNameOverride: "accounts/fireworks/models/glm-4p6"
 
   # glm-4p5:
   #   <<: *fireworksModelRateLimits
@@ -363,6 +363,116 @@ models:
   #     fw-02:
   #       <<: *fwBackendSecondary
   #       modelNameOverride: "accounts/fireworks/models/glm-4p5"
+
+  glm-5:
+    <<: *fireworksModelRateLimits
+    envoyTokenRateLimits: *tl1500_35m_420m
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/glm-5"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/glm-5"
+
+  qwen3-reranker-8b:
+      <<: *fireworksModelRateLimits
+      envoyTokenRateLimits: *tl1500_35m_420m
+      backends:
+        fw-01:
+          <<: *fwBackendPrimary
+          modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
+        fw-02:
+          <<: *fwBackendSecondary
+          modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
+
+  qwen3-embedding-8b:
+      <<: *fireworksModelRateLimits
+      envoyTokenRateLimits: *tl1500_35m_420m
+      backends:
+        fw-01:
+          <<: *fwBackendPrimary
+          modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
+        fw-02:
+          <<: *fwBackendSecondary
+          modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
+
+  kimi-k2p5:
+      <<: *fireworksModelRateLimits
+      envoyTokenRateLimits: *tl1500_35m_420m
+      backends:
+        fw-01:
+          <<: *fwBackendPrimary
+          modelNameOverride: "accounts/fireworks/models/kimi-k2p5"
+        fw-02:
+          <<: *fwBackendSecondary
+          modelNameOverride: "accounts/fireworks/models/kimi-k2p5"
+
+  # playground-v2:
+  #     <<: *fireworksModelRateLimits
+  #     envoyTokenRateLimits: *tl1500_35m_420m
+  #     backends:
+  #       fw-01:
+  #         <<: *fwBackendPrimary
+  #         modelNameOverride: "accounts/fireworks/models/playground-v2-5-1024px-aesthetic"
+  #       fw-02:
+  #         <<: *fwBackendSecondary
+  #         modelNameOverride: "accounts/fireworks/models/playground-v2-5-1024px-aesthetic"
+
+  fireworks-asr-v2:
+      <<: *fireworksModelRateLimits
+      envoyTokenRateLimits: *tl1500_35m_420m
+      backends:
+        fw-01:
+          <<: *fwBackendPrimary
+          modelNameOverride: "accounts/fireworks/models/fireworks-asr-v2"
+        fw-02:
+          <<: *fwBackendSecondary
+          modelNameOverride: "accounts/fireworks/models/fireworks-asr-v2"
+
+  whisper-v3:
+      <<: *fireworksModelRateLimits
+      envoyTokenRateLimits: *tl1500_35m_420m
+      backends:
+        fw-01:
+          <<: *fwBackendPrimary
+          modelNameOverride: "accounts/fireworks/models/whisper-v3"
+        fw-02:
+          <<: *fwBackendSecondary
+          modelNameOverride: "accounts/fireworks/models/whisper-v3"
+
+  whisper-v3-turbo:
+      <<: *fireworksModelRateLimits
+      envoyTokenRateLimits: *tl1500_35m_420m
+      backends:
+        fw-01:
+          <<: *fwBackendPrimary
+          modelNameOverride: "accounts/fireworks/models/whisper-v3-turbo"
+        fw-02:
+          <<: *fwBackendSecondary
+          modelNameOverride: "accounts/fireworks/models/whisper-v3-turbo"
+
+  minimax-m2p5:
+      <<: *fireworksModelRateLimits
+      envoyTokenRateLimits: *tl1500_35m_420m
+      backends:
+        fw-01:
+          <<: *fwBackendPrimary
+          modelNameOverride: "accounts/fireworks/models/minimax-m2p5"
+        fw-02:
+          <<: *fwBackendSecondary
+          modelNameOverride: "accounts/fireworks/models/minimax-m2p5"
+
+  # stable-diffusion-xl:
+  #     <<: *fireworksModelRateLimits
+  #     envoyTokenRateLimits: *tl1500_35m_420m
+  #     backends:
+  #       fw-01:
+  #         <<: *fwBackendPrimary
+  #         modelNameOverride: "accounts/fireworks/models/stable-diffusion-xl-1024-v1-0"
+  #       fw-02:
+  #         <<: *fwBackendSecondary
+  #         modelNameOverride: "accounts/fireworks/models/stable-diffusion-xl-1024-v1-0"
 
   deepseek-v3p1-terminus:
     <<: *fireworksModelRateLimits
@@ -557,16 +667,16 @@ models:
         <<: *vertexBackendSecondary
         modelNameOverride: "gemini-2.5-pro"
 
-  gemini-2-5-pro-reasoning-1024:
-    <<: *geminiModelRateLimits
-    envoyTokenRateLimits: *tl1000_20m_240m
-    backends:
-      vertex-ai-01:
-        <<: *vertexBackendPrimary
-        modelNameOverride: "gemini-2.5-pro"
-      vertex-ai-02:
-        <<: *vertexBackendSecondary
-        modelNameOverride: "gemini-2.5-pro"
+  # gemini-2-5-pro-reasoning-1024:
+  #   <<: *geminiModelRateLimits
+  #   envoyTokenRateLimits: *tl1000_20m_240m
+  #   backends:
+  #     vertex-ai-01:
+  #       <<: *vertexBackendPrimary
+  #       modelNameOverride: "gemini-2.5-pro"
+  #     vertex-ai-02:
+  #       <<: *vertexBackendSecondary
+  #       modelNameOverride: "gemini-2.5-pro"
 
   gemini-3-pro-image-preview:
     <<: *geminiModelRateLimits
@@ -611,13 +721,13 @@ models:
         <<: *googleAiStudioBackendSecondary
         modelNameOverride: "gemini-3-flash-preview"
 
-  gemini-3-flash-thinking:
-    <<: *geminiModelRateLimits
-    envoyTokenRateLimits: *tl800_15m_180m
-    backends:
-      google-ai-studio-01:
-        <<: *googleAiStudioBackendPrimary
-        modelNameOverride: "gemini-3-flash-preview"
-      google-ai-studio-02:
-        <<: *googleAiStudioBackendSecondary
-        modelNameOverride: "gemini-3-flash-preview"
+  # gemini-3-flash-thinking:
+  #   <<: *geminiModelRateLimits
+  #   envoyTokenRateLimits: *tl800_15m_180m
+  #   backends:
+  #     google-ai-studio-01:
+  #       <<: *googleAiStudioBackendPrimary
+  #       modelNameOverride: "gemini-3-flash-preview"
+  #     google-ai-studio-02:
+  #       <<: *googleAiStudioBackendSecondary
+  #       modelNameOverride: "gemini-3-flash-preview"
