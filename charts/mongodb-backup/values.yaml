@@ -18,11 +18,7 @@ mongo-backup:
             repository: mongo
             tag: "8.0"
           env:
-            MONGODB_URI:
-              valueFrom:
-                secretKeyRef:
-                  name: mongodb
-                  key: uri
+            MONGODB_URI: ""
 
           command:
             - /bin/sh
@@ -62,34 +58,34 @@ mongo-backup:
             S3_BUCKET:
               valueFrom:
                 secretKeyRef:
-                  name: mongodb-s3
-                  key: S3_BUCKET_NAME
+                  name: librechat-s3-config
+                  key: s3_bucket_name
             AWS_ACCESS_KEY_ID:
               valueFrom:
                 secretKeyRef:
-                  name: mongodb-s3
-                  key: S3_ACCESS_KEY_ID
+                  name: librechat-s3-config
+                  key: s3_access_key_id
             AWS_SECRET_ACCESS_KEY:
               valueFrom:
                 secretKeyRef:
-                  name: mongodb-s3
-                  key: S3_SECRET_ACCESS_KEY
+                  name: librechat-s3-config
+                  key: s3_secret_access_key
             AWS_DEFAULT_REGION:
               valueFrom:
                 secretKeyRef:
-                  name: mongodb-s3
-                  key: S3_REGION_NAME
+                  name: librechat-s3-config
+                  key: s3_region_name
             # Optional: S3 Endpoint (for MinIO/Localstack)
             # S3_ENDPOINT: ...
             # Optional: S3 Prefix
-            S3_PREFIX: ""
+            S3_PREFIX: "mongodb-backup"
             # Optional: Backup database naming (used to construct filename)
             BACKUP_DATABASE: "mongo"
 
           # Load optional secrets EnvVars blindly if they exist in secret
           envFrom:
             - secretRef:
-                name: mongodb-s3
+                name: librechat-s3-config
                 optional: true
 
           command:
