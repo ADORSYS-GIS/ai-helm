@@ -1,0 +1,58 @@
+apiVersion: authorino.kuadrant.io/v1beta3
+kind: AuthConfig
+metadata:
+  name: converse-api-protection
+  namespace: {{ .Release.Namespace | default .Values.namespace }}
+spec:
+  hosts:
+    - {{ .Values.gateway.listeners.api.hostname }}
+  
+  authentication:
+    "anonymous":
+      anonymous: { }
+  
+  metadata:
+    "lightbridge-validation":
+      http:
+        url: http://lightbridge.{{ .Release.Namespace | default .Values.namespace }}.svc.cluster.local:{{ .Values.lightbridge.service.port }}/v1/authorino/validate
+        method: POST
+        sharedSecretRef:
+          name: lightbridge-opa-auth
+          key: credentials
+        credentials:
+          authorizationHeader:
+            prefix: Basic
+        bodyParameters:
+          api_key:
+            selector: "context.request.http.headers.authorization.@extract:{\"sep\":\" \",\"pos\":1}"
+          ip:
+            selector: "context.request.http.headers.x-forwarded-for"
+        contentType: "application/json"
+
+  authorization:
+    "enforce-valid-key":
+      patternMatching:
+        patterns:
+          - selector: "auth.metadata.lightbridge-validation.project.id"
+            operator: "neq"
+            value: ""
+
+  response:
+    success:
+      dynamicMetadata:
+        "llm_project_id":
+          plain:
+            selector: "auth.metadata.lightbridge-validation.project.id"
+        "llm_account_id":
+          plain:
+            selector: "auth.metadata.lightbridge-validation.account.id"
+        "llm_api_key_id":
+          plain:
+            selector: "auth.metadata.lightbridge-validation.api_key.id"
+      headers:
+        "x-project-id":
+          plain:
+            selector: "auth.metadata.lightbridge-validation.project.id"
+        "x-account-id":
+          plain:
+            selector: "auth.metadata.lightbridge-validation.account.id"
