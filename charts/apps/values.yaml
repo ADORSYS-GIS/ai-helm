@@ -1,0 +1,385 @@
+applications:
+
+  # --- Core Infrastructure ---
+  - name: redis
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: registry-1.docker.io/bitnamicharts
+      targetRevision: 24.0.0
+      chart: redis
+      helm:
+        releaseName: redis
+        valuesObject:
+          global:
+            defaultStorageClass: linode-block-storage
+          auth:
+            enabled: false
+          image:
+            repository: bitnamilegacy/redis
+          architecture: replication
+          replica:
+            replicaCount: 1
+    destination:
+      namespace: redis-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: aieg-crd
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: oci://docker.io/envoyproxy/ai-gateway-crds-helm
+      targetRevision: v0.5.0
+      path: .
+      helm:
+        releaseName: aieg-crd
+    destination:
+      namespace: envoy-ai-gateway-system
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: aieg
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: oci://docker.io/envoyproxy/ai-gateway-helm
+      targetRevision: v0.5.0
+      path: .
+      helm:
+        releaseName: aieg
+        valuesObject:
+          controller:
+            mutatingWebhook:
+              certManager:
+                enable: true
+                issuerName: self-signed-ca
+                certificateName: self-signed-cert-for-mutating-webhook-managed
+          extProc:
+            extraEnvVars:
+                - name: LOG_LEVEL
+                  value: "debug"
+    destination:
+      namespace: envoy-ai-gateway-system
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: secrets
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-ops-secrets.git
+      targetRevision: HEAD
+      path: manifests
+    destination:
+      namespace: manifests
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Gateway ---
+  - name: core-gateway
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/core-gateway
+      helm:
+        releaseName: core-gateway
+        valuesObject:
+          gateway:
+            apiHostname: api.ai.camer.digital
+            webHostname: ai.camer.digital
+            issuer: letsencrypt-prod
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+        - CreateNamespace=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Security & Policy ---
+  - name: authorino-operator
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://kuadrant.io/helm-charts
+      targetRevision: 0.23.1
+      chart: authorino-operator
+      helm:
+        releaseName: authorino-operator
+    destination:
+      namespace: authorino-system
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: security-policies
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/kuadrant-policies
+      helm:
+        releaseName: security-policies
+        valuesObject:
+          authConfigs:
+            converse-api-protection:
+              hosts:
+                - api.ai.camer.digital
+              authentication:
+                "anonymous":
+                  anonymous: { }
+              metadata:
+                "lightbridge-validation":
+                  http:
+                    url: http://lightbridge.converse.svc.cluster.local:8080/v1/authorino/validate
+                    method: POST
+                    sharedSecretRef:
+                      name: lightbridge-opa-auth
+                      key: credentials
+                    credentials:
+                      authorizationHeader:
+                        prefix: Basic
+                    bodyParameters:
+                      api_key:
+                        selector: "context.request.http.headers.authorization.@extract:{\"sep\":\" \",\"pos\":1}"
+                      ip:
+                        selector: "context.request.http.headers.x-forwarded-for"
+                    contentType: "application/json"
+              authorization:
+                "enforce-valid-key":
+                  patternMatching:
+                    patterns:
+                      - selector: "auth.metadata.lightbridge-validation.project.id"
+                        operator: "neq"
+                        value: ""
+              response:
+                success:
+                  dynamicMetadata:
+                    "llm_project_id":
+                      plain:
+                        selector: "auth.metadata.lightbridge-validation.project.id"
+                  headers:
+                    "x-project-id":
+                      plain:
+                        selector: "auth.metadata.lightbridge-validation.project.id"
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Lightbridge Backend ---
+  - name: lightbridge-backend
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://adorsys-gis.github.io/lightbridge-authz
+      targetRevision: 0.5.8
+      chart: lightbridge-authz
+      helm:
+        releaseName: lightbridge
+        valuesObject:
+          ingress:
+            enabled: false
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+        - CreateNamespace=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Lightbridge UI ---
+  - name: lightbridge-ui
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://bjw-s-labs.github.io/helm-charts
+      targetRevision: 4.6.2
+      chart: app-template
+      helm:
+        releaseName: lightbridge-ui
+        valuesObject:
+          controllers:
+            main:
+              containers:
+                main:
+                  image:
+                    repository: nginx
+                    tag: alpine
+          service:
+            main:
+              controller: main
+              ports:
+                http:
+                  port: 80
+          route:
+            main:
+              enabled: true
+              kind: HTTPRoute
+              parentRefs:
+                - name: core-gateway
+                  namespace: converse
+                  sectionName: web-https
+              hostnames:
+                - ai.camer.digital
+              rules:
+                - matches:
+                    - path:
+                        type: PathPrefix
+                        value: /ui
+                  backendRefs:
+                    - name: lightbridge-ui
+                      port: 80
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- LibreChat & Phoenix ---
+  - name: phoenix
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: oci://registry-1.docker.io/arizephoenix/phoenix-helm
+      targetRevision: 4.0.36
+      path: .
+      helm:
+        releaseName: phoenix
+        valuesObject:
+          persistence:
+            storageClass: linode-block-storage
+          service:
+            type: "ClusterIP"
+          ingress:
+            enabled: false
+          auth:
+            disableBasicAuth: true
+            useSecureCookies: true
+            createSecret: false
+            name: "converse-phoenix"
+            oauth2:
+              enabled: true
+              providers:
+                keycloak:
+                  client_id: "phoenix"
+                  oidc_config_url: "https://accounts.ssegning.com/realms/camer-digital/.well-known/openid-configuration"
+                  display_name: "CDigital"
+                  allow_sign_up: true
+                  auto_login: true
+                  role_attribute_path: "phoenix_role"
+                  role_mapping: "admin:ADMIN,user:MEMBER,viewer:VIEWER"
+                  role_attribute_strict: true
+                  use_pkce: true
+                  scopes: "openid phoenix"
+    destination:
+      namespace: converse-phoenix
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: librechat
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://helm.librechat.ai
+      targetRevision: 0.1.0
+      chart: librechat
+      helm:
+        releaseName: librechat
+        valuesObject:
+          ingress:
+            enabled: false
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Models ---
+  - name: ai-models
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/ai-models
+      helm:
+        releaseName: ai-models
+        valuesObject:
+          apiHostname: api.ai.camer.digital
+          backends:
+            fw-01:
+              schema: OpenAI
+              hostname: api.fireworks.ai
+              port: 443
+            fw-02:
+              schema: OpenAI
+              hostname: api.fireworks.ai
+              port: 443
+            openai-01:
+              schema: OpenAI
+              hostname: api.openai.com
+              port: 443
+            openai-02:
+              schema: OpenAI
+              hostname: api.openai.com
+              port: 443
+          models:
+            deepseek-v3p1:
+              backends:
+                fw-01: { modelNameOverride: "accounts/fireworks/models/deepseek-v3p1", priority: 0, weight: 1 }
+                fw-02: { modelNameOverride: "accounts/fireworks/models/deepseek-v3p1", priority: 1, weight: 1 }
+            gpt-5:
+              backends:
+                openai-01: { modelNameOverride: "gpt-5", priority: 0, weight: 1 }
+                openai-02: { modelNameOverride: "gpt-5", priority: 1, weight: 1 }
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true

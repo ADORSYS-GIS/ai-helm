@@ -1,0 +1,58 @@
+{{- range $routeName, $routeConfig := .Values.models }}
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: {{ $routeName }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $.Values.gatewayName | default "core-gateway" }}
+      sectionName: api-https
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: {{ $routeConfig.modelMatch | default $routeName }}
+      backendRefs:
+        {{- range $bKey, $bVal := $routeConfig.backends }}
+        - name: {{ $bKey }}
+          {{- if $bVal.modelNameOverride }}
+          modelNameOverride: {{ $bVal.modelNameOverride }}
+          {{- end }}
+          {{- if hasKey $bVal "weight" }}
+          weight: {{ $bVal.weight }}
+          {{- end }}
+          priority: {{ $bVal.priority | default 0 }}
+        {{- end }}
+---
+{{- end }}
+
+{{- range $backendName, $backendConfig := .Values.backends }}
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: {{ $backendName }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  schema:
+    name: {{ $backendConfig.schema | default "OpenAI" }}
+  backendRef:
+    name: {{ $backendName }}
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: {{ $backendName }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  endpoints:
+    - fqdn:
+        hostname: {{ $backendConfig.hostname }}
+        port: {{ $backendConfig.port | default 443 }}
+---
+{{- end }}
