@@ -1,0 +1,15 @@
+{{- range $backendName, $backendConfig := .Values.backends }}
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: BackendTLSPolicy
+metadata:
+  name: {{ $backendName }}-tls
+  namespace: {{ $.Release.Namespace }}
+spec:
+  targetRef:
+    group: gateway.envoyproxy.io
+    kind: Backend
+    name: {{ $backendName }}
+  tls:
+    hostname: {{ $backendConfig.hostname }}
+---
+{{- end }}

@@ -1,0 +1,19 @@
+{{- range $backendName, $backendConfig := .Values.backends }}
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: {{ $backendName }}-security
+  namespace: {{ $.Release.Namespace }}
+spec:
+  type: APIKey
+  apiKey:
+    secretRef:
+      {{- if contains "fireworks" $backendConfig.hostname }}
+      name: converse-fireworks-api-key
+      {{- else if contains "openai" $backendConfig.hostname }}
+      name: converse-openai-api-key
+      {{- else }}
+      name: {{ $backendName }}-api-key
+      {{- end }}
+---
+{{- end }}

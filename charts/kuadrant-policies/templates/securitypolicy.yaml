@@ -1,0 +1,16 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: converse-api-protection
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gatewayName | default "ai-gateway" }}
+      sectionName: api-https
+  extAuth:
+    grpc:
+      backendRefs:
+        - name: converse-authorino-authorization
+          port: 50051
