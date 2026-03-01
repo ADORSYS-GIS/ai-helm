@@ -1,0 +1,20 @@
+{{- range $backendName, $backendConfig := .Values.backends }}
+{{- if not (eq $backendConfig.enabled false) }}
+{{- if eq (int $backendConfig.fqdn.port) 443 }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ $backendConfig.resourceName }}-tls
+  namespace: {{ $.Release.Namespace | default $.Values.namespace }}
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: {{ $backendConfig.resourceName }}
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: {{ $backendConfig.tlsHostname }}
+{{- end }}
+{{- end }}
+{{- end }}

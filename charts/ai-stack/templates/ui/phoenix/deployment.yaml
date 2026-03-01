@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phoenix
+  namespace: {{ .Release.Namespace | default .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phoenix
+  template:
+    metadata:
+      labels:
+        app: phoenix
+    spec:
+      containers:
+      - name: phoenix
+        image: arizephoenix/phoenix:4.0.36
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 6006
+        env:
+        - name: PHOENIX_PORT
+          value: "6006"
+        - name: PHOENIX_HOST
+          value: "0.0.0.0"
+        - name: PHOENIX_ENABLE_AUTH
+          value: "true"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_CLIENT_ID
+          value: "phoenix"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: converse-phoenix-keycloak
+              key: client_secret
+        - name: PHOENIX_OAUTH2_KEYCLOAK_OIDC_CONFIG_URL
+          value: "https://accounts.ssegning.com/realms/camer-digital/.well-known/openid-configuration"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_DISPLAY_NAME
+          value: "CDigital"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_ALLOW_SIGN_UP
+          value: "true"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_AUTO_LOGIN
+          value: "true"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_ROLE_ATTRIBUTE_PATH
+          value: "phoenix_role"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_ROLE_MAPPING
+          value: "admin:ADMIN,user:MEMBER,viewer:VIEWER"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_ROLE_ATTRIBUTE_STRICT
+          value: "true"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_USE_PKCE
+          value: "true"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_SCOPES
+          value: "openid phoenix"
+        - name: PHOENIX_OAUTH2_KEYCLOAK_REDIRECT_URI
+          value: "https://analytics.ai.camer.digital/oauth2/keycloak/tokens"
+        # Optional, to ensure cookies are secure
+        - name: PHOENIX_AUTH_USE_SECURE_COOKIES
+          value: "true"
+        volumeMounts:
+        - name: data
+          mountPath: /root/.phoenix
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: phoenix-data

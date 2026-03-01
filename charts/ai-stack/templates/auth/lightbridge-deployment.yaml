@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lightbridge
+  namespace: {{ .Release.Namespace | default .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lightbridge
+  template:
+    metadata:
+      labels:
+        app: lightbridge
+    spec:
+      initContainers:
+        - name: config-generator
+          image: busybox:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Read the sensitive values from the secret
+              DATABASE_URL=$(cat /secrets/DATABASE_URL)
+              JWKS_URL=$(cat /secrets/JWKS_URL)
+
+              # Read the config template from the configmap
+              CONFIG_TEMPLATE=$(cat /config-template/config.yaml)
+
+              # Replace the placeholders in the template
+              CONFIG_CONTENT=$(echo "$CONFIG_TEMPLATE" | sed "s|{{DATABASE_URL}}|$DATABASE_URL|" | sed "s|{{JWKS_URL}}|$JWKS_URL|")
+
+              # Write the final config file
+              echo "$CONFIG_CONTENT" > /config/config.yaml
+          volumeMounts:
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+            - name: config-template
+              mountPath: /config-template
+              readOnly: true
+            - name: config
+              mountPath: /config
+      containers:
+        - name: main
+          image: "{{ .Values.lightbridge.image.repository }}:{{ .Values.lightbridge.image.tag }}"
+          env:
+            - name: CONFIG_PATH
+              value: /config/config.yaml
+          ports:
+            - name: rest
+              containerPort: 3000
+            - name: grpc
+              containerPort: 3001
+          livenessProbe:
+            httpGet:
+              path: /
+              port: rest
+          readinessProbe:
+            httpGet:
+              path: /
+              port: rest
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ .Values.lightbridge.databaseUrlSecret }}
+        - name: config-template
+          configMap:
+            name: lightbridge-config-template
+        - name: config
+          emptyDir: {}
