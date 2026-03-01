@@ -1,0 +1,15 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.tls.secretName }}
+  namespace: {{ .Release.Namespace | default .Values.namespace }}
+spec:
+  secretName: {{ .Values.tls.secretName }}
+  issuerRef:
+    name: {{ .Values.tls.issuerName }}
+    kind: {{ .Values.tls.issuerKind }}
+  dnsNames:
+    {{- range .Values.tls.domains }}
+    - {{ . }}
+    {{- end }}
+    - "*.ai.camer.digital"
