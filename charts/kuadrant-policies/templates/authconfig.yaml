@@ -9,15 +9,30 @@ metadata:
   labels:
     {{ include "common.labels.standard" $ | nindent 4 }}
 spec:
+  {{ with $config.hosts }}
   hosts:
-    {{- toYaml $config.hosts | nindent 4 }}
+    {{- toYaml . | nindent 4 }}
+  {{ end }}
+
+  {{ with $config.authentication }}
   authentication:
-    {{- toYaml $config.authentication | nindent 4 }}
+    {{- toYaml . | nindent 4 }}
+  {{ end }}
+
+  {{ with $config.metadata }}
   metadata:
-    {{- toYaml $config.metadata | nindent 4 }}
+    {{- toYaml . | nindent 4 }}
+  {{ end }}
+
+  {{ with $config.authorization }}
   authorization:
-    {{- toYaml $config.authorization | nindent 4 }}
+    {{- toYaml . | nindent 4 }}
+  {{ end }}
+
+  {{ with $config.response }}
   response:
-    {{- toYaml $config.response | nindent 4 }}
+    {{- toYaml . | nindent 4 }}
+  {{ end }}
+
 {{- end }}
 {{- end }}
