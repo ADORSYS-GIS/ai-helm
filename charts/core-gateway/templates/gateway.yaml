@@ -16,7 +16,9 @@ spec:
     - name: api-http
       protocol: HTTP
       port: 80
-      hostname: {{ .Values.gateway.apiHostname }}
+      allowedRoutes:
+        namespaces:
+          from: Same
     - name: api-https
       protocol: HTTPS
       port: 443
@@ -27,10 +29,6 @@ spec:
           - name: {{ include "core-gateway.fullname" . }}-api-tls
             kind: Secret
             group: ''
-    - name: service-http
-      protocol: HTTP
-      port: 80
-      hostname: {{ .Values.gateway.serviceApiHostname }}
     - name: service-https
       protocol: HTTPS
       port: 443
@@ -41,3 +39,6 @@ spec:
           - name: {{ include "core-gateway.fullname" . }}-service-tls
             kind: Secret
             group: ''
+      allowedRoutes:
+        namespaces:
+          from: All
