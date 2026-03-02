@@ -345,7 +345,7 @@ applications:
               hosts:
                 - api.ai.camer.digital
               authentication:
-                "anonymous":
+                anonymous:
                   anonymous: { }
               metadata:
                 "lightbridge-validation":
@@ -393,6 +393,18 @@ applications:
                     "x-api-key-id":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.account.id"
+            services:
+              hosts:
+                - services.api.ai.camer.digital
+              authentication:
+                librechat-api-key:
+                  apiKey:
+                    selector:
+                      matchLabels:
+                        group: converse-api-key # Labels on your API Key Secrets
+                  credentials:
+                    authorizationHeader:
+                      prefix: Bearer
     destination:
       namespace: converse
     syncPolicy:
