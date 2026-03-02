@@ -9,21 +9,13 @@ app-template:
     enabled: false
     object: ""
 
-  defaultPodOptions:
-    securityContext:
-      runAsNonRoot: true
-      runAsUser: 999
-      runAsGroup: 999
-      fsGroup: 999
-    terminationGracePeriodSeconds: 30
-
   controllers:
     backup:
       type: cronjob
       pod:
         restartPolicy: OnFailure
       cronjob:
-        schedule: "* * * * *"
+        schedule: "00 02 * * *"
         concurrencyPolicy: Forbid
         successfulJobsHistory: 3
         failedJobsHistory: 3
