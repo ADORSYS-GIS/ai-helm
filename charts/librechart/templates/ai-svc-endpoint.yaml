@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "common.names.fullname" $ }}-helper
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  selector:
+    gateway.envoyproxy.io/owning-gateway-name: {{ .Values.gateway.name }}
+    gateway.envoyproxy.io/owning-gateway-namespace: {{ .Values.gateway.namespace }}
+  ports:
+    - name: https-443
+      port: 443
+      protocol: TCP
+      targetPort: 10443
+  type: ClusterIP
