@@ -1,0 +1,57 @@
+{{- range .Values.applications }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  {{- with .additionalAnnotations }}
+  annotations:
+    {{- range $key, $value := . }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+  {{- end }}
+  {{- with .additionalLabels }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" . "context" $ ) | nindent 4 }}
+  {{- end }}
+  name: ai-{{ .name }}
+  {{- with .namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  {{- with .finalizers }}
+  finalizers:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  project: ai
+  {{- with .source }}
+  source:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .sources }}
+  sources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  destination:
+    name: lke560142-ctx
+    namespace: {{ .destination.namespace }}
+  {{- with .syncPolicy }}
+  syncPolicy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
+  {{- with .ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .resourceInclusions }}
+  resourceInclusions: {{ . | toYaml | nindent 4 }}
+  {{- end }}
+  {{- with .resourceExclusions }}
+  resourceExclusions: {{ . | toYaml | nindent 4 }}
+  {{- end }}
+  {{- with .info }}
+  info:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

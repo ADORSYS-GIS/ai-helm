@@ -1,0 +1,19 @@
+{{- range $backendName, $backendConfig := .Values.backends }}
+{{- if not (eq $backendConfig.enabled false) }}
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: {{ $backendConfig.resourceName }}
+spec:
+  schema:
+    name: {{ $backendConfig.schema }}
+    {{- if $backendConfig.prefix }}
+    prefix: {{ $backendConfig.prefix }}
+    {{- end }}
+  backendRef:
+    name: {{ $backendConfig.resourceName }}
+    kind: Backend
+    group: gateway.envoyproxy.io
+{{- end }}
+{{- end }}

@@ -1,0 +1,568 @@
+global:
+  librechat:
+    version: "v0.8.3-rc1"
+  mongo:
+    replicaCount: 1
+
+librechat:
+  ingress:
+    librechat:
+      enabled: true
+      annotations:
+        cert-manager.io/cluster-issuer: cert-home-cert-http
+      className: traefik
+      hosts:
+        - host: ai.camer.digital
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: librechat
+                port: http
+      tls:
+        - secretName: ai.camer.digital-tls
+          hosts:
+            - ai.camer.digital
+
+  route:
+    librechat:
+      enabled: false
+      kind: HTTPRoute
+      #annotations:
+      #  cert-manager.io/cluster-issuer: cert-home-cert-envoy
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: core-gateway
+          namespace: converse
+          sectionName: web-https
+      hostnames:
+        - ai.camer.digital
+      rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+          backendRefs:
+            - identifier: librechat
+              port: 3080
+
+  service:
+    librechat:
+      enabled: true
+      annotations: { }
+      type: ClusterIP
+      controller: librechat
+      ports:
+        http:
+          enabled: true
+          port: 3080
+          targetPort: 3080
+
+    rag-api:
+      enabled: false
+      annotations: { }
+      type: ClusterIP
+      controller: rag-api
+      ports:
+        http:
+          enabled: true
+          port: 8000
+          targetPort: 8000
+
+  controllers:
+    librechat:
+      type: deployment
+      strategy: RollingUpdate
+      serviceAccount:
+        identifier: librechat
+      replicas: 2
+      pod:
+        labels:
+          app: librechat-app
+      containers:
+        librechat:
+          image:
+            repository: ghcr.io/danny-avila/librechat
+            tag: "{{ .Values.global.librechat.version }}"
+            pullPolicy: Always
+          env:
+            PUID: "1000"
+            PGID: "1000"
+            TZ: "Europe/Berlin"
+
+            ALLOW_EMAIL_LOGIN: "false"
+            ALLOW_REGISTRATION: "false"
+            ALLOW_SOCIAL_LOGIN: "true"
+            ALLOW_SOCIAL_REGISTRATION: "true"
+            REFRESH_TOKEN_EXPIRY: 5184000000 # "(1000 * 60 * 60 * 24) * 60 => 60 days"
+
+            OPENID_ISSUER: "https://accounts.camer.digital/realms/camer-digital"
+            OPENID_CALLBACK_URL: "/oauth/openid/callback"
+            OPENID_SCOPE: "openid profile email librechat"
+            #OPENID_REQUIRED_ROLE: "user" # Now we're in open beta; everyone can connect and test
+            OPENID_REQUIRED_ROLE_TOKEN_KIND: "access"
+            OPENID_REQUIRED_ROLE_PARAMETER_PATH: "librechat_roles"
+            OPENID_AUTO_REDIRECT: "true"
+
+            ANTHROPIC_API_KEY: "user_provided"
+            ANTHROPIC_MODELS: "claude-3-opus-20240229,claude-3-sonnet-20240229,claude-3-haiku-20240307,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k"
+
+            OPENAI_API_KEY: "user_provided"
+            OPENAI_MODELS: "gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k"
+
+            GOOGLE_KEY: "user_provided"
+            GOOGLE_MODELS: "gemini-3-pro-preview,gemini-3-pro-image-preview,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.5-pro"
+
+            #DEBUG_LOGGING: true
+            #DEBUG_CONSOLE: true
+
+            LOGIN_MAX: "50"
+            LOGIN_WINDOW: "1"
+
+            GITHUB_MCP_CLIENT_ID:
+              secretKeyRef:
+                name: librechat-mcp-github
+                key: client_id
+            GITHUB_MCP_SECRET_ID:
+              secretKeyRef:
+                name: librechat-mcp-github
+                key: client_secret
+
+            OPENID_CLIENT_ID:
+              secretKeyRef:
+                name: librechat-openid-config
+                key: client_id
+            OPENID_CLIENT_SECRET:
+              secretKeyRef:
+                name: librechat-openid-config
+                key: client_secret
+            OPENID_SESSION_SECRET:
+              secretKeyRef:
+                name: librechat-openid-config
+                key: session_secret
+
+            # DEBUG_OPENID_REQUESTS: "true"
+
+            # Optional: redirects the user to the end session endpoint after logging out
+            OPENID_USE_END_SESSION_ENDPOINT: "true"
+
+            #RAG_API_URL: "http://{{ .Release.Name }}-rag-api:8000"
+
+            DOMAIN_CLIENT: &url "https://ai.camer.digital"
+            DOMAIN_SERVER: *url
+            NO_INDEX: "true"
+            # TRUST_PROXY: "-1"
+
+            USE_REDIS: "true"
+            REDIS_KEY_PREFIX: "librechat-prod-v2"
+            REDIS_URI: "redis://redis-master.redis-system.svc.cluster.local:6379"
+            FORCED_IN_MEMORY_CACHE_NAMESPACES: "APP_CONFIG,CONFIG_STORE"
+
+            SEARCH: true
+            MEILI_HOST: "http://{{ .Release.Name }}-search:7700"
+            MEILI_MASTER_KEY:
+              secretKeyRef:
+                name: librechat-meili-config
+                key: MEILI_MASTER_KEY
+
+            MONGO_URI: '{{ include "mongo_uri" $ }}'
+
+            CREDS_KEY:
+              secretKeyRef:
+                name: librechat-config
+                key: creds_key
+            CREDS_IV:
+              secretKeyRef:
+                name: librechat-config
+                key: creds_iv
+            JWT_SECRET:
+              secretKeyRef:
+                name: librechat-config
+                key: jwt_secret
+            JWT_REFRESH_SECRET:
+              secretKeyRef:
+                name: librechat-config
+                key: jwt_refresh_secret
+
+            CONVERSE_OPENAI_API_KEY:
+              secretKeyRef:
+                name: librechat-main-config
+                key: converse_openai_api_key
+
+            # Web Search Configuration - Reference environment variables from secrets
+            # Search Provider: Serper (you can also use SearXNG)
+            SERPER_API_KEY:
+              secretKeyRef:
+                name: librechat-websearch-config
+                key: serper_api_key
+
+            # Scraper: Firecrawl
+            FIRECRAWL_API_KEY:
+              secretKeyRef:
+                name: librechat-websearch-config
+                key: firecrawl_api_key
+
+            # Reranker: Jina (you can also use Cohere)
+            JINA_API_KEY:
+              secretKeyRef:
+                name: librechat-websearch-config
+                key: jina_api_key
+
+            # Image Generation Configuration - Reference environment variables from secrets
+            #  Image Generation
+            IMAGE_GEN_OAI_API_KEY:
+              secretKeyRef:
+                name: librechat-main-config
+                key: converse_openai_api_key
+
+            # OpenAI-compatible Converse LLM API base URL
+            IMAGE_GEN_OAI_BASEURL: https://api.ai.camer.digital/v1
+
+
+            AWS_REGION:
+              secretKeyRef:
+                name: librechat-s3-config
+                key: s3_region_name
+            AWS_ACCESS_KEY_ID:
+              secretKeyRef:
+                name: librechat-s3-config
+                key: s3_access_key_id
+            AWS_SECRET_ACCESS_KEY:
+              secretKeyRef:
+                name: librechat-s3-config
+                key: s3_secret_access_key
+            AWS_BUCKET_NAME:
+              secretKeyRef:
+                name: librechat-s3-config
+                key: s3_bucket_name
+            # AWS_ENDPOINT_URL: "https://s3.camer.digital"
+            # AWS_FORCE_PATH_STYLE: "https://s3.camer.digital"
+
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 200m
+              memory: 500Mi
+          probes:
+            liveness:
+              enabled: true
+              path: /health
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+            readiness:
+              enabled: true
+              path: /health
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+            startup:
+              enabled: true
+              path: /health
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+                failureThreshold: 30
+                periodSeconds: 5
+
+    rag-api:
+      enabled: false
+      type: statefulset
+      strategy: RollingUpdate
+      serviceAccount:
+        identifier: rag-api
+      replicas: 2
+      pod:
+        labels:
+          app: librechat-app
+      containers:
+        rag-api:
+          image:
+            repository: ghcr.io/danny-avila/librechat-rag-api-dev-lite
+            tag: "{{ .Values.global.librechat.version }}"
+            pullPolicy: Always
+          env:
+            PUID: "1000"
+            PGID: "1000"
+            TZ: "Europe/Berlin"
+
+            # TODO fix that
+            RAG_OPENAI_BASEURL: "http://10.10.0.230:11434/v1"
+            RAG_OPENAI_API_KEY:
+              secretKeyRef:
+                name: librechat-main-config
+                key: converse_openai_api_key
+
+            EMBEDDINGS_MODEL: "nomic-embed-text"
+
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 200m
+              memory: 500Mi
+          probes:
+            liveness:
+              enabled: true
+              path: /
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+            readiness:
+              enabled: true
+              path: /
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+            startup:
+              enabled: true
+              path: /
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+                failureThreshold: 30
+                periodSeconds: 5
+  configMaps:
+    config:
+      enabled: true
+      labels: { }
+      annotations: { }
+      data:
+        librechat: |
+          version: 1.3.1
+          cache: true
+          fileStrategy: "s3"
+          # Balance settings
+          balance:
+            enabled: false               # Enable token credit balances for users
+            startBalance: 20000          # Initial tokens credited upon registration
+            autoRefillEnabled: false     # Enable automatic token refills
+            refillIntervalValue: 30      # Numerical value for refill interval
+            refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
+            refillAmount: 10000          # Tokens added during each refill
+          
+          # Web Search Configuration
+          webSearch:
+            # Search Provider Configuration - use environment variable references
+            serperApiKey: "${SERPER_API_KEY}"
+            # Alternative: SearXNG (uncomment if using)
+            # searxngInstanceUrl: "${SEARXNG_INSTANCE_URL}"
+            # searxngApiKey: "${SEARXNG_API_KEY}"
+          
+            # Scraper Configuration
+            firecrawlApiKey: "${FIRECRAWL_API_KEY}"
+            # Optional: Custom Firecrawl instance
+            # firecrawlApiUrl: "${FIRECRAWL_API_URL}"
+          
+            # Reranker Configuration - Jina (or use Cohere)
+            jinaApiKey: "${JINA_API_KEY}"
+            # Optional: Custom Jina instance
+            # jinaApiUrl: "${JINA_API_URL}"
+            # Alternative: Cohere
+            # cohereApiKey: "${COHERE_API_KEY}"
+          
+            # General Settings
+            safeSearch: 1  # Options: 0 (OFF), 1 (MODERATE - default), 2 (STRICT)
+          
+          mcpServers:
+            github:
+              type: "streamable-http"
+              initTimeout: 150000
+              url: "https://api.githubcopilot.com/mcp"
+              oauth:
+                authorization_url: https://github.com/login/oauth/authorize
+                token_url: https://github.com/login/oauth/access_token
+                client_id: ${GITHUB_MCP_CLIENT_ID}
+                client_secret: ${GITHUB_MCP_SECRET_ID}
+                redirect_uri: https://ai.camer.digital/api/mcp/github/oauth/callback
+                scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
+          
+          fileConfig:
+            endpoints:
+              assistants:
+                fileLimit: 5
+                fileSizeLimit: 10  # Maximum size for an individual file in MB
+                totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
+                supportedMimeTypes:
+                  - "image/.*"
+                  - "application/pdf"
+              openAI:
+                disabled: false  # Disables file uploading to the OpenAI endpoint
+              default:
+                totalSizeLimit: 20
+              YourCustomEndpointName:
+                fileLimit: 2
+                fileSizeLimit: 5
+            serverFileSizeLimit: 100  # Global server file size limit in MB
+            avatarSizeLimit: 2  # Limit for user avatar image size in MB
+          rateLimits:
+            fileUploads:
+              ipMax: 100
+              ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
+              userMax: 50
+              userWindowInMinutes: 60  # Rate limit window for file uploads per user
+            #registration:
+            #socialLogins: [ "openid" ]
+          endpoints:
+            all:
+              streamRate: 5
+              titlePromptTemplate: |
+                ### Task:
+                Generate a concise, 3-5 word title with an emoji summarizing the chat history.
+          
+                ### Guidelines:
+                - The title should clearly represent the main theme or subject of the conversation.
+                - Always use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
+                - Write the title in the chat's primary language; default to English if multilingual.
+                - Prioritize accuracy over excessive creativity; keep it clear and simple.
+                - The title should be short and funny.
+                - The emoji should come first.
+          
+                ### Output:
+                Format "<emoji> your concise title here"
+                  ### Examples:
+                  - 📉 Stock Market Trends
+                  - 🍪 Perfect Chocolate Chip Recipe
+                  - 🎧 Evolution of Music Streaming
+                  - 👨🏿‍💻 Remote Work Productivity Tips
+                  - 🧠 Artificial Intelligence in Healthcare
+                  - 🎮 Video Game Development Insights
+          
+                ### Chat History:
+                Human: {input}
+                Assistant: {output}
+            agents:
+              recursionLimit: 50
+              maxRecursionLimit: 100
+              disableBuilder: false
+              # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+              # capabilities: ["execute_code", "file_search", "actions", "tools", "artifacts", "ocr", "chain", "web_search"]
+              # (optional) File citation configuration for file_search capability
+              maxCitations: 20          # Maximum total citations in responses (1-50)
+              maxCitationsPerFile: 7    # Maximum citations from each file (1-10)
+              minRelevanceScore: 0.45   # Minimum relevance score threshold (0.0-1.0)
+            assistants:
+              disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
+              pollIntervalMs: 750  # Polling interval for checking assistant updates
+              timeoutMs: 180000  # Timeout for assistant operations
+              # Should only be one or the other, either `supportedIds` or `excludedIds`
+              #supportedIds: [ "asst_supportedAssistantId1", "asst_supportedAssistantId2" ]
+              #excludedIds: ["asst_excludedAssistantId"]
+            custom:
+              - name: "Converse"
+                apiKey: "dummy"
+                baseURL: "https://api.ai.camer.digital/v1"
+                models:
+                  default:
+                    - "gpt-image-1"
+                    - "qwen3-embedding-8b"
+                    - "minimax-m2p5"
+                    - "qwen3-235b-a22b"
+                    - "qwen3-reranker-8b"
+                    - "qwen3-235b-a22b-instruct-2507"
+                    - "deepseek-v3p1-terminus"
+                    - "dall-e-3"
+                    - "gemini-3-pro"
+                    - "glm-5"
+                    - "deepseek-v3p1"
+                    - "o4-mini"
+                    - "fireworks-asr-v2"
+                    - "gemini-3-pro-image-preview"
+                    - "gemini-2-5-flash-lite"
+                    - "qwen3-235b-a22b-thinking-2507"
+                    - "gpt-4-1"
+                    - "kimi-k2-thinking"
+                    # - "qwen3-coder-30b-a3b-instruct" # TODO remove from Envoy
+                    - "whisper-v3-turbo"
+                    - "gemini-2-5-pro-reasoning"
+                    - "gpt-oss-120b"
+                    - "kimi-k2p5"
+                    - "gpt-4-1-mini"
+                    - "gpt-oss-20b"
+                    - "kimi-k2-instruct-0905"
+                    - "gemini-2-5-flash"
+                    - "gpt-5"
+                    - "gpt-5-mini"
+                    - "gpt-5-nano"
+                    - "gemini-3-flash"
+                    - "whisper-v3"
+                  fetch: false  # Attempt to dynamically fetch available models -> fails, because of 401
+                  userIdQuery: false
+                iconURL: "https://s3.camer.digital/converse/public/autumn.png"
+                titleConvo: true
+                titleMethod: "completion"
+                titleModel: "gemini-2-5-flash-lite"
+                summarize: true
+                summaryModel: "gemini-2-5-flash-lite"
+                forcePrompt: false
+                modelDisplayLabel: "Converse AI"
+                headers:
+                  X-User-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
+                  X-User-Email: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
+                  X-User-Role: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
+                  Authorization: 'APIKEY ${CONVERSE_OPENAI_API_KEY}'
+
+
+  persistence:
+    config:
+      enabled: true
+      type: configMap
+      identifier: config
+      advancedMounts:
+        librechat:
+          librechat:
+            - path: /app/librechat.yaml
+              subPath: librechat
+              readOnly: true
+
+  serviceAccount:
+    librechat:
+      enabled: true
+      annotations: { }
+      labels: { }
+    rag-api:
+      enabled: false
+      annotations: { }
+      labels: { }
+
+# MongoDB Parameters
+db:
+  enabled: true
+  image:
+    repository: bitnamilegacy/mongodb
+  auth:
+    enabled: false
+  persistence:
+    size: 30Gi
+    storageClass: ~
+  architecture: replicaset
+  replicaCount: 1 # should be similar to the global mongo replicaCount
+  resourcesPreset: small
+
+search:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: ~
+  auth:
+    # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
+    existingMasterKeySecret: "librechat-meili-config"
+  environment:
+    MEILI_ENV: "production"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 500Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi

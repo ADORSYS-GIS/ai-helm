@@ -1,0 +1,25 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "core-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.gateway.issuer | default "self-signed-ca" }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className | default "core-gateway" }}
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: {{ include "core-gateway.fullname" . }}
+  listeners:
+    - name: api-https
+      protocol: HTTPS
+      port: 443
+      hostname: {{ .Values.gateway.apiHostname }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ include "core-gateway.fullname" . }}-api-tls
+            kind: Secret
+            group: ''
