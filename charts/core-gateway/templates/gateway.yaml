@@ -23,3 +23,13 @@ spec:
           - name: {{ include "core-gateway.fullname" . }}-api-tls
             kind: Secret
             group: ''
+    - name: service-https
+      protocol: HTTPS
+      port: 443
+      hostname: {{ .Values.gateway.serviceApiHostname }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ include "core-gateway.fullname" . }}-service-tls
+            kind: Secret
+            group: ''
