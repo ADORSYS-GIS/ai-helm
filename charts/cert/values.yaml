@@ -1,0 +1,21 @@
+global:
+  issuer:
+    email: "selastlambou@protonmail.com"
+
+solvers:
+  http:
+    ingressClassName: traefik
+    gateway:
+      name: core-gateway
+      namespace: converse
+    email: "{{ .Values.global.issuer.email }}"
+    commonAnnotations: ~
+
+commonAnnotations: { }
+
+cert-manager:
+  installCRDs: true
+  config:
+    apiVersion: "controller.config.cert-manager.io/v1alpha1"
+    kind: "ControllerConfiguration"
+    enableGatewayAPI: true

@@ -1,0 +1,23 @@
+{{- if .Values.authConfigs }}
+{{- range $name, $config := .Values.authConfigs }}
+---
+apiVersion: authorino.kuadrant.io/v1beta3
+kind: AuthConfig
+metadata:
+  name: {{ include "common.names.name" $ }}-{{ $name }}
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{ include "common.labels.standard" $ | nindent 4 }}
+spec:
+  hosts:
+    {{- toYaml $config.hosts | nindent 4 }}
+  authentication:
+    {{- toYaml $config.authentication | nindent 4 }}
+  metadata:
+    {{- toYaml $config.metadata | nindent 4 }}
+  authorization:
+    {{- toYaml $config.authorization | nindent 4 }}
+  response:
+    {{- toYaml $config.response | nindent 4 }}
+{{- end }}
+{{- end }}

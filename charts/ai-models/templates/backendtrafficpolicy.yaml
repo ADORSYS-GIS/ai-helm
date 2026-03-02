@@ -1,0 +1,68 @@
+{{- if (default true (dig "enabled" nil (default dict .Values.backendTrafficPolicy))) }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: {{ .Values.backendTrafficPolicy.name }}
+  {{- with .Values.backendTrafficPolicy.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.backendTrafficPolicy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  targetRefs:
+    {{- toYaml .Values.backendTrafficPolicy.targetRefs | nindent 4 }}
+  retry:
+    {{- toYaml .Values.backendTrafficPolicy.retry | nindent 4 }}
+  {{- if (default true (dig "enabled" nil (default dict .Values.envoyRateLimit))) }}
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        {{- range $routeName, $routeConfig := .Values.models }}
+        {{- if (default true $routeConfig.enabled) }}
+        # Rate limit rule for {{ $routeName }}
+        - clientSelectors:
+            - headers:
+                - name: x-user-id
+                  type: Distinct
+                  invert: false
+                - name: x-ai-eg-model
+                  type: Exact
+                  invert: false
+                  value: {{ $routeConfig.modelMatch | default $routeName }}
+          limit:
+            requests: {{ $routeConfig.envoyRateLimit.requests }}
+            unit: {{ $routeConfig.envoyRateLimit.unit }}
+        {{- with $routeConfig.envoyTokenRateLimits }}
+        {{- range . }}
+        - clientSelectors:
+            - headers:
+                - name: x-user-id
+                  type: Distinct
+                  invert: false
+                - name: x-ai-eg-model
+                  type: Exact
+                  invert: false
+                  value: {{ $routeConfig.modelMatch | default $routeName }}
+          limit:
+            requests: {{ .tokens }}
+            unit: {{ .unit }}
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_total_token
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+  {{- end }}
+{{- end }}
