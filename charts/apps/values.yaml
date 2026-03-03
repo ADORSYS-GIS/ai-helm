@@ -40,6 +40,34 @@ applications:
         prune: true
         selfHeal: true
 
+  - name: opentelemetry-operator
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+      targetRevision: 0.106.0
+      chart: opentelemetry-operator
+      helm:
+        releaseName: opentelemetry-operator
+        valuesObject:
+          #manager:
+          #  collectorImage:
+          #    repository: "otel/opentelemetry-collector-k8s"
+          admissionWebhooks:
+            certManager:
+              enabled: false
+            autoGenerateCert:
+              enabled: false
+    destination:
+      namespace: opentelemetry-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   - name: cnpg
     finalizers:
       - resources-finalizer.argocd.argoproj.io
@@ -238,6 +266,10 @@ applications:
                 certificateName: self-signed-cert-for-mutating-webhook-managed
           extProc:
             extraEnvVars:
+              - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                value: "http://converse-collector.converse-monitoring:4317"
+              - name: OTEL_METRICS_EXPORTER
+                value: "none"
               - name: LOG_LEVEL
                 value: "debug"
     destination:
