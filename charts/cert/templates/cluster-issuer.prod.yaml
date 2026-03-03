@@ -1,0 +1,63 @@
+{{ with .Values.solvers.http }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ include "common.names.fullname" $ }}-http
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{ include "common.labels.standard" $ | nindent 4 }}
+  annotations:
+    {{- with .commonAnnotations }}
+    {{ include "common.tplvalues.render" ( dict "value" . "context" $ ) | nindent 4 }}
+    {{- end }}
+    {{- with $.Values.commonAnnotations }}
+    {{ include "common.tplvalues.render" ( dict "value" . "context" $ ) | nindent 4 }}
+    {{- end }}
+spec:
+  acme:
+    # The ACME server URL
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email address used for ACME registration
+    email: {{ include "common.tplvalues.render" ( dict "value" .email "context" $ ) }}
+    # Name of a secret used to store the ACME account private key
+    privateKeySecretRef:
+      name: {{ include "common.names.fullname" $ }}-http
+    # Enable the HTTP-01 challenge provider
+    solvers:
+      - http01:
+          ingress:
+            class: {{ include "common.tplvalues.render" ( dict "value" .ingressClassName "context" $ ) }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ include "common.names.fullname" $ }}-envoy
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{ include "common.labels.standard" $ | nindent 4 }}
+  annotations:
+    {{- with .commonAnnotations }}
+    {{ include "common.tplvalues.render" ( dict "value" . "context" $ ) | nindent 4 }}
+    {{- end }}
+    {{- with $.Values.commonAnnotations }}
+    {{ include "common.tplvalues.render" ( dict "value" . "context" $ ) | nindent 4 }}
+    {{- end }}
+spec:
+  acme:
+    # The ACME server URL
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email address used for ACME registration
+    email: {{ include "common.tplvalues.render" ( dict "value" .email "context" $ ) }}
+    # Name of a secret used to store the ACME account private key
+    privateKeySecretRef:
+      name: {{ include "common.names.fullname" $ }}-envoy
+    # Enable the HTTP-01 challenge provider
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - kind: Gateway
+                name: {{ include "common.tplvalues.render" ( dict "value" .gateway.name "context" $ ) }}
+                namespace: {{ include "common.tplvalues.render" ( dict "value" .gateway.namespace "context" $ ) }}
+                group: gateway.networking.k8s.io
+{{ end }}

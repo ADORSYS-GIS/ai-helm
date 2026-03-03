@@ -1,0 +1,965 @@
+applications:
+
+  - name: traefik
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://traefik.github.io/charts
+      targetRevision: 39.0.2
+      chart: traefik
+      helm:
+        releaseName: traefik
+        valuesObject:
+          additionalArguments:
+            - "--entryPoints.web.http.redirections.entryPoint.to=:443"
+            - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
+            - "--global.sendAnonymousUsage=false"
+          logs:
+            access:
+              enabled: false
+          ports:
+            traefik:
+              expose:
+                web: true
+                websecure: true
+          providers:
+            kubernetesCRD:
+              allowCrossNamespace: true
+            kubernetesGateway:
+              enabled: false
+
+          gateway:
+            namespacePolicy: All
+    destination:
+      namespace: traefik-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: opentelemetry-operator
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+      targetRevision: 0.106.0
+      chart: opentelemetry-operator
+      helm:
+        releaseName: opentelemetry-operator
+        valuesObject:
+          #manager:
+          #  collectorImage:
+          #    repository: "otel/opentelemetry-collector-k8s"
+    destination:
+      namespace: opentelemetry-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: cnpg
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://cloudnative-pg.github.io/charts
+      targetRevision: 0.27.1
+      chart: cloudnative-pg
+      helm:
+        releaseName: cnpg
+        valuesObject:
+          resources:
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 100Mi
+    destination:
+      namespace: cnpg-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: cert
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/adorsys-gis/ai-helm.git
+      targetRevision: HEAD
+      path: charts/cert
+      helm:
+        releaseName: cert
+        valuesObject: { }
+    destination:
+      namespace: cert-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Core Infrastructure ---
+  - name: redis
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: registry-1.docker.io/bitnamicharts
+      targetRevision: 24.0.0
+      chart: redis
+      helm:
+        releaseName: redis
+        valuesObject:
+          global:
+            defaultStorageClass: linode-block-storage
+          auth:
+            enabled: false
+          image:
+            repository: bitnamilegacy/redis
+          architecture: replication
+          replica:
+            replicaCount: 1
+    destination:
+      namespace: redis-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: aieg-crd
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: oci://docker.io/envoyproxy/ai-gateway-crds-helm
+      targetRevision: v0.5.0
+      path: .
+      helm:
+        releaseName: aieg-crd
+    destination:
+      namespace: envoy-ai-gateway-system
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: eg
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    project: ai
+    source:
+      repoURL: oci://docker.io/envoyproxy/gateway-helm
+      targetRevision: v1.7.0
+      path: .
+      helm:
+        releaseName: eg
+        valuesObject:
+          hpa:
+            enabled: true
+            minReplicas: 1
+            maxReplicas: 2
+          config:
+            envoyGateway:
+              gateway:
+                controllerName: gateway.envoyproxy.io/gatewayclass-controller
+              logging:
+                level:
+                  default: info
+              rateLimit:
+                backend:
+                  type: Redis
+                  redis:
+                    # Update this URL to match your Redis service location
+                    # This assumes Redis is deployed using the redis.yaml in this directory
+                    url: redis-master.redis-system.svc.cluster.local:6379
+              provider:
+                type: Kubernetes
+                kubernetes:
+                  rateLimitDeployment:
+                    patch:
+                      type: StrategicMerge
+                      value:
+                        spec:
+                          template:
+                            spec:
+                              containers:
+                                - imagePullPolicy: IfNotPresent
+                                  name: envoy-ratelimit
+                                  image: docker.io/envoyproxy/ratelimit:60d8e81b
+              extensionApis:
+                # Not strictly required, but recommended for backward/future compatibility.
+                enableEnvoyPatchPolicy: true
+                # Required: Enable Backend API for AI service backends.
+                enableBackend: true
+              # Required: AI Gateway needs to fine-tune xDS resources generated by Envoy Gateway.
+              extensionManager:
+                #backendResources:
+                #  - group: inference.networking.k8s.io
+                #    kind: InferencePool
+                #    version: v1
+                hooks:
+                  xdsTranslator:
+                    translation:
+                      listener:
+                        includeAll: true
+                      route:
+                        includeAll: true
+                      cluster:
+                        includeAll: true
+                      secret:
+                        includeAll: true
+                    post:
+                      - Translation
+                      - Cluster
+                      - Route
+                service:
+                  fqdn:
+                    # IMPORTANT: Update this to match your AI Gateway controller service
+                    # Format: <service-name>.<namespace>.svc.cluster.local
+                    # Default if you followed the installation steps above:
+                    hostname: ai-gateway-controller.envoy-ai-gateway-system.svc.cluster.local
+                    port: 1063
+    destination:
+      namespace: envoy-gateway-system
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: aieg
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: oci://docker.io/envoyproxy/ai-gateway-helm
+      targetRevision: v0.5.0
+      path: .
+      helm:
+        releaseName: aieg
+        valuesObject:
+          controller:
+            mutatingWebhook:
+              certManager:
+                enable: true
+                issuerName: self-signed-ca
+                certificateName: self-signed-cert-for-mutating-webhook-managed
+          extProc:
+            extraEnvVars:
+              - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                value: "http://converse-collector.converse-monitoring:4317"
+              - name: OTEL_METRICS_EXPORTER
+                value: "none"
+              - name: LOG_LEVEL
+                value: "debug"
+    destination:
+      namespace: envoy-ai-gateway-system
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: secrets
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-ops-secrets.git
+      targetRevision: HEAD
+      path: manifests
+    destination:
+      namespace: manifests
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Gateway ---
+  - name: core-gateway
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/core-gateway
+      helm:
+        releaseName: core-gateway
+        valuesObject:
+          gateway:
+            apiHostname: api.ai.camer.digital
+            serviceApiHostname: services.api.ai.camer.digital
+            issuer: cert-home-cert-envoy
+    destination:
+      namespace: converse-gateway
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+        - CreateNamespace=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Security & Policy ---
+  - name: authorino-operator
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://kuadrant.io/helm-charts
+      targetRevision: 0.23.1
+      chart: authorino-operator
+      helm:
+        releaseName: authorino-operator
+    destination:
+      namespace: authorino-system
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: security-policies
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/kuadrant-policies
+      helm:
+        releaseName: security-policies
+        valuesObject:
+          instances:
+            main:
+              listener:
+                tls:
+                  enabled: false
+              oidcServer:
+                tls:
+                  enabled: false
+              volumes:
+                items:
+                  - name: lightbridge-ca
+                    mountPath: /etc/pki/tls/certs
+                    secrets:
+                      - authz-tls
+                    items:
+                      - key: ca.crt
+                        path: lightbridge-ca.crt
+          securityPolicies:
+            main:
+              gatewayName: core-gateway
+              authorinoService: kuadrant-policies-main-authorino-authorization
+          authConfigs:
+            main:
+              hosts:
+                - api.ai.camer.digital
+              authentication:
+                anonymous:
+                  anonymous: { }
+              metadata:
+                "lightbridge-validation":
+                  http:
+                    url: https://lightbridge-opa.converse.svc.cluster.local:3000/v1/authorino/validate
+                    method: POST
+                    sharedSecretRef:
+                      name: lightbridge-opa-auth
+                      key: credentials
+                    credentials:
+                      authorizationHeader:
+                        prefix: Basic
+                    bodyParameters:
+                      api_key:
+                        selector: "context.request.http.headers.authorization.@extract:{\"sep\":\" \",\"pos\":1}"
+                      ip:
+                        selector: "context.request.http.headers.x-forwarded-for"
+                    contentType: "application/json"
+              authorization:
+                "enforce-valid-key":
+                  patternMatching:
+                    patterns:
+                      - selector: "auth.metadata.lightbridge-validation.project.id"
+                        operator: "neq"
+                        value: ""
+              response:
+                success:
+                  dynamicMetadata:
+                    "llm_project_id":
+                      plain:
+                        selector: "auth.metadata.lightbridge-validation.project.id"
+                    "llm_account_id":
+                      plain:
+                        selector: "auth.metadata.lightbridge-validation.account.id"
+                    "llm_api_key_id":
+                      plain:
+                        selector: "auth.metadata.lightbridge-validation.api_key.id"
+                  headers:
+                    "x-project-id":
+                      plain:
+                        selector: "auth.metadata.lightbridge-validation.project.id"
+                    "x-account-id":
+                      plain:
+                        selector: "auth.metadata.lightbridge-validation.account.id"
+                    "x-api-key-id":
+                      plain:
+                        selector: "auth.metadata.lightbridge-validation.account.id"
+            services:
+              hosts:
+                - services.api.ai.camer.digital
+              authentication:
+                librechat-api-key:
+                  apiKey:
+                    selector:
+                      matchLabels:
+                        group: converse-api-key # Labels on your API Key Secrets
+                  credentials:
+                    authorizationHeader:
+                      prefix: Bearer
+    destination:
+      namespace: converse-gateway
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Lightbridge Backend ---
+  - name: lightbridge-backend
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://adorsys-gis.github.io/lightbridge-authz
+      targetRevision: 0.5.9
+      chart: lightbridge
+      helm:
+        releaseName: lightbridge
+        valuesObject:
+          global:
+            authz:
+              image:
+                version: "sha-0ad64f8e85fa5ee40310b40057a3e04c155c1e4e"
+            authz_usage:
+              image:
+                version: "sha-0ad64f8e85fa5ee40310b40057a3e04c155c1e4e"
+            tls:
+              enabled: false
+
+          api:
+            enabled: true
+            configMaps:
+              config:
+                enabled: true
+                data:
+                  config.yaml: |
+                    logging:
+                      level: "${RUST_LOG}"
+                    database:
+                      url: "${DATABASE_URL}"
+                      pool_size: 10
+                    oauth2:
+                      jwks_url: https://accounts.ssegning.com/realms/camer-digital/protocol/openid-connect/certs
+                    server:
+                      api:
+                        address: 0.0.0.0
+                        port: 3000
+                        tls:
+                          cert_path: /etc/lightbridge/tls/tls.crt
+                          key_path: /etc/lightbridge/tls/tls.key
+                      opa:
+                        address: 0.0.0.0
+                        port: 3000
+                        tls:
+                          cert_path: /etc/lightbridge/tls/tls.crt
+                          key_path: /etc/lightbridge/tls/tls.key
+                        basic_auth:
+                          username: authorino
+                          password: "${OPA_PASSWORD}"
+                    otel:
+                      enabled: false
+                      otlp_endpoint: "http://localhost:4317"
+                      service_name: "lightbridge-authz-api"
+            controllers:
+              main:
+                replicas: 2
+                containers:
+                  authz:
+                    env:
+                      RUST_LOG: "WARN"
+                      PORT: "3000"
+                      POD_NAME:
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.name
+                      DATABASE_URL:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-main-db-app
+                            key: uri
+              migrate:
+                containers:
+                  authz:
+                    env:
+                      DATABASE_URL:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-main-db-app
+                            key: uri
+            persistence:
+              tls:
+                name: authz-tls
+            service:
+              authz:
+                annotations:
+                  traefik.ingress.kubernetes.io/service.serversscheme: https
+                  traefik.ingress.kubernetes.io/service.serverstransport: converse-insecure-transport@kubernetescrd
+            ingress:
+              main:
+                enabled: true
+                annotations:
+                  cert-manager.io/cluster-issuer: cert-home-cert-http
+                className: traefik
+                hosts:
+                  - host: api-main.ai.camer.digital
+                    paths:
+                      - path: /
+                        pathType: Prefix
+                        service:
+                          identifier: authz
+                          port: http
+                tls:
+                  - secretName: api-main.ai.camer.digital-tls
+                    hosts:
+                      - api-main.ai.camer.digital
+          opa:
+            enabled: true
+            configMaps:
+              config:
+                enabled: true
+                data:
+                  config.yaml: |
+                    logging:
+                      level: "${RUST_LOG}"
+                    database:
+                      url: "${DATABASE_URL}"
+                      pool_size: 10
+                    oauth2:
+                      jwks_url: https://accounts.ssegning.com/realms/camer-digital/protocol/openid-connect/certs
+                    server:
+                      api:
+                        address: 0.0.0.0
+                        port: 3000
+                        tls:
+                          cert_path: /etc/lightbridge/tls/tls.crt
+                          key_path: /etc/lightbridge/tls/tls.key
+                      opa:
+                        address: 0.0.0.0
+                        port: 3000
+                        tls:
+                          cert_path: /etc/lightbridge/tls/tls.crt
+                          key_path: /etc/lightbridge/tls/tls.key
+                        basic_auth:
+                          username: authorino
+                          password: "${OPA_PASSWORD}"
+                    otel:
+                      enabled: false
+                      otlp_endpoint: "http://localhost:4317"
+                      service_name: "lightbridge-authz-opa"
+            controllers:
+              main:
+                replicas: 2
+                containers:
+                  authz:
+                    env:
+                      RUST_LOG: "WARN"
+                      PORT: "3000"
+                      POD_NAME:
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.name
+                      DATABASE_URL:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-main-db-app
+                            key: uri
+              migrate:
+                containers:
+                  authz:
+                    env:
+                      DATABASE_URL:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-main-db-app
+                            key: uri
+            service:
+              authz:
+                annotations:
+                  traefik.ingress.kubernetes.io/service.serversscheme: https
+                  traefik.ingress.kubernetes.io/service.serverstransport: converse-insecure-transport@kubernetescrd
+            persistence:
+              tls:
+                name: authz-tls
+
+          usage:
+            enabled: true
+            configMaps:
+              config:
+                enabled: true
+                data:
+                  config.yaml: |
+                    logging:
+                      level: info
+                    database:
+                      url: "${DATABASE_URL}"
+                      pool_size: 10
+                    otel:
+                      enabled: false
+                      otlp_endpoint: http://localhost:4317
+                      service_name: lightbridge-authz-usage
+                    server:
+                      usage:
+                        address: 0.0.0.0
+                        port: 3000
+                        tls:
+                          cert_path: /etc/lightbridge/tls/tls.crt
+                          key_path: /etc/lightbridge/tls/tls.key
+
+            controllers:
+              main:
+                replicas: 2
+                containers:
+                  authz:
+                    env:
+                      DATABASE_URL:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-usage-db-app
+                            key: uri
+              migrate:
+                containers:
+                  authz:
+                    env:
+                      DATABASE_URL:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-usage-db-app
+                            key: uri
+            service:
+              authz:
+                annotations:
+                  traefik.ingress.kubernetes.io/service.serversscheme: https
+                  traefik.ingress.kubernetes.io/service.serverstransport: converse-insecure-transport@kubernetescrd
+            ingress:
+              main:
+                enabled: true
+                annotations:
+                  cert-manager.io/cluster-issuer: cert-home-cert-http
+                className: traefik
+                hosts:
+                  - host: api-usage.ai.camer.digital
+                    paths:
+                      - path: /
+                        pathType: Prefix
+                        service:
+                          identifier: authz
+                          port: http
+                tls:
+                  - secretName: api-usage.ai.camer.digital-tls
+                    hosts:
+                      - api-usage.ai.camer.digital
+            persistence:
+              tls:
+                name: authz-tls
+          rawRessources:
+            - |
+              apiVersion: traefik.io/v1alpha1
+              kind: ServersTransport
+              metadata:
+                name: insecure-transport
+                namespace: converse
+              spec:
+                insecureSkipVerify: true
+            - |
+              apiVersion: cert-manager.io/v1
+              kind: Certificate
+              metadata:
+                name: authz-tls
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                secretName: authz-tls
+                issuerRef:
+                  name: self-signed-ca
+                  kind: ClusterIssuer
+                commonName: lightbridge-api.{{ $.Release.Namespace }}.svc.cluster.local
+                dnsNames:
+                  - lightbridge-api.{{ $.Release.Namespace }}.svc.cluster.local
+                  - lightbridge-opa.{{ $.Release.Namespace }}.svc.cluster.local
+                  - lightbridge-api.{{ $.Release.Namespace }}.svc.cluster
+                  - lightbridge-opa.{{ $.Release.Namespace }}.svc.cluster
+                  - lightbridge-api.{{ $.Release.Namespace }}.svc
+                  - lightbridge-opa.{{ $.Release.Namespace }}.svc
+                  - lightbridge-api.{{ $.Release.Namespace }}
+                  - lightbridge-opa.{{ $.Release.Namespace }}
+                usages:
+                  - server auth
+                  - client auth
+            - |
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: lightbridge-main-db
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                instances: 2
+                storage:
+                  storageClass: linode-block-storage
+                  size: "5Gi"
+                resources:
+                  limits:
+                    cpu: 300m
+                    memory: 1Gi
+                  requests:
+                    cpu: 200m
+                    memory: 500Mi
+            - |
+              ---
+              apiVersion: postgresql.cnpg.io/v1
+              kind: ClusterImageCatalog
+              metadata:
+                name: lightbridge-usage-db
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                images:
+                  - major: 17
+                    image: timescale/timescaledb:2.21.1-pg17
+              ---
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: lightbridge-usage-db
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                instances: 2
+                #imageName: ghcr.io/clevyr/cloudnativepg-timescale:17-ts2
+                imageCatalogRef:
+                  apiGroup: postgresql.cnpg.io
+                  kind: ClusterImageCatalog
+                  name: lightbridge-usage-db
+                  major: 17
+                storage:
+                  storageClass: linode-block-storage
+                  size: "10Gi"
+                resources:
+                  limits:
+                    cpu: 300m
+                    memory: 1Gi
+                  requests:
+                    cpu: 200m
+                    memory: 500Mi
+                postgresql:
+                  shared_preload_libraries:
+                    - timescaledb
+                postgresUID: 70 # see below
+                postgresGID: 70 # see below
+                bootstrap:
+                  initdb:
+                    postInitTemplateSQL:
+                      - CREATE EXTENSION timescaledb VERSION '2.19.3';
+                      - CREATE EXTENSION IF NOT EXISTS timescaledb;
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Lightbridge UI ---
+  - name: lightbridge-ui
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://bjw-s-labs.github.io/helm-charts
+      targetRevision: 4.6.2
+      chart: app-template
+      helm:
+        releaseName: lightbridge-ui
+        valuesObject:
+          controllers:
+            main:
+              containers:
+                main:
+                  image:
+                    repository: nginx
+                    tag: alpine
+          service:
+            main:
+              controller: main
+              ports:
+                http:
+                  port: 80
+          ingress:
+            main:
+              enabled: true
+              annotations:
+                cert-manager.io/cluster-issuer: cert-home-cert-http
+              className: traefik
+              hosts:
+                - host: console.ai.camer.digital
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      service:
+                        identifier: main
+                        port: http
+              tls:
+                - secretName: console.ai.camer.digital-tls
+                  hosts:
+                    - console.ai.camer.digital
+          route:
+            main:
+              enabled: false
+              kind: HTTPRoute
+              parentRefs:
+                - name: core-gateway
+                  namespace: converse
+                  sectionName: manage-https-v2
+              hostnames:
+                - manage.ai.camer.digital
+              rules:
+                - matches:
+                    - path:
+                        type: PathPrefix
+                        value: /
+                  backendRefs:
+                    - name: lightbridge-ui
+                      port: 80
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- LibreChat & Phoenix ---
+  - name: phoenix
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: oci://registry-1.docker.io/arizephoenix/phoenix-helm
+      targetRevision: 4.0.36
+      path: .
+      helm:
+        releaseName: phoenix
+        valuesObject:
+          persistence:
+            storageClass: linode-block-storage
+          service:
+            type: "ClusterIP"
+          ingress:
+            host: "analytics.ai.camer.digital"
+            annotations:
+              cert-manager.io/cluster-issuer: cert-home-cert-http
+            tls:
+              enabled: true
+          additionalEnv:
+            - name: PHOENIX_OAUTH2_KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: converse-phoenix-keycloak
+                  key: client_secret
+          auth:
+            disableBasicAuth: true
+            useSecureCookies: true
+            createSecret: false
+            name: "converse-phoenix"
+            oauth2:
+              enabled: true
+              providers:
+                keycloak:
+                  client_id: "phoenix"
+                  oidc_config_url: "https://accounts.ssegning.com/realms/camer-digital/.well-known/openid-configuration"
+                  display_name: "CDigital"
+                  allow_sign_up: true
+                  auto_login: true
+                  role_attribute_path: "phoenix_role"
+                  role_mapping: "admin:ADMIN,user:MEMBER,viewer:VIEWER"
+                  role_attribute_strict: true
+                  use_pkce: true
+                  scopes: "openid phoenix"
+    destination:
+      namespace: converse-monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: librechat
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/librechart
+      helm:
+        releaseName: librechat
+        valuesObject:
+          search:
+            persistence:
+              storageClass: "linode-block-storage"
+          db:
+            persistence:
+              storageClass: linode-block-storage
+
+    destination:
+      namespace: converse-chat
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Models ---
+  - name: models
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/ai-models
+      helm:
+        releaseName: models
+        valuesObject: { }
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true

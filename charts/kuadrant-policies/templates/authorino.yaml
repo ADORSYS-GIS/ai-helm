@@ -1,0 +1,19 @@
+{{- if .Values.instances }}
+{{- range $name, $config := .Values.instances }}
+---
+apiVersion: operator.authorino.kuadrant.io/v1beta1
+kind: Authorino
+metadata:
+  name: {{ include "common.names.name" $ }}-{{ $name }}
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{ include "common.labels.standard" $ | nindent 4 }}
+spec:
+  listener:
+    {{- toYaml $config.listener | nindent 4 }}
+  oidcServer:
+    {{- toYaml $config.oidcServer | nindent 4 }}
+  volumes:
+    {{- toYaml $config.volumes | nindent 4 }}
+{{- end }}
+{{- end }}
