@@ -1,0 +1,149 @@
+global:
+  labels:
+    app: converse-frontend
+    team: ssegning-home
+
+conversefrontend:
+  controllers:
+    main:
+      type: deployment
+      strategy: RollingUpdate
+      replicas: 2
+      pod:
+        labels:
+          app: converse-frontend-app
+      containers:
+        frontend:
+          image:
+            repository: ghcr.io/adorsys-gis/converse-frontends
+            tag: sha-1d554a6
+            pullPolicy: IfNotPresent
+
+         
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+
+          env:
+
+            # Production defaults aligned with the Converse (LibreChat) chart.
+            # See [`charts/ai/converse/values.yaml`](charts/ai/converse/values.yaml:17)
+            # and [`charts/ai/converse/values.yaml`](charts/ai/converse/values.yaml:97).
+            EXPO_PUBLIC_BACKEND_URL: "https://api-main.ai.camer.digital/"
+
+            EXPO_PUBLIC_KEYCLOAK_ISSUER: "https://accounts.camer.digital/realms/camer-digital"
+            EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: "converse-ui"
+            EXPO_PUBLIC_KEYCLOAK_SCHEME: "https"
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+
+          probes:
+            liveness:
+              enabled: true
+              type: HTTP
+              path: /
+              spec:
+                httpGet:
+                  port: http
+            readiness:
+              enabled: true
+              type: HTTP
+              path: /
+              spec:
+                httpGet:
+                  port: http
+            startup:
+              enabled: true
+              type: HTTP
+              path: /
+              spec:
+                httpGet:
+                  port: http
+                failureThreshold: 30
+                periodSeconds: 5
+
+  service:
+    frontend:
+      enabled: true
+      annotations: {}
+      type: ClusterIP
+      controller: main
+      ports:
+        http:
+          enabled: true
+          port: 80
+          targetPort: http
+
+  ingress:
+    frontend:
+      enabled: true
+      annotations:
+        cert-manager.io/cluster-issuer: cert-cloudflare
+      className: traefik
+      hosts:
+        - host: converse-ui.camer.digital
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: frontend
+                port: http
+      tls:
+        - secretName: converse-ui.camer.digital-tls
+          hosts:
+            - converse-ui.camer.digital
+
+    frontend-local:
+      enabled: false
+      annotations:
+        cert-manager.io/cluster-issuer: self-signed-ca
+      className: traefik
+      hosts:
+        - host: converse-ui.home.ssegning
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: frontend
+                port: http
+      tls:
+        - secretName: converse-ui.home.ssegning-tls
+          hosts:
+            - converse-ui.home.ssegning
+
+  # Optional override for the runtime-config template consumed by the container entrypoint.
+  # If enabled, this replaces the template shipped in the image.
+  configMaps:
+    runtime-config-template:
+      enabled: false
+      annotations:
+        description: "Runtime config template for converse-frontends (/usr/share/nginx/html/config.template.json)"
+      data:
+        config.template.json: |
+          {
+            "backendUrl": "${EXPO_PUBLIC_BACKEND_URL}",
+            "keycloak": {
+              "issuer": "${EXPO_PUBLIC_KEYCLOAK_ISSUER}",
+              "clientId": "${EXPO_PUBLIC_KEYCLOAK_CLIENT_ID}",
+              "scheme": "${EXPO_PUBLIC_KEYCLOAK_SCHEME}"
+            }
+          }
+
+  persistence:
+    runtime-config-template:
+      enabled: false
+      type: configMap
+      identifier: runtime-config-template
+      advancedMounts:
+        main:
+          frontend:
+            - path: /usr/share/nginx/html/config.template.json
+              subPath: config.template.json
+              readOnly: true
