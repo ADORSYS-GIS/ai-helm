@@ -9,11 +9,15 @@ metadata:
   labels:
     {{ include "common.labels.standard" $ | nindent 4 }}
 spec:
-  {{ with $config.targetRefs }}
   targetRefs:
-    {{- toYaml . | nindent 4 }}
-  {{ end }}
-
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $config.gatewayName }}
+      sectionName: api-https
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $config.gatewayName }}
+      sectionName: service-https
   extAuth:
     grpc:
       backendRefs:
