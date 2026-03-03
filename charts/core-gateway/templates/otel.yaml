@@ -1,0 +1,72 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: {{ include "core-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  # mode: deployment  # optional; defaults to deployment in most setups
+  env:
+    - name: PHOENIX_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: pheonix-otel-key
+          key: token
+
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      otlp_lightbridge:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:14318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 15
+      batch: {}
+
+    exporters:
+      # Phoenix HTTP ingest endpoint:
+      # - If Phoenix is inside the cluster, keep http://
+      otlphttp/phoenix:
+        endpoint: "http://phoenix-svc.converse-monitoring.svc.cluster.local:6006"
+        headers:
+          # Phoenix docs: Bearer auth; lowercase header for compatibility.
+          authorization: "Bearer ${env:PHOENIX_API_KEY}"
+      otlphttp/lightbridge_opa:
+        endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000"
+        #headers:
+        #  # Phoenix docs: Bearer auth; lowercase header for compatibility.
+        #  authorization: "Bearer ${env:PHOENIX_API_KEY}"
+
+      debug:
+        verbosity: normal
+
+    service:
+      pipelines:
+        traces:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - otlphttp/phoenix
+            #- debug
+        traces_lightbridge:
+          receivers:
+            - otlp_lightbridge
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - debug
+            - otlphttp/lightbridge_opa
+
