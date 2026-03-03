@@ -238,8 +238,8 @@ applications:
                 certificateName: self-signed-cert-for-mutating-webhook-managed
           extProc:
             extraEnvVars:
-                - name: LOG_LEVEL
-                  value: "debug"
+              - name: LOG_LEVEL
+                value: "debug"
     destination:
       namespace: envoy-ai-gateway-system
     syncPolicy:
@@ -338,7 +338,10 @@ applications:
                         path: lightbridge-ca.crt
           securityPolicies:
             main:
-              gatewayName: core-gateway
+              targetRefs:
+                - group: ""
+                  kind: Namespace
+                  name: converse
               authorinoService: kuadrant-policies-main-authorino-authorization
           authConfigs:
             main:
