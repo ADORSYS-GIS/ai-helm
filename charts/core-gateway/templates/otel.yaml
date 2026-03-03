@@ -1,7 +1,7 @@
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:
-  name: {{ include "core-gateway.fullname" . }}
+  name: {{ include "core-gateway.fullname" . }}-phoenix
   namespace: {{ .Release.Namespace }}
 spec:
   # mode: deployment  # optional; defaults to deployment in most setups
@@ -16,20 +16,10 @@ spec:
     receivers:
       otlp:
         protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
-      otlp_lightbridge:
-        protocols:
-          http:
-            endpoint: 0.0.0.0:14318
 
     processors:
-      memory_limiter:
-        check_interval: 1s
-        limit_percentage: 75
-        spike_limit_percentage: 15
       batch: {}
 
     exporters:
@@ -40,14 +30,6 @@ spec:
         headers:
           # Phoenix docs: Bearer auth; lowercase header for compatibility.
           authorization: "Bearer ${env:PHOENIX_API_KEY}"
-      otlphttp/lightbridge_opa:
-        endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000"
-        #headers:
-        #  # Phoenix docs: Bearer auth; lowercase header for compatibility.
-        #  authorization: "Bearer ${env:PHOENIX_API_KEY}"
-
-      debug:
-        verbosity: normal
 
     service:
       pipelines:
@@ -55,18 +37,44 @@ spec:
           receivers:
             - otlp
           processors:
-            - memory_limiter
             - batch
           exporters:
             - otlphttp/phoenix
+---
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-usage
+  namespace: {{ .Release.Namespace }}
+spec:
+  config:
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch: {}
+
+    exporters:
+      otlphttp/lightbridge_opa:
+        endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000"
+
+    service:
+      pipelines:
+        traces:
+          receivers:
+            - otlp
+          processors:
+            - batch
+          exporters:
+            - otlphttp/lightbridge_opa
             #- debug
         traces_lightbridge:
           receivers:
-            - otlp_lightbridge
+            - otlp
           processors:
-            - memory_limiter
             - batch
           exporters:
-            - debug
             - otlphttp/lightbridge_opa
 
