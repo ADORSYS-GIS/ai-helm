@@ -11,9 +11,14 @@ spec:
     - name: {{ include "core-gateway.fullname" . }}
       kind: Gateway
       group: gateway.networking.k8s.io
+      sectionName: http
   rules:
     - filters:
         - type: RequestRedirect
           requestRedirect:
             scheme: https
             statusCode: 301
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
