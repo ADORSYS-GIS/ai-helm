@@ -1,8 +1,9 @@
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
+{{- $gateway := .Values.gateway | default dict }}
 metadata:
-  name: {{ .Values.gateway.className | default "core-gateway" }}
+  name: {{ $gateway.className | default "core-gateway" }}
   namespace: {{ .Release.Namespace }}
 spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
