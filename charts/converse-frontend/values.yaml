@@ -1,7 +1,7 @@
 global:
   labels:
     app: converse-frontend
-    team: ssegning-home
+    team: ""
 
 conversefrontend:
   controllers:
@@ -27,13 +27,12 @@ conversefrontend:
 
           env:
 
-            # Production defaults aligned with the Converse (LibreChat) chart.
-            # See [`charts/ai/converse/values.yaml`](charts/ai/converse/values.yaml:17)
-            # and [`charts/ai/converse/values.yaml`](charts/ai/converse/values.yaml:97).
-            EXPO_PUBLIC_BACKEND_URL: "https://api-main.ai.camer.digital/"
+          
+            EXPO_PUBLIC_BACKEND_URL: ""
 
-            EXPO_PUBLIC_KEYCLOAK_ISSUER: "https://accounts.camer.digital/realms/camer-digital"
-            EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: "converse-ui"
+            
+            EXPO_PUBLIC_KEYCLOAK_ISSUER: ""
+            EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: ""
             EXPO_PUBLIC_KEYCLOAK_SCHEME: "https"
 
           resources:
@@ -83,40 +82,20 @@ conversefrontend:
 
   ingress:
     frontend:
-      enabled: true
-      annotations:
-        cert-manager.io/cluster-issuer: cert-cloudflare
-      className: traefik
-      hosts:
-        - host: converse-ui.camer.digital
-          paths:
-            - path: /
-              pathType: Prefix
-              service:
-                identifier: frontend
-                port: http
-      tls:
-        - secretName: converse-ui.camer.digital-tls
-          hosts:
-            - converse-ui.camer.digital
+     
+      enabled: false
+      annotations: {}
+      className: ""
+      hosts: []
+      tls: []
 
     frontend-local:
       enabled: false
-      annotations:
-        cert-manager.io/cluster-issuer: self-signed-ca
-      className: traefik
-      hosts:
-        - host: converse-ui.home.ssegning
-          paths:
-            - path: /
-              pathType: Prefix
-              service:
-                identifier: frontend
-                port: http
-      tls:
-        - secretName: converse-ui.home.ssegning-tls
-          hosts:
-            - converse-ui.home.ssegning
+      # Vendor-neutral local ingress stub. Configure in your own values if you need it.
+      annotations: {}
+      className: ""
+      hosts: []
+      tls: []
 
   # Optional override for the runtime-config template consumed by the container entrypoint.
   # If enabled, this replaces the template shipped in the image.

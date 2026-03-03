@@ -1,0 +1,37 @@
+{{- /*
+Fail fast if required runtime-config values are missing.
+
+Reason: the frontend validates the runtime config shape at startup and will hang/throw
+if required fields are absent or empty.
+
+Users are expected to provide these values via:
+- helm install/upgrade -f my-values.yaml
+- or --set conversefrontend.controllers.main.containers.frontend.env.EXPO_PUBLIC_...
+
+ Auth bypass for local/testing:
+ - Set EXPO_PUBLIC_KEYCLOAK_CLIENT_ID to "disabled" to skip Keycloak issuer/scheme validation.
+   The UI should treat this as auth-disabled mode. Backend URL remains required.
+*/ -}}
+
+{{- $env := (((.Values.conversefrontend).controllers).main).containers.frontend.env | default dict -}}
+{{- $clientId := get $env "EXPO_PUBLIC_KEYCLOAK_CLIENT_ID" -}}
+
+{{- if not (get $env "EXPO_PUBLIC_BACKEND_URL") }}
+{{- fail "Missing required value: conversefrontend.controllers.main.containers.frontend.env.EXPO_PUBLIC_BACKEND_URL" -}}
+{{- end }}
+
+{{- if not $clientId }}
+{{- fail "Missing required value: conversefrontend.controllers.main.containers.frontend.env.EXPO_PUBLIC_KEYCLOAK_CLIENT_ID (set to 'disabled' to bypass auth in local/testing)" -}}
+{{- end }}
+
+{{- if ne $clientId "disabled" }}
+  {{- if not (get $env "EXPO_PUBLIC_KEYCLOAK_ISSUER") }}
+  {{- fail "Missing required value: conversefrontend.controllers.main.containers.frontend.env.EXPO_PUBLIC_KEYCLOAK_ISSUER" -}}
+  {{- end }}
+
+  {{- if not (get $env "EXPO_PUBLIC_KEYCLOAK_SCHEME") }}
+  {{- fail "Missing required value: conversefrontend.controllers.main.containers.frontend.env.EXPO_PUBLIC_KEYCLOAK_SCHEME" -}}
+  {{- end }}
+{{- end }}
+
+{{- /* Render nothing; this file exists only for validation. */ -}}
