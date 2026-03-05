@@ -447,7 +447,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://adorsys-gis.github.io/lightbridge-authz
-      targetRevision: 0.5.9
+      targetRevision: 0.6.2
       chart: lightbridge
       helm:
         releaseName: lightbridge
@@ -455,10 +455,13 @@ applications:
           global:
             authz:
               image:
-                version: "sha-0ad64f8e85fa5ee40310b40057a3e04c155c1e4e"
+                version: "sha-965faaebabc02cf8d873ddef0278fa11b716ba77"
             authz_usage:
               image:
-                version: "sha-0ad64f8e85fa5ee40310b40057a3e04c155c1e4e"
+                version: "sha-965faaebabc02cf8d873ddef0278fa11b716ba77"
+            authz_mcp:
+              image:
+                version: "sha-965faaebabc02cf8d873ddef0278fa11b716ba77"
             tls:
               enabled: false
 
@@ -548,6 +551,83 @@ applications:
                   - secretName: api-main.ai.camer.digital-tls
                     hosts:
                       - api-main.ai.camer.digital
+          mcp:
+            enabled: true
+            configMaps:
+              config:
+                enabled: true
+                data:
+                  config.yaml: |
+                    logging:
+                      level: "${RUST_LOG}"
+                    database:
+                      url: "${DATABASE_URL}"
+                      pool_size: 10
+                    oauth2:
+                      jwks_url: https://accounts.ssegning.com/realms/camer-digital/protocol/openid-connect/certs
+                    server:
+                      api:
+                        address: 0.0.0.0
+                        port: 3000
+                        tls:
+                          cert_path: /etc/lightbridge/tls/tls.crt
+                          key_path: /etc/lightbridge/tls/tls.key
+                      opa:
+                        address: 0.0.0.0
+                        port: 3000
+                        tls:
+                          cert_path: /etc/lightbridge/tls/tls.crt
+                          key_path: /etc/lightbridge/tls/tls.key
+                        basic_auth:
+                          username: authorino
+                          password: "${OPA_PASSWORD}"
+                    otel:
+                      enabled: false
+                      otlp_endpoint: "http://localhost:4317"
+                      service_name: "lightbridge-authz-api"
+            controllers:
+              main:
+                replicas: 1
+                containers:
+                  authz:
+                    env:
+                      RUST_LOG: "WARN"
+                      PORT: "3000"
+                      POD_NAME:
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.name
+                      DATABASE_URL:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-main-db-app
+                            key: uri
+            persistence:
+              tls:
+                name: authz-tls
+            service:
+              authz:
+                annotations:
+                  traefik.ingress.kubernetes.io/service.serversscheme: https
+                  traefik.ingress.kubernetes.io/service.serverstransport: converse-insecure-transport@kubernetescrd
+            ingress:
+              main:
+                enabled: true
+                annotations:
+                  cert-manager.io/cluster-issuer: cert-home-cert-http
+                className: traefik
+                hosts:
+                  - host: api-mcp.ai.camer.digital
+                    paths:
+                      - path: /
+                        pathType: Prefix
+                        service:
+                          identifier: authz
+                          port: http
+                tls:
+                  - secretName: api-mcp.ai.camer.digital-tls
+                    hosts:
+                      - api-mcp.ai.camer.digital
           opa:
             enabled: true
             configMaps:
@@ -709,14 +789,10 @@ applications:
                   kind: ClusterIssuer
                 commonName: lightbridge-api.{{ $.Release.Namespace }}.svc.cluster.local
                 dnsNames:
-                  - lightbridge-api.{{ $.Release.Namespace }}.svc.cluster.local
-                  - lightbridge-opa.{{ $.Release.Namespace }}.svc.cluster.local
-                  - lightbridge-api.{{ $.Release.Namespace }}.svc.cluster
-                  - lightbridge-opa.{{ $.Release.Namespace }}.svc.cluster
-                  - lightbridge-api.{{ $.Release.Namespace }}.svc
-                  - lightbridge-opa.{{ $.Release.Namespace }}.svc
-                  - lightbridge-api.{{ $.Release.Namespace }}
-                  - lightbridge-opa.{{ $.Release.Namespace }}
+                  - *.{{ $.Release.Namespace }}.svc.cluster.local
+                  - *.{{ $.Release.Namespace }}.svc.cluster
+                  - *.{{ $.Release.Namespace }}.svc
+                  - *.{{ $.Release.Namespace }}
                 usages:
                   - server auth
                   - client auth
