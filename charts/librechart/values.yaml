@@ -1,8 +1,10 @@
 global:
   librechat:
-    version: "v0.8.3-rc1"
+    version: "v0.8.3-rc2"
   mongo:
-    replicaCount: 1
+    replicaCount: 2
+  configmap:
+    name: "librechat-config"
 
 librechat:
   ingress:
@@ -119,6 +121,15 @@ librechat:
 
             LOGIN_MAX: "50"
             LOGIN_WINDOW: "1"
+
+            CD_MCP_CLIENT_ID:
+              secretKeyRef:
+                name: librechat-mcp-cd-credentials
+                key: client_id
+            CD_MCP_SECRET_ID:
+              secretKeyRef:
+                name: librechat-mcp-cd-credentials
+                key: client_secret
 
             GITHUB_MCP_CLIENT_ID:
               secretKeyRef:
@@ -241,11 +252,11 @@ librechat:
 
           resources:
             limits:
-              cpu: 300m
-              memory: 1Gi
+              cpu: 1000m
+              memory: 2Gi
             requests:
-              cpu: 200m
-              memory: 500Mi
+              cpu: 500m
+              memory: 1Gi
           probes:
             liveness:
               enabled: true
@@ -303,11 +314,11 @@ librechat:
 
           resources:
             limits:
-              cpu: 300m
-              memory: 1Gi
+              cpu: 1000m
+              memory: 2Gi
             requests:
-              cpu: 200m
-              memory: 500Mi
+              cpu: 500m
+              memory: 1Gi
           probes:
             liveness:
               enabled: true
@@ -332,192 +343,12 @@ librechat:
                   port: http
                 failureThreshold: 30
                 periodSeconds: 5
-  configMaps:
-    config:
-      enabled: true
-      labels: { }
-      annotations: { }
-      data:
-        librechat: |
-          version: 1.3.1
-          cache: true
-          fileStrategy: "s3"
-          # Balance settings
-          balance:
-            enabled: false               # Enable token credit balances for users
-            startBalance: 20000          # Initial tokens credited upon registration
-            autoRefillEnabled: false     # Enable automatic token refills
-            refillIntervalValue: 30      # Numerical value for refill interval
-            refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
-            refillAmount: 10000          # Tokens added during each refill
-          
-          # Web Search Configuration
-          webSearch:
-            # Search Provider Configuration - use environment variable references
-            serperApiKey: "${SERPER_API_KEY}"
-            # Alternative: SearXNG (uncomment if using)
-            # searxngInstanceUrl: "${SEARXNG_INSTANCE_URL}"
-            # searxngApiKey: "${SEARXNG_API_KEY}"
-          
-            # Scraper Configuration
-            firecrawlApiKey: "${FIRECRAWL_API_KEY}"
-            # Optional: Custom Firecrawl instance
-            # firecrawlApiUrl: "${FIRECRAWL_API_URL}"
-          
-            # Reranker Configuration - Jina (or use Cohere)
-            jinaApiKey: "${JINA_API_KEY}"
-            # Optional: Custom Jina instance
-            # jinaApiUrl: "${JINA_API_URL}"
-            # Alternative: Cohere
-            # cohereApiKey: "${COHERE_API_KEY}"
-          
-            # General Settings
-            safeSearch: 1  # Options: 0 (OFF), 1 (MODERATE - default), 2 (STRICT)
-          
-          mcpServers:
-            github:
-              type: "streamable-http"
-              initTimeout: 150000
-              url: "https://api.githubcopilot.com/mcp"
-              oauth:
-                authorization_url: https://github.com/login/oauth/authorize
-                token_url: https://github.com/login/oauth/access_token
-                client_id: ${GITHUB_MCP_CLIENT_ID}
-                client_secret: ${GITHUB_MCP_SECRET_ID}
-                redirect_uri: https://ai.camer.digital/api/mcp/github/oauth/callback
-                scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
-          
-          fileConfig:
-            endpoints:
-              assistants:
-                fileLimit: 5
-                fileSizeLimit: 10  # Maximum size for an individual file in MB
-                totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
-                supportedMimeTypes:
-                  - "image/.*"
-                  - "application/pdf"
-              openAI:
-                disabled: false  # Disables file uploading to the OpenAI endpoint
-              default:
-                totalSizeLimit: 20
-              YourCustomEndpointName:
-                fileLimit: 2
-                fileSizeLimit: 5
-            serverFileSizeLimit: 100  # Global server file size limit in MB
-            avatarSizeLimit: 2  # Limit for user avatar image size in MB
-          rateLimits:
-            fileUploads:
-              ipMax: 100
-              ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
-              userMax: 50
-              userWindowInMinutes: 60  # Rate limit window for file uploads per user
-            #registration:
-            #socialLogins: [ "openid" ]
-          endpoints:
-            all:
-              streamRate: 5
-              titlePromptTemplate: |
-                ### Task:
-                Generate a concise, 3-5 word title with an emoji summarizing the chat history.
-          
-                ### Guidelines:
-                - The title should clearly represent the main theme or subject of the conversation.
-                - Always use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
-                - Write the title in the chat's primary language; default to English if multilingual.
-                - Prioritize accuracy over excessive creativity; keep it clear and simple.
-                - The title should be short and funny.
-                - The emoji should come first.
-          
-                ### Output:
-                Format "<emoji> your concise title here"
-                  ### Examples:
-                  - 📉 Stock Market Trends
-                  - 🍪 Perfect Chocolate Chip Recipe
-                  - 🎧 Evolution of Music Streaming
-                  - 👨🏿‍💻 Remote Work Productivity Tips
-                  - 🧠 Artificial Intelligence in Healthcare
-                  - 🎮 Video Game Development Insights
-          
-                ### Chat History:
-                Human: {input}
-                Assistant: {output}
-            agents:
-              recursionLimit: 50
-              maxRecursionLimit: 100
-              disableBuilder: false
-              # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-              # capabilities: ["execute_code", "file_search", "actions", "tools", "artifacts", "ocr", "chain", "web_search"]
-              # (optional) File citation configuration for file_search capability
-              maxCitations: 20          # Maximum total citations in responses (1-50)
-              maxCitationsPerFile: 7    # Maximum citations from each file (1-10)
-              minRelevanceScore: 0.45   # Minimum relevance score threshold (0.0-1.0)
-            assistants:
-              disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-              pollIntervalMs: 750  # Polling interval for checking assistant updates
-              timeoutMs: 180000  # Timeout for assistant operations
-              # Should only be one or the other, either `supportedIds` or `excludedIds`
-              #supportedIds: [ "asst_supportedAssistantId1", "asst_supportedAssistantId2" ]
-              #excludedIds: ["asst_excludedAssistantId"]
-            custom:
-              - name: "Converse"
-                apiKey: "${CONVERSE_OPENAI_API_KEY}"
-                baseURL: "https://services.api.ai.camer.digital/v1"
-                models:
-                  default:
-                    - "gpt-image-1"
-                    - "qwen3-embedding-8b"
-                    - "minimax-m2p5"
-                    - "qwen3-235b-a22b"
-                    - "qwen3-reranker-8b"
-                    - "qwen3-235b-a22b-instruct-2507"
-                    - "deepseek-v3p1-terminus"
-                    - "dall-e-3"
-                    - "gemini-3-pro"
-                    - "glm-5"
-                    - "deepseek-v3p1"
-                    - "o4-mini"
-                    - "fireworks-asr-v2"
-                    - "gemini-3-pro-image-preview"
-                    - "gemini-2-5-flash-lite"
-                    - "qwen3-235b-a22b-thinking-2507"
-                    - "gpt-4-1"
-                    - "kimi-k2-thinking"
-                    # - "qwen3-coder-30b-a3b-instruct" # TODO remove from Envoy
-                    - "whisper-v3-turbo"
-                    - "gemini-2-5-pro-reasoning"
-                    - "gpt-oss-120b"
-                    - "kimi-k2p5"
-                    - "gpt-4-1-mini"
-                    - "gpt-oss-20b"
-                    - "kimi-k2-instruct-0905"
-                    - "gemini-2-5-flash"
-                    - "gpt-5"
-                    - "gpt-5-mini"
-                    - "gpt-5-nano"
-                    - "gemini-3-flash"
-                    - "whisper-v3"
-                  fetch: false  # Attempt to dynamically fetch available models -> fails, because of 401
-                  userIdQuery: false
-                iconURL: "https://s3.camer.digital/converse/public/autumn.png"
-                titleConvo: true
-                titleMethod: "completion"
-                titleModel: "gemini-2-5-flash-lite"
-                summarize: true
-                summaryModel: "gemini-2-5-flash-lite"
-                forcePrompt: false
-                modelDisplayLabel: "Converse AI"
-                headers:
-                  X-User-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
-                  X-User-Email: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
-                  X-User-Role: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
-                  #Authorization: 'Bearer ${CONVERSE_OPENAI_API_KEY}'
-
 
   persistence:
     config:
       enabled: true
       type: configMap
-      identifier: config
+      name: '{{ .Values.global.configmap.name }}'
       advancedMounts:
         librechat:
           librechat:
@@ -535,6 +366,226 @@ librechat:
       annotations: { }
       labels: { }
 
+config:
+  version: 1.3.1
+  cache: true
+  fileStrategy: "s3"
+  # Balance settings
+  balance:
+    enabled: false               # Enable token credit balances for users
+    startBalance: 20000          # Initial tokens credited upon registration
+    autoRefillEnabled: false     # Enable automatic token refills
+    refillIntervalValue: 30      # Numerical value for refill interval
+    refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
+    refillAmount: 10000          # Tokens added during each refill
+
+  # Web Search Configuration
+  webSearch:
+    # Search Provider Configuration - use environment variable references
+    serperApiKey: "${SERPER_API_KEY}"
+    # Alternative: SearXNG (uncomment if using)
+    # searxngInstanceUrl: "${SEARXNG_INSTANCE_URL}"
+    # searxngApiKey: "${SEARXNG_API_KEY}"
+
+    # Scraper Configuration
+    firecrawlApiKey: "${FIRECRAWL_API_KEY}"
+    # Optional: Custom Firecrawl instance
+    # firecrawlApiUrl: "${FIRECRAWL_API_URL}"
+
+    # Reranker Configuration - Jina (or use Cohere)
+    jinaApiKey: "${JINA_API_KEY}"
+    # Optional: Custom Jina instance
+    # jinaApiUrl: "${JINA_API_URL}"
+    # Alternative: Cohere
+    # cohereApiKey: "${COHERE_API_KEY}"
+
+    # General Settings
+    safeSearch: 0  # Options: 0 (OFF), 1 (MODERATE - default), 2 (STRICT)
+
+  mcpServers:
+    github_issues:
+      title: "GH Issues"
+      type: "streamable-http"
+      description: "Provides access to GitHub issues across all repositories the user has access to, with support for filtering by organization, repository, assignee, and more."
+      initTimeout: 150000
+      url: "https://api.githubcopilot.com/mcp/x/issues"
+      oauth:
+        authorization_url: https://github.com/login/oauth/authorize
+        token_url: https://github.com/login/oauth/access_token
+        client_id: ${GITHUB_MCP_CLIENT_ID}
+        client_secret: ${GITHUB_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/github_issues/oauth/callback
+        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
+    github_projects:
+      title: "GH Project"
+      type: "streamable-http"
+      description: "Provides access to GitHub projects across all repositories the user has access to, with support for filtering by organization, repository, assignee, and more."
+      initTimeout: 150000
+      url: "https://api.githubcopilot.com/mcp/x/projects"
+      oauth:
+        authorization_url: https://github.com/login/oauth/authorize
+        token_url: https://github.com/login/oauth/access_token
+        client_id: ${GITHUB_MCP_CLIENT_ID}
+        client_secret: ${GITHUB_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/github_projects/oauth/callback
+        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
+    github_pull_requests:
+      title: "GH PR"
+      type: "streamable-http"
+      description: "Provides access to GitHub pull requests across all repositories the user has access to, with support for filtering by organization, repository, assignee, and more."
+      initTimeout: 150000
+      url: "https://api.githubcopilot.com/mcp/x/pull_requests"
+      oauth:
+        authorization_url: https://github.com/login/oauth/authorize
+        token_url: https://github.com/login/oauth/access_token
+        client_id: ${GITHUB_MCP_CLIENT_ID}
+        client_secret: ${GITHUB_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/github_pull_requests/oauth/callback
+        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
+    github_repos:
+      title: "GH Reps"
+      type: "streamable-http"
+      description: "Provides access to GitHub repositories across all repositories the user has access to, with support for filtering by organization, repository, assignee, and more."
+      initTimeout: 150000
+      url: "https://api.githubcopilot.com/mcp/x/repos"
+      oauth:
+        authorization_url: https://github.com/login/oauth/authorize
+        token_url: https://github.com/login/oauth/access_token
+        client_id: ${GITHUB_MCP_CLIENT_ID}
+        client_secret: ${GITHUB_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/github_repos/oauth/callback
+        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
+    github_github_support_docs_search:
+      title: "GH Docs"
+      type: "streamable-http"
+      description: "Provides access to search across GitHub's support documentation, enabling users to find relevant articles and resources based on their queries."
+      initTimeout: 150000
+      url: "https://api.githubcopilot.com/mcp/x/github_support_docs_search"
+      oauth:
+        authorization_url: https://github.com/login/oauth/authorize
+        token_url: https://github.com/login/oauth/access_token
+        client_id: ${GITHUB_MCP_CLIENT_ID}
+        client_secret: ${GITHUB_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/github_github_support_docs_search/oauth/callback
+        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
+    lightbridge_self_service:
+      title: "LightBridge Self Service"
+      description: "Provides utilities to CRUD accounts, projects, and API keys. API keys are used to interact with the backend at `https://api.ai.camer.digital/v1` and are OpenAI compatible."
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "https://self-service-api.ai.camer.digital/mcp"
+      oauth:
+        authorization_url: https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CD_MCP_CLIENT_ID}
+        client_secret: ${CD_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/lightbridge_self_service/oauth/callback
+        scope: "email openid"
+
+  fileConfig:
+    endpoints:
+      assistants:
+        fileLimit: 5
+        fileSizeLimit: 10  # Maximum size for an individual file in MB
+        totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
+        supportedMimeTypes:
+          - "image/.*"
+          - "application/pdf"
+      openAI:
+        disabled: false  # Disables file uploading to the OpenAI endpoint
+      default:
+        totalSizeLimit: 20
+      YourCustomEndpointName:
+        fileLimit: 2
+        fileSizeLimit: 5
+    serverFileSizeLimit: 100  # Global server file size limit in MB
+    avatarSizeLimit: 2  # Limit for user avatar image size in MB
+  rateLimits:
+    fileUploads:
+      ipMax: 100
+      ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
+      userMax: 50
+      userWindowInMinutes: 60  # Rate limit window for file uploads per user
+    #registration:
+    #socialLogins: [ "openid" ]
+  endpoints:
+    all:
+      streamRate: 5
+      titlePromptTemplate: |
+        ### Task:
+        Generate a concise, 3-5 word title with an emoji summarizing the chat history.
+        
+        ### Guidelines:
+        - The title should clearly represent the main theme or subject of the conversation.
+        - Always use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
+        - Write the title in the chat's primary language; default to English if multilingual.
+        - Prioritize accuracy over excessive creativity; keep it clear and simple.
+        - The title should be short and funny.
+        - The emoji should come first.
+        
+        ### Output:
+        Format "<emoji> your concise title here"
+          ### Examples:
+          - 📉 Stock Market Trends
+          - 🍪 Perfect Chocolate Chip Recipe
+          - 🎧 Evolution of Music Streaming
+          - 👨🏿‍💻 Remote Work Productivity Tips
+          - 🧠 Artificial Intelligence in Healthcare
+          - 🎮 Video Game Development Insights
+        
+        ### Chat History:
+        Human: {input}
+        Assistant: {output}
+    agents:
+      recursionLimit: 50
+      maxRecursionLimit: 100
+      disableBuilder: false
+      # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+      # capabilities: ["execute_code", "file_search", "actions", "tools", "artifacts", "ocr", "chain", "web_search"]
+      # (optional) File citation configuration for file_search capability
+      maxCitations: 20          # Maximum total citations in responses (1-50)
+      maxCitationsPerFile: 7    # Maximum citations from each file (1-10)
+      minRelevanceScore: 0.45   # Minimum relevance score threshold (0.0-1.0)
+    assistants:
+      disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
+      pollIntervalMs: 750  # Polling interval for checking assistant updates
+      timeoutMs: 180000  # Timeout for assistant operations
+      # Should only be one or the other, either `supportedIds` or `excludedIds`
+      #supportedIds: [ "asst_supportedAssistantId1", "asst_supportedAssistantId2" ]
+      #excludedIds: ["asst_excludedAssistantId"]
+    custom:
+      - name: "Converse"
+        apiKey: "${CONVERSE_OPENAI_API_KEY}"
+        baseURL: "https://services.api.ai.camer.digital/v1"
+        models:
+          default:
+            #- "gemini-2-5-flash-lite"
+            #- "gemini-3-pro"
+            #- "gemini-3-flash"
+            - "glm-5"
+            - "gpt-5-nano"
+            - "kimi-k2-instruct-0905"
+            - "kimi-k2-thinking"
+            #- "gemini-2-5-pro-reasoning"
+            #- "gemini-3-pro-image-preview"
+            - "gpt-5-mini"
+          fetch: false
+        iconURL: "https://s3.camer.digital/converse/public/autumn.png"
+        titleConvo: false
+        titleMethod: "completion"
+        titleModel: "gemini-2-5-flash-lite"
+        summarize: false
+        summaryModel: "gemini-2-5-flash-lite"
+        forcePrompt: false
+        modelDisplayLabel: "Converse AI"
+        headers:
+          X-User-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
+          X-User-Email: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
+          X-User-Role: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
+          #Authorization: 'Bearer ${CONVERSE_OPENAI_API_KEY}'
+        #dropParams:
+        #- "stream_options"
+
 # MongoDB Parameters
 db:
   enabled: true
@@ -546,7 +597,7 @@ db:
     size: 30Gi
     storageClass: ~
   architecture: replicaset
-  replicaCount: 1 # should be similar to the global mongo replicaCount
+  replicaCount: 2 # should be similar to the global mongo replicaCount
   resourcesPreset: small
 
 search:
@@ -561,8 +612,8 @@ search:
     MEILI_ENV: "production"
   resources:
     limits:
-      cpu: 500m
-      memory: 500Mi
+      cpu: 1000m
+      memory: 2Gi
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 500m
+      memory: 1Gi
