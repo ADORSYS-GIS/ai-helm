@@ -179,7 +179,7 @@ applications:
                 controllerName: gateway.envoyproxy.io/gatewayclass-controller
               logging:
                 level:
-                  default: info
+                  default: warn
               rateLimit:
                 backend:
                   type: Redis
@@ -266,7 +266,7 @@ applications:
               - name: OTEL_METRICS_EXPORTER
                 value: "none"
               - name: LOG_LEVEL
-                value: "info"
+                value: "warn"
     destination:
       namespace: envoy-ai-gateway-system
     syncPolicy:
@@ -447,7 +447,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://adorsys-gis.github.io/lightbridge-authz
-      targetRevision: 0.6.2
+      targetRevision: 0.6.4
       chart: lightbridge
       helm:
         releaseName: lightbridge
@@ -535,7 +535,7 @@ applications:
                   traefik.ingress.kubernetes.io/service.serverstransport: converse-insecure-transport@kubernetescrd
             ingress:
               main:
-                enabled: true
+                enabled: false
                 annotations:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
                 className: traefik
@@ -612,7 +612,7 @@ applications:
                   traefik.ingress.kubernetes.io/service.serverstransport: converse-insecure-transport@kubernetescrd
             ingress:
               main:
-                enabled: true
+                enabled: false
                 annotations:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
                 className: traefik
@@ -748,7 +748,7 @@ applications:
                   traefik.ingress.kubernetes.io/service.serverstransport: converse-insecure-transport@kubernetescrd
             ingress:
               main:
-                enabled: true
+                enabled: false
                 annotations:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
                 className: traefik
@@ -769,6 +769,63 @@ applications:
                 name: authz-tls
           rawRessources:
             - |
+              apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: multi-path-ingress
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  cert-manager.io/cluster-issuer: cert-home-cert-http
+              spec:
+                rules:
+                - host: self-service-api.ai.camer.digital
+                  http:
+                    paths:
+                    - path: /api/v1
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: {{ $.Release.Name }}-api
+                          port:
+                            number: 3000
+
+                    - path: /usage/v1
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: {{ $.Release.Name }}-usage
+                          port:
+                            number: 3000
+
+                    - path: /mcp
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: {{ $.Release.Name }}-mcp
+                          port:
+                            number: 3000
+                    - path: /.well-known/oauth-authorization-server
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: {{ $.Release.Name }}-mcp
+                          port:
+                            number: 3000
+                    - path: /.well-known/openid-configuration
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: {{ $.Release.Name }}-mcp
+                          port:
+                            number: 3000
+                    - path: /oauth/register
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: {{ $.Release.Name }}-mcp
+                          port:
+                            number: 3000
+            - |
               apiVersion: traefik.io/v1alpha1
               kind: ServersTransport
               metadata:
@@ -787,7 +844,7 @@ applications:
                 issuerRef:
                   name: self-signed-ca
                   kind: ClusterIssuer
-                commonName: lightbridge-api.{{ $.Release.Namespace }}.svc.cluster.local
+                commonName: lightbridge.{{ $.Release.Namespace }}.svc.cluster.local
                 dnsNames:
                   - *.{{ $.Release.Namespace }}.svc.cluster.local
                   - *.{{ $.Release.Namespace }}.svc.cluster

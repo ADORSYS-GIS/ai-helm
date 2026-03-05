@@ -2,7 +2,7 @@ global:
   librechat:
     version: "v0.8.3-rc2"
   mongo:
-    replicaCount: 1
+    replicaCount: 2
 
 librechat:
   ingress:
@@ -76,7 +76,7 @@ librechat:
       strategy: RollingUpdate
       serviceAccount:
         identifier: librechat
-      replicas: 1
+      replicas: 2
       pod:
         labels:
           app: librechat-app
@@ -513,15 +513,15 @@ librechat:
                 baseURL: "https://services.api.ai.camer.digital/v1"
                 models:
                   default:
-                    - "gemini-2-5-flash-lite"
-                    - "gemini-3-pro"
-                    - "gemini-3-flash"
+                    #- "gemini-2-5-flash-lite"
+                    #- "gemini-3-pro"
+                    #- "gemini-3-flash"
                     - "glm-5"
                     - "gpt-5-nano"
                     - "kimi-k2-instruct-0905"
                     - "kimi-k2-thinking"
-                    - "gemini-2-5-pro-reasoning"
-                    - "gemini-3-pro-image-preview"
+                    #- "gemini-2-5-pro-reasoning"
+                    #- "gemini-3-pro-image-preview"
                     - "gpt-5-mini"
                   fetch: false
                 iconURL: "https://s3.camer.digital/converse/public/autumn.png"
@@ -574,7 +574,7 @@ db:
     size: 30Gi
     storageClass: ~
   architecture: replicaset
-  replicaCount: 1 # should be similar to the global mongo replicaCount
+  replicaCount: 2 # should be similar to the global mongo replicaCount
   resourcesPreset: small
 
 search:
