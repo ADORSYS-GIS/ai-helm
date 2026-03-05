@@ -915,6 +915,37 @@ applications:
         prune: true
         selfHeal: true
 
+  # --- MongoDB Backup ---
+  - name: mongodb-backup
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: feat/mongodb-backup
+      path: charts/mongodb-backup
+      helm:
+        releaseName: mongodb-backup
+        valuesObject:
+          mongo-backup:
+            controllers:
+              main:
+                cronjob:
+                  successfulJobsHistory: 3
+                  failedJobsHistory: 3
+                  startingDeadlineSeconds: 30
+                initContainers:
+                  exporter:
+                    env:
+                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Models ---
   - name: models
     finalizers:
