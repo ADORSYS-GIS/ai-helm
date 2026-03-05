@@ -772,11 +772,12 @@ applications:
               apiVersion: networking.k8s.io/v1
               kind: Ingress
               metadata:
-                name: multi-path-ingress
+                name: "{{ $.Release.Name }}-apis"
                 namespace: {{ $.Release.Namespace }}
                 annotations:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
               spec:
+                ingressClassName: traefik
                 rules:
                 - host: self-service-api.ai.camer.digital
                   http:
