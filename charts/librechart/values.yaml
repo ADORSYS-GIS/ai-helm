@@ -168,7 +168,7 @@ librechat:
             USE_REDIS: "true"
             REDIS_KEY_PREFIX: "librechat-prod-v2"
             REDIS_URI: "redis://redis-master.redis-system.svc.cluster.local:6379"
-            FORCED_IN_MEMORY_CACHE_NAMESPACES: "APP_CONFIG,CONFIG_STORE"
+            FORCED_IN_MEMORY_CACHE_NAMESPACES: "APP_CONFIG,CONFIG_STORE,STARTUP_CONFIG"
 
             SEARCH: true
             MEILI_HOST: "http://{{ .Release.Name }}-search:7700"
@@ -482,6 +482,7 @@ config:
         - Backend is OpenAI compatible
         - Api-keys belongs to projects, and projects belongs to Accounts.
         - Billing account is usually arbitrary and mostly used for humain billing
+        - Most users don't have multiple accounts. Most users have single project.
       oauth:
         authorization_url: https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/auth
         token_url: https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/token
