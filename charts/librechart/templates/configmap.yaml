@@ -1,0 +1,11 @@
+{{ with .Values.config }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $.Values.global.configmap.name }}
+  namespace: {{ include "common.names.namespace" $ }}
+data:
+  librechat: |
+    {{- $value := include "common.tplvalues.render" ( dict "value" . "context" $ ) -}}
+    {{ $value | toYaml | nindent 4 }}
+{{ end }}

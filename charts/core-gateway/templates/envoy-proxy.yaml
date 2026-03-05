@@ -1,0 +1,57 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ include "core-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 2
+        container:
+          # Note: this is to clear the large default memory/cpu requirements for local tests.
+          # In production, you should set these to values that make sense for your environment.
+          resources: {}
+      envoyService:
+        type: LoadBalancer
+  shutdown:
+    drainTimeout: 30s
+    minDrainDuration: 5s
+  logging:
+    level:
+      default: warn
+  telemetry:
+    accessLog:
+      settings:
+        - sinks:
+            - type: OpenTelemetry
+              openTelemetry:
+                port: 4317
+                backendRefs:
+                  - kind: Service
+                    name: {{ include "core-gateway.fullname" . }}-usage-collector
+                    port: 4318
+                    weight: 1
+                    group: ''
+          format:
+            type: JSON
+            json:
+              # AI specific fields. The properties in the dynamic metadata expressions must match the ones
+              # defined in the AIGatewayRoute llmRequestCosts field.
+              gen_ai.request.model: "%REQ(X-AI-EG-MODEL)%"
+              gen_ai.request.model_override: "%DYNAMIC_METADATA(io.envoy.ai_gateway:model_name_override)%"
+              gen_ai.provider.name: "%DYNAMIC_METADATA(io.envoy.ai_gateway:backend_name)%"
+              gen_ai.usage.total_tokens: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_total_token)%"
+              gen_ai.usage.input_tokens: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_input_token)%"
+              gen_ai.usage.output_tokens: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_output_token)%"
+              # Some Common fields
+              start_time: "%START_TIME%"
+              method: "%REQ(:METHOD)%"
+              protocol: "%PROTOCOL%"
+              user-agent: "%REQ(USER-AGENT)%"
+              x-request-id: "%REQ(X-REQUEST-ID)%"
+              # LightBridge
+              api_key_id: "%DYNAMIC_METADATA(envoy.filters.http.ext_authz:ext_auth_data:api_key_id)%"
+              project_id: "%DYNAMIC_METADATA(envoy.filters.http.ext_authz:ext_auth_data:project_id)%"
+              account_id: "%DYNAMIC_METADATA(envoy.filters.http.ext_authz:ext_auth_data:account_id)%"
