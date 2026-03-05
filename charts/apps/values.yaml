@@ -1176,3 +1176,28 @@ applications:
       automated:
         prune: true
         selfHeal: true
+
+  # --- Backups ---
+  - name: cnpg-pgdump-backup
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm.git
+      targetRevision: HEAD
+      path: charts/pgdump-backup
+      helm:
+        releaseName: cnpg-pgdump-backup
+        valueFiles:
+          - values.yaml
+        valuesObject:
+          pg_dump:
+            postgres:
+              secretName: lightbridge-main-db-app
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
