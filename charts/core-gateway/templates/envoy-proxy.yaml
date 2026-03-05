@@ -8,10 +8,19 @@ spec:
     type: Kubernetes
     kubernetes:
       envoyDeployment:
+        replicas: 1
         container:
           # Note: this is to clear the large default memory/cpu requirements for local tests.
           # In production, you should set these to values that make sense for your environment.
           resources: {}
+      envoyService:
+        type: LoadBalancer
+  shutdown:
+    drainTimeout: 30s
+    minDrainDuration: 5s
+  logging:
+    level:
+      default: debug
   telemetry:
     accessLog:
       settings:
