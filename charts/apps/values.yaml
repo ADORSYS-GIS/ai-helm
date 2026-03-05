@@ -830,6 +830,13 @@ applications:
                           name: {{ $.Release.Name }}-mcp
                           port:
                             number: 3000
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: converse-ui-frontend
+                          port:
+                            number: 80
             - |
               apiVersion: traefik.io/v1alpha1
               kind: ServersTransport
@@ -990,6 +997,43 @@ applications:
                   backendRefs:
                     - name: lightbridge-ui
                       port: 80
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+   # --- Converse UI ---
+  - name: converse-ui
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: 10-create-a-helm-chart-for-the-converse-frontend
+      path: charts/converse-frontend
+      helm:
+        releaseName: converse-ui
+        valuesObject:
+          conversefrontend:
+            controllers:
+              main:
+                containers:
+                  frontend:
+                    image:
+                      repository: ghcr.io/adorsys-gis/converse-frontends
+                      tag: sha-9d448d2
+                      pullPolicy: IfNotPresent
+                    env:
+                      EXPO_PUBLIC_BACKEND_URL: "https://self-service-api.ai.camer.digital"
+                      EXPO_PUBLIC_USAGE_URL: "https://self-service-api.ai.camer.digital"
+                      EXPO_PUBLIC_GATEWAY_URL: "http://core-gateway.converse-gateway.svc.cluster.local"
+                      EXPO_PUBLIC_ANALYTICS_URL: "http://phoenix.converse.svc.cluster.local"
+                      EXPO_PUBLIC_KEYCLOAK_ISSUER: "https://accounts.camer.digital/realms/camer-digital"
+                      EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: "converse-frontend"
+                      EXPO_PUBLIC_KEYCLOAK_SCHEME: "self-service"
     destination:
       namespace: converse
     syncPolicy:
