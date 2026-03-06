@@ -1,6 +1,4 @@
-pg_dump:
-  enabled: true
-
+app-template:
   postgres:
     secretName: litellm-pg-app
 
@@ -10,14 +8,6 @@ pg_dump:
   restore:
     enabled: false
     object: ""
-
-  defaultPodOptions:
-    securityContext:
-      runAsNonRoot: true
-      runAsUser: 999
-      runAsGroup: 999
-      fsGroup: 999
-    terminationGracePeriodSeconds: 30
 
   controllers:
     backup:
@@ -38,7 +28,7 @@ pg_dump:
             pullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
             capabilities:
               drop:
                 - ALL
@@ -115,7 +105,7 @@ pg_dump:
             pullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
             capabilities:
               drop:
                 - ALL
