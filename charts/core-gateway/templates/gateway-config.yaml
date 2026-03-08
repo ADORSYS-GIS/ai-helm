@@ -5,17 +5,18 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   extProc:
-    #env:
-    #  - name: OTEL_EXPORTER_OTLP_ENDPOINT
-    #    value: "http://core-gateway-phoenix-collector.converse-gateway:4318"
-    #  - name: OTEL_METRICS_EXPORTER
-    #    value: "none"
-    #  - name: OTEL_SERVICE_NAME
-    #    value: "{{ include "core-gateway.fullname" $ }}"
-    resources:
-      requests:
-        cpu: "1"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "2Gi"
+    kubernetes:
+      env:
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://core-gateway-phoenix-collector.converse-gateway:4318"
+        - name: OTEL_METRICS_EXPORTER
+          value: "none"
+        - name: OTEL_SERVICE_NAME
+          value: "{{ include "core-gateway.fullname" $ }}"
+      resources:
+        requests:
+          cpu: "1"
+          memory: "1Gi"
+        limits:
+          cpu: "2"
+          memory: "2Gi"
