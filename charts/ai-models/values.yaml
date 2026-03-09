@@ -375,27 +375,38 @@ models:
         <<: *fwBackendSecondary
         modelNameOverride: "accounts/fireworks/models/glm-5"
 
-    qwen3-reranker-8b:
-      <<: *fireworksModelRateLimits
-      envoyTokenRateLimits: *tl1500_35m_420m
-      backends:
-        fw-01:
-          <<: *fwBackendPrimary
-          modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
-        fw-02:
-          <<: *fwBackendSecondary
-          modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
+  cogito-671b-v2-p1:
+    <<: *fireworksModelRateLimits
+    envoyTokenRateLimits: *tl1500_35m_420m
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/cogito/models/cogito-671b-v2-p1"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/cogito/models/cogito-671b-v2-p1"
 
-    qwen3-embedding-8b:
-      <<: *fireworksModelRateLimits
-      envoyTokenRateLimits: *tl1500_35m_420m
-      backends:
-        fw-01:
-          <<: *fwBackendPrimary
-          modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
-        fw-02:
-          <<: *fwBackendSecondary
-          modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
+  qwen3-reranker-8b:
+    <<: *fireworksModelRateLimits
+    envoyTokenRateLimits: *tl1500_35m_420m
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
+
+  qwen3-embedding-8b:
+    <<: *fireworksModelRateLimits
+    envoyTokenRateLimits: *tl1500_35m_420m
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
   #
   #  kimi-k2p5:
   #    <<: *fireworksModelRateLimits
@@ -485,17 +496,6 @@ models:
         <<: *fwBackendSecondary
         modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
 
-  stable-diffusion-xl:
-    <<: *fireworksModelRateLimits
-    envoyTokenRateLimits: *tl1500_35m_420m
-    backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/stable-diffusion-xl-1024-v1-0"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/stable-diffusion-xl-1024-v1-0"
-
   #  deepseek-v3p1-terminus:
   #    <<: *fireworksModelRateLimits
   #    envoyTokenRateLimits: *tl1500_35m_420m
@@ -506,51 +506,7 @@ models:
   #      fw-02:
   #        <<: *fwBackendSecondary
   #        modelNameOverride: "accounts/fireworks/models/deepseek-v3p1-terminus"
-  #
-  #  # OpenAI Models
-  #  o4-mini:
-  #    <<: *openaiModelRateLimits
-  #    envoyTokenRateLimits: *tl3000_80m_960m
-  #    backends:
-  #      openai-01:
-  #        <<: *openaiBackendPrimary
-  #        modelNameOverride: "o4-mini"
-  #      openai-02:
-  #        <<: *openaiBackendSecondary
-  #        modelNameOverride: "o4-mini"
 
-  # o4-mini-deep-research:
-  #   <<: *openaiModelRateLimits
-  #   backends:
-  #     openai-01:
-  #       <<: *openaiBackendPrimary
-  #       modelNameOverride: "o4-mini-deep-research"
-  #     openai-02:
-  #       <<: *openaiBackendSecondary
-  #       modelNameOverride: "o4-mini-deep-research"
-
-  #  gpt-4-1:
-  #    <<: *openaiLowModelRateLimits
-  #    envoyTokenRateLimits: *tl1500_35m_420m
-  #    backends:
-  #      openai-01:
-  #        <<: *openaiBackendPrimary
-  #        modelNameOverride: "gpt-4.1"
-  #      openai-02:
-  #        <<: *openaiBackendSecondary
-  #        modelNameOverride: "gpt-4.1"
-  #
-  #  gpt-4-1-mini:
-  #    <<: *openaiModelRateLimits
-  #    envoyTokenRateLimits: *tl3000_80m_960m
-  #    backends:
-  #      openai-01:
-  #        <<: *openaiBackendPrimary
-  #        modelNameOverride: "gpt-4.1-mini"
-  #      openai-02:
-  #        <<: *openaiBackendSecondary
-  #        modelNameOverride: "gpt-4.1-mini"
-  #
   #  gpt-5:
   #    <<: *openaiModelRateLimits
   #    envoyTokenRateLimits: *tl1000_20m_240m
@@ -573,6 +529,17 @@ models:
         <<: *openaiBackendSecondary
         modelNameOverride: "gpt-5-mini"
 
+  gpt-5.1-codex-mini:
+    <<: *openaiModelRateLimits
+    envoyTokenRateLimits: *tl3000_80m_960m
+    backends:
+      openai-01:
+        <<: *openaiBackendPrimary
+        modelNameOverride: "gpt-5.1-codex-mini"
+      openai-02:
+        <<: *openaiBackendSecondary
+        modelNameOverride: "gpt-5.1-codex-mini"
+
   gpt-5-nano:
     <<: *openaiModelRateLimits
     envoyTokenRateLimits: *tl3000_80m_960m
@@ -594,17 +561,17 @@ models:
   #       <<: *openaiBackendSecondary
   #       modelNameOverride: "codex-mini-latest"
 
-  #  text-embedding-3-large:
-  #    <<: *openaiEmbedModelRateLimits
-  #    envoyTokenRateLimits: *tl10m_300m_3600m
-  #    backends:
-  #      openai-01:
-  #        <<: *openaiBackendPrimary
-  #        modelNameOverride: "text-embedding-3-large"
-  #      openai-02:
-  #        <<: *openaiBackendSecondary
-  #        modelNameOverride: "text-embedding-3-large"
-  #
+  text-embedding-3-large:
+    <<: *openaiEmbedModelRateLimits
+    envoyTokenRateLimits: *tl10m_300m_3600m
+    backends:
+      openai-01:
+        <<: *openaiBackendPrimary
+        modelNameOverride: "text-embedding-3-large"
+      openai-02:
+        <<: *openaiBackendSecondary
+        modelNameOverride: "text-embedding-3-large"
+
   #  dall-e-3:
   #    <<: *openaiModelRateLimits
   #    backends:
@@ -666,36 +633,14 @@ models:
   #       <<: *openaiBackendSecondary
   #       modelNameOverride: "gpt-4o-mini-tts"
 
-  # Google Gemini Models
-  #  gemini-2-5-flash:
-  #    <<: *geminiModelRateLimits
-  #    envoyTokenRateLimits: *tl3000_80m_960m
-  #    backends:
-  #      vertex-ai-01:
-  #        <<: *vertexBackendPrimary
-  #        modelNameOverride: "gemini-2.5-flash"
-  #      vertex-ai-02:
-  #        <<: *vertexBackendSecondary
-  #        modelNameOverride: "gemini-2.5-flash"
-  #
-  gemini-2-5-pro-reasoning:
+  gemini-3.1-pro:
     <<: *geminiModelRateLimits
     envoyTokenRateLimits: *tl1000_20m_240m
     backends:
-      vertex-ai-01:
-        <<: *vertexBackendPrimary
-        modelNameOverride: "gemini-2.5-pro"
-      vertex-ai-02:
-        <<: *vertexBackendSecondary
-        modelNameOverride: "gemini-2.5-pro"
-
-  gemini-3.1-pro:
-    <<: *geminiModelRateLimits
-    backends:
-      vertex-ai-01:
+      google-ai-studio-01:
         <<: *vertexBackendPrimary
         modelNameOverride: "gemini-3.1-pro-preview"
-      vertex-ai-02:
+      google-ai-studio-02:
         <<: *vertexBackendSecondary
         modelNameOverride: "gemini-3.1-pro-preview"
 
@@ -703,10 +648,10 @@ models:
     <<: *geminiModelRateLimits
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
-      vertex-ai-01:
+      google-ai-studio-01:
         <<: *vertexBackendPrimary
         modelNameOverride: "gemini-3.1-flash-lite-preview"
-      vertex-ai-02:
+      google-ai-studio-02:
         <<: *vertexBackendSecondary
         modelNameOverride: "gemini-3.1-flash-lite-preview"
 
@@ -714,23 +659,12 @@ models:
     <<: *geminiModelRateLimits
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
-      vertex-ai-01:
+      google-ai-studio-01:
         <<: *vertexBackendPrimary
         modelNameOverride: "gemini-2.5-flash-lite"
-      vertex-ai-02:
+      google-ai-studio-02:
         <<: *vertexBackendSecondary
         modelNameOverride: "gemini-2.5-flash-lite"
-
-  gemini-3-pro:
-    <<: *geminiModelRateLimits
-    envoyTokenRateLimits: *tl1000_20m_240m
-    backends:
-      google-ai-studio-01:
-        <<: *googleAiStudioBackendPrimary
-        modelNameOverride: "gemini-3-pro-preview"
-      google-ai-studio-02:
-        <<: *googleAiStudioBackendSecondary
-        modelNameOverride: "gemini-3-pro-preview"
 
   gemini-3-flash:
     <<: *geminiModelRateLimits
