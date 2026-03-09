@@ -1153,28 +1153,3 @@ applications:
       automated:
         prune: true
         selfHeal: true
-
-  - name: keycloak-backup
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/keycloak-backup
-      helm:
-        releaseName: keycloak-backup
-        valueFiles:
-          - values.yaml
-        valuesObject:
-          app-template:
-            adminSecret: keycloak-pg-app
-            dbSecret: keycloak-pg-app
-            s3Secret: keycloak-s3
-    destination:
-      namespace: keycloak
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
