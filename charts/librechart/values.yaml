@@ -26,29 +26,6 @@ librechat:
           hosts:
             - ai.camer.digital
 
-  route:
-    librechat:
-      enabled: false
-      kind: HTTPRoute
-      #annotations:
-      #  cert-manager.io/cluster-issuer: cert-home-cert-envoy
-      parentRefs:
-        - group: gateway.networking.k8s.io
-          kind: Gateway
-          name: core-gateway
-          namespace: converse-gateway
-          sectionName: web-https
-      hostnames:
-        - ai.camer.digital
-      rules:
-        - matches:
-            - path:
-                type: PathPrefix
-                value: /
-          backendRefs:
-            - identifier: librechat
-              port: 3080
-
   service:
     librechat:
       enabled: true
@@ -353,16 +330,6 @@ librechat:
               subPath: librechat
               readOnly: true
 
-  serviceAccount:
-    librechat:
-      enabled: true
-      annotations: { }
-      labels: { }
-    rag-api:
-      enabled: false
-      annotations: { }
-      labels: { }
-
 config:
   version: 1.3.5
   cache: true
@@ -574,7 +541,6 @@ config:
             - "gpt-5-mini"
             - "deepseek-v3p2"
             - "qwen3-vl-30b-a3b-thinking"
-            - "stable-diffusion-xl"
             - "kimi-k2-thinking"
             - "gemini-2-5-flash-lite"
             #- "gemini-3-pro"
