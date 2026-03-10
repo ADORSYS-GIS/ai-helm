@@ -48,8 +48,52 @@ spec:
                   invert: false
                   value: {{ $routeConfig.modelMatch | default $routeName }}
           limit:
-            requests: {{ $limits.monthlyTokens | int64 }}
-            unit: Month
+            requests: {{ $limits.weeklyTokens | int64 }}
+            unit: Week
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_total_token
+
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                  invert: false
+                - name: x-ai-eg-model
+                  type: Exact
+                  invert: false
+                  value: {{ $routeConfig.modelMatch | default $routeName }}
+          limit:
+            requests: {{ $limits.dailyTokens | int64 }}
+            unit: Day
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_total_token
+
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                  invert: false
+                - name: x-ai-eg-model
+                  type: Exact
+                  invert: false
+                  value: {{ $routeConfig.modelMatch | default $routeName }}
+          limit:
+            requests: {{ $limits.weeklyTokens | int64 }}
+            unit: Week
           cost:
             request:
               from: Number
