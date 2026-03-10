@@ -7,6 +7,7 @@ apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
   name: {{ $.Values.backendTrafficPolicy.name }}-{{ $routeName }}
+  namespace: {{ $.Values.gatewayRef.namespace }}
   {{- with $.Values.backendTrafficPolicy.labels }}
   labels:
     {{- toYaml . | nindent 4 }}
@@ -17,7 +18,9 @@ metadata:
   {{- end }}
 spec:
   targetRefs:
-    {{- toYaml $.Values.backendTrafficPolicy.targetRefs | nindent 4 }}
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $.Values.gatewayRef.name }}
   retry:
     {{- toYaml $.Values.backendTrafficPolicy.retry | nindent 4 }}
   {{- if (default true (dig "enabled" nil (default dict $.Values.envoyRateLimit))) }}
