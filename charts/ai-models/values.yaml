@@ -1,30 +1,193 @@
+rateLimitBudgeting:
+  enabled: true
+  defaultPlan: free
+
+  plans:
+    free:
+      monthlyBudgetUsd: 30
+      safetyFactor: 0.85
+      burstMultiplier: 3
+      defaultAvgTokensPerRequest: 1500
+    pro:
+      monthlyBudgetUsd: 200
+      safetyFactor: 0.90
+      burstMultiplier: 5
+      defaultAvgTokensPerRequest: 2000
+
+  pricingProfiles:
+    # --- Fireworks.ai ---
+    # from https://fireworks.ai/pricing
+
+    # Text/Chat
+    kimi-k2-instruct-0905:
+      kind: text
+      mode: weighted
+      inputPer1M: 0.70
+      outputPer1M: 0.70
+      avgInputShare: 0.75
+      avgOutputShare: 0.25
+      avgTokensPerRequest: 2000
+
+    kimi-k2-thinking:
+      kind: text
+      mode: weighted
+      inputPer1M: 1.00 # placeholder
+      outputPer1M: 1.00 # placeholder
+      avgInputShare: 0.50
+      avgOutputShare: 0.50
+      avgTokensPerRequest: 3000
+
+    deepseek-v3:
+      kind: text
+      mode: weighted
+      inputPer1M: 0.27
+      outputPer1M: 1.10
+      avgInputShare: 0.70
+      avgOutputShare: 0.30
+      avgTokensPerRequest: 2000
+
+    glm-5:
+      kind: text
+      mode: weighted
+      inputPer1M: 1.00 # placeholder
+      outputPer1M: 1.00 # placeholder
+      avgInputShare: 0.70
+      avgOutputShare: 0.30
+      avgTokensPerRequest: 2000
+
+    cogito:
+      kind: text
+      mode: weighted
+      inputPer1M: 1.00 # placeholder
+      outputPer1M: 1.00 # placeholder
+      avgInputShare: 0.70
+      avgOutputShare: 0.30
+      avgTokensPerRequest: 2000
+
+    qwen-reranker:
+      kind: reranker
+      mode: fixed
+      effectivePer1M: 1.00 # placeholder
+      avgTokensPerRequest: 1000
+
+    qwen-embedding:
+      kind: embedding
+      mode: fixed
+      effectivePer1M: 0.10 # placeholder
+      avgTokensPerRequest: 500
+
+    minimax:
+      kind: text
+      mode: weighted
+      inputPer1M: 1.00 # placeholder
+      outputPer1M: 1.00 # placeholder
+      avgInputShare: 0.70
+      avgOutputShare: 0.30
+      avgTokensPerRequest: 2000
+
+    qwen-vl-instruct:
+      kind: multimodal
+      mode: weighted
+      inputPer1M: 1.00 # placeholder
+      outputPer1M: 1.00 # placeholder
+      avgInputShare: 0.70
+      avgOutputShare: 0.30
+      avgTokensPerRequest: 2000
+
+    qwen-vl-thinking:
+      kind: multimodal
+      mode: weighted
+      inputPer1M: 1.00 # placeholder
+      outputPer1M: 1.00 # placeholder
+      avgInputShare: 0.50
+      avgOutputShare: 0.50
+      avgTokensPerRequest: 3000
+
+    # --- OpenAI ---
+    # from https://openai.com/pricing
+
+    # Text/Chat
+    gpt-5-mini:
+      kind: text
+      mode: weighted
+      inputPer1M: 2.50
+      outputPer1M: 10.00
+      avgInputShare: 0.70
+      avgOutputShare: 0.30
+      avgTokensPerRequest: 1800
+
+    gpt-5.1-codex-mini:
+      kind: text
+      mode: weighted
+      inputPer1M: 2.50 # placeholder
+      outputPer1M: 10.00 # placeholder
+      avgInputShare: 0.70
+      avgOutputShare: 0.30
+      avgTokensPerRequest: 1800
+
+    gpt-5-nano:
+      kind: text
+      mode: weighted
+      inputPer1M: 1.00 # placeholder
+      outputPer1M: 5.00 # placeholder
+      avgInputShare: 0.70
+      avgOutputShare: 0.30
+      avgTokensPerRequest: 1500
+
+    # Embedding
+    text-embedding-large:
+      kind: embedding
+      mode: fixed
+      effectivePer1M: 0.13
+      avgTokensPerRequest: 500
+
+    gpt-image:
+      kind: image
+      mode: fixed
+      effectivePer1M: 30.00 # placeholder
+      avgTokensPerRequest: 1
+
+    # --- Google AI Studio ---
+    # from https://ai.google.dev/pricing
+
+    gemini-flash-lite:
+      kind: text
+      mode: weighted
+      inputPer1M: 0.25
+      outputPer1M: 1.50
+      avgInputShare: 0.80
+      avgOutputShare: 0.20
+      avgTokensPerRequest: 1500
+
+    gemini-pro:
+      kind: text
+      mode: weighted
+      inputPer1M: 1.25 # placeholder
+      outputPer1M: 5.00 # placeholder
+      avgInputShare: 0.80
+      avgOutputShare: 0.20
+      avgTokensPerRequest: 2000
+
+    gemini-flash:
+      kind: text
+      mode: weighted
+      inputPer1M: 0.50 # placeholder
+      outputPer1M: 2.00 # placeholder
+      avgInputShare: 0.80
+      avgOutputShare: 0.20
+      avgTokensPerRequest: 1500
+
+    gemini-flash-image:
+      kind: image
+      mode: fixed
+      effectivePer1M: 15.00 # placeholder
+      avgTokensPerRequest: 1
+
 gatewayRef:
   name: core-gateway
   namespace: converse-gateway
 
 envoyRateLimit: { }
-
-backendTrafficPolicy:
-  name: backend-retry-policy
-  labels: { }
-  annotations: { }
-  retry:
-    numRetries: 3
-    perRetry:
-      backOff:
-        baseInterval: 100ms
-        maxInterval: 10s
-      timeout: 30s
-    retryOn:
-      httpStatusCodes:
-        - 500
-        - 502
-        - 503
-        - 504
-        - 404
-      triggers:
-        - connect-failure
-        - retriable-status-codes
 
 backendDefaults:
   fireworks: &fireworksBackend
@@ -223,6 +386,7 @@ models:
 
   kimi-k2-instruct-0905:
     <<: *fireworksModelRateLimits
+    identifier: kimi-k2-instruct-0905
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -234,6 +398,7 @@ models:
 
   kimi-k2-thinking:
     <<: *fireworksModelRateLimits
+    identifier: kimi-k2-thinking
     envoyTokenRateLimits: *tl800_15m_180m
     backends:
       fw-01:
@@ -245,6 +410,7 @@ models:
 
   deepseek-v3p2:
     <<: *fireworksModelRateLimits
+    identifier: deepseek-v3
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -363,6 +529,7 @@ models:
 
   glm-5:
     <<: *fireworksModelRateLimits
+    identifier: glm-5
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -374,6 +541,7 @@ models:
 
   cogito-671b-v2-p1:
     <<: *fireworksModelRateLimits
+    identifier: cogito
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -385,6 +553,7 @@ models:
 
   qwen3-reranker-8b:
     <<: *fireworksModelRateLimits
+    identifier: qwen-reranker
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -396,6 +565,7 @@ models:
 
   qwen3-embedding-8b:
     <<: *fireworksModelRateLimits
+    identifier: qwen-embedding
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -462,6 +632,7 @@ models:
 
   minimax-m2p5:
     <<: *fireworksModelRateLimits
+    identifier: minimax
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -473,6 +644,7 @@ models:
 
   qwen3-vl-30b-a3b-instruct:
     <<: *fireworksModelRateLimits
+    identifier: qwen-vl-instruct
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -484,6 +656,7 @@ models:
 
   qwen3-vl-30b-a3b-thinking:
     <<: *fireworksModelRateLimits
+    identifier: qwen-vl-thinking
     envoyTokenRateLimits: *tl1500_35m_420m
     backends:
       fw-01:
@@ -517,6 +690,7 @@ models:
 
   gpt-5-mini:
     <<: *openaiModelRateLimits
+    identifier: gpt-5-mini
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       openai-01:
@@ -528,6 +702,7 @@ models:
 
   gpt-5.1-codex-mini:
     <<: *openaiModelRateLimits
+    identifier: gpt-5.1-codex-mini
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       openai-01:
@@ -539,6 +714,7 @@ models:
 
   gpt-5-nano:
     <<: *openaiModelRateLimits
+    identifier: gpt-5-nano
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       openai-01:
@@ -560,6 +736,7 @@ models:
 
   text-embedding-3-large:
     <<: *openaiEmbedModelRateLimits
+    identifier: text-embedding-large
     envoyTokenRateLimits: *tl10m_300m_3600m
     backends:
       openai-01:
@@ -581,6 +758,7 @@ models:
   #
   gpt-image-1:
     <<: *openaiModelRateLimits
+    identifier: gpt-image
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -632,6 +810,7 @@ models:
 
   gemini-3.1-pro:
     <<: *geminiModelRateLimits
+    identifier: gemini-pro
     envoyTokenRateLimits: *tl1000_20m_240m
     backends:
       google-ai-studio-01:
@@ -643,6 +822,7 @@ models:
 
   gemini-3.1-flash-lite:
     <<: *geminiModelRateLimits
+    identifier: gemini-flash-lite
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
@@ -654,6 +834,7 @@ models:
 
   gemini-3-flash:
     <<: *geminiModelRateLimits
+    identifier: gemini-flash
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
@@ -665,6 +846,7 @@ models:
 
   gemini-2-5-flash-lite:
     <<: *geminiModelRateLimits
+    identifier: gemini-flash-lite
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
@@ -677,6 +859,7 @@ models:
 
   "gemini-2.5-pro":
     <<: *geminiModelRateLimits
+    identifier: gemini-pro
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
@@ -688,6 +871,7 @@ models:
 
   "gemini-2.5-flash":
     <<: *geminiModelRateLimits
+    identifier: gemini-flash
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
@@ -699,6 +883,7 @@ models:
 
   "gemini-2.5-flash-lite":
     <<: *geminiModelRateLimits
+    identifier: gemini-flash-lite
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
@@ -710,6 +895,7 @@ models:
 
   "gemini-2.5-flash-image":
     <<: *geminiModelRateLimits
+    identifier: gemini-flash-image
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
@@ -721,6 +907,7 @@ models:
 
   "gemini-2.0-flash-lite":
     <<: *geminiModelRateLimits
+    identifier: gemini-flash-lite
     envoyTokenRateLimits: *tl3000_80m_960m
     backends:
       google-ai-studio-01:
