@@ -10,84 +10,11 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: {{ $routeName }}
-  {{- if (default true (dig "enabled" nil (default dict $.Values.envoyRateLimit))) }}
   rateLimit:
     type: Global
     global:
       rules:
         # Rate limit rule for {{ $routeName }}
-        - clientSelectors:
-            - headers:
-                - name: x-user-id
-                  type: Distinct
-                  invert: false
-                - name: x-ai-eg-model
-                  type: Exact
-                  invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
-          limit:
-            requests: {{ $routeConfig.envoyRateLimit.requests }}
-            unit: {{ $routeConfig.envoyRateLimit.unit }}
-
-        - clientSelectors:
-            - headers:
-                - name: x-api-key-id
-                  type: Distinct
-                  invert: false
-                - name: x-ai-eg-model
-                  type: Exact
-                  invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
-          limit:
-            requests: 30
-            unit: Minute
-
-        - clientSelectors:
-            - headers:
-                - name: x-project-id
-                  type: Distinct
-                  invert: false
-                - name: x-ai-eg-model
-                  type: Exact
-                  invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
-          limit:
-            requests: 200000
-            unit: Day
-          cost:
-            request:
-              from: Number
-              number: 0
-            response:
-              from: Metadata
-              metadata:
-                namespace: io.envoy.ai_gateway
-                key: llm_total_token
-
-        - clientSelectors:
-            - headers:
-                - name: x-account-id
-                  invert: false
-                  type: Distinct
-                - name: x-ai-eg-model
-                  type: Exact
-                  invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
-          limit:
-            requests: 300000
-            unit: Day
-          cost:
-            request:
-              from: Number
-              number: 0
-            response:
-              from: Metadata
-              metadata:
-                namespace: io.envoy.ai_gateway
-                key: llm_total_token
-
-        {{- if (default true (dig "enabled" nil (default dict $.Values.envoyRateLimit))) }}
-        {{- if include "ai-models.budgeting.enabled" $ | eq "true" }}
         {{- $limits := include "ai-models.budgeting.derivedLimits" (dict "ctx" $ "model" $routeConfig "modelName" $routeName) | fromYaml }}
         - clientSelectors:
             - headers:
@@ -99,7 +26,7 @@ spec:
                   invert: false
                   value: {{ $routeConfig.modelMatch | default $routeName }}
           limit:
-            requests: {{ $limits.dailyTokens }}
+            requests: {{ $limits.dailyTokens | int64 }}
             unit: Day
           cost:
             request:
@@ -121,7 +48,7 @@ spec:
                   invert: false
                   value: {{ $routeConfig.modelMatch | default $routeName }}
           limit:
-            requests: {{ $limits.monthlyTokens }}
+            requests: {{ $limits.monthlyTokens | int64 }}
             unit: Month
           cost:
             request:
@@ -143,36 +70,7 @@ spec:
                   invert: false
                   value: {{ $routeConfig.modelMatch | default $routeName }}
           limit:
-            requests: {{ $limits.rpmEstimate | default 30 }}
+            requests: {{ $limits.rpmEstimate | default 30 | int64 }}
             unit: Minute
-        {{- else }}
-        {{- with $routeConfig.envoyTokenRateLimits }}
-        {{- range . }}
-        - clientSelectors:
-            - headers:
-                - name: x-project-id
-                  type: Distinct
-                  invert: false
-                - name: x-ai-eg-model
-                  type: Exact
-                  invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
-          limit:
-            requests: {{ .tokens }}
-            unit: {{ .unit }}
-          cost:
-            request:
-              from: Number
-              number: 0
-            response:
-              from: Metadata
-              metadata:
-                namespace: io.envoy.ai_gateway
-                key: llm_total_token
-        {{- end }}
-        {{- end }}
-        {{- end }}
-        {{- end }}
-  {{- end }}
 {{- end }}
 {{- end }}

@@ -1,9 +1,6 @@
 {{/*
 Budget-driven rate limiting helpers.
 */}}
-{{- define "ai-models.budgeting.enabled" -}}
-{{- .Values.rateLimitBudgeting.enabled | default false -}}
-{{- end -}}
 
 
 {{/*
@@ -57,7 +54,7 @@ Resolve and validate the currently selected plan.
 {{- $plan := get $ctx.Values.rateLimitBudgeting.plans $planName -}}
 {{- $validationScope := dict "plan" $plan "name" $planName -}}
 {{- include "ai-models.budgeting.validatePlan" $validationScope -}}
-{{- $plan -}}
+{{- $plan | toYaml -}}
 {{- end -}}
 
 
@@ -73,7 +70,7 @@ Resolve the pricing profile for a given model.
 {{- $modelName := .modelName -}}
 {{- $identifier := $model.identifier | required (printf "Model '%s' is missing required field 'identifier'" $modelName) -}}
 {{- $profile := get $ctx.Values.rateLimitBudgeting.pricingProfiles $identifier | required (printf "Pricing profile '%s' for model '%s' not found" $identifier $modelName) -}}
-{{- $profile -}}
+{{- $profile | toYaml -}}
 {{- end -}}
 
 
@@ -101,11 +98,11 @@ Calculate the effective price per 1 million tokens for a model profile.
   {{- $outputPer1M := $profile.outputPer1M | required (printf "Weighted profile '%s' is missing 'outputPer1M'" $profileName) -}}
   {{- $avgInputShare := $profile.avgInputShare | required (printf "Weighted profile '%s' is missing 'avgInputShare'" $profileName) -}}
   {{- $avgOutputShare := $profile.avgOutputShare | required (printf "Weighted profile '%s' is missing 'avgOutputShare'" $profileName) -}}
-  {{- $shareSum := add (float64 $avgInputShare) (float64 $avgOutputShare) -}}
+  {{- $shareSum := addf (float64 $avgInputShare) (float64 $avgOutputShare) -}}
   {{- if not (eq (printf "%.2f" $shareSum) "1.00") -}}
     {{- fail (printf "Weighted profile '%s' has shares that do not sum to 1.00 (got %.2f)" $profileName $shareSum) -}}
   {{- end -}}
-  {{- $effectivePrice := add (mul (float64 $inputPer1M) (float64 $avgInputShare)) (mul (float64 $outputPer1M) (float64 $avgOutputShare)) -}}
+  {{- $effectivePrice := addf (mulf (float64 $inputPer1M) (float64 $avgInputShare)) (mulf (float64 $outputPer1M) (float64 $avgOutputShare)) -}}
   {{- $effectivePrice -}}
 
 {{- else if eq $mode "fixed" -}}
@@ -136,21 +133,21 @@ Compute derived rate limits for a model based on a plan.
 {{- $safetyFactor := float64 ($plan.safetyFactor | default 1.0) -}}
 {{- $burstMultiplier := float64 ($plan.burstMultiplier | default 1.0) -}}
 
-{{- $usableMonthlyBudget := mul $monthlyBudget $safetyFactor -}}
-{{- $dailyBudget := div $usableMonthlyBudget 30.0 -}}
-{{- $weeklyBudget := mul $dailyBudget 7.0 -}}
+{{- $usableMonthlyBudget := mulf $monthlyBudget $safetyFactor -}}
+{{- $dailyBudget := divf $usableMonthlyBudget 30.0 -}}
+{{- $weeklyBudget := mulf $dailyBudget 7.0 -}}
 
 {{- $effectivePer1M := include "ai-models.budgeting.effectivePer1M" (dict "profile" $profile "profileName" $model.identifier) | float64 -}}
-{{- if not (gt $effectivePer1M 0) -}}
+{{- if not (gt $effectivePer1M 0.0) -}}
   {{- fail (printf "Effective price for model '%s' must be positive" $modelName) -}}
 {{- end -}}
 
-{{- $tokensPerUsd := div 1000000.0 $effectivePer1M -}}
-{{- $dailyTokens := floor (mul $dailyBudget $tokensPerUsd) -}}
-{{- $weeklyTokens := floor (mul $weeklyBudget $tokensPerUsd) -}}
-{{- $monthlyTokens := floor (mul $usableMonthlyBudget $tokensPerUsd) -}}
-{{- $baseTpm := floor (div $dailyTokens 1440.0) -}}
-{{- $burstTpm := floor (mul $baseTpm $burstMultiplier) -}}
+{{- $tokensPerUsd := divf 1000000.0 $effectivePer1M -}}
+{{- $dailyTokens := floor (mulf $dailyBudget $tokensPerUsd) | int64 -}}
+{{- $weeklyTokens := floor (mulf $weeklyBudget $tokensPerUsd) | int64 -}}
+{{- $monthlyTokens := floor (mulf $usableMonthlyBudget $tokensPerUsd) | int64 -}}
+{{- $baseTpm := floor (divf (float64 $dailyTokens) 1440.0) | int64 -}}
+{{- $burstTpm := floor (mulf (float64 $baseTpm) $burstMultiplier) | int64 -}}
 
 {{- $limits := dict
       "dailyTokens" $dailyTokens
@@ -162,7 +159,7 @@ Compute derived rate limits for a model based on a plan.
 
 {{- $avgTokensPerRequest := $profile.avgTokensPerRequest | default $plan.defaultAvgTokensPerRequest -}}
 {{- if $avgTokensPerRequest -}}
-  {{- $rpmEstimate := floor (div $burstTpm (float64 $avgTokensPerRequest)) -}}
+  {{- $rpmEstimate := floor (divf (float64 $burstTpm) (float64 $avgTokensPerRequest)) | int64 -}}
   {{- $_ := set $limits "rpmEstimate" $rpmEstimate -}}
 {{- end -}}
 
