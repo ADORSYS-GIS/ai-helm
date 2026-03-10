@@ -33,13 +33,10 @@ spec:
         - sinks:
             - type: OpenTelemetry
               openTelemetry:
+                host: {{ include "core-gateway.fullname" . }}-usage-collector
                 port: 4317
-                backendRefs:
-                  - kind: Service
-                    name: {{ include "core-gateway.fullname" . }}-usage-collector
-                    port: 4318
-                    weight: 1
-                    group: ''
+                resources:
+                  k8s.cluster.name: "converse-llm-1"
           format:
             type: JSON
             json:
