@@ -37,11 +37,65 @@ spec:
           limit:
             requests: {{ $routeConfig.envoyRateLimit.requests }}
             unit: {{ $routeConfig.envoyRateLimit.unit }}
+
+        - clientSelectors:
+            - headers:
+                - name: x-api-key-id
+                  type: Distinct
+                  invert: false
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $routeConfig.modelMatch | default $routeName }}
+          limit:
+            requests: 15
+            unit: Minute
+
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                  invert: false
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $routeConfig.modelMatch | default $routeName }}
+          limit:
+            requests: 200000
+            unit: Day
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_total_token
+
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $routeConfig.modelMatch | default $routeName }}
+          limit:
+            requests: 300000
+            unit: Day
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_total_token
+
         {{- with $routeConfig.envoyTokenRateLimits }}
         {{- range . }}
         - clientSelectors:
             - headers:
-                - name: x-user-id
+                - name: x-project-id
                   type: Distinct
                   invert: false
                 - name: x-ai-eg-model
@@ -62,6 +116,7 @@ spec:
                 key: llm_total_token
         {{- end }}
         {{- end }}
+
         {{- end }}
         {{- end }}
   {{- end }}
