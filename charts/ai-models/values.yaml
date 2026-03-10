@@ -13,175 +13,6 @@ rateLimitBudgeting:
       burstMultiplier: 5
       defaultAvgTokensPerRequest: 2000
 
-  pricingProfiles:
-    # --- Fireworks.ai ---
-    # from https://fireworks.ai/pricing
-
-    # Text/Chat
-    kimi-k2-instruct-0905:
-      kind: text
-      mode: weighted
-      inputPer1M: 0.70
-      outputPer1M: 0.70
-      avgInputShare: 0.75
-      avgOutputShare: 0.25
-      avgTokensPerRequest: 2000
-
-    kimi-k2-thinking:
-      kind: text
-      mode: weighted
-      inputPer1M: 1.00 # placeholder
-      outputPer1M: 1.00 # placeholder
-      avgInputShare: 0.50
-      avgOutputShare: 0.50
-      avgTokensPerRequest: 3000
-
-    deepseek-v3:
-      kind: text
-      mode: weighted
-      inputPer1M: 0.27
-      outputPer1M: 1.10
-      avgInputShare: 0.70
-      avgOutputShare: 0.30
-      avgTokensPerRequest: 2000
-
-    glm-5:
-      kind: text
-      mode: weighted
-      inputPer1M: 1.00 # placeholder
-      outputPer1M: 1.00 # placeholder
-      avgInputShare: 0.70
-      avgOutputShare: 0.30
-      avgTokensPerRequest: 2000
-
-    cogito:
-      kind: text
-      mode: weighted
-      inputPer1M: 1.00 # placeholder
-      outputPer1M: 1.00 # placeholder
-      avgInputShare: 0.70
-      avgOutputShare: 0.30
-      avgTokensPerRequest: 2000
-
-    qwen-reranker:
-      kind: reranker
-      mode: fixed
-      effectivePer1M: 1.00 # placeholder
-      avgTokensPerRequest: 1000
-
-    qwen-embedding:
-      kind: embedding
-      mode: fixed
-      effectivePer1M: 0.10 # placeholder
-      avgTokensPerRequest: 500
-
-    minimax:
-      kind: text
-      mode: weighted
-      inputPer1M: 1.00 # placeholder
-      outputPer1M: 1.00 # placeholder
-      avgInputShare: 0.70
-      avgOutputShare: 0.30
-      avgTokensPerRequest: 2000
-
-    qwen-vl-instruct:
-      kind: multimodal
-      mode: weighted
-      inputPer1M: 1.00 # placeholder
-      outputPer1M: 1.00 # placeholder
-      avgInputShare: 0.70
-      avgOutputShare: 0.30
-      avgTokensPerRequest: 2000
-
-    qwen-vl-thinking:
-      kind: multimodal
-      mode: weighted
-      inputPer1M: 1.00 # placeholder
-      outputPer1M: 1.00 # placeholder
-      avgInputShare: 0.50
-      avgOutputShare: 0.50
-      avgTokensPerRequest: 3000
-
-    # --- OpenAI ---
-    # from https://openai.com/pricing
-
-    # Text/Chat
-    gpt-5-mini:
-      kind: text
-      mode: weighted
-      inputPer1M: 2.50
-      outputPer1M: 10.00
-      avgInputShare: 0.70
-      avgOutputShare: 0.30
-      avgTokensPerRequest: 1800
-
-    gpt-5.1-codex-mini:
-      kind: text
-      mode: weighted
-      inputPer1M: 2.50 # placeholder
-      outputPer1M: 10.00 # placeholder
-      avgInputShare: 0.70
-      avgOutputShare: 0.30
-      avgTokensPerRequest: 1800
-
-    gpt-5-nano:
-      kind: text
-      mode: weighted
-      inputPer1M: 1.00 # placeholder
-      outputPer1M: 5.00 # placeholder
-      avgInputShare: 0.70
-      avgOutputShare: 0.30
-      avgTokensPerRequest: 1500
-
-    # Embedding
-    text-embedding-large:
-      kind: embedding
-      mode: fixed
-      effectivePer1M: 0.13
-      avgTokensPerRequest: 500
-
-    gpt-image:
-      kind: image
-      mode: fixed
-      effectivePer1M: 30.00 # placeholder
-      avgTokensPerRequest: 1
-
-    # --- Google AI Studio ---
-    # from https://ai.google.dev/pricing
-
-    gemini-flash-lite:
-      kind: text
-      mode: weighted
-      inputPer1M: 0.25
-      outputPer1M: 1.50
-      avgInputShare: 0.80
-      avgOutputShare: 0.20
-      avgTokensPerRequest: 1500
-
-    gemini-pro:
-      kind: text
-      mode: weighted
-      inputPer1M: 1.25 # placeholder
-      outputPer1M: 5.00 # placeholder
-      avgInputShare: 0.80
-      avgOutputShare: 0.20
-      avgTokensPerRequest: 2000
-
-    gemini-flash:
-      kind: text
-      mode: weighted
-      inputPer1M: 0.50 # placeholder
-      outputPer1M: 2.00 # placeholder
-      avgInputShare: 0.80
-      avgOutputShare: 0.20
-      avgTokensPerRequest: 1500
-
-    gemini-flash-image:
-      kind: image
-      mode: fixed
-      effectivePer1M: 15.00 # placeholder
-      avgTokensPerRequest: 1
-
 gatewayRef:
   name: core-gateway
   namespace: converse-gateway
@@ -299,19 +130,15 @@ backends:
       name: google-ai-studio-api-key-02
 
 models:
-  # Fireworks AI Models
-  # qwen3-coder-480b-a35b-instruct:
-  #   <<: *fireworksModelRateLimits
-  #   backends:
-  #     fw-01:
-  #       <<: *fwBackendPrimary
-  #       modelNameOverride: "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct"
-  #     fw-02:
-  #       <<: *fwBackendSecondary
-  #       modelNameOverride: "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct"
 
   kimi-k2-instruct-0905:
-    identifier: kimi-k2-instruct-0905
+    kind: text
+    mode: weighted
+    inputPer1M: 0.70
+    outputPer1M: 0.70
+    avgInputShare: 0.75
+    avgOutputShare: 0.25
+    avgTokensPerRequest: 2000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -321,7 +148,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/kimi-k2-instruct-0905"
 
   kimi-k2-thinking:
-    identifier: kimi-k2-thinking
+    kind: text
+    mode: weighted
+    inputPer1M: 1.00 # placeholder
+    outputPer1M: 1.00 # placeholder
+    avgInputShare: 0.50
+    avgOutputShare: 0.50
+    avgTokensPerRequest: 3000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -331,7 +164,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/kimi-k2-thinking"
 
   deepseek-v3p2:
-    identifier: deepseek-v3
+    kind: text
+    mode: weighted
+    inputPer1M: 0.27
+    outputPer1M: 1.10
+    avgInputShare: 0.70
+    avgOutputShare: 0.30
+    avgTokensPerRequest: 2000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -341,7 +180,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/deepseek-v3p2"
 
   glm-5:
-    identifier: glm-5
+    kind: text
+    mode: weighted
+    inputPer1M: 1.00 # placeholder
+    outputPer1M: 1.00 # placeholder
+    avgInputShare: 0.70
+    avgOutputShare: 0.30
+    avgTokensPerRequest: 2000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -351,7 +196,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/glm-5"
 
   cogito-671b-v2-p1:
-    identifier: cogito
+    kind: text
+    mode: weighted
+    inputPer1M: 1.00 # placeholder
+    outputPer1M: 1.00 # placeholder
+    avgInputShare: 0.70
+    avgOutputShare: 0.30
+    avgTokensPerRequest: 2000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -361,7 +212,10 @@ models:
         modelNameOverride: "accounts/cogito/models/cogito-671b-v2-p1"
 
   qwen3-reranker-8b:
-    identifier: qwen-reranker
+    kind: reranker
+    mode: fixed
+    effectivePer1M: 1.00 # placeholder
+    avgTokensPerRequest: 1000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -371,7 +225,10 @@ models:
         modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
 
   qwen3-embedding-8b:
-    identifier: qwen-embedding
+    kind: embedding
+    mode: fixed
+    effectivePer1M: 0.10 # placeholder
+    avgTokensPerRequest: 500
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -381,7 +238,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
 
   minimax-m2p5:
-    identifier: minimax
+    kind: text
+    mode: weighted
+    inputPer1M: 1.00 # placeholder
+    outputPer1M: 1.00 # placeholder
+    avgInputShare: 0.70
+    avgOutputShare: 0.30
+    avgTokensPerRequest: 2000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -391,7 +254,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/minimax-m2p5"
 
   qwen3-vl-30b-a3b-instruct:
-    identifier: qwen-vl-instruct
+    kind: multimodal
+    mode: weighted
+    inputPer1M: 1.00 # placeholder
+    outputPer1M: 1.00 # placeholder
+    avgInputShare: 0.70
+    avgOutputShare: 0.30
+    avgTokensPerRequest: 2000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -401,7 +270,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct"
 
   qwen3-vl-30b-a3b-thinking:
-    identifier: qwen-vl-thinking
+    kind: multimodal
+    mode: weighted
+    inputPer1M: 1.00 # placeholder
+    outputPer1M: 1.00 # placeholder
+    avgInputShare: 0.50
+    avgOutputShare: 0.50
+    avgTokensPerRequest: 3000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -411,7 +286,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
 
   gpt-5-mini:
-    identifier: gpt-5-mini
+    kind: text
+    mode: weighted
+    inputPer1M: 2.50
+    outputPer1M: 10.00
+    avgInputShare: 0.70
+    avgOutputShare: 0.30
+    avgTokensPerRequest: 1800
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -421,7 +302,13 @@ models:
         modelNameOverride: "gpt-5-mini"
 
   gpt-5.1-codex-mini:
-    identifier: gpt-5.1-codex-mini
+    kind: text
+    mode: weighted
+    inputPer1M: 2.50 # placeholder
+    outputPer1M: 10.00 # placeholder
+    avgInputShare: 0.70
+    avgOutputShare: 0.30
+    avgTokensPerRequest: 1800
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -431,7 +318,13 @@ models:
         modelNameOverride: "gpt-5.1-codex-mini"
 
   gpt-5-nano:
-    identifier: gpt-5-nano
+    kind: text
+    mode: weighted
+    inputPer1M: 1.00 # placeholder
+    outputPer1M: 5.00 # placeholder
+    avgInputShare: 0.70
+    avgOutputShare: 0.30
+    avgTokensPerRequest: 1500
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -441,7 +334,10 @@ models:
         modelNameOverride: "gpt-5-nano"
 
   text-embedding-3-large:
-    identifier: text-embedding-large
+    kind: embedding
+    mode: fixed
+    effectivePer1M: 0.13
+    avgTokensPerRequest: 500
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -451,7 +347,10 @@ models:
         modelNameOverride: "text-embedding-3-large"
 
   gpt-image-1:
-    identifier: gpt-image
+    kind: image
+    mode: fixed
+    effectivePer1M: 30.00 # placeholder
+    avgTokensPerRequest: 1
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -461,7 +360,13 @@ models:
         modelNameOverride: "gpt-image-1.5-2025-12-16"
 
   gemini-3.1-pro:
-    identifier: gemini-pro
+    kind: text
+    mode: weighted
+    inputPer1M: 1.25 # placeholder
+    outputPer1M: 5.00 # placeholder
+    avgInputShare: 0.80
+    avgOutputShare: 0.20
+    avgTokensPerRequest: 2000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -471,7 +376,13 @@ models:
         modelNameOverride: "gemini-3.1-pro-preview"
 
   gemini-3.1-flash-lite:
-    identifier: gemini-flash-lite
+    kind: text
+    mode: weighted
+    inputPer1M: 0.25
+    outputPer1M: 1.50
+    avgInputShare: 0.80
+    avgOutputShare: 0.20
+    avgTokensPerRequest: 1500
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -481,7 +392,13 @@ models:
         modelNameOverride: "gemini-3.1-flash-lite-preview"
 
   gemini-3-flash:
-    identifier: gemini-flash
+    kind: text
+    mode: weighted
+    inputPer1M: 0.50 # placeholder
+    outputPer1M: 2.00 # placeholder
+    avgInputShare: 0.80
+    avgOutputShare: 0.20
+    avgTokensPerRequest: 1500
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -491,7 +408,13 @@ models:
         modelNameOverride: "gemini-3-flash-preview"
 
   gemini-2-5-flash-lite:
-    identifier: gemini-flash-lite
+    kind: text
+    mode: weighted
+    inputPer1M: 0.25
+    outputPer1M: 1.50
+    avgInputShare: 0.80
+    avgOutputShare: 0.20
+    avgTokensPerRequest: 1500
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -502,7 +425,13 @@ models:
 
 
   "gemini-2.5-pro":
-    identifier: gemini-pro
+    kind: text
+    mode: weighted
+    inputPer1M: 1.25 # placeholder
+    outputPer1M: 5.00 # placeholder
+    avgInputShare: 0.80
+    avgOutputShare: 0.20
+    avgTokensPerRequest: 2000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -512,7 +441,13 @@ models:
         modelNameOverride: "gemini-2.5-pro"
 
   "gemini-2.5-flash":
-    identifier: gemini-flash
+    kind: text
+    mode: weighted
+    inputPer1M: 0.50 # placeholder
+    outputPer1M: 2.00 # placeholder
+    avgInputShare: 0.80
+    avgOutputShare: 0.20
+    avgTokensPerRequest: 1500
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -522,7 +457,13 @@ models:
         modelNameOverride: "gemini-2.5-flash"
 
   "gemini-2.5-flash-lite":
-    identifier: gemini-flash-lite
+    kind: text
+    mode: weighted
+    inputPer1M: 0.25
+    outputPer1M: 1.50
+    avgInputShare: 0.80
+    avgOutputShare: 0.20
+    avgTokensPerRequest: 1500
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -532,7 +473,10 @@ models:
         modelNameOverride: "gemini-2.5-flash-lite"
 
   "gemini-2.5-flash-image":
-    identifier: gemini-flash-image
+    kind: image
+    mode: fixed
+    effectivePer1M: 15.00 # placeholder
+    avgTokensPerRequest: 1
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -542,7 +486,13 @@ models:
         modelNameOverride: "gemini-2.5-flash-image"
 
   "gemini-2.0-flash-lite":
-    identifier: gemini-flash-lite
+    kind: text
+    mode: weighted
+    inputPer1M: 0.25
+    outputPer1M: 1.50
+    avgInputShare: 0.80
+    avgOutputShare: 0.20
+    avgTokensPerRequest: 1500
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary

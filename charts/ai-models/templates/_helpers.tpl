@@ -59,58 +59,42 @@ Resolve and validate the currently selected plan.
 
 
 {{/*
-Resolve the pricing profile for a given model.
-- .ctx: The top-level chart context (.).
-- .model: The model object from the values.
-- .modelName: The name of the model.
-*/}}
-{{- define "ai-models.budgeting.profileForModel" -}}
-{{- $ctx := .ctx -}}
-{{- $model := .model -}}
-{{- $modelName := .modelName -}}
-{{- $identifier := $model.identifier | required (printf "Model '%s' is missing required field 'identifier'" $modelName) -}}
-{{- $profile := get $ctx.Values.rateLimitBudgeting.pricingProfiles $identifier | required (printf "Pricing profile '%s' for model '%s' not found" $identifier $modelName) -}}
-{{- $profile | toYaml -}}
-{{- end -}}
-
-
-{{/*
 ---
 Calculation Helpers
 ---
 */}}
 
 {{/*
-Calculate the effective price per 1 million tokens for a model profile.
-- .profile: The pricing profile for the model.
-- .profileName: The name of the profile (for error messages).
+Calculate the effective price per 1 million tokens for a model.
+- .model: The model object (directly containing pricing info).
+- .modelName: The name of the model (for error messages).
 */}}
 {{- define "ai-models.budgeting.effectivePer1M" -}}
-{{- $profile := .profile -}}
-{{- $profileName := .profileName -}}
-{{- if not $profile -}}
-{{- fail (printf "Pricing profile '%s' is missing or null" $profileName) -}}
+{{- $model := .model -}}
+{{- $modelName := .modelName -}}
+{{- if not $model -}}
+{{- fail (printf "Model '%s' is missing or null" $modelName) -}}
 {{- end -}}
-{{- $mode := $profile.mode | required (printf "Pricing profile '%s' is missing 'mode'" $profileName) -}}
+{{- $mode := $model.mode | required (printf "Model '%s' is missing pricing 'mode'" $modelName) -}}
 
 {{- if eq $mode "weighted" -}}
-  {{- $inputPer1M := $profile.inputPer1M | required (printf "Weighted profile '%s' is missing 'inputPer1M'" $profileName) -}}
-  {{- $outputPer1M := $profile.outputPer1M | required (printf "Weighted profile '%s' is missing 'outputPer1M'" $profileName) -}}
-  {{- $avgInputShare := $profile.avgInputShare | required (printf "Weighted profile '%s' is missing 'avgInputShare'" $profileName) -}}
-  {{- $avgOutputShare := $profile.avgOutputShare | required (printf "Weighted profile '%s' is missing 'avgOutputShare'" $profileName) -}}
+  {{- $inputPer1M := $model.inputPer1M | required (printf "Weighted model '%s' is missing 'inputPer1M'" $modelName) -}}
+  {{- $outputPer1M := $model.outputPer1M | required (printf "Weighted model '%s' is missing 'outputPer1M'" $modelName) -}}
+  {{- $avgInputShare := $model.avgInputShare | required (printf "Weighted model '%s' is missing 'avgInputShare'" $modelName) -}}
+  {{- $avgOutputShare := $model.avgOutputShare | required (printf "Weighted model '%s' is missing 'avgOutputShare'" $modelName) -}}
   {{- $shareSum := addf (float64 $avgInputShare) (float64 $avgOutputShare) -}}
   {{- if not (eq (printf "%.2f" $shareSum) "1.00") -}}
-    {{- fail (printf "Weighted profile '%s' has shares that do not sum to 1.00 (got %.2f)" $profileName $shareSum) -}}
+    {{- fail (printf "Weighted model '%s' has shares that do not sum to 1.00 (got %.2f)" $modelName $shareSum) -}}
   {{- end -}}
   {{- $effectivePrice := addf (mulf (float64 $inputPer1M) (float64 $avgInputShare)) (mulf (float64 $outputPer1M) (float64 $avgOutputShare)) -}}
   {{- $effectivePrice -}}
 
 {{- else if eq $mode "fixed" -}}
-  {{- $effectivePrice := $profile.effectivePer1M | required (printf "Fixed profile '%s' is missing 'effectivePer1M'" $profileName) -}}
+  {{- $effectivePrice := $model.effectivePer1M | required (printf "Fixed model '%s' is missing 'effectivePer1M'" $modelName) -}}
   {{- $effectivePrice -}}
 
 {{- else -}}
-  {{- fail (printf "Unsupported pricing mode '%s' for profile '%s'" $mode $profileName) -}}
+  {{- fail (printf "Unsupported pricing mode '%s' for model '%s'" $mode $modelName) -}}
 {{- end -}}
 {{- end -}}
 
@@ -127,7 +111,6 @@ Compute derived rate limits for a model based on a plan.
 {{- $modelName := .modelName -}}
 
 {{- $plan := include "ai-models.budgeting.plan" (dict "ctx" $ctx) | fromYaml -}}
-{{- $profile := include "ai-models.budgeting.profileForModel" (dict "ctx" $ctx "model" $model "modelName" $modelName) | fromYaml -}}
 
 {{- $monthlyBudget := float64 $plan.monthlyBudgetUsd -}}
 {{- $safetyFactor := float64 ($plan.safetyFactor | default 1.0) -}}
@@ -137,7 +120,7 @@ Compute derived rate limits for a model based on a plan.
 {{- $dailyBudget := divf $usableMonthlyBudget 30.0 -}}
 {{- $weeklyBudget := mulf $dailyBudget 7.0 -}}
 
-{{- $effectivePer1M := include "ai-models.budgeting.effectivePer1M" (dict "profile" $profile "profileName" $model.identifier) | float64 -}}
+{{- $effectivePer1M := include "ai-models.budgeting.effectivePer1M" (dict "model" $model "modelName" $modelName) | float64 -}}
 {{- if not (gt $effectivePer1M 0.0) -}}
   {{- fail (printf "Effective price for model '%s' must be positive" $modelName) -}}
 {{- end -}}
@@ -157,7 +140,7 @@ Compute derived rate limits for a model based on a plan.
       "burstTpm" $burstTpm
 -}}
 
-{{- $avgTokensPerRequest := $profile.avgTokensPerRequest | default $plan.defaultAvgTokensPerRequest -}}
+{{- $avgTokensPerRequest := $model.avgTokensPerRequest | default $plan.defaultAvgTokensPerRequest -}}
 {{- if $avgTokensPerRequest -}}
   {{- $rpmEstimate := floor (divf (float64 $burstTpm) (float64 $avgTokensPerRequest)) | int64 -}}
   {{- $_ := set $limits "rpmEstimate" $rpmEstimate -}}
