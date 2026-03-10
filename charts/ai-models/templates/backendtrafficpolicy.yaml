@@ -18,8 +18,8 @@ metadata:
 spec:
   targetRefs:
     - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: {{ $.Values.gatewayRef.name }}
+      kind: HTTPRoute
+      name: {{ $routeName }}
   retry:
     {{- toYaml $.Values.backendTrafficPolicy.retry | nindent 4 }}
   {{- if (default true (dig "enabled" nil (default dict $.Values.envoyRateLimit))) }}
@@ -56,7 +56,7 @@ spec:
 
         - clientSelectors:
             - headers:
-                - name: x-account-id
+                - name: x-project-id
                   type: Distinct
                   invert: false
                 - name: x-ai-eg-model
