@@ -16,27 +16,28 @@ spec:
       rules:
         # Rate limit rule for {{ $routeName }}
         {{- $limits := include "ai-models.budgeting.derivedLimits" (dict "ctx" $ "model" $routeConfig "modelName" $routeName) | fromYaml }}
-        - clientSelectors:
-            - headers:
-                - name: x-project-id
-                  type: Distinct
-                  invert: false
-                - name: x-ai-eg-model
-                  type: Exact
-                  invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
-          limit:
-            requests: {{ $limits.dailyTokens | int64 }}
-            unit: Day
-          cost:
-            request:
-              from: Number
-              number: 0
-            response:
-              from: Metadata
-              metadata:
-                namespace: io.envoy.ai_gateway
-                key: llm_total_token
+        # TODO sse how to do efficiently daily limits?
+        #- clientSelectors:
+        #    - headers:
+        #        - name: x-project-id
+        #          type: Distinct
+        #          invert: false
+        #        - name: x-ai-eg-model
+        #          type: Exact
+        #          invert: false
+        #          value: {{ $routeConfig.modelMatch | default $routeName }}
+        #  limit:
+        #    requests: {{ $limits.dailyTokens | int64 }}
+        #    unit: Day
+        #  cost:
+        #    request:
+        #      from: Number
+        #      number: 0
+        #    response:
+        #      from: Metadata
+        #      metadata:
+        #        namespace: io.envoy.ai_gateway
+        #        key: llm_total_token
 
         - clientSelectors:
             - headers:
