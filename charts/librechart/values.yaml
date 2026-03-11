@@ -41,7 +41,7 @@ librechat:
           targetPort: 3080
 
     rag-api:
-      enabled: true
+      enabled: false
       annotations: { }
       type: ClusterIP
       controller: rag-api
@@ -132,7 +132,7 @@ librechat:
             # Optional: redirects the user to the end session endpoint after logging out
             OPENID_USE_END_SESSION_ENDPOINT: "true"
 
-            RAG_API_URL: "http://{{ .Release.Name }}-rag-api:8000"
+            #RAG_API_URL: "http://{{ .Release.Name }}-rag-api:8000"
 
             DOMAIN_CLIENT: &url "https://ai.camer.digital"
             DOMAIN_SERVER: *url
@@ -257,7 +257,7 @@ librechat:
                 periodSeconds: 5
 
     rag-api:
-      enabled: true
+      enabled: false
       type: statefulset
       strategy: RollingUpdate
       replicas: 2
