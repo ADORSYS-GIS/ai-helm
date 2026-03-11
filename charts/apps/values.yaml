@@ -1130,6 +1130,26 @@ applications:
         prune: true
         selfHeal: true
 
+  # --- Models ---
+  - name: mcps
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/mcps
+      helm:
+        releaseName: mcps
+        valuesObject: { }
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Backups ---
   - name: cnpg-pgdump-backup
     finalizers:
