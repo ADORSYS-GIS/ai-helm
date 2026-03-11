@@ -41,6 +41,18 @@ Validate a plan configuration.
 {{- if not (ge (float64 $burstMultiplier) 1.0) -}}
 {{- fail (printf "Plan '%s' has a 'burstMultiplier' less than 1" $name) -}}
 {{- end -}}
+{{- $effectiveMinutes := $plan.effectiveMinutes | default 1440.0 -}}
+{{- if not (or (kindIs "numeric" $effectiveMinutes) (kindIs "float64" $effectiveMinutes) (kindIs "int64" $effectiveMinutes) (kindIs "int" $effectiveMinutes)) -}}
+{{- fail (printf "Plan '%s' has a non-numeric 'effectiveMinutes'" $name) -}}
+{{- end -}}
+{{- $tokenVarianceMultiplier := $plan.tokenVarianceMultiplier | default 1.0 -}}
+{{- if not (or (kindIs "numeric" $tokenVarianceMultiplier) (kindIs "float64" $tokenVarianceMultiplier) (kindIs "int64" $tokenVarianceMultiplier) (kindIs "int" $tokenVarianceMultiplier)) -}}
+{{- fail (printf "Plan '%s' has a non-numeric 'tokenVarianceMultiplier'" $name) -}}
+{{- end -}}
+{{- $avgTokensPerSecondPerRequest := $plan.avgTokensPerSecondPerRequest | default 1.0 -}}
+{{- if not (or (kindIs "numeric" $avgTokensPerSecondPerRequest) (kindIs "float64" $avgTokensPerSecondPerRequest) (kindIs "int64" $avgTokensPerSecondPerRequest) (kindIs "int" $avgTokensPerSecondPerRequest)) -}}
+{{- fail (printf "Plan '%s' has a non-numeric 'avgTokensPerSecondPerRequest'" $name) -}}
+{{- end -}}
 {{- end -}}
 
 
@@ -68,10 +80,14 @@ Calculation Helpers
 Calculate the effective price per 1 million tokens for a model.
 - .model: The model object (directly containing pricing info).
 - .modelName: The name of the model (for error messages).
+- .avgTokensPerRequest: The average tokens per request.
+- .safeAvgTokensPerRequest: The safe average tokens per request.
 */}}
 {{- define "ai-models.budgeting.effectivePer1M" -}}
 {{- $model := .model -}}
 {{- $modelName := .modelName -}}
+{{- $avgTokensPerRequest := .avgTokensPerRequest -}}
+{{- $safeAvgTokensPerRequest := .safeAvgTokensPerRequest -}}
 {{- if not $model -}}
 {{- fail (printf "Model '%s' is missing or null" $modelName) -}}
 {{- end -}}
@@ -83,14 +99,19 @@ Calculate the effective price per 1 million tokens for a model.
   {{- $avgInputShare := $model.avgInputShare | required (printf "Weighted model '%s' is missing 'avgInputShare'" $modelName) -}}
   {{- $avgOutputShare := $model.avgOutputShare | required (printf "Weighted model '%s' is missing 'avgOutputShare'" $modelName) -}}
   {{- $shareSum := addf (float64 $avgInputShare) (float64 $avgOutputShare) -}}
-  {{- if not (eq (printf "%.2f" $shareSum) "1.00") -}}
-    {{- fail (printf "Weighted model '%s' has shares that do not sum to 1.00 (got %.2f)" $modelName $shareSum) -}}
+  {{- if or (lt $shareSum 0.999) (gt $shareSum 1.001) -}}
+    {{- fail (printf "Weighted model '%s' has shares that do not sum to 1.00 (got %.4f)" $modelName $shareSum) -}}
   {{- end -}}
-  {{- $effectivePrice := addf (mulf (float64 $inputPer1M) (float64 $avgInputShare)) (mulf (float64 $outputPer1M) (float64 $avgOutputShare)) -}}
+  {{- $avgInputTokens := mulf (float64 $avgTokensPerRequest) (float64 $avgInputShare) -}}
+  {{- $avgOutputTokens := mulf (float64 $avgTokensPerRequest) (float64 $avgOutputShare) -}}
+  {{- $avgRequestCost := addf (divf (mulf $avgInputTokens (float64 $inputPer1M)) 1000000.0) (divf (mulf $avgOutputTokens (float64 $outputPer1M)) 1000000.0) -}}
+  {{- $effectivePrice := mulf (divf $avgRequestCost (float64 $safeAvgTokensPerRequest)) 1000000.0 -}}
   {{- $effectivePrice -}}
 
 {{- else if eq $mode "fixed" -}}
-  {{- $effectivePrice := $model.effectivePer1M | required (printf "Fixed model '%s' is missing 'effectivePer1M'" $modelName) -}}
+  {{- $baseEffectivePrice := $model.effectivePer1M | required (printf "Fixed model '%s' is missing 'effectivePer1M'" $modelName) -}}
+  {{- $avgRequestCost := divf (mulf (float64 $avgTokensPerRequest) (float64 $baseEffectivePrice)) 1000000.0 -}}
+  {{- $effectivePrice := mulf (divf $avgRequestCost (float64 $safeAvgTokensPerRequest)) 1000000.0 -}}
   {{- $effectivePrice -}}
 
 {{- else -}}
@@ -115,12 +136,18 @@ Compute derived rate limits for a model based on a plan.
 {{- $monthlyBudget := float64 $plan.monthlyBudgetUsd -}}
 {{- $safetyFactor := float64 ($plan.safetyFactor | default 1.0) -}}
 {{- $burstMultiplier := float64 ($plan.burstMultiplier | default 1.0) -}}
+{{- $effectiveMinutes := float64 ($plan.effectiveMinutes | default 1440.0) -}}
+{{- $tokenVarianceMultiplier := float64 ($plan.tokenVarianceMultiplier | default 1.0) -}}
+{{- $avgTokensPerSecondPerRequest := float64 ($plan.avgTokensPerSecondPerRequest | default 1.0) -}}
 
 {{- $usableMonthlyBudget := mulf $monthlyBudget $safetyFactor -}}
-{{- $dailyBudget := divf $usableMonthlyBudget 30.0 -}}
+{{- $dailyBudget := divf $usableMonthlyBudget 20.0 -}}
 {{- $weeklyBudget := mulf $dailyBudget 7.0 -}}
 
-{{- $effectivePer1M := include "ai-models.budgeting.effectivePer1M" (dict "model" $model "modelName" $modelName) | float64 -}}
+{{- $avgTokensPerRequest := float64 ($model.avgTokensPerRequest | default $plan.defaultAvgTokensPerRequest | default 1000) -}}
+{{- $safeAvgTokensPerRequest := floor (mulf $avgTokensPerRequest $tokenVarianceMultiplier) -}}
+
+{{- $effectivePer1M := include "ai-models.budgeting.effectivePer1M" (dict "model" $model "modelName" $modelName "avgTokensPerRequest" $avgTokensPerRequest "safeAvgTokensPerRequest" $safeAvgTokensPerRequest) | float64 -}}
 {{- if not (gt $effectivePer1M 0.0) -}}
   {{- fail (printf "Effective price for model '%s' must be positive" $modelName) -}}
 {{- end -}}
@@ -129,8 +156,12 @@ Compute derived rate limits for a model based on a plan.
 {{- $dailyTokens := floor (mulf $dailyBudget $tokensPerUsd) | int64 -}}
 {{- $weeklyTokens := floor (mulf $weeklyBudget $tokensPerUsd) | int64 -}}
 {{- $monthlyTokens := floor (mulf $usableMonthlyBudget $tokensPerUsd) | int64 -}}
-{{- $baseTpm := floor (divf (float64 $dailyTokens) 1440.0) | int64 -}}
+{{- $baseTpm := floor (divf (float64 $dailyTokens) $effectiveMinutes) | int64 -}}
 {{- $burstTpm := floor (mulf (float64 $baseTpm) $burstMultiplier) | int64 -}}
+
+{{- $baseRpm := floor (divf (float64 $baseTpm) $safeAvgTokensPerRequest) | int64 -}}
+{{- $burstRpm := floor (divf (float64 $burstTpm) $safeAvgTokensPerRequest) | int64 -}}
+{{- $maxConcurrentRequests := floor (divf (float64 $burstTpm) $avgTokensPerSecondPerRequest) | int64 -}}
 
 {{- $limits := dict
       "dailyTokens" $dailyTokens
@@ -138,13 +169,10 @@ Compute derived rate limits for a model based on a plan.
       "monthlyTokens" $monthlyTokens
       "baseTpm" $baseTpm
       "burstTpm" $burstTpm
+      "baseRpm" $baseRpm
+      "burstRpm" $burstRpm
+      "maxConcurrentRequests" $maxConcurrentRequests
 -}}
-
-{{- $avgTokensPerRequest := $model.avgTokensPerRequest | default $plan.defaultAvgTokensPerRequest -}}
-{{- if $avgTokensPerRequest -}}
-  {{- $rpmEstimate := floor (divf (float64 $burstTpm) (float64 $avgTokensPerRequest)) | int64 -}}
-  {{- $_ := set $limits "rpmEstimate" $rpmEstimate -}}
-{{- end -}}
 
 {{- $limits | toYaml -}}
 {{- end -}}

@@ -6,12 +6,18 @@ rateLimitBudgeting:
       monthlyBudgetUsd: 30
       safetyFactor: 0.85
       burstMultiplier: 3
-      defaultAvgTokensPerRequest: 1500
+      defaultAvgTokensPerRequest: 4500
+      effectiveMinutes: 720
+      tokenVarianceMultiplier: 1.4
+      avgTokensPerSecondPerRequest: 40
     pro:
       monthlyBudgetUsd: 200
       safetyFactor: 0.90
       burstMultiplier: 5
-      defaultAvgTokensPerRequest: 2000
+      defaultAvgTokensPerRequest: 6000
+      effectiveMinutes: 500
+      tokenVarianceMultiplier: 1.4
+      avgTokensPerSecondPerRequest: 40
 
 gatewayRef:
   name: core-gateway
@@ -136,9 +142,9 @@ models:
     mode: weighted
     inputPer1M: 0.40
     outputPer1M: 0.40
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 6000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -152,9 +158,9 @@ models:
     mode: weighted
     inputPer1M: 0.60
     outputPer1M: 2.50
-    avgInputShare: 0.70
-    avgOutputShare: 0.30
-    avgTokensPerRequest: 8000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -168,9 +174,9 @@ models:
     mode: weighted
     inputPer1M: 0.27
     outputPer1M: 1.10
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 12000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -184,9 +190,9 @@ models:
     mode: weighted
     inputPer1M: 0.80
     outputPer1M: 2.56
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 8000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -200,9 +206,9 @@ models:
     mode: weighted
     inputPer1M: 0.27
     outputPer1M: 1.10
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 12000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -215,7 +221,7 @@ models:
     kind: reranker
     mode: fixed
     effectivePer1M: 0.20
-    avgTokensPerRequest: 6000
+    avgTokensPerRequest: 18000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -228,7 +234,7 @@ models:
     kind: embedding
     mode: fixed
     effectivePer1M: 0.20
-    avgTokensPerRequest: 500
+    avgTokensPerRequest: 1500
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -242,9 +248,9 @@ models:
     mode: weighted
     inputPer1M: 0.20
     outputPer1M: 0.20
-    avgInputShare: 0.90
-    avgOutputShare: 0.10
-    avgTokensPerRequest: 60000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -258,9 +264,9 @@ models:
     mode: weighted
     inputPer1M: 0.30
     outputPer1M: 1.20
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 20000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -274,9 +280,9 @@ models:
     mode: weighted
     inputPer1M: 0.40
     outputPer1M: 0.40
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 20000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -290,9 +296,9 @@ models:
     mode: weighted
     inputPer1M: 0.40
     outputPer1M: 1.20
-    avgInputShare: 0.70
-    avgOutputShare: 0.30
-    avgTokensPerRequest: 20000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -306,9 +312,9 @@ models:
     mode: weighted
     inputPer1M: 0.25
     outputPer1M: 2.00
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 12000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -322,9 +328,9 @@ models:
     mode: weighted
     inputPer1M: 0.25
     outputPer1M: 2.00
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 12000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -338,9 +344,9 @@ models:
     mode: weighted
     inputPer1M: 0.05
     outputPer1M: 0.40
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 28000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -353,7 +359,7 @@ models:
     kind: embedding
     mode: fixed
     effectivePer1M: 0.13
-    avgTokensPerRequest: 500
+    avgTokensPerRequest: 1500
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -366,7 +372,7 @@ models:
     kind: embedding
     mode: fixed
     effectivePer1M: 0.13
-    avgTokensPerRequest: 1500
+    avgTokensPerRequest: 4500
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -393,9 +399,9 @@ models:
     mode: weighted
     inputPer1M: 2.00
     outputPer1M: 12.00
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 8000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -409,9 +415,9 @@ models:
     mode: weighted
     inputPer1M: 0.25
     outputPer1M: 1.50
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 28000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -425,9 +431,9 @@ models:
     mode: weighted
     inputPer1M: 0.50
     outputPer1M: 3.00
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 12000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -441,9 +447,9 @@ models:
     mode: weighted
     inputPer1M: 0.075
     outputPer1M: 0.30
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 28000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -452,15 +458,14 @@ models:
         <<: *googleAiStudioBackendSecondary
         modelNameOverride: "gemini-2.5-flash-lite"
 
-
   "gemini-2.5-pro":
     kind: text
     mode: weighted
     inputPer1M: 1.25
     outputPer1M: 5.00
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 8000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -474,9 +479,9 @@ models:
     mode: weighted
     inputPer1M: 0.10
     outputPer1M: 0.40
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 12000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -490,9 +495,9 @@ models:
     mode: weighted
     inputPer1M: 0.075
     outputPer1M: 0.30
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 20000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -505,7 +510,7 @@ models:
     kind: image
     mode: fixed
     effectivePer1M: 400.00
-    avgTokensPerRequest: 12000
+    avgTokensPerRequest: 36000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
@@ -519,9 +524,9 @@ models:
     mode: weighted
     inputPer1M: 0.075
     outputPer1M: 0.30
-    avgInputShare: 0.85
-    avgOutputShare: 0.15
-    avgTokensPerRequest: 28000
+    avgInputShare: 0.95
+    avgOutputShare: 0.05
+    avgTokensPerRequest: 48000
     backends:
       google-ai-studio-01:
         <<: *googleAiStudioBackendPrimary
