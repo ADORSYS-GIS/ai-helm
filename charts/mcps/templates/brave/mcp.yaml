@@ -1,0 +1,25 @@
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: MCPRoute
+metadata:
+  name: brave-search
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  parentRefs:
+    - name: {{ include "common.tplvalues.render" ( dict "value" .Values.gatewayRef.name "context" $ ) }}
+      namespace: {{ include "common.tplvalues.render" ( dict "value" .Values.gatewayRef.namespace "context" $ ) }}
+      kind: Gateway
+      group: gateway.networking.k8s.io
+
+  path: "/mcp/brave"
+
+  backendRefs:
+    - name: brave-search
+      kind: Backend
+      group: gateway.envoyproxy.io
+      path: "/mcp"
+      securityPolicy:
+        apiKey:
+          secretRef:
+            name: brave-search-token
+          header: X-API-Key

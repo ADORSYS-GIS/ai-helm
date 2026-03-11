@@ -1,0 +1,20 @@
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: MCPRoute
+metadata:
+  name: qdrant
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  parentRefs:
+    - name: ai-gateway
+      namespace: converse-llm
+      kind: Gateway
+      group: gateway.networking.k8s.io
+
+  path: "/mcp/qdrant"
+
+  backendRefs:
+    - name: qdrant
+      kind: Backend
+      group: gateway.envoyproxy.io
+      path: "/mcp"
