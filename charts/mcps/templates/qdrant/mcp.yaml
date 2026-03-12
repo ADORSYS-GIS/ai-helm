@@ -6,8 +6,8 @@ metadata:
   namespace: {{ include "common.names.namespace" $ }}
 spec:
   parentRefs:
-    - name: ai-gateway
-      namespace: converse-llm
+    - name: {{ include "common.tplvalues.render" ( dict "value" .Values.gatewayRef.name "context" $ ) }}
+      namespace: {{ include "common.tplvalues.render" ( dict "value" .Values.gatewayRef.namespace "context" $ ) }}
       kind: Gateway
       group: gateway.networking.k8s.io
 
