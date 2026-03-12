@@ -1,0 +1,39 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: brave-search
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: brave-search
+  template:
+    metadata:
+      labels:
+        app: brave-search
+    spec:
+      containers:
+        - name: brave-search
+          image: docker.io/mcp/brave-search:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
+          env:
+            - name: BRAVE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: brave-token
+                  key: apiKey
+            - name: BRAVE_MCP_TRANSPORT
+              value: "http"
+          args:
+            - --transport
+            - http

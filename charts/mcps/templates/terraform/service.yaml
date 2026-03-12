@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: terraform-mcp
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  selector:
+    app: terraform-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

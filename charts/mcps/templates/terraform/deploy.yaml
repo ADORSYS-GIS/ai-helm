@@ -1,0 +1,39 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terraform-mcp
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: terraform-mcp
+  template:
+    metadata:
+      labels:
+        app: terraform-mcp
+    spec:
+      containers:
+        - name: terraform-mcp
+          image: hashicorp/terraform-mcp-server:latest
+          args:
+            - "streamable-http"
+            - "--transport-host"
+            - "0.0.0.0"
+          env:
+            - name: MODE
+              value: "streamable-http"
+            - name: PORT
+              value: "8080"
+            - name: HOST
+              value: "0.0.0.0"
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
