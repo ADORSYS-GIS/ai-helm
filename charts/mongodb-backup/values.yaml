@@ -1,4 +1,7 @@
-mongo-backup:
+mongodb-backup:
+  s3:
+    secretName: mongodb-s3
+
   controllers:
     main:
       type: cronjob
@@ -29,19 +32,34 @@ mongo-backup:
             - |
               set -ex
 
+              if [ -z "$MONGODB_URI" ]; then
+                echo "Error: MONGODB_URI is required"
+                exit 1
+              fi
+
               # Create writable directory for backup
               mkdir -p /exported
 
-              # Run mongodump to create backup using URI
-              mongodump \
-                --uri="${MONGODB_URI}" \
-                --archive=/exported/mongo_backup.gz \
-                --gzip
+              # Build mongodump command based on BACKUP_DATABASE
+              if [ -n "$BACKUP_DATABASE" ]; then
+                echo "Backing up specific database: $BACKUP_DATABASE"
+                mongodump \
+                  --uri="${MONGODB_URI}" \
+                  --db="${BACKUP_DATABASE}" \
+                  --archive=/exported/mongo_backup.gz \
+                  --gzip
+              else
+                echo "Backing up all databases from URI"
+                mongodump \
+                  --uri="${MONGODB_URI}" \
+                  --archive=/exported/mongo_backup.gz \
+                  --gzip
+              fi
 
               echo "Export complete"
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           resources:
@@ -61,34 +79,34 @@ mongo-backup:
             S3_BUCKET:
               valueFrom:
                 secretKeyRef:
-                  name: librechat-s3-config
+                  name: "{{ .Values.s3.secretName }}"
                   key: s3_bucket_name
             AWS_ACCESS_KEY_ID:
               valueFrom:
                 secretKeyRef:
-                  name: librechat-s3-config
+                  name: "{{ .Values.s3.secretName }}"
                   key: s3_access_key_id
             AWS_SECRET_ACCESS_KEY:
               valueFrom:
                 secretKeyRef:
-                  name: librechat-s3-config
+                  name: "{{ .Values.s3.secretName }}"
                   key: s3_secret_access_key
             AWS_DEFAULT_REGION:
               valueFrom:
                 secretKeyRef:
-                  name: librechat-s3-config
+                  name: "{{ .Values.s3.secretName }}"
                   key: s3_region_name
             # Optional: S3 Endpoint (for MinIO/Localstack)
-            # S3_ENDPOINT: ...
+            S3_ENDPOINT: ""
             # Optional: S3 Prefix
             S3_PREFIX: "mongodb-backup"
             # Optional: Backup database naming (used to construct filename)
-            BACKUP_DATABASE: "mongo"
+            BACKUP_DATABASE: ""
 
           # Load optional secrets EnvVars blindly if they exist in secret
           envFrom:
             - secretRef:
-                name: librechat-s3-config
+                name: "{{ .Values.s3.secretName }}"
                 optional: true
 
           command:
