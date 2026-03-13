@@ -1,0 +1,163 @@
+mongodb-backup:
+  s3:
+    secretName: mongodb-s3
+
+  controllers:
+    main:
+      type: cronjob
+      cronjob:
+        schedule: "0 2 * * *"
+        concurrencyPolicy: Forbid
+        successfulJobsHistory: 3
+        failedJobsHistory: 3
+        startingDeadlineSeconds: 30
+
+      pod:
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
+
+      initContainers:
+        exporter:
+          image:
+            repository: mongo
+            tag: "8.0"
+          env:
+            MONGODB_URI: ""
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -ex
+
+              if [ -z "$MONGODB_URI" ]; then
+                echo "Error: MONGODB_URI is required"
+                exit 1
+              fi
+
+              # Create writable directory for backup
+              mkdir -p /exported
+
+              # Build mongodump command based on BACKUP_DATABASE
+              if [ -n "$BACKUP_DATABASE" ]; then
+                echo "Backing up specific database: $BACKUP_DATABASE"
+                mongodump \
+                  --uri="${MONGODB_URI}" \
+                  --db="${BACKUP_DATABASE}" \
+                  --archive=/exported/mongo_backup.gz \
+                  --gzip
+              else
+                echo "Backing up all databases from URI"
+                mongodump \
+                  --uri="${MONGODB_URI}" \
+                  --archive=/exported/mongo_backup.gz \
+                  --gzip
+              fi
+
+              echo "Export complete"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+
+      containers:
+        main:
+          image:
+            repository: amazon/aws-cli
+            tag: "2.17.0"
+          env:
+            S3_BUCKET:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: s3_bucket_name
+            AWS_ACCESS_KEY_ID:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: s3_access_key_id
+            AWS_SECRET_ACCESS_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: s3_secret_access_key
+            AWS_DEFAULT_REGION:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.s3.secretName }}"
+                  key: s3_region_name
+            # Optional: S3 Endpoint (for MinIO/Localstack)
+            S3_ENDPOINT: ""
+            # Optional: S3 Prefix
+            S3_PREFIX: "mongodb-backup"
+            # Optional: Backup database naming (used to construct filename)
+            BACKUP_DATABASE: ""
+
+          # Load optional secrets EnvVars blindly if they exist in secret
+          envFrom:
+            - secretRef:
+                name: "{{ .Values.s3.secretName }}"
+                optional: true
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -ex
+
+              TIMESTAMP=$(date -u +"%Y%m%d_%H%M%S")
+
+              if [ -n "$BACKUP_DATABASE" ]; then
+                 BACKUP_FILE="${BACKUP_DATABASE}_${TIMESTAMP}.gz"
+              else
+                 BACKUP_FILE="all-databases_${TIMESTAMP}.gz"
+              fi
+
+              # Build S3 path with prefix handling
+              if [ -n "$S3_PREFIX" ]; then
+                S3_PATH="${S3_PREFIX}/${BACKUP_FILE}"
+              else
+                S3_PATH="${BACKUP_FILE}"
+              fi
+
+              if [ -n "$S3_ENDPOINT" ]; then
+                aws s3 cp \
+                  --endpoint-url "$S3_ENDPOINT" \
+                  /exported/mongo_backup.gz \
+                  "s3://${S3_BUCKET}/${S3_PATH}"
+              else
+                aws s3 cp \
+                  /exported/mongo_backup.gz \
+                  "s3://${S3_BUCKET}/${S3_PATH}"
+              fi
+
+              echo "Uploaded: $BACKUP_FILE"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+
+  persistence:
+    export-volume:
+      type: emptyDir
+      globalMounts:
+        - path: /exported
