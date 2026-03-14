@@ -50,9 +50,9 @@ applications:
       helm:
         releaseName: opentelemetry-operator
         valuesObject:
-          #manager:
-          #  collectorImage:
-          #    repository: "otel/opentelemetry-collector-k8s"
+        #manager:
+        #  collectorImage:
+        #    repository: "otel/opentelemetry-collector-k8s"
     destination:
       namespace: opentelemetry-system
     syncPolicy:
@@ -959,7 +959,7 @@ applications:
         prune: true
         selfHeal: true
 
-   # --- Converse UI ---
+  # --- Converse UI ---
   - name: converse-ui
     finalizers:
       - resources-finalizer.argocd.argoproj.io
@@ -1172,14 +1172,69 @@ applications:
               backup:
                 containers:
                   backup:
-                    image: 
+                    image:
                       repository: ghcr.io/adorsys-gis/lightbridge-authz
                       tag: postgres-backup
-          
+
     destination:
       namespace: converse
     syncPolicy:
       syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Proxy ---
+  - name: gemini-proxy
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 4.6.2
+      helm:
+        releaseName: gemini-proxy
+        valuesObject:
+          controllers:
+            main:
+              type: deployment
+              strategy: Recreate
+              replicas: 1
+              labels:
+                main: gemini-proxy
+              containers:
+                mcpo:
+                  image:
+                    repository: zhu327/gemini-openai-proxy
+                    tag: latest
+                    pullPolicy: IfNotPresent
+
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+
+          service:
+            mcpo:
+              enabled: true
+              annotations: { }
+              type: ClusterIP
+              controller: main
+              ports:
+                http:
+                  enabled: true
+                  port: 8080
+                  targetPort: 8080
+
+    destination:
+      namespace: converse-proxy
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
         - ServerSideApply=true
       automated:
         prune: true
