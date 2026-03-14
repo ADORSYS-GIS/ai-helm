@@ -1204,7 +1204,7 @@ applications:
               labels:
                 main: gemini-proxy
               containers:
-                mcpo:
+                proxy:
                   image:
                     repository: zhu327/gemini-openai-proxy
                     tag: latest
@@ -1218,8 +1218,11 @@ applications:
                       cpu: 500m
                       memory: 512Mi
 
+                  env:
+                    DISABLE_MODEL_MAPPING: 1
+
           service:
-            mcpo:
+            proxy:
               enabled: true
               annotations: { }
               type: ClusterIP
