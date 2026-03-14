@@ -710,7 +710,7 @@ applications:
                 data:
                   config.yaml: |
                     logging:
-                      level: info
+                      level: "${RUST_LOG}"
                     database:
                       url: "${DATABASE_URL}"
                       pool_size: 10
@@ -732,6 +732,12 @@ applications:
                 containers:
                   authz:
                     env:
+                      RUST_LOG: "debug"
+                      PORT: "3000"
+                      POD_NAME:
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.name
                       DATABASE_URL:
                         valueFrom:
                           secretKeyRef:
