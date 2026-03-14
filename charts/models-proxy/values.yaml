@@ -1,0 +1,79 @@
+global:
+  litellm:
+    version: "main-latest"
+  configmap:
+    name: "litellm-config"
+
+proxy:
+  service:
+    litellm:
+      enabled: true
+      annotations: { }
+      type: ClusterIP
+      controller: litellm
+      ports:
+        http:
+          enabled: true
+          port: 4000
+          targetPort: 4000
+
+  controllers:
+    litellm:
+      type: deployment
+      strategy: RollingUpdate
+      replicas: 2
+      pod:
+        labels:
+          app: proxy-app
+      containers:
+        proxy:
+          image:
+            repository: docker.litellm.ai/berriai/litellm
+            tag: "{{ .Values.global.litellm.version }}"
+            pullPolicy: Always
+          args:
+            - --config-path
+            - /app/config.yaml
+          env:
+            PUID: "1000"
+            PGID: "1000"
+            TZ: "Europe/Berlin"
+
+            GEMINI_API_KEY:
+              secretKeyRef:
+                name: gemini-api-key
+                key: apiKey
+
+            #EMBEDDINGS_MODEL: "text-embedding-3-small"
+            #EMBEDDING_BATCH_SIZE: 750
+
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 200m
+              memory: 200Mi
+          probes:
+            liveness:
+              enabled: true
+            readiness:
+              enabled: true
+
+  persistence:
+    config:
+      enabled: true
+      type: configMap
+      name: '{{ .Values.global.configmap.name }}'
+      advancedMounts:
+        litellm:
+          litellm:
+            - path: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+
+config:
+  model_list:
+    - model_name: "*"
+      litellm_params:
+        model: "*"
