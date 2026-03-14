@@ -1,0 +1,40 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepl
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deepl
+  template:
+    metadata:
+      labels:
+        app: deepl
+    spec:
+      containers:
+        - name: deepl
+          image: node:alpine
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
+          env:
+            - name: DEEPL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: deepl-token
+                  key: apiKey
+            - name: BRAVE_MCP_TRANSPORT
+              value: "http"
+          args:
+            - npx
+            - -y
+            - deepl-mcp-server
