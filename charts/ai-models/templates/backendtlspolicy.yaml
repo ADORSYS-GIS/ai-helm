@@ -1,4 +1,5 @@
 {{- range $backendName, $backendConfig := .Values.backends }}
+{{- if $backendConfig.tlsHostname }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: BackendTLSPolicy
@@ -12,4 +13,5 @@ spec:
   validation:
     wellKnownCACertificates: "System"
     hostname: {{ $backendConfig.tlsHostname }}
+{{- end }}
 {{- end }}
