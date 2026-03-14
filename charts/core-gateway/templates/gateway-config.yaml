@@ -1,22 +1,29 @@
+---
 apiVersion: aigateway.envoyproxy.io/v1alpha1
-kind: GatewayConfig
+kind: GatewayConfigList
 metadata:
-  name: {{ include "core-gateway.fullname" $ }}-config
+  name: {{ include "core-gateway.fullname" $ }}-config-list
   namespace: {{ .Release.Namespace }}
-spec:
-  extProc:
-    kubernetes:
-      env:
-        - name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: "http://core-gateway-phoenix-collector.converse-gateway:4318"
-        - name: OTEL_METRICS_EXPORTER
-          value: "none"
-        - name: OTEL_SERVICE_NAME
-          value: "{{ include "core-gateway.fullname" $ }}"
-      resources:
-        requests:
-          cpu: "100m"
-          memory: "100Mi"
-        limits:
-          cpu: "512m"
-          memory: "512Mi"
+items:
+  - apiVersion: aigateway.envoyproxy.io/v1alpha1
+    kind: GatewayConfig
+    metadata:
+      name: {{ include "core-gateway.fullname" $ }}-config
+      namespace: {{ .Release.Namespace }}
+    spec:
+      extProc:
+        kubernetes:
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://core-gateway-phoenix-collector.converse-gateway:4318"
+            - name: OTEL_METRICS_EXPORTER
+              value: "none"
+            - name: OTEL_SERVICE_NAME
+              value: "{{ include "core-gateway.fullname" $ }}"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "100Mi"
+            limits:
+              cpu: "512m"
+              memory: "512Mi"
