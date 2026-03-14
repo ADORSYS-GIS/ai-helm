@@ -37,14 +37,6 @@ spec:
 
     service:
       pipelines:
-        logs:
-          receivers:
-            - otlp
-          processors:
-            - batch
-          exporters:
-            - otlphttp/phoenix
-            - debug
         traces:
           receivers:
             - otlp
@@ -73,21 +65,12 @@ spec:
 
     exporters:
       otlphttp/lightbridge_usage:
-        traces_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/traces"
-        metrics_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/metrics"
+        logs_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/logs"
       debug: {}
 
     service:
       pipelines:
         logs:
-          receivers:
-            - otlp
-          processors:
-            - batch
-          exporters:
-            - otlphttp/lightbridge_usage
-            - debug
-        traces:
           receivers:
             - otlp
           processors:
