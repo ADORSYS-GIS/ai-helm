@@ -22,7 +22,7 @@ spec:
             endpoint: 0.0.0.0:4318
 
     processors:
-      batch: {}
+      batch: { }
 
     exporters:
       # Phoenix HTTP ingest endpoint:
@@ -33,7 +33,7 @@ spec:
           # Phoenix docs: Bearer auth; lowercase header for compatibility.
           authorization: "Bearer ${env:PHOENIX_API_KEY}"
 
-      debug: {}
+      debug: { }
 
     service:
       pipelines:
@@ -52,6 +52,21 @@ metadata:
   name: {{ include "core-gateway.fullname" . }}-usage
   namespace: {{ .Release.Namespace }}
 spec:
+  volumes:
+    - name: authz-tls
+      secret:
+        secretName: authz-tls
+        items:
+          - key: ca.crt
+            path: ca.crt
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
+  volumeMounts:
+    - name: authz-tls
+      mountPath: /etc/otel/tls
+      readOnly: true
   config:
     receivers:
       otlp:
@@ -61,12 +76,14 @@ spec:
           http:
             endpoint: 0.0.0.0:4318
     processors:
-      batch: {}
+      batch: { }
 
     exporters:
       otlphttp/lightbridge_usage:
         logs_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/logs"
-      debug: {}
+        tls:
+          ca_file: /etc/otel/tls/ca.crt
+      debug: { }
 
     service:
       pipelines:
