@@ -1186,58 +1186,20 @@ applications:
         selfHeal: true
 
   # --- Proxy ---
-  - name: gemini-proxy
+  - name: models-proxy
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     source:
-      repoURL: https://bjw-s-labs.github.io/helm-charts
-      chart: app-template
-      targetRevision: 4.6.2
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/models-proxy
       helm:
-        releaseName: gemini-proxy
-        valuesObject:
-          controllers:
-            main:
-              type: deployment
-              strategy: Recreate
-              replicas: 1
-              labels:
-                main: gemini-proxy
-              containers:
-                proxy:
-                  image:
-                    repository: zhu327/gemini-openai-proxy
-                    tag: latest
-                    pullPolicy: IfNotPresent
-
-                  resources:
-                    requests:
-                      cpu: 100m
-                      memory: 128Mi
-                    limits:
-                      cpu: 500m
-                      memory: 512Mi
-
-                  env:
-                    DISABLE_MODEL_MAPPING: 1
-
-          service:
-            proxy:
-              enabled: true
-              annotations: { }
-              type: ClusterIP
-              controller: main
-              ports:
-                http:
-                  enabled: true
-                  port: 8080
-                  targetPort: 8080
-
+        releaseName: models-proxy
+        valuesObject: { }
     destination:
       namespace: converse-proxy
     syncPolicy:
       syncOptions:
-        - CreateNamespace=true
         - ServerSideApply=true
       automated:
         prune: true
