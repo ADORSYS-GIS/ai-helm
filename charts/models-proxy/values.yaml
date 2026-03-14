@@ -35,13 +35,22 @@ proxy:
             - /app/config.yaml
             - --detailed_debug
           env:
-            #PUID: "1000"
-            #PGID: "1000"
-            #TZ: "Europe/Berlin"
+            PUID: "1000"
+            PGID: "1000"
+            TZ: "Europe/Berlin"
+
+            LITELLM_MODE: "production"
+
+            REDIS_URL: "redis://redis-master.redis-system.svc.cluster.local:6379"
 
             GEMINI_API_KEY:
               secretKeyRef:
                 name: gemini-api-key
+                key: apiKey
+
+            LITELLM_MASTER_KEY:
+              secretKeyRef:
+                name: proxy-api-key
                 key: apiKey
 
             #EMBEDDINGS_MODEL: "text-embedding-3-small"
@@ -56,9 +65,9 @@ proxy:
               memory: 200Mi
           probes:
             liveness:
-              enabled: false
+              enabled: true
             readiness:
-              enabled: false
+              enabled: true
 
   persistence:
     config:
@@ -73,6 +82,11 @@ proxy:
               readOnly: true
 
 config:
+  litellm_settings:
+    cache: True
+    cache_params: # set cache params for redis
+      type: redis
+      namespace: "litellm.caching.caching"
   model_list:
     - model_name: "*"
       litellm_params:
