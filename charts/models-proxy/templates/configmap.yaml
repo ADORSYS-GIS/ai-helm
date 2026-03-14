@@ -6,6 +6,7 @@ metadata:
   namespace: {{ include "common.names.namespace" $ }}
 data:
   "config.yaml": |
-    {{- $value := include "common.tplvalues.render" ( dict "value" . "context" $ ) -}}
-    {{ $value | toYaml | nindent 4 }}
+    {{- $json := . | toYaml -}}
+    {{- $value := include "common.tplvalues.render" ( dict "value" $json "context" $ ) -}}
+    {{ $value | nindent 4 }}
 {{ end }}
