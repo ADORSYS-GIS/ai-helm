@@ -65,7 +65,9 @@ spec:
 
     exporters:
       otlphttp/lightbridge_usage:
-        endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000"
+        #endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000"
+        traces_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/traces"
+        metrics_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/metrics"
       debug: {}
 
     service:
@@ -76,5 +78,5 @@ spec:
           processors:
             - batch
           exporters:
-            - otlphttp/lightbridge_usage
+            #- otlphttp/lightbridge_usage
             - debug
