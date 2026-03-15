@@ -1210,3 +1210,107 @@ applications:
       automated:
         prune: true
         selfHeal: true
+
+  # --- Adminer ---
+  - name: adminer
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://bjw-s-labs.github.io/helm-charts
+      targetRevision: 4.5.0
+      chart: app-template
+      helm:
+        releaseName: adminer
+        valuesObject:
+          ingress:
+            adminer:
+              enabled: false
+              annotations:
+                cert-manager.io/cluster-issuer: self-signed-ca
+              className: traefik
+              hosts:
+                - host: adminer.ssegning
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      service:
+                        identifier: adminer
+                        port: http
+              tls:
+                - secretName: adminer.home.ssegning-tls
+                  hosts:
+                    - adminer.home.ssegning
+
+          service:
+            adminer:
+              enabled: true
+              annotations: { }
+              type: ClusterIP
+              controller: adminer
+              ports:
+                http:
+                  enabled: true
+                  port: 8080
+                  targetPort: 8080
+
+          controllers:
+            adminer:
+              strategy: RollingUpdate
+              replicas: 1
+              pod:
+                labels:
+                  app: adminer-app
+              containers:
+                adminer:
+                  image:
+                    repository: adminer
+                    tag: "latest"
+                    pullPolicy: Always
+                  env:
+                    PUID: "1000"
+                    PGID: "1000"
+                    TZ: "Europe/Berlin"
+
+                    ADMINER_PLUGINS: "tables-filter tinymce"
+                    ADMINER_DESIGN: "dracula"
+
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 200m
+                      memory: 512G
+                  probes:
+                    liveness:
+                      enabled: false
+                      path: /
+                      type: HTTP
+                      spec:
+                        httpGet:
+                          port: http
+                    readiness:
+                      enabled: false
+                      path: /
+                      type: HTTP
+                      spec:
+                        httpGet:
+                          port: http
+                    startup:
+                      enabled: false
+                      path: /
+                      type: HTTP
+                      spec:
+                        httpGet:
+                          port: http
+                        failureThreshold: 30
+                        periodSeconds: 5
+
+            destination:
+              namespace: converse
+            syncPolicy:
+              syncOptions:
+                - ServerSideApply=true
+              automated:
+                prune: true
+                selfHeal: true
