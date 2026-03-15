@@ -26,7 +26,7 @@ spec:
     minDrainDuration: 5s
   logging:
     level:
-      default: debug
+      default: info
   telemetry:
     accessLog:
       settings:
@@ -55,6 +55,6 @@ spec:
               user-agent: "%REQ(USER-AGENT)%"
               x-request-id: "%REQ(X-REQUEST-ID)%"
               # LightBridge
-              api_key_id: "%DYNAMIC_METADATA(envoy.filters.http.ext_authz:ext_auth_data:api_key_id)%"
-              project_id: "%DYNAMIC_METADATA(envoy.filters.http.ext_authz:ext_auth_data:project_id)%"
-              account_id: "%DYNAMIC_METADATA(envoy.filters.http.ext_authz:ext_auth_data:account_id)%"
+              api_key_id: "%REQ(x-api-key-id)%"
+              project_id: "%REQ(x-project-id)%"
+              account_id: "%REQ(x-account-id)%"
