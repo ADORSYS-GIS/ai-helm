@@ -90,6 +90,25 @@ applications:
         prune: true
         selfHeal: true
 
+  - name: cnpg-barman-cloud
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://cloudnative-pg.github.io/charts
+      targetRevision: 0.5.0
+      chart: plugin-barman-cloud
+      helm:
+        releaseName: cnpg-barman-cloud
+    destination:
+      namespace: cnpg-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   - name: cert
     finalizers:
       - resources-finalizer.argocd.argoproj.io
@@ -894,6 +913,26 @@ applications:
                   - server auth
                   - client auth
             - |
+              apiVersion: barmancloud.cnpg.io/v1
+              kind: ObjectStore
+              metadata:
+                name: lightbridge-barman-store
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                configuration:
+                  destinationPath: s3://your-bucket/lightbridge-cnpg-backups/
+                  endpointURL: https://s3.eu-central-1.amazonaws.com
+                  s3Credentials:
+                    accessKeyId:
+                      name: lightbridge-cnpg-s3
+                      key: s3_access_key_id
+                    secretAccessKey:
+                      name: lightbridge-cnpg-s3
+                      key: s3_secret_access_key
+                    region:
+                      name: lightbridge-cnpg-s3
+                      key: s3_region_name
+            - |
               apiVersion: postgresql.cnpg.io/v1
               kind: Cluster
               metadata:
@@ -901,6 +940,12 @@ applications:
                 namespace: {{ $.Release.Namespace }}
               spec:
                 instances: 2
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: lightbridge-barman-store
+                      serverName: lightbridge-main-db
                 storage:
                   storageClass: linode-block-storage
                   size: "5Gi"
@@ -936,6 +981,12 @@ applications:
                   kind: ClusterImageCatalog
                   name: lightbridge-usage-db
                   major: 17
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: lightbridge-barman-store
+                      serverName: lightbridge-usage-db
                 storage:
                   storageClass: linode-block-storage
                   size: "10Gi"
@@ -956,6 +1007,34 @@ applications:
                     postInitTemplateSQL:
                       - CREATE EXTENSION timescaledb VERSION '2.19.3';
                       - CREATE EXTENSION IF NOT EXISTS timescaledb;
+            - |
+              apiVersion: postgresql.cnpg.io/v1
+              kind: ScheduledBackup
+              metadata:
+                name: lightbridge-main-db-daily
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                immediate: true
+                schedule: "0 2 * * *"
+                cluster:
+                  name: lightbridge-main-db
+                method: plugin
+                pluginConfiguration:
+                  name: barman-cloud.cloudnative-pg.io
+            - |
+              apiVersion: postgresql.cnpg.io/v1
+              kind: ScheduledBackup
+              metadata:
+                name: lightbridge-usage-db-daily
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                immediate: true
+                schedule: "0 2 * * *"
+                cluster:
+                  name: lightbridge-usage-db
+                method: plugin
+                pluginConfiguration:
+                  name: barman-cloud.cloudnative-pg.io
     destination:
       namespace: converse
     syncPolicy:
