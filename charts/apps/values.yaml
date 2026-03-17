@@ -90,6 +90,27 @@ applications:
         prune: true
         selfHeal: true
 
+  - name: cnpg-barman-cloud
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://cloudnative-pg.github.io/charts
+      targetRevision: 0.5.0
+      chart: plugin-barman-cloud
+      helm:
+        releaseName: cnpg-barman-cloud
+    destination:
+      namespace: cnpg-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   - name: cert
     finalizers:
       - resources-finalizer.argocd.argoproj.io
@@ -450,6 +471,8 @@ applications:
   - name: lightbridge-backend
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "0"
     source:
       repoURL: https://adorsys-gis.github.io/lightbridge-authz
       targetRevision: 0.7.0
@@ -894,13 +917,44 @@ applications:
                   - server auth
                   - client auth
             - |
+              apiVersion: barmancloud.cnpg.io/v1
+              kind: ObjectStore
+              metadata:
+                name: lightbridge-barman-store
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "1"
+                  argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+              spec:
+                configuration:
+                  destinationPath: s3://prod-env-prod-web/lightbridge-cnpg-backups/
+                  endpointURL: https://s3.eu-central-1.amazonaws.com
+                  s3Credentials:
+                    accessKeyId:
+                      name: lightbridge-cnpg-s3
+                      key: s3_access_key_id
+                    secretAccessKey:
+                      name: lightbridge-cnpg-s3
+                      key: s3_secret_access_key
+                    region:
+                      name: lightbridge-cnpg-s3
+                      key: s3_region_name
+            - |
               apiVersion: postgresql.cnpg.io/v1
               kind: Cluster
               metadata:
                 name: lightbridge-main-db
                 namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: lightbridge-barman-store
+                      serverName: lightbridge-main-db
                 storage:
                   storageClass: linode-block-storage
                   size: "5Gi"
@@ -928,6 +982,8 @@ applications:
               metadata:
                 name: lightbridge-usage-db
                 namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
                 #imageName: ghcr.io/clevyr/cloudnativepg-timescale:17-ts2
@@ -936,6 +992,12 @@ applications:
                   kind: ClusterImageCatalog
                   name: lightbridge-usage-db
                   major: 17
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: lightbridge-barman-store
+                      serverName: lightbridge-usage-db
                 storage:
                   storageClass: linode-block-storage
                   size: "10Gi"
@@ -956,6 +1018,40 @@ applications:
                     postInitTemplateSQL:
                       - CREATE EXTENSION timescaledb VERSION '2.19.3';
                       - CREATE EXTENSION IF NOT EXISTS timescaledb;
+            - |
+              apiVersion: postgresql.cnpg.io/v1
+              kind: ScheduledBackup
+              metadata:
+                name: lightbridge-main-db-daily
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "3"
+                  argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+              spec:
+                immediate: true
+                schedule: "0 2 * * *"
+                cluster:
+                  name: lightbridge-main-db
+                method: plugin
+                pluginConfiguration:
+                  name: barman-cloud.cloudnative-pg.io
+            - |
+              apiVersion: postgresql.cnpg.io/v1
+              kind: ScheduledBackup
+              metadata:
+                name: lightbridge-usage-db-daily
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "3"
+                  argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+              spec:
+                immediate: true
+                schedule: "0 2 * * *"
+                cluster:
+                  name: lightbridge-usage-db
+                method: plugin
+                pluginConfiguration:
+                  name: barman-cloud.cloudnative-pg.io
     destination:
       namespace: converse
     syncPolicy:
