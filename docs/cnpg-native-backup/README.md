@@ -9,11 +9,11 @@ This document is a general guide to installing CloudNativePG (CNPG), installing 
 - CNPG 1.26+ for Barman Cloud plugin compatibility
 
 ## Install CNPG Operator (kubectl)
-Pick a CNPG version compatible with the Barman plugin (CNPG 1.26+). Example install:
+Pick a CNPG version compatible with the Barman plugin (CNPG 1.26+). If you want to align with the production Helm chart `cloudnative-pg` `0.27.1`, use CNPG `v1.28.1`. Example install:
 
 ```bash
 kubectl apply --server-side -f \
-  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.26/releases/cnpg-1.26.3.yaml
+  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-1.28.1.yaml
 ```
 
 ## Install Barman Cloud Plugin (kubectl)
