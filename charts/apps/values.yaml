@@ -1254,41 +1254,6 @@ applications:
         prune: true
         selfHeal: true
 
-  # --- Backups ---
-  - name: cnpg-pgdump-backup
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/pgdump-backup
-      helm:
-        releaseName: cnpg-pgdump-backup
-        valueFiles:
-          - values.yaml
-        valuesObject:
-          app-template:
-            postgres:
-              secretName: lightbridge-main-db-app
-            s3:
-              secretName: librechat-s3-config
-            controllers:
-              backup:
-                containers:
-                  backup:
-                    image:
-                      repository: ghcr.io/adorsys-gis/lightbridge-authz
-                      tag: postgres-backup
-
-    destination:
-      namespace: converse
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
-
   # --- Proxy ---
   - name: models-proxy
     finalizers:
