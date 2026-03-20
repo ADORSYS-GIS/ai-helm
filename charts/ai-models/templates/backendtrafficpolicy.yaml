@@ -14,42 +14,22 @@ spec:
     type: Global
     global:
       rules:
-        # Rate limit rule for {{ $routeName }}
-        {{- $limits := include "ai-models.budgeting.derivedLimits" (dict "ctx" $ "model" $routeConfig "modelName" $routeName) | fromYaml }}
-        # TODO sse how to do efficiently daily limits?
-        #- clientSelectors:
-        #    - headers:
-        #        - name: x-project-id
-        #          type: Distinct
-        #          invert: false
-        #        - name: x-ai-eg-model
-        #          type: Exact
-        #          invert: false
-        #          value: {{ $routeConfig.modelMatch | default $routeName }}
-        #  limit:
-        #    requests: {{ $limits.dailyTokens | int64 }}
-        #    unit: Day
-        #  cost:
-        #    request:
-        #      from: Number
-        #      number: 0
-        #    response:
-        #      from: Metadata
-        #      metadata:
-        #        namespace: io.envoy.ai_gateway
-        #        key: llm_total_token
-
+        {{ range $planName, $planValue := $.Values.rateLimitBudgeting.plans }}
         - clientSelectors:
             - headers:
-                - name: x-project-id
+                - name: x-account-id
                   type: Distinct
                   invert: false
+                - name: x-billing-plan
+                  type: Exact
+                  invert: false
+                  value: {{ $planName }}
                 - name: x-ai-eg-model
                   type: Exact
                   invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
+                  value: {{ $routeName }}
           limit:
-            requests: {{ $limits.monthlyTokens | int64 }}
+            requests: {{ $planValue.monthlyBudgetUsd | int64 }}
             unit: Month
           cost:
             request:
@@ -59,29 +39,24 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                key: llm_total_token
+                key: llm_custom_total_cost
+        {{ end }}
 
         - clientSelectors:
             - headers:
                 - name: x-account-id
                   type: Distinct
                   invert: false
+                - name: x-billing-plan
+                  type: Exact
+                  invert: true
                 - name: x-ai-eg-model
                   type: Exact
                   invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
+                  value: {{ $routeName }}
           limit:
-            requests: {{ $limits.monthlyTokens | int64 }}
-            unit: Month
-          cost:
-            request:
-              from: Number
-              number: 0
-            response:
-              from: Metadata
-              metadata:
-                namespace: io.envoy.ai_gateway
-                key: llm_total_token
+            requests: 0
+            unit: Minute
 
         - clientSelectors:
             - headers:
@@ -91,9 +66,9 @@ spec:
                 - name: x-ai-eg-model
                   type: Exact
                   invert: false
-                  value: {{ $routeConfig.modelMatch | default $routeName }}
+                  value: {{ default $routeName }}
           limit:
-            requests: {{ $limits.rpmEstimate | default 30 | int64 }}
+            requests: {{ 30 | int64 }}
             unit: Minute
 {{- end }}
 {{- end }}

@@ -1,23 +1,9 @@
 rateLimitBudgeting:
-  defaultPlan: free
-
   plans:
     free:
       monthlyBudgetUsd: 30
-      safetyFactor: 0.85
-      burstMultiplier: 3
-      defaultAvgTokensPerRequest: 4500
-      effectiveMinutes: 720
-      tokenVarianceMultiplier: 1.4
-      avgTokensPerSecondPerRequest: 40
     pro:
       monthlyBudgetUsd: 200
-      safetyFactor: 0.90
-      burstMultiplier: 5
-      defaultAvgTokensPerRequest: 6000
-      effectiveMinutes: 500
-      tokenVarianceMultiplier: 1.4
-      avgTokensPerSecondPerRequest: 40
 
 gatewayRef:
   name: core-gateway
@@ -164,11 +150,9 @@ models:
   kimi-k2-instruct-0905:
     kind: text
     mode: weighted
-    inputPer1M: 0.40
-    outputPer1M: 0.40
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.60
+    cachedInputPer1M: 0.30
+    outputPer1M: 2.50
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -181,10 +165,8 @@ models:
     kind: text
     mode: weighted
     inputPer1M: 0.60
+    cachedInputPer1M: 0.30
     outputPer1M: 2.50
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -196,11 +178,9 @@ models:
   deepseek-v3p2:
     kind: text
     mode: weighted
-    inputPer1M: 0.27
-    outputPer1M: 1.10
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.56
+    cachedInputPer1M: 0.28
+    outputPer1M: 1.68
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -212,11 +192,9 @@ models:
   glm-5:
     kind: text
     mode: weighted
-    inputPer1M: 0.80
-    outputPer1M: 2.56
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 1.0
+    cachedInputPer1M: 0.2
+    outputPer1M: 3.2
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -228,11 +206,9 @@ models:
   cogito-671b-v2-p1:
     kind: text
     mode: weighted
-    inputPer1M: 0.27
-    outputPer1M: 1.10
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 1.2
+    cachedInputPer1M: 0.6
+    outputPer1M: 1.2
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -270,11 +246,9 @@ models:
   qwen3-8b:
     kind: text
     mode: weighted
-    inputPer1M: 0.20
-    outputPer1M: 0.20
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 1.2
+    cachedInputPer1M: 0.6
+    outputPer1M: 1.2
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -286,11 +260,9 @@ models:
   minimax-m2p5:
     kind: text
     mode: weighted
-    inputPer1M: 0.30
-    outputPer1M: 1.20
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.3
+    cachedInputPer1M: 0.03
+    outputPer1M: 1.2
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -302,11 +274,9 @@ models:
   qwen3-vl-30b-a3b-instruct:
     kind: multimodal
     mode: weighted
-    inputPer1M: 0.40
-    outputPer1M: 0.40
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.15
+    cachedInputPer1M: 0.08
+    outputPer1M: 0.6
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -318,11 +288,9 @@ models:
   qwen3-vl-30b-a3b-thinking:
     kind: multimodal
     mode: weighted
-    inputPer1M: 0.40
-    outputPer1M: 1.20
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.15
+    cachedInputPer1M: 0.08
+    outputPer1M: 0.6
     backends:
       fw-01:
         <<: *fwBackendPrimary
@@ -334,11 +302,9 @@ models:
   gpt-5-mini:
     kind: text
     mode: weighted
-    inputPer1M: 0.25
-    outputPer1M: 2.00
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.75
+    cachedInputPer1M: 0.075
+    outputPer1M: 4.5
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -347,59 +313,48 @@ models:
         <<: *openaiBackendSecondary
         modelNameOverride: "gpt-5-mini"
 
-  gpt-5.1-codex-mini:
+  gpt-5-codex-mini:
     kind: text
-    mode: weighted
-    inputPer1M: 0.25
-    outputPer1M: 2.00
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.75
+    cachedInputPer1M: 0.075
+    outputPer1M: 4.5
     backends:
       openai-01:
-        <<: *openaiBackendPrimary
-        modelNameOverride: "gpt-5.1-codex-mini"
+        <<: *modelProxyPrimary
+        modelNameOverride: "openai/gpt-5.4-mini-2026-03-17"
       openai-02:
-        <<: *openaiBackendSecondary
-        modelNameOverride: "gpt-5.1-codex-mini"
+        <<: *modelProxySecondary
+        modelNameOverride: "openai/gpt-5.4-mini-2026-03-17"
 
   gpt-5-nano:
     kind: text
-    mode: weighted
-    inputPer1M: 0.05
-    outputPer1M: 0.40
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.2
+    cachedInputPer1M: 0.02
+    outputPer1M: 1.25
     backends:
       openai-01:
         <<: *openaiBackendPrimary
-        modelNameOverride: "gpt-5-nano"
+        modelNameOverride: "gpt-5.4-nano-2026-03-17"
       openai-02:
         <<: *openaiBackendSecondary
-        modelNameOverride: "gpt-5-nano"
+        modelNameOverride: "gpt-5.4-nano-2026-03-17"
 
   gpt-5.3-codex:
     kind: text
-    mode: weighted
     inputPer1M: 1.75
+    cachedInputPer1M: 0.175
     outputPer1M: 14.00
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
     backends:
       openai-01:
-        <<: *openaiBackendPrimary
-        modelNameOverride: "gpt-5.3-codex"
+        <<: *modelProxyPrimary
+        modelNameOverride: "openai/gpt-5.3-codex"
       openai-02:
-        <<: *openaiBackendSecondary
-        modelNameOverride: "gpt-5.3-codex"
+        <<: *modelProxySecondary
+        modelNameOverride: "openai/gpt-5.3-codex"
 
   text-embedding-3-large:
     kind: embedding
-    mode: fixed
     effectivePer1M: 0.13
-    avgTokensPerRequest: 1500
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -410,9 +365,7 @@ models:
 
   text-embedding-3-small:
     kind: embedding
-    mode: fixed
     effectivePer1M: 0.13
-    avgTokensPerRequest: 4500
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -423,9 +376,7 @@ models:
 
   gpt-image-1:
     kind: image
-    mode: fixed
-    effectivePer1M: 40000.00
-    avgTokensPerRequest: 1
+    effectivePer1M: 30.00
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -436,12 +387,9 @@ models:
 
   gemini-3.1-pro:
     kind: text
-    mode: weighted
-    inputPer1M: 2.00
-    outputPer1M: 12.00
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 3.0
+    cachedInputPer1M: 0.3
+    outputPer1M: 15
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
@@ -452,12 +400,9 @@ models:
 
   gemini-3.1-flash-lite:
     kind: text
-    mode: weighted
-    inputPer1M: 0.25
-    outputPer1M: 1.50
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.3
+    cachedInputPer1M: 0.03
+    outputPer1M: 1.5
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
@@ -468,12 +413,9 @@ models:
 
   gemini-3-flash:
     kind: text
-    mode: weighted
-    inputPer1M: 0.50
-    outputPer1M: 3.00
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.75
+    cachedInputPer1M: 0.05
+    outputPer1M: 3.0
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
@@ -484,12 +426,9 @@ models:
 
   gemini-2-5-flash-lite:
     kind: text
-    mode: weighted
-    inputPer1M: 0.075
-    outputPer1M: 0.30
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.15
+    cachedInputPer1M: 0.01
+    outputPer1M: 0.4
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
@@ -498,14 +437,11 @@ models:
         <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-flash-lite"
 
-  "gemini-2.5-pro":
+  gemini-2.5-pro:
     kind: text
-    mode: weighted
-    inputPer1M: 1.25
-    outputPer1M: 5.00
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 1.5
+    cachedInputPer1M: 0.15
+    outputPer1M: 12.0
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
@@ -516,12 +452,9 @@ models:
 
   "gemini-2.5-flash":
     kind: text
-    mode: weighted
-    inputPer1M: 0.10
-    outputPer1M: 0.40
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.5
+    cachedInputPer1M: 0.03
+    outputPer1M: 2.5
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
@@ -532,12 +465,9 @@ models:
 
   "gemini-2.5-flash-lite":
     kind: text
-    mode: weighted
-    inputPer1M: 0.075
-    outputPer1M: 0.30
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
+    inputPer1M: 0.15
+    cachedInputPer1M: 0.01
+    outputPer1M: 0.4
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
@@ -548,9 +478,7 @@ models:
 
   "gemini-2.5-flash-image":
     kind: image
-    mode: fixed
-    effectivePer1M: 400.00
-    avgTokensPerRequest: 36000
+    effectivePer1M: 30.00
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
@@ -559,18 +487,3 @@ models:
         <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-flash-image"
 
-  "gemini-2.0-flash-lite":
-    kind: text
-    mode: weighted
-    inputPer1M: 0.075
-    outputPer1M: 0.30
-    avgInputShare: 0.95
-    avgOutputShare: 0.05
-    avgTokensPerRequest: 48000
-    backends:
-      model-proxy-01:
-        <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-2.0-flash-lite-001"
-      model-proxy-02:
-        <<: *modelProxySecondary
-        modelNameOverride: "gemini/gemini-2.0-flash-lite-001"

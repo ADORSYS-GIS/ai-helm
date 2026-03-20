@@ -26,16 +26,33 @@ spec:
   llmRequestCosts:
     - metadataKey: llm_input_token
       type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
     - metadataKey: llm_output_token
       type: OutputToken
     - metadataKey: llm_total_token
       type: TotalToken
+    {{ if eq $routeConfig.kind "text" }}
+    - metadataKey: llm_custom_total_cost
+      type: CEL
+      cel: "((input_tokens - cached_input_tokens) * {{ $routeConfig.inputPer1M }}) + (cached_input_tokens * {{ $routeConfig.cachedInputPer1M }}) + (output_tokens * {{ $routeConfig.outputPer1M }})"
+    {{ end }}
+    {{ if eq $routeConfig.kind "image" }}
+    - metadataKey: llm_custom_total_cost
+      type: CEL
+      cel: "llm_total_token * {{ $routeConfig.effectivePer1M }}"
+    {{ end }}
+    {{ if eq $routeConfig.kind "embedding" }}
+    - metadataKey: llm_custom_total_cost
+      type: CEL
+      cel: "llm_total_token * {{ $routeConfig.effectivePer1M }}"
+    {{ end }}
   rules:
     - matches:
         - headers:
             - type: Exact
               name: x-ai-eg-model
-              value: {{ $routeConfig.modelMatch | default $routeName }}
+              value: {{ default $routeName }}
       modelsOwnedBy: GIS AI Models
       backendRefs:
         {{- range $bKey, $bVal := $activeBackends }}
