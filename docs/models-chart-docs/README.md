@@ -108,6 +108,13 @@ Placeholder for testing screenshots:
 
 ## Configuration
 
+## Cost Tracking And Budgeting
+
+Token usage and cost metadata are emitted by Envoy AI Gateway and consumed by access logs and budget
+rate limiting. See `cost-tracking.md` for units and how the CEL expressions work.
+
+Docs: `docs/models-chart-docs/cost-tracking.md`
+
 ### Gateway Reference
 
 | Parameter | Description | Default |

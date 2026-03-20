@@ -29,7 +29,9 @@ spec:
                   invert: false
                   value: {{ $routeName }}
           limit:
-            requests: {{ $planValue.monthlyBudgetUsd | int64 }}
+            # `llm_custom_total_cost` is emitted as an integer in micro-USD (USD * 1e6).
+            # Convert USD budgets to the same unit so token cost budgeting works as expected.
+            requests: {{ mul $planValue.monthlyBudgetUsd 1000000 | int64 }}
             unit: Month
           cost:
             request:
