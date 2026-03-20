@@ -37,16 +37,11 @@ spec:
                 port: 4317
                 resources:
                   k8s.cluster.name: "converse-llm-1"
+          matches:
+            - "request.headers['x-ai-eg-model'] != ''"
           format:
             type: JSON
             json:
-              # MCP specific fields
-              mcp_request_id: "%DYNAMIC_METADATA(io.envoy.ai_gateway:mcp_request_id)%"
-              mcp_session_id: "%REQ(MCP-SESSION-ID)%"
-              mcp_method: "%DYNAMIC_METADATA(io.envoy.ai_gateway:mcp_method)%"
-              mcp_backend: "%DYNAMIC_METADATA(io.envoy.ai_gateway:mcp_backend)%"
-              # AI specific fields. The properties in the dynamic metadata expressions must match the ones
-              # defined in the AIGatewayRoute llmRequestCosts field.
               gen_ai.request.model: "%REQ(X-AI-EG-MODEL)%"
               gen_ai.request.model_override: "%DYNAMIC_METADATA(io.envoy.ai_gateway:model_name_override)%"
               gen_ai.provider.name: "%DYNAMIC_METADATA(io.envoy.ai_gateway:backend_name)%"
