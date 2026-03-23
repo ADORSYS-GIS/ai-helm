@@ -32,21 +32,15 @@ spec:
       type: OutputToken
     - metadataKey: llm_total_token
       type: TotalToken
-    {{ if eq $routeConfig.kind "text" }}
+    {{ if or (eq $routeConfig.kind "text") (eq $routeConfig.kind "multimodal") }}
     {{- $inputPer1MScaled := int (round (mulf $routeConfig.inputPer1M 1000) 0) }}
     {{- $cachedInputPer1MScaled := int (round (mulf $routeConfig.cachedInputPer1M 1000) 0) }}
     {{- $outputPer1MScaled := int (round (mulf $routeConfig.outputPer1M 1000) 0) }}
     - metadataKey: llm_custom_total_cost
       type: CEL
-      cel: "(((int(input_tokens) - int(cached_input_tokens)) * {{ $inputPer1MScaled }}) + (int(cached_input_tokens) * {{ $cachedInputPer1MScaled }}) + (int(output_tokens) * {{ $outputPer1MScaled }})) / 1000"
+      cel: "((max((int(input_tokens) - int(cached_input_tokens)), 0) * {{ $inputPer1MScaled }}) + (int(cached_input_tokens) * {{ $cachedInputPer1MScaled }}) + (int(output_tokens) * {{ $outputPer1MScaled }})) / 1000"
     {{ end }}
-    {{ if eq $routeConfig.kind "image" }}
-    {{- $effectivePer1MScaled := int (round (mulf $routeConfig.effectivePer1M 1000) 0) }}
-    - metadataKey: llm_custom_total_cost
-      type: CEL
-      cel: "(int(total_tokens) * {{ $effectivePer1MScaled }}) / 1000"
-    {{ end }}
-    {{ if eq $routeConfig.kind "embedding" }}
+    {{ if or (eq $routeConfig.kind "image") (eq $routeConfig.kind "embedding") (eq $routeConfig.kind "reranker") }}
     {{- $effectivePer1MScaled := int (round (mulf $routeConfig.effectivePer1M 1000) 0) }}
     - metadataKey: llm_custom_total_cost
       type: CEL
@@ -57,7 +51,7 @@ spec:
         - headers:
             - type: Exact
               name: x-ai-eg-model
-              value: {{ default $routeName }}
+              value: {{ $routeName }}
       modelsOwnedBy: GIS AI Models
       backendRefs:
         {{- range $bKey, $bVal := $activeBackends }}

@@ -44,6 +44,7 @@ spec:
                 key: llm_custom_total_cost
         {{ end }}
 
+        {{- if (default true $.Values.rateLimitFallback.enabled) }}
         - clientSelectors:
             - headers:
                 - name: x-api-key-id
@@ -52,9 +53,10 @@ spec:
                 - name: x-ai-eg-model
                   type: Exact
                   invert: false
-                  value: {{ default $routeName }}
+                  value: {{ $routeName }}
           limit:
-            requests: {{ 30 | int64 }}
-            unit: Minute
+            requests: {{ $.Values.rateLimitFallback.requests | int64 }}
+            unit: {{ $.Values.rateLimitFallback.unit }}
+        {{- end }}
 {{- end }}
 {{- end }}

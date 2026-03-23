@@ -5,6 +5,12 @@ rateLimitBudgeting:
     pro:
       monthlyBudgetUsd: 200
 
+rateLimitFallback:
+  enabled: true
+  # Coarse burst guard while the budget rule only decrements counters on the response path.
+  requests: 30
+  unit: Minute
+
 gatewayRef:
   name: core-gateway
   namespace: converse-gateway
@@ -500,4 +506,3 @@ models:
       model-proxy-02:
         <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-flash-image"
-
