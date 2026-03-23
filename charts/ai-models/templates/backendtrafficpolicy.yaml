@@ -30,8 +30,8 @@ spec:
                   value: {{ $routeName }}
           limit:
             # `llm_custom_total_cost` is emitted as an integer in micro-USD (USD * 1e6).
-            # Convert USD budgets to the same unit so token cost budgeting works as expected.
-            requests: {{ mul $planValue.monthlyBudgetUsd 1000000 | int64 }}
+            # Budget: use modelBudgets.overrides.<model> if defined, else monthlyBudgetUsd.
+            requests: {{ include "ai-models.modelBudgetMicroUsd" (dict "planName" $planName "modelName" $routeName "planValue" $planValue) }}
             unit: Month
           cost:
             request:
@@ -43,5 +43,20 @@ spec:
                 namespace: io.envoy.ai_gateway
                 key: llm_custom_total_cost
         {{ end }}
+
+        {{- if (default true $.Values.rateLimitFallback.enabled) }}
+        - clientSelectors:
+            - headers:
+                - name: x-api-key-id
+                  type: Distinct
+                  invert: false
+                - name: x-ai-eg-model
+                  type: Exact
+                  invert: false
+                  value: {{ $routeName }}
+          limit:
+            requests: {{ $.Values.rateLimitFallback.requests | int64 }}
+            unit: {{ $.Values.rateLimitFallback.unit }}
+        {{- end }}
 {{- end }}
 {{- end }}

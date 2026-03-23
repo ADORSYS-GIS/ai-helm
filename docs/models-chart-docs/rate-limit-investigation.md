@@ -4,10 +4,6 @@ This note documents the current rate-limit implementation in this repo, the exac
 `llm_custom_total_cost` is computed, the accuracy limits of the current approach, and the changes
 made in this branch to make the chart easier to reason about.
 
-If you need the operator guide rather than the ticket detail, start with
-`docs/models-chart-docs/cost-tracking.md`. That file explains the pricing strategies, token types,
-and formulas in plain language.
-
 ## Scope And Deployed Stack
 
 `charts/apps/templates/applications.yaml` is only the Argo CD app-of-apps renderer. The pinned
@@ -37,8 +33,9 @@ actually deploys, not `latest`.
 4. The current approach is directionally better than raw token counting because it differentiates
    uncached input, cached input, and output tokens per model. It is still not identical to real
    provider billing.
-5. The repo now uses only the monthly cost-based rule. There is no separate request-rate rule in
-   `BackendTrafficPolicy`.
+5. The `30 req/min` rule is a burst guard, not a billing control. It exists because the budget rule
+   only decrements on the response path and therefore cannot stop the request that actually crosses
+   the budget.
 6. I could not find `tokenBudget` in the public Envoy Gateway `v1.7.x` or Envoy AI Gateway
    `v0.5.0` documentation queried through Context7/Tavily. For this repo, that feature should be
    treated as unverified and unavailable until proven against the installed CRDs.
@@ -47,7 +44,8 @@ actually deploys, not `latest`.
 
 ### 1. Authn/Authz injects the selector headers
 
-Authorino adds several headers after a successful LightBridge validation, including:
+The rate-limit selectors rely on headers added by Authorino after a successful LightBridge
+validation:
 
 - `x-account-id`
 - `x-api-key-id`
@@ -57,14 +55,8 @@ Those headers are configured in `charts/apps/values.yaml` under the `AuthConfig`
 The `SecurityPolicy` in `charts/kuadrant-policies/templates/securitypolicy.yaml` attaches ext auth
 to the `core-gateway` `api-https` and `service-https` listeners.
 
-For the current budget rule, the rate-limit selectors specifically rely on:
-
-- `x-account-id`
-- `x-billing-plan`
-- `x-ai-eg-model`
-
 Implication: if traffic reaches the generated model routes without passing through this auth path,
-the budget rule will not match.
+the budget rule will not match, and the fallback rule only matches if `x-api-key-id` is present.
 
 ### 2. Envoy AI Gateway resolves the model and extracts token usage
 
@@ -88,10 +80,10 @@ This chart asks AI Gateway to emit:
 This is the key point of the ticket.
 
 The cost estimation happens in `charts/ai-models/templates/aigatewayroute.yaml` inside
-`spec.llmRequestCosts`. The chart renders a CEL expression per model using the pricing strategy from
+`spec.llmRequestCosts`. The chart renders a CEL expression per model using the model prices from
 `charts/ai-models/values.yaml`.
 
-For `pricing.strategy: weighted`, the rendered CEL is:
+For `text` and `multimodal` models, the rendered CEL is:
 
 ```cel
 ((max((int(input_tokens) - int(cached_input_tokens)), 0) * inputPer1MScaled) +
@@ -99,14 +91,11 @@ For `pricing.strategy: weighted`, the rendered CEL is:
  (int(output_tokens) * outputPer1MScaled)) / 1000
 ```
 
-For `pricing.strategy: flat`, the rendered CEL is:
+For `image`, `embedding`, and `reranker` models, the rendered CEL is:
 
 ```cel
 (int(total_tokens) * effectivePer1MScaled) / 1000
 ```
-
-For `pricing.strategy: tieredWeighted`, the chart switches between two weighted branches based on
-`input_tokens > thresholdTokens`.
 
 All outputs are integers in micro-USD.
 
@@ -144,11 +133,9 @@ single shared multiplier across all models.
 
 For example:
 
-- `deepseek-v3p2` uses `weighted` pricing: `0.56 / 0.28 / 1.68`
-- `qwen3-8b` uses `flat` pricing: `0.20`
-- `gemini-2.5-pro` uses `tieredWeighted` pricing:
-  - short context: `1.25 / 0.125 / 10.0`
-  - long context: `2.50 / 0.25 / 15.0`
+- `deepseek-v3p2` uses `0.56 / 0.28 / 1.68`
+- `gpt-5-mini` uses `0.75 / 0.075 / 4.5`
+- `gemini-2.5-pro` uses `1.5 / 0.15 / 12.0`
 
 So the chart already does the right thing at the model granularity.
 
@@ -176,9 +163,7 @@ Outcome:
 - current request succeeds
 - next matching request is the one that is rejected
 
-That does not mean the budget rule is ignored on the request path. It means the request that causes
-the overage is allowed, while later matching requests are blocked once Redis already contains the
-exhausted bucket state.
+That makes the budget rule unsuitable as the only abuse-control mechanism.
 
 ### Integer math truncates small costs to zero
 
@@ -187,12 +172,12 @@ round down to zero budget usage.
 
 Concrete example for `gemini-2.5-flash-lite`:
 
-- `inputPer1M = 0.10`
+- `inputPer1M = 0.15`
 - one uncached input token
 
 Budget cost:
 
-- true arithmetic: `0.10` micro-USD
+- true arithmetic: `0.15` micro-USD
 - CEL integer result: `0`
 
 So extremely small requests can consume no monthly budget at all.
@@ -223,29 +208,6 @@ If cached input is missing and treated as `0`:
 
 That is a `4.24x` overestimate.
 
-### Image-generation models still require approximation
-
-Some provider price sheets split image workloads into different token classes that AI Gateway does
-not expose separately in CEL.
-
-Concrete example for `gpt-image-1.5`:
-
-- published text input: `$5.00 / 1M`
-- published image input: `$8.00 / 1M`
-- published image output: `$32.00 / 1M`
-
-The OpenAI image APIs do expose `input_tokens_details` and `output_tokens_details`, but the Envoy
-AI Gateway token-cost examples only document aggregate `input_tokens`, `output_tokens`, and
-`total_tokens`.
-
-Current implication in this repo:
-
-- `gpt-image-1` is rendered as a weighted model so output tokens cost more than input tokens
-- the input side still uses one published rate, not separate text-input vs image-input rates
-
-That is directionally much better than a flat token budget, but it is still not equivalent to exact
-provider billing for edit-heavy image workflows.
-
 ### Header-based matching assumes all traffic uses the secured gateway path
 
 The budget rules match on:
@@ -254,63 +216,89 @@ The budget rules match on:
 - `x-billing-plan`
 - `x-ai-eg-model`
 
+The fallback rule matches on:
+
+- `x-api-key-id`
+- `x-ai-eg-model`
+
 If a request bypasses the `core-gateway` auth path, these headers may be missing. In that case the
-budget rule does not apply.
+budget rule does not apply, and the fallback rule only applies if `x-api-key-id` is still present.
 
-## Review Of The Previous `30 req/min` Rule
+### `avgTokensPerRequest` is currently unused
 
-This repo previously had a second rule:
+`charts/ai-models/values.yaml` defines `avgTokensPerRequest` for the reranker model, but no current
+template or policy consumes it. That field should be treated as unused configuration today.
+
+## Review Of The `30 req/min` Fallback
+
+The fallback rule is currently:
 
 - per `x-api-key-id`
 - per `x-ai-eg-model`
 - default `30` requests per minute
 
-That rule was not a true fallback in protocol terms. It was an always-on second limiter that
-applied independently whenever the request matched its headers.
+### What it is protecting against
 
-### Why it was removed
+It is protecting against burst behavior that the budget rule cannot stop in real time:
 
-- it was not cost-aware
-- it was plan-agnostic
-- it could reject requests even when the account still had monthly budget remaining
-- it made the runtime behavior harder to explain because two independent rules were active at once
+- the budget rule only consumes cost on the response path
+- requests with tiny integer-truncated costs can consume `0`
+- requests with missing or malformed cost metadata should still hit a coarse guardrail
 
-### What remains true after removing it
+### What it is not protecting against
 
-- the request that crosses the monthly budget is still allowed
-- later matching requests are rejected once Redis already contains the exhausted budget bucket
-- there is no longer a separate request-count guardrail in this chart
+It is not a cost-fairness mechanism:
+
+- it is plan-agnostic
+- it does not differentiate cheap and expensive models
+- it can throttle a legitimate `pro` customer exactly the same way as a `free` customer
+
+### Change made in this branch
+
+This branch keeps the default at `30 req/min`, but removes the hardcoded literal from the template.
+The fallback is now configured in `charts/ai-models/values.yaml`:
+
+```yaml
+rateLimitFallback:
+  enabled: true
+  requests: 30
+  unit: Minute
+```
+
+That does not make `30` inherently correct, but it makes the value explicit, reviewable, and
+environment-specific.
+
+Recommendation:
+
+- keep it as a burst guard
+- do not treat it as the billing control
+- tune it with observed traffic rather than keeping it as an undocumented constant
 
 ## Changes Made In This Branch
 
-Besides documenting the current behavior, this branch makes four chart changes:
+Besides documenting the current behavior, this branch makes three chart changes:
 
-1. Model pricing now lives under an explicit `pricing.strategy` block in `charts/ai-models/values.yaml`.
-2. Vendor prices were refreshed from the current Fireworks, OpenAI, and Gemini pricing pages.
-3. Gemini long-context tiers are now represented explicitly with `tieredWeighted` pricing.
-4. The separate request-rate rule was removed so only the monthly cost-based rule remains.
+1. `multimodal` models now render the same weighted cost formula as `text` models.
+2. `reranker` models now render `llm_custom_total_cost` using the existing `effectivePer1M` path.
+3. The fallback request-rate limit is now values-driven instead of hardcoded.
 
 Rationale:
 
-- before this branch, the chart mixed weighted and flat prices directly into each model entry, which
-  made stale pricing harder to spot and long-context Gemini pricing impossible to represent cleanly
-- vendor-published pricing now maps directly to one of three strategies: `weighted`, `flat`, or
-  `tieredWeighted`
-- `BackendTrafficPolicy` still consumes a single `llm_custom_total_cost` metadata key, so this keeps
-  the enforcement path stable while improving the estimate
-- removing the extra request-rate rule makes the behavior easier to reason about, at the cost of no
-  longer having a coarse burst guard in this chart
+- before this branch, `BackendTrafficPolicy` always expected `llm_custom_total_cost`, but the chart
+  only rendered that metadata key for `text`, `image`, and `embedding`
+- the values file already contained `multimodal` and `reranker` kinds, so those routes were
+  materially harder to reason about from a budgeting perspective
 
 ## Proposed Improvements
 
 | Proposal | Rationale | Complexity |
 | --- | --- | --- |
-| Keep cost-based limiting in CEL, but treat it as an estimate | This repo now has explicit `weighted`, `flat`, and `tieredWeighted` pricing strategies, which is better than raw token limits. The right framing is “estimated spend guardrail”, not “exact billing.” | Low |
-| Add a separate gateway-level abuse-control policy only if production traffic shows a real burst problem | The current chart now has one budget rule, which is easier to reason about. If a burst guard is needed later, make it explicit and separate from billing logic. | Medium |
+| Keep cost-based limiting in CEL, but treat it as an estimate | This repo already has per-model weighted pricing, which is better than raw token limits. The right framing is “estimated spend guardrail”, not “exact billing.” | Low |
+| Add a gateway-level burst-abuse policy alongside route-level budget rules | Envoy Gateway supports layered `BackendTrafficPolicy` behavior. A gateway-level abuse limit plus route-level budget rules is easier to reason about than one hardcoded per-route fallback. | Medium |
 | Build budget observability from existing access logs | The access log already exports `gen_ai.usage.custom_total_cost`, `account_id`, `billing_plan`, and `api_key_id`. A dashboard can show budget burn before users hit `429`. | Medium |
 | Validate cached-token telemetry per provider | Cached pricing is where the estimate can diverge the most. This should be verified against live responses from OpenAI, Gemini proxy paths, Fireworks, and Vertex/OpenAI-compatible backends. | Medium |
 | Do not plan around `tokenBudget` yet | I could not find `tokenBudget` in the Envoy Gateway `v1.7.x` or Envoy AI Gateway `v0.5.0` docs queried via Context7/Tavily. Upgrade exploration is needed before treating it as a viable option. | Medium |
-| Validate image-model usage breakdown before tightening budgets further | OpenAI and Gemini publish image-specific token rates, but the current CEL path still consumes aggregate input/output counters. | Medium |
+| Decide whether `avgTokensPerRequest` should be wired or removed | It is currently dead config, which makes reranker pricing harder to understand. | Low |
 
 ## Suggested Follow-up Validation
 
@@ -320,7 +308,7 @@ Rationale:
 2. Compare logged `llm_custom_total_cost` against provider invoices or provider response usage for a
    small sample.
 3. Confirm that missing header paths are impossible in production, or reject them explicitly.
-4. Decide explicitly whether a separate gateway-level abuse guard is still needed, rather than reintroducing a hidden second limiter in the model chart.
+4. Tune `rateLimitFallback` using real traffic percentiles rather than the current placeholder value.
 
 ## External Sources
 
@@ -337,13 +325,3 @@ Rationale:
 - Envoy AI Gateway maintainer clarification that AI Gateway computes request cost while Envoy
   Gateway owns the static rate-limit policy:
   `https://github.com/envoyproxy/ai-gateway/discussions/557`
-- Fireworks pricing:
-  `https://fireworks.ai/pricing`
-- OpenAI pricing:
-  `https://developers.openai.com/api/docs/pricing/`
-- OpenAI embeddings guide:
-  `https://developers.openai.com/api/docs/guides/embeddings/`
-- OpenAI GPT Image 1.5 model page:
-  `https://developers.openai.com/api/docs/models/gpt-image-1.5`
-- Gemini Developer API pricing:
-  `https://ai.google.dev/gemini-api/docs/pricing`
