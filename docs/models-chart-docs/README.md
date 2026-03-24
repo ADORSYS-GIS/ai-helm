@@ -11,7 +11,7 @@ This chart deploys the model-specific components for an AI Gateway:
 - **AIGatewayRoute** - Model routing rules with load balancing and failover
 - **BackendSecurityPolicy** - API key authentication policies
 - **BackendTLSPolicy** - TLS configuration for backend connections
-- **BackendTrafficPolicy** - Retry and cost-based rate limiting policies for backend connections
+- **BackendTrafficPolicy** - Retry, fallback, and token-based rate limiting policies for backend connections
 - **Secret** - API key secrets for backend authentication
 
 This chart requires the `core-gateway` chart to be installed first, which provides the Gateway infrastructure.
@@ -20,8 +20,8 @@ This chart requires the `core-gateway` chart to be installed first, which provid
 
 - Kubernetes 1.24+
 - Helm 3.0+
-- [Envoy Gateway](https://gateway.envoyproxy.io/docs/tasks/quickstart/) installed in the cluster with rate limiting enabled
-- [Envoy AI Gateway](https://aigateway.envoyproxy.io/docs/getting-started/installation/) installed too
+- [Envoy Gateway](https://aigateway.envoyproxy.io/docs/getting-started/prerequisites) installed in the cluster with rate limiting enabled
+- [Envoy Ai Gateway](https://aigateway.envoyproxy.io/docs/getting-started/installation) installed too
 - `core-gateway` chart installed
 - `redis` installed
 
@@ -29,12 +29,11 @@ This chart requires the `core-gateway` chart to be installed first, which provid
 
 ### Prepare Secrets
 
-Before installing, prepare your API key secrets. The example file in this repo is
-[`secret.example.yaml`](./secret.example.yaml).
+Before installing, prepare your API key secrets:
 
 ```bash
-# Copy the example secret file from the repo root
-cp ./docs/models-chart-docs/secret.example.yaml ./secret.yaml
+# Copy the example secret file
+cp secret.example.yaml secret.yaml
 
 # Edit secret.yaml with your actual API keys
 # Update the apiKey values and service account JSON as needed
@@ -96,13 +95,21 @@ curl -v -H "Content-Type: application/json" \
 
 **Update model name in respect to the configurations made in the values.yaml file**
 
+### Screenshots
+
+Placeholder for testing screenshots:
+
+- ![Gateway Installation](screenshots/gateway-install.png)
+- ![Successful API Response](screenshots/api-response.png)
+- ![Rate Limiting Test](screenshots/rate-limit.png)
+
 ## Configuration
 
 ## Cost Tracking And Budgeting
 
 Start with the plain-English guide:
 
-Docs: [cost-tracking.md](./cost-tracking.md)
+Docs: `docs/models-chart-docs/cost-tracking.md`
 
 That guide explains:
 
@@ -110,11 +117,11 @@ That guide explains:
 - the difference between input, cached input, and output tokens
 - how `standard` and `longContext` pricing work
 - how the math turns token usage into `llm_custom_total_cost`
-- when a request is blocked before upstream and when it is not
+- how monthly budgets interact with the fallback requests-per-minute rule
 
 For the ticket-focused investigation of the full pipeline, deployed versions, and proposed improvements, see:
 
-Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
+Docs: `docs/models-chart-docs/rate-limit-investigation.md`
 
 ### Gateway Reference
 
@@ -127,15 +134,37 @@ Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Monthly estimated spend guard per account, plan, and model | `free=30`, `pro=200` |
+| `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Default budget for all models (USD) | `free=30`, `pro=200` |
+| `rateLimitBudgeting.plans.<plan>.modelBudgets.overrides.<model>` | Per-model budget override (USD) | none (uses monthlyBudgetUsd) |
+| `rateLimitFallback.enabled` | Enable the coarse burst guard | `true` |
+| `rateLimitFallback.requests` | Max fallback requests per API key and per model in the fallback window | `30` |
+| `rateLimitFallback.unit` | Fallback window unit | `Minute` |
 | `models.<name>.pricing.strategy` | Cost model used to compute `llm_custom_total_cost` | `weighted`, `flat`, `tieredWeighted` |
 
-The chart uses one rate-limit control:
+Budget resolution: `modelBudgets.overrides.<model>` if defined, else `monthlyBudgetUsd`.
+
+Example with per-model budgets:
+
+```yaml
+rateLimitBudgeting:
+  plans:
+    free:
+      monthlyBudgetUsd: 30           # Default: $30 per month for all models
+      modelBudgets:
+        overrides:
+          gpt-5-mini: 10             # Override: $10 for this specific model
+          gemini-2.5-pro: 50         # Override: $50 for this specific model
+```
+
+The chart uses two complementary controls:
 
 1. A monthly budget rule based on estimated request cost.
+2. A fallback request-rate rule for burst protection.
 
 The budget rule matches `x-account-id + x-billing-plan + x-ai-eg-model`.
-The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the upstream provider.
+The fallback rule matches `x-api-key-id + x-ai-eg-model`.
+
+The budget is decremented from response metadata, so the request that crosses the budget can still succeed. The fallback rule exists to keep that delayed budget enforcement from becoming an abuse gap.
 
 ### Backend Traffic Policy
 
@@ -144,6 +173,7 @@ The budget is decremented from response metadata, so the request that crosses th
 | `BackendTrafficPolicy` target | One `BackendTrafficPolicy` is rendered per model route | each `HTTPRoute` |
 | Monthly budget selector | `x-account-id`, `x-billing-plan`, `x-ai-eg-model` | generated |
 | Budget limit unit | Same unit as `llm_custom_total_cost` | micro-USD |
+| Fallback selector | `x-api-key-id`, `x-ai-eg-model` | generated |
 
 `BackendTrafficPolicy` does not calculate cost by itself. It reads the `llm_custom_total_cost` value produced by `AIGatewayRoute` and uses that response metadata as the cost of the request.
 
@@ -177,7 +207,7 @@ Models define routing rules for AI model requests:
 |-----------|-------------|---------|
 | `models.<name>.enabled` | Enable this model route | `true` |
 | `models.<name>.kind` | Model family used for routing and telemetry expectations | `text` |
-| `models.<name>.pricing` | Cost formula inputs for `llm_custom_total_cost` | See [cost-tracking.md](./cost-tracking.md) |
+| `models.<name>.pricing` | Cost formula inputs for `llm_custom_total_cost` | See `cost-tracking.md` |
 | `models.<name>.backends.<ref>.enabled` | Enable this backend for the model | `true` |
 | `models.<name>.backends.<ref>.ref` | Reference to backend definition | `gcp-primary` |
 | `models.<name>.backends.<ref>.modelNameOverride` | Override model name sent to backend | `gpt-4-turbo` |
@@ -197,6 +227,11 @@ rateLimitBudgeting:
       monthlyBudgetUsd: 30
     pro:
       monthlyBudgetUsd: 200
+
+rateLimitFallback:
+  enabled: true
+  requests: 30
+  unit: Minute
 
 backends:
   gpt-01:
@@ -270,19 +305,20 @@ Instead, rate limiting works like this:
 
 1. `AIGatewayRoute` computes `llm_custom_total_cost` from token usage and the model's pricing block.
 2. `BackendTrafficPolicy` charges that value against the monthly budget for the account, billing plan, and model.
-3. If Redis already shows that budget bucket as exhausted, the next matching request is rejected before it reaches the upstream provider.
-4. The request that actually crosses the budget is still allowed, because the cost is applied on the response path.
+3. A separate fallback requests-per-minute rule protects against bursts.
 
 If you need to tune behavior, update:
 
 1. `rateLimitBudgeting.plans` for monthly budget limits
-2. `models.<name>.pricing` for the cost formula
+2. `rateLimitFallback` for the burst guard
+3. `models.<name>.pricing` for the cost formula
 
 ## Backend Traffic Policies
 
 In this chart, `BackendTrafficPolicy` is responsible for:
 
 1. enforcing the monthly estimated-spend budget
+2. enforcing the fallback burst rule
 
 The policy does not contain provider pricing. Provider pricing lives in `values.yaml` and is rendered into `AIGatewayRoute`.
 

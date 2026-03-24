@@ -4,6 +4,10 @@ This note documents the current rate-limit implementation in this repo, the exac
 `llm_custom_total_cost` is computed, the accuracy limits of the current approach, and the changes
 made in this branch to make the chart easier to reason about.
 
+If you need the operator guide rather than the ticket detail, start with
+`docs/models-chart-docs/cost-tracking.md`. That file explains the pricing strategies, token types,
+and formulas in plain language.
+
 ## Scope And Deployed Stack
 
 `charts/apps/templates/applications.yaml` is only the Argo CD app-of-apps renderer. The pinned
@@ -80,10 +84,10 @@ This chart asks AI Gateway to emit:
 This is the key point of the ticket.
 
 The cost estimation happens in `charts/ai-models/templates/aigatewayroute.yaml` inside
-`spec.llmRequestCosts`. The chart renders a CEL expression per model using the model prices from
+`spec.llmRequestCosts`. The chart renders a CEL expression per model using the pricing strategy from
 `charts/ai-models/values.yaml`.
 
-For `text` and `multimodal` models, the rendered CEL is:
+For `pricing.strategy: weighted`, the rendered CEL is:
 
 ```cel
 ((max((int(input_tokens) - int(cached_input_tokens)), 0) * inputPer1MScaled) +
@@ -91,11 +95,14 @@ For `text` and `multimodal` models, the rendered CEL is:
  (int(output_tokens) * outputPer1MScaled)) / 1000
 ```
 
-For `image`, `embedding`, and `reranker` models, the rendered CEL is:
+For `pricing.strategy: flat`, the rendered CEL is:
 
 ```cel
 (int(total_tokens) * effectivePer1MScaled) / 1000
 ```
+
+For `pricing.strategy: tieredWeighted`, the chart switches between two weighted branches based on
+`input_tokens > thresholdTokens`.
 
 All outputs are integers in micro-USD.
 
@@ -133,9 +140,11 @@ single shared multiplier across all models.
 
 For example:
 
-- `deepseek-v3p2` uses `0.56 / 0.28 / 1.68`
-- `gpt-5-mini` uses `0.75 / 0.075 / 4.5`
-- `gemini-2.5-pro` uses `1.5 / 0.15 / 12.0`
+- `deepseek-v3p2` uses `weighted` pricing: `0.56 / 0.28 / 1.68`
+- `qwen3-8b` uses `flat` pricing: `0.20`
+- `gemini-2.5-pro` uses `tieredWeighted` pricing:
+  - short context: `1.25 / 0.125 / 10.0`
+  - long context: `2.50 / 0.25 / 15.0`
 
 So the chart already does the right thing at the model granularity.
 
@@ -172,12 +181,12 @@ round down to zero budget usage.
 
 Concrete example for `gemini-2.5-flash-lite`:
 
-- `inputPer1M = 0.15`
+- `inputPer1M = 0.10`
 - one uncached input token
 
 Budget cost:
 
-- true arithmetic: `0.15` micro-USD
+- true arithmetic: `0.10` micro-USD
 - CEL integer result: `0`
 
 So extremely small requests can consume no monthly budget at all.
@@ -208,6 +217,29 @@ If cached input is missing and treated as `0`:
 
 That is a `4.24x` overestimate.
 
+### Image-generation models still require approximation
+
+Some provider price sheets split image workloads into different token classes that AI Gateway does
+not expose separately in CEL.
+
+Concrete example for `gpt-image-1.5`:
+
+- published text input: `$5.00 / 1M`
+- published image input: `$8.00 / 1M`
+- published image output: `$32.00 / 1M`
+
+The OpenAI image APIs do expose `input_tokens_details` and `output_tokens_details`, but the Envoy
+AI Gateway token-cost examples only document aggregate `input_tokens`, `output_tokens`, and
+`total_tokens`.
+
+Current implication in this repo:
+
+- `gpt-image-1` is rendered as a weighted model so output tokens cost more than input tokens
+- the input side still uses one published rate, not separate text-input vs image-input rates
+
+That is directionally much better than a flat token budget, but it is still not equivalent to exact
+provider billing for edit-heavy image workflows.
+
 ### Header-based matching assumes all traffic uses the secured gateway path
 
 The budget rules match on:
@@ -223,11 +255,6 @@ The fallback rule matches on:
 
 If a request bypasses the `core-gateway` auth path, these headers may be missing. In that case the
 budget rule does not apply, and the fallback rule only applies if `x-api-key-id` is still present.
-
-### `avgTokensPerRequest` is currently unused
-
-`charts/ai-models/values.yaml` defines `avgTokensPerRequest` for the reranker model, but no current
-template or policy consumes it. That field should be treated as unused configuration today.
 
 ## Review Of The `30 req/min` Fallback
 
@@ -276,29 +303,32 @@ Recommendation:
 
 ## Changes Made In This Branch
 
-Besides documenting the current behavior, this branch makes three chart changes:
+Besides documenting the current behavior, this branch makes four chart changes:
 
-1. `multimodal` models now render the same weighted cost formula as `text` models.
-2. `reranker` models now render `llm_custom_total_cost` using the existing `effectivePer1M` path.
-3. The fallback request-rate limit is now values-driven instead of hardcoded.
+1. Model pricing now lives under an explicit `pricing.strategy` block in `charts/ai-models/values.yaml`.
+2. Vendor prices were refreshed from the current Fireworks, OpenAI, and Gemini pricing pages.
+3. Gemini long-context tiers are now represented explicitly with `tieredWeighted` pricing.
+4. The fallback request-rate limit is values-driven instead of hardcoded.
 
 Rationale:
 
-- before this branch, `BackendTrafficPolicy` always expected `llm_custom_total_cost`, but the chart
-  only rendered that metadata key for `text`, `image`, and `embedding`
-- the values file already contained `multimodal` and `reranker` kinds, so those routes were
-  materially harder to reason about from a budgeting perspective
+- before this branch, the chart mixed weighted and flat prices directly into each model entry, which
+  made stale pricing harder to spot and long-context Gemini pricing impossible to represent cleanly
+- vendor-published pricing now maps directly to one of three strategies: `weighted`, `flat`, or
+  `tieredWeighted`
+- `BackendTrafficPolicy` still consumes a single `llm_custom_total_cost` metadata key, so this keeps
+  the enforcement path stable while improving the estimate
 
 ## Proposed Improvements
 
 | Proposal | Rationale | Complexity |
 | --- | --- | --- |
-| Keep cost-based limiting in CEL, but treat it as an estimate | This repo already has per-model weighted pricing, which is better than raw token limits. The right framing is “estimated spend guardrail”, not “exact billing.” | Low |
+| Keep cost-based limiting in CEL, but treat it as an estimate | This repo now has explicit `weighted`, `flat`, and `tieredWeighted` pricing strategies, which is better than raw token limits. The right framing is “estimated spend guardrail”, not “exact billing.” | Low |
 | Add a gateway-level burst-abuse policy alongside route-level budget rules | Envoy Gateway supports layered `BackendTrafficPolicy` behavior. A gateway-level abuse limit plus route-level budget rules is easier to reason about than one hardcoded per-route fallback. | Medium |
 | Build budget observability from existing access logs | The access log already exports `gen_ai.usage.custom_total_cost`, `account_id`, `billing_plan`, and `api_key_id`. A dashboard can show budget burn before users hit `429`. | Medium |
 | Validate cached-token telemetry per provider | Cached pricing is where the estimate can diverge the most. This should be verified against live responses from OpenAI, Gemini proxy paths, Fireworks, and Vertex/OpenAI-compatible backends. | Medium |
 | Do not plan around `tokenBudget` yet | I could not find `tokenBudget` in the Envoy Gateway `v1.7.x` or Envoy AI Gateway `v0.5.0` docs queried via Context7/Tavily. Upgrade exploration is needed before treating it as a viable option. | Medium |
-| Decide whether `avgTokensPerRequest` should be wired or removed | It is currently dead config, which makes reranker pricing harder to understand. | Low |
+| Validate image-model usage breakdown before tightening budgets further | OpenAI and Gemini publish image-specific token rates, but the current CEL path still consumes aggregate input/output counters. | Medium |
 
 ## Suggested Follow-up Validation
 
@@ -325,3 +355,13 @@ Rationale:
 - Envoy AI Gateway maintainer clarification that AI Gateway computes request cost while Envoy
   Gateway owns the static rate-limit policy:
   `https://github.com/envoyproxy/ai-gateway/discussions/557`
+- Fireworks pricing:
+  `https://fireworks.ai/pricing`
+- OpenAI pricing:
+  `https://developers.openai.com/api/docs/pricing/`
+- OpenAI embeddings guide:
+  `https://developers.openai.com/api/docs/guides/embeddings/`
+- OpenAI GPT Image 1.5 model page:
+  `https://developers.openai.com/api/docs/models/gpt-image-1.5`
+- Gemini Developer API pricing:
+  `https://ai.google.dev/gemini-api/docs/pricing`
