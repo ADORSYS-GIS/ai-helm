@@ -11,7 +11,7 @@ This chart deploys the model-specific components for an AI Gateway:
 - **AIGatewayRoute** - Model routing rules with load balancing and failover
 - **BackendSecurityPolicy** - API key authentication policies
 - **BackendTLSPolicy** - TLS configuration for backend connections
-- **BackendTrafficPolicy** - Retry, fallback, and token-based rate limiting policies for backend connections
+- **BackendTrafficPolicy** - Retry and cost-based rate limiting policies for backend connections
 - **Secret** - API key secrets for backend authentication
 
 This chart requires the `core-gateway` chart to be installed first, which provides the Gateway infrastructure.
@@ -20,8 +20,8 @@ This chart requires the `core-gateway` chart to be installed first, which provid
 
 - Kubernetes 1.24+
 - Helm 3.0+
-- [Envoy Gateway](https://aigateway.envoyproxy.io/docs/getting-started/prerequisites) installed in the cluster with rate limiting enabled
-- [Envoy Ai Gateway](https://aigateway.envoyproxy.io/docs/getting-started/installation) installed too
+- [Envoy Gateway](https://gateway.envoyproxy.io/docs/tasks/quickstart/) installed in the cluster with rate limiting enabled
+- [Envoy AI Gateway](https://aigateway.envoyproxy.io/docs/getting-started/installation/) installed too
 - `core-gateway` chart installed
 - `redis` installed
 
@@ -29,11 +29,12 @@ This chart requires the `core-gateway` chart to be installed first, which provid
 
 ### Prepare Secrets
 
-Before installing, prepare your API key secrets:
+Before installing, prepare your API key secrets. The example file in this repo is
+[`secret.example.yaml`](./secret.example.yaml).
 
 ```bash
-# Copy the example secret file
-cp secret.example.yaml secret.yaml
+# Copy the example secret file from the repo root
+cp ./docs/models-chart-docs/secret.example.yaml ./secret.yaml
 
 # Edit secret.yaml with your actual API keys
 # Update the apiKey values and service account JSON as needed
@@ -95,21 +96,13 @@ curl -v -H "Content-Type: application/json" \
 
 **Update model name in respect to the configurations made in the values.yaml file**
 
-### Screenshots
-
-Placeholder for testing screenshots:
-
-- ![Gateway Installation](screenshots/gateway-install.png)
-- ![Successful API Response](screenshots/api-response.png)
-- ![Rate Limiting Test](screenshots/rate-limit.png)
-
 ## Configuration
 
 ## Cost Tracking And Budgeting
 
 Start with the plain-English guide:
 
-Docs: `docs/models-chart-docs/cost-tracking.md`
+Docs: [cost-tracking.md](./cost-tracking.md)
 
 That guide explains:
 
@@ -121,7 +114,7 @@ That guide explains:
 
 For the ticket-focused investigation of the full pipeline, deployed versions, and proposed improvements, see:
 
-Docs: `docs/models-chart-docs/rate-limit-investigation.md`
+Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
 
 ### Gateway Reference
 
@@ -207,7 +200,7 @@ Models define routing rules for AI model requests:
 |-----------|-------------|---------|
 | `models.<name>.enabled` | Enable this model route | `true` |
 | `models.<name>.kind` | Model family used for routing and telemetry expectations | `text` |
-| `models.<name>.pricing` | Cost formula inputs for `llm_custom_total_cost` | See `cost-tracking.md` |
+| `models.<name>.pricing` | Cost formula inputs for `llm_custom_total_cost` | See [cost-tracking.md](./cost-tracking.md) |
 | `models.<name>.backends.<ref>.enabled` | Enable this backend for the model | `true` |
 | `models.<name>.backends.<ref>.ref` | Reference to backend definition | `gcp-primary` |
 | `models.<name>.backends.<ref>.modelNameOverride` | Override model name sent to backend | `gpt-4-turbo` |
