@@ -43,18 +43,5 @@ spec:
                 namespace: io.envoy.ai_gateway
                 key: llm_custom_total_cost
         {{ end }}
-
-        - clientSelectors:
-            - headers:
-                - name: x-api-key-id
-                  type: Distinct
-                  invert: false
-                - name: x-ai-eg-model
-                  type: Exact
-                  invert: false
-                  value: {{ default $routeName }}
-          limit:
-            requests: {{ 30 | int64 }}
-            unit: Minute
 {{- end }}
 {{- end }}
