@@ -110,11 +110,19 @@ That guide explains:
 - the difference between input, cached input, and output tokens
 - how `standard` and `longContext` pricing work
 - how the math turns token usage into `llm_custom_total_cost`
-- how monthly budgets interact with the fallback requests-per-minute rule
+- when a request is blocked before upstream and when it is not
 
 For the ticket-focused investigation of the full pipeline, deployed versions, and proposed improvements, see:
 
 Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
+
+That guide explains:
+
+- what `weighted`, `flat`, and `tieredWeighted` mean
+- the difference between input, cached input, and output tokens
+- how `standard` and `longContext` pricing work
+- how the math turns token usage into `llm_custom_total_cost`
+- how monthly budgets interact with the fallback requests-per-minute rule
 
 ### Gateway Reference
 
@@ -127,12 +135,22 @@ Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Default budget for all models (USD) | `free=30`, `pro=200` |
-| `rateLimitBudgeting.plans.<plan>.modelBudgets.overrides.<model>` | Per-model budget override (USD) | none (uses monthlyBudgetUsd) |
+| `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Monthly estimated spend guard per account, plan, and model | `free=30`, `pro=200` |
+| `rateLimitBudgeting.plans.<plan>.modelBudgets.overrides.<model>` | Per-model budget override (USD) | none (uses `monthlyBudgetUsd`) |
 | `rateLimitFallback.enabled` | Enable the coarse burst guard | `true` |
 | `rateLimitFallback.requests` | Max fallback requests per API key and per model in the fallback window | `30` |
 | `rateLimitFallback.unit` | Fallback window unit | `Minute` |
 | `models.<name>.pricing.strategy` | Cost model used to compute `llm_custom_total_cost` | `weighted`, `flat`, `tieredWeighted` |
+
+The chart uses two complementary controls:
+
+1. A monthly budget rule based on estimated request cost.
+2. A fallback request-rate rule for burst protection.
+
+The budget rule matches `x-account-id + x-billing-plan + x-ai-eg-model`.
+The fallback rule matches `x-api-key-id + x-ai-eg-model`.
+
+The budget is decremented from response metadata, so the request that crosses the budget can still succeed. The fallback rule exists to keep that delayed budget enforcement from becoming an abuse gap.
 
 Budget resolution: `modelBudgets.overrides.<model>` if defined, else `monthlyBudgetUsd`.
 
@@ -148,16 +166,6 @@ rateLimitBudgeting:
           gpt-5-mini: 10             # Override: $10 for this specific model
           gemini-2.5-pro: 50         # Override: $50 for this specific model
 ```
-
-The chart uses two complementary controls:
-
-1. A monthly budget rule based on estimated request cost.
-2. A fallback request-rate rule for burst protection.
-
-The budget rule matches `x-account-id + x-billing-plan + x-ai-eg-model`.
-The fallback rule matches `x-api-key-id + x-ai-eg-model`.
-
-The budget is decremented from response metadata, so the request that crosses the budget can still succeed. The fallback rule exists to keep that delayed budget enforcement from becoming an abuse gap.
 
 ### Backend Traffic Policy
 
@@ -218,9 +226,12 @@ rateLimitBudgeting:
   plans:
     free:
       monthlyBudgetUsd: 30
+      modelBudgets:
+        overrides: {}
     pro:
       monthlyBudgetUsd: 200
-
+      modelBudgets:
+        overrides: {}
 rateLimitFallback:
   enabled: true
   requests: 30
@@ -299,6 +310,8 @@ Instead, rate limiting works like this:
 1. `AIGatewayRoute` computes `llm_custom_total_cost` from token usage and the model's pricing block.
 2. `BackendTrafficPolicy` charges that value against the monthly budget for the account, billing plan, and model.
 3. A separate fallback requests-per-minute rule protects against bursts.
+
+The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the upstream provider.
 
 If you need to tune behavior, update:
 

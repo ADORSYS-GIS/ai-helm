@@ -7,7 +7,7 @@ If you only remember four things, remember these:
 1. The monthly limit is based on estimated model cost, not raw request count.
 2. The estimate comes from the model prices in `charts/ai-models/values.yaml`.
 3. Input tokens, cached input tokens, and output tokens can cost different amounts.
-4. There is also a simple requests-per-minute fallback because the monthly budget is only updated after the response comes back.
+4. The request that crosses the monthly budget can still succeed, because the budget is reduced after the response comes back (and a simple requests-per-minute fallback can cap bursts in the meantime).
 
 ## The Three Things You Configure
 
@@ -240,9 +240,9 @@ The important detail is step 4 happens on the response path.
 That means:
 
 1. the request that crosses the monthly budget can still succeed
-2. the next matching request is the one that gets blocked
+2. the next matching request is the one that gets blocked once Redis already contains the exhausted bucket
 
-This is the reason the chart also keeps a simple requests-per-minute fallback.
+This delayed enforcement is why the chart also supports a simple requests-per-minute fallback.
 
 ## Who Gets Limited
 
@@ -309,8 +309,10 @@ rateLimitBudgeting:
       modelBudgets:
         overrides:
           gpt-5-mini: 10             # Expensive model: $10
-          gemini-2.5-pro: 50          # Popular model: $50
+          gemini-2.5-pro: 50         # Popular model: $50
 ```
+
+This allows fine-grained control over spend allocation across different models while maintaining a sensible default.
 
 ## Where The Math Lives In The Chart
 
