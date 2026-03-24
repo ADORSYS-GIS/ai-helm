@@ -9,15 +9,6 @@ rateLimitBudgeting:
     pro:
       monthlyBudgetUsd: 200
 
-rateLimitFallback:
-  enabled: true
-  # Coarse burst guard per `x-api-key-id` and per model.
-  # This is intentionally separate from the monthly budget rule because budget counters only
-  # decrease after a response is returned. In other words, the request that crosses the budget
-  # can still succeed, and this fallback helps cap bursts in the meantime.
-  requests: 30
-  unit: Minute
-
 gatewayRef:
   name: core-gateway
   namespace: converse-gateway

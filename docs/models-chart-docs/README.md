@@ -117,7 +117,7 @@ That guide explains:
 - the difference between input, cached input, and output tokens
 - how `standard` and `longContext` pricing work
 - how the math turns token usage into `llm_custom_total_cost`
-- how monthly budgets interact with the fallback requests-per-minute rule
+- when a request is blocked before upstream and when it is not
 
 For the ticket-focused investigation of the full pipeline, deployed versions, and proposed improvements, see:
 
@@ -135,20 +135,14 @@ Docs: `docs/models-chart-docs/rate-limit-investigation.md`
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Monthly estimated spend guard per account, plan, and model | `free=30`, `pro=200` |
-| `rateLimitFallback.enabled` | Enable the coarse burst guard | `true` |
-| `rateLimitFallback.requests` | Max fallback requests per API key and per model in the fallback window | `30` |
-| `rateLimitFallback.unit` | Fallback window unit | `Minute` |
 | `models.<name>.pricing.strategy` | Cost model used to compute `llm_custom_total_cost` | `weighted`, `flat`, `tieredWeighted` |
 
-The chart uses two complementary controls:
+The chart uses one rate-limit control:
 
 1. A monthly budget rule based on estimated request cost.
-2. A fallback request-rate rule for burst protection.
 
 The budget rule matches `x-account-id + x-billing-plan + x-ai-eg-model`.
-The fallback rule matches `x-api-key-id + x-ai-eg-model`.
-
-The budget is decremented from response metadata, so the request that crosses the budget can still succeed. The fallback rule exists to keep that delayed budget enforcement from becoming an abuse gap.
+The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the upstream provider.
 
 ### Backend Traffic Policy
 
@@ -157,7 +151,6 @@ The budget is decremented from response metadata, so the request that crosses th
 | `BackendTrafficPolicy` target | One `BackendTrafficPolicy` is rendered per model route | each `HTTPRoute` |
 | Monthly budget selector | `x-account-id`, `x-billing-plan`, `x-ai-eg-model` | generated |
 | Budget limit unit | Same unit as `llm_custom_total_cost` | micro-USD |
-| Fallback selector | `x-api-key-id`, `x-ai-eg-model` | generated |
 
 `BackendTrafficPolicy` does not calculate cost by itself. It reads the `llm_custom_total_cost` value produced by `AIGatewayRoute` and uses that response metadata as the cost of the request.
 
@@ -211,11 +204,6 @@ rateLimitBudgeting:
       monthlyBudgetUsd: 30
     pro:
       monthlyBudgetUsd: 200
-
-rateLimitFallback:
-  enabled: true
-  requests: 30
-  unit: Minute
 
 backends:
   gpt-01:
@@ -289,20 +277,19 @@ Instead, rate limiting works like this:
 
 1. `AIGatewayRoute` computes `llm_custom_total_cost` from token usage and the model's pricing block.
 2. `BackendTrafficPolicy` charges that value against the monthly budget for the account, billing plan, and model.
-3. A separate fallback requests-per-minute rule protects against bursts.
+3. If Redis already shows that budget bucket as exhausted, the next matching request is rejected before it reaches the upstream provider.
+4. The request that actually crosses the budget is still allowed, because the cost is applied on the response path.
 
 If you need to tune behavior, update:
 
 1. `rateLimitBudgeting.plans` for monthly budget limits
-2. `rateLimitFallback` for the burst guard
-3. `models.<name>.pricing` for the cost formula
+2. `models.<name>.pricing` for the cost formula
 
 ## Backend Traffic Policies
 
 In this chart, `BackendTrafficPolicy` is responsible for:
 
 1. enforcing the monthly estimated-spend budget
-2. enforcing the fallback burst rule
 
 The policy does not contain provider pricing. Provider pricing lives in `values.yaml` and is rendered into `AIGatewayRoute`.
 
