@@ -11,29 +11,30 @@ This chart deploys the model-specific components for an AI Gateway:
 - **AIGatewayRoute** - Model routing rules with load balancing and failover
 - **BackendSecurityPolicy** - API key authentication policies
 - **BackendTLSPolicy** - TLS configuration for backend connections
-- **BackendTrafficPolicy** - Retry, fallback, and token-based rate limiting policies for backend connections
+- **BackendTrafficPolicy** - Retry and cost-based rate limiting policies for backend connections
 - **Secret** - API key secrets for backend authentication
 
-This chart requires the `ai-gateway-core` chart to be installed first, which provides the Gateway infrastructure.
+This chart requires the `core-gateway` chart to be installed first, which provides the Gateway infrastructure.
 
 ## Prerequisites
 
 - Kubernetes 1.24+
 - Helm 3.0+
-- [Envoy Gateway](https://aigateway.envoyproxy.io/docs/getting-started/prerequisites) installed in the cluster with rate limiting enabled
-- [Envoy Ai Gateway](https://aigateway.envoyproxy.io/docs/getting-started/installation) installed too
-- `ai-gateway-core` chart installed
+- [Envoy Gateway](https://gateway.envoyproxy.io/docs/tasks/quickstart/) installed in the cluster with rate limiting enabled
+- [Envoy AI Gateway](https://aigateway.envoyproxy.io/docs/getting-started/installation/) installed too
+- `core-gateway` chart installed
 - `redis` installed
 
 ## Installation
 
 ### Prepare Secrets
 
-Before installing, prepare your API key secrets:
+Before installing, prepare your API key secrets. The example file in this repo is
+[`secret.example.yaml`](./secret.example.yaml).
 
 ```bash
-# Copy the example secret file
-cp secret.example.yaml secret.yaml
+# Copy the example secret file from the repo root
+cp ./docs/models-chart-docs/secret.example.yaml ./secret.yaml
 
 # Edit secret.yaml with your actual API keys
 # Update the apiKey values and service account JSON as needed
@@ -46,16 +47,13 @@ kubectl apply -f secret.yaml
 
 ```bash
 # First, install the core gateway infrastructure
-helm install ai-gateway-core ./charts/ai-gateway-core
+helm install core-gateway ./charts/core-gateway -n converse-gateway --create-namespace
 
 # Then install the models chart
-helm install models ./charts/models
+helm install ai-models ./charts/ai-models -n converse-gateway
 
 # Install with custom values
-helm install models ./charts/models -f my-values.yaml
-
-# Install without rate limiting
-helm install models ./charts/models --set rateLimitPolicy.enabled=false
+helm install ai-models ./charts/ai-models -n converse-gateway -f my-values.yaml
 ```
 
 ## Testing
@@ -67,7 +65,7 @@ After installing the chart, you can test the AI Gateway locally using curl reque
 ```bash
 # Get the Envoy service name dynamically
 export ENVOY_SERVICE=$(kubectl get svc -n envoy-gateway-system \
-  --selector=gateway.envoyproxy.io/owning-gateway-namespace=default,gateway.envoyproxy.io/owning-gateway-name=ai-gateway \
+  --selector=gateway.envoyproxy.io/owning-gateway-namespace=converse-gateway,gateway.envoyproxy.io/owning-gateway-name=core-gateway \
   -o jsonpath='{.items[0].metadata.name}')
 
 # Port forward the Envoy Gateway service
@@ -83,9 +81,9 @@ Test a chat completion request:
 
 ```bash
 curl -v -H "Content-Type: application/json" \
-  -H "x-user-id: user1" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "x-ai-eg-model: gpt-5-mini" \
   -d '{
-    "model": "fireworks-instruct",
     "messages": [
       {
         "role": "user",
@@ -98,77 +96,64 @@ curl -v -H "Content-Type: application/json" \
 
 **Update model name in respect to the configurations made in the values.yaml file**
 
-### Screenshots
-
-Placeholder for testing screenshots:
-
-- ![Gateway Installation](screenshots/gateway-install.png)
-- ![Successful API Response](screenshots/api-response.png)
-- ![Rate Limiting Test](screenshots/rate-limit.png)
-
 ## Configuration
 
 ## Cost Tracking And Budgeting
 
-Token usage and cost metadata are emitted by Envoy AI Gateway and consumed by access logs and budget
-rate limiting. See `cost-tracking.md` for units and how the CEL expressions work.
+Start with the plain-English guide:
 
-Docs: `docs/models-chart-docs/cost-tracking.md`
+Docs: [cost-tracking.md](./cost-tracking.md)
+
+That guide explains:
+
+- what `weighted`, `flat`, and `tieredWeighted` mean
+- the difference between input, cached input, and output tokens
+- how `standard` and `longContext` pricing work
+- how the math turns token usage into `llm_custom_total_cost`
+- when a request is blocked before upstream and when it is not
+
+For the ticket-focused investigation of the full pipeline, deployed versions, and proposed improvements, see:
+
+Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
 
 ### Gateway Reference
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `gatewayRef.name` | Name of the Gateway resource (from ai-gateway-core) | `ai-gateway` |
+| `gatewayRef.name` | Name of the shared gateway resource | `core-gateway` |
+| `gatewayRef.namespace` | Namespace of the shared gateway resource | `converse-gateway` |
 
-### Envoy Rate Limiting
+### Rate Limiting And Budgeting
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `envoyRateLimit.enabled` | Enable/disable Envoy rate limiting | `true` |
-| `models.<name>.envoyRateLimit.requests` | Token limit per user per model | `30` |
-| `models.<name>.envoyRateLimit.unit` | Time unit for rate limiting | `Minute` |
+| `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Monthly estimated spend guard per account, plan, and model | `free=30`, `pro=200` |
+| `models.<name>.pricing.strategy` | Cost model used to compute `llm_custom_total_cost` | `weighted`, `flat`, `tieredWeighted` |
 
-Rate limiting is implemented using Envoy Gateway's built-in global rate limiting. Limits are applied per user per model based on actual token consumption, using metadata from AI Gateway responses.
+The chart uses one rate-limit control:
+
+1. A monthly budget rule based on estimated request cost.
+
+The budget rule matches `x-account-id + x-billing-plan + x-ai-eg-model`.
+The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the upstream provider.
 
 ### Backend Traffic Policy
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `backendTrafficPolicy.enabled` | Enable/disable backend traffic policies | `true` |
-| `backendTrafficPolicy.name` | Name of the BackendTrafficPolicy | `backend-retry-policy` |
-| `backendTrafficPolicy.labels` | Additional labels | `{}` |
-| `backendTrafficPolicy.annotations` | Additional annotations | `{}` |
-| `backendTrafficPolicy.targetRefs` | Target resources for the policy | See below |
-| `backendTrafficPolicy.retry` | Retry configuration | See below |
-| `envoyRateLimit.enabled` | Enable Envoy rate limiting (when true, adds rateLimit to policy) | `true` |
+| `BackendTrafficPolicy` target | One `BackendTrafficPolicy` is rendered per model route | each `HTTPRoute` |
+| Monthly budget selector | `x-account-id`, `x-billing-plan`, `x-ai-eg-model` | generated |
+| Budget limit unit | Same unit as `llm_custom_total_cost` | micro-USD |
 
-Default backend traffic policy:
-```yaml
-backendTrafficPolicy:
-  enabled: true
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: ai-gateway
-  retry:
-    numRetries: 3
-    perRetry:
-      backOff:
-        baseInterval: 100ms
-        maxInterval: 10s
-      timeout: 30s
-    retryOn:
-      httpStatusCodes:
-        - 500
-        - 502
-        - 503
-        - 504
-        - 404
-      triggers:
-        - connect-failure
-        - retriable-status-codes
-```
+`BackendTrafficPolicy` does not calculate cost by itself. It reads the `llm_custom_total_cost` value produced by `AIGatewayRoute` and uses that response metadata as the cost of the request.
+
+### Pricing Strategies
+
+| Strategy | When to use it | Required fields |
+|-----------|-------------|---------|
+| `weighted` | Provider publishes separate prices for input, cached input, and output tokens | `standard.inputPer1M`, `standard.cachedInputPer1M`, `standard.outputPer1M` |
+| `flat` | Provider publishes one blended price for total tokens | `standard.effectivePer1M` |
+| `tieredWeighted` | Provider publishes weighted prices and a more expensive long-context tier | `thresholdTokens`, `standard.*`, `longContext.*` |
 
 ### Backends
 
@@ -181,8 +166,7 @@ Backends define the upstream AI service endpoints:
 | `backends.<name>.prefix` | Optional URL prefix | `/inference/v1` |
 | `backends.<name>.fqdn.hostname` | Backend hostname | `api.openai.com` |
 | `backends.<name>.fqdn.port` | Backend port | `443` |
-| `backends.<name>.apiKeySecretRef.name` | Secret name for API key | `openai-apikey` |
-| `backends.<name>.apiKeySecretRef.key` | Key in secret | `apiKey` |
+| `backends.<name>.secretRef.name` | Secret name for API key | `openai-apikey` |
 | `backends.<name>.tlsHostname` | TLS hostname for validation | `api.openai.com` |
 
 ### Models
@@ -192,8 +176,8 @@ Models define routing rules for AI model requests:
 | Parameter | Description | Example |
 |-----------|-------------|---------|
 | `models.<name>.enabled` | Enable this model route | `true` |
-| `models.<name>.modelMatch` | Model name to match in requests | `gpt-4` |
-| `models.<name>.rateLimit` | Per-model rate limit override | See below |
+| `models.<name>.kind` | Model family used for routing and telemetry expectations | `text` |
+| `models.<name>.pricing` | Cost formula inputs for `llm_custom_total_cost` | See [cost-tracking.md](./cost-tracking.md) |
 | `models.<name>.backends.<ref>.enabled` | Enable this backend for the model | `true` |
 | `models.<name>.backends.<ref>.ref` | Reference to backend definition | `gcp-primary` |
 | `models.<name>.backends.<ref>.modelNameOverride` | Override model name sent to backend | `gpt-4-turbo` |
@@ -204,34 +188,15 @@ Models define routing rules for AI model requests:
 
 ```yaml
 gatewayRef:
-  name: ai-gateway
+  name: core-gateway
+  namespace: converse-gateway
 
-rateLimitPolicy:
-  enabled: true
-
-backendTrafficPolicy:
-  enabled: true
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: ai-gateway
-  retry:
-    numRetries: 3
-    perRetry:
-      backOff:
-        baseInterval: 100ms
-        maxInterval: 10s
-      timeout: 30s
-    retryOn:
-      httpStatusCodes:
-        - 500
-        - 502
-        - 503
-        - 504
-        - 404
-      triggers:
-        - connect-failure
-        - retriable-status-codes
+rateLimitBudgeting:
+  plans:
+    free:
+      monthlyBudgetUsd: 30
+    pro:
+      monthlyBudgetUsd: 200
 
 backends:
   gpt-01:
@@ -241,8 +206,7 @@ backends:
       hostname: api.ai.kivoyo.com
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: openai-api-key-01
     tlsHostname: api.ai.kivoyo.com
   gpt-02:
@@ -252,73 +216,75 @@ backends:
       hostname: api.ai.kivoyo.com
       port: 443
     securityType: APIKey
-    useEnvVars: true
-    envSecretRef:
+    secretRef:
       name: openai-api-key-02
     tlsHostname: api.ai.kivoyo.com
 
 models:
-  gpt-04:
+  gpt-5-mini:
     enabled: true
-
-    rateLimit:
-      scope:
-        - user
-        - model
-        - tokens
-
-      limits:
-        requests:
-          rates:
-            - limit: 3
-              window: 1m
-        tokens:
-          rates:
-            - limit: 50
-              window: 1m
-        
+    kind: text
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.75
+        cachedInputPer1M: 0.075
+        outputPer1M: 4.50
     backends:
-      aws-01:
+      primary:
         enabled: true
         ref: gpt-01
-        modelNameOverride: "gpt-4o-mini"
+        modelNameOverride: "gpt-5-mini"
         priority: 0
-      aws-02:
+      secondary:
         enabled: true
         ref: gpt-02
-        modelNameOverride: "gpt-4o-mini"
+        modelNameOverride: "gpt-5-mini"
+        priority: 1
+
+  text-embedding-3-small:
+    enabled: true
+    kind: embedding
+    pricing:
+      strategy: flat
+      standard:
+        effectivePer1M: 0.02
+    backends:
+      primary:
+        enabled: true
+        ref: gpt-01
+        modelNameOverride: "text-embedding-3-small"
+        priority: 0
+      secondary:
+        enabled: true
+        ref: gpt-02
+        modelNameOverride: "text-embedding-3-small"
         priority: 1
 ```
 
 ## Rate Limiting
 
-Rate limiting is implemented using Envoy Gateway's built-in global rate limiting. The chart supports token-based rate limiting per user per model, using AI Gateway metadata to count actual token consumption.
+The current chart does not use a per-model `envoyRateLimit` block anymore.
 
-### Rate Limit Configuration
+Instead, rate limiting works like this:
 
-Rate limits are configured per model in the values.yaml file. Each model can have its own token limit per user. The limits are enforced globally across all backends for that model.
+1. `AIGatewayRoute` computes `llm_custom_total_cost` from token usage and the model's pricing block.
+2. `BackendTrafficPolicy` charges that value against the monthly budget for the account, billing plan, and model.
+3. If Redis already shows that budget bucket as exhausted, the next matching request is rejected before it reaches the upstream provider.
+4. The request that actually crosses the budget is still allowed, because the cost is applied on the response path.
 
-Example configuration:
-```yaml
-models:
-  gpt-5:
-    enabled: true
-    envoyRateLimit:
-      requests: 30  # Max 30 tokens per minute per user
-      unit: Minute
-```
+If you need to tune behavior, update:
+
+1. `rateLimitBudgeting.plans` for monthly budget limits
+2. `models.<name>.pricing` for the cost formula
 
 ## Backend Traffic Policies
 
-Backend traffic policies provide retry and fallback logic for backend connections. The BackendTrafficPolicy applies to the Gateway and configures retry behavior for failed requests, including exponential backoff and specific HTTP status codes to retry on.
+In this chart, `BackendTrafficPolicy` is responsible for:
 
-### Disabling Rate Limiting
+1. enforcing the monthly estimated-spend budget
 
-To disable Envoy rate limiting:
-
-```bash
-helm install models ./charts/models --set envoyRateLimit.enabled=false
-```
+The policy does not contain provider pricing. Provider pricing lives in `values.yaml` and is rendered into `AIGatewayRoute`.
 
 ## Model Routing Requirements
 
@@ -326,13 +292,13 @@ Each enabled model route must have **at least 2 enabled backends**. This is enfo
 
 ## Related Charts
 
-- **ai-gateway-core** - Core gateway infrastructure (must be installed first)
+- **core-gateway** - Core gateway infrastructure (must be installed first)
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    ai-gateway-core                          │
+│                     core-gateway                            │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐ │
 │  │ GatewayClass│  │   Gateway   │  │ ClientTrafficPolicy  │ │
 │  └─────────────┘  └─────────────┘  └──────────────────────┘ │
