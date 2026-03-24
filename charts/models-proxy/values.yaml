@@ -81,6 +81,17 @@ proxy:
             - path: /app/config.yaml
               subPath: config.yaml
               readOnly: true
+    # Gemini thought signature patch
+    gemini-patch:
+      enabled: true
+      type: configMap
+      name: litellm-gemini-plugin
+      advancedMounts:
+        litellm:
+          litellm:
+            - path: /app/litellm_gemini_patch.py
+              subPath: litellm_gemini_patch.py
+              readOnly: true
 
 config:
   litellm_settings:
@@ -88,7 +99,17 @@ config:
     cache_params: # set cache params for redis
       type: redis
       namespace: "litellm.caching.caching"
+    # Gemini thought signature patch callback - REMOVE once LiteLLM has the fix
+    callbacks: ["litellm_gemini_patch.proxy_handler_instance"]
+    drop_params: true  # Required for Gemini 3 - drops unsupported params to prevent API errors
   model_list:
     - model_name: "*"
       litellm_params:
         model: "*"
+        # api_key: "os.environ/GEMINI_API_KEY"
+    # ── Wildcard passthrough (optional – keeps upstream model names working)
+    - model_name: "gemini/*"
+      litellm_params:
+        model: "gemini/*"
+        # api_key: "os.environ/GEMINI_API_KEY"
+        
