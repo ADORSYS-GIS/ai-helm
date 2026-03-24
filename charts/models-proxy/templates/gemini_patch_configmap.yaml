@@ -1,6 +1,7 @@
-{{- $persistence := .Values.persistence }}
-{{- $gp := $persistence.geminiPatch }}
-{{- if and $persistence (hasKey $persistence "geminiPatch") (get $gp "enabled") }}
+{{- $persistence := .Values.proxy.persistence }}
+{{- if and $persistence (hasKey $persistence "gemini-patch") }}
+{{- $gp := index $persistence "gemini-patch" }}
+{{- if (get $gp "enabled") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -98,4 +99,5 @@ data:
             return data
 
     proxy_handler_instance = GeminiSignaturePatch()
+{{- end }}
 {{- end }}
