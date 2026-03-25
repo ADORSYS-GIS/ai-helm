@@ -110,13 +110,42 @@ config:
       namespace: "litellm.caching.caching"
     drop_params: true  # Required for Gemini 3 - drops unsupported params to prevent API errors
   model_list:
-    - model_name: "*"
+    # Explicit allowlist of supported models/providers
+    # Add new models here following the pattern below
+    # Format: model_name (how clients call it) -> litellm_params.model (how LiteLLM routes it)
+    
+    # ── Google Gemini Pro models
+    - model_name: "gemini/gemini-3.1-pro"
       litellm_params:
-        model: "*"
-        # api_key: "os.environ/GEMINI_API_KEY"
-    # ── Wildcard passthrough (optional – keeps upstream model names working)
-    - model_name: "gemini/*"
+        model: "gemini/gemini-3.1-pro"
+    - model_name: "gemini/gemini-2.5-pro"
       litellm_params:
-        model: "gemini/*"
-        # api_key: "os.environ/GEMINI_API_KEY"
+        model: "gemini/gemini-2.5-pro"
+    
+    # ── Google Gemini Flash models
+    - model_name: "gemini/gemini-3-flash"
+      litellm_params:
+        model: "gemini/gemini-3-flash"
+    - model_name: "gemini/gemini-2.5-flash"
+      litellm_params:
+        model: "gemini/gemini-2.5-flash"
+    
+    # ── Google Gemini Lite models
+    - model_name: "gemini/gemini-3.1-flash-lite"
+      litellm_params:
+        model: "gemini/gemini-3.1-flash-lite"
+    - model_name: "gemini/gemini-2.5-flash-lite"
+      litellm_params:
+        model: "gemini/gemini-2.5-flash-lite"
+    
+    # ── Google Gemini Image model
+    - model_name: "gemini/gemini-2.5-flash-image"
+      litellm_params:
+        model: "gemini/gemini-2.5-flash-image"
+    
+    # ── Add more providers below following this pattern:
+    # - model_name: "provider/model-name"
+    #   litellm_params:
+    #     model: "provider/model-name"
+    
         
