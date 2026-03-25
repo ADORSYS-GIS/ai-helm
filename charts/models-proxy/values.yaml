@@ -5,6 +5,9 @@ global:
     name: "litellm-config"
 
 proxy:
+  defaultPodOptions:
+    automountServiceAccountToken: false
+
   service:
     litellm:
       enabled: true
@@ -92,6 +95,10 @@ proxy:
             - path: /app/litellm_gemini_patch.py
               subPath: litellm_gemini_patch.py
               readOnly: true
+
+  serviceAccount:
+    default:
+      enabled: false
 
 config:
   litellm_settings:
