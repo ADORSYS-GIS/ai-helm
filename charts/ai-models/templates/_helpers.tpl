@@ -64,10 +64,10 @@ All individual AIGatewayRoute resources omit the CEL entry entirely.
       {{- $expr = printf "(model == %q) ? %s" $routeName $branch -}}
       {{- $first = false -}}
     {{- else -}}
-      {{- $expr = printf "%s : (model == %q) ? %s" $expr $routeName $branch -}}
+      {{- $expr = printf "(%s) : (model == %q) ? %s" $expr $routeName $branch -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
-{{- $expr = printf "%s : 0.0" $expr -}}
+{{- $expr = printf "(%s) : 0.0" $expr -}}
 {{- $expr -}}
 {{- end -}}
