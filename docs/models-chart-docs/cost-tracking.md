@@ -239,12 +239,13 @@ The important detail is step 4 happens on the response path.
 That means:
 
 1. the request that crosses the monthly budget can still succeed
-2. the next matching request is the one that gets blocked if the Redis-backed bucket is already exhausted
-3. once the bucket is exhausted from earlier responses, later matching requests are rejected before they reach the upstream provider
+2. the next matching request is the one that gets blocked once Redis already contains the exhausted bucket
+
+This delayed enforcement is why the chart also supports a simple requests-per-minute fallback.
 
 ## Who Gets Limited
 
-There is one rate-limit rule shape in `BackendTrafficPolicy`.
+There are two different rules in `BackendTrafficPolicy`.
 
 ### Monthly budget rule
 
@@ -260,12 +261,25 @@ Meaning:
 2. the bucket depends on the billing plan
 3. the bucket is separate for each model
 
+### Fallback burst rule
+
+This rule matches on:
+
+1. `x-api-key-id`
+2. `x-ai-eg-model`
+
+Meaning:
+
+1. each API key gets its own burst limit
+2. the burst limit is separate for each model
+3. this rule protects against spikes, not monthly spend fairness
+
 ## The Main Rate-Limit Settings In `values.yaml`
 
 | Setting | What it means | Example |
 | --- | --- | --- |
-| `rateLimitBudgeting.plans.free.monthlyBudgetUsd` | Monthly estimated spend for the `free` plan | `30` |
-| `rateLimitBudgeting.plans.pro.monthlyBudgetUsd` | Monthly estimated spend for the `pro` plan | `200` |
+| `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Default budget for all models | `30` |
+| `rateLimitBudgeting.plans.<plan>.modelBudgets.overrides.<model>` | Per-model budget override | `gpt-5-mini: 10` |
 | `models.<name>.pricing.strategy` | Which pricing formula to use | `weighted`, `flat`, `tieredWeighted` |
 | `models.<name>.pricing.standard.inputPer1M` | Fresh input token price | `0.75` |
 | `models.<name>.pricing.standard.cachedInputPer1M` | Cached input token price | `0.075` |
@@ -273,6 +287,28 @@ Meaning:
 | `models.<name>.pricing.standard.effectivePer1M` | Flat total-token price | `0.20` |
 | `models.<name>.pricing.thresholdTokens` | Threshold that activates `longContext` pricing | `200000` |
 | `models.<name>.pricing.longContext.*` | Prices used after the threshold is crossed | see Gemini profiles |
+
+### Per-Model Budget Configuration
+
+Each billing plan supports per-model budget overrides. The resolution order is:
+
+1. Check `rateLimitBudgeting.plans.<plan>.modelBudgets.overrides.<model>`
+2. Fall back to `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd`
+
+Example configuration:
+
+```yaml
+rateLimitBudgeting:
+  plans:
+    free:
+      monthlyBudgetUsd: 30            # Default: $30 per month for all models
+      modelBudgets:
+        overrides:
+          gpt-5-mini: 10             # Expensive model: $10
+          gemini-2.5-pro: 50         # Popular model: $50
+```
+
+This allows fine-grained control over spend allocation across different models while maintaining a sensible default.
 
 ## Where The Math Lives In The Chart
 
@@ -301,5 +337,4 @@ These limits should be understood by anyone operating the chart:
 2. Cached-input discounting only works when the provider reports cached token usage.
 3. Image models can still be approximate because providers may publish separate text-input and image-input prices while the current Envoy metadata only gives aggregate `input_tokens` and `output_tokens`.
 4. Very small requests can round down to `0` micro-USD because Envoy CEL uses integer math.
-5. The request that actually consumes the last available budget is still allowed. Enforcement starts on the next matching request.
-6. The metadata key must stay exactly `io.envoy.ai_gateway/llm_custom_total_cost`, or the monthly budget rule will stop working.
+5. The metadata key must stay exactly `io.envoy.ai_gateway/llm_custom_total_cost`, or the monthly budget rule will stop working.

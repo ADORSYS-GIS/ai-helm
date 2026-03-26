@@ -2,6 +2,19 @@
 {{- printf "%d" (int (round (mulf (default 0 .) 1000) 0)) -}}
 {{- end -}}
 
+{{- define "ai-models.modelBudgetMicroUsd" -}}
+{{- $planName := .planName -}}
+{{- $modelName := .modelName -}}
+{{- $planValue := .planValue -}}
+{{- $result := $planValue.monthlyBudgetUsd -}}
+{{- if and (hasKey $planValue "modelBudgets") (hasKey $planValue.modelBudgets "overrides") -}}
+  {{- if hasKey $planValue.modelBudgets.overrides $modelName -}}
+    {{- $result = index $planValue.modelBudgets.overrides $modelName -}}
+  {{- end -}}
+{{- end -}}
+{{- printf "%d" (int64 (mulf $result 1000000)) -}}
+{{- end -}}
+
 {{- define "ai-models.weightedCostBranch" -}}
 {{- $pricing := . -}}
 {{- $inputScaled := include "ai-models.priceScale" $pricing.inputPer1M -}}

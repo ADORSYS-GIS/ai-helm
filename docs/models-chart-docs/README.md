@@ -116,6 +116,14 @@ For the ticket-focused investigation of the full pipeline, deployed versions, an
 
 Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
 
+That guide explains:
+
+- what `weighted`, `flat`, and `tieredWeighted` mean
+- the difference between input, cached input, and output tokens
+- how `standard` and `longContext` pricing work
+- how the math turns token usage into `llm_custom_total_cost`
+- how monthly budgets interact with the fallback requests-per-minute rule
+
 ### Gateway Reference
 
 | Parameter | Description | Default |
@@ -128,6 +136,7 @@ Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Monthly estimated spend guard per account, plan, and model | `free=30`, `pro=200` |
+| `rateLimitBudgeting.plans.<plan>.modelBudgets.overrides.<model>` | Per-model budget override (USD) | none (uses `monthlyBudgetUsd`) |
 | `models.<name>.pricing.strategy` | Cost model used to compute `llm_custom_total_cost` | `weighted`, `flat`, `tieredWeighted` |
 
 The chart uses one rate-limit control:
@@ -135,7 +144,23 @@ The chart uses one rate-limit control:
 1. A monthly budget rule based on estimated request cost.
 
 The budget rule matches `x-account-id + x-billing-plan + x-ai-eg-model`.
+
 The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the upstream provider.
+
+Budget resolution: `modelBudgets.overrides.<model>` if defined, else `monthlyBudgetUsd`.
+
+Example with per-model budgets:
+
+```yaml
+rateLimitBudgeting:
+  plans:
+    free:
+      monthlyBudgetUsd: 30           # Default: $30 per month for all models
+      modelBudgets:
+        overrides:
+          gpt-5-mini: 10             # Override: $10 for this specific model
+          gemini-2.5-pro: 50         # Override: $50 for this specific model
+```
 
 ### Backend Traffic Policy
 
@@ -144,6 +169,7 @@ The budget is decremented from response metadata, so the request that crosses th
 | `BackendTrafficPolicy` target | One `BackendTrafficPolicy` is rendered per model route | each `HTTPRoute` |
 | Monthly budget selector | `x-account-id`, `x-billing-plan`, `x-ai-eg-model` | generated |
 | Budget limit unit | Same unit as `llm_custom_total_cost` | micro-USD |
+| Fallback selector | `x-api-key-id`, `x-ai-eg-model` | generated |
 
 `BackendTrafficPolicy` does not calculate cost by itself. It reads the `llm_custom_total_cost` value produced by `AIGatewayRoute` and uses that response metadata as the cost of the request.
 
@@ -195,8 +221,12 @@ rateLimitBudgeting:
   plans:
     free:
       monthlyBudgetUsd: 30
+      modelBudgets:
+        overrides: {}
     pro:
       monthlyBudgetUsd: 200
+      modelBudgets:
+        overrides: {}
 
 backends:
   gpt-01:
@@ -270,8 +300,9 @@ Instead, rate limiting works like this:
 
 1. `AIGatewayRoute` computes `llm_custom_total_cost` from token usage and the model's pricing block.
 2. `BackendTrafficPolicy` charges that value against the monthly budget for the account, billing plan, and model.
-3. If Redis already shows that budget bucket as exhausted, the next matching request is rejected before it reaches the upstream provider.
-4. The request that actually crosses the budget is still allowed, because the cost is applied on the response path.
+3. A separate fallback requests-per-minute rule protects against bursts.
+
+The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the upstream provider.
 
 If you need to tune behavior, update:
 

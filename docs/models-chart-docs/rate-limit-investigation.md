@@ -257,29 +257,26 @@ The budget rules match on:
 If a request bypasses the `core-gateway` auth path, these headers may be missing. In that case the
 budget rule does not apply.
 
-## Review Of The Previous `30 req/min` Rule
+## Review Of The `30 req/min` Fallback
 
-This repo previously had a second rule:
+The fallback rule is currently:
 
 - per `x-api-key-id`
 - per `x-ai-eg-model`
 - default `30` requests per minute
 
-That rule was not a true fallback in protocol terms. It was an always-on second limiter that
-applied independently whenever the request matched its headers.
+This rule is intentionally separate from monthly budgets:
 
-### Why it was removed
+- the monthly budget is decremented on the response path, so the request that crosses the budget can still succeed
+- the fallback exists as a coarse burst guard while that delayed enforcement catches up
 
-- it was not cost-aware
-- it was plan-agnostic
-- it could reject requests even when the account still had monthly budget remaining
-- it made the runtime behavior harder to explain because two independent rules were active at once
+Limitations:
 
-### What remains true after removing it
+- it is not cost-aware
+- it is plan-agnostic
+- it can reject requests even when monthly budget remains
 
-- the request that crosses the monthly budget is still allowed
-- later matching requests are rejected once Redis already contains the exhausted budget bucket
-- there is no longer a separate request-count guardrail in this chart
+In this repo, that trade-off is accepted because it is explicitly framed as burst protection, not spend fairness.
 
 ## Changes Made In This Branch
 
@@ -288,7 +285,7 @@ Besides documenting the current behavior, this branch makes four chart changes:
 1. Model pricing now lives under an explicit `pricing.strategy` block in `charts/ai-models/values.yaml`.
 2. Vendor prices were refreshed from the current Fireworks, OpenAI, and Gemini pricing pages.
 3. Gemini long-context tiers are now represented explicitly with `tieredWeighted` pricing.
-4. The separate request-rate rule was removed so only the monthly cost-based rule remains.
+4. The fallback request-rate limit is values-driven instead of hardcoded.
 
 Rationale:
 
@@ -298,15 +295,13 @@ Rationale:
   `tieredWeighted`
 - `BackendTrafficPolicy` still consumes a single `llm_custom_total_cost` metadata key, so this keeps
   the enforcement path stable while improving the estimate
-- removing the extra request-rate rule makes the behavior easier to reason about, at the cost of no
-  longer having a coarse burst guard in this chart
 
 ## Proposed Improvements
 
 | Proposal | Rationale | Complexity |
 | --- | --- | --- |
 | Keep cost-based limiting in CEL, but treat it as an estimate | This repo now has explicit `weighted`, `flat`, and `tieredWeighted` pricing strategies, which is better than raw token limits. The right framing is “estimated spend guardrail”, not “exact billing.” | Low |
-| Add a separate gateway-level abuse-control policy only if production traffic shows a real burst problem | The current chart now has one budget rule, which is easier to reason about. If a burst guard is needed later, make it explicit and separate from billing logic. | Medium |
+| Add a gateway-level burst-abuse policy alongside route-level budget rules | Envoy Gateway supports layered `BackendTrafficPolicy` behavior. A gateway-level abuse limit plus route-level budget rules is easier to reason about than one hardcoded per-route fallback. | Medium |
 | Build budget observability from existing access logs | The access log already exports `gen_ai.usage.custom_total_cost`, `account_id`, `billing_plan`, and `api_key_id`. A dashboard can show budget burn before users hit `429`. | Medium |
 | Validate cached-token telemetry per provider | Cached pricing is where the estimate can diverge the most. This should be verified against live responses from OpenAI, Gemini proxy paths, Fireworks, and Vertex/OpenAI-compatible backends. | Medium |
 | Do not plan around `tokenBudget` yet | I could not find `tokenBudget` in the Envoy Gateway `v1.7.x` or Envoy AI Gateway `v0.5.0` docs queried via Context7/Tavily. Upgrade exploration is needed before treating it as a viable option. | Medium |

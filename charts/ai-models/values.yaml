@@ -1,14 +1,29 @@
 # Monthly estimated-spend guardrails.
 # Each plan value is expressed in real USD, but the chart converts it to micro-USD because
 # `llm_custom_total_cost` is emitted by Envoy AI Gateway as an integer in micro-USD.
+#
+# Structure:
+# - plans.<plan>.monthlyBudgetUsd: Default budget for all models (USD).
+# - plans.<plan>.modelBudgets.overrides.<model>: Per-model budget override (USD).
+#
 # Example: `30` means "allow about $30 of estimated model spend per month".
+# Example:
+#   free:
+#     monthlyBudgetUsd: 30           # Default: $30 per month for all models
+#     modelBudgets:
+#       overrides:
+#         gpt-5-mini: 10             # Override: $10 for this specific model
+#         gemini-2.5-pro: 50         # Override: $50 for this specific model
 rateLimitBudgeting:
   plans:
     free:
       monthlyBudgetUsd: 30
+      modelBudgets:
+        overrides: {}
     pro:
       monthlyBudgetUsd: 200
-
+      modelBudgets:
+        overrides: {}
 
 gatewayRef:
   name: core-gateway
