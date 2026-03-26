@@ -39,3 +39,35 @@
 {{- fail (printf "Route '%s' has unsupported pricing.strategy '%v'" $routeName $pricing.strategy) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Builds the single global model-branching CEL expression for llm_custom_total_cost.
+
+The AI Gateway controller deduplicates llmRequestCosts entries across all
+AIGatewayRoute resources by metadataKey, keeping only the first one it
+encounters (non-deterministic Go map iteration). The "winning" CEL for
+llm_custom_total_cost is therefore a random model's formula, producing
+wrong cost telemetry for all other models.
+
+Fix: define llm_custom_total_cost once in a dedicated anchor route whose
+CEL branches on the `model` variable (available in the CEL environment).
+All individual AIGatewayRoute resources omit the CEL entry entirely.
+*/}}
+{{- define "ai-models.globalCostCEL" -}}
+{{- $models := .Values.models -}}
+{{- $first := true -}}
+{{- $expr := "" -}}
+{{- range $routeName, $routeConfig := $models -}}
+  {{- if (default true $routeConfig.enabled) -}}
+    {{- $branch := include "ai-models.costExpression" (dict "routeName" $routeName "routeConfig" $routeConfig) -}}
+    {{- if $first -}}
+      {{- $expr = printf "(model == %q) ? %s" $routeName $branch -}}
+      {{- $first = false -}}
+    {{- else -}}
+      {{- $expr = printf "%s : (model == %q) ? %s" $expr $routeName $branch -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- $expr = printf "%s : 0.0" $expr -}}
+{{- $expr -}}
+{{- end -}}
