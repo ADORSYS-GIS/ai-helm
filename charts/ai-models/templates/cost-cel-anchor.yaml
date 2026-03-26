@@ -1,0 +1,73 @@
+{{/*
+This route carries the single global llm_custom_total_cost CEL entry.
+
+Why this exists:
+The AI Gateway controller merges llmRequestCosts from all AIGatewayRoute
+resources, deduplicating by metadataKey — first route processed wins
+(non-deterministic Go map iteration). The winning CEL was therefore a
+random model's pricing formula, producing wrong cost telemetry.
+
+The fix (supported by the Envoy AI Gateway API spec, which explicitly
+documents the model variable in the CEL environment) is to define
+llm_custom_total_cost exactly once using a CEL expression that branches
+on `model`. This route carries that expression. The match rule targets a
+sentinel value (__cost-cel-anchor__) that no real request will ever send.
+*/}}
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: cost-cel-anchor
+  annotations:
+    ai-models/purpose: "global-cost-cel"
+    ai-models/description: >
+      Carries the single global llm_custom_total_cost CEL that branches on
+      the `model` variable. See cost-cel-anchor.yaml for full explanation.
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gatewayRef.name }}
+      namespace: {{ .Values.gatewayRef.namespace }}
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: llm_custom_total_cost
+      type: CEL
+      cel: {{ include "ai-models.globalCostCEL" . | quote }}
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: "__cost-cel-anchor__"
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        {{- $firstRef := "" -}}
+        {{- $firstRefSecond := "" -}}
+        {{- range $routeName, $routeConfig := .Values.models -}}
+          {{- if and (default true $routeConfig.enabled) (eq $firstRef "") -}}
+            {{- range $bKey, $bVal := $routeConfig.backends -}}
+              {{- if (default true $bVal.enabled) -}}
+                {{- $backendBase := index $.Values.backends $bVal.ref -}}
+                {{- if eq $firstRef "" -}}
+                  {{- $firstRef = $backendBase.resourceName -}}
+                {{- else if eq $firstRefSecond "" -}}
+                  {{- $firstRefSecond = $backendBase.resourceName -}}
+                {{- end -}}
+              {{- end -}}
+            {{- end -}}
+          {{- end -}}
+        {{- end }}
+        - name: {{ $firstRef }}
+          weight: 1
+          priority: 0
+        - name: {{ $firstRefSecond }}
+          weight: 1
+          priority: 1
