@@ -137,20 +137,15 @@ That guide explains:
 |-----------|-------------|---------|
 | `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Monthly estimated spend guard per account, plan, and model | `free=30`, `pro=200` |
 | `rateLimitBudgeting.plans.<plan>.modelBudgets.overrides.<model>` | Per-model budget override (USD) | none (uses `monthlyBudgetUsd`) |
-| `rateLimitFallback.enabled` | Enable the coarse burst guard | `true` |
-| `rateLimitFallback.requests` | Max fallback requests per API key and per model in the fallback window | `30` |
-| `rateLimitFallback.unit` | Fallback window unit | `Minute` |
 | `models.<name>.pricing.strategy` | Cost model used to compute `llm_custom_total_cost` | `weighted`, `flat`, `tieredWeighted` |
 
-The chart uses two complementary controls:
+The chart uses one rate-limit control:
 
 1. A monthly budget rule based on estimated request cost.
-2. A fallback request-rate rule for burst protection.
 
 The budget rule matches `x-account-id + x-billing-plan + x-ai-eg-model`.
-The fallback rule matches `x-api-key-id + x-ai-eg-model`.
 
-The budget is decremented from response metadata, so the request that crosses the budget can still succeed. The fallback rule exists to keep that delayed budget enforcement from becoming an abuse gap.
+The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the upstream provider.
 
 Budget resolution: `modelBudgets.overrides.<model>` if defined, else `monthlyBudgetUsd`.
 
@@ -232,10 +227,6 @@ rateLimitBudgeting:
       monthlyBudgetUsd: 200
       modelBudgets:
         overrides: {}
-rateLimitFallback:
-  enabled: true
-  requests: 30
-  unit: Minute
 
 backends:
   gpt-01:
@@ -316,15 +307,13 @@ The budget is decremented from response metadata, so the request that crosses th
 If you need to tune behavior, update:
 
 1. `rateLimitBudgeting.plans` for monthly budget limits
-2. `rateLimitFallback` for the burst guard
-3. `models.<name>.pricing` for the cost formula
+2. `models.<name>.pricing` for the cost formula
 
 ## Backend Traffic Policies
 
 In this chart, `BackendTrafficPolicy` is responsible for:
 
 1. enforcing the monthly estimated-spend budget
-2. enforcing the fallback burst rule
 
 The policy does not contain provider pricing. Provider pricing lives in `values.yaml` and is rendered into `AIGatewayRoute`.
 

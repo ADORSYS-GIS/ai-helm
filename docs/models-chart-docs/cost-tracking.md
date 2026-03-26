@@ -7,16 +7,15 @@ If you only remember four things, remember these:
 1. The monthly limit is based on estimated model cost, not raw request count.
 2. The estimate comes from the model prices in `charts/ai-models/values.yaml`.
 3. Input tokens, cached input tokens, and output tokens can cost different amounts.
-4. The request that crosses the monthly budget can still succeed, because the budget is reduced after the response comes back (and a simple requests-per-minute fallback can cap bursts in the meantime).
+4. The request that crosses the monthly budget can still succeed, because the budget is reduced after the response comes back.
 
-## The Three Things You Configure
+## The Two Things You Configure
 
-Rate limiting in this chart is controlled by three groups of values:
+Rate limiting in this chart is controlled by two groups of values:
 
 | Where | What it controls | Plain-English meaning |
 | --- | --- | --- |
 | `rateLimitBudgeting.plans` | Monthly budget per billing plan | "How much estimated spend can this plan use per month?" |
-| `rateLimitFallback` | Burst guard per API key and per model | "How many requests can this client send quickly before we slow them down?" |
 | `models.<name>.pricing` | How request cost is calculated for one model | "How expensive are this model's input, cached input, and output tokens?" |
 
 ## Simple Glossary
@@ -281,9 +280,6 @@ Meaning:
 | --- | --- | --- |
 | `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Default budget for all models | `30` |
 | `rateLimitBudgeting.plans.<plan>.modelBudgets.overrides.<model>` | Per-model budget override | `gpt-5-mini: 10` |
-| `rateLimitFallback.enabled` | Turn the burst guard on or off | `true` |
-| `rateLimitFallback.requests` | Max requests in the fallback window | `30` |
-| `rateLimitFallback.unit` | The fallback window size | `Minute` |
 | `models.<name>.pricing.strategy` | Which pricing formula to use | `weighted`, `flat`, `tieredWeighted` |
 | `models.<name>.pricing.standard.inputPer1M` | Fresh input token price | `0.75` |
 | `models.<name>.pricing.standard.cachedInputPer1M` | Cached input token price | `0.075` |
