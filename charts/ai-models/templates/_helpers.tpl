@@ -10,26 +10,18 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- printf "%d" (int (round (mulf (default 0 .) 1000) 0)) -}}
 {{- end -}}
 
-{{- define "ai-models.celToken" -}}
-{{- printf "(has(%s) ? int(%s) : 0)" . . -}}
-{{- end -}}
-
 {{- define "ai-models.weightedCostBranch" -}}
 {{- $p := . -}}
 {{- $in := mulf $p.inputPer1M 1000000 | printf "%.0f" -}}
 {{- $ca := mulf (default 0 $p.cachedInputPer1M) 1000000 | printf "%.0f" -}}
 {{- $out := mulf $p.outputPer1M 1000000 | printf "%.0f" -}}
-{{- $inVar := include "ai-models.celToken" "input_tokens" -}}
-{{- $caVar := include "ai-models.celToken" "cached_input_tokens" -}}
-{{- $outVar := include "ai-models.celToken" "output_tokens" -}}
-{{- printf "((%s - %s) * %s + %s * %s + %s * %s)" $inVar $caVar $in $caVar $ca $outVar $out -}}
+{{- printf "(double(input_tokens) - double(cached_input_tokens)) * %s + double(cached_input_tokens) * %s + double(output_tokens) * %s" $in $ca $out -}}
 {{- end -}}
 
 {{- define "ai-models.flatCostBranch" -}}
 {{- $p := . -}}
 {{- $eff := mulf $p.effectivePer1M 1000000 | printf "%.0f" -}}
-{{- $totalVar := include "ai-models.celToken" "total_tokens" -}}
-{{- printf "(%s * %s)" $totalVar $eff -}}
+{{- printf "double(total_tokens) * %s" $eff -}}
 {{- end -}}
 
 {{- define "ai-models.costExpression" -}}
@@ -49,13 +41,14 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- $threshold := int (default 128000 $pricing.thresholdTokens) -}}
 {{- $standardBranch := include "ai-models.weightedCostBranch" $pricing.standard -}}
 {{- $longBranch := include "ai-models.weightedCostBranch" $pricing.longContext -}}
-{{- $inVar := include "ai-models.celToken" "input_tokens" -}}
-{{- $expr = printf "((%s > %d) ? %s : %s)" $inVar $threshold $longBranch $standardBranch -}}
+{{- $expr = printf "(double(input_tokens) > %d.0 ? %s : %s)" $threshold $longBranch $standardBranch -}}
 {{- else if eq $pricing.strategy "flat" -}}
 {{- $expr = include "ai-models.flatCostBranch" $pricing.standard -}}
 {{- else -}}
 {{- fail (printf "Route '%s' has unsupported pricing.strategy '%v'" $routeName $pricing.strategy) -}}
 {{- end -}}
-{{- printf "((%s > 0) ? %s : 0)" $expr $expr -}}
+{{- /* Ensure we return an integer and it's non-negative */ -}}
+{{- printf "int(%s > 0.0 ? %s : 0.0)" $expr $expr -}}
 {{- end -}}
+
 
