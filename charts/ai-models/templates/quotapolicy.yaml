@@ -53,6 +53,31 @@ spec:
           limit: 1000000000
           duration: 720h
         bucketRules:
+          {{- $modelBudgets := default dict $routeConfig.rateLimitBudgeting -}}
+          {{- if $modelBudgets }}
+          {{- $freeBudget := index $modelBudgets "free" | default (index $.Values.rateLimitBudgeting.plans "free" "monthlyBudgetUsd" | default 30) }}
+          {{- $proBudget := index $modelBudgets "pro" | default (index $.Values.rateLimitBudgeting.plans "pro" "monthlyBudgetUsd" | default 200) }}
+          - clientSelectors:
+              - headers:
+                  - name: x-account-id
+                    type: Distinct
+                  - name: x-billing-plan
+                    type: Exact
+                    value: free
+            quota:
+              limit: {{ mul $freeBudget 1000000 | int64 }}
+              duration: 720h
+          - clientSelectors:
+              - headers:
+                  - name: x-account-id
+                    type: Distinct
+                  - name: x-billing-plan
+                    type: Exact
+                    value: pro
+            quota:
+              limit: {{ mul $proBudget 1000000 | int64 }}
+              duration: 720h
+          {{- else }}
           {{- range $planName, $planConfig := $.Values.rateLimitBudgeting.plans }}
           - clientSelectors:
               - headers:
@@ -64,6 +89,7 @@ spec:
             quota:
               limit: {{ mul $planConfig.monthlyBudgetUsd 1000000 | int64 }}
               duration: 720h
+          {{- end }}
           {{- end }}
     {{- end }}
 {{- end }}

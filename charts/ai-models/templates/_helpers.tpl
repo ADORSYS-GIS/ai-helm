@@ -60,7 +60,7 @@ so the result is in micro-USD (USD * 1e6) matching the monthly budget limits.
 {{- $inputScaled := include "ai-models.priceScale" $pricing.standard.inputPer1M -}}
 {{- $cachedScaled := include "ai-models.priceScale" (default 0 $pricing.standard.cachedInputPer1M) -}}
 {{- $outputScaled := include "ai-models.priceScale" $pricing.standard.outputPer1M -}}
-{{- printf "(max(input_tokens - cached_input_tokens, 0.0) * %s + cached_input_tokens * %s + output_tokens * %s) / 1000.0" $inputScaled $cachedScaled $outputScaled -}}
+{{- printf "((input_tokens > cached_input_tokens) ? (input_tokens - cached_input_tokens) : 0) * %s + cached_input_tokens * %s + output_tokens * %s) / 1000.0" $inputScaled $cachedScaled $outputScaled -}}
 {{- else if eq $pricing.strategy "tieredWeighted" -}}
 {{- if not $pricing.longContext -}}
 {{- fail (printf "Route '%s' uses tieredWeighted pricing but is missing pricing.longContext" $routeName) -}}
@@ -72,7 +72,7 @@ so the result is in micro-USD (USD * 1e6) matching the monthly budget limits.
 {{- $lIn := include "ai-models.priceScale" $pricing.longContext.inputPer1M -}}
 {{- $lCached := include "ai-models.priceScale" (default 0 $pricing.longContext.cachedInputPer1M) -}}
 {{- $lOut := include "ai-models.priceScale" $pricing.longContext.outputPer1M -}}
-{{- printf "(input_tokens > %d.0 ? (max(input_tokens - cached_input_tokens, 0.0) * %s + cached_input_tokens * %s + output_tokens * %s) : (max(input_tokens - cached_input_tokens, 0.0) * %s + cached_input_tokens * %s + output_tokens * %s)) / 1000.0" $threshold $lIn $lCached $lOut $sIn $sCached $sOut -}}
+{{- printf "(input_tokens > %d.0 ? ((input_tokens > cached_input_tokens) ? (input_tokens - cached_input_tokens) : 0) * %s + cached_input_tokens * %s + output_tokens * %s : ((input_tokens > cached_input_tokens) ? (input_tokens - cached_input_tokens) : 0) * %s + cached_input_tokens * %s + output_tokens * %s) / 1000.0" $threshold $lIn $lCached $lOut $sIn $sCached $sOut -}}
 {{- else if eq $pricing.strategy "flat" -}}
 {{- $effectiveScaled := include "ai-models.priceScale" $pricing.standard.effectivePer1M -}}
 {{- printf "total_tokens * %s / 1000.0" $effectiveScaled -}}
