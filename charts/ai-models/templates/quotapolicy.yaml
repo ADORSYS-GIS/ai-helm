@@ -65,7 +65,7 @@ spec:
                     type: Exact
                     value: free
             quota:
-              limit: {{ mul $freeBudget 1000000 | int64 }}
+              limit: {{ mulf $freeBudget 1000000 | int64 }}
               duration: 720h
           - clientSelectors:
               - headers:
@@ -75,7 +75,7 @@ spec:
                     type: Exact
                     value: pro
             quota:
-              limit: {{ mul $proBudget 1000000 | int64 }}
+              limit: {{ mulf $proBudget 1000000 | int64 }}
               duration: 720h
           {{- else }}
           {{- range $planName, $planConfig := $.Values.rateLimitBudgeting.plans }}
@@ -87,7 +87,7 @@ spec:
                     type: Exact
                     value: {{ $planName | quote }}
             quota:
-              limit: {{ mul $planConfig.monthlyBudgetUsd 1000000 | int64 }}
+              limit: {{ mulf $planConfig.monthlyBudgetUsd 1000000 | int64 }}
               duration: 720h
           {{- end }}
           {{- end }}
