@@ -10,18 +10,26 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- printf "%d" (int (round (mulf (default 0 .) 1000) 0)) -}}
 {{- end -}}
 
+{{- define "ai-models.celToken" -}}
+{{- printf "(has(%s) ? int(%s) : 0)" . . -}}
+{{- end -}}
+
 {{- define "ai-models.weightedCostBranch" -}}
 {{- $p := . -}}
 {{- $in := mulf $p.inputPer1M 1000000 | printf "%.0f" -}}
 {{- $ca := mulf (default 0 $p.cachedInputPer1M) 1000000 | printf "%.0f" -}}
 {{- $out := mulf $p.outputPer1M 1000000 | printf "%.0f" -}}
-{{- printf "((int(input_tokens) - int(cached_input_tokens)) * %s + int(cached_input_tokens) * %s + int(output_tokens) * %s)" $in $ca $out -}}
+{{- $inVar := include "ai-models.celToken" "input_tokens" -}}
+{{- $caVar := include "ai-models.celToken" "cached_input_tokens" -}}
+{{- $outVar := include "ai-models.celToken" "output_tokens" -}}
+{{- printf "((%s - %s) * %s + %s * %s + %s * %s)" $inVar $caVar $in $caVar $ca $outVar $out -}}
 {{- end -}}
 
 {{- define "ai-models.flatCostBranch" -}}
 {{- $p := . -}}
 {{- $eff := mulf $p.effectivePer1M 1000000 | printf "%.0f" -}}
-{{- printf "(int(total_tokens) * %s)" $eff -}}
+{{- $totalVar := include "ai-models.celToken" "total_tokens" -}}
+{{- printf "(%s * %s)" $totalVar $eff -}}
 {{- end -}}
 
 {{- define "ai-models.costExpression" -}}
@@ -38,10 +46,11 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- if not $pricing.longContext -}}
 {{- fail (printf "Route '%s' uses tieredWeighted pricing but is missing pricing.longContext" $routeName) -}}
 {{- end -}}
-{{- $threshold := int $pricing.thresholdTokens -}}
+{{- $threshold := int (default 128000 $pricing.thresholdTokens) -}}
 {{- $standardBranch := include "ai-models.weightedCostBranch" $pricing.standard -}}
 {{- $longBranch := include "ai-models.weightedCostBranch" $pricing.longContext -}}
-{{- $expr = printf "((int(input_tokens) > %d) ? %s : %s)" $threshold $longBranch $standardBranch -}}
+{{- $inVar := include "ai-models.celToken" "input_tokens" -}}
+{{- $expr = printf "((%s > %d) ? %s : %s)" $inVar $threshold $longBranch $standardBranch -}}
 {{- else if eq $pricing.strategy "flat" -}}
 {{- $expr = include "ai-models.flatCostBranch" $pricing.standard -}}
 {{- else -}}
