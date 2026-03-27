@@ -10,12 +10,12 @@ spec:
     name: {{ include "core-gateway.fullname" . }}
   type: JSONPatch
   jsonPatches:
-    {{/* Patch for HTTP (port 80) */}}
+    {{/* Patch for HTTP (port 80) - usually a redirector, uses default_filter_chain */}}
     - type: "type.googleapis.com/envoy.config.listener.v3.Listener"
       name: {{ printf "%s/%s/http" $.Release.Namespace (include "core-gateway.fullname" $) }}
       operation:
         op: add
-        path: "/filter_chains/0/filters/0/typed_config/http_filters/0"
+        path: "/default_filter_chain/filters/0/typed_config/http_filters/0"
         value: &luaFilter
           name: envoy.filters.http.lua
           typed_config:
