@@ -10,7 +10,9 @@ spec:
     name: {{ include "core-gateway.fullname" . }}
   type: JSONPatch
   jsonPatches:
+    {{- range $listener := (list "http" "api-https" "service-https") }}
     - type: "type.googleapis.com/envoy.config.listener.v3.Listener"
+      name: {{ printf "%s/%s/%s" $.Release.Namespace (include "core-gateway.fullname" $) $listener }}
       operation:
         op: add
         path: "/filter_chains/0/filters/0/typed_config/http_filters/0"
@@ -34,4 +36,5 @@ spec:
                   end
                 end
               end
+    {{- end }}
 ---
