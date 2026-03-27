@@ -5,12 +5,12 @@ Each model gets its own CEL-based cost metadata key in its AIGatewayRoute
 (e.g. cost_gpt_5_mini), so the AI Gateway controller never deduplicates them.
 The rate limit rule references that unique key via response cost metadata.
 
-Budget values in values.yaml are in USD; limits here are in micro-USD
-(USD * 1e6) to match the integer cost emitted by the CEL expressions.
+Budget values in values.yaml are in USD; limits here are in pico-USD
+(USD * 1e12) to match the integer cost emitted by the CEL expressions (Scaled 1e6 for per-1M prices).
 */}}
 {{- range $routeName, $routeConfig := $.Values.models }}
 {{- if (default true $routeConfig.enabled) }}
-{{- $modelBudgets := default dict $routeConfig.rateLimitBudgeting -}}
+{{- $modelBudgets := default dict $routeConfig.rateLimitBudgeting }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -39,7 +39,7 @@ spec:
                   type: Exact
                   value: {{ $routeName | quote }}
           limit:
-            requests: {{ mulf $freeBudget 1000000 | int64 }}
+            requests: {{ mulf $freeBudget 1000000000000 | int64 }}
             unit: Month
           cost:
             request:
@@ -61,7 +61,7 @@ spec:
                   type: Exact
                   value: {{ $routeName | quote }}
           limit:
-            requests: {{ mulf $proBudget 1000000 | int64 }}
+            requests: {{ mulf $proBudget 1000000000000 | int64 }}
             unit: Month
           cost:
             request:
@@ -85,7 +85,7 @@ spec:
                   type: Exact
                   value: {{ $routeName | quote }}
           limit:
-            requests: {{ mulf $planConfig.monthlyBudgetUsd 1000000 | int64 }}
+            requests: {{ mulf $planConfig.monthlyBudgetUsd 1000000000000 | int64 }}
             unit: Month
           cost:
             request:

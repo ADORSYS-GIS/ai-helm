@@ -12,12 +12,16 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 
 {{- define "ai-models.weightedCostBranch" -}}
 {{- $p := . -}}
-{{- printf "((double(int(input_tokens) - int(cached_input_tokens)) * %v) + (double(int(cached_input_tokens)) * %v) + (double(int(output_tokens)) * %v))" (float64 $p.inputPer1M) (float64 (default 0 $p.cachedInputPer1M)) (float64 $p.outputPer1M) -}}
+{{- $in := mulf $p.inputPer1M 1000000 | printf "%.0f" -}}
+{{- $ca := mulf (default 0 $p.cachedInputPer1M) 1000000 | printf "%.0f" -}}
+{{- $out := mulf $p.outputPer1M 1000000 | printf "%.0f" -}}
+{{- printf "((int(input_tokens) - int(cached_input_tokens)) * %s + int(cached_input_tokens) * %s + int(output_tokens) * %s)" $in $ca $out -}}
 {{- end -}}
 
 {{- define "ai-models.flatCostBranch" -}}
 {{- $p := . -}}
-{{- printf "(double(int(total_tokens)) * %v)" (float64 $p.effectivePer1M) -}}
+{{- $eff := mulf $p.effectivePer1M 1000000 | printf "%.0f" -}}
+{{- printf "(int(total_tokens) * %s)" $eff -}}
 {{- end -}}
 
 {{- define "ai-models.costExpression" -}}
@@ -43,6 +47,6 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- else -}}
 {{- fail (printf "Route '%s' has unsupported pricing.strategy '%v'" $routeName $pricing.strategy) -}}
 {{- end -}}
-{{- printf "((%s > 0.0) ? %s : 0.0)" $expr $expr -}}
+{{- printf "((%s > 0) ? %s : 0)" $expr $expr -}}
 {{- end -}}
 
