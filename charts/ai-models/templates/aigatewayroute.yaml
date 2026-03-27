@@ -32,6 +32,9 @@ spec:
       type: OutputToken
     - metadataKey: llm_total_token
       type: TotalToken
+    - metadataKey: {{ include "ai-models.metadataKeySafe" $routeName }}
+      type: CEL
+      cel: {{ include "ai-models.costExpression" (dict "routeName" $routeName "routeConfig" $routeConfig) | quote }}
   rules:
     - matches:
         - headers:
