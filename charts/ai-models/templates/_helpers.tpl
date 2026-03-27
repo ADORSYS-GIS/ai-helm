@@ -12,15 +12,15 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 
 {{- define "ai-models.weightedCostBranch" -}}
 {{- $p := . -}}
-{{- $in := mulf $p.inputPer1M 1000000 | printf "%.0f" -}}
-{{- $ca := mulf (default 0 $p.cachedInputPer1M) 1000000 | printf "%.0f" -}}
-{{- $out := mulf $p.outputPer1M 1000000 | printf "%.0f" -}}
+{{- $in := mulf $p.inputPer1M 1000000 | printf "%.1f" -}}
+{{- $ca := mulf (default 0 $p.cachedInputPer1M) 1000000 | printf "%.1f" -}}
+{{- $out := mulf $p.outputPer1M 1000000 | printf "%.1f" -}}
 {{- printf "(double(input_tokens) - double(cached_input_tokens)) * %s + double(cached_input_tokens) * %s + double(output_tokens) * %s" $in $ca $out -}}
 {{- end -}}
 
 {{- define "ai-models.flatCostBranch" -}}
 {{- $p := . -}}
-{{- $eff := mulf $p.effectivePer1M 1000000 | printf "%.0f" -}}
+{{- $eff := mulf $p.effectivePer1M 1000000 | printf "%.1f" -}}
 {{- printf "double(total_tokens) * %s" $eff -}}
 {{- end -}}
 
@@ -50,5 +50,6 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- /* Ensure we return an integer and it's non-negative */ -}}
 {{- printf "int(%s > 0.0 ? %s : 0.0)" $expr $expr -}}
 {{- end -}}
+
 
 
