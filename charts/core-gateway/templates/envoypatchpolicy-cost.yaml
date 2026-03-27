@@ -10,13 +10,13 @@ spec:
     name: {{ include "core-gateway.fullname" . }}
   type: JSONPatch
   jsonPatches:
-    {{- range $listener := (list "http" "api-https" "service-https") }}
+    {{/* Patch for HTTP (port 80) */}}
     - type: "type.googleapis.com/envoy.config.listener.v3.Listener"
-      name: {{ printf "%s/%s/%s" $.Release.Namespace (include "core-gateway.fullname" $) $listener }}
+      name: {{ printf "%s/%s/http" $.Release.Namespace (include "core-gateway.fullname" $) }}
       operation:
         op: add
         path: "/filter_chains/0/filters/0/typed_config/http_filters/0"
-        value:
+        value: &luaFilter
           name: envoy.filters.http.lua
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
@@ -36,5 +36,14 @@ spec:
                   end
                 end
               end
+
+    {{/* Patches for HTTPS (port 443) - multiple filter chains due to separate hostnames/certs */}}
+    {{- range $chain := (list "0" "1") }}
+    - type: "type.googleapis.com/envoy.config.listener.v3.Listener"
+      name: {{ printf "%s/%s/api-https" $.Release.Namespace (include "core-gateway.fullname" $) }}
+      operation:
+        op: add
+        path: {{ printf "/filter_chains/%s/filters/0/typed_config/http_filters/0" $chain }}
+        value: *luaFilter
     {{- end }}
 ---
