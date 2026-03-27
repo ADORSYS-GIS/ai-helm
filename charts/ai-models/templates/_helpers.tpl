@@ -13,9 +13,9 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- define "ai-models.weightedCostBranch" -}}
 {{- $p := .pricing -}}
 {{- $kind := .kind -}}
-{{- $in := $p.inputPer1M | printf "%.4f" -}}
-{{- $ca := (default 0 $p.cachedInputPer1M) | printf "%.4f" -}}
-{{- $out := $p.outputPer1M | printf "%.4f" -}}
+{{- $in := mulf $p.inputPer1M 1.0 | printf "%.4f" -}}
+{{- $ca := mulf (default 0.0 $p.cachedInputPer1M) 1.0 | printf "%.4f" -}}
+{{- $out := mulf $p.outputPer1M 1.0 | printf "%.4f" -}}
 {{- if or (eq $kind "embedding") (eq $kind "reranker") -}}
 {{- printf "double(input_tokens) * %s" $in -}}
 {{- else -}}
@@ -26,13 +26,14 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- define "ai-models.flatCostBranch" -}}
 {{- $p := .pricing -}}
 {{- $kind := .kind -}}
-{{- $eff := $p.effectivePer1M | printf "%.4f" -}}
+{{- $eff := mulf $p.effectivePer1M 1.0 | printf "%.4f" -}}
 {{- if or (eq $kind "embedding") (eq $kind "reranker") -}}
 {{- printf "double(input_tokens) * %s" $eff -}}
 {{- else -}}
 {{- printf "double(total_tokens) * %s" $eff -}}
 {{- end -}}
 {{- end -}}
+
 
 {{- define "ai-models.costExpression" -}}
 {{- $routeName := .routeName -}}
