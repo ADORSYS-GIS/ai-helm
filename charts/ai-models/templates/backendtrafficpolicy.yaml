@@ -1,3 +1,4 @@
+{{/* Rate limiting removed — migrated to QuotaPolicy (quotapolicy.yaml). */}}
 {{- range $routeName, $routeConfig := $.Values.models }}
 {{- if (default true $routeConfig.enabled) }}
 ---
@@ -10,38 +11,5 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: {{ $routeName }}
-  rateLimit:
-    type: Global
-    global:
-      rules:
-        {{ range $planName, $planValue := $.Values.rateLimitBudgeting.plans }}
-        - clientSelectors:
-            - headers:
-                - name: x-account-id
-                  type: Distinct
-                  invert: false
-                - name: x-billing-plan
-                  type: Exact
-                  invert: false
-                  value: {{ $planName }}
-                - name: x-ai-eg-model
-                  type: Exact
-                  invert: false
-                  value: {{ $routeName }}
-          limit:
-            # `llm_custom_total_cost` is emitted as an integer in micro-USD (USD * 1e6).
-            # Convert USD budgets to the same unit so token cost budgeting works as expected.
-            requests: {{ mul $planValue.monthlyBudgetUsd 1000000 | int64 }}
-            unit: Month
-          cost:
-            request:
-              from: Number
-              number: 0
-            response:
-              from: Metadata
-              metadata:
-                namespace: io.envoy.ai_gateway
-                key: llm_custom_total_cost
-        {{ end }}
 {{- end }}
 {{- end }}

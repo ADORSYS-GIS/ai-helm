@@ -32,10 +32,6 @@ spec:
       type: OutputToken
     - metadataKey: llm_total_token
       type: TotalToken
-    {{- $costExpression := include "ai-models.costExpression" (dict "routeName" $routeName "routeConfig" $routeConfig) }}
-    - metadataKey: llm_custom_total_cost
-      type: CEL
-      cel: {{ $costExpression | quote }}
   rules:
     - matches:
         - headers:
