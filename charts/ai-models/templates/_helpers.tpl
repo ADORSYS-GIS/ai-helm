@@ -15,7 +15,7 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- $inputScaled := include "ai-models.priceScale" $pricing.inputPer1M -}}
 {{- $cachedScaled := include "ai-models.priceScale" (default 0 $pricing.cachedInputPer1M) -}}
 {{- $outputScaled := include "ai-models.priceScale" $pricing.outputPer1M -}}
-{{- printf "(((int(input_tokens) - int(cached_input_tokens)) > 0) ? (int(input_tokens) - int(cached_input_tokens)) : 0) * %s) + (int(cached_input_tokens) * %s) + (int(output_tokens) * %s))" $inputScaled $cachedScaled $outputScaled -}}
+{{- printf "((((int(input_tokens) - int(cached_input_tokens)) > 0 ? (int(input_tokens) - int(cached_input_tokens)) : 0) * %s) + (int(cached_input_tokens) * %s) + (int(output_tokens) * %s))" $inputScaled $cachedScaled $outputScaled -}}
 {{- end -}}
 
 {{- define "ai-models.flatCostBranch" -}}
