@@ -4,17 +4,17 @@ metadata:
   name: {{ include "core-gateway.fullname" . }}-cost-aggregation
   namespace: {{ .Release.Namespace }}
 spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: {{ include "core-gateway.fullname" . }}
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ include "core-gateway.fullname" . }}
   type: JSONPatch
   jsonPatches:
     - type: "type.googleapis.com/envoy.config.listener.v3.Listener"
-      # Insert Lua filter to aggregate per-model cost_* metadata into llm_custom_total_cost
+      # Apply to all listeners (e.g. both HTTP and HTTPS if defined)
       name: any
-      patch:
-        type: add
+      operation:
+        op: add
         path: "/filter_chains/0/filters/0/typed_config/http_filters/-"
         value:
           name: envoy.filters.http.lua
@@ -28,8 +28,8 @@ spec:
                   -- Iterate through all metadata keys in the ai_gateway namespace
                   for k, v in pairs(ai_gateway_meta) do
                     -- If we find a key starting with "cost_", copy it to "llm_custom_total_cost"
-                    -- Only one model's cost key will be present per request.
-                    if k:sub(1, 5) == "cost_" then
+                    -- This allows the access log to use a single stable key.
+                    if type(k) == "string" and k:sub(1, 5) == "cost_" then
                       metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", v)
                       break
                     end
