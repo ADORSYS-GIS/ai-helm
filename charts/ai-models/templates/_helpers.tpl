@@ -1,3 +1,11 @@
+{{/*
+metadataKeySafe turns a model name into a metadata key safe string.
+Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
+*/}}
+{{- define "ai-models.metadataKeySafe" -}}
+{{- printf "cost_%s" (. | replace "-" "_" | replace "." "_") -}}
+{{- end -}}
+
 {{- define "ai-models.priceScale" -}}
 {{- printf "%d" (int (round (mulf (default 0 .) 1000) 0)) -}}
 {{- end -}}
@@ -40,43 +48,3 @@
 {{- end -}}
 {{- end -}}
 
-{{/*
-Builds a QuotaPolicy-compatible CEL costExpression for a given model's pricing.
-
-QuotaPolicy costExpression uses raw token floats:
-  input_tokens, cached_input_tokens, output_tokens, total_tokens
-
-Prices in values.yaml are per-1M tokens. priceScale multiplies by 1000,
-so the result is in micro-USD (USD * 1e6) matching the monthly budget limits.
-*/}}
-{{- define "ai-models.quotaCostExpression" -}}
-{{- $routeName := .routeName -}}
-{{- $routeConfig := .routeConfig -}}
-{{- $pricing := $routeConfig.pricing -}}
-{{- if not $pricing -}}
-{{- fail (printf "Route '%s' is missing pricing configuration" $routeName) -}}
-{{- end -}}
-{{- if eq $pricing.strategy "weighted" -}}
-{{- $inputScaled := include "ai-models.priceScale" $pricing.standard.inputPer1M -}}
-{{- $cachedScaled := include "ai-models.priceScale" (default 0 $pricing.standard.cachedInputPer1M) -}}
-{{- $outputScaled := include "ai-models.priceScale" $pricing.standard.outputPer1M -}}
-{{- printf "((input_tokens > cached_input_tokens) ? (input_tokens - cached_input_tokens) : 0) * %s + cached_input_tokens * %s + output_tokens * %s) / 1000.0" $inputScaled $cachedScaled $outputScaled -}}
-{{- else if eq $pricing.strategy "tieredWeighted" -}}
-{{- if not $pricing.longContext -}}
-{{- fail (printf "Route '%s' uses tieredWeighted pricing but is missing pricing.longContext" $routeName) -}}
-{{- end -}}
-{{- $threshold := int $pricing.thresholdTokens -}}
-{{- $sIn := include "ai-models.priceScale" $pricing.standard.inputPer1M -}}
-{{- $sCached := include "ai-models.priceScale" (default 0 $pricing.standard.cachedInputPer1M) -}}
-{{- $sOut := include "ai-models.priceScale" $pricing.standard.outputPer1M -}}
-{{- $lIn := include "ai-models.priceScale" $pricing.longContext.inputPer1M -}}
-{{- $lCached := include "ai-models.priceScale" (default 0 $pricing.longContext.cachedInputPer1M) -}}
-{{- $lOut := include "ai-models.priceScale" $pricing.longContext.outputPer1M -}}
-{{- printf "(input_tokens > %d.0 ? ((input_tokens > cached_input_tokens) ? (input_tokens - cached_input_tokens) : 0) * %s + cached_input_tokens * %s + output_tokens * %s : ((input_tokens > cached_input_tokens) ? (input_tokens - cached_input_tokens) : 0) * %s + cached_input_tokens * %s + output_tokens * %s) / 1000.0" $threshold $lIn $lCached $lOut $sIn $sCached $sOut -}}
-{{- else if eq $pricing.strategy "flat" -}}
-{{- $effectiveScaled := include "ai-models.priceScale" $pricing.standard.effectivePer1M -}}
-{{- printf "total_tokens * %s / 1000.0" $effectiveScaled -}}
-{{- else -}}
-{{- fail (printf "Route '%s' has unsupported pricing.strategy '%v'" $routeName $pricing.strategy) -}}
-{{- end -}}
-{{- end -}}
