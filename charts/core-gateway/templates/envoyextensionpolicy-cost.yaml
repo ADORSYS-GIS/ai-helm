@@ -11,51 +11,52 @@ spec:
   lua:
     - type: Inline
       inline: |
-        function envoy_on_request(request_handle)
-          -- Phase 1: Capture the authoritative route name from the match header
-          local route_name = request_handle:headers():get("x-ai-eg-model")
-          if route_name then
-            -- Store it in a dedicated Lua metadata namespace for the response phase
-            request_handle:streamInfo():dynamicMetadata():set("io.heron.telemetry", "active_route", route_name)
-          end
-        end
-
         function envoy_on_response(response_handle)
           local stream_info = response_handle:streamInfo()
           local metadata = stream_info:dynamicMetadata()
-          
-          -- Get the route name we captured in the request phase
-          local herons_meta = metadata:get("io.heron.telemetry")
           local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
           
-          if herons_meta and herons_meta["active_route"] and ai_gateway_meta then
-            local route_name = herons_meta["active_route"]
+          -- DIAGNOSTIC 1: Discover the native Envoy route name
+          local native_route = "(none)"
+          pcall(function() native_route = tostring(stream_info:routeName()) end)
+          response_handle:headers():add("x-debug-route-name", native_route)
+
+          if ai_gateway_meta and type(ai_gateway_meta) == "table" then
+            -- Fallback Attempt 1: Native route name (if it contains our model slug)
+            local clean_route = native_route:gsub(".*/", ""):gsub("[-.]", "_")
+            local best_cost = ai_gateway_meta["cost_" .. clean_route]
             
-            -- Construct the exact CEL cost key used in AIGatewayRoute
-            -- (Matching the logic in metadataKeySafe: s/[-.]/_/g)
-            local safe_key = "cost_" .. route_name:gsub("[-.]", "_")
+            -- Fallback Attempt 2: Longest prefix match on model_name_override (from previous step)
+            if not best_cost then
+              local model_id = ai_gateway_meta["model_name_override"]
+              if model_id then
+                local norm_id = model_id:gsub("[-/.]", "_")
+                local longest_len = -1
+                for k, v in pairs(ai_gateway_meta) do
+                  local suffix = k:match("^cost_(.*)")
+                  if suffix and (norm_id:find(suffix, 1, true) or suffix:find(norm_id, 1, true)) then
+                    if #suffix > longest_len then
+                      best_cost = v
+                      longest_len = #suffix
+                    end
+                  end
+                end
+              end
+            end
             
-            local final_cost = ai_gateway_meta[safe_key]
-            
-            if final_cost then
-              metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", final_cost)
-              
-              -- Compatibility fallback
+            if best_cost then
+              metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", best_cost)
               pcall(function() 
                 if stream_info.setDynamicMetadata then
-                   stream_info:setDynamicMetadata("io.envoy.ai_gateway", "llm_custom_total_cost", final_cost)
+                   stream_info:setDynamicMetadata("io.envoy.ai_gateway", "llm_custom_total_cost", best_cost)
                 end
               end)
-
-              -- Verification headers
               response_handle:headers():add("x-telemetry-status", "success")
-              response_handle:headers():add("x-telemetry-route", route_name)
-              response_handle:headers():add("x-telemetry-cost", tostring(final_cost))
+              response_handle:headers():add("x-telemetry-cost", tostring(best_cost))
             else
-              response_handle:headers():add("x-telemetry-status", "cost-not-found")
-              response_handle:headers():add("x-telemetry-key-tried", safe_key)
+              response_handle:headers():add("x-telemetry-status", "no-cost-match")
             end
           else
-             response_handle:headers():add("x-telemetry-status", "context-missing")
+            response_handle:headers():add("x-telemetry-status", "metadata-missing")
           end
         end
