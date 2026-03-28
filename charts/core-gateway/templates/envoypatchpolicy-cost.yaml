@@ -21,6 +21,14 @@ spec:
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
             inline_code: |
+              function envoy_on_request(request_handle)
+                local model_name = request_handle:headers():get("x-ai-eg-model")
+                if model_name then
+                  -- Persist the request header into dynamic metadata to access it during the response phase
+                  request_handle:streamInfo():dynamicMetadata():set("envoy.filters.http.lua", "req_model_name", model_name)
+                end
+              end
+
               function envoy_on_response(response_handle)
                 local metadata = response_handle:streamInfo():dynamicMetadata()
                 local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
