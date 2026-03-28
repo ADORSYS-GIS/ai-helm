@@ -36,6 +36,9 @@ spec:
     - metadataKey: {{ include "ai-models.metadataKeySafe" $routeName }}
       type: CEL
       cel: {{ include "ai-models.costExpression" (dict "routeName" $routeName "routeConfig" $routeConfig) | quote }}
+    - metadataKey: "route_matched_{{ include "ai-models.metadataKeySafe" $routeName }}"
+      type: CEL
+      cel: "request.headers['x-ai-eg-model'] == '{{ $routeName }}' ? 1 : 0"
     {{- end }}
   rules:
     - matches:
@@ -43,6 +46,12 @@ spec:
             - type: Exact
               name: x-ai-eg-model
               value: {{ $routeName }}
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            add:
+              - name: x-agw-model-cost-key
+                value: {{ include "ai-models.metadataKeySafe" $routeName }}
       modelsOwnedBy: GIS AI Models
       backendRefs:
         {{- range $bKey, $bVal := $activeBackends }}
