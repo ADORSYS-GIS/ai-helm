@@ -21,17 +21,27 @@ spec:
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
             inline_code: |
+              function envoy_on_request(request_handle)
+                local model_name = request_handle:headers():get("x-ai-eg-model")
+                if model_name then
+                  -- Persist the request header into dynamic metadata to access it during the response phase
+                  request_handle:streamInfo():dynamicMetadata():set("envoy.filters.http.lua", "req_model_name", model_name)
+                end
+              end
+
               function envoy_on_response(response_handle)
                 local metadata = response_handle:streamInfo():dynamicMetadata()
                 local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
                 if ai_gateway_meta then
-                  -- Iterate through all metadata keys in the ai_gateway namespace
-                  for k, v in pairs(ai_gateway_meta) do
-                    -- If we find a key starting with "cost_", copy it to "llm_custom_total_cost"
-                    -- This allows the access log to use a single stable key.
-                    if type(k) == "string" and k:sub(1, 5) == "cost_" then
-                      metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", v)
-                      break
+                  local lua_meta = metadata:get("envoy.filters.http.lua")
+                  if lua_meta and lua_meta["req_model_name"] then
+                    local model_name = lua_meta["req_model_name"]
+                    local safe_name = model_name:gsub("-", "_"):gsub("%.", "_")
+                    local exact_key = "cost_" .. safe_name
+                    
+                    local cost_val = ai_gateway_meta[exact_key]
+                    if cost_val then
+                      metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", cost_val)
                     end
                   end
                 end
