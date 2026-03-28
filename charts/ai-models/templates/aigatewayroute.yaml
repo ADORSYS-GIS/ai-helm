@@ -37,7 +37,7 @@ spec:
       cel: {{ include "ai-models.costExpression" (dict "routeName" $routeName "routeConfig" $routeConfig) | quote }}
     - metadataKey: "active_model_{{ include "ai-models.metadataKeySafe" $routeName }}"
       type: CEL
-      cel: "model == '{{ $routeName }}' ? 1 : 0"
+      cel: {{ printf "model == '%s' ? 1 : 0" $routeName | quote }}
   rules:
     - matches:
         - headers:
