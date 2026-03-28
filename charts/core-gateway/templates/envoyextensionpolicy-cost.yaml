@@ -15,18 +15,19 @@ spec:
           local stream_info = response_handle:streamInfo()
           local metadata = stream_info:dynamicMetadata()
           local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
-          
-          -- DIAGNOSTIC 1: Discover the native Envoy route name
-          local native_route = "(none)"
-          pcall(function() native_route = tostring(stream_info:routeName()) end)
-          response_handle:headers():add("x-debug-route-name", native_route)
 
           if ai_gateway_meta and type(ai_gateway_meta) == "table" then
-            -- Fallback Attempt 1: Native route name (if it contains our model slug)
-            local clean_route = native_route:gsub(".*/", ""):gsub("[-.]", "_")
-            local best_cost = ai_gateway_meta["cost_" .. clean_route]
+            -- 1. Extract model from native Envoy route name (Definitive Identification)
+            local route_name = tostring(stream_info:routeName())
+            local namespace, model_slug = route_name:match("httproute/([^/]+)/([^/]+)/")
             
-            -- Fallback Attempt 2: Longest prefix match on model_name_override (from previous step)
+            local best_cost = nil
+            if model_slug then
+              local safe_key = "cost_" .. model_slug:gsub("[-.]", "_")
+              best_cost = ai_gateway_meta[safe_key]
+            end
+
+            -- 2. Fallback: Longest match on override (if route name is non-standard)
             if not best_cost then
               local model_id = ai_gateway_meta["model_name_override"]
               if model_id then
