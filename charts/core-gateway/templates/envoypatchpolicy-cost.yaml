@@ -25,13 +25,23 @@ spec:
                 local metadata = response_handle:streamInfo():dynamicMetadata()
                 local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
                 if ai_gateway_meta then
-                  -- Iterate through all metadata keys in the ai_gateway namespace
-                  for k, v in pairs(ai_gateway_meta) do
-                    -- If we find a key starting with "cost_", copy it to "llm_custom_total_cost"
-                    -- This allows the access log to use a single stable key.
-                    if type(k) == "string" and k:sub(1, 5) == "cost_" then
-                      metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", v)
-                      break
+                  -- The AI ExtProc globally evaluates ALL costs, but natively exports the actual routed model
+                  -- backward into the metadata natively as "model_name_override".
+                  -- This format is explicitly structured as 'provider/model-name' or 'model-name'.
+                  local override = ai_gateway_meta["model_name_override"]
+                  if override then
+                    -- Extract the literal model name robustly (grabs everything after the last slash, or the whole string)
+                    local model_name = override:match("([^/]+)$")
+                    
+                    if model_name then
+                      -- Translate back to the mathematical Helm template variables (e.g. cost_gemini_2_5_flash_lite)
+                      local safe_name = model_name:gsub("-", "_"):gsub("%.", "_")
+                      local exact_key = "cost_" .. safe_name
+                      
+                      local cost_val = ai_gateway_meta[exact_key]
+                      if cost_val then
+                        metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", cost_val)
+                      end
                     end
                   end
                 end
