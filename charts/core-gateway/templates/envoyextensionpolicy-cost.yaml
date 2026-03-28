@@ -17,47 +17,24 @@ spec:
           local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
 
           if ai_gateway_meta and type(ai_gateway_meta) == "table" then
-            -- 1. Extract model from native Envoy route name (Definitive Identification)
-            local route_name = tostring(stream_info:routeName())
-            local namespace, model_slug = route_name:match("httproute/([^/]+)/([^/]+)/")
+            -- 1. Precision extraction of model identity from the native Envoy route path
+            local route_path = tostring(stream_info:routeName())
+            local ns, model_slug = route_path:match("httproute/([^/]+)/([^/]+)/")
             
-            local best_cost = nil
             if model_slug then
-              local safe_key = "cost_" .. model_slug:gsub("[-.]", "_")
-              best_cost = ai_gateway_meta[safe_key]
-            end
-
-            -- 2. Fallback: Longest match on override (if route name is non-standard)
-            if not best_cost then
-              local model_id = ai_gateway_meta["model_name_override"]
-              if model_id then
-                local norm_id = model_id:gsub("[-/.]", "_")
-                local longest_len = -1
-                for k, v in pairs(ai_gateway_meta) do
-                  local suffix = k:match("^cost_(.*)")
-                  if suffix and (norm_id:find(suffix, 1, true) or suffix:find(norm_id, 1, true)) then
-                    if #suffix > longest_len then
-                      best_cost = v
-                      longest_len = #suffix
-                    end
+              -- 2. Build the deterministic cost key that matches the AIGatewayRoute's metadataKey
+              local cost_key = "cost_" .. model_slug:gsub("[-.]", "_")
+              local computed_cost = ai_gateway_meta[cost_key] or ai_gateway_meta["cost_" .. model_slug]
+              
+              if computed_cost then
+                -- 3. Unified usage forwarding for the backend aggregator
+                metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", computed_cost)
+                pcall(function() 
+                  if stream_info.setDynamicMetadata then
+                    stream_info:setDynamicMetadata("io.envoy.ai_gateway", "llm_custom_total_cost", computed_cost)
                   end
-                end
+                end)
               end
             end
-            
-            if best_cost then
-              metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", best_cost)
-              pcall(function() 
-                if stream_info.setDynamicMetadata then
-                   stream_info:setDynamicMetadata("io.envoy.ai_gateway", "llm_custom_total_cost", best_cost)
-                end
-              end)
-              response_handle:headers():add("x-telemetry-status", "success")
-              response_handle:headers():add("x-telemetry-cost", tostring(best_cost))
-            else
-              response_handle:headers():add("x-telemetry-status", "no-cost-match")
-            end
-          else
-            response_handle:headers():add("x-telemetry-status", "metadata-missing")
           end
         end
