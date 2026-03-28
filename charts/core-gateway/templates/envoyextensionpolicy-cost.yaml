@@ -12,34 +12,53 @@ spec:
     - type: Inline
       inline: |
         function envoy_on_response(response_handle)
-          -- ALWAYS add this to confirm Lua is running
-          response_handle:headers():add("x-telemetry-status", "evaluated")
-          
-          local metadata = response_handle:streamInfo():dynamicMetadata()
+          local stream_info = response_handle:streamInfo()
+          local metadata = stream_info:dynamicMetadata()
           local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
           
           if ai_gateway_meta and type(ai_gateway_meta) == "table" then
-            response_handle:headers():add("x-telemetry-meta", "found")
+            local model_id = ai_gateway_meta["model_name_override"]
             
-            -- Scan for ANY active model marker
-            for k, v in pairs(ai_gateway_meta) do
-              local marker_key = k:match("^active_model_(.*)")
-              if marker_key then
-                local s_val = tostring(v)
-                -- Add marker name and value to headers for diagnosis
-                response_handle:headers():add("x-telemetry-marker-" .. marker_key, s_val)
-                
-                if s_val == "1" then
-                  local final_cost = ai_gateway_meta[marker_key]
-                  if final_cost then
-                    metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", final_cost)
-                    response_handle:headers():add("x-telemetry-mapped", marker_key)
+            if model_id then
+              -- Normalize for matching
+              local norm_id = model_id:gsub("[-/.]", "_")
+              
+              -- Use a priority-based match (longest key name that is a suffix of the override or vice versa)
+              local best_cost = nil
+              local longest_match_len = -1
+              
+              for k, v in pairs(ai_gateway_meta) do
+                local cost_suffix = k:match("^cost_(.*)")
+                if cost_suffix then
+                  -- Check if suffix matches perfectly OR is contained as a unique identifier
+                  if norm_id:find(cost_suffix, 1, true) or cost_suffix:find(norm_id, 1, true) then
+                    if #cost_suffix > longest_match_len then
+                      best_cost = v
+                      longest_match_len = #cost_suffix
+                    end
                   end
-                  return
                 end
               end
+              
+              if best_cost then
+                metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", best_cost)
+                
+                -- Support newer/older Envoy driver variations
+                pcall(function() 
+                  if stream_info.setDynamicMetadata then
+                    stream_info:setDynamicMetadata("io.envoy.ai_gateway", "llm_custom_total_cost", best_cost)
+                  end
+                end)
+                
+                -- Proof of performance headers
+                response_handle:headers():add("x-telemetry-status", "success")
+                response_handle:headers():add("x-telemetry-id", model_id)
+                response_handle:headers():add("x-telemetry-cost", tostring(best_cost))
+              else
+                response_handle:headers():add("x-telemetry-status", "no-model-match")
+              end
+            else
+              response_handle:headers():add("x-telemetry-status", "no-override-found")
             end
-          else
-            response_handle:headers():add("x-telemetry-meta", "missing")
           end
         end
