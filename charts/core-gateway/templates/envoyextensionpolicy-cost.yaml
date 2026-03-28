@@ -15,19 +15,25 @@ spec:
           local metadata = response_handle:streamInfo():dynamicMetadata()
           local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
           
-          -- Defensively check type to satisfy validator and handle all metadata formats
-          if ai_gateway_meta and type(ai_gateway_meta) == "table" then
-            -- Find the identifier key whose value is 1 (integer or string)
-            for k, v in pairs(ai_gateway_meta) do
-              local cost_key = k:match("^active_model_(.*)")
-              if cost_key and tonumber(v) == 1 then
-                -- This is the confirmed active model for this request
-                local cost_val = ai_gateway_meta[cost_key]
-                if cost_val then
-                  metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", cost_val)
+          if ai_gateway_meta then
+            if type(ai_gateway_meta) == "table" then
+              -- Find the active model marker
+              for k, v in pairs(ai_gateway_meta) do
+                local marker_key = k:match("^active_model_(.*)")
+                -- Robust comparison to avoid 1 vs "1" trap
+                if marker_key and tostring(v) == "1" then
+                  local cost_val = ai_gateway_meta[marker_key]
+                  if cost_val then
+                    metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", cost_val)
+                    -- response_handle:logInfo("Telemetry: mapped " .. marker_key .. " to general cost")
+                  end
+                  return
                 end
-                break -- Exit early once the single active model is found
               end
+            else
+              -- response_handle:logWarn("Telemetry: io.envoy.ai_gateway is not a table, got " .. type(ai_gateway_meta))
             end
+          else
+            -- response_handle:logWarn("Telemetry: io.envoy.ai_gateway namespace missing")
           end
         end
