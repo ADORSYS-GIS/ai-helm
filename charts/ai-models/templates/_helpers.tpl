@@ -50,8 +50,3 @@ Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
 {{- /* Ensure we return an integer and it's non-negative */ -}}
 {{- printf "int(%s > 0.0 ? %s : 0.0)" $expr $expr -}}
 {{- end -}}
-
-
-
-
-
