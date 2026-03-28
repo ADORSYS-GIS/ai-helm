@@ -12,28 +12,34 @@ spec:
     - type: Inline
       inline: |
         function envoy_on_response(response_handle)
+          -- ALWAYS add this to confirm Lua is running
+          response_handle:headers():add("x-telemetry-status", "evaluated")
+          
           local metadata = response_handle:streamInfo():dynamicMetadata()
           local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
           
-          if ai_gateway_meta then
-            if type(ai_gateway_meta) == "table" then
-              -- Find the active model marker
-              for k, v in pairs(ai_gateway_meta) do
-                local marker_key = k:match("^active_model_(.*)")
-                -- Robust comparison to avoid 1 vs "1" trap
-                if marker_key and tostring(v) == "1" then
-                  local cost_val = ai_gateway_meta[marker_key]
-                  if cost_val then
-                    metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", cost_val)
-                    -- response_handle:logInfo("Telemetry: mapped " .. marker_key .. " to general cost")
+          if ai_gateway_meta and type(ai_gateway_meta) == "table" then
+            response_handle:headers():add("x-telemetry-meta", "found")
+            
+            -- Scan for ANY active model marker
+            for k, v in pairs(ai_gateway_meta) do
+              local marker_key = k:match("^active_model_(.*)")
+              if marker_key then
+                local s_val = tostring(v)
+                -- Add marker name and value to headers for diagnosis
+                response_handle:headers():add("x-telemetry-marker-" .. marker_key, s_val)
+                
+                if s_val == "1" then
+                  local final_cost = ai_gateway_meta[marker_key]
+                  if final_cost then
+                    metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", final_cost)
+                    response_handle:headers():add("x-telemetry-mapped", marker_key)
                   end
                   return
                 end
               end
-            else
-              -- response_handle:logWarn("Telemetry: io.envoy.ai_gateway is not a table, got " .. type(ai_gateway_meta))
             end
           else
-            -- response_handle:logWarn("Telemetry: io.envoy.ai_gateway namespace missing")
+            response_handle:headers():add("x-telemetry-meta", "missing")
           end
         end
