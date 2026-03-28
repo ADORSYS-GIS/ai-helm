@@ -11,30 +11,20 @@ spec:
   lua:
     - type: Inline
       inline: |
-        function envoy_on_request(request_handle)
-          local model_name = request_handle:headers():get("x-ai-eg-model")
-          if model_name then
-            -- Persist the model request header evaluated by ExtProc into dynamic metadata
-            request_handle:streamInfo():dynamicMetadata():set("envoy.filters.http.lua", "req_model_name", model_name)
-          end
-        end
-
         function envoy_on_response(response_handle)
           local metadata = response_handle:streamInfo():dynamicMetadata()
           local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
           if ai_gateway_meta then
-            local lua_meta = metadata:get("envoy.filters.http.lua")
-            if lua_meta and lua_meta["req_model_name"] then
-              local model_name = lua_meta["req_model_name"]
-              
-              -- model_name precisely matches the mathematical AIGatewayRoute matched header
-              -- Safely translate it back to the exact CEL Helm template format (e.g. cost_te3_small)
-              local safe_name = model_name:gsub("-", "_"):gsub("%.", "_")
-              local exact_key = "cost_" .. safe_name
-              
-              local cost_val = ai_gateway_meta[exact_key]
-              if cost_val then
-                metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", cost_val)
+            -- Find the static identifier key set by the AIGatewayRoute
+            for k, _ in pairs(ai_gateway_meta) do
+              local cost_key = k:match("^active_model_(.*)")
+              if cost_key then
+                -- cost_key is the 'safe' name (e.g. cost_te3_small)
+                local cost_val = ai_gateway_meta[cost_key]
+                if cost_val then
+                  metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", cost_val)
+                end
+                break
               end
             end
           end
