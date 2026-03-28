@@ -15,19 +15,18 @@ spec:
           local metadata = response_handle:streamInfo():dynamicMetadata()
           local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
           
-          -- Explicit type check to satisfy Envoy Gateway's validator and handle string metadata
+          -- Defensively check type to satisfy validator and handle all metadata formats
           if ai_gateway_meta and type(ai_gateway_meta) == "table" then
-            -- Find the static identifier key set by the AIGatewayRoute
-            -- The identifier key will have value 1 ONLY for the matched model
+            -- Find the identifier key whose value is 1 (integer or string)
             for k, v in pairs(ai_gateway_meta) do
               local cost_key = k:match("^active_model_(.*)")
-              if cost_key and v == 1 then
-                -- cost_key is the 'safe' name (e.g. cost_te3_small)
+              if cost_key and tonumber(v) == 1 then
+                -- This is the confirmed active model for this request
                 local cost_val = ai_gateway_meta[cost_key]
                 if cost_val then
                   metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", cost_val)
                 end
-                break
+                break -- Exit early once the single active model is found
               end
             end
           end
