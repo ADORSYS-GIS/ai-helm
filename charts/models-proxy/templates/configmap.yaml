@@ -1,4 +1,18 @@
-{{ with .Values.config }}
+{{- with .Values.config }}
+{{- $geminiPatchEnabled := false -}}
+{{- $root := $ -}}
+{{- $persistence := index $root.Values "proxy" "persistence" -}}
+{{- if and $persistence (hasKey $persistence "gemini_patch") -}}
+{{-   $geminiPatchEnabled = index (index $persistence "gemini_patch") "enabled" -}}
+{{- end -}}
+{{- $settings := omit .litellm_settings "callbacks" }}
+{{- if $geminiPatchEnabled }}
+{{- $settings = merge $settings (dict "callbacks" (list "litellm_gemini_patch.proxy_handler_instance")) }}
+{{- end }}
+{{- $yaml := $settings | toYaml -}}
+{{- $modelListYaml := .model_list | toYaml -}}
+{{- $combined := printf "%s\nmodel_list:\n%s" (trimSuffix "\n" $yaml) $modelListYaml -}}
+{{- $value := include "common.tplvalues.render" ( dict "value" $combined "context" . ) -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,7 +20,5 @@ metadata:
   namespace: {{ include "common.names.namespace" $ }}
 data:
   "config.yaml": |
-    {{- $yaml := . | toYaml -}}
-    {{- $value := include "common.tplvalues.render" ( dict "value" $yaml "context" $ ) -}}
     {{ $value | nindent 4 }}
-{{ end }}
+{{- end }}
