@@ -59,11 +59,7 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                {{- if eq $strategy "flat" }}
-                key: llm_total_token
-                {{- else }}
                 key: {{ include "ai-models.metadataKeySafe" $routeName }}
-                {{- end }}
         - clientSelectors:
             - headers:
                 - name: x-account-id
@@ -85,11 +81,7 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                {{- if eq $strategy "flat" }}
-                key: llm_total_token
-                {{- else }}
                 key: {{ include "ai-models.metadataKeySafe" $routeName }}
-                {{- end }}
         {{- else }}
         {{- range $planName, $planConfig := $.Values.rateLimitBudgeting.plans }}
         {{- $budget := $planConfig.monthlyBudgetUsd | default 30 }}
@@ -120,11 +112,7 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                {{- if eq $strategy "flat" }}
-                key: llm_total_token
-                {{- else }}
                 key: {{ include "ai-models.metadataKeySafe" $routeName }}
-                {{- end }}
         {{- end }}
         {{- end }}
 {{- end }}
