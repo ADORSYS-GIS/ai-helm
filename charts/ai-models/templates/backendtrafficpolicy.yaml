@@ -1,9 +1,9 @@
 {{/*
 BackendTrafficPolicy — per-model, per-plan rate limiting via Global Rate Limit.
 
-Each model gets its own cost metadata key in its AIGatewayRoute.
-- Weighted/Tiered models use a CEL-based cost key in micro-USD.
-- Flat models use the standard llm_total_token key (budget is scaled to tokens).
+Each model gets its own rate limit based on its pricing strategy:
+- Weighted/Tiered models: limit in micro-USD (Budget * 1e6)
+- Flat models: limit in USD (budget used directly)
 
 Budget values in values.yaml are in USD.
 */}}
@@ -11,7 +11,6 @@ Budget values in values.yaml are in USD.
 {{- if (default true $routeConfig.enabled) }}
 {{- $modelBudgets := default dict $routeConfig.rateLimitBudgeting }}
 {{- $strategy := $routeConfig.pricing.strategy }}
-{{- $eff := (default 1.0 $routeConfig.pricing.standard.effectivePer1M) }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -29,15 +28,10 @@ spec:
         {{- if $modelBudgets }}
         {{- $freeBudget := index $modelBudgets "free" | default (index $.Values.rateLimitBudgeting.plans "free" "monthlyBudgetUsd" | default 30) }}
         {{- $proBudget := index $modelBudgets "pro" | default (index $.Values.rateLimitBudgeting.plans "pro" "monthlyBudgetUsd" | default 200) }}
-        {{- /* Scale limits: if flat, scale USD to tokens (Budget * 1e6 / effectivePer1M); else scale to micro-USD (Budget * 1e6) */ -}}
+
         {{- $freeLimit := 0 }}{{ $proLimit := 0 }}
-        {{- if eq $strategy "flat" }}
-          {{- $freeLimit = mulf $freeBudget (divf 1000000.0 $eff) | int64 }}
-          {{- $proLimit = mulf $proBudget (divf 1000000.0 $eff) | int64 }}
-        {{- else }}
-          {{- $freeLimit = mulf $freeBudget 1000000 | int64 }}
-          {{- $proLimit = mulf $proBudget 1000000 | int64 }}
-        {{- end }}
+        {{- $freeLimit = mulf $freeBudget 1000000 | int64 }}
+        {{- $proLimit = mulf $proBudget 1000000 | int64 }}
         - clientSelectors:
             - headers:
                 - name: x-account-id
@@ -85,12 +79,7 @@ spec:
         {{- else }}
         {{- range $planName, $planConfig := $.Values.rateLimitBudgeting.plans }}
         {{- $budget := $planConfig.monthlyBudgetUsd | default 30 }}
-        {{- $planLimit := 0 }}
-        {{- if eq $strategy "flat" }}
-          {{- $planLimit = mulf $budget (divf 1000000.0 $eff) | int64 }}
-        {{- else }}
-          {{- $planLimit = mulf $budget 1000000 | int64 }}
-        {{- end }}
+        {{- $planLimit := mulf $budget 1000000 | int64 }}
         - clientSelectors:
             - headers:
                 - name: x-account-id
