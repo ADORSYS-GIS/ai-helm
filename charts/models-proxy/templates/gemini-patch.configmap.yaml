@@ -1,13 +1,13 @@
 {{- $geminiPatchEnabled := false -}}
 {{- $persistence := index .Values "proxy" "persistence" -}}
-{{- if and $persistence (hasKey $persistence "gemini_patch") -}}
-{{-   $geminiPatchEnabled = index (index $persistence "gemini_patch") "enabled" -}}
+{{- if and $persistence (hasKey $persistence "gemini-patch") -}}
+{{-   $geminiPatchEnabled = index (index $persistence "gemini-patch") "enabled" -}}
 {{- end -}}
 {{- if $geminiPatchEnabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ default "litellm-gemini-plugin" (index (index $persistence "gemini_patch") "name") }}
+  name: {{ default "litellm-gemini-plugin" (index (index $persistence "gemini-patch") "name") }}
   namespace: {{ include "common.names.namespace" . }}
 data:
   litellm_gemini_patch.py: |
