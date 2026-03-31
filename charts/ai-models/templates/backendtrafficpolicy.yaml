@@ -1,5 +1,17 @@
+{{/*
+BackendTrafficPolicy — per-model, per-plan rate limiting via Global Rate Limit.
+
+Each model gets its own cost metadata key in its AIGatewayRoute.
+- Weighted/Tiered models use a CEL-based cost key in micro-USD.
+- Flat models use the standard llm_total_token key (budget is scaled to tokens).
+
+Budget values in values.yaml are in USD.
+*/}}
 {{- range $routeName, $routeConfig := $.Values.models }}
 {{- if (default true $routeConfig.enabled) }}
+{{- $modelBudgets := default dict $routeConfig.rateLimitBudgeting }}
+{{- $strategy := $routeConfig.pricing.strategy }}
+{{- $eff := (default 1.0 $routeConfig.pricing.standard.effectivePer1M) }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -14,24 +26,30 @@ spec:
     type: Global
     global:
       rules:
-        {{ range $planName, $planValue := $.Values.rateLimitBudgeting.plans }}
+        {{- if $modelBudgets }}
+        {{- $freeBudget := index $modelBudgets "free" | default (index $.Values.rateLimitBudgeting.plans "free" "monthlyBudgetUsd" | default 30) }}
+        {{- $proBudget := index $modelBudgets "pro" | default (index $.Values.rateLimitBudgeting.plans "pro" "monthlyBudgetUsd" | default 200) }}
+        {{- /* Scale limits: if flat, scale USD to tokens (Budget * 1e6 / effectivePer1M); else scale to micro-USD (Budget * 1e6) */ -}}
+        {{- $freeLimit := 0 }}{{ $proLimit := 0 }}
+        {{- if eq $strategy "flat" }}
+          {{- $freeLimit = mulf $freeBudget (divf 1000000.0 $eff) | int64 }}
+          {{- $proLimit = mulf $proBudget (divf 1000000.0 $eff) | int64 }}
+        {{- else }}
+          {{- $freeLimit = mulf $freeBudget 1000000 | int64 }}
+          {{- $proLimit = mulf $proBudget 1000000 | int64 }}
+        {{- end }}
         - clientSelectors:
             - headers:
                 - name: x-account-id
                   type: Distinct
-                  invert: false
                 - name: x-billing-plan
                   type: Exact
-                  invert: false
-                  value: {{ $planName }}
+                  value: "free"
                 - name: x-ai-eg-model
                   type: Exact
-                  invert: false
-                  value: {{ $routeName }}
+                  value: {{ $routeName | quote }}
           limit:
-            # `llm_custom_total_cost` is emitted as an integer in micro-USD (USD * 1e6).
-            # Convert USD budgets to the same unit so token cost budgeting works as expected.
-            requests: {{ mul $planValue.monthlyBudgetUsd 1000000 | int64 }}
+            requests: {{ $freeLimit }}
             unit: Month
           cost:
             request:
@@ -41,7 +59,61 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                key: llm_custom_total_cost
-        {{ end }}
+                key: {{ include "ai-models.metadataKeySafe" $routeName }}
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $routeName | quote }}
+          limit:
+            requests: {{ $proLimit }}
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: {{ include "ai-models.metadataKeySafe" $routeName }}
+        {{- else }}
+        {{- range $planName, $planConfig := $.Values.rateLimitBudgeting.plans }}
+        {{- $budget := $planConfig.monthlyBudgetUsd | default 30 }}
+        {{- $planLimit := 0 }}
+        {{- if eq $strategy "flat" }}
+          {{- $planLimit = mulf $budget (divf 1000000.0 $eff) | int64 }}
+        {{- else }}
+          {{- $planLimit = mulf $budget 1000000 | int64 }}
+        {{- end }}
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: {{ $planName | quote }}
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $routeName | quote }}
+          limit:
+            requests: {{ $planLimit }}
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: {{ include "ai-models.metadataKeySafe" $routeName }}
+        {{- end }}
+        {{- end }}
 {{- end }}
 {{- end }}

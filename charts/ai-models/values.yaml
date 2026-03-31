@@ -463,6 +463,9 @@ models:
   gpt-5-mini:
     kind: text
     pricing: *pricingOpenaiGpt54Mini
+    rateLimitBudgeting:
+      free: .000001    # Override free plan to $0.10
+      pro: 300
     backends:
       openai-01:
         <<: *openaiBackendPrimary
@@ -504,7 +507,7 @@ models:
         <<: *modelProxySecondary
         modelNameOverride: "openai/gpt-5.3-codex"
 
-  text-embedding-3-large:
+  te3-large:
     kind: embedding
     pricing: *pricingOpenaiEmbeddingLarge
     backends:
@@ -515,7 +518,7 @@ models:
         <<: *openaiBackendSecondary
         modelNameOverride: "text-embedding-3-large"
 
-  text-embedding-3-small:
+  te3-small:
     kind: embedding
     pricing: *pricingOpenaiEmbeddingSmall
     backends:

@@ -1,0 +1,40 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyExtensionPolicy
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-telemetry-lua
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ include "core-gateway.fullname" . }}
+  lua:
+    - type: Inline
+      inline: |
+        function envoy_on_response(response_handle)
+          local stream_info = response_handle:streamInfo()
+          local metadata = stream_info:dynamicMetadata()
+          local ai_gateway_meta = metadata:get("io.envoy.ai_gateway")
+
+          if ai_gateway_meta and type(ai_gateway_meta) == "table" then
+            -- 1. Precision extraction of model identity from the native Envoy route path
+            local route_path = tostring(stream_info:routeName())
+            local ns, model_slug = route_path:match("httproute/([^/]+)/([^/]+)/")
+            
+            if model_slug then
+              -- 2. Build the deterministic cost key that matches the AIGatewayRoute's metadataKey
+              local cost_key = "cost_" .. model_slug:gsub("[-.]", "_")
+              local computed_cost = ai_gateway_meta[cost_key] or ai_gateway_meta["cost_" .. model_slug]
+              
+              if computed_cost then
+                -- 3. Unified usage forwarding for the backend aggregator
+                metadata:set("io.envoy.ai_gateway", "llm_custom_total_cost", computed_cost)
+                pcall(function() 
+                  if stream_info.setDynamicMetadata then
+                    stream_info:setDynamicMetadata("io.envoy.ai_gateway", "llm_custom_total_cost", computed_cost)
+                  end
+                end)
+              end
+            end
+          end
+        end
