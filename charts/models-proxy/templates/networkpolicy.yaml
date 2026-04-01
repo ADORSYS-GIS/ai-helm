@@ -2,14 +2,17 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "common.names.fullname" . }}
-  namespace: {{ include "common.names.namespace" . }}
+  name: {{ .Release.Name }}-network-policy
+  namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "common.names.name" . | quote }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "common.labels.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: {{ include "common.names.name" . | quote }}
+      app.kubernetes.io/instance: {{ .Release.Name | quote }}
   policyTypes:
     - Ingress
     - Egress
