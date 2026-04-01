@@ -11,7 +11,7 @@
 {{- end }}
 {{- $yaml := $settings | toYaml -}}
 {{- $modelListYaml := .model_list | toYaml -}}
-{{- $combined := printf "%s\nmodel_list:\n%s" (trimSuffix "\n" $yaml) $modelListYaml -}}
+{{- $combined := printf "litellm_settings:\n%s\nmodel_list:\n%s" (trimSuffix "\n" $yaml) $modelListYaml -}}
 {{- $value := include "common.tplvalues.render" ( dict "value" $combined "context" . ) -}}
 apiVersion: v1
 kind: ConfigMap
