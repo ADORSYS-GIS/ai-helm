@@ -17,13 +17,15 @@ spec:
     - Ingress
     - Egress
   ingress:
+    {{- range .Values.networkPolicy.ingressNamespaces }}
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+              kubernetes.io/metadata.name: {{ . }}
       ports:
         - protocol: TCP
           port: 4000
+    {{- end }}
   egress:
     # Allow DNS resolution
     - to:
