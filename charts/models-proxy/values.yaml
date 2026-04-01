@@ -1,12 +1,19 @@
 global:
   litellm:
-    version: "main-v1.82.4-nightly"
+    version: "v1.82.3-stable"
   configmap:
     name: "litellm-config"
 
 proxy:
   defaultPodOptions:
     automountServiceAccountToken: false
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
 
   service:
     litellm:
@@ -67,6 +74,15 @@ proxy:
             requests:
               cpu: 500m
               memory: 512Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           probes:
             liveness:
               enabled: false
@@ -101,6 +117,20 @@ proxy:
   serviceAccount:
     default:
       enabled: false
+
+networkPolicy:
+  enabled: true
+  egressDestinations:
+    # Google Gemini API
+    - cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # OpenAI API
+    - cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
 
 config:
   litellm_settings:
