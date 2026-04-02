@@ -44,14 +44,30 @@ spec:
               value: {{ $routeName }}
       modelsOwnedBy: GIS AI Models
       backendRefs:
+        {{- $hasLitellm := false }}
         {{- range $bKey, $bVal := $activeBackends }}
-        {{- $backendBase := index $.Values.backends $bVal.ref }}
-        - name: {{ $backendBase.resourceName }}
-          {{- if $bVal.modelNameOverride }}
-          modelNameOverride: {{ $bVal.modelNameOverride }}
+          {{- if hasPrefix "litellm" $bVal.ref }}
+            {{- $hasLitellm = true }}
           {{- end }}
-          weight: {{ $bVal.weight | default 1 }}
-          priority: {{ $bVal.priority | default 0 }}
+        {{- end }}
+
+        {{- range $bKey, $bVal := $activeBackends }}
+          {{- $backendBase := index $.Values.backends $bVal.ref }}
+          {{- if not $hasLitellm }}
+            - name: {{ $backendBase.resourceName }}
+              {{- if $bVal.modelNameOverride }}
+              modelNameOverride: {{ $bVal.modelNameOverride }}
+              {{- end }}
+              weight: {{ $bVal.weight | default 1 }}
+              priority: {{ $bVal.priority | default 0 }}
+          {{- else if hasPrefix "litellm" $bVal.ref }}
+            - name: {{ $backendBase.resourceName }}
+              {{- if $bVal.modelNameOverride }}
+              modelNameOverride: {{ $bVal.modelNameOverride }}
+              {{- end }}
+              weight: {{ $bVal.weight | default 1 }}
+              priority: {{ $bVal.priority | default 0 }}
+          {{- end }}
         {{- end }}
 {{- end }}
 {{- end }}

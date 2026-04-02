@@ -1216,6 +1216,7 @@ applications:
 
   # --- Models ---
   - name: models
+    enabled: false
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     source:
@@ -1229,6 +1230,31 @@ applications:
       namespace: converse
     syncPolicy:
       syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: litellm
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/ai-models
+      helm:
+        releaseName: litellm
+        valuesObject:
+          backends:
+            fw-01:
+              enabled: false
+            fw-02:
+              enabled: false
+    destination:
+      namespace: litellm
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
         - ServerSideApply=true
       automated:
         prune: true
