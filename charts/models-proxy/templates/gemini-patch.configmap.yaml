@@ -11,13 +11,12 @@ metadata:
   namespace: {{ include "common.names.namespace" . }}
 data:
   litellm_gemini_patch.py: |
-    import json
     import logging
     import re
     from litellm.integrations.custom_logger import CustomLogger
 
-    logging.basicConfig(level=logging.DEBUG)
-    logger = logging.getLogger(__name__)
+    # Force logging at startup
+    print("BOOTSTRAP: GeminiSignaturePatch module is being loaded!", flush=True)
 
     class GeminiSignaturePatch(CustomLogger):
         async def async_pre_call_hook(self, user_api_key_dict, cache, data, **kwargs):
@@ -26,78 +25,73 @@ data:
             Fixes known Gemini 3 reasoning signature bugs without modifying core LiteLLM logic.
             """
             model = data.get("model", "")
-            logger.debug(f"Hook triggered for model: {model}")
+            print(f"DEBUG GEMINI PATCH - Hook triggered for model: {model}", flush=True)
             
-            if "gemini" not in model.lower():
-                return data
-                
-            if "messages" in data and isinstance(data["messages"], list):
-                for idx, msg in enumerate(data["messages"]):
-                    role = msg.get("role", "")
+            try:
+                if "gemini" not in model.lower():
+                    return data
                     
-                    if role == "assistant":
-                        logger.debug(f"Processing assistant message {idx}")
+                if "messages" in data and isinstance(data["messages"], list):
+                    for msg in data["messages"]:
+                        role = msg.get("role", "")
                         
-                        # Fix 1: Drop empty content entirely.
-                        # Prevents LiteLLM from generating an artificial empty text part,
-                        # which avoids triggering Gemini's strict "consecutive model turns" rejection.
-                        if msg.get("content") in ["", " "]:
-                            msg["content"] = None
-                            
-                        tool_calls = msg.get("tool_calls")
-                        if tool_calls and isinstance(tool_calls, list):
-                            for tc in tool_calls:
-                                if isinstance(tc, dict) and "id" in tc:
-                                    tool_call_id = tc["id"]
-                                    if "__thought__" in tool_call_id:
-                                        logger.debug(f"Found thought tool call: {tool_call_id[:50]}...")
-                                        parts = tool_call_id.split("__thought__")
-                                        if len(parts) == 2:
-                                            tc["id"] = parts[0] + "__thought__skip_thought_signature_validator"
-                                            logger.debug(f"Replaced thought tool call ID: {tc['id']}")
-                        
-                        psf = msg.get("provider_specific_fields", {})
-                        # Fix 2: Universally bypass cryptographic signature checks.
-                        # Overwrites all incoming strict hashes with the Vertex bypass string.
-                        if "thought_signatures" in psf and isinstance(psf["thought_signatures"], list):
-                            psf["thought_signatures"] = ["skip_thought_signature_validator"] * len(psf["thought_signatures"])
-                        if "server_side_tool_invocations" in psf:
-                            for invocation in psf["server_side_tool_invocations"]:
-                                if "thought_signature" in invocation:
-                                    invocation["thought_signature"] = "skip_thought_signature_validator"
-                        
-                        if "thinking_blocks" in msg and isinstance(msg["thinking_blocks"], list):
-                            for block in msg["thinking_blocks"]:
-                                if "signature" in block:
-                                    block["signature"] = "skip_thought_signature_validator"
-                        # Fix 3: Handle Roo Code's native 'thinking_blocks' signature tracking
-                        # (additional handling below)
-                        
-                        if "signature" in msg:
-                            msg["signature"] = "skip_thought_signature_validator"
-                        
-                        # Fix 4: Prevent duplicate unsigned tool_calls if thinking_blocks already contains them
-                        # If we have thinking blocks with a signature, it often implies the tool call is already inside it.
-                        # We remove the duplicate top-level tool_calls to avoid Gemini "mixed support" errors.
-                        if msg.get("tool_calls") and msg.get("thinking_blocks"):
-                            msg["tool_calls"] = None
-                            msg["function_call"] = None
-                            
-                        content = msg.get("content", "")
-                        if isinstance(content, str) and "<thinking>" in content:
-                            cleaned = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL)
-                            msg["content"] = cleaned.strip()
-                            
-                    elif role == "tool":
-                        tool_call_id = msg.get("tool_call_id", "")
-                        if "__thought__" in tool_call_id:
-                            logger.debug(f"Processing tool response with thought ID: {tool_call_id[:50]}...")
-                            parts = tool_call_id.split("__thought__")
-                            if len(parts) == 2:
-                                msg["tool_call_id"] = parts[0] + "__thought__skip_thought_signature_validator"
-                                logger.debug(f"Replaced tool response ID: {msg['tool_call_id']}")
+                        if role == "assistant":
+                            # Fix 1: Drop empty content entirely.
+                            content = msg.get("content")
+                            if content in ("", " "):
+                                msg["content"] = None
                                 
-            logger.debug(f"DEBUG INCOMING MESSAGES: processed {len(data.get('messages', []))} messages")
+                            # Fix 2: Replace signatures in tool_call IDs
+                            tool_calls = msg.get("tool_calls")
+                            if tool_calls and isinstance(tool_calls, list):
+                                for tc in tool_calls:
+                                    if isinstance(tc, dict) and "id" in tc:
+                                        if "__thought__" in tc["id"]:
+                                            parts = tc["id"].split("__thought__")
+                                            if len(parts) == 2:
+                                                tc["id"] = parts[0] + "__thought__skip_thought_signature_validator"
+                            
+                            # Fix 3: Universally bypass cryptographic signature checks in PSF
+                            psf = msg.get("provider_specific_fields", {})
+                            if "thought_signatures" in psf and isinstance(psf["thought_signatures"], list):
+                                psf["thought_signatures"] = ["skip_thought_signature_validator"] * len(psf["thought_signatures"])
+                                
+                            if "server_side_tool_invocations" in psf:
+                                for invocation in psf["server_side_tool_invocations"]:
+                                    if "thought_signature" in invocation:
+                                        invocation["thought_signature"] = "skip_thought_signature_validator"
+                                        
+                            # Fix 4: Handle Roo Code's native 'thinking_blocks' signature tracking
+                            if "thinking_blocks" in msg and isinstance(msg["thinking_blocks"], list):
+                                for block in msg["thinking_blocks"]:
+                                    if "signature" in block:
+                                        block["signature"] = "skip_thought_signature_validator"
+                            
+                            # Fix 5: Handle top-level message signature
+                            if "signature" in msg:
+                                msg["signature"] = "skip_thought_signature_validator"
+                            
+                            # Fix 6: Prevent duplicate unsigned tool_calls if thinking_blocks already contains them
+                            if msg.get("tool_calls") and msg.get("thinking_blocks"):
+                                msg["tool_calls"] = None
+                                msg["function_call"] = None
+                            
+                            # Fix 7: Strip <thinking> tags from content if present (Roo Code legacy compatibility)
+                            content = msg.get("content", "")
+                            if isinstance(content, str) and "<thinking>" in content:
+                                cleaned = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL)
+                                msg["content"] = cleaned.strip()
+                                
+                        elif role == "tool":
+                            # Fix 8: Replace signatures in tool_call_id for the tool response
+                            tool_call_id = msg.get("tool_call_id", "")
+                            if "__thought__" in tool_call_id:
+                                parts = tool_call_id.split("__thought__")
+                                if len(parts) == 2:
+                                    msg["tool_call_id"] = parts[0] + "__thought__skip_thought_signature_validator"
+            except Exception as e:
+                print(f"ERROR GEMINI PATCH - {str(e)}", flush=True)
+            
             return data
 
     proxy_handler_instance = GeminiSignaturePatch()
