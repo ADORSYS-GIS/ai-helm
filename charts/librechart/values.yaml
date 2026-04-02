@@ -517,6 +517,13 @@ config:
       recursionLimit: 50
       maxRecursionLimit: 100
       disableBuilder: false
+      capabilities:
+        - "file_search"
+        - "context"
+        - "web_search"
+        - "tools"
+        - "artifacts"
+        - "chain"
       # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
       # capabilities: ["execute_code", "file_search", "actions", "tools", "artifacts", "ocr", "chain", "web_search"]
       # (optional) File citation configuration for file_search capability
@@ -536,32 +543,33 @@ config:
         baseURL: "https://services.api.ai.camer.digital/v1"
         models:
           default:
-            - "deepseek-v3p2"
-            - "gpt-image-1"
-            - "gemini-2.5-flash"
-            - "qwen3-8b"
-            - "qwen3-vl-30b-a3b-thinking"
-            - "text-embedding-3-small"
-            - "gemini-2.0-flash-lite"
+            - "gpt-5-codex-mini"
+            - "te3-small"
+            - "kimi-k2.5"
             - "gemini-3.1-pro"
-            - "gemini-2.5-pro"
-            - "kimi-k2-instruct-0905"
-            - "gemini-2.5-flash-lite"
-            - "glm-5"
-            - "text-embedding-3-large"
-            - "gemini-3.1-flash-lite"
-            - "gpt-5-mini"
-            - "gpt-5-nano"
-            - "gpt-5.1-codex-mini"
-            - "cogito-671b-v2-p1"
-            - "gemini-2.5-flash-image"
             - "gemini-3-flash"
-            - "kimi-k2-thinking"
-            - "minimax-m2p5"
-            - "qwen3-reranker-8b"
-            - "qwen3-vl-30b-a3b-instruct"
+            - "cogito-671b-v2-p1"
             - "gemini-2-5-flash-lite"
+            - "gemini-2.5-flash"
+            - "kimi-k2-thinking"
+            - "deepseek-v3p2"
+            - "kimi-k2-instruct-0905"
+            - "glm-5"
+            - "qwen3-vl-30b-a3b-instruct"
+            - "qwen3-vl-30b-a3b-thinking"
+            - "minimax-m2p5"
+            - "gemini-2.5-flash-lite"
+            - "gpt-5-nano"
             - "qwen3-embedding-8b"
+            - "gemini-2.5-flash-image"
+            - "gemini-2.5-pro"
+            - "gpt-5-mini"
+            - "gemini-3.1-flash-lite"
+            - "gpt-5.3-codex"
+            - "gpt-image-1"
+            - "qwen3-8b"
+            - "qwen3-reranker-8b"
+            - "te3-large"
           fetch: false
         iconURL: "https://s3.camer.digital/converse/public/autumn.png"
         titleConvo: false
@@ -578,6 +586,166 @@ config:
           X-User-Email: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
           X-User-Role: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
 
+  modelSpecs:
+    enforce: true
+    prioritize: true
+    list:
+      - name: "moa-orchestrator"
+        label: "MoA Orchestrator"
+        default: true
+        group: "MoA"
+        description: "Entry agent that coordinates specialists and produces the final plan."
+        webSearch: true
+        fileSearch: true
+        mcpServers: [ "sequential-thinking" ]
+        preset:
+          endpoint: "converse"
+          model: "glm-5"
+          temperature: 0.2
+          promptPrefix: |
+            You are the entry agent in a Mixture-of-Agents workflow.
+            Your job is to:
+            1. gather constraints first,
+            2. request ideation and brainstorming paths,
+            3. send every serious path to rejection,
+            4. send surviving paths to security review,
+            5. require a TDD-first implementation plan for the chosen path,
+            6. synthesize one final plan.
+
+            Output sections:
+            - Problem framing
+            - Constraints discovered
+            - Candidate paths
+            - Rejected paths and why
+            - Selected path
+            - Security review
+            - TDD plan
+            - Milestones
+            - Open risks
+
+      - name: "moa-ideation"
+        label: "Ideation"
+        group: "MoA Specialists"
+        description: "Generates a few strong strategic options."
+        preset:
+          endpoint: "converse"
+          model: "kimi-k2.5"
+          temperature: 0.7
+          promptPrefix: |
+            You are the Ideation agent.
+            Produce 3 to 5 strong solution directions.
+            Prefer clarity over volume.
+            For each direction include:
+            - core idea
+            - why it could work
+            - assumptions
+            - expected upside
+            - likely implementation complexity
+
+      - name: "moa-brainstorming"
+        label: "Brainstorming"
+        group: "MoA Specialists"
+        description: "Expands the option space with variants and unconventional ideas."
+        preset:
+          endpoint: "converse"
+          model: "cogito-671b-v2-p1"
+          temperature: 0.95
+          promptPrefix: |
+            You are the Brainstorming agent.
+            Generate a broad set of candidate approaches and variations.
+            Prefer diversity and novelty.
+            Include:
+            - standard option
+            - low-cost option
+            - high-upside option
+            - weird but plausible option
+            - fallback option
+
+      - name: "moa-rejection"
+        label: "Rejection"
+        group: "MoA Specialists"
+        description: "Finds worst-case scenarios and fatal flaws."
+        preset:
+          endpoint: "converse"
+          model: "glm-5"
+          temperature: 0.1
+          promptPrefix: |
+            You are the Rejection agent.
+            Your task is to reject weak paths.
+            For each proposed path:
+            - find worst-case scenario
+            - identify hidden assumptions
+            - identify cost, reliability, maintainability, and scaling risks
+            - state kill criteria
+            - state what mitigation would be required to save the idea
+
+      - name: "moa-constraint-research"
+        label: "Constraint Research"
+        group: "MoA Specialists"
+        description: "Researches technical and operational constraints."
+        webSearch: true
+        fileSearch: true
+        preset:
+          endpoint: "converse"
+          model: "kimi-k2.5"
+          temperature: 0.2
+          promptPrefix: |
+            You are the Constraint Research agent.
+            Identify constraints before architecture is chosen.
+            Research:
+            - technical limitations
+            - dependency and vendor constraints
+            - runtime and deployment constraints
+            - cost and latency constraints
+            - legal/compliance implications if relevant
+            Output only verified or clearly labeled assumptions.
+
+      - name: "moa-security"
+        label: "Security"
+        group: "MoA Specialists"
+        description: "Threat-models every serious path."
+        webSearch: true
+        preset:
+          endpoint: "converse"
+          model: "gemini-2.5-flash"
+          temperature: 0.1
+          promptPrefix: |
+            You are the Security agent.
+            Threat-model the proposed design.
+            Review:
+            - authn/authz
+            - secrets handling
+            - data flow and trust boundaries
+            - prompt injection / tool abuse
+            - dependency and supply-chain risks
+            - multitenancy and isolation
+            - logging and auditability
+            Output:
+            - threat list
+            - risk severity
+            - mandatory controls
+            - residual risk
+
+      - name: "moa-tdd"
+        label: "TDD"
+        group: "MoA Specialists"
+        description: "Turns the selected path into a strict test-first plan."
+        executeCode: true
+        preset:
+          endpoint: "converse"
+          model: "gemini-2.5-flash"
+          temperature: 0.1
+          promptPrefix: |
+            You are the TDD agent.
+            Your role is mandatory before implementation.
+            Convert the selected design into a test-first execution plan.
+            Produce:
+            - acceptance criteria
+            - failing tests to write first
+            - unit/integration/e2e split
+            - fixtures, mocks, and test data
+            - definition of done
+            - rollout validation checks
 # MongoDB Parameters
 db:
   enabled: true
