@@ -25,13 +25,11 @@ data:
             Fixes known Gemini 3 reasoning signature bugs without modifying core LiteLLM logic.
             """
             model = data.get("model", "")
-            print(f"DEBUG GEMINI PATCH - Hook triggered for model: {model}", flush=True)
+            print(f"GEMINI_PATCH: Hook triggered for model: {model}", flush=True)
             
             try:
-                if "gemini" not in model.lower():
-                    return data
-                    
                 if "messages" in data and isinstance(data["messages"], list):
+
                     for msg in data["messages"]:
                         role = msg.get("role", "")
                         
