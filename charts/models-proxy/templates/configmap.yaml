@@ -9,10 +9,8 @@
 {{- if $geminiPatchEnabled }}
 {{- $settings = merge $settings (dict "callbacks" (list "litellm_gemini_patch.proxy_handler_instance")) }}
 {{- end }}
-{{- $yaml := $settings | toYaml -}}
-{{- $modelListYaml := .model_list | toYaml -}}
-{{- $combined := printf "litellm_settings:\n%s\nmodel_list:\n%s" (trimSuffix "\n" $yaml) $modelListYaml -}}
-{{- $value := include "common.tplvalues.render" ( dict "value" $combined "context" . ) -}}
+{{- $combined := dict "litellm_settings" $settings "model_list" .model_list -}}
+{{- $value := include "common.tplvalues.render" ( dict "value" ($combined | toYaml) "context" $root ) -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
