@@ -118,6 +118,19 @@ proxy:
             - path: /app/litellm_gemini_patch.py
               subPath: litellm_gemini_patch.py
               readOnly: true
+    # Fireworks tool-calling patch - fixes tool call loop issues with glm-5 and other Fireworks models
+    # Use proxy.persistence["fireworks-patch"].enabled to enable/disable
+    # Use proxy.persistence["fireworks-patch"].name to customize the ConfigMap name (optional)
+    fireworks-patch:
+      enabled: true
+      name: litellm-fireworks-plugin
+      type: configMap
+      advancedMounts:
+        litellm:
+          litellm:
+            - path: /app/litellm_fireworks_patch.py
+              subPath: litellm_fireworks_patch.py
+              readOnly: true
 
   serviceAccount:
     default:
