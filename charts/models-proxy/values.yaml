@@ -62,6 +62,11 @@ proxy:
                 name: gemini-api-key
                 key: apiKey
 
+            FIREWORKS_API_KEY:
+              secretKeyRef:
+                name: fireworks-api-key-01
+                key: apiKey
+
             #LITELLM_MASTER_KEY:
             #  secretKeyRef:
             #    name: proxy-api-key
@@ -112,6 +117,19 @@ proxy:
           litellm:
             - path: /app/litellm_gemini_patch.py
               subPath: litellm_gemini_patch.py
+              readOnly: true
+    # Fireworks tool-calling patch - fixes tool call loop issues with glm-5 and other Fireworks models
+    # Use proxy.persistence["fireworks-patch"].enabled to enable/disable
+    # Use proxy.persistence["fireworks-patch"].name to customize the ConfigMap name (optional)
+    fireworks-patch:
+      enabled: true
+      name: litellm-fireworks-plugin
+      type: configMap
+      advancedMounts:
+        litellm:
+          litellm:
+            - path: /app/litellm_fireworks_patch.py
+              subPath: litellm_fireworks_patch.py
               readOnly: true
 
   serviceAccount:
@@ -169,6 +187,10 @@ config:
     - model_name: "gemini/gemini-2.5-flash-image"
       litellm_params:
         model: "gemini/gemini-2.5-flash-image"
+    # Fireworks models
+    - model_name: "fireworks/accounts/fireworks/models/glm-5"
+      litellm_params:
+        model: "fireworks/accounts/fireworks/models/glm-5"
     # Wildcard fallback
     - model_name: "*"
       litellm_params:
