@@ -1,0 +1,152 @@
+{{- $persistence := .Values.proxy.persistence }}
+{{- if and $persistence (hasKey $persistence "fireworks-patch") }}
+{{- $fp := index $persistence "fireworks-patch" }}
+{{- if (get $fp "enabled") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ default "litellm-fireworks-plugin" $fp.name }}
+  namespace: {{ include "common.names.namespace" . }}
+data:
+  litellm_fireworks_patch.py: |
+    import json
+    import logging
+    import re
+    from litellm.integrations.custom_logger import CustomLogger
+
+    logging.basicConfig(level=logging.DEBUG)
+    logger = logging.getLogger(__name__)
+
+    class FireworksToolCallPatch(CustomLogger):
+        """
+        Patches tool-calling issues with Fireworks AI models (particularly glm-5).
+        
+        Known issues:
+        1. Missing or incorrect finish_reason in tool call responses
+        2. Empty content field when tool_calls are present
+        3. Streaming responses not properly signaling end of tool calls
+        4. Potential duplicate tool calls in responses
+        """
+        
+        async def async_pre_call_hook(self, user_api_key_dict, cache, data, **kwargs):
+            """
+            Pre-processes requests before they are sent to Fireworks AI.
+            """
+            model = data.get("model", "")
+            logger.debug(f"Fireworks patch triggered for model: {model}")
+            
+            # Only apply to Fireworks models (glm-5, etc.)
+            if not self._is_fireworks_model(model):
+                return data
+            
+            logger.info(f"Applying Fireworks patch for model: {model}")
+            return data
+        
+        async def async_post_call_hook(self, user_api_key_dict, cache, response, **kwargs):
+            """
+            Post-processes responses from Fireworks AI to fix tool-calling issues.
+            """
+            model = kwargs.get("model", "")
+            
+            if not self._is_fireworks_model(model):
+                return response
+            
+            logger.info(f"Applying Fireworks response patch for model: {model}")
+            
+            # Handle different response types
+            if hasattr(response, 'choices'):
+                return self._patch_response(response)
+            elif isinstance(response, dict):
+                return self._patch_response_dict(response)
+            
+            return response
+        
+        def _is_fireworks_model(self, model: str) -> bool:
+            """Check if the model is a Fireworks AI model that needs patching."""
+            fireworks_models = ["glm-5", "fireworks/", "accounts/fireworks/"]
+            model_lower = model.lower()
+            return any(fm in model_lower for fm in [m.lower() for m in fireworks_models])
+        
+        def _patch_response(self, response):
+            """Patch the response object to fix tool-calling issues."""
+            try:
+                for choice in response.choices:
+                    if hasattr(choice, 'message') and choice.message:
+                        self._patch_message(choice.message)
+                    
+                    # Fix finish_reason for tool calls
+                    if hasattr(choice, 'finish_reason'):
+                        if choice.finish_reason is None or choice.finish_reason == "":
+                            # Check if there are tool calls
+                            if hasattr(choice, 'message') and choice.message:
+                                if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
+                                    choice.finish_reason = "tool_calls"
+                                    logger.debug("Set finish_reason to 'tool_calls'")
+                                elif hasattr(choice.message, 'content') and choice.message.content:
+                                    choice.finish_reason = "stop"
+                                    logger.debug("Set finish_reason to 'stop'")
+            except Exception as e:
+                logger.error(f"Error patching response: {e}")
+            
+            return response
+        
+        def _patch_response_dict(self, response: dict) -> dict:
+            """Patch the response dictionary to fix tool-calling issues."""
+            try:
+                choices = response.get("choices", [])
+                for choice in choices:
+                    if "message" in choice:
+                        self._patch_message_dict(choice["message"])
+                    
+                    # Fix finish_reason for tool calls
+                    if "finish_reason" in choice:
+                        if choice["finish_reason"] is None or choice["finish_reason"] == "":
+                            message = choice.get("message", {})
+                            if message.get("tool_calls"):
+                                choice["finish_reason"] = "tool_calls"
+                                logger.debug("Set finish_reason to 'tool_calls' in dict")
+                            elif message.get("content"):
+                                choice["finish_reason"] = "stop"
+                                logger.debug("Set finish_reason to 'stop' in dict")
+            except Exception as e:
+                logger.error(f"Error patching response dict: {e}")
+            
+            return response
+        
+        def _patch_message(self, message):
+            """Patch a message object to fix tool-calling issues."""
+            # Ensure content is None (not empty string) when tool_calls are present
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                if hasattr(message, 'content') and message.content in ["", " "]:
+                    message.content = None
+                    logger.debug("Set content to None for tool call message")
+            
+            # Validate tool call IDs
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                for tc in message.tool_calls:
+                    if hasattr(tc, 'id') and not tc.id:
+                        # Generate a unique ID if missing
+                        import uuid
+                        tc.id = f"call_{uuid.uuid4().hex[:24]}"
+                        logger.debug(f"Generated tool call ID: {tc.id}")
+        
+        def _patch_message_dict(self, message: dict):
+            """Patch a message dictionary to fix tool-calling issues."""
+            # Ensure content is None (not empty string) when tool_calls are present
+            if message.get("tool_calls"):
+                if message.get("content") in ["", " "]:
+                    message["content"] = None
+                    logger.debug("Set content to None for tool call message dict")
+            
+            # Validate tool call IDs
+            tool_calls = message.get("tool_calls", [])
+            for tc in tool_calls:
+                if isinstance(tc, dict) and not tc.get("id"):
+                    import uuid
+                    tc["id"] = f"call_{uuid.uuid4().hex[:24]}"
+                    logger.debug(f"Generated tool call ID in dict: {tc['id']}")
+
+    # Create instance for LiteLLM callback registration
+    proxy_handler_instance = FireworksToolCallPatch()
+{{- end }}
+{{- end }}
