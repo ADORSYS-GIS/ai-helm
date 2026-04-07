@@ -11,6 +11,27 @@ spec:
   lua:
     - type: Inline
       inline: |
+        function envoy_on_request(request_handle)
+          local model = request_handle:headers():get("x-ai-eg-model")
+          if model and model:find("-image") then
+            local body_size = request_handle:body():length()
+            if body_size > 0 then
+              local body = request_handle:body():getBytes(0, body_size)
+              local new_body = body
+              if body:find("\"stream\"%s*:%s*false") then
+                new_body = body:gsub("\"stream\"%s*:%s*false", "\"stream\": true")
+              elseif not body:find("\"stream\"%s*:%s*true") then
+                new_body = body:gsub("{", "{\"stream\": true, ", 1)
+              end
+              
+              if new_body ~= body then
+                request_handle:body():setBytes(new_body)
+                request_handle:headers():replace("content-length", tostring(#new_body))
+              end
+            end
+          end
+        end
+
         function envoy_on_response(response_handle)
           local stream_info = response_handle:streamInfo()
           local metadata = stream_info:dynamicMetadata()
