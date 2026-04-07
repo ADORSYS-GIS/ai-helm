@@ -1,18 +1,27 @@
 {{- with .Values.config }}
 {{- $geminiPatchEnabled := false -}}
+{{- $fireworksPatchEnabled := false -}}
 {{- $root := $ -}}
 {{- $persistence := index $root.Values "proxy" "persistence" -}}
 {{- if and $persistence (hasKey $persistence "gemini-patch") -}}
 {{-   $geminiPatchEnabled = index (index $persistence "gemini-patch") "enabled" -}}
 {{- end -}}
+{{- if and $persistence (hasKey $persistence "fireworks-patch") -}}
+{{-   $fireworksPatchEnabled = index (index $persistence "fireworks-patch") "enabled" -}}
+{{- end -}}
 {{- $settings := omit .litellm_settings "callbacks" }}
-{{- if $geminiPatchEnabled }}
-{{- $settings = merge $settings (dict "callbacks" (list "litellm_gemini_patch.proxy_handler_instance")) }}
+{{- $callbacks := list -}}
+{{- if $geminiPatchEnabled -}}
+{{-   $callbacks = append $callbacks "litellm_gemini_patch.proxy_handler_instance" -}}
+{{- end -}}
+{{- if $fireworksPatchEnabled -}}
+{{-   $callbacks = append $callbacks "litellm_fireworks_patch.proxy_handler_instance" -}}
+{{- end -}}
+{{- if $callbacks -}}
+{{- $settings = merge $settings (dict "callbacks" $callbacks) -}}
 {{- end }}
-{{- $yaml := $settings | toYaml -}}
-{{- $modelListYaml := .model_list | toYaml -}}
-{{- $combined := printf "%s\nmodel_list:\n%s" (trimSuffix "\n" $yaml) $modelListYaml -}}
-{{- $value := include "common.tplvalues.render" ( dict "value" $combined "context" . ) -}}
+{{- $combined := dict "litellm_settings" $settings "model_list" .model_list -}}
+{{- $value := include "common.tplvalues.render" ( dict "value" ($combined | toYaml) "context" $root ) -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

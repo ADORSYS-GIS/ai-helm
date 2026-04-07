@@ -45,7 +45,7 @@ proxy:
     # This is the single source of truth for enabling/disabling the patch.
     # When enabled: creates ConfigMap, mounts it, adds callback automatically
     # When disabled: removes all related config automatically
-    gemini_patch:
+    gemini-patch:
       enabled: true
 ```
 
@@ -70,13 +70,13 @@ global:
 
 ### Step 2: Disable the Patch in values.yaml
 
-Set `proxy.persistence.gemini_patch.enabled: false` in `charts/models-proxy/values.yaml`:
+Set `proxy.persistence.gemini-patch.enabled: false` in `charts/models-proxy/values.yaml`:
 
 ```yaml
 # Disable the Gemini patch - removes all related config automatically:
 proxy:
   persistence:
-    gemini_patch:
+    gemini-patch:
       enabled: false
 ```
 
@@ -154,7 +154,7 @@ proxy:
               subPath: config.yaml
               readOnly: true
     # Gemini patch disabled - no ConfigMap or mount created
-    gemini_patch:
+    gemini-patch:
       enabled: false
 
 config:
@@ -215,11 +215,11 @@ kubectl delete configmap litellm-gemini-plugin -n $NAMESPACE --ignore-not-found
 # Get current values.yaml path
 VALUES_FILE="charts/models-proxy/values.yaml"
 
-# Check if gemini_patch section exists
-if grep -q "gemini_patch:" $VALUES_FILE; then
-  echo "Found gemini_patch in values.yaml - please manually remove:"
-  echo "  - persistence.gemini_patch section"
-  echo "  - callbacks: [\"litellm_gemini_patch.proxy_handler_instance\"]"
+# Check if gemini-patch section exists
+if grep -q "gemini-patch:" $VALUES_FILE; then
+  echo "Found gemini-patch in values.yaml - please manually remove:"
+  echo "  - persistence.gemini-patch section"
+  echo "  - callbacks: [\"litellm_gemini-patch.proxy_handler_instance\"]"
   echo "Then run: helm upgrade models-proxy charts/models-proxy -n $NAMESPACE"
 else
   echo "Patch sections already removed from values.yaml"

@@ -1,12 +1,19 @@
 global:
   litellm:
-    version: "main-v1.82.4-nightly"
+    version: "v1.82.3-stable"
   configmap:
     name: "litellm-config"
 
 proxy:
   defaultPodOptions:
     automountServiceAccountToken: false
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
 
   service:
     litellm:
@@ -55,6 +62,11 @@ proxy:
                 name: gemini-api-key
                 key: apiKey
 
+            FIREWORKS_API_KEY:
+              secretKeyRef:
+                name: fireworks-api-key-01
+                key: apiKey
+
             #LITELLM_MASTER_KEY:
             #  secretKeyRef:
             #    name: proxy-api-key
@@ -67,6 +79,15 @@ proxy:
             requests:
               cpu: 500m
               memory: 512Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           probes:
             liveness:
               enabled: false
@@ -97,10 +118,42 @@ proxy:
             - path: /app/litellm_gemini_patch.py
               subPath: litellm_gemini_patch.py
               readOnly: true
+    # Fireworks tool-calling patch - fixes tool call loop issues with glm-5 and other Fireworks models
+    # Use proxy.persistence["fireworks-patch"].enabled to enable/disable
+    # Use proxy.persistence["fireworks-patch"].name to customize the ConfigMap name (optional)
+    fireworks-patch:
+      enabled: true
+      name: litellm-fireworks-plugin
+      type: configMap
+      advancedMounts:
+        litellm:
+          litellm:
+            - path: /app/litellm_fireworks_patch.py
+              subPath: litellm_fireworks_patch.py
+              readOnly: true
 
   serviceAccount:
     default:
       enabled: false
+
+networkPolicy:
+  enabled: true
+  # Namespace(s) that should be allowed to access the proxy
+  ingressNamespaces:
+    - envoy-gateway-system
+    - envoy-ai-gateway-system
+    - default
+  egressDestinations:
+    # Google Gemini API
+    - cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # OpenAI API
+    - cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
 
 config:
   litellm_settings:
@@ -112,33 +165,25 @@ config:
   model_list:
     # Explicit allowlist of supported models/providers
     # Add new models here following the pattern below
-    # Format: model_name (how clients call it) -> litellm_params.model (how LiteLLM routes it)
-    
-    # ── Google Gemini Pro models
-    - model_name: "gemini/gemini-3.1-pro-preview"
+    # Models synchronized with ai-models overrides
+    - model_name: "gemini/gemini-3.1-pro"
       litellm_params:
-        model: "gemini/gemini-3.1-pro-preview"
-    - model_name: "gemini/gemini-2.5-pro"
-      litellm_params:
-        model: "gemini/gemini-2.5-pro"
-    
-    # ── Google Gemini Flash models
-    - model_name: "gemini/gemini-3-flash"
-      litellm_params:
-        model: "gemini/gemini-3-flash"
-    - model_name: "gemini/gemini-2.5-flash"
-      litellm_params:
-        model: "gemini/gemini-2.5-flash"
-    
-    # ── Google Gemini Lite models
+        model: "gemini/gemini-3.1-pro"
     - model_name: "gemini/gemini-3.1-flash-lite"
       litellm_params:
         model: "gemini/gemini-3.1-flash-lite"
+    - model_name: "gemini/gemini-3-flash"
+      litellm_params:
+        model: "gemini/gemini-3-flash"
+    - model_name: "gemini/gemini-2.5-pro"
+      litellm_params:
+        model: "gemini/gemini-2.5-pro"
+    - model_name: "gemini/gemini-2.5-flash"
+      litellm_params:
+        model: "gemini/gemini-2.5-flash"
     - model_name: "gemini/gemini-2.5-flash-lite"
       litellm_params:
         model: "gemini/gemini-2.5-flash-lite"
-    
-    # ── Google Gemini Image model
     - model_name: "gemini/gemini-2.5-flash-image"
       litellm_params:
         model: "gemini/gemini-2.5-flash-image"
@@ -148,5 +193,14 @@ config:
     # - model_name: "provider/model-name"
     #   litellm_params:
     #     model: "provider/model-name"
+    # Fireworks models
+    - model_name: "fireworks/accounts/fireworks/models/glm-5"
+      litellm_params:
+        model: "fireworks/accounts/fireworks/models/glm-5"
+    # Wildcard fallback
+    - model_name: "*"
+      litellm_params:
+        model: "*"
+
     
         
