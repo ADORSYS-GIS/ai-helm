@@ -1,0 +1,78 @@
+# artillery-gateway-load.yml
+# Full gateway stack load test through Envoy
+# Tests multiple models and routing paths simultaneously
+#
+# Usage:
+#   artillery run artillery-gateway-load.yml -o report-gateway-load.json
+#   artillery report report-gateway-load.json --output report-gateway-load.html
+#
+# Prerequisites:
+#   - LIGHTBRIDGE_API_KEY environment variable set
+
+config:
+  target: "https://api.ai.camer.digital"
+  phases:
+    # Phase 1: Baseline at 2 RPS
+    - name: "Baseline"
+      duration: 60
+      arrivalRate: 2
+      
+    # Phase 2: Ramp up from 2 to 20 RPS
+    - name: "Scale up"
+      duration: 180
+      arrivalRate: 2
+      rampTo: 20
+      
+    # Phase 3: Sustained load at 20 RPS
+    - name: "Sustained"
+      duration: 120
+      arrivalRate: 20
+      
+  defaults:
+    headers:
+      Authorization: "Bearer {{ $LIGHTBRIDGE_API_KEY }}"
+      Content-Type: "application/json"
+
+scenarios:
+  # Fireworks direct model - 50% of traffic
+  - name: "Fireworks direct - qwen3-8b"
+    weight: 3
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          headers:
+            x-ai-eg-model: "qwen3-8b"
+          json:
+            messages:
+              - role: "user"
+                content: "Hello"
+            max_tokens: 10
+            
+  # Proxied model through LiteLLM - 33% of traffic
+  - name: "Proxied - gemini-2.5-flash"
+    weight: 2
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          headers:
+            x-ai-eg-model: "gemini-2.5-flash"
+          json:
+            messages:
+              - role: "user"
+                content: "Hello"
+            max_tokens: 10
+            
+  # Streaming request - 17% of traffic
+  - name: "Streaming - qwen3-8b"
+    weight: 1
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          headers:
+            x-ai-eg-model: "qwen3-8b"
+          json:
+            messages:
+              - role: "user"
+                content: "Count to 10"
+            max_tokens: 50
+            stream: true

@@ -1,0 +1,45 @@
+# artillery-lua-overhead.yml
+# Measures Lua policy overhead by comparing with/without the policy
+#
+# Usage:
+#   Step 1 - With Lua (baseline):
+#     artillery run artillery-lua-overhead.yml -o report-with-lua.json
+#
+#   Step 2 - Disable Lua policy:
+#     kubectl patch envoyextensionpolicy -n converse-gateway core-gateway-telemetry-lua \
+#       --type=json -p='[{"op":"replace","path":"/spec/lua","value":[]}]'
+#     sleep 30  # Wait for Envoy to reload
+#
+#   Step 3 - Without Lua:
+#     artillery run artillery-lua-overhead.yml -o report-without-lua.json
+#
+#   Step 4 - Re-enable Lua policy:
+#     kubectl rollout restart deployment/envoy -n converse-gateway
+#     kubectl rollout status deployment/envoy -n converse-gateway
+#
+#   Step 5 - Generate reports:
+#     artillery report report-with-lua.json --output report-with-lua.html
+#     artillery report report-without-lua.json --output report-without-lua.html
+
+config:
+  target: "https://api.ai.camer.digital"
+  phases:
+    - name: "Baseline measurement"
+      duration: 120
+      arrivalRate: 5
+  defaults:
+    headers:
+      Authorization: "Bearer {{ $LIGHTBRIDGE_API_KEY }}"
+      x-ai-eg-model: "qwen3-8b"
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Chat completion - qwen3-8b"
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            messages:
+              - role: "user"
+                content: "Say hello"
+            max_tokens: 10
