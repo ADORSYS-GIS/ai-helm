@@ -3,6 +3,7 @@
 # Establishes baseline latency for the raw AI provider
 #
 # Usage:
+#   export FIREWORKS_API_KEY="your-key"
 #   artillery run artillery-direct-fireworks.yml -o report-direct-fireworks.json
 #   artillery report report-direct-fireworks.json --output report-direct-fireworks.html
 #
@@ -17,7 +18,7 @@ config:
       arrivalRate: 2
   defaults:
     headers:
-      Authorization: "Bearer {{ $FIREWORKS_API_KEY }}"
+      Authorization: "Bearer {{ $processEnvironment.FIREWORKS_API_KEY }}"
       Content-Type: "application/json"
 
 scenarios:
@@ -31,6 +32,3 @@ scenarios:
               - role: "user"
                 content: "Say hello"
             max_tokens: 10
-          capture:
-            - json: "$.choices[0].message.content"
-              as: "response"

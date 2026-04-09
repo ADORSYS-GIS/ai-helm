@@ -3,6 +3,7 @@
 # Measures auth latency under various load conditions
 #
 # Usage:
+#   export LIGHTBRIDGE_API_KEY="your-key"
 #   artillery run artillery-authorino-load.yml -o report-authorino.json
 #   artillery report report-authorino.json --output report-authorino.html
 #
@@ -40,7 +41,7 @@ config:
       
   defaults:
     headers:
-      Authorization: "Bearer {{ $LIGHTBRIDGE_API_KEY }}"
+      Authorization: "Bearer {{ $processEnvironment.LIGHTBRIDGE_API_KEY }}"
       Content-Type: "application/json"
 
 scenarios:

@@ -2,6 +2,7 @@
 # Measures latency through the full gateway stack (Envoy + Authorino + Lua)
 #
 # Usage:
+#   export LIGHTBRIDGE_API_KEY="your-key"
 #   artillery run artillery-gateway-latency.yml -o report-gateway.json
 #   artillery report report-gateway.json --output report-gateway.html
 #
@@ -16,7 +17,7 @@ config:
       arrivalRate: 2
   defaults:
     headers:
-      Authorization: "Bearer {{ $LIGHTBRIDGE_API_KEY }}"
+      Authorization: "Bearer {{ $processEnvironment.LIGHTBRIDGE_API_KEY }}"
       Content-Type: "application/json"
 
 scenarios:
@@ -32,6 +33,3 @@ scenarios:
               - role: "user"
                 content: "Say hello"
             max_tokens: 10
-          capture:
-            - json: "$.choices[0].message.content"
-              as: "response"
