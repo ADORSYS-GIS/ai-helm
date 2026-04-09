@@ -30,6 +30,7 @@ Run tests in this order to minimize risk and maximize data value:
 | 5 | LiteLLM direct vs proxied test | Low | 15 min |
 | 6 | Lua overhead test (disable policy) | Medium | 20 min |
 | 7 | Load test LiteLLM | Medium | 30 min |
+| 8 | Authorino auth load test | Low | 15 min |
 
 ### Pre-Test Checklist
 
@@ -283,6 +284,41 @@ artillery run artillery/gateway/artillery-gateway-load.yml -o report-gateway-loa
 # Generate report
 artillery report report-gateway-load.json --output report-gateway-load.html
 ```
+
+---
+
+### Test 9: Authorino Auth Load Test (15 min, Low risk)
+
+> **Tool:** Artillery - focused auth layer load test
+> **Purpose:** Isolate Authorino ext-authz latency under varying load
+
+**Artillery Config:** `artillery/gateway/artillery-authorino-load.yml`
+
+**Run commands:**
+```bash
+# Run Authorino-focused load test
+artillery run artillery/gateway/artillery-authorino-load.yml -o report-authorino.json
+
+# Generate report
+artillery report report-authorino.json --output report-authorino.html
+
+# Extract per-phase latency to see auth scaling
+jq '.aggregate.phases[] | {name: .name, median: .latency.median, p95: .latency.p95}' report-authorino.json
+```
+
+**Data to collect:**
+| Phase | RPS | p50 (ms) | p95 (ms) | Error Rate | Auth Overhead Trend |
+|-------|-----|----------|----------|------------|---------------------|
+| Warmup | 1 | | | | Baseline |
+| Light | 5 | | | | |
+| Medium | 15 | | | | |
+| Heavy | 30 | | | | |
+| Stress | 50 | | | | |
+
+**Interpretation:**
+- If latency increases linearly with RPS → Authorino scales normally
+- If latency spikes exponentially → Authorino bottleneck (consider replicas)
+- If error rate > 1% at 30 RPS → Auth layer overwhelmed
 
 ---
 
@@ -742,6 +778,72 @@ Based on the data, we will decide:
 - [ ] Is Lua optimization worth pursuing? (only if overhead > 10ms)
 - [ ] Is Authorino optimization worth pursuing? (only if p95 > 30ms)
 - [ ] Is LiteLLM scaling worth pursuing? (only if overhead > 20ms or throttling)
+
+---
+
+## Decision Tree
+
+Use this flowchart to interpret test results and determine optimization priorities:
+
+```mermaid
+flowchart TD
+    A[Run All Tests] --> B{Lua overhead > 10ms?}
+    
+    B -->|Yes| C[🔴 Priority 1: Optimize Lua]
+    C --> C1{Which hook is slower?}
+    C1 -->|Request| C2[Profile request hook - header/body parsing]
+    C1 -->|Response| C3[Profile response hook - cost calculation]
+    C1 -->|Both equal| C4[Profile both hooks equally]
+    
+    B -->|No| D{Authorino p95 > 30ms?}
+    
+    D -->|Yes| E[🔴 Priority 1: Optimize Authorino]
+    E --> E1{Resource constrained?}
+    E1 -->|CPU/Memory high| E2[Scale Authorino replicas]
+    E1 -->|Resources OK| E3[Investigate auth chain - OPA/DB latency]
+    
+    D -->|No| F{LiteLLM overhead > 20ms?}
+    
+    F -->|Yes| G[🟡 Priority 2: Scale LiteLLM]
+    G --> G1{At what RPS does latency spike?}
+    G1 -->|< 10 RPS| G2[Critical: Scale immediately]
+    G1 -->|10-20 RPS| G3[Plan horizontal scaling]
+    G1 -->|> 20 RPS| G4[Monitor, scale if traffic grows]
+    
+    F -->|No| H{Error rate > 1% at 20 RPS?}
+    
+    H -->|Yes| I[🟡 Priority 2: Investigate errors]
+    I --> I1[Check upstream provider status]
+    I --> I2[Check timeout configurations]
+    I --> I3[Check rate limiting]
+    
+    H -->|No| J[✅ Gateway is efficient]
+    J --> K[Document baseline]
+    K --> L[Set up monitoring alerts]
+    L --> M[Review if traffic increases 2x]
+```
+
+### Threshold Reference
+
+| Metric | Good | Warning | Critical | Action |
+|--------|------|---------|----------|--------|
+| Lua overhead | < 5ms | 5-10ms | > 10ms | Profile and optimize |
+| Authorino p95 | < 20ms | 20-30ms | > 30ms | Scale or optimize chain |
+| LiteLLM overhead | < 10ms | 10-20ms | > 20ms | Add replicas |
+| Error rate @ 20 RPS | < 0.1% | 0.1-1% | > 1% | Investigate root cause |
+| Gateway total overhead | < 30ms | 30-50ms | > 50ms | Layer-by-layer analysis |
+
+### Decision Matrix
+
+| Lua | Authorino | LiteLLM | Recommended Action |
+|------|-----------|--------|-------------------|
+| High | Low | Low | Focus on Lua optimization |
+| Low | High | Low | Scale Authorino, check auth chain |
+| Low | Low | High | Scale LiteLLM replicas |
+| High | High | Low | Lua first (quick wins), then Authorino |
+| High | Low | High | Lua + LiteLLM scaling in parallel |
+| Low | High | High | Authorino + LiteLLM scaling in parallel |
+| High | High | High | All three - prioritize by impact |
 
 ---
 

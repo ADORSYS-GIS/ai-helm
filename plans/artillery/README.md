@@ -15,7 +15,8 @@ artillery/
 └── gateway/             # Tests through the full gateway stack
     ├── artillery-gateway-latency.yml
     ├── artillery-gateway-load.yml
-    └── artillery-lua-overhead.yml
+    ├── artillery-lua-overhead.yml
+    └── artillery-authorino-load.yml
 ```
 
 ## Prerequisites
@@ -75,6 +76,10 @@ artillery report report-gateway.json --output report-gateway.html
 # Load test
 artillery run gateway/artillery-gateway-load.yml -o report-gateway-load.json
 artillery report report-gateway-load.json --output report-gateway-load.html
+
+# Authorino-focused load test
+artillery run gateway/artillery-authorino-load.yml -o report-authorino.json
+artillery report report-authorino.json --output report-authorino.html
 ```
 
 ### 4. Lua Overhead Test
