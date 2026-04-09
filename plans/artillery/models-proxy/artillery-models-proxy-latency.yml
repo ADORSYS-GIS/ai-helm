@@ -1,0 +1,36 @@
+# artillery-models-proxy-latency.yml
+# Measures latency directly to models-proxy (LiteLLM) bypassing the gateway
+#
+# Usage:
+#   kubectl port-forward svc/models-proxy 4000:4000 -n converse-proxy &
+#   artillery run artillery-models-proxy-latency.yml -o report-models-proxy.json
+#   artillery report report-models-proxy.json --output report-models-proxy.html
+#
+# Prerequisites:
+#   - GEMINI_API_KEY environment variable set (for Gemini models through LiteLLM)
+
+config:
+  target: "http://localhost:4000"
+  phases:
+    - name: "Latency baseline"
+      duration: 60
+      arrivalRate: 2
+  defaults:
+    headers:
+      Authorization: "Bearer {{ $GEMINI_API_KEY }}"
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Chat completion - Gemini 2.5 Flash"
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            model: "gemini/gemini-2.5-flash"
+            messages:
+              - role: "user"
+                content: "Say hello"
+            max_tokens: 10
+          capture:
+            - json: "$.choices[0].message.content"
+              as: "response"

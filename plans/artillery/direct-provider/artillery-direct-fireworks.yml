@@ -1,0 +1,36 @@
+# artillery-direct-fireworks.yml
+# Direct call to Fireworks AI API bypassing everything (gateway, LiteLLM, etc.)
+# Establishes baseline latency for the raw AI provider
+#
+# Usage:
+#   artillery run artillery-direct-fireworks.yml -o report-direct-fireworks.json
+#   artillery report report-direct-fireworks.json --output report-direct-fireworks.html
+#
+# Prerequisites:
+#   - FIREWORKS_API_KEY environment variable set
+
+config:
+  target: "https://api.fireworks.ai"
+  phases:
+    - name: "Direct provider baseline"
+      duration: 60
+      arrivalRate: 2
+  defaults:
+    headers:
+      Authorization: "Bearer {{ $FIREWORKS_API_KEY }}"
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Direct Fireworks qwen3-8b"
+    flow:
+      - post:
+          url: "/inference/v1/chat/completions"
+          json:
+            model: "accounts/fireworks/models/qwen3-8b"
+            messages:
+              - role: "user"
+                content: "Say hello"
+            max_tokens: 10
+          capture:
+            - json: "$.choices[0].message.content"
+              as: "response"

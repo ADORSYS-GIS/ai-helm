@@ -1,0 +1,35 @@
+# artillery-direct-gemini.yml
+# Direct call to Google AI Studio API bypassing everything (gateway, LiteLLM, etc.)
+# Establishes baseline latency for the raw AI provider
+#
+# Usage:
+#   artillery run artillery-direct-gemini.yml -o report-direct-gemini.json
+#   artillery report report-direct-gemini.json --output report-direct-gemini.html
+#
+# Prerequisites:
+#   - GEMINI_API_KEY environment variable set (Google AI Studio API key)
+
+config:
+  target: "https://generativelanguage.googleapis.com"
+  phases:
+    - name: "Direct provider baseline"
+      duration: 60
+      arrivalRate: 2
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Direct Gemini 2.5 Flash"
+    flow:
+      - post:
+          url: "/v1beta/openai/chat/completions?key={{ $GEMINI_API_KEY }}"
+          json:
+            model: "gemini-2.5-flash"
+            messages:
+              - role: "user"
+                content: "Say hello"
+            max_tokens: 10
+          capture:
+            - json: "$.choices[0].message.content"
+              as: "response"

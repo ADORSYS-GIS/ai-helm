@@ -1,0 +1,37 @@
+# artillery-gateway-latency.yml
+# Measures latency through the full gateway stack (Envoy + Authorino + Lua)
+#
+# Usage:
+#   artillery run artillery-gateway-latency.yml -o report-gateway.json
+#   artillery report report-gateway.json --output report-gateway.html
+#
+# Prerequisites:
+#   - LIGHTBRIDGE_API_KEY environment variable set
+
+config:
+  target: "https://api.ai.camer.digital"
+  phases:
+    - name: "Latency baseline"
+      duration: 60
+      arrivalRate: 2
+  defaults:
+    headers:
+      Authorization: "Bearer {{ $LIGHTBRIDGE_API_KEY }}"
+      Content-Type: "application/json"
+
+scenarios:
+  # Test a model that goes through models-proxy (Gemini)
+  - name: "Chat completion - gemini-2.5-flash"
+    weight: 1
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            model: "gemini-2.5-flash"
+            messages:
+              - role: "user"
+                content: "Say hello"
+            max_tokens: 10
+          capture:
+            - json: "$.choices[0].message.content"
+              as: "response"
