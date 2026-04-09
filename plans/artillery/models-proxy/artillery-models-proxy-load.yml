@@ -3,6 +3,7 @@
 #
 # Usage:
 #   kubectl port-forward svc/models-proxy 4000:4000 -n converse-proxy &
+#   export GEMINI_API_KEY="your-key"
 #   artillery run artillery-models-proxy-load.yml -o report-models-proxy-load.json
 #   artillery report report-models-proxy-load.json --output report-models-proxy-load.html
 #
@@ -39,7 +40,7 @@ config:
       
   defaults:
     headers:
-      Authorization: "Bearer {{ $GEMINI_API_KEY }}"
+      Authorization: "Bearer {{ $processEnvironment.GEMINI_API_KEY }}"
       Content-Type: "application/json"
 
 scenarios:

@@ -25,10 +25,40 @@ artillery/
 # Install Artillery
 npm install -g artillery
 
+# Install just (command runner)
+# macOS: brew install just
+# Linux: cargo install just
+# See: https://github.com/casey/just
+
 # Set required environment variables
 export LIGHTBRIDGE_API_KEY="your-lightbridge-key"    # For gateway tests
 export GEMINI_API_KEY="your-gemini-key"              # For Gemini/LiteLLM tests
 export FIREWORKS_API_KEY="your-fireworks-key"        # For direct Fireworks tests
+
+# Note: Artillery uses {{ $processEnvironment.VAR_NAME }} syntax for env vars
+```
+
+## Quick Start with just
+
+The `justfile` automates test execution:
+
+```bash
+# Show all available commands
+just
+
+# Run complete test suite
+just all
+
+# Run specific test layer
+just direct-gemini
+just models-proxy-latency
+just gateway-load
+
+# View summary comparison
+just summary
+
+# Check Kubernetes resources
+just resources
 ```
 
 ## Test Execution Order
@@ -106,6 +136,44 @@ kubectl rollout status deployment/envoy -n converse-gateway
 artillery report report-with-lua.json --output report-with-lua.html
 artillery report report-without-lua.json --output report-without-lua.html
 ```
+
+## Report Generation
+
+The `artillery report` command is deprecated. We use a custom HTML report generator instead.
+
+### Generate HTML Reports
+
+```bash
+# Generate HTML for a specific JSON report
+just report report-direct-gemini
+
+# Generate HTML for all existing JSON reports
+just reports-all
+
+# View console summary without generating HTML
+just view report-direct-gemini
+
+# Or use the script directly
+node generate-report.js reports/report-direct-gemini.json
+```
+
+### HTML Report Features
+
+The generated HTML reports include:
+- **Summary metrics**: Total requests, success rate, errors, timeouts
+- **Latency distribution**: Min, mean, median, p75, p90, p95, p99, max
+- **Per-phase breakdown**: Charts and tables showing metrics per test phase
+- **Raw counters**: All Artillery counter metrics in tabular format
+- **Color-coded status**: Green/yellow/red indicators for quick assessment
+
+### Thresholds Used
+
+| Metric | Good (green) | Warning (yellow) | Critical (red) |
+|--------|--------------|------------------|----------------|
+| Success rate | ≥99.9% | 99-99.9% | <99% |
+| p95 latency | ≤500ms | 500-1000ms | >1000ms |
+| p99 latency | ≤1000ms | 1000-2000ms | >2000ms |
+| Max latency | ≤2000ms | 2000-5000ms | >5000ms |
 
 ## Latency Comparison Analysis
 

@@ -3,6 +3,7 @@
 #
 # Usage:
 #   kubectl port-forward svc/models-proxy 4000:4000 -n converse-proxy &
+#   export GEMINI_API_KEY="your-key"
 #   artillery run artillery-models-proxy-latency.yml -o report-models-proxy.json
 #   artillery report report-models-proxy.json --output report-models-proxy.html
 #
@@ -17,7 +18,7 @@ config:
       arrivalRate: 2
   defaults:
     headers:
-      Authorization: "Bearer {{ $GEMINI_API_KEY }}"
+      Authorization: "Bearer {{ $processEnvironment.GEMINI_API_KEY }}"
       Content-Type: "application/json"
 
 scenarios:
@@ -31,6 +32,3 @@ scenarios:
               - role: "user"
                 content: "Say hello"
             max_tokens: 10
-          capture:
-            - json: "$.choices[0].message.content"
-              as: "response"
