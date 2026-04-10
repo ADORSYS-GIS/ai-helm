@@ -180,6 +180,20 @@ _pricingProfiles:
       cachedInputPer1M: 0.20
       outputPer1M: 3.20
 
+  fireworksGlm51: &pricingFireworksGlm51
+    strategy: weighted
+    standard:
+      inputPer1M: 1.40
+      cachedInputPer1M: 0.26
+      outputPer1M: 4.40
+
+  fireworksQwen36Plus: &pricingFireworksQwen36Plus
+    strategy: weighted
+    standard:
+      inputPer1M: 0.50
+      cachedInputPer1M: 0.10
+      outputPer1M: 3.00
+
   fireworksKimiK25: &pricingFireworksKimiK25
     strategy: weighted
     standard:
@@ -354,6 +368,28 @@ models:
       model-proxy-01:
         <<: *modelProxyPrimary
         modelNameOverride: "fireworks/accounts/fireworks/models/glm-5"
+
+  glm-5p1:
+    kind: text
+    pricing: *pricingFireworksGlm51
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/glm-5p1"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/glm-5p1"
+
+  qwen3p6-plus:
+    kind: multimodal
+    pricing: *pricingFireworksQwen36Plus
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/qwen3p6-plus"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/qwen3p6-plus"
 
   kimi-k2.5:
     kind: text
