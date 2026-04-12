@@ -1254,59 +1254,43 @@ applications:
         selfHeal: true
 
   # --- Coder ---
-  - name: coder-db
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "1"
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/coder-db
-      helm:
-        releaseName: coder-db
-        valuesObject:
-          cluster:
-            name: coder-cnpg
-            instances: 1
-            storage:
-              size: 10Gi
-            bootstrap:
-              initdb:
-                database: coder
-                owner: coder
-    destination:
-      namespace: coder
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
-
   - name: coder
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "2"
-    source:
-      repoURL: oci://ghcr.io/coder/chart/coder
-      targetRevision: 2.29.5
-      helm:
-        releaseName: coder
-        valuesObject:
-          coder:
-            env:
-              - name: CODER_PG_CONNECTION_URL
-                valueFrom:
-                  secretKeyRef:
-                    name: coder-cnpg-app
-                    key: uri
-              - name: CODER_PG_OPTIONS
-                value: "sslmode=disable"
-              - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
-                value: "false"
+      argocd.argoproj.io/sync-wave: "1"
+    sources:
+      - repoURL: https://github.com/ADORSYS-GIS/ai-helm
+        targetRevision: HEAD
+        path: charts/coder-db
+        helm:
+          releaseName: coder-db
+          valuesObject:
+            cluster:
+              name: coder-cnpg
+              instances: 1
+              storage:
+                size: 10Gi
+              bootstrap:
+                initdb:
+                  database: coder
+                  owner: coder
+      - repoURL: oci://ghcr.io/coder/chart/coder
+        targetRevision: 2.29.5
+        helm:
+          releaseName: coder
+          valuesObject:
+            coder:
+              env:
+                - name: CODER_PG_CONNECTION_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-cnpg-app
+                      key: uri
+                - name: CODER_PG_OPTIONS
+                  value: "sslmode=disable"
+                - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
+                  value: "false"
     destination:
       namespace: coder
     syncPolicy:
