@@ -1,74 +1,18 @@
 name: Security Audit
 on:
   push:
-    branches: [ "main", "sec/ci-scanning-rollout" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "sec/ci-scanning-rollout" ]
+    branches: [ "main" ]
 
 permissions:
   contents: read
   pull-requests: write
 
 jobs:
-  gitleaks:
-    name: Secret Scan (Gitleaks)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
-
-  trivy:
-    name: Vulnerability Scan (Trivy)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.14.0
-
-      - name: Add Repos from Charts Automatically
-        run: |
-          set -e
-            repos=$(find charts -name 'Chart.yaml' -exec yq e '.dependencies[].repository' {} \; | sort -u)
-            for repo in $repos; do
-              if [[ "$repo" == oci://* ]]; then
-                echo "Skipping OCI registry: $repo"
-                continue
-              fi
-              name=$(basename "$repo" | tr -cd '[:alnum:]-')
-              if [ -z "$name" ]; then
-                echo "Error: Could not generate valid name for $repo"
-                exit 1
-              fi
-              helm repo add "$name" "$repo" || { echo "Failed to add $repo"; exit 1; }
-            done
-            helm repo update || { echo "Failed to update repos"; exit 1; }
-
-      - name: Build chart dependencies
-        run: |
-           set -e
-            for dir in charts/*; do
-              if [ -f "$dir/Chart.yaml" ]; then
-                helm dependency build "$dir" || { echo "Failed to build $dir"; exit 1; }
-              fi
-            done
-
-      - name: Run Trivy scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'config'
-          scan-ref: 'charts/'
-          scanners: 'vuln,secret,misconfig'
-          ignore-unfixed: true
-          format: 'table'
-          exit-code: '1'
-          severity: 'HIGH,CRITICAL'
+  scan:
+    uses: ADORSYS-GIS/ai-ops/.github/workflows/security-gates.yml@main
+    secrets: inherit
+    with:
+      trivy-scan-type: 'config'
+      trivy-target: 'charts/'
