@@ -3,6 +3,7 @@
 # Tests multiple models and routing paths simultaneously
 #
 # Usage:
+#   export LIGHTBRIDGE_API_KEY="your-key"
 #   artillery run artillery-gateway-load.yml -o report-gateway-load.json
 #   artillery report report-gateway-load.json --output report-gateway-load.html
 #
@@ -30,7 +31,7 @@ config:
       
   defaults:
     headers:
-      Authorization: "Bearer {{ $LIGHTBRIDGE_API_KEY }}"
+      Authorization: "Bearer {{ $processEnvironment.LIGHTBRIDGE_API_KEY }}"
       Content-Type: "application/json"
 
 scenarios:
@@ -40,9 +41,8 @@ scenarios:
     flow:
       - post:
           url: "/v1/chat/completions"
-          headers:
-            x-ai-eg-model: "qwen3-8b"
           json:
+            model: "qwen3-8b"
             messages:
               - role: "user"
                 content: "Hello"
@@ -54,9 +54,8 @@ scenarios:
     flow:
       - post:
           url: "/v1/chat/completions"
-          headers:
-            x-ai-eg-model: "gemini-2.5-flash"
           json:
+            model: "gemini-2.5-flash"
             messages:
               - role: "user"
                 content: "Hello"
@@ -68,9 +67,8 @@ scenarios:
     flow:
       - post:
           url: "/v1/chat/completions"
-          headers:
-            x-ai-eg-model: "qwen3-8b"
           json:
+            model: "qwen3-8b"
             messages:
               - role: "user"
                 content: "Count to 10"

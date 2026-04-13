@@ -1,0 +1,56 @@
+# artillery-models-proxy-load.yml
+# Phased load test to find LiteLLM (models-proxy) throughput limits
+#
+# Usage:
+#   kubectl port-forward svc/models-proxy 4000:4000 -n converse-proxy &
+#   export GEMINI_API_KEY="your-key"
+#   artillery run artillery-models-proxy-load.yml -o report-models-proxy-load.json
+#   artillery report report-models-proxy-load.json --output report-models-proxy-load.html
+#
+# Prerequisites:
+#   - GEMINI_API_KEY environment variable set
+
+config:
+  target: "http://localhost:4000"
+  phases:
+    # Phase 1: Warmup at 1 RPS
+    - name: "Warmup"
+      duration: 60
+      arrivalRate: 1
+      
+    # Phase 2: Light load at 5 RPS
+    - name: "Light load"
+      duration: 120
+      arrivalRate: 5
+      
+    # Phase 3: Medium load at 10 RPS
+    - name: "Medium load"
+      duration: 120
+      arrivalRate: 10
+      
+    # Phase 4: Heavy load at 20 RPS
+    - name: "Heavy load"
+      duration: 120
+      arrivalRate: 20
+      
+    # Phase 5: Stress test at 50 RPS
+    - name: "Stress test"
+      duration: 60
+      arrivalRate: 50
+      
+  defaults:
+    headers:
+      Authorization: "Bearer {{ $processEnvironment.GEMINI_API_KEY }}"
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Chat completion - Gemini 2.5 Flash"
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            model: "gemini/gemini-2.5-flash"
+            messages:
+              - role: "user"
+                content: "Hi"
+            max_tokens: 5

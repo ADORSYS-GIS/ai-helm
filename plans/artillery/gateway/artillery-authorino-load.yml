@@ -1,0 +1,88 @@
+# artillery-authorino-load.yml
+# Focused load test for Authorino ext-authz authentication layer
+# Measures auth latency under various load conditions
+#
+# Usage:
+#   export LIGHTBRIDGE_API_KEY="your-key"
+#   artillery run artillery-authorino-load.yml -o report-authorino.json
+#   artillery report report-authorino.json --output report-authorino.html
+#
+# Prerequisites:
+#   - LIGHTBRIDGE_API_KEY environment variable set
+#   - Multiple API keys for concurrent auth testing (optional)
+
+config:
+  target: "https://api.ai.camer.digital"
+  phases:
+    # Phase 1: Warmup - establish connections
+    - name: "Warmup"
+      duration: 30
+      arrivalRate: 1
+      
+    # Phase 2: Light auth load - 5 concurrent auth requests
+    - name: "Light auth load"
+      duration: 60
+      arrivalRate: 5
+      
+    # Phase 3: Medium auth load - 15 concurrent auth requests
+    - name: "Medium auth load"
+      duration: 60
+      arrivalRate: 15
+      
+    # Phase 4: Heavy auth load - 30 concurrent auth requests
+    - name: "Heavy auth load"
+      duration: 60
+      arrivalRate: 30
+      
+    # Phase 5: Auth stress test - 50 concurrent auth requests
+    - name: "Auth stress test"
+      duration: 30
+      arrivalRate: 50
+      
+  defaults:
+    headers:
+      Authorization: "Bearer {{ $processEnvironment.LIGHTBRIDGE_API_KEY }}"
+      Content-Type: "application/json"
+
+scenarios:
+  # Quick auth check - minimal payload to isolate auth latency
+  # Using a fast model to minimize upstream latency variance
+  - name: "Auth check - qwen3-8b minimal"
+    weight: 5
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            model: "qwen3-8b"
+            messages:
+              - role: "user"
+                content: "Hi"
+            max_tokens: 1
+            
+  # Streaming auth - auth happens once, but connection stays open
+  # Tests if auth latency differs for streaming vs non-streaming
+  - name: "Auth check - streaming"
+    weight: 2
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            model: "qwen3-8b"
+            messages:
+              - role: "user"
+                content: "Hi"
+            max_tokens: 5
+            stream: true
+
+  # Gemini through proxy - tests auth + LiteLLM routing
+  - name: "Auth check - gemini-2.5-flash"
+    weight: 3
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            model: "gemini-2.5-flash"
+            messages:
+              - role: "user"
+                content: "Hi"
+            max_tokens: 1

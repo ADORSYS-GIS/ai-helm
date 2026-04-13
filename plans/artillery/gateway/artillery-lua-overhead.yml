@@ -20,6 +20,9 @@
 #   Step 5 - Generate reports:
 #     artillery report report-with-lua.json --output report-with-lua.html
 #     artillery report report-without-lua.json --output report-without-lua.html
+#
+# Prerequisites:
+#   - LIGHTBRIDGE_API_KEY environment variable set
 
 config:
   target: "https://api.ai.camer.digital"
@@ -29,8 +32,7 @@ config:
       arrivalRate: 5
   defaults:
     headers:
-      Authorization: "Bearer {{ $LIGHTBRIDGE_API_KEY }}"
-      x-ai-eg-model: "qwen3-8b"
+      Authorization: "Bearer {{ $processEnvironment.LIGHTBRIDGE_API_KEY }}"
       Content-Type: "application/json"
 
 scenarios:
@@ -39,6 +41,7 @@ scenarios:
       - post:
           url: "/v1/chat/completions"
           json:
+            model: "qwen3-8b"
             messages:
               - role: "user"
                 content: "Say hello"

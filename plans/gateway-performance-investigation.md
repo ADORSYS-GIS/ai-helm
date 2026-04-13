@@ -30,6 +30,7 @@ Run tests in this order to minimize risk and maximize data value:
 | 5 | LiteLLM direct vs proxied test | Low | 15 min |
 | 6 | Lua overhead test (disable policy) | Medium | 20 min |
 | 7 | Load test LiteLLM | Medium | 30 min |
+| 8 | Authorino auth load test | Low | 15 min |
 
 ### Pre-Test Checklist
 
@@ -130,7 +131,7 @@ echo "=== LiteLLM Logs (last 50 lines) ===" && \
 kubectl logs -n converse-proxy -l app=proxy-app --tail=50
 
 # Check for errors
-kubectl logs -n converse-proxy -l app=proxy-app --tail=200 | grep -i "error\|warn\|fail" > litellm-errors.txt
+kubectl logs -n converse-proxy -l app=proxy-app --tail=200 | grep -i "error\|warn\|fail" > models-proxy-errors.txt
 ```
 
 ### Test 5: LiteLLM Direct vs Proxied Test (15 min, Low risk)
@@ -142,60 +143,25 @@ kubectl logs -n converse-proxy -l app=proxy-app --tail=200 | grep -i "error\|war
 # Install Artillery if not already installed
 npm install -g artillery
 
-# Port-forward to LiteLLM (run in background)
-kubectl port-forward svc/litellm 4000:4000 -n converse-proxy &
+# Port-forward to LiteLLM/models-proxy (run in background)
+kubectl port-forward svc/models-proxy 4000:4000 -n converse-proxy &
 PF_PID=$!
 sleep 2
 ```
 
-**Artillery Config:** `artillery-latency-comparison.yml`
-
-```yaml
-# artillery-latency-comparison.yml
-# Compares direct LiteLLM vs gateway-routed latency
-
-config:
-  target: "http://localhost:4000"
-  phases:
-    - name: "Direct LiteLLM baseline"
-      duration: 60
-      arrivalRate: 2
-      payload:
-        path: "test-payloads.csv"
-  defaults:
-    headers:
-      Authorization: "Bearer {{ GEMINI_API_KEY }}"
-      Content-Type: "application/json"
-
-scenarios:
-  - name: "Direct LiteLLM - Gemini"
-    flow:
-      - post:
-          url: "/v1/chat/completions"
-          json:
-            model: "gemini/gemini-2.5-flash"
-            messages:
-              - role: "user"
-                content: "Say hello"
-            max_tokens: 10
-          capture:
-            - json: "$.choices[0].message.content"
-              as: "response"
-```
+**Artillery Configs:**
+- `artillery/models-proxy/artillery-models-proxy-latency.yml` - Direct to LiteLLM
+- `artillery/gateway/artillery-gateway-latency.yml` - Through gateway
 
 **Run commands:**
 ```bash
-# Test A: Direct LiteLLM
-artillery run artillery-latency-comparison.yml -o report-direct.json
+# Test A: Direct to models-proxy (LiteLLM)
+artillery run artillery/models-proxy/artillery-models-proxy-latency.yml -o report-direct.json
 
-# Test B: Through Gateway (change target in config or override)
-artillery run artillery-latency-comparison.yml \
-  --target https://api.ai.camer.digital \
-  -e gateway \
-  -o report-gateway.json \
-  --overrides '{"config":{"defaults":{"headers":{"Authorization":"Bearer $LIGHTBRIDGE_API_KEY","x-ai-eg-model":"gemini-2.5-flash"}}}}'
+# Test B: Through Gateway
+artillery run artillery/gateway/artillery-gateway-latency.yml -o report-gateway.json
 
-# Generate comparison report
+# Generate comparison reports
 artillery report report-direct.json --output report-direct.html
 artillery report report-gateway.json --output report-gateway.html
 
@@ -218,41 +184,13 @@ kill $PF_PID 2>/dev/null
 > ⚠️ **Warning:** This temporarily disables the Lua policy. Run during low-traffic hours.
 > **Tool:** Artillery - precise before/after comparison
 
-**Artillery Config:** `artillery-lua-overhead.yml`
-
-```yaml
-# artillery-lua-overhead.yml
-# Measures Lua policy overhead by comparing with/without
-
-config:
-  target: "https://api.ai.camer.digital"
-  phases:
-    - name: "Baseline measurement"
-      duration: 120
-      arrivalRate: 5
-  defaults:
-    headers:
-      Authorization: "Bearer {{ LIGHTBRIDGE_API_KEY }}"
-      x-ai-eg-model: "qwen3-8b"
-      Content-Type: "application/json"
-
-scenarios:
-  - name: "Chat completion - qwen3-8b"
-    flow:
-      - post:
-          url: "/v1/chat/completions"
-          json:
-            messages:
-              - role: "user"
-                content: "Say hello"
-            max_tokens: 10
-```
+**Artillery Config:** `artillery/gateway/artillery-lua-overhead.yml`
 
 **Run commands:**
 ```bash
 # Step 1: Baseline WITH Lua
 echo "=== BASELINE (with Lua) ===" && \
-artillery run artillery-lua-overhead.yml -o report-with-lua.json
+artillery run artillery/gateway/artillery-lua-overhead.yml -o report-with-lua.json
 
 # Step 2: Disable Lua policy
 kubectl patch envoyextensionpolicy -n converse-gateway core-gateway-telemetry-lua \
@@ -264,7 +202,7 @@ sleep 30
 
 # Step 3: Measurement WITHOUT Lua
 echo "=== WITHOUT Lua ===" && \
-artillery run artillery-lua-overhead.yml -o report-without-lua.json
+artillery run artillery/gateway/artillery-lua-overhead.yml -o report-without-lua.json
 
 # Step 4: Re-enable Lua policy (IMPORTANT!)
 kubectl rollout restart deployment/envoy -n converse-gateway
@@ -297,68 +235,18 @@ jq '.aggregate.latency' report-with-lua.json report-without-lua.json
 
 **Prerequisites:**
 ```bash
-# Port-forward to LiteLLM
-kubectl port-forward svc/litellm 4000:4000 -n converse-proxy &
+# Port-forward to LiteLLM (models-proxy service)
+kubectl port-forward svc/models-proxy 4000:4000 -n converse-proxy &
 PF_PID=$!
 sleep 2
 ```
 
-**Artillery Config:** `artillery-load-test.yml`
-
-```yaml
-# artillery-load-test.yml
-# Phased load test to find LiteLLM throughput limits
-
-config:
-  target: "http://localhost:4000"
-  phases:
-    # Phase 1: Warmup at 1 RPS
-    - name: "Warmup"
-      duration: 60
-      arrivalRate: 1
-      
-    # Phase 2: Light load at 5 RPS
-    - name: "Light load"
-      duration: 120
-      arrivalRate: 5
-      
-    # Phase 3: Medium load at 10 RPS
-    - name: "Medium load"
-      duration: 120
-      arrivalRate: 10
-      
-    # Phase 4: Heavy load at 20 RPS
-    - name: "Heavy load"
-      duration: 120
-      arrivalRate: 20
-      
-    # Phase 5: Stress test at 50 RPS
-    - name: "Stress test"
-      duration: 60
-      arrivalRate: 50
-      
-  defaults:
-    headers:
-      Authorization: "Bearer {{ GEMINI_API_KEY }}"
-      Content-Type: "application/json"
-
-scenarios:
-  - name: "Chat completion - Gemini Flash"
-    flow:
-      - post:
-          url: "/v1/chat/completions"
-          json:
-            model: "gemini/gemini-2.5-flash"
-            messages:
-              - role: "user"
-                content: "Hi"
-            max_tokens: 5
-```
+**Artillery Config:** `artillery/models-proxy/artillery-models-proxy-load.yml`
 
 **Run commands:**
 ```bash
 # Run full load test
-artillery run artillery-load-test.yml -o report-load-test.json
+artillery run artillery/models-proxy/artillery-models-proxy-load.yml -o report-load-test.json
 
 # Generate HTML report
 artillery report report-load-test.json --output report-load-test.html
@@ -386,83 +274,51 @@ kill $PF_PID 2>/dev/null
 
 > **Tool:** Artillery - full gateway stack load test
 
-**Artillery Config:** `artillery-gateway-load.yml`
-
-```yaml
-# artillery-gateway-load.yml
-# Full gateway stack load test through Envoy
-
-config:
-  target: "https://api.ai.camer.digital"
-  phases:
-    - name: "Baseline"
-      duration: 60
-      arrivalRate: 2
-      
-    - name: "Scale up"
-      duration: 180
-      arrivalRate: 2
-      rampTo: 20
-      
-    - name: "Sustained"
-      duration: 120
-      arrivalRate: 20
-      
-  defaults:
-    headers:
-      Authorization: "Bearer {{ LIGHTBRIDGE_API_KEY }}"
-      Content-Type: "application/json"
-
-scenarios:
-  - name: "Fireworks direct - qwen3-8b"
-    weight: 3
-    flow:
-      - post:
-          url: "/v1/chat/completions"
-          headers:
-            x-ai-eg-model: "qwen3-8b"
-          json:
-            messages:
-              - role: "user"
-                content: "Hello"
-            max_tokens: 10
-            
-  - name: "Proxied - gemini-2.5-flash"
-    weight: 2
-    flow:
-      - post:
-          url: "/v1/chat/completions"
-          headers:
-            x-ai-eg-model: "gemini-2.5-flash"
-          json:
-            messages:
-              - role: "user"
-                content: "Hello"
-            max_tokens: 10
-            
-  - name: "Streaming - qwen3-8b"
-    weight: 1
-    flow:
-      - post:
-          url: "/v1/chat/completions"
-          headers:
-            x-ai-eg-model: "qwen3-8b"
-          json:
-            messages:
-              - role: "user"
-                content: "Count to 10"
-            max_tokens: 50
-            stream: true
-```
+**Artillery Config:** `artillery/gateway/artillery-gateway-load.yml`
 
 **Run commands:**
 ```bash
 # Run gateway load test
-artillery run artillery-gateway-load.yml -o report-gateway-load.json
+artillery run artillery/gateway/artillery-gateway-load.yml -o report-gateway-load.json
 
 # Generate report
 artillery report report-gateway-load.json --output report-gateway-load.html
 ```
+
+---
+
+### Test 9: Authorino Auth Load Test (15 min, Low risk)
+
+> **Tool:** Artillery - focused auth layer load test
+> **Purpose:** Isolate Authorino ext-authz latency under varying load
+
+**Artillery Config:** `artillery/gateway/artillery-authorino-load.yml`
+
+**Run commands:**
+```bash
+# Run Authorino-focused load test
+artillery run artillery/gateway/artillery-authorino-load.yml -o report-authorino.json
+
+# Generate report
+artillery report report-authorino.json --output report-authorino.html
+
+# Extract per-phase latency to see auth scaling
+jq '.aggregate.phases[] | {name: .name, median: .latency.median, p95: .latency.p95}' report-authorino.json
+```
+
+**Data to collect:**
+| Phase | RPS | p50 (ms) | p95 (ms) | Error Rate | Auth Overhead Trend |
+|-------|-----|----------|----------|------------|---------------------|
+| Warmup | 1 | | | | Baseline |
+| Light | 5 | | | | |
+| Medium | 15 | | | | |
+| Heavy | 30 | | | | |
+| Stress | 50 | | | | |
+
+**Interpretation:**
+- If latency increases linearly with RPS → Authorino scales normally
+- If latency spikes exponentially → Authorino bottleneck (consider replicas)
+- If error rate > 1% at 30 RPS → Auth layer overwhelmed
 
 ---
 
@@ -744,8 +600,8 @@ kubectl describe pod -n converse-gateway -l app.kubernetes.io/name=authorino | g
 # Test A: Through Envoy → LiteLLM → Google
 # Run 20 requests to gemini-2.5-flash through gateway
 
-# Test B: Direct to LiteLLM (bypass Envoy)
-kubectl port-forward svc/litellm 4000:4000 -n converse-proxy &
+# Test B: Direct to LiteLLM/models-proxy (bypass Envoy)
+kubectl port-forward svc/models-proxy 4000:4000 -n converse-proxy &
 curl http://localhost:4000/v1/chat/completions \
   -H "Authorization: Bearer $GEMINI_API_KEY" \
   -d '{"model":"gemini/gemini-2.5-flash","messages":[{"role":"user","content":"Hi"}]}'
@@ -922,6 +778,72 @@ Based on the data, we will decide:
 - [ ] Is Lua optimization worth pursuing? (only if overhead > 10ms)
 - [ ] Is Authorino optimization worth pursuing? (only if p95 > 30ms)
 - [ ] Is LiteLLM scaling worth pursuing? (only if overhead > 20ms or throttling)
+
+---
+
+## Decision Tree
+
+Use this flowchart to interpret test results and determine optimization priorities:
+
+```mermaid
+flowchart TD
+    A[Run All Tests] --> B{Lua overhead > 10ms?}
+    
+    B -->|Yes| C[🔴 Priority 1: Optimize Lua]
+    C --> C1{Which hook is slower?}
+    C1 -->|Request| C2[Profile request hook - header/body parsing]
+    C1 -->|Response| C3[Profile response hook - cost calculation]
+    C1 -->|Both equal| C4[Profile both hooks equally]
+    
+    B -->|No| D{Authorino p95 > 30ms?}
+    
+    D -->|Yes| E[🔴 Priority 1: Optimize Authorino]
+    E --> E1{Resource constrained?}
+    E1 -->|CPU/Memory high| E2[Scale Authorino replicas]
+    E1 -->|Resources OK| E3[Investigate auth chain - OPA/DB latency]
+    
+    D -->|No| F{LiteLLM overhead > 20ms?}
+    
+    F -->|Yes| G[🟡 Priority 2: Scale LiteLLM]
+    G --> G1{At what RPS does latency spike?}
+    G1 -->|< 10 RPS| G2[Critical: Scale immediately]
+    G1 -->|10-20 RPS| G3[Plan horizontal scaling]
+    G1 -->|> 20 RPS| G4[Monitor, scale if traffic grows]
+    
+    F -->|No| H{Error rate > 1% at 20 RPS?}
+    
+    H -->|Yes| I[🟡 Priority 2: Investigate errors]
+    I --> I1[Check upstream provider status]
+    I --> I2[Check timeout configurations]
+    I --> I3[Check rate limiting]
+    
+    H -->|No| J[✅ Gateway is efficient]
+    J --> K[Document baseline]
+    K --> L[Set up monitoring alerts]
+    L --> M[Review if traffic increases 2x]
+```
+
+### Threshold Reference
+
+| Metric | Good | Warning | Critical | Action |
+|--------|------|---------|----------|--------|
+| Lua overhead | < 5ms | 5-10ms | > 10ms | Profile and optimize |
+| Authorino p95 | < 20ms | 20-30ms | > 30ms | Scale or optimize chain |
+| LiteLLM overhead | < 10ms | 10-20ms | > 20ms | Add replicas |
+| Error rate @ 20 RPS | < 0.1% | 0.1-1% | > 1% | Investigate root cause |
+| Gateway total overhead | < 30ms | 30-50ms | > 50ms | Layer-by-layer analysis |
+
+### Decision Matrix
+
+| Lua | Authorino | LiteLLM | Recommended Action |
+|------|-----------|--------|-------------------|
+| High | Low | Low | Focus on Lua optimization |
+| Low | High | Low | Scale Authorino, check auth chain |
+| Low | Low | High | Scale LiteLLM replicas |
+| High | High | Low | Lua first (quick wins), then Authorino |
+| High | Low | High | Lua + LiteLLM scaling in parallel |
+| Low | High | High | Authorino + LiteLLM scaling in parallel |
+| High | High | High | All three - prioritize by impact |
 
 ---
 
