@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Artillery Report: report-models-proxy-load</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #f8fafc; }
+    .subtitle { color: #94a3b8; margin-bottom: 2rem; }
+    
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .metric-card {
+      background: #1e293b;
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      border: 1px solid #334155;
+    }
+    
+    .metric-label {
+      font-size: 0.875rem;
+      color: #94a3b8;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .metric-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+    
+    .metric-value.good { color: #22c55e; }
+    .metric-value.warning { color: #eab308; }
+    .metric-value.critical { color: #ef4444; }
+    
+    .metric-detail {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-top: 0.25rem;
+    }
+    
+    .section {
+      background: #1e293b;
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid #334155;
+    }
+    
+    .section h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      color: #f8fafc;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid #334155;
+    }
+    
+    th {
+      background: #0f172a;
+      font-weight: 600;
+      color: #94a3b8;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    td { color: #e2e8f0; }
+    
+    tr:hover { background: #334155; }
+    
+    .chart-container {
+      position: relative;
+      height: 300px;
+      margin-top: 1rem;
+    }
+    
+    .percentile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+    }
+    
+    .percentile-item {
+      text-align: center;
+      padding: 1rem;
+      background: #0f172a;
+      border-radius: 0.5rem;
+    }
+    
+    .percentile-label {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-bottom: 0.25rem;
+    }
+    
+    .percentile-value {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .timestamp {
+      color: #64748b;
+      font-size: 0.875rem;
+      margin-top: 2rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Artillery Load Test Report</h1>
+    <p class="subtitle">report-models-proxy-load • Generated 2026-04-09T18:35:29.662Z</p>
+    
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Total Requests</div>
+        <div class="metric-value">7,260</div>
+        <div class="metric-detail">4,850 successful</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">Success Rate</div>
+        <div class="metric-value" style="color: #ef4444">66.80%</div>
+        <div class="metric-detail">0 errors, 0 timeouts</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">p50 Latency</div>
+        <div class="metric-value">478.3 ms</div>
+        <div class="metric-detail">Median response time</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">p95 Latency</div>
+        <div class="metric-value" style="color: #ef4444">6,187.2 ms</div>
+        <div class="metric-detail">95th percentile</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">p99 Latency</div>
+        <div class="metric-value" style="color: #ef4444">9,230.4 ms</div>
+        <div class="metric-detail">99th percentile</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">Max Latency</div>
+        <div class="metric-value" style="color: #ef4444">9,987 ms</div>
+        <div class="metric-detail">Slowest request</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>📊 Response Time Distribution</h2>
+      <div class="percentile-grid">
+        <div class="percentile-item">
+          <div class="percentile-label">Min</div>
+          <div class="percentile-value">417 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">Mean</div>
+          <div class="percentile-value">1,099.1 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">Median (p50)</div>
+          <div class="percentile-value">478.3 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">p75</div>
+          <div class="percentile-value">539.2 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">p90</div>
+          <div class="percentile-value">2,515.5 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">p95</div>
+          <div class="percentile-value">6,187.2 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">p99</div>
+          <div class="percentile-value">9,230.4 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">Max</div>
+          <div class="percentile-value">9,987 ms</div>
+        </div>
+      </div>
+    </div>
+    
+    
+    <div class="section">
+      <h2>📈 Per-Phase Breakdown</h2>
+      <div class="chart-container">
+        <canvas id="phaseChart"></canvas>
+      </div>
+      <table style="margin-top: 1.5rem">
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Requests</th>
+            <th>Successful</th>
+            <th>Errors</th>
+            <th>Timeouts</th>
+            <th>p50</th>
+            <th>p95</th>
+            <th>p99</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr>
+            <td>1</td>
+            <td>7</td>
+            <td style="color: #22c55e">7</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>528.6 ms</td>
+            <td>620.3 ms</td>
+            <td>620.3 ms</td>
+          </tr>
+          
+          <tr>
+            <td>2</td>
+            <td>10</td>
+            <td style="color: #22c55e">10</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>487.9 ms</td>
+            <td>550.1 ms</td>
+            <td>550.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>3</td>
+            <td>10</td>
+            <td style="color: #22c55e">10</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>550.1 ms</td>
+            <td>550.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>4</td>
+            <td>10</td>
+            <td style="color: #22c55e">10</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>487.9 ms</td>
+            <td>584.2 ms</td>
+            <td>584.2 ms</td>
+          </tr>
+          
+          <tr>
+            <td>5</td>
+            <td>10</td>
+            <td style="color: #22c55e">10</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>550.1 ms</td>
+            <td>550.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>6</td>
+            <td>10</td>
+            <td style="color: #22c55e">10</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>468.8 ms</td>
+            <td>572.6 ms</td>
+            <td>572.6 ms</td>
+          </tr>
+          
+          <tr>
+            <td>7</td>
+            <td>38</td>
+            <td style="color: #22c55e">38</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>727.9 ms</td>
+            <td>742.6 ms</td>
+          </tr>
+          
+          <tr>
+            <td>8</td>
+            <td>50</td>
+            <td style="color: #22c55e">50</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>450.4 ms</td>
+            <td>468.8 ms</td>
+            <td>468.8 ms</td>
+          </tr>
+          
+          <tr>
+            <td>9</td>
+            <td>50</td>
+            <td style="color: #22c55e">50</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>450.4 ms</td>
+            <td>459.5 ms</td>
+            <td>468.8 ms</td>
+          </tr>
+          
+          <tr>
+            <td>10</td>
+            <td>50</td>
+            <td style="color: #22c55e">49</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>468.8 ms</td>
+            <td>671.9 ms</td>
+            <td>685.5 ms</td>
+          </tr>
+          
+          <tr>
+            <td>11</td>
+            <td>50</td>
+            <td style="color: #22c55e">50</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>507.8 ms</td>
+            <td>550.1 ms</td>
+            <td>561.2 ms</td>
+          </tr>
+          
+          <tr>
+            <td>12</td>
+            <td>50</td>
+            <td style="color: #22c55e">51</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>450.4 ms</td>
+            <td>528.6 ms</td>
+            <td>539.2 ms</td>
+          </tr>
+          
+          <tr>
+            <td>13</td>
+            <td>50</td>
+            <td style="color: #22c55e">50</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>450.4 ms</td>
+            <td>478.3 ms</td>
+            <td>487.9 ms</td>
+          </tr>
+          
+          <tr>
+            <td>14</td>
+            <td>50</td>
+            <td style="color: #22c55e">49</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>468.8 ms</td>
+            <td>487.9 ms</td>
+            <td>497.8 ms</td>
+          </tr>
+          
+          <tr>
+            <td>15</td>
+            <td>50</td>
+            <td style="color: #22c55e">51</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>468.8 ms</td>
+            <td>487.9 ms</td>
+            <td>497.8 ms</td>
+          </tr>
+          
+          <tr>
+            <td>16</td>
+            <td>50</td>
+            <td style="color: #22c55e">50</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>468.8 ms</td>
+            <td>632.8 ms</td>
+            <td>742.6 ms</td>
+          </tr>
+          
+          <tr>
+            <td>17</td>
+            <td>50</td>
+            <td style="color: #22c55e">47</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>450.4 ms</td>
+            <td>497.8 ms</td>
+            <td>507.8 ms</td>
+          </tr>
+          
+          <tr>
+            <td>18</td>
+            <td>50</td>
+            <td style="color: #22c55e">53</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>561.2 ms</td>
+            <td>685.5 ms</td>
+            <td>772.9 ms</td>
+          </tr>
+          
+          <tr>
+            <td>19</td>
+            <td>85</td>
+            <td style="color: #22c55e">80</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>459.5 ms</td>
+            <td>507.8 ms</td>
+            <td>518.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>20</td>
+            <td>100</td>
+            <td style="color: #22c55e">100</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>459.5 ms</td>
+            <td>596 ms</td>
+            <td>658.6 ms</td>
+          </tr>
+          
+          <tr>
+            <td>21</td>
+            <td>100</td>
+            <td style="color: #22c55e">100</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>459.5 ms</td>
+            <td>572.6 ms</td>
+            <td>671.9 ms</td>
+          </tr>
+          
+          <tr>
+            <td>22</td>
+            <td>100</td>
+            <td style="color: #22c55e">100</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>459.5 ms</td>
+            <td>497.8 ms</td>
+            <td>550.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>23</td>
+            <td>100</td>
+            <td style="color: #22c55e">99</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>459.5 ms</td>
+            <td>478.3 ms</td>
+            <td>478.3 ms</td>
+          </tr>
+          
+          <tr>
+            <td>24</td>
+            <td>100</td>
+            <td style="color: #22c55e">100</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>507.8 ms</td>
+            <td>620.3 ms</td>
+            <td>727.9 ms</td>
+          </tr>
+          
+          <tr>
+            <td>25</td>
+            <td>100</td>
+            <td style="color: #22c55e">101</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>507.8 ms</td>
+            <td>699.4 ms</td>
+            <td>757.6 ms</td>
+          </tr>
+          
+          <tr>
+            <td>26</td>
+            <td>100</td>
+            <td style="color: #22c55e">100</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>459.5 ms</td>
+            <td>518.1 ms</td>
+            <td>561.2 ms</td>
+          </tr>
+          
+          <tr>
+            <td>27</td>
+            <td>100</td>
+            <td style="color: #22c55e">99</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>550.1 ms</td>
+            <td>645.6 ms</td>
+          </tr>
+          
+          <tr>
+            <td>28</td>
+            <td>100</td>
+            <td style="color: #22c55e">101</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>487.9 ms</td>
+            <td>1,107.9 ms</td>
+            <td>1,200.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>29</td>
+            <td>100</td>
+            <td style="color: #22c55e">99</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>487.9 ms</td>
+            <td>497.8 ms</td>
+            <td>507.8 ms</td>
+          </tr>
+          
+          <tr>
+            <td>30</td>
+            <td>100</td>
+            <td style="color: #22c55e">100</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>596 ms</td>
+            <td>925.4 ms</td>
+            <td>1,002.4 ms</td>
+          </tr>
+          
+          <tr>
+            <td>31</td>
+            <td>174</td>
+            <td style="color: #22c55e">170</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>487.9 ms</td>
+            <td>699.4 ms</td>
+            <td>854.2 ms</td>
+          </tr>
+          
+          <tr>
+            <td>32</td>
+            <td>200</td>
+            <td style="color: #22c55e">199</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>584.2 ms</td>
+            <td>742.6 ms</td>
+          </tr>
+          
+          <tr>
+            <td>33</td>
+            <td>200</td>
+            <td style="color: #22c55e">201</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>550.1 ms</td>
+            <td>584.2 ms</td>
+          </tr>
+          
+          <tr>
+            <td>34</td>
+            <td>200</td>
+            <td style="color: #22c55e">200</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>632.8 ms</td>
+            <td>788.5 ms</td>
+          </tr>
+          
+          <tr>
+            <td>35</td>
+            <td>200</td>
+            <td style="color: #22c55e">200</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>459.5 ms</td>
+            <td>507.8 ms</td>
+            <td>528.6 ms</td>
+          </tr>
+          
+          <tr>
+            <td>36</td>
+            <td>200</td>
+            <td style="color: #22c55e">200</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>468.8 ms</td>
+            <td>528.6 ms</td>
+            <td>550.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>37</td>
+            <td>200</td>
+            <td style="color: #22c55e">195</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>699.4 ms</td>
+            <td>727.9 ms</td>
+          </tr>
+          
+          <tr>
+            <td>38</td>
+            <td>200</td>
+            <td style="color: #22c55e">205</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>645.6 ms</td>
+            <td>713.5 ms</td>
+          </tr>
+          
+          <tr>
+            <td>39</td>
+            <td>200</td>
+            <td style="color: #22c55e">200</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>645.6 ms</td>
+            <td>820.7 ms</td>
+          </tr>
+          
+          <tr>
+            <td>40</td>
+            <td>200</td>
+            <td style="color: #22c55e">200</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>478.3 ms</td>
+            <td>550.1 ms</td>
+            <td>561.2 ms</td>
+          </tr>
+          
+          <tr>
+            <td>41</td>
+            <td>200</td>
+            <td style="color: #22c55e">186</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>596 ms</td>
+            <td>1,249.1 ms</td>
+            <td>1,380.5 ms</td>
+          </tr>
+          
+          <tr>
+            <td>42</td>
+            <td>200</td>
+            <td style="color: #22c55e">214</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>487.9 ms</td>
+            <td>1,200.1 ms</td>
+            <td>1,436.8 ms</td>
+          </tr>
+          
+          <tr>
+            <td>43</td>
+            <td>423</td>
+            <td style="color: #22c55e">254</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>1,620 ms</td>
+            <td>3,395.5 ms</td>
+            <td>3,534.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>44</td>
+            <td>500</td>
+            <td style="color: #22c55e">275</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>5,944.6 ms</td>
+            <td>7,865.6 ms</td>
+            <td>8,024.5 ms</td>
+          </tr>
+          
+          <tr>
+            <td>45</td>
+            <td>500</td>
+            <td style="color: #22c55e">127</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>9,047.6 ms</td>
+            <td>9,801.2 ms</td>
+            <td>9,999.2 ms</td>
+          </tr>
+          
+          <tr>
+            <td>46</td>
+            <td>500</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>N/A</td>
+            <td>N/A</td>
+            <td>N/A</td>
+          </tr>
+          
+          <tr>
+            <td>47</td>
+            <td>500</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>N/A</td>
+            <td>N/A</td>
+            <td>N/A</td>
+          </tr>
+          
+          <tr>
+            <td>48</td>
+            <td>500</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>N/A</td>
+            <td>N/A</td>
+            <td>N/A</td>
+          </tr>
+          
+          <tr>
+            <td>49</td>
+            <td>133</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>N/A</td>
+            <td>N/A</td>
+            <td>N/A</td>
+          </tr>
+          
+          <tr>
+            <td>50</td>
+            <td>0</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>N/A</td>
+            <td>N/A</td>
+            <td>N/A</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+    
+    
+    <div class="section">
+      <h2>📋 Raw Counters</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr>
+            <td>vusers.created_by_name.Chat completion - Gemini 2.5 Flash</td>
+            <td>7,260</td>
+          </tr>
+          
+          <tr>
+            <td>vusers.created</td>
+            <td>7,260</td>
+          </tr>
+          
+          <tr>
+            <td>http.requests</td>
+            <td>7,260</td>
+          </tr>
+          
+          <tr>
+            <td>http.codes.200</td>
+            <td>4,850</td>
+          </tr>
+          
+          <tr>
+            <td>http.responses</td>
+            <td>4,850</td>
+          </tr>
+          
+          <tr>
+            <td>http.downloaded_bytes</td>
+            <td>2,972,970</td>
+          </tr>
+          
+          <tr>
+            <td>plugins.metrics-by-endpoint./v1/chat/completions.codes.200</td>
+            <td>4,850</td>
+          </tr>
+          
+          <tr>
+            <td>vusers.failed</td>
+            <td>2,410</td>
+          </tr>
+          
+          <tr>
+            <td>vusers.completed</td>
+            <td>4,850</td>
+          </tr>
+          
+          <tr>
+            <td>plugins.metrics-by-endpoint./v1/chat/completions.errors.ETIMEDOUT</td>
+            <td>2,410</td>
+          </tr>
+          
+          <tr>
+            <td>errors.ETIMEDOUT</td>
+            <td>2,410</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+    
+    <p class="timestamp">Report generated from Artillery JSON output</p>
+  </div>
+  
+  <script>
+    // Phase chart
+    const phaseData = [{"phase":1,"requests":7,"successful":7,"errors":0,"timeouts":0,"p50":528.6,"p95":620.3,"p99":620.3,"mean":617.7},{"phase":2,"requests":10,"successful":10,"errors":0,"timeouts":0,"p50":487.9,"p95":550.1,"p99":550.1,"mean":497.2},{"phase":3,"requests":10,"successful":10,"errors":0,"timeouts":0,"p50":478.3,"p95":550.1,"p99":550.1,"mean":504.5},{"phase":4,"requests":10,"successful":10,"errors":0,"timeouts":0,"p50":487.9,"p95":584.2,"p99":584.2,"mean":522.3},{"phase":5,"requests":10,"successful":10,"errors":0,"timeouts":0,"p50":478.3,"p95":550.1,"p99":550.1,"mean":503.2},{"phase":6,"requests":10,"successful":10,"errors":0,"timeouts":0,"p50":468.8,"p95":572.6,"p99":572.6,"mean":499.7},{"phase":7,"requests":38,"successful":38,"errors":0,"timeouts":0,"p50":478.3,"p95":727.9,"p99":742.6,"mean":537.5},{"phase":8,"requests":50,"successful":50,"errors":0,"timeouts":0,"p50":450.4,"p95":468.8,"p99":468.8,"mean":450},{"phase":9,"requests":50,"successful":50,"errors":0,"timeouts":0,"p50":450.4,"p95":459.5,"p99":468.8,"mean":449.7},{"phase":10,"requests":50,"successful":49,"errors":0,"timeouts":0,"p50":468.8,"p95":671.9,"p99":685.5,"mean":502.6},{"phase":11,"requests":50,"successful":50,"errors":0,"timeouts":0,"p50":507.8,"p95":550.1,"p99":561.2,"mean":508.7},{"phase":12,"requests":50,"successful":51,"errors":0,"timeouts":0,"p50":450.4,"p95":528.6,"p99":539.2,"mean":466.6},{"phase":13,"requests":50,"successful":50,"errors":0,"timeouts":0,"p50":450.4,"p95":478.3,"p99":487.9,"mean":456},{"phase":14,"requests":50,"successful":49,"errors":0,"timeouts":0,"p50":468.8,"p95":487.9,"p99":497.8,"mean":465},{"phase":15,"requests":50,"successful":51,"errors":0,"timeouts":0,"p50":468.8,"p95":487.9,"p99":497.8,"mean":470.4},{"phase":16,"requests":50,"successful":50,"errors":0,"timeouts":0,"p50":468.8,"p95":632.8,"p99":742.6,"mean":490.3},{"phase":17,"requests":50,"successful":47,"errors":0,"timeouts":0,"p50":450.4,"p95":497.8,"p99":507.8,"mean":455.7},{"phase":18,"requests":50,"successful":53,"errors":0,"timeouts":0,"p50":561.2,"p95":685.5,"p99":772.9,"mean":559.4},{"phase":19,"requests":85,"successful":80,"errors":0,"timeouts":0,"p50":459.5,"p95":507.8,"p99":518.1,"mean":461.1},{"phase":20,"requests":100,"successful":100,"errors":0,"timeouts":0,"p50":459.5,"p95":596,"p99":658.6,"mean":474.8},{"phase":21,"requests":100,"successful":100,"errors":0,"timeouts":0,"p50":459.5,"p95":572.6,"p99":671.9,"mean":472.1},{"phase":22,"requests":100,"successful":100,"errors":0,"timeouts":0,"p50":459.5,"p95":497.8,"p99":550.1,"mean":465.7},{"phase":23,"requests":100,"successful":99,"errors":0,"timeouts":0,"p50":459.5,"p95":478.3,"p99":478.3,"mean":461.1},{"phase":24,"requests":100,"successful":100,"errors":0,"timeouts":0,"p50":507.8,"p95":620.3,"p99":727.9,"mean":516.3},{"phase":25,"requests":100,"successful":101,"errors":0,"timeouts":0,"p50":507.8,"p95":699.4,"p99":757.6,"mean":532},{"phase":26,"requests":100,"successful":100,"errors":0,"timeouts":0,"p50":459.5,"p95":518.1,"p99":561.2,"mean":465.7},{"phase":27,"requests":100,"successful":99,"errors":0,"timeouts":0,"p50":478.3,"p95":550.1,"p99":645.6,"mean":485.4},{"phase":28,"requests":100,"successful":101,"errors":0,"timeouts":0,"p50":487.9,"p95":1107.9,"p99":1200.1,"mean":564.3},{"phase":29,"requests":100,"successful":99,"errors":0,"timeouts":0,"p50":487.9,"p95":497.8,"p99":507.8,"mean":485.7},{"phase":30,"requests":100,"successful":100,"errors":0,"timeouts":0,"p50":596,"p95":925.4,"p99":1002.4,"mean":616.7},{"phase":31,"requests":174,"successful":170,"errors":0,"timeouts":0,"p50":487.9,"p95":699.4,"p99":854.2,"mean":515.4},{"phase":32,"requests":200,"successful":199,"errors":0,"timeouts":0,"p50":478.3,"p95":584.2,"p99":742.6,"mean":496.9},{"phase":33,"requests":200,"successful":201,"errors":0,"timeouts":0,"p50":478.3,"p95":550.1,"p99":584.2,"mean":487.5},{"phase":34,"requests":200,"successful":200,"errors":0,"timeouts":0,"p50":478.3,"p95":632.8,"p99":788.5,"mean":498.2},{"phase":35,"requests":200,"successful":200,"errors":0,"timeouts":0,"p50":459.5,"p95":507.8,"p99":528.6,"mean":462.1},{"phase":36,"requests":200,"successful":200,"errors":0,"timeouts":0,"p50":468.8,"p95":528.6,"p99":550.1,"mean":478.3},{"phase":37,"requests":200,"successful":195,"errors":0,"timeouts":0,"p50":478.3,"p95":699.4,"p99":727.9,"mean":513.5},{"phase":38,"requests":200,"successful":205,"errors":0,"timeouts":0,"p50":478.3,"p95":645.6,"p99":713.5,"mean":497.6},{"phase":39,"requests":200,"successful":200,"errors":0,"timeouts":0,"p50":478.3,"p95":645.6,"p99":820.7,"mean":505.6},{"phase":40,"requests":200,"successful":200,"errors":0,"timeouts":0,"p50":478.3,"p95":550.1,"p99":561.2,"mean":485.9},{"phase":41,"requests":200,"successful":186,"errors":0,"timeouts":0,"p50":596,"p95":1249.1,"p99":1380.5,"mean":677.2},{"phase":42,"requests":200,"successful":214,"errors":0,"timeouts":0,"p50":487.9,"p95":1200.1,"p99":1436.8,"mean":614.7},{"phase":43,"requests":423,"successful":254,"errors":0,"timeouts":0,"p50":1620,"p95":3395.5,"p99":3534.1,"mean":1715.6},{"phase":44,"requests":500,"successful":275,"errors":0,"timeouts":0,"p50":5944.6,"p95":7865.6,"p99":8024.5,"mean":5859.1},{"phase":45,"requests":500,"successful":127,"errors":0,"timeouts":0,"p50":9047.6,"p95":9801.2,"p99":9999.2,"mean":9045.9},{"phase":46,"requests":500,"successful":0,"errors":0,"timeouts":0},{"phase":47,"requests":500,"successful":0,"errors":0,"timeouts":0},{"phase":48,"requests":500,"successful":0,"errors":0,"timeouts":0},{"phase":49,"requests":133,"successful":0,"errors":0,"timeouts":0},{"phase":50,"requests":0,"successful":0,"errors":0,"timeouts":0}];
+    if (phaseData.length > 0) {
+      const ctx = document.getElementById('phaseChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: phaseData.map(p => 'Phase ' + p.phase),
+          datasets: [{
+            label: 'p50 Latency (ms)',
+            data: phaseData.map(p => p.p50),
+            backgroundColor: 'rgba(59, 130, 246, 0.7)',
+            borderColor: 'rgba(59, 130, 246, 1)',
+            borderWidth: 1
+          }, {
+            label: 'p95 Latency (ms)',
+            data: phaseData.map(p => p.p95),
+            backgroundColor: 'rgba(249, 115, 22, 0.7)',
+            borderColor: 'rgba(249, 115, 22, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+              ticks: { color: '#94a3b8' }
+            },
+            x: {
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+              ticks: { color: '#94a3b8' }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: { color: '#e2e8f0' }
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>

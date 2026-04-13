@@ -1,0 +1,293 @@
+# justfile for Artillery load testing
+# Usage: just <command>
+# Run from the plans/artillery directory
+
+# Default: show available commands
+default:
+    @just --list
+
+# ============================================================================
+# Prerequisites
+# ============================================================================
+
+# Check if required tools are installed
+check-deps:
+    @echo "Checking dependencies..."
+    @command -v artillery >/dev/null 2>&1 || { echo "❌ artillery not found. Run: npm install -g artillery"; exit 1; }
+    @command -v kubectl >/dev/null 2>&1 || { echo "❌ kubectl not found"; exit 1; }
+    @command -v jq >/dev/null 2>&1 || { echo "❌ jq not found"; exit 1; }
+    @echo "✅ All dependencies available"
+
+# Check if required environment variables are set
+check-env:
+    @echo "Checking environment variables..."
+    @test -n "$$LIGHTBRIDGE_API_KEY" || { echo "⚠️  LIGHTBRIDGE_API_KEY not set (required for gateway tests)"; }
+    @test -n "$$GEMINI_API_KEY" || { echo "⚠️  GEMINI_API_KEY not set (required for Gemini/LiteLLM tests)"; }
+    @test -n "$$FIREWORKS_API_KEY" || { echo "⚠️  FIREWORKS_API_KEY not set (required for direct Fireworks tests)"; }
+    @echo "Environment check complete"
+
+# Setup port-forward to models-proxy (LiteLLM)
+port-forward:
+    @echo "Starting port-forward to models-proxy..."
+    @kubectl port-forward svc/models-proxy 4000:4000 -n converse-proxy &
+    @sleep 2
+    @echo "Port-forward active on localhost:4000"
+
+# Kill port-forward processes
+kill-port-forward:
+    @echo "Killing port-forward processes..."
+    @pkill -f "port-forward.*models-proxy" 2>/dev/null || true
+    @echo "Port-forward processes killed"
+
+# ============================================================================
+# Direct Provider Tests (Baseline)
+# ============================================================================
+
+# Run direct Gemini test (baseline)
+direct-gemini: check-deps reports-dir
+    @echo "=== Direct Gemini Test ==="
+    artillery run direct-provider/artillery-direct-gemini.yml -o reports/report-direct-gemini.json
+    node generate-report.js reports/report-direct-gemini.json reports/report-direct-gemini.html
+    @echo "Report: reports/report-direct-gemini.html"
+
+# Run direct Fireworks test (baseline)
+direct-fireworks: check-deps reports-dir
+    @echo "=== Direct Fireworks Test ==="
+    artillery run direct-provider/artillery-direct-fireworks.yml -o reports/report-direct-fireworks.json
+    node generate-report.js reports/report-direct-fireworks.json reports/report-direct-fireworks.html
+    @echo "Report: reports/report-direct-fireworks.html"
+
+# Run all direct provider tests
+direct-all: direct-gemini direct-fireworks
+
+# ============================================================================
+# Models-Proxy Tests (LiteLLM Layer)
+# ============================================================================
+
+# Run models-proxy latency test
+models-proxy-latency: check-deps reports-dir port-forward
+    @echo "=== Models-Proxy Latency Test ==="
+    artillery run models-proxy/artillery-models-proxy-latency.yml -o reports/report-models-proxy.json
+    node generate-report.js reports/report-models-proxy.json reports/report-models-proxy.html
+    @echo "Report: reports/report-models-proxy.html"
+
+# Run models-proxy load test
+models-proxy-load: check-deps reports-dir port-forward
+    @echo "=== Models-Proxy Load Test ==="
+    artillery run models-proxy/artillery-models-proxy-load.yml -o reports/report-models-proxy-load.json
+    node generate-report.js reports/report-models-proxy-load.json reports/report-models-proxy-load.html
+    @echo "Report: reports/report-models-proxy-load.html"
+
+# Run all models-proxy tests
+models-proxy-all: models-proxy-latency models-proxy-load
+
+# ============================================================================
+# Gateway Tests (Full Stack)
+# ============================================================================
+
+# Run gateway latency test
+gateway-latency: check-deps reports-dir
+    @echo "=== Gateway Latency Test ==="
+    artillery run gateway/artillery-gateway-latency.yml -o reports/report-gateway.json
+    node generate-report.js reports/report-gateway.json reports/report-gateway.html
+    @echo "Report: reports/report-gateway.html"
+
+# Run gateway load test
+gateway-load: check-deps reports-dir
+    @echo "=== Gateway Load Test ==="
+    artillery run gateway/artillery-gateway-load.yml -o reports/report-gateway-load.json
+    node generate-report.js reports/report-gateway-load.json reports/report-gateway-load.html
+    @echo "Report: reports/report-gateway-load.html"
+
+# Run Authorino-focused load test
+authorino-load: check-deps reports-dir
+    @echo "=== Authorino Load Test ==="
+    artillery run gateway/artillery-authorino-load.yml -o reports/report-authorino.json
+    node generate-report.js reports/report-authorino.json reports/report-authorino.html
+    @echo "Report: reports/report-authorino.html"
+
+# Run all gateway tests
+gateway-all: gateway-latency gateway-load authorino-load
+
+# ============================================================================
+# Lua Overhead Test (Special - requires policy changes)
+# ============================================================================
+
+# Run Lua overhead test (with and without Lua policy)
+lua-overhead: check-deps reports-dir
+    @echo "=== Lua Overhead Test ==="
+    @echo ""
+    @echo "Step 1: Baseline WITH Lua..."
+    artillery run gateway/artillery-lua-overhead.yml -o reports/report-with-lua.json
+    @echo ""
+    @echo "Step 2: Disabling Lua policy..."
+    kubectl patch envoyextensionpolicy -n converse-gateway core-gateway-telemetry-lua \
+      --type=json -p='[{"op":"replace","path":"/spec/lua","value":[]}]'
+    @echo "Waiting 30s for Envoy to reload..."
+    @sleep 30
+    @echo ""
+    @echo "Step 3: Measurement WITHOUT Lua..."
+    artillery run gateway/artillery-lua-overhead.yml -o reports/report-without-lua.json
+    @echo ""
+    @echo "Step 4: Re-enabling Lua policy..."
+    kubectl rollout restart deployment/envoy -n converse-gateway
+    kubectl rollout status deployment/envoy -n converse-gateway
+    @echo ""
+    @echo "Step 5: Generating reports..."
+    node generate-report.js reports/report-with-lua.json reports/report-with-lua.html
+    node generate-report.js reports/report-without-lua.json reports/report-without-lua.html
+    @echo ""
+    @just lua-compare
+
+# Compare Lua overhead results
+lua-compare:
+    @echo "=== Lua Overhead Comparison ==="
+    @echo ""
+    @echo "WITH Lua:"
+    @jq -r '"  p50: \(.aggregate.latency.median)ms, p95: \(.aggregate.latency.p95)ms, p99: \(.aggregate.latency.p99)ms"' reports/report-with-lua.json 2>/dev/null || echo "  No data"
+    @echo ""
+    @echo "WITHOUT Lua:"
+    @jq -r '"  p50: \(.aggregate.latency.median)ms, p95: \(.aggregate.latency.p95)ms, p99: \(.aggregate.latency.p99)ms"' reports/report-without-lua.json 2>/dev/null || echo "  No data"
+    @echo ""
+    @echo "Lua overhead = difference between the two"
+
+# ============================================================================
+# Full Test Suite
+# ============================================================================
+
+# Run complete test suite in order (baseline → models-proxy → gateway)
+all: check-deps check-env
+    @echo "=========================================="
+    @echo "  Running Complete Test Suite"
+    @echo "=========================================="
+    @echo ""
+    @just direct-gemini
+    @just direct-fireworks
+    @just models-proxy-latency
+    @just models-proxy-load
+    @just gateway-latency
+    @just gateway-load
+    @just authorino-load
+    @just kill-port-forward
+    @echo ""
+    @echo "=========================================="
+    @echo "  Test Suite Complete"
+    @echo "=========================================="
+    @just summary
+
+# ============================================================================
+# Analysis & Reports
+# ============================================================================
+
+# Create reports directory
+reports-dir:
+    @mkdir -p reports
+
+# Generate HTML report from existing JSON
+report report:
+    @echo "Generating HTML report for {{ report }}..."
+    node generate-report.js reports/{{ report }}.json reports/{{ report }}.html
+    @echo "Report: reports/{{ report }}.html"
+
+# Generate HTML reports for all existing JSON files
+reports-all: reports-dir
+    @echo "Generating HTML reports for all JSON files..."
+    @for f in reports/*.json; do \
+        base=$$(basename "$$f" .json); \
+        node generate-report.js "$$f" "reports/$$base.html"; \
+    done
+    @echo "All reports generated."
+
+# View console summary for a report
+view report:
+    @node generate-report.js --console reports/{{ report }}.json
+
+# Generate summary comparison of all tests
+summary: reports-dir
+    @echo "=== Latency Summary ==="
+    @echo ""
+    @echo "| Layer            | p50 (ms) | p95 (ms) | p99 (ms) |"
+    @echo "|------------------|----------|----------|----------|"
+    @test -f reports/report-direct-gemini.json && jq -r '"| Direct Gemini     | \(.aggregate.latency.median) | \(.aggregate.latency.p95) | \(.aggregate.latency.p99) |"' reports/report-direct-gemini.json 2>/dev/null || echo "| Direct Gemini     | - | - | - |"
+    @test -f reports/report-direct-fireworks.json && jq -r '"| Direct Fireworks  | \(.aggregate.latency.median) | \(.aggregate.latency.p95) | \(.aggregate.latency.p99) |"' reports/report-direct-fireworks.json 2>/dev/null || echo "| Direct Fireworks  | - | - | - |"
+    @test -f reports/report-models-proxy.json && jq -r '"| Models-Proxy      | \(.aggregate.latency.median) | \(.aggregate.latency.p95) | \(.aggregate.latency.p99) |"' reports/report-models-proxy.json 2>/dev/null || echo "| Models-Proxy      | - | - | - |"
+    @test -f reports/report-gateway.json && jq -r '"| Gateway           | \(.aggregate.latency.median) | \(.aggregate.latency.p95) | \(.aggregate.latency.p99) |"' reports/report-gateway.json 2>/dev/null || echo "| Gateway           | - | - | - |"
+    @echo ""
+    @echo "Overhead calculations:"
+    @echo "  LiteLLM overhead = models-proxy - direct-provider"
+    @echo "  Gateway overhead = gateway - models-proxy"
+
+# Clean up all reports
+clean:
+    @echo "Cleaning reports..."
+    @rm -rf reports/*.json reports/*.html
+    @echo "Reports cleaned"
+
+# ============================================================================
+# Kubernetes Resource Checks
+# ============================================================================
+
+# Check resource usage for all components
+resources:
+    @echo "=== ENVOY PROXY ==="
+    @kubectl top pods -n converse-gateway -l app.kubernetes.io/name=envoy 2>/dev/null || echo "Metrics not available"
+    @echo ""
+    @echo "=== AUTHORINO ==="
+    @kubectl top pods -n converse-gateway -l app.kubernetes.io/name=authorino 2>/dev/null || echo "Metrics not available"
+    @echo ""
+    @echo "=== MODELS-PROXY (LiteLLM) ==="
+    @kubectl top pods -n converse-proxy -l app=proxy-app 2>/dev/null || echo "Metrics not available"
+
+# Check for recent errors in gateway components
+errors:
+    @echo "=== ENVOY ERRORS ==="
+    @kubectl logs -n converse-gateway -l app.kubernetes.io/name=envoy --tail=50 2>/dev/null | grep -i "error\|warn\|fail" | tail -10 || echo "No errors found"
+    @echo ""
+    @echo "=== MODELS-PROXY ERRORS ==="
+    @kubectl logs -n converse-proxy -l app=proxy-app --tail=50 2>/dev/null | grep -i "error\|warn\|fail" | tail -10 || echo "No errors found"
+
+# ============================================================================
+# Help
+# ============================================================================
+
+# Show detailed help
+help:
+    @echo "Artillery Load Testing Commands"
+    @echo ""
+    @echo "DIRECT PROVIDER TESTS (Baseline):"
+    @echo "  just direct-gemini        - Test Google AI Studio directly"
+    @echo "  just direct-fireworks     - Test Fireworks AI directly"
+    @echo "  just direct-all           - Run both direct tests"
+    @echo ""
+    @echo "MODELS-PROXY TESTS (LiteLLM):"
+    @echo "  just models-proxy-latency - Latency test to LiteLLM"
+    @echo "  just models-proxy-load    - Load test LiteLLM"
+    @echo "  just models-proxy-all     - Run both models-proxy tests"
+    @echo ""
+    @echo "GATEWAY TESTS (Full Stack):"
+    @echo "  just gateway-latency      - Latency through full gateway"
+    @echo "  just gateway-load         - Load test through gateway"
+    @echo "  just authorino-load       - Authorino-focused load test"
+    @echo "  just gateway-all          - Run all gateway tests"
+    @echo ""
+    @echo "LUA OVERHEAD:"
+    @echo "  just lua-overhead         - Full Lua with/without test"
+    @echo "  just lua-compare          - Compare existing Lua results"
+    @echo ""
+    @echo "UTILITIES:"
+    @echo "  just all                  - Run complete test suite"
+    @echo "  just summary              - Show latency comparison"
+    @echo "  just resources            - Check K8s resource usage"
+    @echo "  just errors               - Check for recent errors"
+    @echo "  just clean                - Remove all reports"
+    @echo ""
+    @echo "REPORT GENERATION:"
+    @echo "  just report <name>        - Generate HTML for specific JSON report"
+    @echo "  just reports-all          - Generate HTML for all JSON reports"
+    @echo "  just view <name>          - View console summary of a report"
+    @echo ""
+    @echo "PREREQUISITES:"
+    @echo "  just check-deps           - Verify tools installed"
+    @echo "  just check-env            - Verify env vars set"
+    @echo "  just port-forward         - Setup port-forward to LiteLLM"
+    @echo "  just kill-port-forward    - Kill port-forward processes"
