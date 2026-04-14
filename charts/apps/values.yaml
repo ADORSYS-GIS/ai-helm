@@ -1297,7 +1297,10 @@ applications:
                 - name: CODER_OIDC_ISSUER_URL
                   value: "https://accounts.camer.digital/realms/camer-digital"
                 - name: CODER_OIDC_CLIENT_ID
-                  value: "coder"
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-keycloak-secret
+                      key: client_id
                 - name: CODER_OIDC_CLIENT_SECRET
                   valueFrom:
                     secretKeyRef:
