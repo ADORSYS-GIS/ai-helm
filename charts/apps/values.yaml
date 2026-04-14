@@ -1292,6 +1292,16 @@ applications:
                   value: "sslmode=disable"
                 - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
                   value: "false"
+                - name: CODER_FIRST_USER_EMAIL
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-admin-secret
+                      key: username
+                - name: CODER_FIRST_USER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-admin-secret
+                      key: password
               tolerations:
                 - key: ai.camer.digital/offline-work
                   operator: Equal
