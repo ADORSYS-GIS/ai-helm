@@ -1,0 +1,817 @@
+policies:
+  # ----------------------------------------------------
+  # Phase 1: Redis System
+  # ----------------------------------------------------
+  redis-system-default-deny-all:
+    namespace: redis-system
+  redis-ingress:
+    namespace: redis-system
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: redis
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-proxy
+        ports:
+          - protocol: TCP
+            port: 6379
+    egress:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: redis
+        ports:
+          - protocol: TCP
+            port: 6379
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+
+  # ----------------------------------------------------
+  # Phase 2: Converse Chat
+  # ----------------------------------------------------
+  converse-chat-default-deny-all:
+    namespace: converse-chat
+  converse-chat-allow-intra-namespace:
+    namespace: converse-chat
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  converse-chat-librechat-app:
+    namespace: converse-chat
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: librechat
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: traefik-system
+        ports:
+          - protocol: TCP
+            port: 3080
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: db
+        ports:
+          - protocol: TCP
+            port: 27017
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: search
+        ports:
+          - protocol: TCP
+            port: 7700
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: redis-system
+        ports:
+          - protocol: TCP
+            port: 6379
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except:
+                - 10.0.0.0/8
+                - 172.16.0.0/12
+                - 192.168.0.0/16
+        ports:
+          - protocol: TCP
+            port: 443
+  converse-chat-librechat-db:
+    namespace: converse-chat
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: db
+        app.kubernetes.io/instance: librechat
+    ingress:
+      - from:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: librechat
+        ports:
+          - protocol: TCP
+            port: 27017
+      - from:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: db
+        ports:
+          - protocol: TCP
+            port: 27017
+    egress:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: db
+        ports:
+          - protocol: TCP
+            port: 27017
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except:
+                - 10.0.0.0/8
+        ports:
+          - protocol: TCP
+            port: 443
+
+  # ----------------------------------------------------
+  # Phase 2: Converse Monitoring
+  # ----------------------------------------------------
+  converse-monitoring-default-deny-all:
+    namespace: converse-monitoring
+  converse-monitoring-allow-intra-namespace:
+    namespace: converse-monitoring
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  converse-monitoring-phoenix-otel-ingress:
+    namespace: converse-monitoring
+    podSelector:
+      matchLabels:
+        app: phoenix
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: traefik-system
+        ports:
+          - protocol: TCP
+            port: 6006
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-gateway
+        ports:
+          - protocol: TCP
+            port: 6006
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - podSelector: {}
+  converse-monitoring-phoenix-postgres:
+    namespace: converse-monitoring
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: postgresql
+    ingress:
+      - from:
+          - podSelector:
+              matchLabels:
+                app: phoenix
+        ports:
+          - protocol: TCP
+            port: 5432
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+
+  # ----------------------------------------------------
+  # Phase 3: Converse
+  # ----------------------------------------------------
+  converse-default-deny-all:
+    namespace: converse
+  converse-allow-intra-namespace:
+    namespace: converse
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  converse-lightbridge-api:
+    namespace: converse
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/instance: lightbridge
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: traefik-system
+        ports:
+          - protocol: TCP
+            port: 3000
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - podSelector:
+              matchLabels:
+                cnpg.io/cluster: lightbridge-main-db
+        ports:
+          - protocol: TCP
+            port: 5432
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: opa
+        ports:
+          - protocol: TCP
+            port: 3000
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: usage
+        ports:
+          - protocol: TCP
+            port: 3000
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+        ports:
+          - protocol: TCP
+            port: 443
+  converse-cnpg-postgres-instances:
+    namespace: converse
+    podSelector:
+      matchLabels:
+        cnpg.io/podRole: instance
+    ingress:
+      - from:
+          - podSelector: {}
+        ports:
+          - protocol: TCP
+            port: 5432
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: cnpg-system
+        ports:
+          - protocol: TCP
+            port: 5432
+          - protocol: TCP
+            port: 8000
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - podSelector:
+              matchLabels:
+                cnpg.io/podRole: instance
+        ports:
+          - protocol: TCP
+            port: 5432
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8]
+        ports:
+          - protocol: TCP
+            port: 443
+
+  # ----------------------------------------------------
+  # Phase 3: Converse MCP
+  # ----------------------------------------------------
+  converse-mcp-default-deny-all:
+    namespace: converse-mcp
+  converse-mcp-allow-intra-namespace:
+    namespace: converse-mcp
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  converse-mcp-services:
+    namespace: converse-mcp
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-gateway
+        ports:
+          - protocol: TCP
+            port: 8080
+          - protocol: TCP
+            port: 443
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: envoy-ai-gateway-system
+        ports:
+          - protocol: TCP
+            port: 8080
+          - protocol: TCP
+            port: 443
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 443
+
+  # ----------------------------------------------------
+  # Phase 4: Converse Gateway
+  # ----------------------------------------------------
+  converse-gateway-default-deny-all:
+    namespace: converse-gateway
+  converse-gateway-allow-intra-namespace:
+    namespace: converse-gateway
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  converse-gateway-envoy-proxy-allow:
+    namespace: converse-gateway
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/component: proxy
+        app.kubernetes.io/managed-by: envoy-gateway
+    ingress:
+      - ports:
+          - protocol: TCP
+            port: 443
+          - protocol: TCP
+            port: 80
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-proxy
+        ports:
+          - protocol: TCP
+            port: 4000
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-mcp
+        ports:
+          - protocol: TCP
+            port: 8080
+          - protocol: TCP
+            port: 443
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/part-of: opentelemetry
+        ports:
+          - protocol: TCP
+            port: 4317
+          - protocol: TCP
+            port: 4318
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: authorino-system
+        ports:
+          - protocol: TCP
+            port: 50051
+          - protocol: TCP
+            port: 5001
+          - protocol: TCP
+            port: 8083
+  converse-gateway-otel-collectors-egress:
+    namespace: converse-gateway
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/managed-by: opentelemetry-operator
+    ingress:
+      - from:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/managed-by: envoy-gateway
+        ports:
+          - protocol: TCP
+            port: 4317
+          - protocol: TCP
+            port: 4318
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-monitoring
+        ports:
+          - protocol: TCP
+            port: 6006
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse
+        ports:
+          - protocol: TCP
+            port: 3000
+
+  # ----------------------------------------------------
+  # Phase 4: Authorino System
+  # ----------------------------------------------------
+  authorino-system-default-deny-all:
+    namespace: authorino-system
+  authorino-system-allow-intra-namespace:
+    namespace: authorino-system
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  authorino-system-grpc-ingress:
+    namespace: authorino-system
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-gateway
+        ports:
+          - protocol: TCP
+            port: 50051
+          - protocol: TCP
+            port: 5001
+          - protocol: TCP
+            port: 8083
+      - from:
+          - ipBlock: # kube-apiserver webhooks
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 8443
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 6443
+
+  # ----------------------------------------------------
+  # Phase 5: Envoy Gateway System
+  # ----------------------------------------------------
+  envoy-gateway-system-default-deny-all:
+    namespace: envoy-gateway-system
+  envoy-gateway-system-allow-intra-namespace:
+    namespace: envoy-gateway-system
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  envoy-gateway-system-general:
+    namespace: envoy-gateway-system
+    ingress:
+      - ports:
+          - protocol: TCP
+            port: 80
+          - protocol: TCP
+            port: 443
+      - from:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 9443
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 6443
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: envoy-ai-gateway-system
+        ports:
+          - protocol: TCP
+            port: 1063
+          - protocol: TCP
+            port: 9443
+          - protocol: TCP
+            port: 9090
+
+  # ----------------------------------------------------
+  # Phase 5: Envoy AI Gateway System
+  # ----------------------------------------------------
+  envoy-ai-gateway-system-default-deny-all:
+    namespace: envoy-ai-gateway-system
+  envoy-ai-gateway-system-allow-intra-namespace:
+    namespace: envoy-ai-gateway-system
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  envoy-ai-gateway-system-general:
+    namespace: envoy-ai-gateway-system
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: envoy-gateway-system
+        ports:
+          - protocol: TCP
+            port: 1063
+          - protocol: TCP
+            port: 9443
+          - protocol: TCP
+            port: 9090
+      - from:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 9443
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 6443
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-proxy
+        ports:
+          - protocol: TCP
+            port: 4000
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 443
+
+  # ----------------------------------------------------
+  # Phase 6: Traefik System
+  # ----------------------------------------------------
+  traefik-system-default-deny-all:
+    namespace: traefik-system
+  traefik-system-allow-intra-namespace:
+    namespace: traefik-system
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  traefik-system-general:
+    namespace: traefik-system
+    ingress:
+      - ports:
+          - protocol: TCP
+            port: 80
+          - protocol: TCP
+            port: 443
+          - protocol: TCP
+            port: 8000
+          - protocol: TCP
+            port: 8443
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-chat
+        ports:
+          - protocol: TCP
+            port: 3080
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse
+        ports:
+          - protocol: TCP
+            port: 3000
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: converse-monitoring
+        ports:
+          - protocol: TCP
+            port: 6006
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 6443
+
+  # ----------------------------------------------------
+  # Phase 7: Cert System
+  # ----------------------------------------------------
+  cert-system-default-deny-all:
+    namespace: cert-system
+  cert-system-allow-intra-namespace:
+    namespace: cert-system
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  cert-system-general:
+    namespace: cert-system
+    ingress:
+      - from:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 9443
+          - protocol: TCP
+            port: 10250
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 6443
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 80
+          - protocol: TCP
+            port: 443
+
+  # ----------------------------------------------------
+  # Phase 7: CNPG System
+  # ----------------------------------------------------
+  cnpg-system-default-deny-all:
+    namespace: cnpg-system
+  cnpg-system-allow-intra-namespace:
+    namespace: cnpg-system
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  cnpg-system-general:
+    namespace: cnpg-system
+    ingress:
+      - from:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 9443
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 6443
+
+  # ----------------------------------------------------
+  # Phase 7: OpenTelemetry System
+  # ----------------------------------------------------
+  opentelemetry-system-default-deny-all:
+    namespace: opentelemetry-system
+  opentelemetry-system-allow-intra-namespace:
+    namespace: opentelemetry-system
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - podSelector: {}
+  opentelemetry-system-general:
+    namespace: opentelemetry-system
+    ingress:
+      - from:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 9443
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 6443
