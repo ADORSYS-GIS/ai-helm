@@ -1292,9 +1292,16 @@ applications:
                   value: "sslmode=disable"
                 - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
                   value: "false"
+            resources:
+              requests:
+                cpu: 1000m
+                memory: 1024Mi
+              limits:
+                cpu: 2000m
+                memory: 4096Mi
             tolerations:
               - key: ai.camer.digital/offline-work
-                operator: Exists
+                operator: Equal
                 value: dev-container
     destination:
       namespace: coder
