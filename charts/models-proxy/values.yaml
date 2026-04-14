@@ -7,6 +7,11 @@ global:
 proxy:
   defaultPodOptions:
     automountServiceAccountToken: false
+    tolerations:
+      - key: ai.camer.digital/offline-work
+        operator: Equal
+        value: dev-container
+        effect: NoSchedule
     securityContext:
       runAsNonRoot: true
       runAsUser: 1000
@@ -74,11 +79,11 @@ proxy:
 
           resources:
             limits:
-              cpu: 1
-              memory: 1Gi
+              cpu: 4
+              memory: 4Gi
             requests:
-              cpu: 500m
-              memory: 512Mi
+              cpu: 2
+              memory: 2Gi
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
