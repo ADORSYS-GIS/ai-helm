@@ -2,43 +2,69 @@
 
 A generic, reusable NetworkPolicy template for managing policies across multiple namespaces centrally.
 
-## Features
+## Design Choices
 
-- **Multi-Namespace Support**: Define policies for any namespace from a single `values.yaml`.
-- **Flexible Rules**: Full support for Kubernetes Ingress and Egress rules via `toYaml`.
-- **Default Deny Strategy**: Easily implement "deny-all" policies by defining a policy with an empty `podSelector` and no rules.
+1.  **Self-Contained & Robust**: The template does not depend on external library charts (like `common`), ensuring it can be deployed centrally to manage many namespaces without dependency conflicts.
+2.  **Abstractions over Raw YAML**: Instead of forcing users to write complex `podSelector` and `namespaceSelector` blocks for every rule, we provide simple keys like `ingress.namespaces` and `egress.internalServices`.
+3.  **Default Security**: DNS egress is enabled by default as it is a fundamental requirement for service discovery in Kubernetes. Egress is otherwise restricted to defined targets.
+4.  **Escape Hatches**: The `custom` blocks allow for any advanced NetworkPolicy features not covered by our abstractions, ensuring the template never blocks specialized needs.
+
+---
+
+## Migration Approach (Centralized to Per-Chart)
+
+Our long-term goal is to move from this centralized repository to a **per-chart approach**, where each application chart owns its own `networkpolicy.yaml`.
+
+1.  **Extract**: Identify the rules for component `X` in these `values.yaml`.
+2.  **Add**: Copy the reference template to `charts/X/templates/`.
+3.  **Config**: Map the old rules to the new `networkPolicy` schema in `charts/X/values.yaml`.
+4.  **Test**: Dry-run with `helm template`.
+5.  **Remove**: Delete the old rules from this centralized chart.
 
 ---
 
 ## Usage
 
-Define your policies in the `policies` map in `values.yaml`:
+### 1. Centralized Mode (Collective)
+
+Define multiple policies in the `policies` map. This is useful for third-party or legacy namespaces.
 
 ```yaml
 policies:
-  # Example: Default Deny All for a namespace
-  my-namespace-default-deny-all:
-    namespace: my-namespace
-
-  # Example: Allow traffic from a specific namespace
-  my-app-ingress:
+  my-app-security:
     namespace: my-namespace
     podSelector:
       matchLabels:
         app: my-app
-    ingress:
-      - from:
-          - namespaceSelector:
-              matchLabels:
-                kubernetes.io/metadata.name: traefik-system
+    ingressNamespaces:
+      - name: traefik-system
         ports:
-          - protocol: TCP
-            port: 8080
+          - port: 8080
+    egressDns: true
+    egressInternalServices:
+      - namespace: redis-system
+        ports:
+          - port: 6379
 ```
 
-### Policy Structure
+### 2. Solo Mode (Singleton)
 
-Each policy in the `policies` map supports the following fields:
+Enable the primary `networkPolicy` block for the current namespace. This uses the new abstraction-based schema.
+
+```yaml
+networkPolicy:
+  enabled: true
+  ingress:
+    namespaces:
+      - name: traefik-system
+        ports:
+          - port: 8080
+  egress:
+    dns: true
+    intraNamespace: true
+```
+
+### Policy Structure (Centralized)
 
 | Field | Type | Description |
 |-------|------|-------------|
