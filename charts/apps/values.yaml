@@ -1338,22 +1338,13 @@ applications:
               service:
                 type: ClusterIP
               ingress:
-                enabled: true
+                enable: true
                 className: traefik
                 annotations:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
-                hosts:
-                  - host: coder.ai.camer.digital
-                    paths:
-                      - path: /
-                        pathType: Prefix
-                        service:
-                          name: coder
-                          port: http
+                host: coder.ai.camer.digital
                 tls:
-                  - secretName: coder.ai.camer.digital-tls
-                    hosts:
-                      - coder.ai.camer.digital
+                  enable: true
     destination:
       namespace: coder
     syncPolicy:
