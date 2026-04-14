@@ -84,9 +84,6 @@ modelDefaults:
     modelProxyPrimary: &modelProxyPrimary
       ref: model-proxy-01
       priority: 0
-    modelProxySecondary: &modelProxySecondary
-      ref: model-proxy-02
-      priority: 1
 
 backends:
   fw-01:
@@ -142,12 +139,6 @@ backends:
     resourceName: model-proxy-01-svc
     secretRef:
       name: proxy-api-key-01
-    #enabled: false
-  model-proxy-02:
-    <<: *geminiProxyBackend
-    resourceName: model-proxy-02-svc
-    secretRef:
-      name: proxy-api-key-02
     #enabled: false
 
 # Pricing sources:
@@ -345,35 +336,29 @@ models:
   kimi-k2-instruct-0905:
     kind: text
     pricing: *pricingFireworksKimiK2
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/kimi-k2-instruct-0905"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/kimi-k2-instruct-0905"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/kimi-k2-instruct-0905"
 
   kimi-k2-thinking:
     kind: text
     pricing: *pricingFireworksKimiK2
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/kimi-k2-thinking"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/kimi-k2-thinking"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/kimi-k2-thinking"
 
   deepseek-v3p2:
     kind: text
     pricing: *pricingFireworksDeepseekV3p2
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/deepseek-v3p2"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/deepseek-v3p2"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/deepseek-v3p2"
 
   glm-5:
     kind: text
@@ -382,117 +367,97 @@ models:
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "fireworks/accounts/fireworks/models/glm-5"
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/glm-5"
 
   glm-5p1:
     kind: text
     pricing: *pricingFireworksGlm51
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/glm-5p1"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/glm-5p1"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/glm-5p1"
 
   qwen3p6-plus:
     kind: multimodal
     pricing: *pricingFireworksQwen36Plus
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/qwen3p6-plus"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/qwen3p6-plus"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/qwen3p6-plus"
 
   kimi-k2.5:
     kind: text
     pricing: *pricingFireworksKimiK25
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/kimi-k2p5"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/kimi-k2p5"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/kimi-k2p5"
 
   cogito-671b-v2-p1:
     kind: text
     pricing: *pricingFireworksFlat120
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/cogito/models/cogito-671b-v2-p1"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/cogito/models/cogito-671b-v2-p1"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/cogito/models/cogito-671b-v2-p1"
 
   qwen3-reranker-8b:
     kind: reranker
     pricing: *pricingFireworksFlat020
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/qwen3-reranker-8b"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/qwen3-reranker-8b"
 
   qwen3-embedding-8b:
     kind: embedding
     pricing: *pricingFireworksFlat010
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/qwen3-embedding-8b"
 
   qwen3-8b:
     kind: text
     pricing: *pricingFireworksFlat020
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/qwen3-8b"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/qwen3-8b"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/qwen3-8b"
 
   minimax-m2p5:
     kind: text
     pricing: *pricingFireworksMiniMaxM25
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p5"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p5"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/minimax-m2p5"
 
   qwen3-vl-30b-a3b-instruct:
     kind: multimodal
     pricing: *pricingFireworksQwenVl30B
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/qwen3-vl-30b-a3b-instruct"
 
   qwen3-vl-30b-a3b-thinking:
     kind: multimodal
     pricing: *pricingFireworksQwenVl30B
+    minBackends: 1
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "fireworks_ai/accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
 
   gpt-5-mini:
     enabled: false  # Disabled: GPT model not currently available
@@ -501,170 +466,140 @@ models:
     rateLimitBudgeting:
       free: .000001    # Override free plan to $0.10
       pro: 300
+    minBackends: 1
     backends:
-      openai-01:
-        <<: *openaiBackendPrimary
-        modelNameOverride: "gpt-5-mini"
-      openai-02:
-        <<: *openaiBackendSecondary
-        modelNameOverride: "gpt-5-mini"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "openai/gpt-5-mini"
 
   gpt-5-codex-mini:
     enabled: false  # Disabled: GPT model not currently available
     kind: text
     pricing: *pricingOpenaiGpt54Mini
+    minBackends: 1
     backends:
-      openai-01:
+      model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "openai/gpt-5.4-mini-2026-03-17"
-      openai-02:
-        <<: *modelProxySecondary
         modelNameOverride: "openai/gpt-5.4-mini-2026-03-17"
 
   gpt-5-nano:
     enabled: false  # Disabled: GPT model not currently available
     kind: text
     pricing: *pricingOpenaiGpt54Nano
+    minBackends: 1
     backends:
-      openai-01:
-        <<: *openaiBackendPrimary
-        modelNameOverride: "gpt-5.4-nano-2026-03-17"
-      openai-02:
-        <<: *openaiBackendSecondary
-        modelNameOverride: "gpt-5.4-nano-2026-03-17"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "openai/gpt-5.4-nano-2026-03-17"
 
   gpt-5.3-codex:
     enabled: false  # Disabled: GPT model not currently available
     kind: text
     pricing: *pricingOpenaiGpt53Codex
+    minBackends: 1
     backends:
-      openai-01:
+      model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "openai/gpt-5.3-codex"
-      openai-02:
-        <<: *modelProxySecondary
         modelNameOverride: "openai/gpt-5.3-codex"
 
   te3-large:
     enabled: false  # Disabled: te3 model not currently available
     kind: embedding
     pricing: *pricingOpenaiEmbeddingLarge
+    minBackends: 1
     backends:
-      openai-01:
-        <<: *openaiBackendPrimary
-        modelNameOverride: "text-embedding-3-large"
-      openai-02:
-        <<: *openaiBackendSecondary
-        modelNameOverride: "text-embedding-3-large"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "openai/text-embedding-3-large"
 
   te3-small:
     enabled: false  # Disabled: te3 model not currently available
     kind: embedding
     pricing: *pricingOpenaiEmbeddingSmall
+    minBackends: 1
     backends:
-      openai-01:
-        <<: *openaiBackendPrimary
-        modelNameOverride: "text-embedding-3-small"
-      openai-02:
-        <<: *openaiBackendSecondary
-        modelNameOverride: "text-embedding-3-small"
+      model-proxy-01:
+        <<: *modelProxyPrimary
+        modelNameOverride: "openai/text-embedding-3-small"
 
   gpt-image-1:
     enabled: true # Disabled: GPT model not currently available
     kind: image
     pricing: *pricingGemini25FlashImage
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-2.5-flash-image"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-flash-image"
 
   gemini-3.1-pro:
     kind: text
     pricing: *pricingGemini31Pro
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-3.1-pro-preview"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-3.1-pro-preview"
 
   gemini-3.1-flash-lite:
     kind: text
     pricing: *pricingGemini31FlashLite
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-3.1-flash-lite-preview"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-3.1-flash-lite-preview"
 
   gemini-3-flash:
     kind: text
     pricing: *pricingGemini3Flash
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-3-flash-preview"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-3-flash-preview"
 
   gemini-2-5-flash-lite:
     kind: text
     pricing: *pricingGemini25FlashLite
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-2.5-flash-lite"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-flash-lite"
 
   gemini-2.5-pro:
     kind: text
     pricing: *pricingGemini25Pro
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-2.5-pro"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-pro"
 
   "gemini-2.5-flash":
     kind: text
     pricing: *pricingGemini25Flash
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-2.5-flash"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-flash"
 
   "gemini-2.5-flash-lite":
     kind: text
     pricing: *pricingGemini25FlashLite
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-2.5-flash-lite"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-flash-lite"
 
   "gemini-2.5-flash-image":
     kind: image
     pricing: *pricingGemini25FlashImage
+    minBackends: 1
     backends:
       model-proxy-01:
         <<: *modelProxyPrimary
-        modelNameOverride: "gemini/gemini-2.5-flash-image"
-      model-proxy-02:
-        <<: *modelProxySecondary
         modelNameOverride: "gemini/gemini-2.5-flash-image"
