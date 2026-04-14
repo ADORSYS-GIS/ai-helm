@@ -371,6 +371,12 @@ config:
     # General Settings
     safeSearch: 0  # Options: 0 (OFF), 1 (MODERATE - default), 2 (STRICT)
 
+  # MCP Servers Configuration
+  mcpSettings:
+    allowedDomains:
+      - "coder.ai.camer.digital"
+      - "coder.coder.svc.cluster.local"
+      - "localhost"
   mcpServers:
     github_issues:
       title: "GH Issues"
@@ -465,6 +471,21 @@ config:
         client_secret: ${CD_MCP_SECRET_ID}
         redirect_uri: https://ai.camer.digital/api/mcp/lightbridge_self_service/oauth/callback
         scope: "email openid offline_access"
+    coder-mcp:
+      title: "Coder MCP"
+      description: "Coder workspace management via MCP protocol"
+      type: "streamable-http"
+      url: "https://coder.ai.camer.digital/api/experimental/mcp/http"
+      timeout: 150000
+      headers: {}
+      requiresOAuth: true
+      oauth:
+        authorization_url: https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CODER_MCP_CLIENT_ID}
+        client_secret: ${CODER_MCP_CLIENT_SECRET}
+        redirect_uri: https://ai.camer.digital/api/mcp/coder-mcp/oauth/callback
+        scope: "openid profile email offline_access"
 
   fileConfig:
     endpoints:
