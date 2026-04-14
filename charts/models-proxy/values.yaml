@@ -7,6 +7,11 @@ global:
 proxy:
   defaultPodOptions:
     automountServiceAccountToken: false
+    tolerations:
+      - key: ai.camer.digital/offline-work
+        operator: Equal
+        value: dev-container
+        effect: NoSchedule
     securityContext:
       runAsNonRoot: true
       runAsUser: 1000
@@ -74,11 +79,11 @@ proxy:
 
           resources:
             limits:
-              cpu: 1
-              memory: 1Gi
+              cpu: 4
+              memory: 4Gi
             requests:
-              cpu: 500m
-              memory: 512Mi
+              cpu: 2
+              memory: 2Gi
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -188,14 +193,68 @@ config:
       litellm_params:
         model: "gemini/gemini-2.5-flash-image"
     
-    # ── Add more providers below following this pattern:
-    # - model_name: "provider/model-name"
-    #   litellm_params:
-    #     model: "provider/model-name"
     # Fireworks models
-    - model_name: "fireworks/accounts/fireworks/models/glm-5"
+    - model_name: "fireworks_ai/accounts/fireworks/models/kimi-k2-instruct-0905"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/kimi-k2-instruct-0905"
+    - model_name: "fireworks_ai/accounts/fireworks/models/kimi-k2-thinking"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/kimi-k2-thinking"
+    - model_name: "fireworks_ai/accounts/fireworks/models/deepseek-v3p2"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/deepseek-v3p2"
+    - model_name: "fireworks_ai/accounts/fireworks/models/glm-5"
       litellm_params:
         model: "fireworks_ai/accounts/fireworks/models/glm-5"
+    - model_name: "fireworks_ai/accounts/fireworks/models/glm-5p1"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/glm-5p1"
+    - model_name: "fireworks_ai/accounts/fireworks/models/qwen3p6-plus"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/qwen3p6-plus"
+    - model_name: "fireworks_ai/accounts/fireworks/models/kimi-k2p5"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/kimi-k2p5"
+    - model_name: "fireworks_ai/accounts/cogito/models/cogito-671b-v2-p1"
+      litellm_params:
+        model: "fireworks_ai/accounts/cogito/models/cogito-671b-v2-p1"
+    - model_name: "fireworks_ai/accounts/fireworks/models/qwen3-reranker-8b"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/qwen3-reranker-8b"
+    - model_name: "fireworks_ai/accounts/fireworks/models/qwen3-embedding-8b"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/qwen3-embedding-8b"
+    - model_name: "fireworks_ai/accounts/fireworks/models/qwen3-8b"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/qwen3-8b"
+    - model_name: "fireworks_ai/accounts/fireworks/models/minimax-m2p5"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/minimax-m2p5"
+    - model_name: "fireworks_ai/accounts/fireworks/models/qwen3-vl-30b-a3b-instruct"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/qwen3-vl-30b-a3b-instruct"
+    - model_name: "fireworks_ai/accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
+      litellm_params:
+        model: "fireworks_ai/accounts/fireworks/models/qwen3-vl-30b-a3b-thinking"
+    - model_name: "openai/gpt-5-mini"
+      litellm_params:
+        model: "openai/gpt-5-mini"
+    - model_name: "openai/gpt-5.4-mini-2026-03-17"
+      litellm_params:
+        model: "openai/gpt-5.4-mini-2026-03-17"
+    - model_name: "openai/gpt-5.4-nano-2026-03-17"
+      litellm_params:
+        model: "openai/gpt-5.4-nano-2026-03-17"
+    - model_name: "openai/gpt-5.3-codex"
+      litellm_params:
+        model: "openai/gpt-5.3-codex"
+    - model_name: "openai/text-embedding-3-large"
+      litellm_params:
+        model: "openai/text-embedding-3-large"
+    - model_name: "openai/text-embedding-3-small"
+      litellm_params:
+        model: "openai/text-embedding-3-small"
+    
     # Wildcard fallback
     - model_name: "*"
       litellm_params:
