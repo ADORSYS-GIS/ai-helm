@@ -1290,8 +1290,21 @@ applications:
                       key: uri
                 - name: CODER_PG_OPTIONS
                   value: "sslmode=disable"
-                - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
-                  value: "false"
+                - name: CODER_ACCESS_URL
+                  value: "https://coder.ai.camer.digital"
+                - name: CODER_WILDCARD_ACCESS_URL
+                  value: "https://*.serverless.coder.ai.camer.digital"
+                - name: CODER_OIDC_ISSUER_URL
+                  value: "https://accounts.camer.digital/realms/camer-digital"
+                - name: CODER_OIDC_CLIENT_ID
+                  value: "coder"
+                - name: CODER_OIDC_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-keycloak-secret
+                      key: client_secret
+                - name: CODER_OIDC_SCOPES
+                  value: "openid,profile,email,offline_access"
                 - name: CODER_FIRST_USER_EMAIL
                   valueFrom:
                     secretKeyRef:
@@ -1302,10 +1315,6 @@ applications:
                     secretKeyRef:
                       name: coder-admin-secret
                       key: password
-                - name: CODER_ACCESS_URL
-                  value: "https://coder.ai.camer.digital"
-                - name: CODER_WILDCARD_ACCESS_URL
-                  value: "https://*.serverless.coder.ai.camer.digital"
               tolerations:
                 - key: ai.camer.digital/offline-work
                   operator: Equal
