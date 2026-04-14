@@ -114,6 +114,15 @@ librechat:
                 name: librechat-mcp-github
                 key: client_secret
 
+            CODERS_MCP_CLIENT_ID:
+              secretKeyRef:
+                name: librechat-mcp-coder-credentials
+                key: client_id
+            CODERS_MCP_SECRET:
+              secretKeyRef:
+                name: librechat-mcp-coder-credentials
+                key: client_secret
+
             OPENID_CLIENT_ID:
               secretKeyRef:
                 name: librechat-openid-config
@@ -465,6 +474,25 @@ config:
         client_secret: ${CD_MCP_SECRET_ID}
         redirect_uri: https://ai.camer.digital/api/mcp/lightbridge_self_service/oauth/callback
         scope: "email openid offline_access"
+
+    coder_mcp:
+      title: "Coder"
+      description: "Coder - Development environments in your cloud"
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "http://coder.coder.svc.cluster.local:8080/api/experimental/mcp/http"
+      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
+      chatMenu: false
+      requiresOAuth: true
+      serverInstructions: |
+        Provides development environment management capabilities.
+      oauth:
+        authorization_url: https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CODERS_MCP_CLIENT_ID}
+        client_secret: ${CODERS_MCP_SECRET}
+        redirect_uri: https://ai.camer.digital/api/mcp/coder_mcp/oauth/callback
+        scope: "openid profile email offline_access"
 
   fileConfig:
     endpoints:
