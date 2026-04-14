@@ -1363,52 +1363,6 @@ applications:
       automated:
         prune: true
         selfHeal: true
-    rawRessources:
-      - |
-        apiVersion: barmancloud.cnpg.io/v1
-        kind: ObjectStore
-        metadata:
-          name: coder-barman-store
-          namespace: coder
-          annotations:
-            argocd.argoproj.io/sync-wave: "1"
-            argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-        spec:
-          configuration:
-            destinationPath: s3://ai-ops-backups/coder-cnpg-backups/
-            endpointURL: https://s3.ssegning.me
-            s3Credentials:
-              accessKeyId:
-                name: coder-s3-config
-                key: s3_access_key_id
-              secretAccessKey:
-                name: coder-s3-config
-                key: s3_secret_access_key
-              region:
-                name: coder-s3-config
-                key: s3_region_name
-      - |
-        apiVersion: postgresql.cnpg.io/v1
-        kind: Cluster
-        metadata:
-          name: coder-cnpg
-          namespace: coder
-          annotations:
-            argocd.argoproj.io/sync-wave: "2"
-        spec:
-          instances: 2
-          plugins:
-            - name: barman-cloud.cloudnative-pg.io
-              isWALArchiver: true
-              parameters:
-                barmanObjectName: coder-barman-store
-                serverName: coder-cnpg
-          storage:
-            size: 10Gi
-          bootstrap:
-            initdb:
-              database: coder
-              owner: coder
 
   # --- Proxy ---
   - name: models-proxy
