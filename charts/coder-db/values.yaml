@@ -1,1 +1,17 @@
-# coder-db values
+resources:
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: coder-cnpg
+      namespace: coder
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      instances: 2
+      storage:
+        size: 10Gi
+      bootstrap:
+        initdb:
+          database: coder
+          owner: coder
