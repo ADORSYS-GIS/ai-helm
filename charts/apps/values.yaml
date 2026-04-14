@@ -1293,7 +1293,7 @@ applications:
                 - name: CODER_ACCESS_URL
                   value: "https://coder.ai.camer.digital"
                 - name: CODER_WILDCARD_ACCESS_URL
-                  value: "https://*.serverless.coder.ai.camer.digital"
+                  value: "*.serverless.coder.ai.camer.digital"
                 - name: CODER_OIDC_ISSUER_URL
                   value: "https://accounts.camer.digital/realms/camer-digital"
                 - name: CODER_OIDC_CLIENT_ID
@@ -1312,6 +1312,8 @@ applications:
                   value: "https://www.keycloak.org/resources/images/logo.svg"
                 - name: CODER_OIDC_SIGN_IN_TEXT
                   value: "Sign in with Keycloak"
+                - name: CODER_EXPERIMENTS
+                  value: "oauth2,mcp-server-http"
                 - name: CODER_FIRST_USER_EMAIL
                   valueFrom:
                     secretKeyRef:
@@ -1335,6 +1337,14 @@ applications:
                   memory: 4096Mi
               service:
                 type: ClusterIP
+              ingress:
+                enable: true
+                className: traefik
+                annotations:
+                  cert-manager.io/cluster-issuer: cert-home-cert-http
+                host: coder.ai.camer.digital
+                tls:
+                  enable: true
     destination:
       namespace: coder
     syncPolicy:
