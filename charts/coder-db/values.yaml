@@ -1,9 +1,15 @@
 cluster:
   name: coder-cnpg
-  instances: 1
+  instances: 2
   storage:
     size: 10Gi
   bootstrap:
     initdb:
       database: coder
       owner: coder
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lightbridge-barman-store
+        serverName: coder-cnpg
