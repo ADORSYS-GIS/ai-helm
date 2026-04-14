@@ -1,0 +1,3265 @@
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: cogito-671b-v2-p1
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_cogito_671b_v2_p1
+      type: CEL
+      cel: "int(double(total_tokens) * 1.2000 > 0.0 ? double(total_tokens) * 1.2000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: cogito-671b-v2-p1
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/cogito/models/cogito-671b-v2-p1
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: deepseek-v3p2
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_deepseek_v3p2
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.5600 + double(cached_input_tokens) * 0.2800 + double(output_tokens) * 1.6800 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.5600 + double(cached_input_tokens) * 0.2800 + double(output_tokens) * 1.6800 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: deepseek-v3p2
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/deepseek-v3p2
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gemini-2-5-flash-lite
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gemini_2_5_flash_lite
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.1000 + double(cached_input_tokens) * 0.0100 + double(output_tokens) * 0.4000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.1000 + double(cached_input_tokens) * 0.0100 + double(output_tokens) * 0.4000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gemini-2-5-flash-lite
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-2.5-flash-lite
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gemini-2.5-flash
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gemini_2_5_flash
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.3000 + double(cached_input_tokens) * 0.0300 + double(output_tokens) * 2.5000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.3000 + double(cached_input_tokens) * 0.0300 + double(output_tokens) * 2.5000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gemini-2.5-flash
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-2.5-flash
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gemini-2.5-flash-image
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gemini_2_5_flash_image
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.3000 + double(cached_input_tokens) * 0.0000 + double(output_tokens) * 30.0000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.3000 + double(cached_input_tokens) * 0.0000 + double(output_tokens) * 30.0000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gemini-2.5-flash-image
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-2.5-flash-image
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gemini-2.5-flash-lite
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gemini_2_5_flash_lite
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.1000 + double(cached_input_tokens) * 0.0100 + double(output_tokens) * 0.4000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.1000 + double(cached_input_tokens) * 0.0100 + double(output_tokens) * 0.4000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gemini-2.5-flash-lite
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-2.5-flash-lite
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gemini-2.5-pro
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gemini_2_5_pro
+      type: CEL
+      cel: "int((double(input_tokens) > 200000.0 ? (double(input_tokens) - double(cached_input_tokens)) * 2.5000 + double(cached_input_tokens) * 0.2500 + double(output_tokens) * 15.0000 : (double(input_tokens) - double(cached_input_tokens)) * 1.2500 + double(cached_input_tokens) * 0.1250 + double(output_tokens) * 10.0000) > 0.0 ? (double(input_tokens) > 200000.0 ? (double(input_tokens) - double(cached_input_tokens)) * 2.5000 + double(cached_input_tokens) * 0.2500 + double(output_tokens) * 15.0000 : (double(input_tokens) - double(cached_input_tokens)) * 1.2500 + double(cached_input_tokens) * 0.1250 + double(output_tokens) * 10.0000) : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gemini-2.5-pro
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-2.5-pro
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gemini-3-flash
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gemini_3_flash
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.5000 + double(cached_input_tokens) * 0.0500 + double(output_tokens) * 3.0000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.5000 + double(cached_input_tokens) * 0.0500 + double(output_tokens) * 3.0000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gemini-3-flash
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-3-flash-preview
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gemini-3.1-flash-lite
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gemini_3_1_flash_lite
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.2500 + double(cached_input_tokens) * 0.0250 + double(output_tokens) * 1.5000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.2500 + double(cached_input_tokens) * 0.0250 + double(output_tokens) * 1.5000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gemini-3.1-flash-lite
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-3.1-flash-lite-preview
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gemini-3.1-pro
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gemini_3_1_pro
+      type: CEL
+      cel: "int((double(input_tokens) > 200000.0 ? (double(input_tokens) - double(cached_input_tokens)) * 4.0000 + double(cached_input_tokens) * 0.4000 + double(output_tokens) * 18.0000 : (double(input_tokens) - double(cached_input_tokens)) * 2.0000 + double(cached_input_tokens) * 0.2000 + double(output_tokens) * 12.0000) > 0.0 ? (double(input_tokens) > 200000.0 ? (double(input_tokens) - double(cached_input_tokens)) * 4.0000 + double(cached_input_tokens) * 0.4000 + double(output_tokens) * 18.0000 : (double(input_tokens) - double(cached_input_tokens)) * 2.0000 + double(cached_input_tokens) * 0.2000 + double(output_tokens) * 12.0000) : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gemini-3.1-pro
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-3.1-pro-preview
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: glm-5
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_glm_5
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 1.0000 + double(cached_input_tokens) * 0.2000 + double(output_tokens) * 3.2000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 1.0000 + double(cached_input_tokens) * 0.2000 + double(output_tokens) * 3.2000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: glm-5
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/glm-5
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: glm-5p1
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_glm_5p1
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 1.4000 + double(cached_input_tokens) * 0.2600 + double(output_tokens) * 4.4000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 1.4000 + double(cached_input_tokens) * 0.2600 + double(output_tokens) * 4.4000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: glm-5p1
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: fw-backend-01-svc
+          modelNameOverride: accounts/fireworks/models/glm-5p1
+          weight: 1
+          priority: 0
+        - name: fw-backend-02-svc
+          modelNameOverride: accounts/fireworks/models/glm-5p1
+          weight: 1
+          priority: 1
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gpt-5-codex-mini
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gpt_5_codex_mini
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.7500 + double(cached_input_tokens) * 0.0750 + double(output_tokens) * 4.5000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.7500 + double(cached_input_tokens) * 0.0750 + double(output_tokens) * 4.5000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gpt-5-codex-mini
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: openai/gpt-5.4-mini-2026-03-17
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gpt-5-mini
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gpt_5_mini
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.7500 + double(cached_input_tokens) * 0.0750 + double(output_tokens) * 4.5000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.7500 + double(cached_input_tokens) * 0.0750 + double(output_tokens) * 4.5000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gpt-5-mini
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: openai/gpt-5-mini
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gpt-5-nano
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gpt_5_nano
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.2000 + double(cached_input_tokens) * 0.0200 + double(output_tokens) * 1.2500 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.2000 + double(cached_input_tokens) * 0.0200 + double(output_tokens) * 1.2500 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gpt-5-nano
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: openai/gpt-5.4-nano-2026-03-17
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gpt-5.3-codex
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gpt_5_3_codex
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 1.7500 + double(cached_input_tokens) * 0.1750 + double(output_tokens) * 14.0000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 1.7500 + double(cached_input_tokens) * 0.1750 + double(output_tokens) * 14.0000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gpt-5.3-codex
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: openai/gpt-5.3-codex
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: gpt-image-1
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_gpt_image_1
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.3000 + double(cached_input_tokens) * 0.0000 + double(output_tokens) * 30.0000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.3000 + double(cached_input_tokens) * 0.0000 + double(output_tokens) * 30.0000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: gpt-image-1
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: gemini/gemini-2.5-flash-image
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: kimi-k2-instruct-0905
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_kimi_k2_instruct_0905
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.6000 + double(cached_input_tokens) * 0.3000 + double(output_tokens) * 2.5000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.6000 + double(cached_input_tokens) * 0.3000 + double(output_tokens) * 2.5000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: kimi-k2-instruct-0905
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/kimi-k2-instruct-0905
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: kimi-k2-thinking
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_kimi_k2_thinking
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.6000 + double(cached_input_tokens) * 0.3000 + double(output_tokens) * 2.5000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.6000 + double(cached_input_tokens) * 0.3000 + double(output_tokens) * 2.5000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: kimi-k2-thinking
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/kimi-k2-thinking
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: kimi-k2.5
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_kimi_k2_5
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.6000 + double(cached_input_tokens) * 0.1000 + double(output_tokens) * 3.0000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.6000 + double(cached_input_tokens) * 0.1000 + double(output_tokens) * 3.0000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: kimi-k2.5
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/kimi-k2p5
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: minimax-m2p5
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_minimax_m2p5
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.3000 + double(cached_input_tokens) * 0.0300 + double(output_tokens) * 1.2000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.3000 + double(cached_input_tokens) * 0.0300 + double(output_tokens) * 1.2000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: minimax-m2p5
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/minimax-m2p5
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: qwen3-8b
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_qwen3_8b
+      type: CEL
+      cel: "int(double(total_tokens) * 0.2000 > 0.0 ? double(total_tokens) * 0.2000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: qwen3-8b
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/qwen3-8b
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: qwen3-embedding-8b
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_qwen3_embedding_8b
+      type: CEL
+      cel: "int(double(total_tokens) * 0.1000 > 0.0 ? double(total_tokens) * 0.1000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: qwen3-embedding-8b
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/qwen3-embedding-8b
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: qwen3-reranker-8b
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_qwen3_reranker_8b
+      type: CEL
+      cel: "int(double(total_tokens) * 0.2000 > 0.0 ? double(total_tokens) * 0.2000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: qwen3-reranker-8b
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/qwen3-reranker-8b
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: qwen3-vl-30b-a3b-instruct
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_qwen3_vl_30b_a3b_instruct
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.1500 + double(cached_input_tokens) * 0.0750 + double(output_tokens) * 0.6000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.1500 + double(cached_input_tokens) * 0.0750 + double(output_tokens) * 0.6000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: qwen3-vl-30b-a3b-instruct
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: qwen3-vl-30b-a3b-thinking
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_qwen3_vl_30b_a3b_thinking
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.1500 + double(cached_input_tokens) * 0.0750 + double(output_tokens) * 0.6000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.1500 + double(cached_input_tokens) * 0.0750 + double(output_tokens) * 0.6000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: qwen3-vl-30b-a3b-thinking
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: fireworks/accounts/fireworks/models/qwen3-vl-30b-a3b-thinking
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: qwen3p6-plus
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_qwen3p6_plus
+      type: CEL
+      cel: "int((double(input_tokens) - double(cached_input_tokens)) * 0.5000 + double(cached_input_tokens) * 0.1000 + double(output_tokens) * 3.0000 > 0.0 ? (double(input_tokens) - double(cached_input_tokens)) * 0.5000 + double(cached_input_tokens) * 0.1000 + double(output_tokens) * 3.0000 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: qwen3p6-plus
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: fw-backend-01-svc
+          modelNameOverride: accounts/fireworks/models/qwen3p6-plus
+          weight: 1
+          priority: 0
+        - name: fw-backend-02-svc
+          modelNameOverride: accounts/fireworks/models/qwen3p6-plus
+          weight: 1
+          priority: 1
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: te3-large
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_te3_large
+      type: CEL
+      cel: "int(double(total_tokens) * 0.1300 > 0.0 ? double(total_tokens) * 0.1300 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: te3-large
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: openai/text-embedding-3-large
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aigatewayroute.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: te3-small
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: core-gateway
+      namespace: converse-gateway
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: cost_te3_small
+      type: CEL
+      cel: "int(double(total_tokens) * 0.0200 > 0.0 ? double(total_tokens) * 0.0200 : 0.0)"
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: te3-small
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        - name: model-proxy-01-svc
+          modelNameOverride: openai/text-embedding-3-small
+          weight: 1
+          priority: 0
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: fw-backend-01-svc
+spec:
+  schema:
+    name: OpenAI
+    prefix: /inference/v1
+  backendRef:
+    name: fw-backend-01-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: fw-backend-02-svc
+spec:
+  schema:
+    name: OpenAI
+    prefix: /inference/v1
+  backendRef:
+    name: fw-backend-02-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: google-ai-studio-backend-01-svc
+spec:
+  schema:
+    name: OpenAI
+    prefix: v1beta/openai
+  backendRef:
+    name: google-ai-studio-backend-01-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: google-ai-studio-backend-02-svc
+spec:
+  schema:
+    name: OpenAI
+    prefix: v1beta/openai
+  backendRef:
+    name: google-ai-studio-backend-02-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: model-proxy-01-svc
+spec:
+  schema:
+    name: OpenAI
+  backendRef:
+    name: model-proxy-01-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: openai-backend-01-svc
+spec:
+  schema:
+    name: OpenAI
+  backendRef:
+    name: openai-backend-01-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: openai-backend-02-svc
+spec:
+  schema:
+    name: OpenAI
+  backendRef:
+    name: openai-backend-02-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: vertex-ai-backend-01-svc
+spec:
+  schema:
+    name: GCPVertexAI
+  backendRef:
+    name: vertex-ai-backend-01-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/aiservicebackend.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: vertex-ai-backend-02-svc
+spec:
+  schema:
+    name: GCPVertexAI
+  backendRef:
+    name: vertex-ai-backend-02-svc
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: fw-backend-01-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: api.fireworks.ai
+        port: 443
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: fw-backend-02-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: api.fireworks.ai
+        port: 443
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: google-ai-studio-backend-01-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: generativelanguage.googleapis.com
+        port: 443
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: google-ai-studio-backend-02-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: generativelanguage.googleapis.com
+        port: 443
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: model-proxy-01-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: models-proxy.converse-proxy.svc.cluster.local
+        port: 4000
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: openai-backend-01-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: api.openai.com
+        port: 443
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: openai-backend-02-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: api.openai.com
+        port: 443
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: vertex-ai-backend-01-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: us-central1-aiplatform.googleapis.com
+        port: 443
+---
+# Source: models/templates/backend.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: vertex-ai-backend-02-svc
+spec:
+  endpoints:
+    - fqdn:
+        hostname: us-central1-aiplatform.googleapis.com
+        port: 443
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: fw-01-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: fw-backend-01-svc
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: fireworks-api-key-01
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: fw-02-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: fw-backend-02-svc
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: fireworks-api-key-02
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: google-ai-studio-01-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: google-ai-studio-backend-01-svc
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: google-ai-studio-api-key-01
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: google-ai-studio-02-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: google-ai-studio-backend-02-svc
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: google-ai-studio-api-key-02
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: model-proxy-01-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: model-proxy-01-svc
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: proxy-api-key-01
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: openai-01-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: openai-backend-01-svc
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: openai-api-key-01
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: openai-02-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: openai-backend-02-svc
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: openai-api-key-02
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: vertex-ai-01-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: vertex-ai-backend-01-svc
+  type: GCPCredentials
+  gcpCredentials:
+    projectName: kivoyo
+    region: us-central1
+    credentialsFile:
+      secretRef:
+        name: gcp-service-account-key-01
+---
+# Source: models/templates/backendsecuritypolicy.yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: vertex-ai-02-security
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: vertex-ai-backend-02-svc
+  type: GCPCredentials
+  gcpCredentials:
+    projectName: kivoyo
+    region: us-central1
+    credentialsFile:
+      secretRef:
+        name: gcp-service-account-key-02
+---
+# Source: models/templates/backendtlspolicy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: fw-backend-01-svc-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: fw-backend-01-svc
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: api.fireworks.ai
+---
+# Source: models/templates/backendtlspolicy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: fw-backend-02-svc-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: fw-backend-02-svc
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: api.fireworks.ai
+---
+# Source: models/templates/backendtlspolicy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: google-ai-studio-backend-01-svc-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: google-ai-studio-backend-01-svc
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: generativelanguage.googleapis.com
+---
+# Source: models/templates/backendtlspolicy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: google-ai-studio-backend-02-svc-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: google-ai-studio-backend-02-svc
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: generativelanguage.googleapis.com
+---
+# Source: models/templates/backendtlspolicy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: openai-backend-01-svc-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: openai-backend-01-svc
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: api.openai.com
+---
+# Source: models/templates/backendtlspolicy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: openai-backend-02-svc-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: openai-backend-02-svc
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: api.openai.com
+---
+# Source: models/templates/backendtlspolicy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: vertex-ai-backend-01-svc-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: vertex-ai-backend-01-svc
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: us-central1-aiplatform.googleapis.com
+---
+# Source: models/templates/backendtlspolicy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: vertex-ai-backend-02-svc-tls
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: vertex-ai-backend-02-svc
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: us-central1-aiplatform.googleapis.com
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: cogito-671b-v2-p1
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: cogito-671b-v2-p1
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "cogito-671b-v2-p1"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_cogito_671b_v2_p1
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "cogito-671b-v2-p1"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_cogito_671b_v2_p1
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: deepseek-v3p2
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: deepseek-v3p2
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "deepseek-v3p2"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_deepseek_v3p2
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "deepseek-v3p2"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_deepseek_v3p2
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gemini-2-5-flash-lite
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gemini-2-5-flash-lite
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2-5-flash-lite"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_flash_lite
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2-5-flash-lite"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_flash_lite
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gemini-2.5-flash
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gemini-2.5-flash
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2.5-flash"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_flash
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2.5-flash"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_flash
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gemini-2.5-flash-image
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gemini-2.5-flash-image
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2.5-flash-image"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_flash_image
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2.5-flash-image"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_flash_image
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gemini-2.5-flash-lite
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gemini-2.5-flash-lite
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2.5-flash-lite"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_flash_lite
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2.5-flash-lite"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_flash_lite
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gemini-2.5-pro
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gemini-2.5-pro
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2.5-pro"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_pro
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-2.5-pro"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_2_5_pro
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gemini-3-flash
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gemini-3-flash
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-3-flash"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_3_flash
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-3-flash"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_3_flash
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gemini-3.1-flash-lite
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gemini-3.1-flash-lite
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-3.1-flash-lite"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_3_1_flash_lite
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-3.1-flash-lite"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_3_1_flash_lite
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gemini-3.1-pro
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gemini-3.1-pro
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-3.1-pro"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_3_1_pro
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gemini-3.1-pro"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gemini_3_1_pro
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: glm-5
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: glm-5
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "glm-5"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_glm_5
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "glm-5"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_glm_5
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: glm-5p1
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: glm-5p1
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "glm-5p1"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_glm_5p1
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "glm-5p1"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_glm_5p1
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gpt-5-codex-mini
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gpt-5-codex-mini
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-5-codex-mini"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_5_codex_mini
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-5-codex-mini"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_5_codex_mini
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gpt-5-mini
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gpt-5-mini
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-5-mini"
+          limit:
+            requests: 1
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_5_mini
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-5-mini"
+          limit:
+            requests: 300000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_5_mini
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gpt-5-nano
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gpt-5-nano
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-5-nano"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_5_nano
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-5-nano"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_5_nano
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gpt-5.3-codex
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gpt-5.3-codex
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-5.3-codex"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_5_3_codex
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-5.3-codex"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_5_3_codex
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: gpt-image-1
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gpt-image-1
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-image-1"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_image_1
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "gpt-image-1"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_gpt_image_1
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: kimi-k2-instruct-0905
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kimi-k2-instruct-0905
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "kimi-k2-instruct-0905"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_kimi_k2_instruct_0905
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "kimi-k2-instruct-0905"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_kimi_k2_instruct_0905
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: kimi-k2-thinking
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kimi-k2-thinking
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "kimi-k2-thinking"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_kimi_k2_thinking
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "kimi-k2-thinking"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_kimi_k2_thinking
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: kimi-k2.5
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kimi-k2.5
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "kimi-k2.5"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_kimi_k2_5
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "kimi-k2.5"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_kimi_k2_5
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: minimax-m2p5
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: minimax-m2p5
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "minimax-m2p5"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_minimax_m2p5
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "minimax-m2p5"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_minimax_m2p5
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: qwen3-8b
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: qwen3-8b
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-8b"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_8b
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-8b"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_8b
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: qwen3-embedding-8b
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: qwen3-embedding-8b
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-embedding-8b"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_embedding_8b
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-embedding-8b"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_embedding_8b
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: qwen3-reranker-8b
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: qwen3-reranker-8b
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-reranker-8b"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_reranker_8b
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-reranker-8b"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_reranker_8b
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: qwen3-vl-30b-a3b-instruct
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: qwen3-vl-30b-a3b-instruct
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-vl-30b-a3b-instruct"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_vl_30b_a3b_instruct
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-vl-30b-a3b-instruct"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_vl_30b_a3b_instruct
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: qwen3-vl-30b-a3b-thinking
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: qwen3-vl-30b-a3b-thinking
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-vl-30b-a3b-thinking"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_vl_30b_a3b_thinking
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3-vl-30b-a3b-thinking"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3_vl_30b_a3b_thinking
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: qwen3p6-plus
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: qwen3p6-plus
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3p6-plus"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3p6_plus
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "qwen3p6-plus"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_qwen3p6_plus
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: te3-large
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: te3-large
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "te3-large"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_te3_large
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "te3-large"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_te3_large
+---
+# Source: models/templates/backendtrafficpolicy.yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: te3-small
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: te3-small
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "free"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "te3-small"
+          limit:
+            requests: 30000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_te3_small
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: "pro"
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: "te3-small"
+          limit:
+            requests: 200000000
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: cost_te3_small
