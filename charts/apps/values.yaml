@@ -1297,7 +1297,10 @@ applications:
                 - name: CODER_OIDC_ISSUER_URL
                   value: "https://accounts.camer.digital/realms/camer-digital"
                 - name: CODER_OIDC_CLIENT_ID
-                  value: "coder"
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-keycloak-secret
+                      key: client_id
                 - name: CODER_OIDC_CLIENT_SECRET
                   valueFrom:
                     secretKeyRef:
@@ -1309,6 +1312,8 @@ applications:
                   value: "https://www.keycloak.org/resources/images/logo.svg"
                 - name: CODER_OIDC_SIGN_IN_TEXT
                   value: "Sign in with Keycloak"
+                - name: CODER_EXPERIMENTS
+                  value: "oauth2,mcp-server-http"
                 - name: CODER_FIRST_USER_EMAIL
                   valueFrom:
                     secretKeyRef:
