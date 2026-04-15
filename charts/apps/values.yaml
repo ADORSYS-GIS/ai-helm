@@ -968,6 +968,34 @@ applications:
                   requests:
                     cpu: 200m
                     memory: 500Mi
+                postgresUID: 26
+                postgresGID: 26
+                bootstrap:
+                  recovery:
+                    source: lightbridge-main-db-backup
+                externalClusters:
+                  - name: lightbridge-main-db-backup
+                    plugin:
+                      name: barman-cloud.cloudnative-pg.io
+                      parameters:
+                        barmanObjectName: lightbridge-barman-store
+                        serverName: lightbridge-main-db
+                backup:
+                  barmanObjectStore:
+                    destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
+                    endpointURL: https://s3.ssegning.me
+                    serverName: lightbridge-main-db
+                    s3Credentials:
+                      accessKeyId:
+                        name: lightbridge-cnpg-s3
+                        key: s3_access_key_id
+                      secretAccessKey:
+                        name: lightbridge-cnpg-s3
+                        key: s3_secret_access_key
+                      region:
+                        name: lightbridge-cnpg-s3
+                        key: s3_region_name
+                  retentionPolicy: "30d"
             - |
               ---
               apiVersion: postgresql.cnpg.io/v1
@@ -1016,11 +1044,37 @@ applications:
                     - timescaledb
                 postgresUID: 70 # see below
                 postgresGID: 70 # see below
+                # bootstrap:
+                #   initdb:
+                #     postInitTemplateSQL:
+                #       - CREATE EXTENSION timescaledb VERSION '2.19.3';
+                #       - CREATE EXTENSION IF NOT EXISTS timescaledb;
                 bootstrap:
-                  initdb:
-                    postInitTemplateSQL:
-                      - CREATE EXTENSION timescaledb VERSION '2.19.3';
-                      - CREATE EXTENSION IF NOT EXISTS timescaledb;
+                  recovery:
+                    source: lightbridge-usage-db-backup
+                externalClusters:
+                  - name: lightbridge-usage-db-backup
+                    plugin:
+                      name: barman-cloud.cloudnative-pg.io
+                      parameters:
+                        barmanObjectName: lightbridge-barman-store
+                        serverName: lightbridge-usage-db
+                backup:
+                  barmanObjectStore:
+                    destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
+                    endpointURL: https://s3.ssegning.me
+                    serverName: lightbridge-usage-db
+                    s3Credentials:
+                      accessKeyId:
+                        name: lightbridge-cnpg-s3
+                        key: s3_access_key_id
+                      secretAccessKey:
+                        name: lightbridge-cnpg-s3
+                        key: s3_secret_access_key
+                      region:
+                        name: lightbridge-cnpg-s3
+                        key: s3_region_name
+                  retentionPolicy: "30d"
             - |
               apiVersion: postgresql.cnpg.io/v1
               kind: ScheduledBackup
