@@ -136,6 +136,7 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
+      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: registry-1.docker.io/bitnamicharts
       targetRevision: 24.0.0
@@ -474,6 +475,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "0"
+      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: https://adorsys-gis.github.io/lightbridge-authz
       targetRevision: 0.8.1
@@ -950,12 +952,7 @@ applications:
                   argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
-                plugins:
-                  - name: barman-cloud.cloudnative-pg.io
-                    isWALArchiver: true
-                    parameters:
-                      barmanObjectName: lightbridge-barman-store
-                      serverName: lightbridge-main-db
+                # Plugins removed - backup.barmanObjectStore handles WAL archiving
                 storage:
                   storageClass: linode-block-storage
                   size: "5Gi"
@@ -1021,12 +1018,7 @@ applications:
                   kind: ClusterImageCatalog
                   name: lightbridge-usage-db
                   major: 17
-                plugins:
-                  - name: barman-cloud.cloudnative-pg.io
-                    isWALArchiver: true
-                    parameters:
-                      barmanObjectName: lightbridge-barman-store
-                      serverName: lightbridge-usage-db
+                # Plugins removed - backup.barmanObjectStore handles WAL archiving
                 storage:
                   storageClass: linode-block-storage
                   size: "10Gi"
@@ -1157,6 +1149,7 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
+      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: oci://registry-1.docker.io/arizephoenix/phoenix-helm
       targetRevision: 4.0.36
@@ -1212,6 +1205,8 @@ applications:
   - name: librechat
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: HEAD
