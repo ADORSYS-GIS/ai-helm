@@ -51,35 +51,23 @@ spec:
   postgresUID: 70
   postgresGID: 70
 
-  # Plugins removed - backup.barmanObjectStore handles WAL archiving
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lightbridge-barman-store
+        serverName: lightbridge-usage-db
 
-  bootstrap:
-    recovery:
-      source: lightbridge-usage-db-backup
+  # Use initdb for normal operation (recovery config commented out)
+  # bootstrap:
+  #   recovery:
+  #     source: lightbridge-usage-db-backup
+  # externalClusters:
+  #   - name: lightbridge-usage-db-backup
+  #     plugin:
+  #       name: barman-cloud.cloudnative-pg.io
+  #       parameters:
+  #         barmanObjectName: lightbridge-barman-store
+  #         serverName: lightbridge-usage-db
 
-  externalClusters:
-    - name: lightbridge-usage-db-backup
-      plugin:
-        name: barman-cloud.cloudnative-pg.io
-        parameters:
-          barmanObjectName: lightbridge-barman-store
-          serverName: lightbridge-usage-db
-
-  backup:
-    barmanObjectStore:
-      destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
-      endpointURL: https://s3.ssegning.me
-      serverName: lightbridge-usage-db
-      s3Credentials:
-        accessKeyId:
-          name: lightbridge-cnpg-s3
-          key: s3_access_key_id
-        secretAccessKey:
-          name: lightbridge-cnpg-s3
-          key: s3_secret_access_key
-        region:
-          name: lightbridge-cnpg-s3
-          key: s3_region_name
-      wal:
-        maxParallel: 1
-    retentionPolicy: "30d"
+  # Backup section removed - using plugins for WAL archiving
