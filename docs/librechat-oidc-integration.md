@@ -226,40 +226,12 @@ After configuring the role mapper, the access token will include:
 
 ### Keycloak Mapper Configuration
 
-To configure the `librechat` scope and role claims in Keycloak:
+> **Note**: Detailed step-by-step instructions for configuring the `librechat` scope, role mapper, and client roles in Keycloak are available in [`docs/tickets/keycloak-librechat-client-setup.md`](tickets/keycloak-librechat-client-setup.md).
 
-1. **Create Client Scope**:
-   - Navigate to **Clients Scopes** → **Create**
-   - Name: `librechat`
-   - Protocol: `openid-connect`
-   - Type: `Default`
-
-2. **Add Role Mapper**:
-   - Click **Add Mapper** → **By Configuration**
-   - Mapper Type: **User Client Role**
-   - Name: `librechat_roles`
-   - Client ID: `librechat`
-   - Client Role: Select applicable roles (e.g., `user`, `admin`)
-   - Token Claim Name: `librechat_roles`
-   - Claim JSON Type: **JSON**
-   - Add to ID token: **ON**
-   - Add to access token: **ON**
-   - Add to userinfo: **ON**
-
-3. **Assign Scope to Client**:
-   - Navigate to **Clients** → `librechat` → **Client Scopes**
-   - Click **Add client scope**
-   - Select `librechat` scope
-   - Type: **Default**
-
-4. **Create Client Roles**:
-   - Navigate to **Clients** → `librechat` → **Roles**
-   - Create roles: `user`, `admin` (as needed)
-
-5. **Assign Roles to Users**:
-   - Navigate to **Users** → Select user → **Role Mappings**
-   - Select `librechat` client
-   - Assign appropriate roles
+The mapper configuration ensures:
+- `librechat_roles` claim is added to both ID and access tokens
+- Roles are extracted from the `librechat` client's role mappings
+- The claim path matches `OPENID_REQUIRED_ROLE_PARAMETER_PATH: "librechat_roles"`
 
 ## Role-Based Access Control
 
@@ -568,14 +540,6 @@ curl -s https://accounts.camer.digital/realms/camer-digital/.well-known/openid-c
 ## References
 
 - [LibreChat OIDC Documentation](https://www.librechat.ai/docs/configuration/auth/oidc)
-- [Keycloak OpenID Connect Documentation](https://www.keycloak.org/docs/latest/server_admin/#_oidc)
+- [Keycloak OpenID Connect Documentation](https://www.librechat.ai/docs/configuration/authentication/OAuth2-OIDC)
 - [Internal Phoenix Integration](../charts/apps/values.yaml)
 - [Kuadrant AuthConfig Template](../charts/kuadrant-policies/templates/authconfig.yaml)
-
-## Changelog
-
-| Date | Version | Changes |
-|------|---------|---------|
-| 2026-04-15 | 1.2.0 | Converted ASCII diagrams to Mermaid format, fixed production URLs in token examples |
-| 2026-04-14 | 1.1.0 | Added detailed claim mapping documentation with token examples, role validation testing commands |
-| 2026-04-14 | 1.0.0 | Initial documentation |
