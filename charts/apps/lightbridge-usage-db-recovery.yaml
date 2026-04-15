@@ -1,0 +1,85 @@
+# Recovery manifest for lightbridge-usage-db
+#
+# How recovery works in CloudNativePG with barman-cloud plugin:
+# 1. The backup is stored in MinIO at s3://ai-ops-backups/lightbridge-cnpg-backups/
+# 2. The existing ObjectStore (lightbridge-barman-store) already contains the credentials
+#    to access this backup location (secret: lightbridge-cnpg-s3)
+# 3. To recover, we create a NEW Cluster with bootstrap.recovery
+# 4. The bootstrap.recovery tells CNPG to:
+#    - Connect to the externalClusters source (which uses barman-cloud plugin)
+#    - Pull the base backup from the ObjectStore using barman-cloud-restore
+#    - Replay WAL files using barman-cloud-wal-restore
+
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lightbridge-usage-db
+  namespace: converse
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  instances: 2
+
+  imageCatalogRef:
+    apiGroup: postgresql.cnpg.io
+    kind: ClusterImageCatalog
+    name: lightbridge-usage-db
+    major: 17
+
+  storage:
+    storageClass: linode-block-storage
+    size: 10Gi
+
+  resources:
+    limits:
+      cpu: 300m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 500Mi
+
+  postgresql:
+    shared_preload_libraries:
+      - timescaledb
+
+  postgresUID: 70
+  postgresGID: 70
+
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lightbridge-barman-store
+        serverName: lightbridge-usage-db
+
+  bootstrap:
+    recovery:
+      source: lightbridge-usage-db-backup
+
+  externalClusters:
+    - name: lightbridge-usage-db-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: lightbridge-barman-store
+          serverName: lightbridge-usage-db
+
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
+      endpointURL: https://s3.ssegning.me
+      serverName: lightbridge-usage-db
+      s3Credentials:
+        accessKeyId:
+          name: lightbridge-cnpg-s3
+          key: s3_access_key_id
+        secretAccessKey:
+          name: lightbridge-cnpg-s3
+          key: s3_secret_access_key
+        region:
+          name: lightbridge-cnpg-s3
+          key: s3_region_name
+      wal:
+        maxParallel: 1
+    retentionPolicy: "30d"
