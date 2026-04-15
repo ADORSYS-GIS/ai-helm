@@ -467,6 +467,24 @@ applications:
         prune: true
         selfHeal: true
 
+  - name: network-policies
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/network-policies
+      helm:
+        releaseName: network-policies
+    destination:
+      namespace: default
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Lightbridge Backend ---
   - name: lightbridge-backend
     finalizers:
