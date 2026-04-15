@@ -1253,12 +1253,35 @@ applications:
         prune: true
         selfHeal: true
 
+  # --- Coder DB ---
+  - name: coder-db
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "1"
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/coder-db
+      helm:
+        releaseName: coder-db
+        valuesObject: {}
+    destination:
+      namespace: coder
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Coder ---
   - name: coder
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "1"
+      argocd.argoproj.io/sync-wave: "2"
     sources:
       - repoURL: oci://ghcr.io/coder/chart/coder
         targetRevision: 2.29.5
@@ -1299,16 +1322,37 @@ applications:
                   value: "Sign in with Keycloak"
                 - name: CODER_EXPERIMENTS
                   value: "oauth2,mcp-server-http"
-                - name: CODER_FIRST_USER_EMAIL
+                - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
+                  value: "false"
+                - name: CODER_USERNAME
                   valueFrom:
                     secretKeyRef:
                       name: coder-admin-secret
                       key: username
-                - name: CODER_FIRST_USER_PASSWORD
+                - name: CODER_EMAIL
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-admin-secret
+                      key: username
+                - name: CODER_PASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: coder-admin-secret
                       key: password
+              lifecycle:
+                postStart:
+                  exec:
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        echo "Waiting for Coder server to be ready..."
+                        until curl -sf http://localhost:8080/healthz > /dev/null 2>&1; do
+                          sleep 2
+                        done
+                        sleep 5
+                        echo "Creating admin user..."
+                        coder server create-admin-user --username "$CODER_USERNAME" --email "$CODER_EMAIL" --password "$CODER_PASSWORD" 2>&1 || true
               tolerations:
                 - key: ai.camer.digital/offline-work
                   operator: Equal
