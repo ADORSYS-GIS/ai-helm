@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: librechat-mongorestore
+  namespace: converse-chat
+spec:
+  restartPolicy: Never
+  volumes:
+    - name: backup
+      emptyDir: {}
+  initContainers:
+    - name: download-backup
+      image: minio/mc:latest
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+
+          if [ -z "${S3_OBJECT_KEY:-}" ]; then
+            echo "S3_OBJECT_KEY is empty"
+            exit 1
+          fi
+
+          KEY="$S3_OBJECT_KEY"
+          echo "Downloading s3://$S3_BUCKET_NAME/$KEY from $S3_ENDPOINT_URL"
+          mc alias set restore "$S3_ENDPOINT_URL" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY"
+          mc cp "restore/$S3_BUCKET_NAME/$KEY" /backup/backup.archive
+          printf "%s" "$KEY" > /backup/object-key
+      env:
+        - name: S3_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: librechat-s3-config
+              key: s3_access_key_id
+        - name: S3_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: librechat-s3-config
+              key: s3_secret_access_key
+        - name: S3_REGION
+          valueFrom:
+            secretKeyRef:
+              name: librechat-s3-config
+              key: s3_region_name
+        - name: S3_BUCKET_NAME
+          value: ai-ops-backups
+        - name: S3_OBJECT_KEY
+          value: mongodb-backup/all-databases_20260415_020035.gz
+        - name: S3_ENDPOINT_URL
+          value: https://s3.ssegning.me
+      volumeMounts:
+        - name: backup
+          mountPath: /backup
+  containers:
+    - name: mongorestore
+      image: mongo:8.2.6
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+
+          KEY="$(cat /backup/object-key)"
+          URI="${MONGO_URI:-mongodb://librechat-db-0.librechat-db-headless:27017/?directConnection=true}"
+
+          echo "Cleaning existing non-system databases on '$URI'"
+          mongosh "$URI" --quiet --eval 'db.adminCommand({ listDatabases: 1 }).databases.map(function(d){ return d.name; }).filter(function(name){ return name !== "admin" && name !== "local" && name !== "config"; }).forEach(function(name){ print("Dropping database: " + name); db.getSiblingDB(name).dropDatabase(); });'
+
+          echo "Restoring '$KEY' into '$URI'"
+          case "$KEY" in
+            *.gz)
+              mongorestore --uri="$URI" --drop --gzip --archive=/backup/backup.archive
+              ;;
+            *)
+              mongorestore --uri="$URI" --drop --archive=/backup/backup.archive
+              ;;
+          esac
+      env:
+        - name: MONGO_URI
+          value: mongodb://librechat-db-0.librechat-db-headless:27017/?directConnection=true
+      volumeMounts:
+        - name: backup
+          mountPath: /backup

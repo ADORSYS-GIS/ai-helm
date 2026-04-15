@@ -4,7 +4,8 @@ global:
   rag_librechat:
     version: "v0.7.2"
   mongo:
-    replicaCount: 2
+    replicaCount: 1
+    replicaSetName: rs0
   configmap:
     name: "librechat-config"
 
@@ -904,16 +905,15 @@ config:
 # MongoDB Parameters
 db:
   enabled: true
-  image:
-    repository: bitnamilegacy/mongodb
   auth:
     enabled: false
   persistence:
     size: 30Gi
     storageClass: ~
-  architecture: replicaset
-  replicaCount: 2 # should be similar to the global mongo replicaCount
-  resourcesPreset: small
+  architecture: standalone
+  replicaSet:
+    name: rs0
+    members: 1
 
 search:
   enabled: true
