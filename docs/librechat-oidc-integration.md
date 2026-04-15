@@ -6,17 +6,24 @@ This document describes the OIDC (OpenID Connect) integration between LibreChat 
 
 ## Architecture
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│                 │     │                  │     │                 │
-│   LibreChat     │────▶│    Keycloak      │────▶│    User Store   │
-│   (SP)          │     │    (IdP)         │     │                 │
-│                 │     │                  │     │                 │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-       │                        │
-       │                        │
-       ▼                        ▼
-  OIDC Flow              Realm: camer-digital
+```mermaid
+flowchart LR
+    subgraph SP["Service Provider"]
+        LC[LibreChat]
+    end
+    
+    subgraph IdP["Identity Provider"]
+        KC[Keycloak]
+        Realm["Realm: camer-digital"]
+    end
+    
+    subgraph Store["User Store"]
+        US[User Store]
+    end
+    
+    LC -->|"OIDC Flow"| KC
+    KC -->|"User Lookup"| US
+    KC --- Realm
 ```
 
 ## Keycloak Configuration
@@ -137,7 +144,7 @@ The access token contains authorization information:
 | `azp` | string | Authorized party (client ID) | `librechat` |
 | `scope` | string | Granted scopes | `openid email profile` |
 | `acr` | string | Authentication context class reference | `1` |
-| `allowed-origins` | string[] | CORS allowed origins | `["https://192.168.4.35"]` |
+| `allowed-origins` | string[] | CORS allowed origins | `["https://ai.camer.digital"]` |
 
 ### Custom Claims (LibreChat-Specific)
 
@@ -157,7 +164,7 @@ The `librechat` custom scope provides application-specific claims for role-based
 {
   "exp": 1776169232,
   "iat": 1776168932,
-  "iss": "https://192.168.4.35/realms/test-realm",
+  "iss": "https://accounts.camer.digital/realms/camer-digital",
   "aud": "librechat",
   "sub": "e3e778d8-f22f-4ffc-9f3e-be98053d813b",
   "typ": "ID",
@@ -178,14 +185,13 @@ The `librechat` custom scope provides application-specific claims for role-based
 {
   "exp": 1776169232,
   "iat": 1776168932,
-  "iss": "https://192.168.4.35/realms/test-realm",
+  "iss": "https://accounts.camer.digital/realms/camer-digital",
   "sub": "e3e778d8-f22f-4ffc-9f3e-be98053d813b",
   "typ": "Bearer",
   "azp": "librechat",
   "acr": "1",
   "allowed-origins": [
-    "http://localhost:8082",
-    "https://192.168.4.35"
+    "https://ai.camer.digital"
   ],
   "scope": "openid email profile",
   "email_verified": true,
@@ -205,7 +211,7 @@ After configuring the role mapper, the access token will include:
 {
   "exp": 1776169232,
   "iat": 1776168932,
-  "iss": "https://192.168.4.35/realms/test-realm",
+  "iss": "https://accounts.camer.digital/realms/camer-digital",
   "sub": "e3e778d8-f22f-4ffc-9f3e-be98053d813b",
   "typ": "Bearer",
   "azp": "librechat",
@@ -299,7 +305,7 @@ To verify roles are correctly included in tokens:
 
 ```bash
 # Get access token with librechat scope
-curl -sk "https://192.168.4.35/realms/test-realm/protocol/openid-connect/token" \
+curl -s "https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/token" \
   -d "client_id=librechat" \
   -d "client_secret=<your-client-secret>" \
   -d "username=testuser" \
@@ -312,38 +318,27 @@ Expected output after proper configuration:
 ```json
 ["user"]
 ```
-3. Denies access if role is missing
-
-> **Note**: Currently `OPENID_REQUIRED_ROLE` is commented out for open beta testing.
 
 ## Login Flow
 
 ### Sequence Diagram
 
-```
-User          LibreChat         Keycloak         Kubernetes
- │                │                 │                │
- │──(1) Access──▶│                 │                │
- │                │                 │                │
- │◀─(2) Redirect─│                 │                │
- │   to Keycloak │                 │                │
- │                │                 │                │
- │─────────────────(3) Auth────────▶│                │
- │                │                 │                │
- │◀───────────────(4) Auth Code────│                │
- │                │                 │                │
- │──(5) Auth Code▶│                 │                │
- │                │                 │                │
- │                │──(6) Token─────▶│                │
- │                │   (client cred │                │
- │                │    from secret)│                │
- │                │                 │                │
- │                │◀─(7) Tokens────│                │
- │                │   (access, ID) │                │
- │                │                 │                │
- │◀─(8) Session──│                 │                │
- │   Created      │                 │                │
- │                │                 │                │
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant LC as LibreChat
+    participant KC as Keycloak
+    participant K8s as Kubernetes
+
+    U->>LC: (1) Access LibreChat
+    LC-->>U: (2) Redirect to Keycloak
+    U->>KC: (3) Authenticate
+    KC-->>U: (4) Return Auth Code
+    U->>LC: (5) Send Auth Code
+    LC->>KC: (6) Exchange code for tokens
+    Note right of LC: Uses client credentials<br/>from Kubernetes secret
+    KC-->>LC: (7) Return Access & ID Tokens
+    LC-->>U: (8) Create Session
 ```
 
 ### Flow Steps
@@ -361,23 +356,17 @@ User          LibreChat         Keycloak         Kubernetes
 
 ### Sequence Diagram
 
-```
-User          LibreChat         Keycloak
- │                │                 │
- │──(1) Logout──▶│                 │
- │                │                 │
- │                │──(2) Clear────▶│
- │                │   Session      │
- │                │                 │
- │◀─(3) Redirect─│                 │
- │   to Keycloak │                 │
- │   End Session │                 │
- │                │                 │
- │─────────────────(4) End Session▶│
- │                │                 │
- │◀───────────────(5) Redirect────│
- │   to LibreChat │                 │
- │                │                 │
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant LC as LibreChat
+    participant KC as Keycloak
+
+    U->>LC: (1) Logout
+    LC->>KC: (2) Clear Session
+    LC-->>U: (3) Redirect to Keycloak End Session
+    U->>KC: (4) End Session Endpoint
+    KC-->>U: (5) Redirect to LibreChat Login
 ```
 
 ### Logout Configuration
@@ -587,5 +576,6 @@ curl -s https://accounts.camer.digital/realms/camer-digital/.well-known/openid-c
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-04-15 | 1.2.0 | Converted ASCII diagrams to Mermaid format, fixed production URLs in token examples |
 | 2026-04-14 | 1.1.0 | Added detailed claim mapping documentation with token examples, role validation testing commands |
 | 2026-04-14 | 1.0.0 | Initial documentation |
