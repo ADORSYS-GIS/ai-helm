@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: librechat-mongorestore
+spec:
+  restartPolicy: Never
+  volumes:
+    - name: backup
+      emptyDir: {}
+  initContainers:
+    - name: download-backup
+      image: amazon/aws-cli:2
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -euo pipefail
+
+          if [ -n "${S3_OBJECT_KEY:-}" ]; then
+            KEY="$S3_OBJECT_KEY"
+          else
+            KEY="$(aws s3api list-objects-v2 --bucket "$S3_BUCKET_NAME" --region "$AWS_REGION" --query "reverse(sort_by(Contents[?contains(Key, \`all-databases_\`) && !ends_with(Key, \`/\`)], &LastModified))[0].Key" --output text)"
+          fi
+
+          if [ "$KEY" = "None" ] || [ -z "$KEY" ]; then
+            echo "No backup object found in bucket: $S3_BUCKET_NAME"
+            exit 1
+          fi
+
+          echo "Downloading s3://$S3_BUCKET_NAME/$KEY"
+          aws s3 cp "s3://$S3_BUCKET_NAME/$KEY" /backup/backup.archive --region "$AWS_REGION"
+          printf "%s" "$KEY" > /backup/object-key
+      env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: librechat-s3-config
+              key: s3_access_key_id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: librechat-s3-config
+              key: s3_secret_access_key
+        - name: AWS_REGION
+          valueFrom:
+            secretKeyRef:
+              name: librechat-s3-config
+              key: s3_region_name
+        - name: AWS_DEFAULT_REGION
+          valueFrom:
+            secretKeyRef:
+              name: librechat-s3-config
+              key: s3_region_name
+        - name: S3_BUCKET_NAME
+          valueFrom:
+            secretKeyRef:
+              name: librechat-s3-config
+              key: s3_bucket_name
+        - name: S3_OBJECT_KEY
+          value: ""
+        - name: AWS_EC2_METADATA_DISABLED
+          value: "true"
+      volumeMounts:
+        - name: backup
+          mountPath: /backup
+  containers:
+    - name: mongorestore
+      image: mongo:8.0.11
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -euo pipefail
+
+          KEY="$(cat /backup/object-key)"
+          URI="${MONGO_URI:-mongodb://mongodb:27017/admin}"
+
+          echo "Cleaning existing non-system databases on '$URI'"
+          mongosh "$URI" --quiet --eval 'db.adminCommand({ listDatabases: 1 }).databases.map(function(d){ return d.name; }).filter(function(name){ return name !== "admin" && name !== "local" && name !== "config"; }).forEach(function(name){ print("Dropping database: " + name); db.getSiblingDB(name).dropDatabase(); });'
+
+          echo "Restoring '$KEY' into '$URI'"
+          case "$KEY" in
+            *.gz)
+              mongorestore --uri="$URI" --drop --gzip --archive=/backup/backup.archive
+              ;;
+            *)
+              mongorestore --uri="$URI" --drop --archive=/backup/backup.archive
+              ;;
+          esac
+      env:
+        - name: MONGO_URI
+          value: mongodb://mongodb:27017/admin
+      volumeMounts:
+        - name: backup
+          mountPath: /backup
