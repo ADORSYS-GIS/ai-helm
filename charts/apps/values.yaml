@@ -1254,27 +1254,7 @@ applications:
         selfHeal: true
 
   # --- Coder DB ---
-  - name: coder-db
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "1"
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/coder-db
-      helm:
-        releaseName: coder-db
-        valuesObject: {}
-    destination:
-      namespace: coder
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
+
 
   # --- Coder ---
   - name: coder
