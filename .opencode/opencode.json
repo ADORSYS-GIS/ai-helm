@@ -1,0 +1,234 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "lightbridge": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LightBridge Server",
+      "options": {
+        "baseURL": "{env:LIGHTBRIDGE_BASE_URL}",
+        "headers": {
+          "Authorization": "Bearer {env:LIGHTBRIDGE_API_KEY}"
+        }
+      },
+      "models": {
+        "minimax-m2p5": {
+          "name": "Minimax m2.5",
+          "limit": {
+            "context": 196000,
+            "output": 7600
+          },
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cache_read": 0.03
+          }
+        },
+        "glm-5": {
+          "name": "GLM 5",
+          "limit": {
+            "context": 200000,
+            "output": 72600
+          },
+          "cost": {
+            "input": 1,
+            "output": 3.2,
+            "cache_read": 0.2
+          }
+        },
+        "glm-5p1": {
+          "name": "GLM 5.1",
+          "limit": {
+            "context": 200000,
+            "output": 72600
+          },
+          "cost": {
+            "input": 1.4,
+            "output": 4.4,
+            "cache_read": 0.26
+          }
+        },
+        "kimi-k2-thinking": {
+          "name": "Kimi K2 Thinking",
+          "limit": {
+            "context": 260000,
+            "output": 32000
+          },
+          "cost": {
+            "input": 0.6,
+            "output": 2.5,
+            "cache_read": 0.3
+          }
+        },
+        "kimi-k2.5": {
+          "name": "Kimi K2.5",
+          "limit": {
+            "context": 260000,
+            "output": 32000
+          },
+          "cost": {
+            "input": 0.6,
+            "output": 3.0,
+            "cache_read": 0.1
+          }
+        },
+        "qwen3-8b": {
+          "name": "Qwen3 8b",
+          "limit": {
+            "context": 38950,
+            "output": 38950
+          }
+        },
+        "gemini-2.5-pro": {
+          "name": "Gemini 2.5 Pro",
+          "limit": {
+            "context": 996318,
+            "output": 62258
+          }
+        },
+        "gemini-3.1-pro": {
+          "name": "Gemini 3.1 Pro",
+          "limit": {
+            "context": 996147,
+            "output": 62259
+          }
+        },
+        "gemini-3.1-flash-lite": {
+          "name": "Gemini 3.1 Flash Lite",
+          "limit": {
+            "context": 950000,
+            "output": 60800
+          }
+        },
+        "gemini-3-flash": {
+          "name": "Gemini 3 Flash",
+          "limit": {
+            "context": 996147,
+            "output": 62259
+          }
+        },
+        "gpt-5-1-codex-mini": {
+          "name": "GPT 5.1 Codex Mini",
+          "limit": {
+            "context": 380000,
+            "output": 121600
+          }
+        },
+        "gpt-5-nano": {
+          "name": "GPT 5 nano",
+          "limit": {
+            "context": 380000,
+            "output": 121600
+          }
+        },
+        "gpt-5-3-codex": {
+          "name": "GPT 5.3 Codex",
+          "limit": {
+            "context": 380000,
+            "output": 121600
+          }
+        },
+        "gemini-2.5-flash": {
+          "name": "Gemini 2.5 flash",
+          "limit": {
+            "context": 996147,
+            "output": 60800
+          },
+          "cost": {
+            "input": 0.25,
+            "output": 1.5,
+            "cache_read": 0.025
+          }
+        },
+        "gemini-2.5-flash-lite": {
+          "name": "Gemini 2.5 flash lite",
+          "limit": {
+            "context": 996147,
+            "output": 60800
+          }
+        },
+        "gemini-2-5-flash-lite": {
+          "name": "Gemini 2.5 Flash Lite",
+          "limit": {
+            "context": 996147,
+            "output": 60800
+          }
+        },
+        "gemini-2-0-flash-lite": {
+          "name": "Gemini 2.0 Flash Lite",
+          "limit": {
+            "context": 996147,
+            "output": 7782
+          }
+        },
+        "gemini-2-5-flash-image": {
+          "name": "Gemini 2.5 flash image",
+          "limit": {
+            "context": 31129,
+            "output": 31129
+          }
+        },
+        "kimi-k2-instruct-0905": {
+          "name": "Kimi K2 Instruct 0905",
+          "limit": {
+            "context": 243200,
+            "output": 15564
+          },
+          "cost": {
+            "input": 0.6,
+            "output": 2.5,
+            "cache_read": 0.3
+          }
+        },
+        "qwen3-vl-30b-a3b-thinking": {
+          "name": "Qwen3 VL 30B A3B Thinking",
+          "limit": {
+            "context": 124545,
+            "output": 31160
+          }
+        },
+        "qwen3-vl-30b-a3b-instruct": {
+          "name": "Qwen3 VL 30B A3B Instruct",
+          "limit": {
+            "context": 124545,
+            "output": 31160
+          }
+        },
+        "gpt-5-mini": {
+          "name": "GPT 5 mini",
+          "limit": {
+            "context": 380000,
+            "output": 121600
+          }
+        },
+        "deepseek-v3p2": {
+          "name": "DeepSeek V3P2",
+          "limit": {
+            "context": 155648,
+            "output": 30400
+          }
+        }
+      }
+    }
+  },
+  "agent": {
+    "auto-review": {
+      "description": "Automatic PR review triggered on PR open/sync",
+      "mode": "primary",
+      "hidden": true,
+      "model": "lightbridge/gemini-3.1-flash-lite",
+      "temperature": 0.1
+    },
+    "manual-review": {
+      "description": "Manual PR review triggered via /oc or /opencode",
+      "mode": "primary",
+      "hidden": true,
+      "model": "lightbridge/kimi-k2.5",
+      "temperature": 0.1
+    }
+  },
+  "watcher": {
+    "ignore": [
+      ".opencode/node_modules/**"
+    ]
+  }
+}
