@@ -943,6 +943,51 @@ applications:
                       name: lightbridge-cnpg-s3
                       key: s3_region_name
             - |
+              # Alias services for stable DB endpoints - enables easy recovery switching
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: lightbridge-main-db-primary
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "1"
+                  description: "Stable alias for lightbridge-main-db - switch traffic via selector"
+                labels:
+                  app.kubernetes.io/component: database
+                  db-alias: "true"
+              spec:
+                type: ClusterIP
+                ports:
+                  - port: 5432
+                    targetPort: 5432
+                    protocol: TCP
+                    name: postgres
+                selector:
+                  cnpg.io/cluster: lightbridge-main-db
+                  cnpg.io/instanceRole: primary
+            - |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: lightbridge-usage-db-primary
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "1"
+                  description: "Stable alias for lightbridge-usage-db - switch traffic via selector"
+                labels:
+                  app.kubernetes.io/component: database
+                  db-alias: "true"
+              spec:
+                type: ClusterIP
+                ports:
+                  - port: 5432
+                    targetPort: 5432
+                    protocol: TCP
+                    name: postgres
+                selector:
+                  cnpg.io/cluster: lightbridge-usage-db
+                  cnpg.io/instanceRole: primary
+            - |
               apiVersion: postgresql.cnpg.io/v1
               kind: Cluster
               metadata:
