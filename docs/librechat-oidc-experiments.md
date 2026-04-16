@@ -275,13 +275,6 @@ curl -s -X POST "https://accounts.camer.digital/realms/camer-digital/protocol/op
 # Expected: empty array or missing claim
 ```
 
-#### 4. Test Existing Session
-
-```bash
-# If user has active session, check if they can still access LibreChat
-# This depends on LibreChat's session validation behavior
-```
-
 ### Expected Behavior
 
 | Time | Token Behavior | LibreChat Access |
@@ -370,108 +363,18 @@ curl -s -X POST "https://accounts.camer.digital/admin/realms/camer-digital/users
 
 ## Experiment 7: Admin vs User Privileges
 
-### Objective
+**Status: ❌ NOT SUPPORTED (Role-based admin)**
 
-Document what additional capabilities the `admin` role enables in LibreChat.
+LibreChat admin is determined by being the **first account created**, not by JWT role claim.
 
-### Background
+- `OPENID_REQUIRED_ROLE` controls access (allow/deny login), not admin privileges
+- Admin status is stored in the database, not derived from OIDC tokens
+- No environment variable maps JWT roles to LibreChat admin status
 
-LibreChat may have built-in admin features that are enabled based on user role. This experiment maps out:
-- What admin users can do that regular users cannot
-- How to enable/configure admin features
-- Whether admin role is checked from JWT or database
-
-### Setup Steps
-
-#### 1. Create Admin Role
-
-```text
-Navigate to: Clients → librechat → Roles → Create Role
-Role: admin
-Description: LibreChat administrator
-```
-
-#### 2. Assign to Test User
-
-```text
-Navigate to: Users → <admin-test-user> → Role Mappings
-Assign: admin role
-```
-
-#### 3. Get Admin Token
-
-```bash
-# Get token for the admin test user (with admin role)
-ADMIN_TOKEN=$(curl -s -X POST "https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password" \
-  -d "client_id=librechat" \
-  -d "username=<admin-test-user>" \
-  -d "password=<password>" | jq -r '.access_token')
-```
-
-#### 4. Test Admin Features
-
-```bash
-# Check if admin panel is accessible
-curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://ai.camer.digital/api/admin | jq
-
-# Check user management endpoints
-curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://ai.camer.digital/api/users | jq
-
-# Check system configuration endpoints
-curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://ai.camer.digital/api/config | jq
-```
-
-#### 5. Get Regular User Token
-
-```bash
-# Get token for a regular user (without admin role)
-USER_TOKEN=$(curl -s -X POST "https://accounts.camer.digital/realms/camer-digital/protocol/openid-connect/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password" \
-  -d "client_id=librechat" \
-  -d "username=<regular-user>" \
-  -d "password=<password>" | jq -r '.access_token')
-```
-
-#### 6. Compare with Regular User
-
-```bash
-# Same requests with regular user token
-curl -s -H "Authorization: Bearer $USER_TOKEN" \
-  https://ai.camer.digital/api/admin | jq
-# Expected: 403 Forbidden or 404 Not Found
-```
-
-### Admin Capabilities Matrix
-
-| Feature | `user` Role | `admin` Role | Endpoint |
-|---------|-------------|--------------|----------|
-| View own conversations | ✅ | ✅ | `/api/convos` |
-| View all conversations | ❌ | ✅? | `/api/admin/convos` |
-| Manage users | ❌ | ✅? | `/api/admin/users` |
-| Configure models | ❌ | ✅? | `/api/admin/models` |
-| View system stats | ❌ | ✅? | `/api/admin/stats` |
-| Manage presets | ❌ | ✅? | `/api/admin/presets` |
-| Access logs | ❌ | ✅? | `/api/admin/logs` |
-
-### LibreChat Environment Variables for Admin
-
-```yaml
-# Check if these are configured
-ADMIN_EMAIL: "admin@example.com"  # Single admin by email
-# Or role-based admin (if supported)
-```
-
-### Findings
-
-> **Document actual results here after running the experiment**
->
-> **Note**: LibreChat's admin features may be email-based rather than role-based. Verify with documentation or source code.
+**References:**
+- [LibreChat Authentication Docs](https://www.librechat.ai/docs/features/authentication) - "The first account you make will be the admin account"
+- [LibreChat Keycloak Docs](https://www.librechat.ai/docs/configuration/authentication/OAuth2-OIDC/keycloak) - `OPENID_REQUIRED_ROLE` only controls login access
+- [GitHub Issue #4670](https://github.com/danny-avila/LibreChat/issues/4670) - JWT claims for user roles (feature request)
 
 ---
 
@@ -485,7 +388,7 @@ ADMIN_EMAIL: "admin@example.com"  # Single admin by email
 | 4. Role Removal and Access Revocation | ✅ WORKS | Immediate propagation to new tokens |
 | 5. Agent/Preset Access Control | ❌ NOT SUPPORTED | GitHub Issue #11693 |
 | 6. Conversation History Access | ❌ NOT SUPPORTED | Architectural limitation |
-| 7. Admin vs User Privileges | 🧪 PENDING TEST | LibreChat has admin role |
+| 7. Admin vs User Privileges | ❌ NOT SUPPORTED | Admin is first account created, not role-based |
 
 ---
 
