@@ -79,6 +79,10 @@ policies:
         ports:
           - protocol: TCP
             port: 3000
+      - name: converse-gateway
+        ports:
+          - protocol: TCP
+            port: 3000
     ingressIntraNamespace: true
     egressDns: true
     egressIntraNamespace: true
@@ -209,6 +213,55 @@ policies:
         ports:
           - protocol: TCP
             port: 3000
+
+  converse-monitoring-security:
+    namespace: converse-monitoring
+    podSelector: {}
+    ingressNamespaces:
+      - name: traefik-system
+        ports:
+          - protocol: TCP
+            port: 6006
+          - protocol: TCP
+            port: 9090
+          - protocol: TCP
+            port: 4317
+      - name: converse-gateway
+        ports:
+          - protocol: TCP
+            port: 4317
+    ingressIntraNamespace: true
+    egressDns: true
+    egressIntraNamespace: true
+
+  converse-gateway-authorino-security:
+    namespace: converse-gateway
+    podSelector:
+      matchLabels:
+        authorino-resource: kuadrant-policies-main
+    ingressNamespaces:
+      - name: envoy-gateway-system
+        ports:
+          - protocol: TCP
+            port: 50051
+          - protocol: TCP
+            port: 5001
+          - protocol: TCP
+            port: 8083
+    ingress:
+      - from:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 8443
+    egressInternalServices:
+      - namespace: converse
+        ports:
+          - protocol: TCP
+            port: 3000
+    egressDns: true
+    egressIntraNamespace: true
 
   authorino-system-security:
     namespace: authorino-system
