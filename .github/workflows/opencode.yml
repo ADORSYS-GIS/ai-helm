@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   detect-trigger:
-    runs-on: arc-runner-set-sky-frontend
+    runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
       run_kind: ${{ steps.check.outputs.run_kind }}
@@ -60,7 +60,7 @@ jobs:
   opencode:
     needs: detect-trigger
     if: needs.detect-trigger.outputs.should_run == 'true'
-    runs-on: arc-runner-set-sky-frontend
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       id-token: write
