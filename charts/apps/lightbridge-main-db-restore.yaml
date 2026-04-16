@@ -1,5 +1,9 @@
 # Restore cluster for lightbridge-main-db
 # Usage: Add this file to Git during recovery, remove after cleanup
+#
+# IMPORTANT: Two-phase deployment due to CNPG webhook restriction
+# Phase 1: Deploy WITHOUT plugins (recovery only)
+# Phase 2: After recovery is complete, uncomment plugins section to enable WAL archiving
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -24,12 +28,14 @@ spec:
       memory: 500Mi
   postgresUID: 26
   postgresGID: 26
-  plugins:
-    - name: barman-cloud.cloudnative-pg.io
-      isWALArchiver: true
-      parameters:
-        barmanObjectName: lightbridge-barman-store
-        serverName: lightbridge-main-db-restore
+  # Phase 1: NO plugins - recovery only (webhook blocks plugins + barmanObjectStore conflict)
+  # Phase 2 (after recovery): Uncomment below to enable WAL archiving
+  # plugins:
+  #   - name: barman-cloud.cloudnative-pg.io
+  #     isWALArchiver: true
+  #     parameters:
+  #       barmanObjectName: lightbridge-barman-store
+  #       serverName: lightbridge-main-db-restore
   bootstrap:
     recovery:
       source: lightbridge-main-db-backup
