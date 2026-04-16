@@ -120,6 +120,25 @@ Keycloak issues two tokens during the OIDC flow:
 | **ID Token** | User identity claims | User profile creation |
 | **Access Token** | Authorization claims | Role-based access control |
 
+### JWT Claim Reference
+
+All tokens use standard JWT claims defined by the OpenID Connect and OAuth 2.0 specifications:
+
+| Claim | Full Name | Description | Example Value |
+|-------|-----------|-------------|---------------|
+| `exp` | Expiration Time | Unix timestamp when token expires. Tokens after this time are rejected. | `1776169232` (2026-04-16T10:37:32 UTC) |
+| `iat` | Issued At | Unix timestamp when token was created. Token lifetime = `exp - iat`. | `1776168932` (2026-04-16T10:35:32 UTC) |
+| `iss` | Issuer | URL identifying the Keycloak realm that issued the token. Used to validate token source. | `https://accounts.camer.digital/realms/camer-digital` |
+| `sub` | Subject | Unique user identifier (Keycloak UUID). The canonical user ID across all applications. | `e3e778d8-f22f-4ffc-9f3e-be98053d813b` |
+| `aud` | Audience | Intended recipient(s) of the token. For ID tokens, this is the client ID. | `librechat` |
+| `typ` | Token Type | Indicates token usage. `ID` for ID tokens, `Bearer` for access tokens. | `Bearer` or `ID` |
+| `azp` | Authorized Party | Client ID that requested the token. Validates token is for your application. | `librechat` |
+| `acr` | Authentication Context Class Reference | Level of authentication performed. `0`=none, `1`=password, `2+=MFA`. | `1` |
+| `scope` | Scope | Space-separated list of granted scopes. | `openid email profile` |
+| `allowed-origins` | Allowed Origins | Keycloak-specific claim listing CORS origins for browser-based requests. | `["https://ai.camer.digital"]` |
+
+> **Note**: Token lifetime is typically 5 minutes (`exp - iat = 300s`). Refresh tokens are used to obtain new access tokens without re-authentication.
+
 ### Standard Claims (ID Token)
 
 LibreChat extracts user profile information from the ID token:
@@ -225,8 +244,6 @@ After configuring the role mapper, the access token will include:
 ```
 
 ### Keycloak Mapper Configuration
-
-> **Note**: Detailed step-by-step instructions for configuring the `librechat` scope, role mapper, and client roles in Keycloak are available in [`docs/tickets/keycloak-librechat-client-setup.md`](tickets/keycloak-librechat-client-setup.md).
 
 The mapper configuration ensures:
 - `librechat_roles` claim is added to both ID and access tokens
@@ -434,27 +451,6 @@ For each new application:
 | `preferred_username` | Display name | Direct from Keycloak |
 | `<app>_roles` | App roles | Role mapper per app |
 
-### Example: Phoenix Analytics Integration
-
-Reference the Phoenix configuration in [`charts/apps/values.yaml`](charts/apps/values.yaml:1131):
-
-```yaml
-auth:
-  oauth2:
-    providers:
-      keycloak:
-        client_id: "phoenix"
-        oidc_config_url: "https://accounts.camer.digital/realms/camer-digital/.well-known/openid-configuration"
-        display_name: "CDigital"
-        allow_sign_up: true
-        auto_login: true
-        role_attribute_path: "phoenix_role"
-        role_mapping: "admin:ADMIN,user:MEMBER,viewer:VIEWER"
-        role_attribute_strict: true
-        use_pkce: true
-        scopes: "openid phoenix"
-```
-
 ## Validation Checklist
 
 ### Login Validation
@@ -540,6 +536,6 @@ curl -s https://accounts.camer.digital/realms/camer-digital/.well-known/openid-c
 ## References
 
 - [LibreChat OIDC Documentation](https://www.librechat.ai/docs/configuration/auth/oidc)
-- [Keycloak OpenID Connect Documentation](https://www.librechat.ai/docs/configuration/authentication/OAuth2-OIDC)
-- [Internal Phoenix Integration](../charts/apps/values.yaml)
+- [Keycloak OpenID Connect Documentation](https://www.keycloak.org/docs/latest/server_admin/#_oidc)
 - [Kuadrant AuthConfig Template](../charts/kuadrant-policies/templates/authconfig.yaml)
+- [Advanced Access Control Experiments](./librechat-oidc-experiments.md) - Group-based access, MCP role control, token propagation
