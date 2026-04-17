@@ -887,3 +887,52 @@ search:
     requests:
       cpu: 500m
       memory: 1Gi
+networkPolicy:
+  enabled: true
+  name: converse-api-security
+  namespace: converse
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: lightbridge
+  ingressNamespaces:
+    - name: traefik-system
+      ports:
+        - protocol: TCP
+          port: 3000
+    - name: converse-gateway
+      ports:
+        - protocol: TCP
+          port: 3000
+  ingressPods: {}
+  egressDns: true
+  egressPods: {}
+  egressExternal:
+    - cidr: 0.0.0.0/0
+      except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - protocol: TCP
+          port: 443
+
+policies:
+  converse-db-security:
+    enabled: true
+    podSelector:
+      matchLabels:
+        cnpg.io/podRole: instance
+    ingressNamespaces:
+      - name: cnpg-system
+        ports:
+          - protocol: TCP
+            port: 5432
+          - protocol: TCP
+            port: 8000
+    ingressPods: {}
+    egressDns: true
+    egressPods: {}
+    egressExternal:
+      - cidr: 0.0.0.0/0
+        except: [10.0.0.0/8]
+        ports:
+          - protocol: TCP
+            port: 443
