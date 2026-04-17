@@ -55,10 +55,10 @@ metadata:
   namespace: converse
 type: Opaque
 stringData:
-  ACCESS_KEY_ID: <your-access-key>
-  ACCESS_SECRET_KEY: <your-secret-key>
-  # Add region if required by your S3 provider
-  # region: us-east-1
+  s3_access_key_id: <your-access-key>
+  s3_secret_access_key: <your-secret-key>
+  s3_region_name: <your-region>  # Optional, depends on S3 provider
+  s3_bucket_name: ai-ops-backups  # Optional, for reference
 ```
 
 ### Phase 3: Create ObjectStore Resources
