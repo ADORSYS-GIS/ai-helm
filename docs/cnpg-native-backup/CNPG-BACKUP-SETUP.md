@@ -1,7 +1,7 @@
 # CNPG Backup - Setup Guide
 
 > **Document Purpose**: Production implementation guide for CloudNativePG backup strategy.
-> **Related Document**: See `docs/lightbridge-db-recovery-runbook.md` for disaster recovery procedures.
+> **Related Document**: See `lightbridge-db-recovery-runbook.md` for disaster recovery procedures.
 > **Status**: Awaiting Management Approval
 > **Last Updated**: April 16, 2026
 
@@ -230,7 +230,7 @@ kubectl exec -n minio deploy/minio -- mc ls local/ai-ops-backups/lightbridge-cnp
 | `charts/apps/lightbridge-usage-db.yaml` | Update | Add plugins section |
 | `charts/apps/lightbridge-main-db-scheduled-backup.yaml` | Update | Use method: plugin |
 | `charts/apps/lightbridge-usage-db-scheduled-backup.yaml` | Update | Use method: plugin |
-| `docs/lightbridge-db-recovery-runbook.md` | Update | Remove two-phase workaround |
+| `cnpg-native-backup/lightbridge-db-recovery-runbook.md` | Update | Remove two-phase workaround |
 
 ---
 

@@ -17,7 +17,7 @@ The old two-phase workaround is no longer needed. The ObjectStore CRD approach a
 - ✅ Restore from existing backup
 - ✅ No two-phase deployment required
 
-For new deployments, see: `docs/CNPG-BACKUP-SETUP.md`
+For new deployments, see: `CNPG-BACKUP-SETUP.md`
 
 ## 🎯 Recovery Strategy
 
