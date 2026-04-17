@@ -29,6 +29,57 @@ librechat:
           hosts:
             - ai.camer.digital
 
+# BJW native NetworkPolicy for librechat controller
+# Uses 'networkpolicies' (plural) as per BJW app-template schema
+  networkpolicies:
+    main:
+      enabled: true
+      controller: librechat
+      policyTypes:
+        - Ingress
+        - Egress
+      rules:
+        ingress:
+          # Ingress from traefik-system
+          - from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: traefik-system
+            ports:
+              - port: 3000
+                protocol: TCP
+          # Ingress from converse-gateway
+          - from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: converse-gateway
+            ports:
+              - port: 3000
+                protocol: TCP
+        egress:
+          # DNS to kube-system
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+            ports:
+              - port: 53
+                protocol: UDP
+              - port: 53
+                protocol: TCP
+          # External access (external APIs)
+          - to:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+                  except:
+                    - 10.0.0.0/8
+                    - 172.16.0.0/12
+                    - 192.168.0.0/16
+            ports:
+              - port: 443
+                protocol: TCP
+    
+
   service:
     librechat:
       enabled: true
@@ -932,52 +983,12 @@ search:
     requests:
       cpu: 500m
       memory: 1Gi
-networkPolicy:
-  enabled: true
-  name: converse-api-security
-  namespace: converse
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: api
-      app.kubernetes.io/instance: lightbridge
-  ingressNamespaces:
-    - name: traefik-system
-      ports:
-        - protocol: TCP
-          port: 3000
-    - name: converse-gateway
-      ports:
-        - protocol: TCP
-          port: 3000
-  ingressPods: {}
-  egressDns: true
-  egressPods: {}
-  egressExternal:
-    - cidr: 0.0.0.0/0
-      except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
-      ports:
-        - protocol: TCP
-          port: 443
 
+# Additional NetworkPolicies for cross-namespace resources
 policies:
   converse-db-security:
     enabled: true
-    podSelector:
-      matchLabels:
-        cnpg.io/podRole: instance
-    ingressNamespaces:
-      - name: cnpg-system
-        ports:
-          - protocol: TCP
-            port: 5432
-          - protocol: TCP
-            port: 8000
-    ingressPods: {}
-    egressDns: true
-    egressPods: {}
-    egressExternal:
-      - cidr: 0.0.0.0/0
-        except: [10.0.0.0/8]
-        ports:
-          - protocol: TCP
-            port: 443
+  converse-chat-namespace-security:
+    enabled: true
+  converse-api-security:
+    enabled: true

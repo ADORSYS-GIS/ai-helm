@@ -30,6 +30,85 @@ applications:
 
           gateway:
             namespacePolicy: All
+
+          # NetworkPolicy for Traefik - co-located with the workload
+          extraObjects:
+            - |
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: traefik-system-security
+                namespace: traefik-system
+                labels:
+                  app.kubernetes.io/name: traefik
+                  app.kubernetes.io/managed-by: Helm
+              spec:
+                podSelector:
+                  matchLabels: {}
+                policyTypes:
+                  - Ingress
+                  - Egress
+                ingress:
+                  # Intra-namespace ingress
+                  - from:
+                      - podSelector: {}
+                  # External ingress on standard ports
+                  - ports:
+                      - port: 80
+                        protocol: TCP
+                      - port: 443
+                        protocol: TCP
+                      - port: 8000
+                        protocol: TCP
+                      - port: 8443
+                        protocol: TCP
+                egress:
+                  # DNS to kube-system
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: kube-system
+                    ports:
+                      - protocol: UDP
+                        port: 53
+                      - protocol: TCP
+                        port: 53
+                  # Intra-namespace egress
+                  - to:
+                      - podSelector: {}
+                  # Access to converse-chat (librechat)
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: converse-chat
+                    ports:
+                      - port: 3080
+                        protocol: TCP
+                  # Access to converse (lightbridge)
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: converse
+                    ports:
+                      - port: 3000
+                        protocol: TCP
+                  # Access to converse-monitoring
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: converse-monitoring
+                    ports:
+                      - port: 6006
+                        protocol: TCP
+                      - port: 9090
+                        protocol: TCP
+                  # Kubernetes API
+                  - to:
+                      - ipBlock:
+                          cidr: 0.0.0.0/0
+                    ports:
+                      - port: 6443
+                        protocol: TCP
     destination:
       namespace: traefik-system
     syncPolicy:
@@ -153,6 +232,43 @@ applications:
           architecture: replication
           replica:
             replicaCount: 1
+          # Native NetworkPolicy for Redis - using Bitnami's built-in support
+          networkPolicy:
+            enabled: true
+            allowExternal: false
+            allowExternalEgress: false
+            extraIngress:
+              - from:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: converse-chat
+                ports:
+                  - port: 6379
+                    protocol: TCP
+              - from:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: converse-monitoring
+                ports:
+                  - port: 6379
+                    protocol: TCP
+              - from:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: converse-proxy
+                ports:
+                  - port: 6379
+                    protocol: TCP
+            extraEgress:
+              - to:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: kube-system
+                ports:
+                  - port: 53
+                    protocol: UDP
+                  - port: 53
+                    protocol: TCP
     destination:
       namespace: redis-system
     syncPolicy:
@@ -462,24 +578,6 @@ applications:
                       prefix: Bearer
     destination:
       namespace: converse-gateway
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
-
-  - name: network-policies
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/network-policies
-      helm:
-        releaseName: network-policies
-    destination:
-      namespace: default
     syncPolicy:
       syncOptions:
         - ServerSideApply=true
