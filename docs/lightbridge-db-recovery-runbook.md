@@ -37,7 +37,6 @@ The recovery follows a **create → validate → switch** pattern:
 - Backup available in MinIO: `s3://ai-ops-backups/lightbridge-cnpg-backups/`
 - Secrets `lightbridge-cnpg-s3` exists in `converse` namespace
 - barman-cloud plugin installed in `cnpg-system`
-- Barman-cloud plugin installed in `cnpg-system`
 
 ---
 
