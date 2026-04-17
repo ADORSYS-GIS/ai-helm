@@ -9,9 +9,8 @@
 {{- end }}
 
 {{/* Allow models to specify minimum backends (default: 2 for HA) */}}
-{{- $minBackends := int (default 2 $routeConfig.minBackends) }}
-{{- $activeBackendCount := len $activeBackends }}
-{{- if lt $activeBackendCount $minBackends }}
+{{- $minBackends := default 2 $routeConfig.minBackends | int }}
+{{- if lt (len $activeBackends) $minBackends }}
   {{- fail (printf "Route '%s' must have at least %d enabled backends. Found: %d" $routeName $minBackends (len $activeBackends)) }}
 {{- end }}
 

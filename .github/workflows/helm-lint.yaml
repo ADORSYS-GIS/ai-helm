@@ -11,16 +11,16 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Helm & yq
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: v3.15.4
       - uses: mikefarah/yq@v4
 
       - name: Cache Helm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/helm
           key: ${{ runner.os }}-helm-${{ hashFiles('**/Chart.yaml') }}

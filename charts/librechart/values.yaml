@@ -4,7 +4,8 @@ global:
   rag_librechat:
     version: "v0.7.2"
   mongo:
-    replicaCount: 2
+    replicaCount: 1
+    replicaSetName: rs0
   configmap:
     name: "librechat-config"
 
@@ -114,6 +115,15 @@ librechat:
                 name: librechat-mcp-github
                 key: client_secret
 
+            CODERS_MCP_CLIENT_ID:
+              secretKeyRef:
+                name: librechat-mcp-coder-credentials
+                key: client_id
+            CODERS_MCP_SECRET:
+              secretKeyRef:
+                name: librechat-mcp-coder-credentials
+                key: client_secret
+
             OPENID_CLIENT_ID:
               secretKeyRef:
                 name: librechat-openid-config
@@ -203,6 +213,7 @@ librechat:
 
             # OpenAI-compatible Converse LLM API base URL
             IMAGE_GEN_OAI_BASEURL: https://api.ai.camer.digital/v1
+            IMAGE_GEN_OAI_MODEL: gpt-image-1
 
 
             AWS_REGION:
@@ -337,7 +348,23 @@ config:
     modelSelect: true
     parameters: true
     presets: true
-    agents: true
+    agents:
+      use: true
+      create: true
+      share: true
+      public: true
+    mcpServers:
+      use: true
+      create: true
+      share: false
+      public: false
+
+  mcpSettings:
+    allowedDomains:
+      - "coder.coder.svc.cluster.local"
+      - "coder.ai.camer.digital"
+      - "ai.camer.digital"
+
   # Balance settings
   balance:
     enabled: false               # Enable token credit balances for users
@@ -465,6 +492,25 @@ config:
         redirect_uri: https://ai.camer.digital/api/mcp/lightbridge_self_service/oauth/callback
         scope: "email openid offline_access"
 
+    coder_mcp:
+      title: "Coder"
+      description: "Coder - Development environments in your cloud"
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "http://coder.coder.svc.cluster.local:8080/api/experimental/mcp/http"
+      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
+      chatMenu: false
+      requiresOAuth: true
+      serverInstructions: |
+        Provides development environment management capabilities.
+      oauth:
+        authorization_url: https://coder.ai.camer.digital/oauth2/authorize
+        token_url: https://coder.ai.camer.digital/oauth2/tokens
+        client_id: ${CODERS_MCP_CLIENT_ID}
+        client_secret: ${CODERS_MCP_SECRET}
+        redirect_uri: https://ai.camer.digital/api/mcp/coder_mcp/oauth/callback
+        scope: "openid profile email offline_access"
+
   fileConfig:
     endpoints:
       assistants:
@@ -565,7 +611,7 @@ config:
             # - "gpt-5-mini"  # Disabled: GPT model not currently available
             - "gemini-3.1-flash-lite"
             # - "gpt-5.3-codex"  # Disabled: GPT model not currently available
-            # - "gpt-image-1"  # Disabled: GPT model not currently available
+            - "gpt-image-1"
             - "qwen3-8b"
             - "qwen3-reranker-8b"
             # - "te3-large"  # Disabled: te3 model not currently available
@@ -859,16 +905,15 @@ config:
 # MongoDB Parameters
 db:
   enabled: true
-  image:
-    repository: bitnamilegacy/mongodb
   auth:
     enabled: false
   persistence:
     size: 30Gi
     storageClass: ~
-  architecture: replicaset
-  replicaCount: 2 # should be similar to the global mongo replicaCount
-  resourcesPreset: small
+  architecture: standalone
+  replicaSet:
+    name: rs0
+    members: 1
 
 search:
   enabled: true

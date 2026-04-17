@@ -135,6 +135,8 @@ applications:
   - name: redis
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: registry-1.docker.io/bitnamicharts
       targetRevision: 24.0.0
@@ -491,6 +493,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "0"
+      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: https://adorsys-gis.github.io/lightbridge-authz
       targetRevision: 0.8.1
@@ -958,6 +961,51 @@ applications:
                       name: lightbridge-cnpg-s3
                       key: s3_region_name
             - |
+              # Alias services for stable DB endpoints - enables easy recovery switching
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: lightbridge-main-db-primary
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "1"
+                  description: "Stable alias for lightbridge-main-db - switch traffic via selector"
+                labels:
+                  app.kubernetes.io/component: database
+                  db-alias: "true"
+              spec:
+                type: ClusterIP
+                ports:
+                  - port: 5432
+                    targetPort: 5432
+                    protocol: TCP
+                    name: postgres
+                selector:
+                  cnpg.io/cluster: lightbridge-main-db
+                  cnpg.io/instanceRole: primary
+            - |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: lightbridge-usage-db-primary
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "1"
+                  description: "Stable alias for lightbridge-usage-db - switch traffic via selector"
+                labels:
+                  app.kubernetes.io/component: database
+                  db-alias: "true"
+              spec:
+                type: ClusterIP
+                ports:
+                  - port: 5432
+                    targetPort: 5432
+                    protocol: TCP
+                    name: postgres
+                selector:
+                  cnpg.io/cluster: lightbridge-usage-db
+                  cnpg.io/instanceRole: primary
+            - |
               apiVersion: postgresql.cnpg.io/v1
               kind: Cluster
               metadata:
@@ -967,12 +1015,7 @@ applications:
                   argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
-                plugins:
-                  - name: barman-cloud.cloudnative-pg.io
-                    isWALArchiver: true
-                    parameters:
-                      barmanObjectName: lightbridge-barman-store
-                      serverName: lightbridge-main-db
+                # Plugins removed - backup.barmanObjectStore handles WAL archiving
                 storage:
                   storageClass: linode-block-storage
                   size: "5Gi"
@@ -1010,12 +1053,7 @@ applications:
                   kind: ClusterImageCatalog
                   name: lightbridge-usage-db
                   major: 17
-                plugins:
-                  - name: barman-cloud.cloudnative-pg.io
-                    isWALArchiver: true
-                    parameters:
-                      barmanObjectName: lightbridge-barman-store
-                      serverName: lightbridge-usage-db
+                # Plugins removed - backup.barmanObjectStore handles WAL archiving
                 storage:
                   storageClass: linode-block-storage
                   size: "10Gi"
@@ -1097,12 +1135,11 @@ applications:
                   frontend:
                     image:
                       repository: ghcr.io/adorsys-gis/converse-frontends
-                      tag: sha-70649e7
+                      tag: sha-119db39
                       pullPolicy: IfNotPresent
                     env:
                       EXPO_PUBLIC_BACKEND_URL: "https://self-service.ai.camer.digital"
                       EXPO_PUBLIC_USAGE_URL: "https://self-service.ai.camer.digital"
-                      EXPO_PUBLIC_GATEWAY_URL: "https://api.ai.camer.digital"
                       EXPO_PUBLIC_ANALYTICS_URL: "https://analytics.ai.camer.digital"
                       EXPO_PUBLIC_KEYCLOAK_ISSUER: "https://accounts.camer.digital/realms/camer-digital"
                       EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: "converse-frontend"
@@ -1120,6 +1157,8 @@ applications:
   - name: phoenix
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: oci://registry-1.docker.io/arizephoenix/phoenix-helm
       targetRevision: 4.0.36
@@ -1175,6 +1214,8 @@ applications:
   - name: librechat
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: HEAD
@@ -1222,7 +1263,7 @@ applications:
                 initContainers:
                   exporter:
                     env:
-                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017
+                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017,librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
     destination:
       namespace: converse-chat
     syncPolicy:
@@ -1267,6 +1308,138 @@ applications:
       namespace: converse-mcp
     syncPolicy:
       syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Coder DB ---
+  - name: coder-db
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "1"
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/coder-db
+      helm:
+        releaseName: coder-db
+        valuesObject: {}
+    destination:
+      namespace: coder
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Coder ---
+  - name: coder
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "2"
+    sources:
+      - repoURL: oci://ghcr.io/coder/chart/coder
+        targetRevision: 2.29.5
+        chart: coder
+        helm:
+          releaseName: coder
+          valuesObject:
+            coder:
+              env:
+                - name: CODER_PG_CONNECTION_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-cnpg-app
+                      key: uri
+                - name: CODER_PG_OPTIONS
+                  value: "sslmode=disable"
+                - name: CODER_ACCESS_URL
+                  value: "https://coder.ai.camer.digital"
+                - name: CODER_WILDCARD_ACCESS_URL
+                  value: "*.serverless.coder.ai.camer.digital"
+                - name: CODER_OIDC_ISSUER_URL
+                  value: "https://accounts.camer.digital/realms/camer-digital"
+                - name: CODER_OIDC_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-keycloak-secret
+                      key: client_id
+                - name: CODER_OIDC_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-keycloak-secret
+                      key: client_secret
+                - name: CODER_OIDC_SCOPES
+                  value: "openid,profile,email,offline_access"
+                - name: CODER_OIDC_ICON_URL
+                  value: "https://www.keycloak.org/resources/images/logo.svg"
+                - name: CODER_OIDC_SIGN_IN_TEXT
+                  value: "Sign in with Keycloak"
+                - name: CODER_EXPERIMENTS
+                  value: "oauth2,mcp-server-http"
+                - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
+                  value: "false"
+                - name: CODER_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-admin-secret
+                      key: username
+                - name: CODER_EMAIL
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-admin-secret
+                      key: username
+                - name: CODER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: coder-admin-secret
+                      key: password
+              lifecycle:
+                postStart:
+                  exec:
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        echo "Waiting for Coder server to be ready..."
+                        until curl -sf http://localhost:8080/healthz > /dev/null 2>&1; do
+                          sleep 2
+                        done
+                        sleep 5
+                        echo "Creating admin user..."
+                        coder server create-admin-user --username "$CODER_USERNAME" --email "$CODER_EMAIL" --password "$CODER_PASSWORD" 2>&1 || true
+              tolerations:
+                - key: ai.camer.digital/offline-work
+                  operator: Equal
+                  value: dev-container
+              resources:
+                requests:
+                  cpu: 1000m
+                  memory: 1024Mi
+                limits:
+                  cpu: 2000m
+                  memory: 4096Mi
+              service:
+                type: ClusterIP
+              ingress:
+                enable: true
+                className: traefik
+                annotations:
+                  cert-manager.io/cluster-issuer: cert-home-cert-http
+                host: "coder.ai.camer.digital"
+                tls:
+                  enable: true
+                  secretName: coder.ai.camer.digital-tls
+    destination:
+      namespace: coder
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
         - ServerSideApply=true
       automated:
         prune: true

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Artillery Report: report-direct-gemini</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #f8fafc; }
+    .subtitle { color: #94a3b8; margin-bottom: 2rem; }
+    
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .metric-card {
+      background: #1e293b;
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      border: 1px solid #334155;
+    }
+    
+    .metric-label {
+      font-size: 0.875rem;
+      color: #94a3b8;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .metric-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+    
+    .metric-value.good { color: #22c55e; }
+    .metric-value.warning { color: #eab308; }
+    .metric-value.critical { color: #ef4444; }
+    
+    .metric-detail {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-top: 0.25rem;
+    }
+    
+    .section {
+      background: #1e293b;
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid #334155;
+    }
+    
+    .section h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      color: #f8fafc;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid #334155;
+    }
+    
+    th {
+      background: #0f172a;
+      font-weight: 600;
+      color: #94a3b8;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    td { color: #e2e8f0; }
+    
+    tr:hover { background: #334155; }
+    
+    .chart-container {
+      position: relative;
+      height: 300px;
+      margin-top: 1rem;
+    }
+    
+    .percentile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+    }
+    
+    .percentile-item {
+      text-align: center;
+      padding: 1rem;
+      background: #0f172a;
+      border-radius: 0.5rem;
+    }
+    
+    .percentile-label {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-bottom: 0.25rem;
+    }
+    
+    .percentile-value {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .timestamp {
+      color: #64748b;
+      font-size: 0.875rem;
+      margin-top: 2rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Artillery Load Test Report</h1>
+    <p class="subtitle">report-direct-gemini • Generated 2026-04-09T18:35:14.897Z</p>
+    
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Total Requests</div>
+        <div class="metric-value">120</div>
+        <div class="metric-detail">120 successful</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">Success Rate</div>
+        <div class="metric-value" style="color: #22c55e">100.00%</div>
+        <div class="metric-detail">0 errors, 0 timeouts</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">p50 Latency</div>
+        <div class="metric-value">757.6 ms</div>
+        <div class="metric-detail">Median response time</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">p95 Latency</div>
+        <div class="metric-value" style="color: #ef4444">1,153.1 ms</div>
+        <div class="metric-detail">95th percentile</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">p99 Latency</div>
+        <div class="metric-value" style="color: #eab308">1,525.7 ms</div>
+        <div class="metric-detail">99th percentile</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-label">Max Latency</div>
+        <div class="metric-value" style="color: #22c55e">1,790 ms</div>
+        <div class="metric-detail">Slowest request</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>📊 Response Time Distribution</h2>
+      <div class="percentile-grid">
+        <div class="percentile-item">
+          <div class="percentile-label">Min</div>
+          <div class="percentile-value">494 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">Mean</div>
+          <div class="percentile-value">775.3 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">Median (p50)</div>
+          <div class="percentile-value">757.6 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">p75</div>
+          <div class="percentile-value">820.7 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">p90</div>
+          <div class="percentile-value">1,022.7 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">p95</div>
+          <div class="percentile-value">1,153.1 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">p99</div>
+          <div class="percentile-value">1,525.7 ms</div>
+        </div>
+        <div class="percentile-item">
+          <div class="percentile-label">Max</div>
+          <div class="percentile-value">1,790 ms</div>
+        </div>
+      </div>
+    </div>
+    
+    
+    <div class="section">
+      <h2>📈 Per-Phase Breakdown</h2>
+      <div class="chart-container">
+        <canvas id="phaseChart"></canvas>
+      </div>
+      <table style="margin-top: 1.5rem">
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Requests</th>
+            <th>Successful</th>
+            <th>Errors</th>
+            <th>Timeouts</th>
+            <th>p50</th>
+            <th>p95</th>
+            <th>p99</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr>
+            <td>1</td>
+            <td>4</td>
+            <td style="color: #22c55e">2</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>671.9 ms</td>
+            <td>671.9 ms</td>
+            <td>671.9 ms</td>
+          </tr>
+          
+          <tr>
+            <td>2</td>
+            <td>20</td>
+            <td style="color: #22c55e">19</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>772.9 ms</td>
+            <td>1,064.4 ms</td>
+            <td>1,064.4 ms</td>
+          </tr>
+          
+          <tr>
+            <td>3</td>
+            <td>20</td>
+            <td style="color: #22c55e">21</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>772.9 ms</td>
+            <td>1,064.4 ms</td>
+            <td>1,064.4 ms</td>
+          </tr>
+          
+          <tr>
+            <td>4</td>
+            <td>20</td>
+            <td style="color: #22c55e">19</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>757.6 ms</td>
+            <td>871.5 ms</td>
+            <td>871.5 ms</td>
+          </tr>
+          
+          <tr>
+            <td>5</td>
+            <td>20</td>
+            <td style="color: #22c55e">19</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>788.5 ms</td>
+            <td>1,300.1 ms</td>
+            <td>1,300.1 ms</td>
+          </tr>
+          
+          <tr>
+            <td>6</td>
+            <td>20</td>
+            <td style="color: #22c55e">22</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>742.6 ms</td>
+            <td>1,022.7 ms</td>
+            <td>1,525.7 ms</td>
+          </tr>
+          
+          <tr>
+            <td>7</td>
+            <td>16</td>
+            <td style="color: #22c55e">18</td>
+            <td style="color: #22c55e">0</td>
+            <td style="color: #22c55e">0</td>
+            <td>550.1 ms</td>
+            <td>685.5 ms</td>
+            <td>685.5 ms</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+    
+    
+    <div class="section">
+      <h2>📋 Raw Counters</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr>
+            <td>vusers.created_by_name.Direct Gemini 2.5 Flash</td>
+            <td>120</td>
+          </tr>
+          
+          <tr>
+            <td>vusers.created</td>
+            <td>120</td>
+          </tr>
+          
+          <tr>
+            <td>http.requests</td>
+            <td>120</td>
+          </tr>
+          
+          <tr>
+            <td>http.codes.200</td>
+            <td>120</td>
+          </tr>
+          
+          <tr>
+            <td>http.responses</td>
+            <td>120</td>
+          </tr>
+          
+          <tr>
+            <td>http.downloaded_bytes</td>
+            <td>0</td>
+          </tr>
+          
+          <tr>
+            <td>plugins.metrics-by-endpoint./v1beta/chat/completions.codes.200</td>
+            <td>120</td>
+          </tr>
+          
+          <tr>
+            <td>vusers.failed</td>
+            <td>0</td>
+          </tr>
+          
+          <tr>
+            <td>vusers.completed</td>
+            <td>120</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+    
+    <p class="timestamp">Report generated from Artillery JSON output</p>
+  </div>
+  
+  <script>
+    // Phase chart
+    const phaseData = [{"phase":1,"requests":4,"successful":2,"errors":0,"timeouts":0,"p50":671.9,"p95":671.9,"p99":671.9,"mean":670},{"phase":2,"requests":20,"successful":19,"errors":0,"timeouts":0,"p50":772.9,"p95":1064.4,"p99":1064.4,"mean":807.1},{"phase":3,"requests":20,"successful":21,"errors":0,"timeouts":0,"p50":772.9,"p95":1064.4,"p99":1064.4,"mean":808.5},{"phase":4,"requests":20,"successful":19,"errors":0,"timeouts":0,"p50":757.6,"p95":871.5,"p99":871.5,"mean":778.5},{"phase":5,"requests":20,"successful":19,"errors":0,"timeouts":0,"p50":788.5,"p95":1300.1,"p99":1300.1,"mean":886.3},{"phase":6,"requests":20,"successful":22,"errors":0,"timeouts":0,"p50":742.6,"p95":1022.7,"p99":1525.7,"mean":785.4},{"phase":7,"requests":16,"successful":18,"errors":0,"timeouts":0,"p50":550.1,"p95":685.5,"p99":685.5,"mean":581.9}];
+    if (phaseData.length > 0) {
+      const ctx = document.getElementById('phaseChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: phaseData.map(p => 'Phase ' + p.phase),
+          datasets: [{
+            label: 'p50 Latency (ms)',
+            data: phaseData.map(p => p.p50),
+            backgroundColor: 'rgba(59, 130, 246, 0.7)',
+            borderColor: 'rgba(59, 130, 246, 1)',
+            borderWidth: 1
+          }, {
+            label: 'p95 Latency (ms)',
+            data: phaseData.map(p => p.p95),
+            backgroundColor: 'rgba(249, 115, 22, 0.7)',
+            borderColor: 'rgba(249, 115, 22, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+              ticks: { color: '#94a3b8' }
+            },
+            x: {
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+              ticks: { color: '#94a3b8' }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: { color: '#e2e8f0' }
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>

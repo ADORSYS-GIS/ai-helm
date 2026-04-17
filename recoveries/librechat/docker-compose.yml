@@ -1,0 +1,43 @@
+services:
+  mongodb:
+    image: mongo:8.0.11
+    container_name: librechat-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpass
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --host localhost --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand({ ping: 1 })\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongorestore:
+    image: mongo:8.0.11
+    container_name: librechat-mongorestore
+    profiles: ["restore"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpass
+    volumes:
+      - ./:/backup:ro
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "set -e; if [ -f /backup/all-databases_20260415_020035.gz ]; then echo 'Restoring gzip archive...'; mongorestore --host mongodb --port 27017 --username $${MONGO_INITDB_ROOT_USERNAME} --password $${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin --drop --gzip --archive=/backup/all-databases_20260415_020035.gz; elif [ -f /backup/all-databases_20260415_020035 ]; then echo 'Restoring archive...'; mongorestore --host mongodb --port 27017 --username $${MONGO_INITDB_ROOT_USERNAME} --password $${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin --drop --archive=/backup/all-databases_20260415_020035; else echo 'Backup file not found in /backup'; exit 1; fi",
+      ]
+
+volumes:
+  mongo_data:
