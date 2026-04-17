@@ -138,18 +138,28 @@ proxy:
 
 networkPolicy:
   enabled: true
+  name: models-proxy-security
+  namespace: converse-proxy
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: models-proxy
   # Namespace(s) that should be allowed to access the proxy
   ingressNamespaces:
-    - envoy-gateway-system
-    - envoy-ai-gateway-system
-    - default
-  egressDestinations:
-    # Google Gemini API
-    - cidr: 0.0.0.0/0
+    - name: envoy-gateway-system
       ports:
         - protocol: TCP
-          port: 443
-    # OpenAI API
+          port: 4000
+    - name: envoy-ai-gateway-system
+      ports:
+        - protocol: TCP
+          port: 4000
+  egressDns: true
+  egressInternalServices:
+    - namespace: redis-system
+      ports:
+        - protocol: TCP
+          port: 6379
+  egressExternal:
     - cidr: 0.0.0.0/0
       ports:
         - protocol: TCP
