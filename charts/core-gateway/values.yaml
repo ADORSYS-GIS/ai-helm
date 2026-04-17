@@ -1,0 +1,61 @@
+networkPolicy:
+  enabled: true
+  name: converse-gateway-otel-security
+  namespace: converse-gateway
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/managed-by: opentelemetry-operator
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: envoy-gateway-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: envoy-gateway
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+  egressDns: true
+  egressServices:
+    - namespace: converse-monitoring
+      ports:
+        - protocol: TCP
+          port: 6006
+    - namespace: converse
+      ports:
+        - protocol: TCP
+          port: 3000
+
+policies:
+  converse-gateway-authorino-security:
+    enabled: true
+    namespace: converse-gateway
+    podSelector:
+      matchLabels:
+        authorino-resource: kuadrant-policies-main
+    ingressNamespaces:
+      - name: envoy-gateway-system
+        ports:
+          - protocol: TCP
+            port: 50051
+          - protocol: TCP
+            port: 5001
+          - protocol: TCP
+            port: 8083
+    ingress:
+      - from:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 8443
+    egressDns: true
+    egressIntraNamespace: true
+    egressInternalServices:
+      - namespace: converse
+        ports:
+          - protocol: TCP
+            port: 3000
