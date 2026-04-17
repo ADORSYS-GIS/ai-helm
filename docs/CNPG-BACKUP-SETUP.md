@@ -1,9 +1,8 @@
-# CNPG Backup Strategy - Implementation Guide
+# CNPG Backup - Setup Guide
 
 > **Document Purpose**: Production implementation guide for CloudNativePG backup strategy.
-> 
+> **Related Document**: See `docs/lightbridge-db-recovery-runbook.md` for disaster recovery procedures.
 > **Status**: Awaiting Management Approval
-> 
 > **Last Updated**: April 16, 2026
 
 ---
