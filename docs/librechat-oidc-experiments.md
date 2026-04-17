@@ -33,7 +33,7 @@ Users assigned to a Keycloak group with a mapped `librechat` client role will ha
 Navigate to: Groups → Create group
 Name: librechat-users
 ```
-![alt text](image.png)
+![alt text](./images/image.png)
 
 #### 2. Assign Role to Group
 
@@ -42,7 +42,7 @@ Navigate to: Groups → librechat-users → Role Mappings
 Client roles: librechat
 Assign roles: user
 ```
-![alt text](image-1.png)
+![alt text](./images/image-1.png)
 
 #### 3. Add Test User to Group
 
@@ -50,7 +50,7 @@ Assign roles: user
 Navigate to: Users → <test-user> → Groups
 Join: librechat-users
 ```
-![alt text](image-2.png)
+![alt text](./images/image-2.png)
 
 ### Validation
 
@@ -130,7 +130,7 @@ Navigate to: Clients → librechat → Roles → Create Role
 Role name: beta-tester
 Description: Beta feature access
 ```
-![alt text](image-3.png)
+![alt text](./images/image-3.png)
 
 #### 2. Assign Role to Test User
 
@@ -139,7 +139,7 @@ Navigate to: Users → <test-user> → Role Mappings
 Client roles: librechat
 Assign: beta-tester
 ```
-![alt text](image-4.png)
+![alt text](./images/image-4.png)
 
 #### 3. Get Token Before and After
 
@@ -255,7 +255,7 @@ When a user's role is removed in Keycloak, subsequent token requests should not 
 Create test user with "user" role in librechat client
 Verify user can access LibreChat
 ```
-![alt text](image-7.png)
+![alt text](./images/image-7.png)
 #### 2. Remove Role
 
 ```text
@@ -263,7 +263,7 @@ Navigate to: Users → <test-user> → Role Mappings
 Client roles: librechat
 Unassign: user
 ```
-![alt text](image-6.png)
+![alt text](./images/image-6.png)
 
 #### 3. Test Access Immediately
 
