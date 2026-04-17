@@ -257,8 +257,8 @@ If issues occur:
 
 ## Timeline Estimate
 
-| Phase | Effort | Duration |
-|-------|--------|----------|
+| Phase | Effort (Work Hours) | Duration (Calendar Time) |
+|-------|---------------------|--------------------------|
 | Phase 1: Prerequisites | 0 | Already done |
 | Phase 2: Secrets | 0.5 hour | 1 hour |
 | Phase 3: ObjectStore | 1 hour | 1 hour |
