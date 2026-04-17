@@ -1,3 +1,28 @@
 gatewayRef:
   name: core-gateway
   namespace: converse-gateway
+networkPolicy:
+  enabled: true
+  name: converse-mcp-security
+  namespace: converse-mcp
+  podSelector: {}
+  ingressNamespaces:
+    - name: converse-gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 443
+    - name: envoy-ai-gateway-system
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 443
+  ingressPods: {}
+  egressDns: true
+  egressExternal:
+    - cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
