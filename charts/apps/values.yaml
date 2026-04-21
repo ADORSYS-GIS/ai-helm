@@ -10,6 +10,11 @@ applications:
       helm:
         releaseName: traefik
         valuesObject:
+          deployment:
+            replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            maxUnavailable: 1
           additionalArguments:
             - "--entryPoints.web.http.redirections.entryPoint.to=:443"
             - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
@@ -50,6 +55,9 @@ applications:
       helm:
         releaseName: opentelemetry-operator
         valuesObject:
+          pdb:
+            create: true
+            maxUnavailable: 0
         #manager:
         #  collectorImage:
         #    repository: "otel/opentelemetry-collector-k8s"
@@ -144,6 +152,11 @@ applications:
       helm:
         releaseName: redis
         valuesObject:
+          master:
+            pdb:
+              create: true
+              minAvailable: 1
+              maxUnavailable: ""
           global:
             defaultStorageClass: linode-block-storage
           auth:
@@ -192,6 +205,8 @@ applications:
       helm:
         releaseName: eg
         valuesObject:
+          podDisruptionBudget:
+            minAvailable: 1
           hpa:
             enabled: true
             minReplicas: 1
@@ -213,6 +228,8 @@ applications:
               provider:
                 type: Kubernetes
                 kubernetes:
+                  rateLimitPDB:
+                    maxUnavailable: 0
                   rateLimitDeployment:
                     patch:
                       type: StrategicMerge
@@ -806,6 +823,30 @@ applications:
                 name: authz-tls
           rawRessources:
             - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-api-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 0
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: api
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-opa-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 0
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: opa
+            - |
               apiVersion: networking.k8s.io/v1
               kind: Ingress
               metadata:
@@ -1113,6 +1154,8 @@ applications:
           conversefrontend:
             controllers:
               main:
+                podDisruptionBudget:
+                  minAvailable: 1
                 containers:
                   frontend:
                     image:
@@ -1148,6 +1191,28 @@ applications:
       helm:
         releaseName: phoenix
         valuesObject:
+          extraObjects:
+            - apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: phoenix-pdb
+                namespace: converse-monitoring
+              spec:
+                maxUnavailable: 0
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/name: phoenix
+            - apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: phoenix-postgresql-pdb
+                namespace: converse-monitoring
+              spec:
+                minAvailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: phoenix
+                    app.kubernetes.io/name: postgresql
           persistence:
             storageClass: linode-block-storage
           service:
