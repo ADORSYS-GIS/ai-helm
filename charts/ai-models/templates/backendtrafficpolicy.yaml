@@ -8,7 +8,7 @@ Each model gets its own rate limit based on its pricing strategy:
 Budget values in values.yaml are in USD.
 */}}
 {{- range $routeName, $routeConfig := $.Values.models }}
-{{- if (default true $routeConfig.enabled) }}
+{{- if not (eq $routeConfig.enabled false) }}
 {{- $modelBudgets := default dict $routeConfig.rateLimitBudgeting }}
 {{- $strategy := $routeConfig.pricing.strategy }}
 ---
