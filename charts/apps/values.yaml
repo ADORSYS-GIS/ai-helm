@@ -10,11 +10,9 @@ applications:
       helm:
         releaseName: traefik
         valuesObject:
-          deployment:
-            replicas: 2
           podDisruptionBudget:
             enabled: true
-            maxUnavailable: 1
+            maxUnavailable: 0
           additionalArguments:
             - "--entryPoints.web.http.redirections.entryPoint.to=:443"
             - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
