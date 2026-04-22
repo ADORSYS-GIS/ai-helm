@@ -1122,16 +1122,6 @@ applications:
                 method: plugin
                 pluginConfiguration:
                   name: barman-cloud.cloudnative-pg.io
-            - |
-              apiVersion: traefik.io/v1alpha1
-              kind: Middleware
-              metadata:
-                name: coder-strip-prompt
-                namespace: {{ $.Release.Namespace }}
-              spec:
-                redirectRegex:
-                  regex: "^(https?://[^/]+/oauth2/authorize\\?.*?)(?:&?)prompt=[^&]*(.*)$"
-                  replacement: "${1}${2}"
     destination:
       namespace: converse
     syncPolicy:
@@ -1455,7 +1445,6 @@ applications:
                 className: traefik
                 annotations:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
-                  traefik.ingress.kubernetes.io/router.middlewares: "converse-coder-strip-prompt@kubernetescrd"
                 host: "coder.ai.camer.digital"
                 tls:
                   enable: true
