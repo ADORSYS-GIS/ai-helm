@@ -1,0 +1,35 @@
+# Gateway configuration
+gateway:
+  apiHostname: api.ai.camer.digital
+  serviceApiHostname: services.api.ai.camer.digital
+  issuer: cert-home-cert-envoy
+
+# NetworkPolicy for pods in converse-gateway namespace
+networkPolicy:
+  enabled: true
+
+# Cross-namespace NetworkPolicies for infrastructure systems
+# These are managed by the core-gateway chart but target other namespaces
+# Note: Redis uses native NetworkPolicy via Bitnami chart (apps/values.yaml)
+# Note: Traefik uses extraObjects via apps chart
+policies:
+  # Authorino pods in converse-gateway namespace
+  converse-gateway-authorino-security:
+    enabled: true
+  # CloudNativePG operator namespace (no native NetworkPolicy)
+  cnpg-system-security:
+    enabled: true
+  # OpenTelemetry operator namespace (no native NetworkPolicy)
+  opentelemetry-system-security:
+    enabled: true
+  # Envoy Gateway namespace (no native NetworkPolicy)
+  envoy-gateway-system-security:
+    enabled: true
+  # Envoy AI Gateway namespace (no native NetworkPolicy)
+  envoy-ai-gateway-system-security:
+    enabled: true
+  # Envoy Proxy pods in envoy-gateway-system namespace
+  converse-gateway-proxy-security:
+    enabled: true
+  converse-monitoring-security:
+    enabled: true
