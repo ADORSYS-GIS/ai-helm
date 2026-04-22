@@ -18,7 +18,13 @@ spec:
     # Intra-namespace ingress
     - from:
         - podSelector: {}
-    - ports:
+    # Webhook access from Kubernetes API and external HTTP validation
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 10250
+          protocol: TCP
         - port: 443
           protocol: TCP
         - port: 80
