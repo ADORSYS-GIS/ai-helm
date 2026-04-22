@@ -1,0 +1,191 @@
+{{- if (index .Values.policies "converse-db-security").enabled }}
+---
+# NetworkPolicy for CNPG database pods in converse namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: converse-db-security
+  namespace: converse
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Ingress from cnpg-system (operator)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+    # Intra-namespace ingress
+    - from:
+        - podSelector: {}
+  egress:
+    # DNS to kube-system
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Intra-namespace egress
+    - to:
+        - podSelector: {}
+    # External access for backups (S3)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+      ports:
+        - port: 443
+          protocol: TCP
+{{- end }}
+
+{{- if (index .Values.policies "converse-chat-namespace-security").enabled }}
+---
+# NetworkPolicy for converse-chat namespace (Librechat)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: converse-chat-namespace-security
+  namespace: converse-chat
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Ingress from traefik-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik-system
+      ports:
+        - port: 3080
+          protocol: TCP
+    # Intra-namespace ingress
+    - from:
+        - podSelector: {}
+  egress:
+    # DNS to kube-system
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Intra-namespace egress
+    - to:
+        - podSelector: {}
+    # Access to Redis
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis-system
+      ports:
+        - port: 6379
+          protocol: TCP
+    # External access (external APIs)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 53
+          protocol: TCP
+{{- end }}
+
+{{- if (index .Values.policies "converse-api-security").enabled }}
+---
+# NetworkPolicy for Lightbridge API pods in converse namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: converse-api-security
+  namespace: converse
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: lightbridge
+      app.kubernetes.io/name: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Ingress from traefik-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik-system
+      ports:
+        - port: 3000
+          protocol: TCP
+    # Ingress from converse-gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: converse-gateway
+      ports:
+        - port: 3000
+          protocol: TCP
+    # Intra-namespace ingress
+    - from:
+        - podSelector: {}
+  egress:
+    # DNS to kube-system
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Intra-namespace egress
+    - to:
+        - podSelector: {}
+    # External access (external APIs)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+{{- end }}
