@@ -173,6 +173,17 @@ spec:
       ports:
         - port: 6443
           protocol: TCP
+    # Access to managed PostgreSQL instances in any namespace
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              cnpg.io/podRole: instance
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
 {{- end }}
 
 {{- if (index .Values.policies "opentelemetry-system-security").enabled }}
