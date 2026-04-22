@@ -79,6 +79,32 @@ librechat:
               - port: 443
                 protocol: TCP
     
+  rawResources:
+    hpa:
+      enabled: true
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      spec:
+        spec:
+          scaleTargetRef:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: librechat
+          minReplicas: 1
+          maxReplicas: 4
+          metrics:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: 70
+            - type: Resource
+              resource:
+                name: memory
+                target:
+                  type: Utilization
+                  averageUtilization: 80
 
   service:
     librechat:
@@ -107,7 +133,7 @@ librechat:
     librechat:
       type: deployment
       strategy: RollingUpdate
-      replicas: 2
+      replicas: 1
       pod:
         labels:
           app: librechat-app
@@ -390,6 +416,19 @@ librechat:
               subPath: librechat
               readOnly: true
 
+  networkpolicies:
+    librechat:
+      enabled: true
+      controller: librechat
+      policyTypes:
+        - Ingress
+        - Egress
+      rules:
+        ingress:
+          - {}
+        egress:
+          - {}
+
 config:
   version: 1.3.5
   cache: true
@@ -409,12 +448,6 @@ config:
       create: true
       share: false
       public: false
-
-  mcpSettings:
-    allowedDomains:
-      - "coder.coder.svc.cluster.local"
-      - "coder.ai.camer.digital"
-      - "ai.camer.digital"
 
   # Balance settings
   balance:
@@ -548,7 +581,7 @@ config:
       description: "Coder - Development environments in your cloud"
       type: "streamable-http"
       initTimeout: 150000
-      url: "http://coder.coder.svc.cluster.local:8080/api/experimental/mcp/http"
+      url: "https://coder.ai.camer.digital/api/experimental/mcp/http"
       iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
       chatMenu: false
       requiresOAuth: true
@@ -560,7 +593,7 @@ config:
         client_id: ${CODERS_MCP_CLIENT_ID}
         client_secret: ${CODERS_MCP_SECRET}
         redirect_uri: https://ai.camer.digital/api/mcp/coder_mcp/oauth/callback
-        scope: "openid profile email offline_access"
+        scope: "openid profile email"
 
   fileConfig:
     endpoints:
