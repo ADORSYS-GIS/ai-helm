@@ -29,7 +29,7 @@ keycloak:
         main:
           image:
             repository: quay.io/keycloak/keycloak
-            tag: latest
+            tag: "26.3"
             pullPolicy: IfNotPresent
           
           args:
@@ -387,7 +387,7 @@ clientScopes:
       enabled: true
       mappers:
         - name: "service-roles-mapper"
-          type: "user-client-role"
+          type: "oidc-usermodel-client-role-mapper"
           config:
             clientRole: "true"
             multiValued: "true"
@@ -404,13 +404,13 @@ clientScopes:
       enabled: true
       mappers:
         - name: "organization-mapper"
-          type: "user-attribute"
+          type: "oidc-usermodel-attribute-mapper"
           config:
             user.attribute: "organization"
             claim.name: "organization"
             jsonType.label: "String"
         - name: "groups-mapper"
-          type: "group-membership"
+          type: "oidc-group-membership-mapper"
           config:
             full.path: "true"
             claim.name: "groups"
@@ -487,7 +487,7 @@ keycloakConfigCli:
   enabled: true
   image:
     repository: docker.io/adorsys/keycloak-config-cli
-    tag: latest
+    tag: "6.5.0-26.5.4"
   keycloakService: keycloak
   adminSecret: keycloak-admin
   adminUser: admin

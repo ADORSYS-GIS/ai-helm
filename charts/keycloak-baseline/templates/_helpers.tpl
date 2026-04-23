@@ -66,8 +66,8 @@ Generate realm JSON for Keycloak import.
 {
   "realm": "{{ .Values.realm.name }}",
   "enabled": true,
-  "displayName": "{{ .Values.realm.displayName }}",
-  "displayNameHtml": "{{ .Values.realm.displayNameHtml }}",
+  "displayName": "{{ .Values.realm.displayName | replace "\"" "\\\"" }}",
+  "displayNameHtml": "{{ .Values.realm.displayNameHtml | replace "\"" "\\\"" }}",
   "sslRequired": "{{ .Values.realm.sslRequired }}",
   "registrationAllowed": {{ .Values.realm.registration.enabled }},
   "registrationEmailAsUsername": {{ .Values.realm.registration.emailAsUsername }},
@@ -83,13 +83,14 @@ Generate realm JSON for Keycloak import.
   "ssoSessionIdleTimeout": {{ .Values.realm.ssoSession.idleTimeout }},
   "clients": [
     {{- $firstClient := true }}
+    {{- /* Process clients from .Values.clients */ -}}
     {{- range $idx, $client := .Values.clients }}
     {{- if not $firstClient }},{{ end }}
     {{- $firstClient = false }}
     {
       "clientId": "{{ $client.clientId | default $client.name }}",
       "name": "{{ $client.displayName | default $client.name }}",
-      "description": "{{ $client.description }}",
+      "description": "{{ $client.description | replace "\"" "\\\"" }}",
       "enabled": true,
       "alwaysDisplayInConsole": {{ $client.alwaysDisplayInConsole | default false }},
       "rootUrl": "{{ $client.baseUrl }}",
@@ -116,7 +117,39 @@ Generate realm JSON for Keycloak import.
       "directAccessGrantsEnabled": {{ $client.directAccessGrantsEnabled | default false }},
       "serviceAccountsEnabled": {{ $client.serviceAccountsEnabled | default false }},
       "protocol": "openid-connect"
+      {{- if $client.pkce }},
+      "attributes": {
+        "pkce.code.challenge.method": "{{ $client.pkce }}"
+      }
+      {{- end }}
     }
+    {{- end }}
+    {{- /* Process service accounts as clients */ -}}
+    {{- range $name, $sa := .Values.serviceAccounts }}
+    {{- if $sa.enabled }}
+    {{- if not $firstClient }},{{ end }}
+    {{- $firstClient = false }}
+    {
+      "clientId": "{{ $sa.clientId }}",
+      "name": "{{ $sa.name }}",
+      "description": "{{ $sa.description | replace "\"" "\\\"" }}",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        {{- $firstScope := true }}
+        {{- range $scope := $sa.scopes }}
+        {{- if not $firstScope }},{{ end }}
+        "{{ $scope }}"
+        {{- $firstScope = false }}
+        {{- end }}
+      ]
+    }
+    {{- end }}
     {{- end }}
   ],
   "roles": {
@@ -127,7 +160,20 @@ Generate realm JSON for Keycloak import.
       {{- if not $firstRole }},{{ end }}
       {
         "name": "{{ $role.name }}",
-        "description": "{{ $role.description }}"
+        "description": "{{ $role.description | replace "\"" "\\\"" }}"
+        {{- if $role.composite }},
+        "composite": true,
+        "composites": {
+          "realm": [
+            {{- $firstComposite := true }}
+            {{- range $composite := $role.composites }}
+            {{- if not $firstComposite }},{{ end }}
+            "{{ $composite }}"
+            {{- $firstComposite = false }}
+            {{- end }}
+          ]
+        }
+        {{- end }}
       }
       {{- $firstRole = false }}
       {{- end }}
@@ -138,7 +184,20 @@ Generate realm JSON for Keycloak import.
       {{- if not $firstRole }},{{ end }}
       {
         "name": "{{ $role.name }}",
-        "description": "{{ $role.description }}"
+        "description": "{{ $role.description | replace "\"" "\\\"" }}"
+        {{- if $role.composite }},
+        "composite": true,
+        "composites": {
+          "realm": [
+            {{- $firstComposite := true }}
+            {{- range $composite := $role.composites }}
+            {{- if not $firstComposite }},{{ end }}
+            "{{ $composite }}"
+            {{- $firstComposite = false }}
+            {{- end }}
+          ]
+        }
+        {{- end }}
       }
       {{- $firstRole = false }}
       {{- end }}
@@ -155,7 +214,7 @@ Generate realm JSON for Keycloak import.
       "name": "{{ $group.name }}",
       "path": "/{{ $group.name }}",
       "attributes": {
-        "description": ["{{ $group.description }}"]
+        "description": ["{{ $group.description | replace "\"" "\\\"" }}"]
       },
       "subGroups": [
         {{- $firstSubGroup := true }}
@@ -165,7 +224,7 @@ Generate realm JSON for Keycloak import.
           "name": "{{ $subGroup.name }}",
           "path": "/{{ $group.name }}/{{ $subGroup.name }}",
           "attributes": {
-            "description": ["{{ $subGroup.description }}"]
+            "description": ["{{ $subGroup.description | replace "\"" "\\\"" }}"]
           },
           "subGroups": [
             {{- $firstSubSubGroup := true }}
@@ -175,7 +234,7 @@ Generate realm JSON for Keycloak import.
               "name": "{{ $subSubGroup.name }}",
               "path": "/{{ $group.name }}/{{ $subGroup.name }}/{{ $subSubGroup.name }}",
               "attributes": {
-                "description": ["{{ $subSubGroup.description }}"]
+                "description": ["{{ $subSubGroup.description | replace "\"" "\\\"" }}"]
               }
             }
             {{- $firstSubSubGroup = false }}
@@ -190,6 +249,55 @@ Generate realm JSON for Keycloak import.
     {{- end }}
     {{- end }}
   ],
-  "clientScopes": []
+  "clientScopes": [
+    {{- $firstScope := true }}
+    {{- /* Standard OIDC scopes */ -}}
+    {{- range $scope := .Values.clientScopes.standard }}
+    {{- if not $firstScope }},{{ end }}
+    {{- $firstScope = false }}
+    {
+      "name": "{{ $scope.name }}",
+      "description": "{{ $scope.description | replace "\"" "\\\"" }}",
+      "protocol": "{{ $scope.protocol }}",
+      "type": "{{ $scope.type }}",
+      "enabled": {{ $scope.enabled }}
+    }
+    {{- end }}
+    {{- /* Platform custom scopes */ -}}
+    {{- range $scope := .Values.clientScopes.platform }}
+    {{- if not $firstScope }},{{ end }}
+    {{- $firstScope = false }}
+    {
+      "name": "{{ $scope.name }}",
+      "description": "{{ $scope.description | replace "\"" "\\\"" }}",
+      "protocol": "{{ $scope.protocol }}",
+      "type": "{{ $scope.type }}",
+      "enabled": {{ $scope.enabled }}
+      {{- if $scope.mappers }},
+      "protocolMappers": [
+        {{- $firstMapper := true }}
+        {{- range $mapper := $scope.mappers }}
+        {{- if not $firstMapper }},{{ end }}
+        {{- $firstMapper = false }}
+        {
+          "name": "{{ $mapper.name }}",
+          "protocol": "{{ $scope.protocol }}",
+          "protocolMapper": "{{ $mapper.type }}",
+          "consentRequired": false,
+          "config": {
+            {{- $firstConfig := true }}
+            {{- range $key, $value := $mapper.config }}
+            {{- if not $firstConfig }},{{ end }}
+            "{{ $key }}": "{{ $value }}"
+            {{- $firstConfig = false }}
+            {{- end }}
+          }
+        }
+        {{- end }}
+      ]
+      {{- end }}
+    }
+    {{- end }}
+  ]
 }
 {{- end -}}
