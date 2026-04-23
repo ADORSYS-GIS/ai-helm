@@ -55,7 +55,7 @@ applications:
         valuesObject:
           pdb:
             create: true
-            maxUnavailable: 0
+            maxUnavailable: 1
         #manager:
         #  collectorImage:
         #    repository: "otel/opentelemetry-collector-k8s"
@@ -1220,28 +1220,6 @@ applications:
       helm:
         releaseName: phoenix
         valuesObject:
-          extraObjects:
-            - apiVersion: policy/v1
-              kind: PodDisruptionBudget
-              metadata:
-                name: phoenix-pdb
-                namespace: converse-monitoring
-              spec:
-                maxUnavailable: 0
-                selector:
-                  matchLabels:
-                    app.kubernetes.io/name: phoenix
-            - apiVersion: policy/v1
-              kind: PodDisruptionBudget
-              metadata:
-                name: phoenix-postgresql-pdb
-                namespace: converse-monitoring
-              spec:
-                minAvailable: 1
-                selector:
-                  matchLabels:
-                    app.kubernetes.io/instance: phoenix
-                    app.kubernetes.io/name: postgresql
           persistence:
             storageClass: linode-block-storage
           service:

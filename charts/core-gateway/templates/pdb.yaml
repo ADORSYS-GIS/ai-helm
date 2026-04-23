@@ -1,0 +1,24 @@
+# Phoenix Application PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-phoenix-pdb
+  namespace: converse-monitoring
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: phoenix
+---
+# Phoenix PostgreSQL PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-phoenix-postgresql-pdb
+  namespace: converse-monitoring
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: phoenix
+      app.kubernetes.io/name: postgresql
