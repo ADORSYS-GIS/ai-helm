@@ -4,6 +4,8 @@
 
 This document describes the OIDC (OpenID Connect) integration between LibreChat and Keycloak, providing a reusable SSO mapping contract for downstream applications.
 
+
+![alt text](./images/image-9.png)
 ## Architecture
 
 ```mermaid
@@ -25,6 +27,7 @@ flowchart LR
     KC -->|"User Lookup"| US
     KC --- Realm
 ```
+![alt text](./images/image-8.png)
 
 ## Keycloak Configuration
 
