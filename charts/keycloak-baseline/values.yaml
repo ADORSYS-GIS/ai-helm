@@ -1,0 +1,495 @@
+# Keycloak Baseline Values
+# ========================
+# This file configures the reusable Keycloak baseline for enterprise AI services.
+# Uses BJW-S app-template as a dependency for deploying Keycloak.
+
+# Global settings
+global:
+  # Keycloak instance configuration
+  keycloak:
+    # Keycloak URL for generating redirect URIs
+    url: "https://accounts.example.com"
+    # Realm name to create/configure
+    realm: "platform"
+    # Namespace where Keycloak is deployed
+    namespace: "keycloak"
+
+# BJW-S app-template configuration for Keycloak deployment
+# Set enabled: true to deploy Keycloak using app-template
+keycloak:
+  enabled: false
+  
+  # Use BJW-S app-template controllers for Keycloak deployment
+  controllers:
+    main:
+      type: Deployment
+      replicas: 1
+      
+      containers:
+        main:
+          image:
+            repository: quay.io/keycloak/keycloak
+            tag: latest
+            pullPolicy: IfNotPresent
+          
+          args:
+            - "start-dev"
+            - "--import-realm"
+          
+          env:
+            KEYCLOAK_ADMIN:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: username
+            KEYCLOAK_ADMIN_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            KC_HOSTNAME:
+              value: "keycloak.local"
+            KC_HTTP_ENABLED:
+              value: "true"
+            KC_HOSTNAME_STRICT:
+              value: "false"
+          
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /realms/master
+                  port: 8080
+                initialDelaySeconds: 60
+                periodSeconds: 30
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /realms/master
+                  port: 8080
+                initialDelaySeconds: 30
+                periodSeconds: 10
+          
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+      
+      volumes:
+        - name: realm-import
+          configMap:
+            name: keycloak-baseline-realm
+  
+  # Service configuration using BJW-S templates
+  service:
+    main:
+      type: ClusterIP
+      ports:
+        http:
+          port: 8080
+        https:
+          port: 8443
+  
+  # Ingress configuration using BJW-S templates
+  ingress:
+    main:
+      enabled: false
+      className: envoy-gateway
+      hosts:
+        - host: keycloak.local
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                name: keycloak
+                port: 8080
+
+# Base Realm Configuration
+# ------------------------
+# Defines the base realm structure for the platform
+realm:
+  # Enable realm creation/configuration
+  enabled: true
+  
+  # ConfigMap name for realm import (optional, auto-generated if not set)
+  # configMapName: "keycloak-baseline-realm"
+  
+  # Realm identifier (should match global.keycloak.realm)
+  name: "platform"
+  
+  # Display name shown in Keycloak console
+  displayName: "Platform Services"
+  
+  # HTML display name for branding
+  displayNameHtml: "<div class='kc-logo-text'><span>Platform Services</span></div>"
+  
+  # SSL requirement: external, all, none
+  sslRequired: "external"
+  
+  # User registration settings
+  registration:
+    enabled: false
+    emailAsUsername: true
+    verifyEmail: true
+    resetPasswordAllowed: true
+  
+  # Login theme configuration
+  themes:
+    login: "keycloak"
+    account: "keycloak"
+    admin: "keycloak"
+    email: "keycloak"
+  
+  # Password policy (see: https://www.keycloak.org/docs/latest/server_admin/#password-policy)
+  passwordPolicy: "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notEmail()"
+  
+  # Access token lifespan in seconds (default: 5 minutes)
+  accessTokenLifespan: 300
+  
+  # SSO session settings
+  ssoSession:
+    # Max session time in seconds (default: 10 hours)
+    max: 36000
+    # Idle timeout in seconds (default: 30 minutes)
+    idleTimeout: 1800
+
+# Client Templates
+# ----------------
+# Reusable client templates for different application types
+clientTemplates:
+  # User-facing web application template
+  webApp:
+    enabled: true
+    name: "web-app-template"
+    description: "Template for user-facing web applications with browser-based authentication"
+    protocol: "openid-connect"
+    publicClient: false
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    pkce: "S256"
+    accessTokenLifespan: 300
+    defaultClientScopes:
+      - web-origins
+      - acr
+      - profile
+      - roles
+      - basic
+      - email
+    optionalClientScopes:
+      - address
+      - phone
+      - offline_access
+      - microprofile-jwt
+
+  # Service-to-service client template
+  serviceAccount:
+    enabled: true
+    name: "service-account-template"
+    description: "Template for backend services using client credentials flow"
+    protocol: "openid-connect"
+    publicClient: false
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    accessTokenLifespan: 300
+    defaultClientScopes:
+      - roles
+      - basic
+      - service-roles
+    optionalClientScopes:
+      - microprofile-jwt
+
+  # SPA/Public client template
+  spaApp:
+    enabled: true
+    name: "spa-app-template"
+    description: "Template for Single Page Applications (public clients)"
+    protocol: "openid-connect"
+    publicClient: true
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    pkce: "S256"
+    accessTokenLifespan: 300
+    defaultClientScopes:
+      - web-origins
+      - acr
+      - profile
+      - roles
+      - basic
+      - email
+    optionalClientScopes:
+      - address
+      - phone
+      - offline_access
+
+  # Machine-to-machine client template
+  machineClient:
+    enabled: true
+    name: "machine-client-template"
+    description: "Template for machine-to-machine communication (CLI, CI/CD, etc.)"
+    protocol: "openid-connect"
+    publicClient: false
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: true
+    serviceAccountsEnabled: false
+    accessTokenLifespan: 60
+    defaultClientScopes:
+      - roles
+      - basic
+    optionalClientScopes:
+      - microprofile-jwt
+
+# Realm Roles
+# -----------
+# Base roles that all services should inherit
+realmRoles:
+  # Platform-wide roles
+  platform:
+    - name: "platform-user"
+      description: "Standard platform user with basic access"
+      composite: false
+    - name: "platform-admin"
+      description: "Platform administrator with elevated privileges"
+      composite: true
+      composites:
+        - "platform-user"
+    - name: "platform-viewer"
+      description: "Read-only access to platform resources"
+      composite: false
+
+  # Service-specific role templates
+  serviceRoles:
+    # AI Services roles
+    ai-services:
+      - name: "ai-user"
+        description: "Standard AI service user"
+      - name: "ai-admin"
+        description: "AI service administrator"
+      - name: "ai-developer"
+        description: "AI service developer with model access"
+    # Chat services roles
+    chat-services:
+      - name: "chat-user"
+        description: "Standard chat user"
+      - name: "chat-admin"
+        description: "Chat service administrator"
+      - name: "chat-moderator"
+        description: "Chat moderator with content management"
+
+# Groups
+# ------
+# Group structure for organizational hierarchy
+groups:
+  # Top-level groups
+  topLevel:
+    - name: "employees"
+      description: "All company employees"
+      subGroups:
+        - name: "engineering"
+          description: "Engineering department"
+          subGroups:
+            - name: "ai-team"
+              description: "AI/ML team"
+            - name: "platform-team"
+              description: "Platform infrastructure team"
+            - name: "frontend-team"
+              description: "Frontend development team"
+        - name: "operations"
+          description: "Operations department"
+          subGroups:
+            - name: "devops"
+              description: "DevOps team"
+            - name: "security"
+              description: "Security team"
+        - name: "product"
+          description: "Product department"
+    - name: "services"
+      description: "Service accounts for applications"
+      subGroups:
+        - name: "ai-services"
+          description: "AI service accounts"
+        - name: "internal-tools"
+          description: "Internal tooling service accounts"
+
+  # Default group assignments
+  defaultGroups:
+    - "employees"
+
+# Client Scopes
+# -------------
+# Reusable client scopes for different purposes
+clientScopes:
+  # Default scopes to include
+  defaultScopes:
+    - profile
+    - email
+    - roles
+    - basic
+
+  # Optional scopes
+  optionalScopes:
+    - address
+    - phone
+    - offline_access
+    - microprofile-jwt
+
+  # Standard OIDC scopes
+  standard:
+    - name: "profile"
+      description: "OpenID Connect profile scope"
+      protocol: "openid-connect"
+      type: "default"
+      enabled: true
+    - name: "email"
+      description: "OpenID Connect email scope"
+      protocol: "openid-connect"
+      type: "default"
+      enabled: true
+    - name: "address"
+      description: "OpenID Connect address scope"
+      protocol: "openid-connect"
+      type: "optional"
+      enabled: true
+    - name: "phone"
+      description: "OpenID Connect phone scope"
+      protocol: "openid-connect"
+      type: "optional"
+      enabled: true
+    - name: "offline_access"
+      description: "Enables refresh tokens for offline access"
+      protocol: "openid-connect"
+      type: "optional"
+      enabled: true
+
+  # Custom platform scopes
+  platform:
+    - name: "service-roles"
+      description: "Service-specific role claims"
+      protocol: "openid-connect"
+      type: "default"
+      enabled: true
+      mappers:
+        - name: "service-roles-mapper"
+          type: "user-client-role"
+          config:
+            clientRole: "true"
+            multiValued: "true"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "service_roles"
+            jsonType.label: "String"
+
+    - name: "organization"
+      description: "Organization and group membership claims"
+      protocol: "openid-connect"
+      type: "optional"
+      enabled: true
+      mappers:
+        - name: "organization-mapper"
+          type: "user-attribute"
+          config:
+            user.attribute: "organization"
+            claim.name: "organization"
+            jsonType.label: "String"
+        - name: "groups-mapper"
+          type: "group-membership"
+          config:
+            full.path: "true"
+            claim.name: "groups"
+            jsonType.label: "String"
+
+# Service Account Configurations
+# ------------------------------
+# Pre-configured service account patterns
+serviceAccounts:
+  # AI Model Gateway service account
+  aiGateway:
+    enabled: false
+    clientId: "ai-gateway"
+    name: "AI Model Gateway"
+    description: "Service account for AI model gateway authentication"
+    roles:
+      - "ai-user"
+      - "ai-developer"
+    scopes:
+      - "service-roles"
+      - "roles"
+      - "basic"
+
+  # MCP Orchestrator service account
+  mcpOrchestrator:
+    enabled: false
+    clientId: "mcp-orchestrator"
+    name: "MCP Orchestrator"
+    description: "Service account for MCP orchestration service"
+    roles:
+      - "platform-user"
+    scopes:
+      - "service-roles"
+      - "roles"
+      - "basic"
+
+  # LibreChat service account (for backend operations)
+  librechat:
+    enabled: false
+    clientId: "librechat-backend"
+    name: "LibreChat Backend"
+    description: "Service account for LibreChat backend operations"
+    roles:
+      - "chat-admin"
+    scopes:
+      - "service-roles"
+      - "roles"
+      - "basic"
+
+# Required Actions
+# ----------------
+# User required action configurations
+requiredActions:
+  - alias: "CONFIGURE_TOTP"
+    name: "Configure OTP"
+    enabled: false
+    defaultAction: false
+  - alias: "VERIFY_EMAIL"
+    name: "Verify Email"
+    enabled: true
+    defaultAction: true
+  - alias: "UPDATE_PASSWORD"
+    name: "Update Password"
+    enabled: true
+    defaultAction: false
+  - alias: "UPDATE_PROFILE"
+    name: "Update Profile"
+    enabled: false
+    defaultAction: false
+
+# keycloak-config-cli Configuration
+# Syncs ConfigMap changes to Keycloak database
+keycloakConfigCli:
+  enabled: true
+  image:
+    repository: docker.io/adorsys/keycloak-config-cli
+    tag: latest
+  keycloakService: keycloak
+  adminSecret: keycloak-admin
+  adminUser: admin
+  keycloak:
+    url: http://keycloak.keycloak.svc.cluster.local:8080
