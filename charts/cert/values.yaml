@@ -19,3 +19,22 @@ cert-manager:
     apiVersion: "controller.config.cert-manager.io/v1alpha1"
     kind: "ControllerConfiguration"
     enableGatewayAPI: true
+
+issuer:
+  apiVersion: cert-manager.io/v1
+  kind: ClusterIssuer
+  metadata:
+    name: cert-cloudflare
+  spec:
+    acme:
+      email: selastlambou@protonmail.com
+      privateKeySecretRef:
+        name: cert-cloudflare
+      server: https://acme-v02.api.letsencrypt.org/directory
+      solvers:
+        - dns01:
+            cloudflare:
+              apiKeySecretRef:
+                key: api-token
+                name: cloudflare-secret
+              email: selastlambou@protonmail.com
