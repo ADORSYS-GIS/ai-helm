@@ -2,7 +2,6 @@
 
 > **Document Purpose**: Production implementation guide for CloudNativePG backup strategy.
 > **Related Document**: See `lightbridge-db-recovery-runbook.md` for disaster recovery procedures.
-> **Status**: Awaiting Management Approval
 > **Last Updated**: April 16, 2026
 
 ---
@@ -266,20 +265,6 @@ If issues occur:
 | Phase 5: ScheduledBackup | 0.5 hour | 1 hour |
 | Phase 6: Verification | 0.5 hour | 1 hour |
 | **Total** | **~3.5 hours** | **~6 hours** |
-
----
-
-## Approval Required
-
-Please sign off on the implementation:
-
-- [ ] **Approve** - Proceed with implementation
-- [ ] **Approve with changes** - See notes below
-- [ ] **Reject** - Do not proceed
-
-**Approved by**: _________________  
-**Date**: _________________  
-**Notes**: _________________
 
 ---
 

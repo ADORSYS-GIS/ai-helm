@@ -917,29 +917,6 @@ applications:
                   - server auth
                   - client auth
             - |
-              apiVersion: barmancloud.cnpg.io/v1
-              kind: ObjectStore
-              metadata:
-                name: lightbridge-barman-store
-                namespace: {{ $.Release.Namespace }}
-                annotations:
-                  argocd.argoproj.io/sync-wave: "1"
-                  argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-              spec:
-                configuration:
-                  destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
-                  endpointURL: https://s3.ssegning.me
-                  s3Credentials:
-                    accessKeyId:
-                      name: lightbridge-cnpg-s3
-                      key: s3_access_key_id
-                    secretAccessKey:
-                      name: lightbridge-cnpg-s3
-                      key: s3_secret_access_key
-                    region:
-                      name: lightbridge-cnpg-s3
-                      key: s3_region_name
-            - |
               # Alias services for stable DB endpoints - enables easy recovery switching
               apiVersion: v1
               kind: Service
