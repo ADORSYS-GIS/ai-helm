@@ -61,19 +61,19 @@ spec:
                 namespace: {{ include "common.tplvalues.render" ( dict "value" .gateway.namespace "context" $ ) }}
                 group: gateway.networking.k8s.io
 {{ end }}
-{{- if .Values.issuer }}
-apiVersion: {{ .Values.issuer.apiVersion }}
-kind: {{ .Values.issuer.kind }}
+{{- if .Values.issuerCloudflare }}
+apiVersion: {{ .Values.issuerCloudflare.apiVersion }}
+kind: {{ .Values.issuerCloudflare.kind }}
 metadata:
-  name: {{ .Values.issuer.metadata.name }}
+  name: {{ .Values.issuerCloudflare.metadata.name }}
 spec:
   acme:
-    email: {{ .Values.issuer.spec.acme.email }}
+    email: {{ .Values.issuerCloudflare.spec.acme.email }}
     privateKeySecretRef:
-      name: {{ .Values.issuer.spec.acme.privateKeySecretRef.name }}
-    server: {{ .Values.issuer.spec.acme.server }}
+      name: {{ .Values.issuerCloudflare.spec.acme.privateKeySecretRef.name }}
+    server: {{ .Values.issuerCloudflare.spec.acme.server }}
     solvers:
-      {{- range $i, $s := .Values.issuer.spec.acme.solvers }}
+      {{- range $i, $s := .Values.issuerCloudflare.spec.acme.solvers }}
       - dns01:
           cloudflare:
             apiKeySecretRef:
