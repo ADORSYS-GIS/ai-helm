@@ -1461,26 +1461,6 @@ applications:
         prune: true
         selfHeal: true
 
-  # --- Proxy ---
-  - name: models-proxy
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/models-proxy
-      helm:
-        releaseName: models-proxy
-        valuesObject: { }
-    destination:
-      namespace: converse-proxy
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
-
   # --- Adminer ---
   - name: adminer
     finalizers:
