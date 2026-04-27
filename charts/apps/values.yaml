@@ -135,8 +135,6 @@ applications:
   - name: redis
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: registry-1.docker.io/bitnamicharts
       targetRevision: 24.0.0
@@ -507,7 +505,6 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "0"
-      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: https://adorsys-gis.github.io/lightbridge-authz
       targetRevision: 0.8.1
@@ -1029,10 +1026,16 @@ applications:
                   argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
-                # Plugins removed - backup.barmanObjectStore handles WAL archiving
+                imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
                 storage:
                   storageClass: linode-block-storage
                   size: "5Gi"
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: lightbridge-main-db
+                      serverName: lightbridge-main-db
                 resources:
                   limits:
                     cpu: 300m
@@ -1061,16 +1064,20 @@ applications:
                   argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
-                #imageName: ghcr.io/clevyr/cloudnativepg-timescale:17-ts2
                 imageCatalogRef:
                   apiGroup: postgresql.cnpg.io
                   kind: ClusterImageCatalog
                   name: lightbridge-usage-db
                   major: 17
-                # Plugins removed - backup.barmanObjectStore handles WAL archiving
                 storage:
                   storageClass: linode-block-storage
                   size: "10Gi"
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: lightbridge-usage-db
+                      serverName: lightbridge-usage-db
                 resources:
                   limits:
                     cpu: 300m
@@ -1081,8 +1088,8 @@ applications:
                 postgresql:
                   shared_preload_libraries:
                     - timescaledb
-                postgresUID: 70 # see below
-                postgresGID: 70 # see below
+                postgresUID: 70
+                postgresGID: 70
                 bootstrap:
                   initdb:
                     postInitTemplateSQL:
@@ -1171,8 +1178,6 @@ applications:
   - name: phoenix
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: oci://registry-1.docker.io/arizephoenix/phoenix-helm
       targetRevision: 4.0.36
@@ -1228,8 +1233,6 @@ applications:
   - name: librechat
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: HEAD
