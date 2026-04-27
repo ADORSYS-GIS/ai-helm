@@ -293,6 +293,38 @@ applications:
         prune: true
         selfHeal: true
 
+  - name: metrics-server
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://kubernetes-sigs.github.io/metrics-server/
+      targetRevision: 3.13.0
+      chart: metrics-server
+      helm:
+        releaseName: metrics-server
+        valuesObject:
+          args:
+            - --kubelet-insecure-tls
+            - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+            - --kubelet-use-node-status-port
+            - --metric-resolution=15s
+          replicas: 2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+    destination:
+      namespace: kube-system
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   - name: secrets
     finalizers:
       - resources-finalizer.argocd.argoproj.io
@@ -1239,7 +1271,7 @@ applications:
                 initContainers:
                   exporter:
                     env:
-                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017,librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
+                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017 # ,librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
     destination:
       namespace: converse-chat
     syncPolicy:
@@ -1320,7 +1352,7 @@ applications:
       argocd.argoproj.io/sync-wave: "2"
     sources:
       - repoURL: oci://ghcr.io/coder/chart/coder
-        targetRevision: 2.29.5
+        targetRevision: 2.31.9
         chart: coder
         helm:
           releaseName: coder
@@ -1337,7 +1369,7 @@ applications:
                 - name: CODER_ACCESS_URL
                   value: "https://coder.ai.camer.digital"
                 - name: CODER_WILDCARD_ACCESS_URL
-                  value: "*.serverless.coder.ai.camer.digital"
+                  value: "*.coder-ai.camer.digital"
                 - name: CODER_OIDC_ISSUER_URL
                   value: "https://accounts.camer.digital/realms/camer-digital"
                 - name: CODER_OIDC_CLIENT_ID
@@ -1408,34 +1440,16 @@ applications:
                 annotations:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
                 host: "coder.ai.camer.digital"
+                wildcardHost: "*.coder-ai.camer.digital"
                 tls:
                   enable: true
                   secretName: coder.ai.camer.digital-tls
+                  wildcardSecretName: coder.ai.camer.digital-tls
     destination:
       namespace: coder
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
-
-  # --- Proxy ---
-  - name: models-proxy
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/models-proxy
-      helm:
-        releaseName: models-proxy
-        valuesObject: { }
-    destination:
-      namespace: converse-proxy
-    syncPolicy:
-      syncOptions:
         - ServerSideApply=true
       automated:
         prune: true

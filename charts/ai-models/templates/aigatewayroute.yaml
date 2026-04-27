@@ -1,9 +1,9 @@
 {{- range $routeName, $routeConfig := .Values.models }}
-{{- if (default true $routeConfig.enabled) }}
+{{- if not (eq $routeConfig.enabled false) }}
 {{/* Filter and Validate Backends */}}
 {{- $activeBackends := dict -}}
 {{- range $bKey, $bVal := $routeConfig.backends }}
-  {{- if (default true $bVal.enabled) }}
+  {{- if not (eq $bVal.enabled false) }}
     {{- $_ := set $activeBackends $bKey $bVal -}}
   {{- end }}
 {{- end }}
