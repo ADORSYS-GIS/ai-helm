@@ -1,0 +1,25 @@
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: converse-mcp-defaults
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 50m, memory: 64Mi }
+      default:        { cpu: 300m, memory: 512Mi }
+      max:            { cpu: "2", memory: 2Gi }
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: converse-mcp-quota
+  namespace: {{ include "common.names.namespace" $ }}
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "3"
+    limits.memory: 3Gi
+    count/pods: "20"
