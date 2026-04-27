@@ -1,0 +1,67 @@
+{{- if .Values.serviceAccount.create }}
+---
+# ServiceAccount for bootstrap ClusterSecretStore
+# Allows ESO to read secrets from any namespace for bootstrap purposes
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: external-secrets
+    app.kubernetes.io/component: bootstrap
+    app.kubernetes.io/managed-by: helm
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.serviceAccount.syncWave | quote }}
+{{- end }}
+
+{{- if .Values.rbac.create }}
+---
+# ClusterRole for bootstrap ClusterSecretStore
+# Allows ESO to read secrets from any namespace for bootstrap purposes
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.rbac.clusterRole.name }}
+  labels:
+    app.kubernetes.io/name: external-secrets
+    app.kubernetes.io/component: bootstrap
+    app.kubernetes.io/managed-by: helm
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.serviceAccount.syncWave | quote }}
+rules:
+  - apiGroups: [""]
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [""]
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+---
+# ClusterRoleBinding for bootstrap ClusterSecretStore
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.rbac.clusterRoleBinding.name }}
+  labels:
+    app.kubernetes.io/name: external-secrets
+    app.kubernetes.io/component: bootstrap
+    app.kubernetes.io/managed-by: helm
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.rbac.clusterRoleBinding.syncWave | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Values.rbac.clusterRole.name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Values.namespace.name }}
+{{- end }}
