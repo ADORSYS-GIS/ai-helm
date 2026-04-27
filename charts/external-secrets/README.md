@@ -39,8 +39,10 @@ kubectl create namespace external-secrets-system
 | `serviceAccount.syncWave` | ArgoCD sync wave | `"0"` |
 | `rbac.create` | Create RBAC resources | `true` |
 | `rbac.clusterRole.name` | ClusterRole name | `external-secrets-bootstrap-reader` |
+| `rbac.clusterRole.syncWave` | ArgoCD sync wave | `"0"` |
 | `rbac.clusterRoleBinding.name` | ClusterRoleBinding name | `external-secrets-bootstrap-reader` |
 | `rbac.clusterRoleBinding.syncWave` | ArgoCD sync wave | `"1"` |
+| `externalSecretsConfig.syncWave` | ArgoCD sync wave for ExternalSecrets | `"2"` |
 | `externalSecrets` | ExternalSecret definitions | `{}` |
 
 ### Adding ExternalSecrets
