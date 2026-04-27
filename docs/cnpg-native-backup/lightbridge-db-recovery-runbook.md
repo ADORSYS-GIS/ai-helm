@@ -34,7 +34,7 @@ The recovery follows a **create → validate → switch** pattern:
 ## 🔧 Prerequisites
 
 - ArgoCD managing the `ai-helm` repo
-- Backup available in MinIO: `s3://ai-ops-backups/lightbridge-cnpg-backups/`
+- Backup available in MinIO: `s3://ai-ops-backups/lightbridge-main-db/` (main), `s3://ai-ops-backups/lightbridge-usage-db/` (usage)
 - Secrets `lightbridge-cnpg-s3` exists in `converse` namespace
 - barman-cloud plugin installed in `cnpg-system`
 
@@ -341,8 +341,8 @@ If something goes wrong after switching:
 
 | Cluster | Backup Location | Server Name |
 |---------|-----------------|-------------|
-| lightbridge-main-db | s3://ai-ops-backups/lightbridge-cnpg-backups/ | lightbridge-main-db |
-| lightbridge-usage-db | s3://ai-ops-backups/lightbridge-cnpg-backups/ | lightbridge-usage-db |
+| lightbridge-main-db | s3://ai-ops-backups/lightbridge-main-db/ | lightbridge-main-db |
+| lightbridge-usage-db | s3://ai-ops-backups/lightbridge-usage-db/ | lightbridge-usage-db |
 
 **MinIO Endpoint:** https://s3.ssegning.me
 

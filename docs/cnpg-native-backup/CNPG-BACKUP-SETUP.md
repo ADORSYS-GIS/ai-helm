@@ -40,7 +40,7 @@ The solution uses:
 | CNPG operator | ✅ | v0.27.1 in `cnpg-system` |
 | barman-cloud plugin | ✅ | v0.5.0 in `cnpg-system` |
 | ObjectStore CRD | ✅ | `objectstores.barmancloud.cnpg.io` |
-| MinIO/S3 | ✅ | `s3://ai-ops-backups/lightbridge-cnpg-backups/` |
+| MinIO/S3 | ✅ | `s3://ai-ops-backups/lightbridge-main-db/` (main), `s3://ai-ops-backups/lightbridge-usage-db/` (usage) |
 
 ### Phase 2: Create S3 Credentials Secret
 
@@ -73,15 +73,15 @@ metadata:
   namespace: converse
 spec:
   configuration:
-    destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
+    destinationPath: s3://ai-ops-backups/lightbridge-main-db/
     endpointURL: https://s3.ssegning.me
     s3Credentials:
       accessKeyId:
         name: lightbridge-cnpg-s3
-        key: ACCESS_KEY_ID
+        key: s3_access_key_id
       secretAccessKey:
         name: lightbridge-cnpg-s3
-        key: ACCESS_SECRET_KEY
+        key: s3_secret_access_key
     wal:
       compression: gzip
 ```
@@ -95,15 +95,15 @@ metadata:
   namespace: converse
 spec:
   configuration:
-    destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
+    destinationPath: s3://ai-ops-backups/lightbridge-usage-db/
     endpointURL: https://s3.ssegning.me
     s3Credentials:
       accessKeyId:
         name: lightbridge-cnpg-s3
-        key: ACCESS_KEY_ID
+        key: s3_access_key_id
       secretAccessKey:
         name: lightbridge-cnpg-s3
-        key: ACCESS_SECRET_KEY
+        key: s3_secret_access_key
     wal:
       compression: gzip
 ```
@@ -214,7 +214,7 @@ kubectl get cluster lightbridge-usage-db -n converse -o jsonpath='{.status.condi
 # Expected: True
 
 # Check backup in MinIO
-kubectl exec -n minio deploy/minio -- mc ls local/ai-ops-backups/lightbridge-cnpg-backups/lightbridge-main-db/base/
+kubectl exec -n minio deploy/minio -- mc ls local/ai-ops-backups/lightbridge-main-db/base/
 ```
 
 ---
@@ -249,8 +249,8 @@ If issues occur:
 |-------|---------|----------|
 | WAL Archiving | `kubectl get cluster -n converse <cluster> -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}'` | `True` |
 | Plugin Status | `kubectl get cluster -n converse <cluster> -o jsonpath='{.status.pluginStatus[*].name}'` | `barman-cloud.cloudnative-pg.io` |
-| Backup Created | `kubectl exec -n minio deploy/minio -- mc ls local/ai-ops-backups/lightbridge-cnpg-backups/<cluster>/base/` | Backup files exist |
-| WAL Streaming | `kubectl exec -n minio deploy/minio -- mc ls local/ai-ops-backups/lightbridge-cnpg-backups/<cluster>/wals/` | WAL files exist |
+| Backup Created | `kubectl exec -n minio deploy/minio -- mc ls local/ai-ops-backups/<cluster>/base/` | Backup files exist |
+| WAL Streaming | `kubectl exec -n minio deploy/minio -- mc ls local/ai-ops-backups/<cluster>/wals/` | WAL files exist |
 
 ---
 
