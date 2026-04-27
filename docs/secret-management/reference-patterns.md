@@ -33,6 +33,51 @@ spec:
         property: apiKey  # Property within the secret
 ```
 
+### ExternalSecret Flow Diagram
+
+```mermaid
+flowchart LR
+    subgraph External["External Secret Store"]
+        SecretStore["AWS Secrets Manager<br/>Azure Key Vault<br/>HashiCorp Vault"]
+    end
+
+    subgraph K8s["Kubernetes Cluster"]
+        ESO["External Secrets<br/>Operator"]
+        CSS["ClusterSecretStore"]
+        ES["ExternalSecret<br/>(CRD)"]
+        K8sSecret["Kubernetes<br/>Secret"]
+        App["Application<br/>Pod"]
+    end
+
+    SecretStore -->|Read| ESO
+    ESO -->|Watches| ES
+    ES -->|References| CSS
+    CSS -->|Authenticates| SecretStore
+    ESO -->|Creates/Updates| K8sSecret
+    K8sSecret -->|Mounts| App
+```
+
+### Pattern Catalog Overview
+
+```mermaid
+mindmap
+  root((ExternalSecret<br/>Patterns))
+    Simple Values
+      Pattern 1: API Key
+      Single secret value
+    Multi-Field Secrets
+      Pattern 2: Database
+      Pattern 3: TLS Certs
+      Pattern 4: Config File
+    Advanced Patterns
+      Pattern 5: Multi-Source
+      Pattern 6: Docker Registry
+      Pattern 7: SSH Keys
+      Pattern 8: OAuth
+    Service Auth
+      Pattern 9: Service-to-Service
+      Pattern 10: Env File
+
 ## Pattern Catalog
 
 ### Pattern 1: Simple API Key

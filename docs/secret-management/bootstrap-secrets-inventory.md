@@ -11,6 +11,61 @@ Bootstrap secrets serve as the foundation for the platform's secret management:
 3. **Source**: Manual creation or migration from previous deployments
 4. **Security**: Stored in Kubernetes secrets, referenced by ExternalSecret resources
 
+## Bootstrap Secret Lifecycle
+
+```mermaid
+flowchart TD
+    subgraph Init["Platform Initialization"]
+        A[Manual Creation] --> B[Bootstrap Secrets<br/>in external-secrets-system]
+    end
+
+    subgraph ESO["External Secrets Operator"]
+        B --> C[ClusterSecretStore<br/>References Bootstrap Secrets]
+        C --> D[ExternalSecret CRDs<br/>in Application Namespaces]
+    end
+
+    subgraph Apps["Application Namespaces"]
+        D --> E[Kubernetes Secrets<br/>Created/Updated by ESO]
+        E --> F[Application Pods<br/>Mount Secrets]
+    end
+
+    subgraph Migration["Optional Migration"]
+        G[External Secret Store<br/>e.g., AWS Secrets Manager]
+        B -.->|Migrate| G
+        G --> H[Updated ClusterSecretStore<br/>References External Store]
+        H --> D
+    end
+```
+
+## Secret Categories Overview
+
+```mermaid
+mindmap
+  root((Bootstrap Secrets))
+    GitOps Infrastructure
+      argocd-gitops-repo
+      argocd-webhook-secret
+    Platform Authentication
+      lightbridge-opa-auth
+      authz-tls
+    AI Model API Keys
+      OpenAI API Keys
+      Gemini API Keys
+      Fireworks API Keys
+      DeepInfra API Keys
+      GCP Service Accounts
+    API Keys & Tokens
+      Converse API Keys
+      Proxy API Keys
+      MCP Tool Tokens
+    Database Credentials
+      PostgreSQL Credentials
+      MongoDB Credentials
+      Coder DB Credentials
+    Backup Credentials
+      S3 Backup Credentials
+      Keycloak Backup
+
 ## Bootstrap Secret Categories
 
 ### Category 1: GitOps Infrastructure

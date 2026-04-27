@@ -77,23 +77,43 @@ kubectl create secret generic my-api-key \
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    subgraph ESO["External Secrets Operator"]
+        direction TB
+        ESOOperator["External Secrets Operator<br/>(Installed via ArgoCD from official upstream Helm chart)"]
+    end
+
+    subgraph ThisChart["This Helm Chart"]
+        direction TB
+        CSS["ClusterSecretStore<br/>(Provides access to bootstrap secrets)"]
+        ES["ExternalSecret CRDs<br/>(Synchronizes secrets to app namespaces)"]
+    end
+
+    ESOOperator -->|Watches| CSS
+    CSS -->|References| ES
+    ESOOperator -->|Creates/Updates| ES
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    External Secrets Operator                     │
-│  (Installed via ArgoCD from official upstream Helm chart)       │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    ClusterSecretStore                            │
-│  (This chart - provides access to bootstrap secrets)            │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    ExternalSecret CRDs                           │
-│  (This chart - synchronizes secrets to app namespaces)          │
-└─────────────────────────────────────────────────────────────────┘
+
+### Deployment Order (ArgoCD Sync Waves)
+
+```mermaid
+flowchart LR
+    subgraph Wave0["Sync Wave 0"]
+        SA["ServiceAccount"]
+        CR["ClusterRole"]
+    end
+
+    subgraph Wave1["Sync Wave 1"]
+        CRB["ClusterRoleBinding"]
+        CSS["ClusterSecretStore"]
+    end
+
+    subgraph Wave2["Sync Wave 2"]
+        ES["ExternalSecrets"]
+    end
+
+    Wave0 --> Wave1 --> Wave2
 ```
 
 ## Related Documentation
