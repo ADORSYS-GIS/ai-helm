@@ -1,0 +1,55 @@
+# Restore cluster for lightbridge-usage-db
+# Usage: Add this file to Git during recovery, remove after cleanup
+#
+# IMPORTANT: Two-phase deployment due to CNPG webhook restriction
+# Phase 1: Deploy WITHOUT plugins (recovery only)
+# Phase 2: After recovery is complete, uncomment plugins section to enable WAL archiving
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lightbridge-usage-db-restore
+  namespace: converse
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    description: "Restored from backup - switch traffic via lightbridge-usage-db-primary service"
+spec:
+  instances: 2
+  imageCatalogRef:
+    apiGroup: postgresql.cnpg.io
+    kind: ClusterImageCatalog
+    name: lightbridge-usage-db
+    major: 17
+  storage:
+    storageClass: linode-block-storage
+    size: 10Gi
+  resources:
+    limits:
+      cpu: 300m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 500Mi
+  postgresql:
+    shared_preload_libraries:
+      - timescaledb
+  postgresUID: 70
+  postgresGID: 70
+  # Phase 1: NO plugins - recovery only (webhook blocks plugins + barmanObjectStore conflict)
+  # Phase 2 (after recovery): Uncomment below to enable WAL archiving
+  # plugins:
+  #   - name: barman-cloud.cloudnative-pg.io
+  #     isWALArchiver: true
+  #     parameters:
+  #       barmanObjectName: lightbridge-barman-store
+  #       serverName: lightbridge-usage-db-restore
+  bootstrap:
+    recovery:
+      source: lightbridge-usage-db-backup
+  externalClusters:
+    - name: lightbridge-usage-db-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: lightbridge-barman-store
+          serverName: lightbridge-usage-db
