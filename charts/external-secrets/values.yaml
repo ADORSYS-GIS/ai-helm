@@ -26,6 +26,8 @@ rbac:
   create: true
   clusterRole:
     name: external-secrets-bootstrap-reader
+    # Sync wave for ArgoCD
+    syncWave: "0"
   clusterRoleBinding:
     name: external-secrets-bootstrap-reader
     # Sync wave for ArgoCD
@@ -40,11 +42,11 @@ externalSecrets:
     secretName: openai-api-key
     refreshInterval: 1h
     data:
-      - secretKey: api-key
+      - secretKey: apiKey
         remoteRef:
           key: openai-api-key
           namespace: external-secrets-system
-          property: api-key
+          property: apiKey
 
   # Gemini API key for models-proxy
   gemini-api-key:
@@ -52,11 +54,11 @@ externalSecrets:
     secretName: gemini-api-key
     refreshInterval: 1h
     data:
-      - secretKey: api-key
+      - secretKey: apiKey
         remoteRef:
           key: gemini-api-key
           namespace: external-secrets-system
-          property: api-key
+          property: apiKey
 
   # Fireworks API key for models-proxy
   fireworks-api-key:
@@ -64,11 +66,11 @@ externalSecrets:
     secretName: fireworks-api-key
     refreshInterval: 1h
     data:
-      - secretKey: api-key
+      - secretKey: apiKey
         remoteRef:
           key: fireworks-api-key
           namespace: external-secrets-system
-          property: api-key
+          property: apiKey
 
   # OpenAI API key (converse namespace)
   openai-api-key-01:
@@ -94,17 +96,17 @@ externalSecrets:
           namespace: external-secrets-system
           property: apiKey
 
-  # DeepInfra API key
+  # DeepInfra API key (converse namespace)
   deepinfra-api-key:
     namespace: converse
     secretName: deepinfra-api-key-only
     refreshInterval: 1h
     data:
-      - secretKey: key
+      - secretKey: apiKey
         remoteRef:
           key: deepinfra-api-key-only
           namespace: external-secrets-system
-          property: key
+          property: apiKey
 
   # GCP Service Account Key 01
   gcp-service-account-01:
@@ -112,11 +114,11 @@ externalSecrets:
     secretName: gcp-service-account-key-01
     refreshInterval: 24h
     data:
-      - secretKey: key
+      - secretKey: service_account.json
         remoteRef:
           key: gcp-service-account-key-01
           namespace: external-secrets-system
-          property: key
+          property: service_account.json
 
   # GCP Service Account Key 02
   gcp-service-account-02:
@@ -124,11 +126,11 @@ externalSecrets:
     secretName: gcp-service-account-key-02
     refreshInterval: 24h
     data:
-      - secretKey: key
+      - secretKey: service_account.json
         remoteRef:
           key: gcp-service-account-key-02
           namespace: external-secrets-system
-          property: key
+          property: service_account.json
 
   # Google AI Studio API Key 01
   google-ai-studio-api-key-01:
@@ -208,11 +210,11 @@ externalSecrets:
     secretName: converse-api-key
     refreshInterval: 1h
     data:
-      - secretKey: key
+      - secretKey: api_key
         remoteRef:
           key: converse-api-key
           namespace: external-secrets-system
-          property: key
+          property: api_key
 
   # Converse API Key Dev
   converse-api-key-dev:
@@ -220,11 +222,11 @@ externalSecrets:
     secretName: converse-api-key-dev
     refreshInterval: 1h
     data:
-      - secretKey: key
+      - secretKey: api_key
         remoteRef:
           key: converse-api-key-dev
           namespace: external-secrets-system
-          property: key
+          property: api_key
 
   # Lightbridge OPA Auth
   lightbridge-opa-auth:
