@@ -986,16 +986,6 @@ applications:
                   cnpg.io/instanceRole: primary
             - |
               apiVersion: postgresql.cnpg.io/v1
-              kind: ClusterImageCatalog
-              metadata:
-                name: lightbridge-main-db
-                namespace: {{ $.Release.Namespace }}
-              spec:
-                images:
-                  - major: 18
-                    image: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
-            - |
-              apiVersion: postgresql.cnpg.io/v1
               kind: Cluster
               metadata:
                 name: lightbridge-main-db
@@ -1004,11 +994,7 @@ applications:
                   argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
-                imageCatalogRef:
-                  apiGroup: postgresql.cnpg.io
-                  kind: ClusterImageCatalog
-                  name: lightbridge-main-db
-                  major: 18
+                imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
                 storage:
                   storageClass: linode-block-storage
                   size: "5Gi"
