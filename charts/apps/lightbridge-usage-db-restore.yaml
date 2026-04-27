@@ -1,0 +1,46 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lightbridge-usage-db-restore
+  namespace: converse
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    description: "Restored from backup - switch traffic via lightbridge-usage-db-primary service"
+spec:
+  instances: 2
+  imageCatalogRef:
+    apiGroup: postgresql.cnpg.io
+    kind: ClusterImageCatalog
+    name: lightbridge-usage-db
+    major: 17
+  storage:
+    storageClass: linode-block-storage
+    size: 10Gi
+  resources:
+    limits:
+      cpu: 300m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 500Mi
+  postgresql:
+    shared_preload_libraries:
+      - timescaledb
+  postgresUID: 70
+  postgresGID: 70
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lightbridge-usage-db
+        serverName: lightbridge-usage-db-restore
+  bootstrap:
+    recovery:
+      source: lightbridge-usage-db-backup
+  externalClusters:
+    - name: lightbridge-usage-db-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: lightbridge-usage-db
+          serverName: lightbridge-usage-db

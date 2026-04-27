@@ -8,28 +8,16 @@ This runbook documents the recovery strategy for two CNPG clusters:
 - `lightbridge-main-db` - Main PostgreSQL database
 - `lightbridge-usage-db` - TimescaleDB for usage tracking
 
-## ⚠️ Important: CNPG Webhook Restriction
+## ⚠️ Important: CNPG Webhook Restriction (DEPRECATED)
 
-**READ THIS BEFORE STARTING RECOVERY**
+**This section is kept for historical reference only.**
 
-CloudNativePG has an admission webhook that prevents enabling WAL archiver plugins when `barmanObjectStore` is configured in `externalClusters`. This causes the error:
+The old two-phase workaround is no longer needed. The ObjectStore CRD approach allows:
+- ✅ WAL archiving enabled from start (no conflict)
+- ✅ Restore from existing backup
+- ✅ No two-phase deployment required
 
-```
-spec.plugins: Invalid value: ["barman-cloud.cloudnative-pg.io"]: 
-Cannot enable a WAL archiver plugin when barmanObjectStore is configured
-```
-
-**Solution: Two-Phase Deployment**
-
-| Phase | Action | Plugins |
-|-------|--------|---------|
-| Phase 1 | Deploy restore cluster, recover from backup | **DISABLED** |
-| Phase 2 | After recovery complete, enable WAL archiving | **ENABLED** |
-
-This means:
-1. Restore cluster deploys WITHOUT plugins → recovery succeeds
-2. After validation, you uncomment plugins → WAL archiving enables
-3. Then you can switch traffic
+For new deployments, see: `CNPG-BACKUP-SETUP.md`
 
 ## 🎯 Recovery Strategy
 
@@ -39,26 +27,16 @@ The recovery follows a **create → validate → switch** pattern:
 1. Create alias services (pointing to current healthy cluster)
 2. Create restore clusters from backup (different names)
 3. Validate data integrity
-4. Enable WAL archiving (Phase 2 - due to CNPG webhook restriction)
-5. Switch traffic via alias service selector
-6. Cleanup old cluster
+4. Switch traffic via alias service selector
+5. Cleanup old cluster
 ```
-
-⚠️ **Important: CNPG Webhook Restriction**
-
-Due to a CNPG admission webhook that blocks enabling WAL archiver plugins when `barmanObjectStore` is configured in externalClusters, recovery requires **two-phase deployment**:
-
-- **Phase 1**: Deploy restore cluster WITHOUT plugins (allows recovery)
-- **Phase 2**: After recovery is complete, enable WAL archiving by uncommenting plugins
-
-This is documented in the Phase 2 and Phase 4 sections below.
 
 ## 🔧 Prerequisites
 
 - ArgoCD managing the `ai-helm` repo
-- Backup available in MinIO: `s3://ai-ops-backups/lightbridge-cnpg-backups/`
+- Backup available in MinIO: `s3://ai-ops-backups/lightbridge-main-db/` (main), `s3://ai-ops-backups/lightbridge-usage-db/` (usage)
 - Secrets `lightbridge-cnpg-s3` exists in `converse` namespace
-- Barman-cloud plugin installed in `cnpg-system`
+- barman-cloud plugin installed in `cnpg-system`
 
 ---
 
@@ -100,14 +78,7 @@ When a cluster fails, create new clusters restored from backup.
 
 ### Step 1: Create Restore Manifest
 
-⚠️ **IMPORTANT: CNPG Webhook Restriction**
-
-Due to a CNPG webhook that blocks enabling WAL archiver plugins when barmanObjectStore is configured, you must use **two-phase deployment**:
-
-- **Phase 1**: Deploy WITHOUT plugins (recovery only)
-- **Phase 2**: After recovery is complete, enable WAL archiving
-
-The restore manifests in this repo have plugins commented out by default.
+> **Note**: The ObjectStore CRD approach allows restore with plugins enabled. No two-phase deployment needed.
 
 Create `lightbridge-main-db-restore.yaml`:
 
@@ -134,14 +105,13 @@ spec:
       memory: 500Mi
   postgresUID: 26
   postgresGID: 26
-  # Phase 1: NO plugins - recovery only (webhook blocks plugins + barmanObjectStore conflict)
-  # Phase 2 (after recovery): Uncomment below to enable WAL archiving
-  # plugins:
-  #   - name: barman-cloud.cloudnative-pg.io
-  #     isWALArchiver: true
-  #     parameters:
-  #       barmanObjectName: lightbridge-barman-store
-  #       serverName: lightbridge-main-db-restore
+  # Plugins can be enabled - the ObjectStore approach doesn't conflict
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lightbridge-main-db
+        serverName: lightbridge-main-db-restore
   bootstrap:
     recovery:
       source: lightbridge-main-db-backup
@@ -150,7 +120,7 @@ spec:
       plugin:
         name: barman-cloud.cloudnative-pg.io
         parameters:
-          barmanObjectName: lightbridge-barman-store
+          barmanObjectName: lightbridge-main-db
           serverName: lightbridge-main-db
 ```
 
@@ -186,14 +156,13 @@ spec:
       - timescaledb
   postgresUID: 70
   postgresGID: 70
-  # Phase 1: NO plugins - recovery only (webhook blocks plugins + barmanObjectStore conflict)
-  # Phase 2 (after recovery): Uncomment below to enable WAL archiving
-  # plugins:
-  #   - name: barman-cloud.cloudnative-pg.io
-  #     isWALArchiver: true
-  #     parameters:
-  #       barmanObjectName: lightbridge-barman-store
-  #       serverName: lightbridge-usage-db-restore
+  # Plugins can be enabled - the ObjectStore approach doesn't conflict
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lightbridge-usage-db
+        serverName: lightbridge-usage-db-restore
   bootstrap:
     recovery:
       source: lightbridge-usage-db-backup
@@ -202,7 +171,7 @@ spec:
       plugin:
         name: barman-cloud.cloudnative-pg.io
         parameters:
-          barmanObjectName: lightbridge-barman-store
+          barmanObjectName: lightbridge-usage-db
           serverName: lightbridge-usage-db
 ```
 
@@ -268,53 +237,7 @@ kubectl exec -it lightbridge-usage-db-restore-1 -n converse -- psql -U postgres 
 
 ---
 
-## Phase 4: Enable WAL Archiving (Phase 2)
-
-⚠️ **IMPORTANT**: This step is required due to CNPG webhook restriction.
-
-The restore cluster was deployed WITHOUT plugins (Phase 1). Now that recovery is complete, you must enable WAL archiving.
-
-### Step 1: Uncomment Plugins in Restore Manifests
-
-Edit `charts/apps/lightbridge-main-db-restore.yaml`:
-
-```yaml
-# Change from:
-# plugins:
-#   - name: barman-cloud.cloudnative-pg.io
-
-# To:
-plugins:
-  - name: barman-cloud.cloudnative-pg.io
-    isWALArchiver: true
-    parameters:
-      barmanObjectName: lightbridge-barman-store
-      serverName: lightbridge-main-db-restore
-```
-
-Edit `charts/apps/lightbridge-usage-db-restore.yaml` similarly.
-
-### Step 2: Commit and Push
-
-```bash
-git add charts/apps/lightbridge-main-db-restore.yaml charts/apps/lightbridge-usage-db-restore.yaml
-git commit -m "fix(db-recovery): enable WAL archiving on restored clusters"
-git push
-```
-
-### Step 3: Verify WAL Archiving Enabled
-
-```bash
-kubectl get clusters.postgresql.cnpg.io -n converse lightbridge-main-db-restore -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}'
-# Should return: True
-
-kubectl get clusters.postgresql.cnpg.io -n converse lightbridge-usage-db-restore -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}'
-# Should return: True
-```
-
----
-
-## Phase 5: Switch Traffic
+## Phase 4: Switch Traffic
 
 ### Option A: Update Alias Service Selector (Recommended)
 
@@ -418,8 +341,8 @@ If something goes wrong after switching:
 
 | Cluster | Backup Location | Server Name |
 |---------|-----------------|-------------|
-| lightbridge-main-db | s3://ai-ops-backups/lightbridge-cnpg-backups/ | lightbridge-main-db |
-| lightbridge-usage-db | s3://ai-ops-backups/lightbridge-cnpg-backups/ | lightbridge-usage-db |
+| lightbridge-main-db | s3://ai-ops-backups/lightbridge-main-db/ | lightbridge-main-db |
+| lightbridge-usage-db | s3://ai-ops-backups/lightbridge-usage-db/ | lightbridge-usage-db |
 
 **MinIO Endpoint:** https://s3.ssegning.me
 
