@@ -4,7 +4,7 @@ app-template:
   dbSecret: "keycloak-db"
   s3Secret: "keycloak-s3"
   # Backup Configuration
-  backupRealm: "master"
+  backupRealm: "camer-digital"
 
   controllers:
     main:
@@ -36,7 +36,7 @@ app-template:
                   name: "{{ .Values.adminSecret }}"
                   key: password
             # Realm to backup (defaults to all if empty)
-            #BACKUP_REALM_NAME: "{{ .Values.backupRealm }}"
+            BACKUP_REALM_NAME: "{{ .Values.backupRealm }}"
             # Database Configuration (Required for export to work with external DB)
             KC_DB:
               value: postgres
@@ -124,7 +124,7 @@ app-template:
             # Optional: S3 Prefix
             S3_PREFIX: "keycloak-backups"
             # Backup realm naming (used to construct filename)
-            #BACKUP_REALM_NAME: "{{ .Values.backupRealm }}"
+            BACKUP_REALM_NAME: "{{ .Values.backupRealm }}"
 
           # Load optional secrets EnvVars blindly if they exist in secret
           envFrom:
