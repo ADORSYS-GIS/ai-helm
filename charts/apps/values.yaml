@@ -958,6 +958,7 @@ applications:
                   argocd.argoproj.io/sync-wave: "1"
                   argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
               spec:
+                retentionPolicy: "6m"
                 configuration:
                   destinationPath: s3://ai-ops-backups/lightbridge-main-db/
                   endpointURL: https://s3.ssegning.me
@@ -981,6 +982,7 @@ applications:
                   argocd.argoproj.io/sync-wave: "1"
                   argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
               spec:
+                retentionPolicy: "6m"
                 configuration:
                   destinationPath: s3://ai-ops-backups/lightbridge-usage-db/
                   endpointURL: https://s3.ssegning.me
@@ -1059,6 +1061,9 @@ applications:
                     parameters:
                       barmanObjectName: lightbridge-main-db
                       serverName: lightbridge-main-db
+                postgresql:
+                  parameters:
+                    archive_timeout: "30min"
                 resources:
                   limits:
                     cpu: 300m
@@ -1101,6 +1106,11 @@ applications:
                     parameters:
                       barmanObjectName: lightbridge-usage-db
                       serverName: lightbridge-usage-db
+                postgresql:
+                  parameters:
+                    archive_timeout: "30min"
+                  shared_preload_libraries:
+                    - timescaledb
                 resources:
                   limits:
                     cpu: 300m
@@ -1108,9 +1118,6 @@ applications:
                   requests:
                     cpu: 200m
                     memory: 500Mi
-                postgresql:
-                  shared_preload_libraries:
-                    - timescaledb
                 postgresUID: 70
                 postgresGID: 70
                 bootstrap:
