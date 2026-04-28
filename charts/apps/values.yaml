@@ -10,9 +10,11 @@ applications:
       helm:
         releaseName: traefik
         valuesObject:
+          deployment:
+            replicas: 2
           podDisruptionBudget:
             enabled: true
-            maxUnavailable: 0
+            maxUnavailable: 1
           additionalArguments:
             - "--entryPoints.web.http.redirections.entryPoint.to=:443"
             - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
@@ -153,8 +155,8 @@ applications:
           global:
             pdb:
               create: true
-              minAvailable: 1
-              maxUnavailable: ""
+              minAvailable: ""
+              maxUnavailable: "1"
             defaultStorageClass: linode-block-storage
           auth:
             enabled: false
@@ -204,10 +206,12 @@ applications:
         valuesObject:
           podDisruptionBudget:
             minAvailable: 1
+          deployment:
+            replicas: 2
           hpa:
             enabled: true
-            minReplicas: 1
-            maxReplicas: 2
+            minReplicas: 2
+            maxReplicas: 3
           config:
             envoyGateway:
               gateway:
@@ -226,8 +230,9 @@ applications:
                 type: Kubernetes
                 kubernetes:
                   rateLimitPDB:
-                    maxUnavailable: 0
+                    maxUnavailable: 1
                   rateLimitDeployment:
+                    replicas: 2
                     patch:
                       type: StrategicMerge
                       value:
@@ -578,7 +583,7 @@ applications:
                       service_name: "lightbridge-authz-api"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -664,7 +669,7 @@ applications:
                       service_name: "lightbridge-authz-api"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -741,7 +746,7 @@ applications:
                       service_name: "lightbridge-authz-opa"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -800,7 +805,7 @@ applications:
 
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -858,7 +863,7 @@ applications:
                 name: lightbridge-api-pdb
                 namespace: {{ $.Release.Namespace }}
               spec:
-                maxUnavailable: 0
+                maxUnavailable: 1
                 selector:
                   matchLabels:
                     app.kubernetes.io/instance: lightbridge
@@ -870,11 +875,35 @@ applications:
                 name: lightbridge-opa-pdb
                 namespace: {{ $.Release.Namespace }}
               spec:
-                maxUnavailable: 0
+                maxUnavailable: 1
                 selector:
                   matchLabels:
                     app.kubernetes.io/instance: lightbridge
                     app.kubernetes.io/name: opa
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-mcp-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: mcp
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-usage-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: usage
             - |
               apiVersion: networking.k8s.io/v1
               kind: Ingress
@@ -1317,7 +1346,7 @@ applications:
                 initContainers:
                   exporter:
                     env:
-                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017 # ,librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
+                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017,librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
     destination:
       namespace: converse-chat
     syncPolicy:

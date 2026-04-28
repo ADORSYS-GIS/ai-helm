@@ -4,7 +4,7 @@ global:
   rag_librechat:
     version: "v0.7.2"
   mongo:
-    replicaCount: 1
+    replicaCount: 2
     replicaSetName: rs0
   configmap:
     name: "librechat-config"
@@ -83,7 +83,7 @@ librechat:
     librechat:
       type: deployment
       strategy: RollingUpdate
-      replicas: 1
+      replicas: 2
       podDisruptionBudget:
         minAvailable: 1
       pod:
@@ -946,7 +946,7 @@ db:
   persistence:
     size: 30Gi
     storageClass: ~
-  architecture: standalone
+  architecture: replicaset
   replicaSet:
     name: rs0
     members: 1
