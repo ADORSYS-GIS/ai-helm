@@ -13,6 +13,48 @@ clusterSecretStore:
   name: bootstrap-secrets
   # Sync wave for ArgoCD
   syncWave: "1"
+  
+  # Provider type: "kubernetes" or "vault"
+  # - kubernetes: Uses in-cluster Kubernetes secrets as the source
+  # - vault: Uses HashiCorp Vault as the external secret store
+  provider:
+    type: kubernetes
+    
+    # Kubernetes provider configuration (default)
+    # Uses in-cluster secrets from a specific namespace
+    kubernetes:
+      # Kubernetes API server URL
+      url: https://kubernetes.default.svc.cluster.local
+      # CA certificate provider for TLS
+      # Note: namespace is required for ClusterSecretStore (cluster-scoped)
+      caProvider:
+        type: ConfigMap
+        name: kube-root-ca.crt
+        key: ca.crt
+        namespace: kube-system
+    
+    # Vault provider configuration (for future use)
+    # Uncomment and configure when migrating to Vault
+    # vault:
+    #   # Vault server URL
+    #   server: https://vault.vault.svc.cluster.local:8200
+    #   # Vault secrets engine path
+    #   path: secret
+    #   # Vault secrets engine version (v1 or v2)
+    #   version: v2
+    #   # Vault namespace (optional, for Vault Enterprise)
+    #   namespace: ""
+    #   # Authentication method
+    #   auth:
+    #     # Kubernetes authentication (recommended for in-cluster)
+    #     kubernetes:
+    #       mountPath: kubernetes
+    #       role: external-secrets
+    #     # OR token authentication (for external Vault)
+    #     # token:
+    #     #   secretName: vault-token
+    #     #   namespace: external-secrets-system
+    #     #   key: token
 
 # ServiceAccount for the ClusterSecretStore
 serviceAccount:
@@ -62,18 +104,6 @@ externalSecrets:
       - secretKey: apiKey
         remoteRef:
           key: gemini-api-key
-          namespace: external-secrets-system
-          property: apiKey
-
-  # Fireworks API key for models-proxy
-  fireworks-api-key:
-    namespace: converse-proxy
-    secretName: fireworks-api-key
-    refreshInterval: 1h
-    data:
-      - secretKey: apiKey
-        remoteRef:
-          key: fireworks-api-key
           namespace: external-secrets-system
           property: apiKey
 

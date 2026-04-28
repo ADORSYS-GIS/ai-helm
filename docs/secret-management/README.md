@@ -45,7 +45,7 @@ graph TD
 External Secrets Operator is installed via ArgoCD using the official upstream Helm chart:
 
 - **Chart**: `https://charts.external-secrets.io`
-- **Version**: 0.14.0
+- **Version**: 2.4.0
 - **Namespace**: `external-secrets-system`
 
 See [`charts/apps/values.yaml`](../../charts/apps/values.yaml) for the ArgoCD Application configuration.
@@ -60,7 +60,7 @@ Bootstrap secrets are manually created secrets that must exist before the platfo
 |-------------|-----------|------|---------|
 | `openai-api-key` | `external-secrets-system` | `api-key` | OpenAI API access |
 | `gemini-api-key` | `external-secrets-system` | `api-key` | Google Gemini API access |
-| `fireworks-api-key` | `external-secrets-system` | `api-key` | Fireworks AI API access |
+| `fireworks-api-key-01` | `external-secrets-system` | `api-key` | Fireworks AI API access |
 
 ### Creating Bootstrap Secrets
 
@@ -77,7 +77,7 @@ kubectl create secret generic gemini-api-key \
   --namespace=external-secrets-system \
   --from-literal=api-key=...
 
-kubectl create secret generic fireworks-api-key \
+kubectl create secret generic fireworks-api-key-01 \
   --namespace=external-secrets-system \
   --from-literal=api-key=...
 ```
