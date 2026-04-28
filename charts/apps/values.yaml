@@ -11,6 +11,7 @@ applications:
         releaseName: traefik
         valuesObject:
           deployment:
+            # High-availability: 2 replicas for redundancy; PDB ensures at least 1 remains available during maintenance.
             replicas: 2
           podDisruptionBudget:
             enabled: true
@@ -205,8 +206,10 @@ applications:
         releaseName: eg
         valuesObject:
           podDisruptionBudget:
+            # Critical Gateway infrastructure: PDB protects against concurrent evictions.
             minAvailable: 1
           deployment:
+            # High-availability: 2 replicas with HPA; minimum 2 ensures PDB compatibility.
             replicas: 2
           hpa:
             enabled: true
@@ -329,6 +332,7 @@ applications:
             - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
             - --kubelet-use-node-status-port
             - --metric-resolution=15s
+          # Monitoring infrastructure: 2 replicas to avoid gaps in metrics during node drains.
           replicas: 2
           resources:
             requests:
@@ -855,6 +859,8 @@ applications:
             persistence:
               tls:
                 name: authz-tls
+          # Lightbridge PDB Strategy: Handled via rawRessources because the upstream chart 
+          # doesn't support controller PDBs natively. Ensure at least 1 instance is always available.
           rawRessources:
             - |
               apiVersion: policy/v1
@@ -1213,7 +1219,8 @@ applications:
             controllers:
               main:
                 podDisruptionBudget:
-                  minAvailable: 1
+                  # User-facing frontend: PDB ensures uptime during automated node maintenance.
+                  maxUnavailable: 1
                 containers:
                   frontend:
                     image:
