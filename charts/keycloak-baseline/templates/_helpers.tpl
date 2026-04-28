@@ -64,6 +64,7 @@ Generate realm JSON for Keycloak import.
 */}}
 {{- define "keycloak-baseline.realm.json" -}}
 {
+  "id": "{{ .Values.realm.name }}",
   "realm": "{{ .Values.realm.name }}",
   "enabled": true,
   "displayName": "{{ .Values.realm.displayName | replace "\"" "\\\"" }}",
@@ -203,47 +204,119 @@ Generate realm JSON for Keycloak import.
       {{- end }}
       {{- end }}
       {{- end }}
-    ]
+    ],
+    "client": {
+      {{- $firstClient := true }}
+      {{- range $clientName, $roles := .Values.clientRoles }}
+      {{- if not $firstClient }},{{ end }}
+      {{- $firstClient = false }}
+      "{{ $clientName }}": [
+        {{- $firstClientRole := true }}
+        {{- range $role := $roles }}
+        {{- if not $firstClientRole }},{{ end }}
+        {
+          "name": "{{ $role.name }}",
+          "description": "{{ $role.description | default $role.name | replace "\"" "\\\"" }}"
+        }
+        {{- $firstClientRole = false }}
+        {{- end }}
+      ]
+      {{- end }}
+    }
   },
   "groups": [
     {{- $firstGroup := true }}
-    {{- if .Values.groups.topLevel }}
-    {{- range $group := .Values.groups.topLevel }}
+    {{- /* Process platformAdmins group (single object) */ -}}
+    {{- if .Values.groups.platformAdmins }}
+    {{- $group := .Values.groups.platformAdmins }}
     {{- if not $firstGroup }},{{ end }}
     {
       "name": "{{ $group.name }}",
       "path": "/{{ $group.name }}",
       "attributes": {
         "description": ["{{ $group.description | replace "\"" "\\\"" }}"]
-      },
-      "subGroups": [
-        {{- $firstSubGroup := true }}
-        {{- range $subGroup := $group.subGroups }}
-        {{- if not $firstSubGroup }},{{ end }}
-        {
-          "name": "{{ $subGroup.name }}",
-          "path": "/{{ $group.name }}/{{ $subGroup.name }}",
-          "attributes": {
-            "description": ["{{ $subGroup.description | replace "\"" "\\\"" }}"]
-          },
-          "subGroups": [
-            {{- $firstSubSubGroup := true }}
-            {{- range $subSubGroup := $subGroup.subGroups }}
-            {{- if not $firstSubSubGroup }},{{ end }}
-            {
-              "name": "{{ $subSubGroup.name }}",
-              "path": "/{{ $group.name }}/{{ $subGroup.name }}/{{ $subSubGroup.name }}",
-              "attributes": {
-                "description": ["{{ $subSubGroup.description | replace "\"" "\\\"" }}"]
-              }
-            }
-            {{- $firstSubSubGroup = false }}
-            {{- end }}
-          ]
-        }
-        {{- $firstSubGroup = false }}
+      }
+      {{- if $group.clientRoles }}
+      ,
+      "clientRoles": {
+        {{- $firstClient := true }}
+        {{- range $clientName, $roles := $group.clientRoles }}
+        {{- if not $firstClient }},{{ end }}
+        "{{ $clientName }}": [
+          {{- $firstRole := true }}
+          {{- range $role := $roles }}
+          {{- if not $firstRole }},{{ end }}
+          "{{ $role }}"
+          {{- $firstRole = false }}
+          {{- end }}
+        ]
+        {{- $firstClient = false }}
         {{- end }}
-      ]
+      }
+      {{- end }}
+    }
+    {{- $firstGroup = false }}
+    {{- end }}
+    {{- /* Process librechat groups (list) */ -}}
+    {{- if .Values.groups.librechat }}
+    {{- range $group := .Values.groups.librechat }}
+    {{- if not $firstGroup }},{{ end }}
+    {
+      "name": "{{ $group.name }}",
+      "path": "/{{ $group.name }}",
+      "attributes": {
+        "description": ["{{ $group.description | replace "\"" "\\\"" }}"]
+      }
+      {{- if $group.clientRoles }}
+      ,
+      "clientRoles": {
+        {{- $firstClient := true }}
+        {{- range $clientName, $roles := $group.clientRoles }}
+        {{- if not $firstClient }},{{ end }}
+        "{{ $clientName }}": [
+          {{- $firstRole := true }}
+          {{- range $role := $roles }}
+          {{- if not $firstRole }},{{ end }}
+          "{{ $role }}"
+          {{- $firstRole = false }}
+          {{- end }}
+        ]
+        {{- $firstClient = false }}
+        {{- end }}
+      }
+      {{- end }}
+    }
+    {{- $firstGroup = false }}
+    {{- end }}
+    {{- end }}
+    {{- /* Process phoenix groups (list) */ -}}
+    {{- if .Values.groups.phoenix }}
+    {{- range $group := .Values.groups.phoenix }}
+    {{- if not $firstGroup }},{{ end }}
+    {
+      "name": "{{ $group.name }}",
+      "path": "/{{ $group.name }}",
+      "attributes": {
+        "description": ["{{ $group.description | replace "\"" "\\\"" }}"]
+      }
+      {{- if $group.clientRoles }}
+      ,
+      "clientRoles": {
+        {{- $firstClient := true }}
+        {{- range $clientName, $roles := $group.clientRoles }}
+        {{- if not $firstClient }},{{ end }}
+        "{{ $clientName }}": [
+          {{- $firstRole := true }}
+          {{- range $role := $roles }}
+          {{- if not $firstRole }},{{ end }}
+          "{{ $role }}"
+          {{- $firstRole = false }}
+          {{- end }}
+        ]
+        {{- $firstClient = false }}
+        {{- end }}
+      }
+      {{- end }}
     }
     {{- $firstGroup = false }}
     {{- end }}

@@ -118,6 +118,7 @@ keycloak:
 # Base Realm Configuration
 # ------------------------
 # Defines the base realm structure for the platform
+# Based on real-world Keycloak configuration from camer-digital realm
 realm:
   # Enable realm creation/configuration
   enabled: true
@@ -163,6 +164,23 @@ realm:
     max: 36000
     # Idle timeout in seconds (default: 30 minutes)
     idleTimeout: 1800
+  
+  # Realm attributes for advanced configuration
+  attributes:
+    frontendUrl: ""
+    darkMode: "true"
+    cibaBackchannelTokenDeliveryMode: "poll"
+    cibaAuthRequestedUserHint: "login_hint"
+    clientOfflineSessionMaxLifespan: "0"
+    oauth2DevicePollingInterval: "5"
+    clientSessionIdleTimeout: "0"
+    clientOfflineSessionIdleTimeout: "0"
+    cibaInterval: "5"
+    realmReusableOtpCode: "false"
+    cibaExpiresIn: "120"
+    oauth2DeviceCodeLifespan: "600"
+    parRequestUriLifespan: "60"
+    clientSessionMaxLifespan: "0"
 
 # Client Templates
 # ----------------
@@ -274,63 +292,80 @@ realmRoles:
       description: "Read-only access to platform resources"
       composite: false
 
-  # Service-specific role templates
-  serviceRoles:
-    # AI Services roles
-    ai-services:
-      - name: "ai-user"
-        description: "Standard AI service user"
-      - name: "ai-admin"
-        description: "AI service administrator"
-      - name: "ai-developer"
-        description: "AI service developer with model access"
-    # Chat services roles
-    chat-services:
-      - name: "chat-user"
-        description: "Standard chat user"
-      - name: "chat-admin"
-        description: "Chat service administrator"
-      - name: "chat-moderator"
-        description: "Chat moderator with content management"
+# Client Roles
+# ------------
+# Client-specific roles for applications
+# Based on real-world Keycloak configuration from camer-digital realm
+clientRoles:
+  # Phoenix client roles - AI dashboard application
+  phoenix:
+    - name: "admin"
+      description: "Phoenix administrator with full access"
+    - name: "user"
+      description: "Phoenix standard user"
+    - name: "viewer"
+      description: "Phoenix read-only viewer"
+  
+  # Converse client roles - LibreChat backend
+  converse:
+    - name: "admin"
+      description: "LibreChat administrator with full access"
+    - name: "user"
+      description: "LibreChat standard user"
+  
+  # Coder client roles - Development environment
+  coder:
+    - name: "admin"
+      description: "Coder administrator with full access"
+    - name: "user"
+      description: "Coder standard user"
 
 # Groups
 # ------
 # Group structure for organizational hierarchy
+# Based on real-world Keycloak configuration from camer-digital realm
 groups:
-  # Top-level groups
-  topLevel:
-    - name: "employees"
-      description: "All company employees"
-      subGroups:
-        - name: "engineering"
-          description: "Engineering department"
-          subGroups:
-            - name: "ai-team"
-              description: "AI/ML team"
-            - name: "platform-team"
-              description: "Platform infrastructure team"
-            - name: "frontend-team"
-              description: "Frontend development team"
-        - name: "operations"
-          description: "Operations department"
-          subGroups:
-            - name: "devops"
-              description: "DevOps team"
-            - name: "security"
-              description: "Security team"
-        - name: "product"
-          description: "Product department"
-    - name: "services"
-      description: "Service accounts for applications"
-      subGroups:
-        - name: "ai-services"
-          description: "AI service accounts"
-        - name: "internal-tools"
-          description: "Internal tooling service accounts"
+  # Platform administrator group - full administrative access
+  platformAdmins:
+    name: "PlatformAdmins"
+    description: "Platform administrators with full access"
+    clientRoles:
+      realm-management:
+        - realm-admin
 
-  # Default group assignments
-  defaultGroups:
-    - "employees"
+  # LibreChat application groups
+  librechat:
+    - name: "LibreChatAdmin"
+      description: "LibreChat administrators"
+      clientRoles:
+        converse:
+          - admin
+    - name: "LibreChatUser"
+      description: "LibreChat standard users"
+      clientRoles:
+        converse:
+          - user
+
+  # Phoenix application groups
+  phoenix:
+    - name: "PhoenixAdmin"
+      description: "Phoenix administrators"
+      clientRoles:
+        phoenix:
+          - admin
+    - name: "PhoenixUser"
+      description: "Phoenix standard users"
+      clientRoles:
+        phoenix:
+          - user
+    - name: "PhoenixViewer"
+      description: "Phoenix read-only viewers"
+      clientRoles:
+        phoenix:
+          - viewer
+
+  # Default group assignments for new users
+  defaultGroups: []
 
 # Client Scopes
 # -------------
@@ -379,6 +414,7 @@ clientScopes:
       enabled: true
 
   # Custom platform scopes
+  # Based on real-world Keycloak configuration from camer-digital realm
   platform:
     - name: "service-roles"
       description: "Service-specific role claims"
@@ -415,6 +451,40 @@ clientScopes:
             full.path: "true"
             claim.name: "groups"
             jsonType.label: "String"
+
+    # LibreChat custom scope - maps roles from converse client
+    - name: "librechat"
+      description: "LibreChat role claims for OIDC integration"
+      protocol: "openid-connect"
+      type: "default"
+      enabled: true
+      mappers:
+        - name: "librechat_roles"
+          type: "oidc-usermodel-client-role-mapper"
+          config:
+            claim.name: "librechat_roles"
+            multivalued: "true"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            usermodel.clientRoleMapping.clientId: "converse"
+
+    # Phoenix custom scope - maps roles from phoenix client
+    - name: "phoenix"
+      description: "Phoenix role claims for OIDC integration"
+      protocol: "openid-connect"
+      type: "default"
+      enabled: true
+      mappers:
+        - name: "phoenix_role"
+          type: "oidc-usermodel-client-role-mapper"
+          config:
+            claim.name: "phoenix_role"
+            multivalued: "true"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            usermodel.clientRoleMapping.clientId: "phoenix"
 
 # Service Account Configurations
 # ------------------------------
@@ -481,10 +551,135 @@ requiredActions:
     enabled: false
     defaultAction: false
 
+# Identity Providers
+# ------------------
+# External identity provider configurations for federation
+# Based on real-world Keycloak configuration from camer-digital realm
+identityProviders:
+  # Keycloak OIDC Federation - connect to external Keycloak realms
+  # Example: Federation with corporate identity provider
+  keycloakFederation:
+    enabled: false
+    alias: "corporate-idp"
+    displayName: "Corporate SSO"
+    providerId: "keycloak-oidc"
+    config:
+      # Issuer URL of the external Keycloak realm
+      issuer: "https://accounts.example.com/realms/corporate"
+      # Client ID registered in the external realm
+      clientId: "platform-sso"
+      # Secret from the external realm (store in Kubernetes secret)
+      clientSecret: "${KEYCLOAK_FEDERATION_SECRET}"
+    # First broker login flow
+    firstBrokerLoginFlowAlias: "first broker login"
+    # Link only mode - don't create new users
+    linkOnly: false
+    # Store tokens for later use
+    storeToken: true
+    # Trust email from provider
+    trustEmail: true
+
+# Clients
+# -------
+# Pre-configured OIDC clients for platform services
+# Based on real-world Keycloak configuration from camer-digital realm
+clients:
+  # Phoenix - AI Dashboard Application
+  phoenix:
+    enabled: false
+    clientId: "phoenix"
+    name: "Phoenix"
+    description: "Phoenix AI Dashboard"
+    secret: "${PHOENIX_CLIENT_SECRET}"
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - "*"
+      - "/*"
+    webOrigins:
+      - "*"
+    defaultClientScopes:
+      - web-origins
+      - acr
+      - phoenix
+      - profile
+      - roles
+      - basic
+      - email
+
+  # Converse - LibreChat Backend
+  converse:
+    enabled: false
+    clientId: "converse"
+    name: "Converse Chats"
+    description: "LibreChat Backend Client"
+    secret: "${CONVERSE_CLIENT_SECRET}"
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - "*"
+    webOrigins:
+      - "*"
+    defaultClientScopes:
+      - web-origins
+      - acr
+      - librechat
+      - profile
+      - roles
+      - basic
+      - email
+
+  # Coder - Development Environment
+  coder:
+    enabled: false
+    clientId: "coder"
+    name: "Coder"
+    description: "Coder Development Environment"
+    secret: "${CODER_CLIENT_SECRET}"
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - "*"
+    webOrigins:
+      - "*"
+    defaultClientScopes:
+      - web-origins
+      - acr
+      - profile
+      - roles
+      - basic
+      - email
+
+  # Self-Service MCP API - Machine-to-Machine
+  selfServiceMcpApi:
+    enabled: false
+    clientId: "self-service-mcp-api"
+    name: "Self Service MCP API"
+    description: "Self-service MCP API client"
+    secret: "${MCP_API_CLIENT_SECRET}"
+    publicClient: false
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: true
+    serviceAccountsEnabled: true
+    redirectUris: []
+    webOrigins: []
+    defaultClientScopes:
+      - roles
+      - basic
+      - service-roles
+
 # keycloak-config-cli Configuration
 # Syncs ConfigMap changes to Keycloak database
 keycloakConfigCli:
   enabled: true
+  # CronJob schedule for syncing realm configuration (default: every hour)
+  schedule: "0 * * * *"
   image:
     repository: docker.io/adorsys/keycloak-config-cli
     tag: "6.5.0-26.5.4"
