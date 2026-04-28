@@ -1,690 +1,157 @@
 # Keycloak Baseline Values
 # ========================
-# This file configures the reusable Keycloak baseline for enterprise AI services.
-# Uses BJW-S app-template as a dependency for deploying Keycloak.
+# This chart provides reusable Keycloak baseline configuration using BJWS app-template.
 
-# Global settings
 global:
-  # Keycloak instance configuration
-  keycloak:
-    # Keycloak URL for generating redirect URIs
-    url: "https://accounts.example.com"
-    # Realm name to create/configure
-    realm: "platform"
-    # Namespace where Keycloak is deployed
-    namespace: "keycloak"
+  nameOverride: keycloak-baseline
 
-# BJW-S app-template configuration for Keycloak deployment
-# Set enabled: true to deploy Keycloak using app-template
-keycloak:
+rbac:
   enabled: false
-  
-  # Use BJW-S app-template controllers for Keycloak deployment
+serviceAccount:
+  enabled: false
+networkPolicy:
+  enabled: false
+serviceMonitors:
+  enabled: false
+ingress:
+  enabled: false
+service:
+  enabled: false
+pvc:
+  enabled: false
+
+# Keycloak Realm Configuration
+#=========================
+keycloak:
+  url: "http://keycloak.keycloak.svc.cluster.local:8080"
+  realm: "platform"
+
+  clients:
+    phoenix:
+      enabled: false
+      clientId: "phoenix"
+      name: "Phoenix"
+      description: "Phoenix AI Dashboard"
+      publicClient: false
+      standardFlowEnabled: true
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris: []
+      webOrigins: []
+      pkce: "S256"
+    converse:
+      enabled: false
+      clientId: "converse"
+      name: "Converse Chats"
+      description: "LibreChat Backend"
+      publicClient: false
+      standardFlowEnabled: true
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris: []
+      webOrigins: []
+    coder:
+      enabled: false
+      clientId: "coder"
+      name: "Coder"
+      description: "Coder Development Environment"
+      publicClient: false
+      standardFlowEnabled: true
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris: []
+      webOrigins: []
+    selfServiceMcpApi:
+      enabled: false
+      clientId: "self-service-mcp-api"
+      name: "Self Service MCP API"
+      description: "MCP service API client"
+      publicClient: false
+      standardFlowEnabled: false
+      directAccessGrantsEnabled: true
+      serviceAccountsEnabled: true
+      redirectUris: []
+      webOrigins: []
+
+  serviceAccounts:
+    aiGateway:
+      enabled: false
+      clientId: "ai-gateway"
+      name: "AI Model Gateway"
+      description: "AI gateway service account"
+    mcpOrchestrator:
+      enabled: false
+      clientId: "mcp-orchestrator"
+      name: "MCP Orchestrator"
+      description: "MCP orchestration service"
+
+  realmRoles:
+    platform:
+      - name: "platform-user"
+      - name: "platform-admin"
+      - name: "platform-viewer"
+
+  clientRoles:
+    phoenix:
+      - name: "admin"
+      - name: "user"
+      - name: "viewer"
+    converse:
+      - name: "admin"
+      - name: "user"
+    coder:
+      - name: "admin"
+      - name: "user"
+
+  groups:
+    platformAdmins:
+      name: "PlatformAdmins"
+    phoenix:
+      - name: "PhoenixAdmin"
+      - name: "PhoenixUser"
+      - name: "PhoenixViewer"
+    librechat:
+      - name: "LibreChatAdmin"
+      - name: "LibreChatUser"
+
+app-template:
   controllers:
-    main:
-      type: Deployment
-      replicas: 1
-      
+    configSync:
+      type: cronjob
+      cronjob:
+        schedule: "0 * * * *"
+        concurrencyPolicy: Forbid
       containers:
         main:
           image:
-            repository: quay.io/keycloak/keycloak
-            tag: "26.3"
-            pullPolicy: IfNotPresent
-          
-          args:
-            - "start-dev"
-            - "--import-realm"
-          
+            repository: docker.io/adorsys/keycloak-config-cli
+            tag: "6.5.0-26.5.4"
           env:
-            KEYCLOAK_ADMIN:
-              valueFrom:
-                secretKeyRef:
-                  name: keycloak-admin
-                  key: username
-            KEYCLOAK_ADMIN_PASSWORD:
+            KEYCLOAK_URL:
+              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+            KEYCLOAK_USER:
+              value: "admin"
+            KEYCLOAK_PASSWORD:
               valueFrom:
                 secretKeyRef:
                   name: keycloak-admin
                   key: password
-            KC_HOSTNAME:
-              value: "keycloak.local"
-            KC_HTTP_ENABLED:
+            IMPORT_VARIABLE_ENABLED:
               value: "true"
-            KC_HOSTNAME_STRICT:
-              value: "false"
-          
-          probes:
-            liveness:
-              enabled: true
-              custom: true
-              spec:
-                httpGet:
-                  path: /realms/master
-                  port: 8080
-                initialDelaySeconds: 60
-                periodSeconds: 30
-            readiness:
-              enabled: true
-              custom: true
-              spec:
-                httpGet:
-                  path: /realms/master
-                  port: 8080
-                initialDelaySeconds: 30
-                periodSeconds: 10
-          
+            IMPORT_ENABLED:
+              value: "true"
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "250m"
+              cpu: 100m
+              memory: 128Mi
             limits:
-              memory: "1Gi"
-              cpu: "1000m"
-          
-          volumeMounts:
-            - name: realm-import
-              mountPath: /opt/keycloak/data/import
-      
-      volumes:
-        - name: realm-import
-          configMap:
-            name: keycloak-baseline-realm
-  
-  # Service configuration using BJW-S templates
-  service:
-    main:
-      type: ClusterIP
-      ports:
-        http:
-          port: 8080
-        https:
-          port: 8443
-  
-  # Ingress configuration using BJW-S templates
-  ingress:
-    main:
-      enabled: false
-      className: envoy-gateway
-      hosts:
-        - host: keycloak.local
-          paths:
-            - path: /
-              pathType: Prefix
-              service:
-                name: keycloak
-                port: 8080
+              cpu: 500m
+              memory: 512Mi
 
-# Base Realm Configuration
-# ------------------------
-# Defines the base realm structure for the platform
-# Based on real-world Keycloak configuration from camer-digital realm
-realm:
-  # Enable realm creation/configuration
-  enabled: true
-  
-  # ConfigMap name for realm import (optional, auto-generated if not set)
-  # configMapName: "keycloak-baseline-realm"
-  
-  # Realm identifier (should match global.keycloak.realm)
-  name: "platform"
-  
-  # Display name shown in Keycloak console
-  displayName: "Platform Services"
-  
-  # HTML display name for branding
-  displayNameHtml: "<div class='kc-logo-text'><span>Platform Services</span></div>"
-  
-  # SSL requirement: external, all, none
-  sslRequired: "external"
-  
-  # User registration settings
-  registration:
-    enabled: false
-    emailAsUsername: true
-    verifyEmail: true
-    resetPasswordAllowed: true
-  
-  # Login theme configuration
-  themes:
-    login: "keycloak"
-    account: "keycloak"
-    admin: "keycloak"
-    email: "keycloak"
-  
-  # Password policy (see: https://www.keycloak.org/docs/latest/server_admin/#password-policy)
-  passwordPolicy: "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notEmail()"
-  
-  # Access token lifespan in seconds (default: 5 minutes)
-  accessTokenLifespan: 300
-  
-  # SSO session settings
-  ssoSession:
-    # Max session time in seconds (default: 10 hours)
-    max: 36000
-    # Idle timeout in seconds (default: 30 minutes)
-    idleTimeout: 1800
-  
-  # Realm attributes for advanced configuration
-  attributes:
-    frontendUrl: ""
-    darkMode: "true"
-    cibaBackchannelTokenDeliveryMode: "poll"
-    cibaAuthRequestedUserHint: "login_hint"
-    clientOfflineSessionMaxLifespan: "0"
-    oauth2DevicePollingInterval: "5"
-    clientSessionIdleTimeout: "0"
-    clientOfflineSessionIdleTimeout: "0"
-    cibaInterval: "5"
-    realmReusableOtpCode: "false"
-    cibaExpiresIn: "120"
-    oauth2DeviceCodeLifespan: "600"
-    parRequestUriLifespan: "60"
-    clientSessionMaxLifespan: "0"
-
-# Client Templates
-# ----------------
-# Reusable client templates for different application types
-clientTemplates:
-  # User-facing web application template
-  webApp:
-    enabled: true
-    name: "web-app-template"
-    description: "Template for user-facing web applications with browser-based authentication"
-    protocol: "openid-connect"
-    publicClient: false
-    standardFlowEnabled: true
-    implicitFlowEnabled: false
-    directAccessGrantsEnabled: false
-    serviceAccountsEnabled: false
-    pkce: "S256"
-    accessTokenLifespan: 300
-    defaultClientScopes:
-      - web-origins
-      - acr
-      - profile
-      - roles
-      - basic
-      - email
-    optionalClientScopes:
-      - address
-      - phone
-      - offline_access
-      - microprofile-jwt
-
-  # Service-to-service client template
-  serviceAccount:
-    enabled: true
-    name: "service-account-template"
-    description: "Template for backend services using client credentials flow"
-    protocol: "openid-connect"
-    publicClient: false
-    standardFlowEnabled: false
-    implicitFlowEnabled: false
-    directAccessGrantsEnabled: false
-    serviceAccountsEnabled: true
-    accessTokenLifespan: 300
-    defaultClientScopes:
-      - roles
-      - basic
-      - service-roles
-    optionalClientScopes:
-      - microprofile-jwt
-
-  # SPA/Public client template
-  spaApp:
-    enabled: true
-    name: "spa-app-template"
-    description: "Template for Single Page Applications (public clients)"
-    protocol: "openid-connect"
-    publicClient: true
-    standardFlowEnabled: true
-    implicitFlowEnabled: false
-    directAccessGrantsEnabled: false
-    serviceAccountsEnabled: false
-    pkce: "S256"
-    accessTokenLifespan: 300
-    defaultClientScopes:
-      - web-origins
-      - acr
-      - profile
-      - roles
-      - basic
-      - email
-    optionalClientScopes:
-      - address
-      - phone
-      - offline_access
-
-  # Machine-to-machine client template
-  machineClient:
-    enabled: true
-    name: "machine-client-template"
-    description: "Template for machine-to-machine communication (CLI, CI/CD, etc.)"
-    protocol: "openid-connect"
-    publicClient: false
-    standardFlowEnabled: false
-    implicitFlowEnabled: false
-    directAccessGrantsEnabled: true
-    serviceAccountsEnabled: false
-    accessTokenLifespan: 60
-    defaultClientScopes:
-      - roles
-      - basic
-    optionalClientScopes:
-      - microprofile-jwt
-
-# Realm Roles
-# -----------
-# Base roles that all services should inherit
-realmRoles:
-  # Platform-wide roles
-  platform:
-    - name: "platform-user"
-      description: "Standard platform user with basic access"
-      composite: false
-    - name: "platform-admin"
-      description: "Platform administrator with elevated privileges"
-      composite: true
-      composites:
-        - "platform-user"
-    - name: "platform-viewer"
-      description: "Read-only access to platform resources"
-      composite: false
-
-# Client Roles
-# ------------
-# Client-specific roles for applications
-# Based on real-world Keycloak configuration from camer-digital realm
-clientRoles:
-  # Phoenix client roles - AI dashboard application
-  phoenix:
-    - name: "admin"
-      description: "Phoenix administrator with full access"
-    - name: "user"
-      description: "Phoenix standard user"
-    - name: "viewer"
-      description: "Phoenix read-only viewer"
-  
-  # Converse client roles - LibreChat backend
-  converse:
-    - name: "admin"
-      description: "LibreChat administrator with full access"
-    - name: "user"
-      description: "LibreChat standard user"
-  
-  # Coder client roles - Development environment
-  coder:
-    - name: "admin"
-      description: "Coder administrator with full access"
-    - name: "user"
-      description: "Coder standard user"
-
-# Groups
-# ------
-# Group structure for organizational hierarchy
-# Based on real-world Keycloak configuration from camer-digital realm
-groups:
-  # Platform administrator group - full administrative access
-  platformAdmins:
-    name: "PlatformAdmins"
-    description: "Platform administrators with full access"
-    clientRoles:
-      realm-management:
-        - realm-admin
-
-  # LibreChat application groups
-  librechat:
-    - name: "LibreChatAdmin"
-      description: "LibreChat administrators"
-      clientRoles:
-        converse:
-          - admin
-    - name: "LibreChatUser"
-      description: "LibreChat standard users"
-      clientRoles:
-        converse:
-          - user
-
-  # Phoenix application groups
-  phoenix:
-    - name: "PhoenixAdmin"
-      description: "Phoenix administrators"
-      clientRoles:
-        phoenix:
-          - admin
-    - name: "PhoenixUser"
-      description: "Phoenix standard users"
-      clientRoles:
-        phoenix:
-          - user
-    - name: "PhoenixViewer"
-      description: "Phoenix read-only viewers"
-      clientRoles:
-        phoenix:
-          - viewer
-
-  # Default group assignments for new users
-  defaultGroups: []
-
-# Client Scopes
-# -------------
-# Reusable client scopes for different purposes
-clientScopes:
-  # Default scopes to include
-  defaultScopes:
-    - profile
-    - email
-    - roles
-    - basic
-
-  # Optional scopes
-  optionalScopes:
-    - address
-    - phone
-    - offline_access
-    - microprofile-jwt
-
-  # Standard OIDC scopes
-  standard:
-    - name: "profile"
-      description: "OpenID Connect profile scope"
-      protocol: "openid-connect"
-      type: "default"
-      enabled: true
-    - name: "email"
-      description: "OpenID Connect email scope"
-      protocol: "openid-connect"
-      type: "default"
-      enabled: true
-    - name: "address"
-      description: "OpenID Connect address scope"
-      protocol: "openid-connect"
-      type: "optional"
-      enabled: true
-    - name: "phone"
-      description: "OpenID Connect phone scope"
-      protocol: "openid-connect"
-      type: "optional"
-      enabled: true
-    - name: "offline_access"
-      description: "Enables refresh tokens for offline access"
-      protocol: "openid-connect"
-      type: "optional"
-      enabled: true
-
-  # Custom platform scopes
-  # Based on real-world Keycloak configuration from camer-digital realm
-  platform:
-    - name: "service-roles"
-      description: "Service-specific role claims"
-      protocol: "openid-connect"
-      type: "default"
-      enabled: true
-      mappers:
-        - name: "service-roles-mapper"
-          type: "oidc-usermodel-client-role-mapper"
-          config:
-            clientRole: "true"
-            multiValued: "true"
-            userinfo.token.claim: "true"
-            id.token.claim: "true"
-            access.token.claim: "true"
-            claim.name: "service_roles"
-            jsonType.label: "String"
-
-    - name: "organization"
-      description: "Organization and group membership claims"
-      protocol: "openid-connect"
-      type: "optional"
-      enabled: true
-      mappers:
-        - name: "organization-mapper"
-          type: "oidc-usermodel-attribute-mapper"
-          config:
-            user.attribute: "organization"
-            claim.name: "organization"
-            jsonType.label: "String"
-        - name: "groups-mapper"
-          type: "oidc-group-membership-mapper"
-          config:
-            full.path: "true"
-            claim.name: "groups"
-            jsonType.label: "String"
-
-    # LibreChat custom scope - maps roles from converse client
-    - name: "librechat"
-      description: "LibreChat role claims for OIDC integration"
-      protocol: "openid-connect"
-      type: "default"
-      enabled: true
-      mappers:
-        - name: "librechat_roles"
-          type: "oidc-usermodel-client-role-mapper"
-          config:
-            claim.name: "librechat_roles"
-            multivalued: "true"
-            userinfo.token.claim: "true"
-            id.token.claim: "true"
-            access.token.claim: "true"
-            usermodel.clientRoleMapping.clientId: "converse"
-
-    # Phoenix custom scope - maps roles from phoenix client
-    - name: "phoenix"
-      description: "Phoenix role claims for OIDC integration"
-      protocol: "openid-connect"
-      type: "default"
-      enabled: true
-      mappers:
-        - name: "phoenix_role"
-          type: "oidc-usermodel-client-role-mapper"
-          config:
-            claim.name: "phoenix_role"
-            multivalued: "true"
-            userinfo.token.claim: "true"
-            id.token.claim: "true"
-            access.token.claim: "true"
-            usermodel.clientRoleMapping.clientId: "phoenix"
-
-# Service Account Configurations
-# ------------------------------
-# Pre-configured service account patterns
-serviceAccounts:
-  # AI Model Gateway service account
-  aiGateway:
-    enabled: false
-    clientId: "ai-gateway"
-    name: "AI Model Gateway"
-    description: "Service account for AI model gateway authentication"
-    roles:
-      - "ai-user"
-      - "ai-developer"
-    scopes:
-      - "service-roles"
-      - "roles"
-      - "basic"
-
-  # MCP Orchestrator service account
-  mcpOrchestrator:
-    enabled: false
-    clientId: "mcp-orchestrator"
-    name: "MCP Orchestrator"
-    description: "Service account for MCP orchestration service"
-    roles:
-      - "platform-user"
-    scopes:
-      - "service-roles"
-      - "roles"
-      - "basic"
-
-  # LibreChat service account (for backend operations)
-  librechat:
-    enabled: false
-    clientId: "librechat-backend"
-    name: "LibreChat Backend"
-    description: "Service account for LibreChat backend operations"
-    roles:
-      - "chat-admin"
-    scopes:
-      - "service-roles"
-      - "roles"
-      - "basic"
-
-# Required Actions
-# ----------------
-# User required action configurations
-requiredActions:
-  - alias: "CONFIGURE_TOTP"
-    name: "Configure OTP"
-    enabled: false
-    defaultAction: false
-  - alias: "VERIFY_EMAIL"
-    name: "Verify Email"
-    enabled: true
-    defaultAction: true
-  - alias: "UPDATE_PASSWORD"
-    name: "Update Password"
-    enabled: true
-    defaultAction: false
-  - alias: "UPDATE_PROFILE"
-    name: "Update Profile"
-    enabled: false
-    defaultAction: false
-
-# Identity Providers
-# ------------------
-# External identity provider configurations for federation
-# Based on real-world Keycloak configuration from camer-digital realm
-identityProviders:
-  # Keycloak OIDC Federation - connect to external Keycloak realms
-  # Example: Federation with corporate identity provider
-  keycloakFederation:
-    enabled: false
-    alias: "corporate-idp"
-    displayName: "Corporate SSO"
-    providerId: "keycloak-oidc"
+  persistence:
     config:
-      # Issuer URL of the external Keycloak realm
-      issuer: "https://accounts.example.com/realms/corporate"
-      # Client ID registered in the external realm
-      clientId: "platform-sso"
-      # Secret from the external realm (store in Kubernetes secret)
-      clientSecret: "${KEYCLOAK_FEDERATION_SECRET}"
-    # First broker login flow
-    firstBrokerLoginFlowAlias: "first broker login"
-    # Link only mode - don't create new users
-    linkOnly: false
-    # Store tokens for later use
-    storeToken: true
-    # Trust email from provider
-    trustEmail: true
-
-# Clients
-# -------
-# Pre-configured OIDC clients for platform services
-# Based on real-world Keycloak configuration from camer-digital realm
-clients:
-  # Phoenix - AI Dashboard Application
-  phoenix:
-    enabled: false
-    clientId: "phoenix"
-    name: "Phoenix"
-    description: "Phoenix AI Dashboard"
-    secret: "${PHOENIX_CLIENT_SECRET}"
-    publicClient: false
-    standardFlowEnabled: true
-    directAccessGrantsEnabled: false
-    serviceAccountsEnabled: false
-    redirectUris:
-      - "*"
-      - "/*"
-    webOrigins:
-      - "*"
-    defaultClientScopes:
-      - web-origins
-      - acr
-      - phoenix
-      - profile
-      - roles
-      - basic
-      - email
-
-  # Converse - LibreChat Backend
-  converse:
-    enabled: false
-    clientId: "converse"
-    name: "Converse Chats"
-    description: "LibreChat Backend Client"
-    secret: "${CONVERSE_CLIENT_SECRET}"
-    publicClient: false
-    standardFlowEnabled: true
-    directAccessGrantsEnabled: false
-    serviceAccountsEnabled: false
-    redirectUris:
-      - "*"
-    webOrigins:
-      - "*"
-    defaultClientScopes:
-      - web-origins
-      - acr
-      - librechat
-      - profile
-      - roles
-      - basic
-      - email
-
-  # Coder - Development Environment
-  coder:
-    enabled: false
-    clientId: "coder"
-    name: "Coder"
-    description: "Coder Development Environment"
-    secret: "${CODER_CLIENT_SECRET}"
-    publicClient: false
-    standardFlowEnabled: true
-    directAccessGrantsEnabled: false
-    serviceAccountsEnabled: false
-    redirectUris:
-      - "*"
-    webOrigins:
-      - "*"
-    defaultClientScopes:
-      - web-origins
-      - acr
-      - profile
-      - roles
-      - basic
-      - email
-
-  # Self-Service MCP API - Machine-to-Machine
-  selfServiceMcpApi:
-    enabled: false
-    clientId: "self-service-mcp-api"
-    name: "Self Service MCP API"
-    description: "Self-service MCP API client"
-    secret: "${MCP_API_CLIENT_SECRET}"
-    publicClient: false
-    standardFlowEnabled: false
-    directAccessGrantsEnabled: true
-    serviceAccountsEnabled: true
-    redirectUris: []
-    webOrigins: []
-    defaultClientScopes:
-      - roles
-      - basic
-      - service-roles
-
-# keycloak-config-cli Configuration
-# Syncs ConfigMap changes to Keycloak database
-keycloakConfigCli:
-  enabled: true
-  # CronJob schedule for syncing realm configuration (default: every hour)
-  schedule: "0 * * * *"
-  image:
-    repository: docker.io/adorsys/keycloak-config-cli
-    tag: "6.5.0-26.5.4"
-  keycloakService: keycloak
-  adminSecret: keycloak-admin
-  adminUser: admin
-  keycloak:
-    url: http://keycloak.keycloak.svc.cluster.local:8080
+      type: configMap
+      name: keycloak-baseline-realm
+      globalMounts:
+        - path: /config
+          readOnly: true

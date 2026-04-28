@@ -1,13 +1,86 @@
-{{- if .Values.realm.enabled -}}
+{{- $kc := .Values.keycloak -}}
+{{- $realm := $kc.realm | default "platform" -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "keycloak-baseline.realm.configMapName" . }}
-  namespace: {{ .Values.global.keycloak.namespace | default "keycloak" }}
+  name: keycloak-baseline-realm
+  namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "keycloak-baseline.labels" . | nindent 4 }}
+    helm.sh/chart: keycloak-baseline-{{ .Chart.Version }}
+    app.kubernetes.io/name: keycloak-baseline
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/component: realm-config
 data:
-  {{ .Values.realm.name }}-realm.json: |
-    {{- include "keycloak-baseline.realm.json" . | nindent 4 }}
-{{- end -}}
+  {{ $realm }}-realm.json: |
+    {
+      "id": "{{ $realm }}",
+      "realm": "{{ $realm }}",
+      "enabled": true,
+      "displayName": "Platform Services",
+      "displayNameHtml": "<div class='kc-logo-text'><span>Platform Services</span></div>",
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "registrationEmailAsUsername": true,
+      "verifyEmail": true,
+      "resetPasswordAllowed": true,
+      "loginTheme": "keycloak",
+      "accountTheme": "keycloak",
+      "adminTheme": "keycloak",
+      "emailTheme": "keycloak",
+      "passwordPolicy": "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notEmail()",
+      "accessTokenLifespan": 300,
+      "ssoSessionMaxLifespan": 36000,
+      "ssoSessionIdleTimeout": 1800,
+      "attributes": {
+        "darkMode": "true"
+      }
+      {{- /* Only include clients section if ANY client is enabled */ -}}
+      {{- $enabledClients := list }}
+      {{- range $name, $client := $kc.clients }}
+      {{- if $client.enabled }}
+      {{- $enabledClients = append $enabledClients $client }}
+      {{- end }}
+      {{- end }}
+      {{- range $name, $sa := $kc.serviceAccounts }}
+      {{- if $sa.enabled }}
+      {{- $enabledClients = append $enabledClients $sa }}
+      {{- end }}
+      {{- end }}
+      {{- if gt (len $enabledClients) 0 }},
+      "clients": [
+        {{- $firstClient := true }}
+        {{- range $client := $enabledClients }}
+        {{- if not $firstClient }},{{ end }}
+        {{- $firstClient = false }}
+        {
+          "clientId": "{{ $client.clientId }}",
+          "name": "{{ $client.name }}",
+          "description": "{{ $client.description }}",
+          "enabled": true,
+          "publicClient": {{ $client.publicClient | default false }},
+          "standardFlowEnabled": {{ $client.standardFlowEnabled | default true }},
+          "implicitFlowEnabled": {{ $client.implicitFlowEnabled | default false }},
+          "directAccessGrantsEnabled": {{ $client.directAccessGrantsEnabled | default false }},
+          "serviceAccountsEnabled": {{ $client.serviceAccountsEnabled | default false }},
+          "redirectUris": [
+            {{- range $i, $uri := $client.redirectUris }}
+            {{- if not (eq $i 0) }},{{ end }}"{{ $uri }}"
+            {{- end }}
+          ],
+          "webOrigins": [
+            {{- range $i, $origin := $client.webOrigins }}
+            {{- if not (eq $i 0) }},{{ end }}"{{ $origin }}"
+            {{- end }}
+          ],
+          "protocol": "openid-connect"
+          {{- if $client.pkce }},
+          "attributes": {
+            "pkce.code.challenge.method": "{{ $client.pkce }}"
+          }
+          {{- end }}
+        }
+        {{- end }}
+      ]
+      {{- end }}
+    }
