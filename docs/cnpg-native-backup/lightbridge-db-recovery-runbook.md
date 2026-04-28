@@ -82,8 +82,8 @@ kubectl get backups -n converse -l postgresql.cnpg.io/cluster=lightbridge-usage-
 
 The restore cluster files are already defined:
 
-- `charts/apps/lightbridge-main-db-restore.yaml`
-- `charts/apps/lightbridge-usage-db-restore.yaml`
+- `docs/cnpg-native-backuplightbridge-main-db-restore.yaml`
+- `docs/cnpg-native-backuplightbridge-usage-db-restore.yaml`
 
 **Key differences from original cluster:**
 
@@ -99,14 +99,14 @@ The restore cluster files are already defined:
 Apply the restore clusters:
 
 ```bash
-kubectl apply -f charts/apps/lightbridge-main-db-restore.yaml
-kubectl apply -f charts/apps/lightbridge-usage-db-restore.yaml
+kubectl apply -f docs/cnpg-native-backuplightbridge-main-db-restore.yaml
+kubectl apply -f docs/cnpg-native-backuplightbridge-usage-db-restore.yaml
 ```
 
 Or commit and push for ArgoCD to sync:
 
 ```bash
-git add charts/apps/lightbridge-main-db-restore.yaml charts/apps/lightbridge-usage-db-restore.yaml
+git add docs/cnpg-native-backuplightbridge-main-db-restore.yaml docs/cnpg-native-backuplightbridge-usage-db-restore.yaml
 git commit -m "feat(db-recovery): create restore clusters"
 git push
 ```
@@ -147,7 +147,7 @@ kubectl exec -it lightbridge-usage-db-restore-1 -n converse -- psql -U postgres 
 
 ### Phase 5: Switch Traffic
 
-Update the alias service selectors in `charts/apps/values.yaml`:
+Update the alias service selectors in `docs/cnpg-native-backupvalues.yaml`:
 
 ```yaml
 # For main-db
@@ -166,7 +166,7 @@ spec:
 Commit and push:
 
 ```bash
-git add charts/apps/values.yaml
+git add docs/cnpg-native-backupvalues.yaml
 git commit -m "fix(db-recovery): switch alias services to restored clusters"
 git push
 ```
@@ -194,7 +194,7 @@ kubectl delete cluster lightbridge-main-db -n converse
 kubectl delete cluster lightbridge-usage-db -n converse
 
 # Remove old cluster definitions from Git
-# (Remove from charts/apps/values.yaml)
+# (Remove from docs/cnpg-native-backupvalues.yaml)
 ```
 
 ### Phase 8: Final State
@@ -259,7 +259,7 @@ kubectl delete cluster lightbridge-main-db -n converse
 
 ### Phase 3: Recreate Cluster with Recovery
 
-In `charts/apps/values.yaml`, find the cluster definition and add `bootstrap.recovery`:
+In `docs/cnpg-native-backupvalues.yaml`, find the cluster definition and add `bootstrap.recovery`:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -307,7 +307,7 @@ spec:
 ### Phase 4: Commit and Push
 
 ```bash
-git add charts/apps/values.yaml
+git add docs/cnpg-native-backupvalues.yaml
 git commit -m "fix(db-recovery): recreate cluster with bootstrap.recovery"
 git push
 ```
@@ -359,12 +359,12 @@ If something goes wrong after switching:
 
 ```bash
 # Revert alias service selector to original cluster
-# Edit charts/apps/values.yaml
+# Edit docs/cnpg-native-backupvalues.yaml
 # Change selector back to original cluster names:
 #   cnpg.io/cluster: lightbridge-main-db
 #   cnpg.io/cluster: lightbridge-usage-db
 
-git add charts/apps/values.yaml
+git add docs/cnpg-native-backupvalues.yaml
 git commit -m "fix(db-recovery): rollback to original clusters"
 git push
 ```
