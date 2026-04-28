@@ -30,6 +30,29 @@ librechat:
             - ai.camer.digital
 
   rawResources:
+    namespace-limit-range:
+      enabled: true
+      apiVersion: v1
+      kind: LimitRange
+      forceRename: converse-chat-defaults
+      spec:
+        limits:
+          - type: Container
+            defaultRequest: { cpu: 100m, memory: 128Mi }
+            default:        { cpu: 500m, memory: 512Mi }
+            max:            { cpu: "4", memory: 8Gi }
+    namespace-resource-quota:
+      enabled: true
+      apiVersion: v1
+      kind: ResourceQuota
+      forceRename: converse-chat-quota
+      spec:
+        hard:
+          requests.cpu: "3"
+          requests.memory: 5Gi
+          limits.cpu: "8"
+          limits.memory: 12Gi
+          count/pods: "20"
     hpa:
       enabled: true
       apiVersion: autoscaling/v2
