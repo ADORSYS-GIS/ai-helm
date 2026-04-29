@@ -7,7 +7,7 @@ Helper functions using BJW-S common library
 Expand the name of the chart.
 */}}
 {{- define "external-secrets.name" -}}
-{{- include "bjw-s.common.lib.chart.names.name" . -}}
+{{- include "common.names.name" . -}}
 {{- end -}}
 
 {{/*
@@ -16,14 +16,14 @@ We truncate at 63 chars because some Kubernetes name fields are limited to this 
 If release name contains chart name it will be used as a full name.
 */}}
 {{- define "external-secrets.fullname" -}}
-{{- include "bjw-s.common.lib.chart.names.fullname" . -}}
+{{- include "common.names.fullname" . -}}
 {{- end -}}
 
 {{/*
 Create chart name and version as used by the chart label.
 */}}
 {{- define "external-secrets.chart" -}}
-{{- include "bjw-s.common.lib.chart.names.chart" . -}}
+{{- include "common.names.chart" . -}}
 {{- end -}}
 
 {{/*
@@ -33,7 +33,7 @@ Return the proper namespace for the component.
 {{- if .Values.namespace -}}
 {{- .Values.namespace.name -}}
 {{- else -}}
-{{- include "bjw-s.common.lib.chart.names.namespace" . -}}
+{{- include "common.names.namespace" . -}}
 {{- end -}}
 {{- end -}}
 
@@ -41,7 +41,7 @@ Return the proper namespace for the component.
 Return the proper labels for ExternalSecrets resources.
 */}}
 {{- define "external-secrets.labels" -}}
-{{- include "bjw-s.common.lib.metadata.allLabels" . -}}
+{{- include "common.labels.standard" . -}}
 {{- end -}}
 
 {{/*
