@@ -51,6 +51,13 @@ rbac:
             - get
             - list
             - watch
+        # Required for ESO Kubernetes provider to validate access
+        # https://external-secrets.io/latest/provider/kubernetes/
+        - apiGroups: ["authorization.k8s.io"]
+          resources:
+            - selfsubjectaccessreviews
+          verbs:
+            - create
   bindings:
     # ClusterRoleBinding for bootstrap ClusterSecretStore
     bootstrap-reader:
@@ -343,6 +350,11 @@ externalSecrets:
           key: lightbridge-main-db-app
           namespace: external-secrets-system
           property: database
+      - secretKey: uri
+        remoteRef:
+          key: lightbridge-main-db-app
+          namespace: external-secrets-system
+          property: uri
 
   # Usage Database Credentials
   lightbridge-usage-db:
@@ -375,3 +387,8 @@ externalSecrets:
           key: lightbridge-usage-db-app
           namespace: external-secrets-system
           property: database
+      - secretKey: uri
+        remoteRef:
+          key: lightbridge-usage-db-app
+          namespace: external-secrets-system
+          property: uri
