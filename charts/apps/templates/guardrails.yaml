@@ -1,6 +1,12 @@
 {{- if .Values.extraObjects }}
 {{- range .Values.extraObjects }}
 ---
-{{ toYaml . }}
+{{- $obj := . -}}
+{{- $metadata := index $obj "metadata" | default (dict) -}}
+{{- $annotations := index $metadata "annotations" | default (dict) -}}
+{{- $_ := set $annotations "argocd.argoproj.io/sync-wave" "5" -}}
+{{- $_ := set $metadata "annotations" $annotations -}}
+{{- $_ := set $obj "metadata" $metadata -}}
+{{ toYaml $obj }}
 {{- end }}
 {{- end }}
