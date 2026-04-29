@@ -10,6 +10,12 @@ applications:
       helm:
         releaseName: traefik
         valuesObject:
+          deployment:
+            # High-availability: 2 replicas for redundancy; PDB ensures at least 1 remains available during maintenance.
+            replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            maxUnavailable: 1
           additionalArguments:
             - "--entryPoints.web.http.redirections.entryPoint.to=:443"
             - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
@@ -50,6 +56,10 @@ applications:
       helm:
         releaseName: opentelemetry-operator
         valuesObject:
+          pdb:
+            create: true
+            minAvailable: null
+            maxUnavailable: 1
         #manager:
         #  collectorImage:
         #    repository: "otel/opentelemetry-collector-k8s"
@@ -188,8 +198,6 @@ applications:
   - name: redis
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: registry-1.docker.io/bitnamicharts
       targetRevision: 24.0.0
@@ -198,6 +206,10 @@ applications:
         releaseName: redis
         valuesObject:
           global:
+            pdb:
+              create: true
+              minAvailable: ""
+              maxUnavailable: "1"
             defaultStorageClass: linode-block-storage
           auth:
             enabled: false
@@ -245,10 +257,16 @@ applications:
       helm:
         releaseName: eg
         valuesObject:
+          podDisruptionBudget:
+            # Critical Gateway infrastructure: PDB protects against concurrent evictions.
+            minAvailable: 1
+          deployment:
+            # High-availability: 2 replicas with HPA; minimum 2 ensures PDB compatibility.
+            replicas: 2
           hpa:
             enabled: true
-            minReplicas: 1
-            maxReplicas: 2
+            minReplicas: 2
+            maxReplicas: 3
           config:
             envoyGateway:
               gateway:
@@ -266,7 +284,10 @@ applications:
               provider:
                 type: Kubernetes
                 kubernetes:
+                  rateLimitPDB:
+                    maxUnavailable: 1
                   rateLimitDeployment:
+                    replicas: 2
                     patch:
                       type: StrategicMerge
                       value:
@@ -363,6 +384,7 @@ applications:
             - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
             - --kubelet-use-node-status-port
             - --metric-resolution=15s
+          # Monitoring infrastructure: 2 replicas to avoid gaps in metrics during node drains.
           replicas: 2
           resources:
             requests:
@@ -560,7 +582,6 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "0"
-      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: https://adorsys-gis.github.io/lightbridge-authz
       targetRevision: 0.8.1
@@ -617,7 +638,7 @@ applications:
                       service_name: "lightbridge-authz-api"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -703,7 +724,7 @@ applications:
                       service_name: "lightbridge-authz-api"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -780,7 +801,7 @@ applications:
                       service_name: "lightbridge-authz-opa"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -839,7 +860,7 @@ applications:
 
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -889,7 +910,57 @@ applications:
             persistence:
               tls:
                 name: authz-tls
+          # Lightbridge PDB Strategy: Handled via rawRessources because the upstream chart 
+          # doesn't support controller PDBs natively. Ensure at least 1 instance is always available.
           rawRessources:
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-api-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: api
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-opa-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: opa
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-mcp-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: mcp
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-usage-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: usage
             - |
               apiVersion: networking.k8s.io/v1
               kind: Ingress
@@ -1008,14 +1079,39 @@ applications:
               apiVersion: barmancloud.cnpg.io/v1
               kind: ObjectStore
               metadata:
-                name: lightbridge-barman-store
+                name: lightbridge-main-db
                 namespace: {{ $.Release.Namespace }}
                 annotations:
                   argocd.argoproj.io/sync-wave: "1"
                   argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
               spec:
+                retentionPolicy: "6m"
                 configuration:
-                  destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
+                  destinationPath: s3://ai-ops-backups/lightbridge-main-db/
+                  endpointURL: https://s3.ssegning.me
+                  s3Credentials:
+                    accessKeyId:
+                      name: lightbridge-cnpg-s3
+                      key: s3_access_key_id
+                    secretAccessKey:
+                      name: lightbridge-cnpg-s3
+                      key: s3_secret_access_key
+                    region:
+                      name: lightbridge-cnpg-s3
+                      key: s3_region_name
+            - |
+              apiVersion: barmancloud.cnpg.io/v1
+              kind: ObjectStore
+              metadata:
+                name: lightbridge-usage-db
+                namespace: {{ $.Release.Namespace }}
+                annotations:
+                  argocd.argoproj.io/sync-wave: "1"
+                  argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+              spec:
+                retentionPolicy: "6m"
+                configuration:
+                  destinationPath: s3://ai-ops-backups/lightbridge-usage-db/
                   endpointURL: https://s3.ssegning.me
                   s3Credentials:
                     accessKeyId:
@@ -1082,10 +1178,19 @@ applications:
                   argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
-                # Plugins removed - backup.barmanObjectStore handles WAL archiving
+                imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
                 storage:
                   storageClass: linode-block-storage
                   size: "5Gi"
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: lightbridge-main-db
+                      serverName: lightbridge-main-db
+                postgresql:
+                  parameters:
+                    archive_timeout: "30min"
                 resources:
                   limits:
                     cpu: 300m
@@ -1114,16 +1219,25 @@ applications:
                   argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
-                #imageName: ghcr.io/clevyr/cloudnativepg-timescale:17-ts2
                 imageCatalogRef:
                   apiGroup: postgresql.cnpg.io
                   kind: ClusterImageCatalog
                   name: lightbridge-usage-db
                   major: 17
-                # Plugins removed - backup.barmanObjectStore handles WAL archiving
                 storage:
                   storageClass: linode-block-storage
                   size: "10Gi"
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: lightbridge-usage-db
+                      serverName: lightbridge-usage-db
+                postgresql:
+                  parameters:
+                    archive_timeout: "30min"
+                  shared_preload_libraries:
+                    - timescaledb
                 resources:
                   limits:
                     cpu: 300m
@@ -1131,11 +1245,8 @@ applications:
                   requests:
                     cpu: 200m
                     memory: 500Mi
-                postgresql:
-                  shared_preload_libraries:
-                    - timescaledb
-                postgresUID: 70 # see below
-                postgresGID: 70 # see below
+                postgresUID: 70
+                postgresGID: 70
                 bootstrap:
                   initdb:
                     postInitTemplateSQL:
@@ -1153,6 +1264,7 @@ applications:
               spec:
                 immediate: true
                 schedule: "0 0 2 * * *"
+                backupOwnerReference: self
                 cluster:
                   name: lightbridge-main-db
                 method: plugin
@@ -1170,6 +1282,7 @@ applications:
               spec:
                 immediate: true
                 schedule: "0 0 2 * * *"
+                backupOwnerReference: self
                 cluster:
                   name: lightbridge-usage-db
                 method: plugin
@@ -1198,6 +1311,9 @@ applications:
           conversefrontend:
             controllers:
               main:
+                podDisruptionBudget:
+                  # User-facing frontend: PDB ensures uptime during automated node maintenance.
+                  maxUnavailable: 1
                 containers:
                   frontend:
                     image:
@@ -1224,8 +1340,6 @@ applications:
   - name: phoenix
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: oci://registry-1.docker.io/arizephoenix/phoenix-helm
       targetRevision: 4.0.36
@@ -1281,8 +1395,6 @@ applications:
   - name: librechat
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-options: PauseSync=true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: HEAD
@@ -1330,7 +1442,7 @@ applications:
                 initContainers:
                   exporter:
                     env:
-                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017 # ,librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
+                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017,librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
     destination:
       namespace: converse-chat
     syncPolicy:
@@ -1428,7 +1540,7 @@ applications:
                 - name: CODER_ACCESS_URL
                   value: "https://coder.ai.camer.digital"
                 - name: CODER_WILDCARD_ACCESS_URL
-                  value: "*.serverless.coder.ai.camer.digital"
+                  value: "*.coder-ai.camer.digital"
                 - name: CODER_OIDC_ISSUER_URL
                   value: "https://accounts.camer.digital/realms/camer-digital"
                 - name: CODER_OIDC_CLIENT_ID
@@ -1499,35 +1611,16 @@ applications:
                 annotations:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
                 host: "coder.ai.camer.digital"
+                wildcardHost: "*.coder-ai.camer.digital"
                 tls:
                   enable: true
                   secretName: coder.ai.camer.digital-tls
-                  wildcardSecretName: coder-wildcard.ai.camer.digital-tls
+                  wildcardSecretName: coder.ai.camer.digital-tls
     destination:
       namespace: coder
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
-
-  # --- Proxy ---
-  - name: models-proxy
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/models-proxy
-      helm:
-        releaseName: models-proxy
-        valuesObject: { }
-    destination:
-      namespace: converse-proxy
-    syncPolicy:
-      syncOptions:
         - ServerSideApply=true
       automated:
         prune: true

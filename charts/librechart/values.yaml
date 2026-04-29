@@ -4,7 +4,7 @@ global:
   rag_librechat:
     version: "v0.7.2"
   mongo:
-    replicaCount: 1
+    replicaCount: 2
     replicaSetName: rs0
   configmap:
     name: "librechat-config"
@@ -83,7 +83,9 @@ librechat:
     librechat:
       type: deployment
       strategy: RollingUpdate
-      replicas: 1
+      replicas: 2
+      podDisruptionBudget:
+        minAvailable: 1
       pod:
         labels:
           app: librechat-app
@@ -112,14 +114,14 @@ librechat:
             OPENID_REQUIRED_ROLE_PARAMETER_PATH: "librechat_roles"
             OPENID_AUTO_REDIRECT: "true"
 
-            OPENAI_API_KEY: "user_provided"
+            #OPENAI_API_KEY: "user_provided"
             #OPENAI_MODELS: "gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k"
 
             #GOOGLE_KEY: "user_provided"
             #GOOGLE_MODELS: "gemini-3-pro-preview,gemini-3-pro-image-preview,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.5-pro"
 
-            #DEBUG_LOGGING: true
-            #DEBUG_CONSOLE: true
+            DEBUG_LOGGING: true
+            DEBUG_CONSOLE: true
 
             LOGIN_MAX: "50"
             LOGIN_WINDOW: "1"
@@ -164,7 +166,7 @@ librechat:
                 name: librechat-openid-config
                 key: session_secret
 
-            # DEBUG_OPENID_REQUESTS: "true"
+            DEBUG_OPENID_REQUESTS: "true"
 
             # Optional: redirects the user to the end session endpoint after logging out
             OPENID_USE_END_SESSION_ENDPOINT: "true"
@@ -240,7 +242,7 @@ librechat:
 
             # OpenAI-compatible Converse LLM API base URL
             IMAGE_GEN_OAI_BASEURL: https://api.ai.camer.digital/v1
-            IMAGE_GEN_OAI_MODEL: gpt-image-1
+            IMAGE_GEN_OAI_MODEL: gemini-2.5-flash-image
 
 
             AWS_REGION:
@@ -622,40 +624,17 @@ config:
         baseURL: "https://services.api.ai.camer.digital/v1"
         models:
           default:
-            # - "gpt-5-codex-mini"  # Disabled: GPT model not currently available
-            # - "te3-small"  # Disabled: te3 model not currently available
-            - "kimi-k2.5"
-            - "gemini-3.1-pro"
-            - "gemini-3-flash"
-            - "cogito-671b-v2-p1"
-            - "gemini-2-5-flash-lite"
-            - "gemini-2.5-flash"
-            - "kimi-k2-thinking"
-            - "deepseek-v3p2"
-            - "kimi-k2-instruct-0905"
             - "glm-5"
-            - "qwen3-vl-30b-a3b-instruct"
-            - "qwen3-vl-30b-a3b-thinking"
-            - "minimax-m2p5"
-            - "gemini-2.5-flash-lite"
-            # - "gpt-5-nano"  # Disabled: GPT model not currently available
-            - "qwen3-embedding-8b"
-            - "gemini-2.5-flash-image"
-            - "gemini-2.5-pro"
-            # - "gpt-5-mini"  # Disabled: GPT model not currently available
+            - "minimax-m2p7"
             - "gemini-3.1-flash-lite"
-            # - "gpt-5.3-codex"  # Disabled: GPT model not currently available
-            - "gpt-image-1"
-            - "qwen3-8b"
-            - "qwen3-reranker-8b"
-            # - "te3-large"  # Disabled: te3 model not currently available
+            - "gemma-4"
           fetch: false
         iconURL: "https://s3.ssegning.me/ai-ops-backups/public/chicken-leg.png"
         titleConvo: false
         titleMethod: "completion"
-        titleModel: "qwen3-vl-30b-a3b-instruct"
+        titleModel: "gemma-4"
         summarize: true
-        summaryModel: "qwen3-vl-30b-a3b-instruct"
+        summaryModel: "gemma-4"
         forcePrompt: true
         modelDisplayLabel: "Converse AI"
         headers:
@@ -664,278 +643,6 @@ config:
           X-User-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
           X-User-Email: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
           X-User-Role: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
-  modelSpecs:
-    enforce: false
-    prioritize: false
-    list:
-      - name: "moe-orchestrator"
-        label: "MoE Orchestrator"
-        group: "MoE Lab"
-        groupIcon: "openAI"
-        description: "Best entry point for the experimental MoE flow. It coordinates the specialist presets and returns one final answer."
-        preset:
-          endpoint: "Converse"
-          model: "qwen3-vl-30b-a3b-instruct"
-          temperature: 0.2
-          promptPrefix: |
-            You are the orchestrator in a Mixture-of-Experts workflow.
-            Your job is to:
-            1. clarify the task and constraints,
-            2. decide which specialists should contribute,
-            3. compare specialist outputs critically,
-            4. resolve disagreements,
-            5. produce one final, actionable answer.
-
-            Output sections:
-            - Task framing
-            - Constraints
-            - Specialist routing plan
-            - Compared recommendations
-            - Final answer
-            - Risks and follow-up
-
-      - name: "moe-strategy"
-        label: "Strategy Expert"
-        group: "MoE Specialists"
-        groupIcon: "openAI"
-        description: "Explores solution directions and trade-offs. Best when you want alternatives before implementation."
-        preset:
-          endpoint: "Converse"
-          model: "kimi-k2-thinking"
-          temperature: 0.6
-          promptPrefix: |
-            You are the Strategy expert.
-            Produce 3 strong solution options.
-            For each option include:
-            - core idea
-            - why it fits
-            - trade-offs
-            - implementation complexity
-
-      - name: "moe-creative"
-        label: "Creative Expert"
-        group: "MoE Specialists"
-        description: "Generates wider and less conventional approaches when you want more exploration."
-        preset:
-          endpoint: "Converse"
-          model: "cogito-671b-v2-p1"
-          temperature: 0.9
-          promptPrefix: |
-            You are the Creative expert.
-            Generate diverse alternatives, including:
-            - standard option
-            - low-cost option
-            - high-upside option
-            - unconventional but plausible option
-            - fallback option
-
-      - name: "moe-analysis"
-        label: "Analysis Expert"
-        group: "MoE Specialists"
-        description: "Critiques proposals for feasibility, risks, and hidden assumptions."
-        preset:
-          endpoint: "Converse"
-          model: "deepseek-v3p2"
-          temperature: 0.1
-          promptPrefix: |
-            You are the Analysis expert.
-            Critically evaluate each proposal.
-            Include:
-            - hidden assumptions
-            - failure modes
-            - cost and scaling risks
-            - maintainability concerns
-            - recommendation
-
-      - name: "moe-vision"
-        label: "Vision Expert"
-        group: "MoE Specialists"
-        description: "Best for multimodal tasks, screenshots, PDFs, and UI critique."
-        preset:
-          endpoint: "Converse"
-          model: "qwen3-vl-30b-a3b-thinking"
-          temperature: 0.2
-          promptPrefix: |
-            You are the Vision expert.
-            Focus on multimodal understanding.
-            When images, screenshots, PDFs, or layouts are involved:
-            - extract the important details
-            - identify inconsistencies
-            - explain findings clearly
-
-      - name: "moe-fast"
-        label: "Fast Expert"
-        group: "MoE Specialists"
-        description: "Low-latency helper for quick drafting, summaries, and lightweight classification."
-        preset:
-          endpoint: "Converse"
-          model: "qwen3-8b"
-          temperature: 0.2
-          promptPrefix: |
-            You are the Fast expert.
-            Be concise, structured, and efficient.
-            Prefer direct answers and compact summaries.
-
-  modelSpecs:
-    enforce: false
-    prioritize: false
-    list:
-      - name: "moa-orchestrator"
-        label: "MoA Orchestrator"
-        #default: true
-        group: "MoA"
-        description: "Entry agent that coordinates specialists and produces the final plan."
-        webSearch: true
-        fileSearch: true
-        #mcpServers: [ "sequential-thinking" ]
-        preset:
-          endpoint: "Converse"
-          model: "glm-5"
-          temperature: 0.2
-          promptPrefix: |
-            You are the entry agent in a Mixture-of-Agents workflow.
-            Your job is to:
-            1. gather constraints first,
-            2. request ideation and brainstorming paths,
-            3. send every serious path to rejection,
-            4. send surviving paths to security review,
-            5. require a TDD-first implementation plan for the chosen path,
-            6. synthesize one final plan.
-
-            Output sections:
-            - Problem framing
-            - Constraints discovered
-            - Candidate paths
-            - Rejected paths and why
-            - Selected path
-            - Security review
-            - TDD plan
-            - Milestones
-            - Open risks
-
-      - name: "moa-ideation"
-        label: "Ideation"
-        group: "MoA Specialists"
-        description: "Generates a few strong strategic options."
-        preset:
-          endpoint: "Converse"
-          model: "kimi-k2.5"
-          temperature: 0.7
-          promptPrefix: |
-            You are the Ideation agent.
-            Produce 3 to 5 strong solution directions.
-            Prefer clarity over volume.
-            For each direction include:
-            - core idea
-            - why it could work
-            - assumptions
-            - expected upside
-            - likely implementation complexity
-
-      - name: "moa-brainstorming"
-        label: "Brainstorming"
-        group: "MoA Specialists"
-        description: "Expands the option space with variants and unconventional ideas."
-        preset:
-          endpoint: "Converse"
-          model: "cogito-671b-v2-p1"
-          temperature: 0.95
-          promptPrefix: |
-            You are the Brainstorming agent.
-            Generate a broad set of candidate approaches and variations.
-            Prefer diversity and novelty.
-            Include:
-            - standard option
-            - low-cost option
-            - high-upside option
-            - weird but plausible option
-            - fallback option
-
-      - name: "moa-rejection"
-        label: "Rejection"
-        group: "MoA Specialists"
-        description: "Finds worst-case scenarios and fatal flaws."
-        preset:
-          endpoint: "Converse"
-          model: "glm-5"
-          temperature: 0.1
-          promptPrefix: |
-            You are the Rejection agent.
-            Your task is to reject weak paths.
-            For each proposed path:
-            - find worst-case scenario
-            - identify hidden assumptions
-            - identify cost, reliability, maintainability, and scaling risks
-            - state kill criteria
-            - state what mitigation would be required to save the idea
-
-      - name: "moa-constraint-research"
-        label: "Constraint Research"
-        group: "MoA Specialists"
-        description: "Researches technical and operational constraints."
-        webSearch: true
-        fileSearch: true
-        preset:
-          endpoint: "Converse"
-          model: "kimi-k2.5"
-          temperature: 0.2
-          promptPrefix: |
-            You are the Constraint Research agent.
-            Identify constraints before architecture is chosen.
-            Research:
-            - technical limitations
-            - dependency and vendor constraints
-            - runtime and deployment constraints
-            - cost and latency constraints
-            - legal/compliance implications if relevant
-            Output only verified or clearly labeled assumptions.
-
-      - name: "moa-security"
-        label: "Security"
-        group: "MoA Specialists"
-        description: "Threat-models every serious path."
-        webSearch: true
-        preset:
-          endpoint: "Converse"
-          model: "gemini-2.5-flash"
-          temperature: 0.1
-          promptPrefix: |
-            You are the Security agent.
-            Threat-model the proposed design.
-            Review:
-            - authn/authz
-            - secrets handling
-            - data flow and trust boundaries
-            - prompt injection / tool abuse
-            - dependency and supply-chain risks
-            - multitenancy and isolation
-            - logging and auditability
-            Output:
-            - threat list
-            - risk severity
-            - mandatory controls
-            - residual risk
-
-      - name: "moa-tdd"
-        label: "TDD"
-        group: "MoA Specialists"
-        description: "Turns the selected path into a strict test-first plan."
-        executeCode: true
-        preset:
-          endpoint: "Converse"
-          model: "gemini-2.5-flash"
-          temperature: 0.1
-          promptPrefix: |
-            You are the TDD agent.
-            Your role is mandatory before implementation.
-            Convert the selected design into a test-first execution plan.
-            Produce:
-            - acceptance criteria
-            - failing tests to write first
-            - unit/integration/e2e split
-            - fixtures, mocks, and test data
-            - definition of done
-            - rollout validation checks
 # MongoDB Parameters
 db:
   enabled: true
@@ -944,7 +651,7 @@ db:
   persistence:
     size: 30Gi
     storageClass: ~
-  architecture: standalone
+  architecture: replicaset
   replicaSet:
     name: rs0
     members: 1
