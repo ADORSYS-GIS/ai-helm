@@ -1,10 +1,66 @@
 # External Secrets Operator Configuration Chart
 # This chart configures ClusterSecretStore and ExternalSecrets for the AI platform
+# Using BJW-S common library for templating
+
+# BJW-S common library global settings
+global:
+  # -- Override the name of the chart
+  nameOverride: ""
+  # -- Override the full name of the chart
+  fullnameOverride: ""
+  # -- Common labels to add to all resources
+  labels: {}
+  # -- Common annotations to add to all resources
+  annotations: {}
 
 # Namespace configuration
 # Note: The namespace must be created manually before deploying this chart
 namespace:
   name: external-secrets-system
+
+# ServiceAccount for the ClusterSecretStore
+# BJW-S common library will create the ServiceAccount
+serviceAccount:
+  bootstrap:
+    enabled: true
+    # -- ArgoCD sync wave annotation (must be before ClusterSecretStore)
+    annotations:
+      argocd.argoproj.io/sync-wave: "0"
+
+# RBAC configuration
+# BJW-S common library will create ClusterRole and ClusterRoleBinding
+rbac:
+  roles:
+    # ClusterRole for bootstrap ClusterSecretStore
+    # Allows ESO to read secrets from any namespace for bootstrap purposes
+    bootstrap-reader:
+      enabled: true
+      type: ClusterRole
+      rules:
+        - apiGroups: [""]
+          resources:
+            - secrets
+          verbs:
+            - get
+            - list
+            - watch
+        - apiGroups: [""]
+          resources:
+            - namespaces
+          verbs:
+            - get
+            - list
+            - watch
+  bindings:
+    # ClusterRoleBinding for bootstrap ClusterSecretStore
+    bootstrap-reader:
+      enabled: true
+      type: ClusterRoleBinding
+      roleRef:
+        identifier: bootstrap-reader
+      subjects:
+        - identifier: bootstrap
+          namespace: external-secrets-system
 
 # ClusterSecretStore configuration
 # This store references bootstrap secrets that must be manually created
@@ -55,25 +111,6 @@ clusterSecretStore:
     #     #   secretName: vault-token
     #     #   namespace: external-secrets-system
     #     #   key: token
-
-# ServiceAccount for the ClusterSecretStore
-serviceAccount:
-  create: true
-  name: external-secrets-bootstrap
-  # Sync wave for ArgoCD (must be before ClusterSecretStore)
-  syncWave: "0"
-
-# RBAC configuration
-rbac:
-  create: true
-  clusterRole:
-    name: external-secrets-bootstrap-reader
-    # Sync wave for ArgoCD
-    syncWave: "0"
-  clusterRoleBinding:
-    name: external-secrets-bootstrap-reader
-    # Sync wave for ArgoCD
-    syncWave: "1"
 
 # ExternalSecrets configuration
 externalSecretsConfig:
