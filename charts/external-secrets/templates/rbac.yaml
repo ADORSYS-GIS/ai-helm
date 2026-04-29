@@ -8,7 +8,7 @@ metadata:
   name: {{ include "external-secrets.serviceAccountName" . }}
   namespace: {{ include "external-secrets.namespace" . }}
   labels:
-    {{- include "external-secrets.labels" . | nindent 4 }}
+    {{- include "common.labels.standard" . | nindent 4 }}
     app.kubernetes.io/component: bootstrap
   annotations:
     {{- if .Values.serviceAccount.bootstrap.annotations }}
@@ -28,7 +28,7 @@ kind: ClusterRole
 metadata:
   name: {{ include "external-secrets.clusterRoleName" . }}
   labels:
-    {{- include "external-secrets.labels" . | nindent 4 }}
+    {{- include "common.labels.standard" . | nindent 4 }}
     app.kubernetes.io/component: bootstrap
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -47,7 +47,7 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ include "external-secrets.clusterRoleBindingName" . }}
   labels:
-    {{- include "external-secrets.labels" . | nindent 4 }}
+    {{- include "common.labels.standard" . | nindent 4 }}
     app.kubernetes.io/component: bootstrap
   annotations:
     argocd.argoproj.io/sync-wave: "1"
