@@ -4,7 +4,7 @@ global:
   rag_librechat:
     version: "v0.7.2"
   mongo:
-    replicaCount: 1
+    replicaCount: 2
     replicaSetName: rs0
   configmap:
     name: "librechat-config"
@@ -83,7 +83,9 @@ librechat:
     librechat:
       type: deployment
       strategy: RollingUpdate
-      replicas: 1
+      replicas: 2
+      podDisruptionBudget:
+        minAvailable: 1
       pod:
         labels:
           app: librechat-app
@@ -240,7 +242,7 @@ librechat:
 
             # OpenAI-compatible Converse LLM API base URL
             IMAGE_GEN_OAI_BASEURL: https://api.ai.camer.digital/v1
-            IMAGE_GEN_OAI_MODEL: gpt-image-1
+            IMAGE_GEN_OAI_MODEL: gemini-2.5-flash-image
 
 
             AWS_REGION:
@@ -649,7 +651,7 @@ db:
   persistence:
     size: 30Gi
     storageClass: ~
-  architecture: standalone
+  architecture: replicaset
   replicaSet:
     name: rs0
     members: 1
