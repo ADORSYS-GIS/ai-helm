@@ -22,9 +22,30 @@ pvc:
 
 # Keycloak Realm Configuration
 #=========================
-keycloak:
+keycloak-config:
   url: "http://keycloak.keycloak.svc.cluster.local:8080"
   realm: "platform"
+
+  # Realm-level configuration with defaults
+  realmConfig:
+    enabled: true
+    displayName: "Platform Services"
+    displayNameHtml: "<div class='kc-logo-text'><span>Platform Services</span></div>"
+    sslRequired: "external"
+    registrationAllowed: false
+    registrationEmailAsUsername: true
+    verifyEmail: true
+    resetPasswordAllowed: true
+    loginTheme: "keycloak"
+    accountTheme: "keycloak"
+    adminTheme: "keycloak"
+    emailTheme: "keycloak"
+    passwordPolicy: "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notEmail()"
+    accessTokenLifespan: 300
+    ssoSessionMaxLifespan: 36000
+    ssoSessionIdleTimeout: 1800
+    attributes:
+      darkMode: "true"
 
   clients:
     phoenix:
@@ -34,6 +55,7 @@ keycloak:
       description: "Phoenix AI Dashboard"
       publicClient: false
       standardFlowEnabled: true
+      implicitFlowEnabled: false
       directAccessGrantsEnabled: false
       serviceAccountsEnabled: false
       redirectUris: []
@@ -46,6 +68,7 @@ keycloak:
       description: "LibreChat Backend"
       publicClient: false
       standardFlowEnabled: true
+      implicitFlowEnabled: false
       directAccessGrantsEnabled: false
       serviceAccountsEnabled: false
       redirectUris: []
@@ -57,6 +80,7 @@ keycloak:
       description: "Coder Development Environment"
       publicClient: false
       standardFlowEnabled: true
+      implicitFlowEnabled: false
       directAccessGrantsEnabled: false
       serviceAccountsEnabled: false
       redirectUris: []
@@ -68,6 +92,7 @@ keycloak:
       description: "MCP service API client"
       publicClient: false
       standardFlowEnabled: false
+      implicitFlowEnabled: false
       directAccessGrantsEnabled: true
       serviceAccountsEnabled: true
       redirectUris: []
@@ -85,36 +110,9 @@ keycloak:
       name: "MCP Orchestrator"
       description: "MCP orchestration service"
 
-  realmRoles:
-    platform:
-      - name: "platform-user"
-      - name: "platform-admin"
-      - name: "platform-viewer"
-
-  clientRoles:
-    phoenix:
-      - name: "admin"
-      - name: "user"
-      - name: "viewer"
-    converse:
-      - name: "admin"
-      - name: "user"
-    coder:
-      - name: "admin"
-      - name: "user"
-
-  groups:
-    platformAdmins:
-      name: "PlatformAdmins"
-    phoenix:
-      - name: "PhoenixAdmin"
-      - name: "PhoenixUser"
-      - name: "PhoenixViewer"
-    librechat:
-      - name: "LibreChatAdmin"
-      - name: "LibreChatUser"
-
-app-template:
+# Keycloak config-sync CronJob (app-template dependency)
+# =====================================================
+config-sync:
   controllers:
     configSync:
       type: cronjob
@@ -125,7 +123,7 @@ app-template:
         main:
           image:
             repository: docker.io/adorsys/keycloak-config-cli
-            tag: "6.5.0-26.5.4"
+            tag: "latest-26"
           env:
             KEYCLOAK_URL:
               value: "http://keycloak.keycloak.svc.cluster.local:8080"

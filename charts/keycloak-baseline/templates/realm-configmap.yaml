@@ -1,4 +1,4 @@
-{{- $kc := .Values.keycloak -}}
+{{- $kc := index .Values "keycloak-config" -}}
 {{- $realm := $kc.realm | default "platform" -}}
 apiVersion: v1
 kind: ConfigMap
@@ -15,24 +15,26 @@ data:
   {{ $realm }}-realm.yaml: |
     id: {{ $realm }}
     realm: {{ $realm }}
-    enabled: true
-    displayName: Platform Services
-    displayNameHtml: <div class='kc-logo-text'><span>Platform Services</span></div>
-    sslRequired: external
-    registrationAllowed: false
-    registrationEmailAsUsername: true
-    verifyEmail: true
-    resetPasswordAllowed: true
-    loginTheme: keycloak
-    accountTheme: keycloak
-    adminTheme: keycloak
-    emailTheme: keycloak
-    passwordPolicy: length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notEmail()
-    accessTokenLifespan: 300
-    ssoSessionMaxLifespan: 36000
-    ssoSessionIdleTimeout: 1800
+    enabled: {{ $kc.realmConfig.enabled }}
+    displayName: {{ $kc.realmConfig.displayName }}
+    displayNameHtml: {{ $kc.realmConfig.displayNameHtml }}
+    sslRequired: {{ $kc.realmConfig.sslRequired }}
+    registrationAllowed: {{ $kc.realmConfig.registrationAllowed }}
+    registrationEmailAsUsername: {{ $kc.realmConfig.registrationEmailAsUsername }}
+    verifyEmail: {{ $kc.realmConfig.verifyEmail }}
+    resetPasswordAllowed: {{ $kc.realmConfig.resetPasswordAllowed }}
+    loginTheme: {{ $kc.realmConfig.loginTheme }}
+    accountTheme: {{ $kc.realmConfig.accountTheme }}
+    adminTheme: {{ $kc.realmConfig.adminTheme }}
+    emailTheme: {{ $kc.realmConfig.emailTheme }}
+    passwordPolicy: {{ $kc.realmConfig.passwordPolicy }}
+    accessTokenLifespan: {{ $kc.realmConfig.accessTokenLifespan }}
+    ssoSessionMaxLifespan: {{ $kc.realmConfig.ssoSessionMaxLifespan }}
+    ssoSessionIdleTimeout: {{ $kc.realmConfig.ssoSessionIdleTimeout }}
     attributes:
-      darkMode: "true"
+    {{- range $key, $value := $kc.realmConfig.attributes }}
+      {{ $key }}: {{ $value | quote }}
+    {{- end }}
     {{- /* Only include clients section if ANY client is enabled */ -}}
     {{- $enabledClients := list }}
     {{- range $name, $client := $kc.clients }}
