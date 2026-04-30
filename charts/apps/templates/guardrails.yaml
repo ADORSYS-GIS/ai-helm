@@ -1,0 +1,36 @@
+{{- if .Values.extraObjects }}
+{{- /* Extract unique namespaces from extraObjects */ -}}
+{{- $namespaces := dict -}}
+{{- range .Values.extraObjects -}}
+{{- $metadata := index . "metadata" | default (dict) -}}
+{{- $namespace := index $metadata "namespace" | default "" -}}
+{{- if $namespace -}}
+{{- $_ := set $namespaces $namespace true -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* Create namespaces first with sync-wave "0" before quotas are applied */ -}}
+{{- range $ns, $_ := $namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    kubernetes.io/metadata.name: {{ $ns }}
+{{- end }}
+
+{{- /* Apply LimitRange/ResourceQuota with sync-wave "5" */ -}}
+{{- range .Values.extraObjects }}
+---
+{{- $obj := . -}}
+{{- $metadata := index $obj "metadata" | default (dict) -}}
+{{- $annotations := index $metadata "annotations" | default (dict) -}}
+{{- $_ := set $annotations "argocd.argoproj.io/sync-wave" "5" -}}
+{{- $_ := set $metadata "annotations" $annotations -}}
+{{- $_ := set $obj "metadata" $metadata -}}
+{{ toYaml $obj }}
+{{- end }}
+{{- end }}
