@@ -10,6 +10,12 @@ applications:
       helm:
         releaseName: traefik
         valuesObject:
+          deployment:
+            # High-availability: 2 replicas for redundancy; PDB ensures at least 1 remains available during maintenance.
+            replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            maxUnavailable: 1
           additionalArguments:
             - "--entryPoints.web.http.redirections.entryPoint.to=:443"
             - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
@@ -76,6 +82,10 @@ applications:
       helm:
         releaseName: opentelemetry-operator
         valuesObject:
+          pdb:
+            create: false
+            minAvailable: ""
+            maxUnavailable: 1
         #manager:
         #  collectorImage:
         #    repository: "otel/opentelemetry-collector-k8s"
@@ -169,6 +179,10 @@ applications:
         releaseName: redis
         valuesObject:
           global:
+            pdb:
+              create: true
+              minAvailable: ""
+              maxUnavailable: "1"
             defaultStorageClass: linode-block-storage
           auth:
             enabled: false
@@ -216,10 +230,16 @@ applications:
       helm:
         releaseName: eg
         valuesObject:
+          podDisruptionBudget:
+            # Critical Gateway infrastructure: PDB protects against concurrent evictions.
+            minAvailable: 1
+          deployment:
+            # High-availability: 2 replicas with HPA; minimum 2 ensures PDB compatibility.
+            replicas: 2
           hpa:
             enabled: true
-            minReplicas: 1
-            maxReplicas: 2
+            minReplicas: 2
+            maxReplicas: 3
           config:
             envoyGateway:
               gateway:
@@ -237,7 +257,10 @@ applications:
               provider:
                 type: Kubernetes
                 kubernetes:
+                  rateLimitPDB:
+                    maxUnavailable: 1
                   rateLimitDeployment:
+                    replicas: 2
                     patch:
                       type: StrategicMerge
                       value:
@@ -334,6 +357,7 @@ applications:
             - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
             - --kubelet-use-node-status-port
             - --metric-resolution=15s
+          # Monitoring infrastructure: 2 replicas to avoid gaps in metrics during node drains.
           replicas: 2
           resources:
             requests:
@@ -587,7 +611,7 @@ applications:
                       service_name: "lightbridge-authz-api"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -673,7 +697,7 @@ applications:
                       service_name: "lightbridge-authz-api"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -750,7 +774,7 @@ applications:
                       service_name: "lightbridge-authz-opa"
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -809,7 +833,7 @@ applications:
 
             controllers:
               main:
-                replicas: 1
+                replicas: 2
                 containers:
                   authz:
                     env:
@@ -859,6 +883,8 @@ applications:
             persistence:
               tls:
                 name: authz-tls
+          # Lightbridge PDB Strategy: Handled via rawRessources because the upstream chart 
+          # doesn't support controller PDBs natively. Ensure at least 1 instance is always available.
           rawRessources:
             - |
               apiVersion: v1
@@ -885,6 +911,53 @@ applications:
                   limits.cpu: "6"
                   limits.memory: 10Gi
                   count/pods: "25"
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-api-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: api
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-opa-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: opa
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-mcp-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: mcp
+            - |
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: lightbridge-usage-pdb
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                maxUnavailable: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/instance: lightbridge
+                    app.kubernetes.io/name: usage
             - |
               apiVersion: networking.k8s.io/v1
               kind: Ingress
@@ -1188,6 +1261,7 @@ applications:
               spec:
                 immediate: true
                 schedule: "0 0 2 * * *"
+                backupOwnerReference: self
                 cluster:
                   name: lightbridge-main-db
                 method: plugin
@@ -1205,6 +1279,7 @@ applications:
               spec:
                 immediate: true
                 schedule: "0 0 2 * * *"
+                backupOwnerReference: self
                 cluster:
                   name: lightbridge-usage-db
                 method: plugin
@@ -1233,6 +1308,9 @@ applications:
           conversefrontend:
             controllers:
               main:
+                podDisruptionBudget:
+                  # User-facing frontend: PDB ensures uptime during automated node maintenance.
+                  maxUnavailable: 1
                 containers:
                   frontend:
                     image:
@@ -1361,7 +1439,7 @@ applications:
                 initContainers:
                   exporter:
                     env:
-                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017 # ,librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
+                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017, #librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
     destination:
       namespace: converse-chat
     syncPolicy:
