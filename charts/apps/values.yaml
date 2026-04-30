@@ -36,6 +36,32 @@ applications:
 
           gateway:
             namespacePolicy: All
+          
+          extraObjects:
+            - apiVersion: v1
+              kind: LimitRange
+              metadata:
+                name: traefik-system-defaults
+                namespace: traefik-system
+              spec:
+                limits:
+                  - type: Container
+                    defaultRequest: { cpu: 50m, memory: 64Mi }
+                    default:        { cpu: 200m, memory: 256Mi }
+                    max:            { cpu: "2", memory: 2Gi }
+            - apiVersion: v1
+              kind: ResourceQuota
+              metadata:
+                name: traefik-system-quota
+                namespace: traefik-system
+              spec:
+                hard:
+                  requests.cpu: 500m
+                  requests.memory: 512Mi
+                  limits.cpu: "2"
+                  limits.memory: 1Gi
+                  count/pods: "10"
+
     destination:
       namespace: traefik-system
     syncPolicy:
@@ -57,9 +83,9 @@ applications:
         releaseName: opentelemetry-operator
         valuesObject:
           pdb:
-            create: false
-            minAvailable: ""
-            maxUnavailable: 1
+            create: true
+            minAvailable: 1
+            #maxUnavailable: 1
         #manager:
         #  collectorImage:
         #    repository: "otel/opentelemetry-collector-k8s"
@@ -861,6 +887,30 @@ applications:
           # doesn't support controller PDBs natively. Ensure at least 1 instance is always available.
           rawRessources:
             - |
+              apiVersion: v1
+              kind: LimitRange
+              metadata:
+                name: converse-defaults
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                limits:
+                  - type: Container
+                    defaultRequest: { cpu: 100m, memory: 128Mi }
+                    default:        { cpu: 400m, memory: 512Mi }
+                    max:            { cpu: "4", memory: 8Gi }
+            - |
+              apiVersion: v1
+              kind: ResourceQuota
+              metadata:
+                name: converse-quota
+                namespace: {{ $.Release.Namespace }}
+              spec:
+                hard:
+                  requests.cpu: "2"
+                  requests.memory: 4Gi
+                  limits.cpu: "6"
+                  limits.memory: 10Gi
+                  count/pods: "25"
               apiVersion: policy/v1
               kind: PodDisruptionBudget
               metadata:
@@ -1642,7 +1692,7 @@ applications:
                       memory: 128Mi
                     limits:
                       cpu: 200m
-                      memory: 512G
+                      memory: 512Mi
                   probes:
                     liveness:
                       enabled: false
@@ -1676,3 +1726,234 @@ applications:
       automated:
         prune: true
         selfHeal: true
+
+extraObjects:
+  # ==========================================
+  # Upstream namespace quotas & limit ranges
+  # ==========================================
+
+  # redis-system
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: redis-system-defaults
+      namespace: redis-system
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 50m, memory: 64Mi }
+          default:        { cpu: 200m, memory: 256Mi }
+          max:            { cpu: "2", memory: 2Gi }
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: redis-system-quota
+      namespace: redis-system
+    spec:
+      hard:
+        requests.cpu: 500m
+        requests.memory: 1Gi
+        limits.cpu: "2"
+        limits.memory: 3Gi
+        count/pods: "10"
+
+  # cnpg-system
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: cnpg-system-defaults
+      namespace: cnpg-system
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 50m, memory: 64Mi }
+          default:        { cpu: 200m, memory: 256Mi }
+          max:            { cpu: "2", memory: 2Gi }
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: cnpg-system-quota
+      namespace: cnpg-system
+    spec:
+      hard:
+        requests.cpu: 500m
+        requests.memory: 512Mi
+        limits.cpu: "1"
+        limits.memory: 3Gi
+        count/pods: "10"
+
+  # authorino-system
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: authorino-system-defaults
+      namespace: authorino-system
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 50m, memory: 64Mi }
+          default:        { cpu: 200m, memory: 256Mi }
+          max:            { cpu: "2", memory: 2Gi }
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: authorino-system-quota
+      namespace: authorino-system
+    spec:
+      hard:
+        requests.cpu: 500m
+        requests.memory: 512Mi
+        limits.cpu: "2"
+        limits.memory: 3Gi
+        count/pods: "10"
+
+  # envoy-gateway-system
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: envoy-gateway-system-defaults
+      namespace: envoy-gateway-system
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 50m, memory: 128Mi }
+          default:        { cpu: 200m, memory: 512Mi }
+          max:            { cpu: "4", memory: 4Gi }
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: envoy-gateway-system-quota
+      namespace: envoy-gateway-system
+    spec:
+      hard:
+        requests.cpu: "2"
+        requests.memory: 4Gi
+        limits.cpu: "6"
+        limits.memory: 10Gi
+        count/pods: "15"
+
+  # envoy-ai-gateway-system
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: envoy-ai-gateway-system-defaults
+      namespace: envoy-ai-gateway-system
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 50m, memory: 64Mi }
+          default:        { cpu: 200m, memory: 256Mi }
+          max:            { cpu: "2", memory: 2Gi }
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: envoy-ai-gateway-system-quota
+      namespace: envoy-ai-gateway-system
+    spec:
+      hard:
+        requests.cpu: 500m
+        requests.memory: 512Mi
+        limits.cpu: "2"
+        limits.memory: 3Gi
+        count/pods: "10"
+
+  # opentelemetry-system
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: opentelemetry-system-defaults
+      namespace: opentelemetry-system
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 50m, memory: 64Mi }
+          default:        { cpu: 200m, memory: 256Mi }
+          max:            { cpu: "2", memory: 2Gi }
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: opentelemetry-system-quota
+      namespace: opentelemetry-system
+    spec:
+      hard:
+        requests.cpu: 500m
+        requests.memory: 512Mi
+        limits.cpu: "2"
+        limits.memory: 3Gi
+        count/pods: "10"
+
+  # converse-monitoring
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: converse-monitoring-defaults
+      namespace: converse-monitoring
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 100m, memory: 128Mi }
+          default:        { cpu: 500m, memory: 512Mi }
+          max:            { cpu: "4", memory: 8Gi }
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: converse-monitoring-quota
+      namespace: converse-monitoring
+    spec:
+      hard:
+        requests.cpu: "2"
+        requests.memory: 4Gi
+        limits.cpu: "6"
+        limits.memory: 10Gi
+        count/pods: "15"
+
+  # coder
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: coder-defaults
+      namespace: coder
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 100m, memory: 128Mi }
+          default:        { cpu: 500m, memory: 512Mi }
+          max:            { cpu: "4", memory: 8Gi }
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: coder-quota
+      namespace: coder
+    spec:
+      hard:
+        requests.cpu: "4"
+        requests.memory: 10Gi
+        limits.cpu: "12"
+        limits.memory: 40Gi
+        count/pods: "70"
+
+  # kube-system (limitrange only)
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: kube-system-defaults
+      namespace: kube-system
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 50m, memory: 64Mi }
+          default:        { cpu: 200m, memory: 256Mi }
+          max:            { cpu: "4", memory: 8Gi }
+
+  # converse-proxy (limitrange only)
+  - apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: converse-proxy-defaults
+      namespace: converse-proxy
+    spec:
+      limits:
+        - type: Container
+          defaultRequest: { cpu: 50m, memory: 64Mi }
+          default:        { cpu: 200m, memory: 256Mi }
+          max:            { cpu: "4", memory: 8Gi }
