@@ -2,8 +2,7 @@
 
 This Helm chart configures External Secrets Operator (ESO) for the AI platform. It provides:
 
-- ClusterSecretStore for bootstrap secrets
-- RBAC (ServiceAccount, ClusterRole, ClusterRoleBinding)
+- ClusterSecretStore for HashiCorp Vault integration
 - ExternalSecret resources for application secret synchronization
 
 **Note:** This chart does NOT install the ESO operator. The operator is installed separately from the official upstream Helm chart.
@@ -12,6 +11,7 @@ This Helm chart configures External Secrets Operator (ESO) for the AI platform. 
 
 - External Secrets Operator must be installed (see `charts/apps/values.yaml`)
 - Kubernetes cluster with ArgoCD
+- Access to a HashiCorp Vault instance (remote or in-cluster)
 - **Namespace `external-secrets-system` must be created manually before deploying this chart**
 
 ## Installation
@@ -34,16 +34,74 @@ kubectl create namespace external-secrets-system
 | `clusterSecretStore.enabled` | Enable ClusterSecretStore | `true` |
 | `clusterSecretStore.name` | ClusterSecretStore name | `bootstrap-secrets` |
 | `clusterSecretStore.syncWave` | ArgoCD sync wave | `"1"` |
-| `serviceAccount.create` | Create ServiceAccount | `true` |
-| `serviceAccount.name` | ServiceAccount name | `external-secrets-bootstrap` |
-| `serviceAccount.syncWave` | ArgoCD sync wave | `"0"` |
-| `rbac.create` | Create RBAC resources | `true` |
-| `rbac.clusterRole.name` | ClusterRole name | `external-secrets-bootstrap-reader` |
-| `rbac.clusterRole.syncWave` | ArgoCD sync wave | `"0"` |
-| `rbac.clusterRoleBinding.name` | ClusterRoleBinding name | `external-secrets-bootstrap-reader` |
-| `rbac.clusterRoleBinding.syncWave` | ArgoCD sync wave | `"1"` |
+| `clusterSecretStore.vault.server` | Vault server URL (required) | `""` |
+| `clusterSecretStore.vault.path` | Vault secrets engine path | `secret` |
+| `clusterSecretStore.vault.version` | Vault secrets engine version | `v2` |
+| `clusterSecretStore.vault.namespace` | Vault namespace (Enterprise) | `""` |
+| `clusterSecretStore.vault.auth.kubernetes.mountPath` | Kubernetes auth mount path | `kubernetes` |
+| `clusterSecretStore.vault.auth.kubernetes.role` | Kubernetes auth role (required) | `""` |
 | `externalSecretsConfig.syncWave` | ArgoCD sync wave for ExternalSecrets | `"2"` |
 | `externalSecrets` | ExternalSecret definitions | `{}` |
+
+### Vault Configuration
+
+This chart connects to a HashiCorp Vault instance for secret management. Configure the connection in your values:
+
+```yaml
+clusterSecretStore:
+  enabled: true
+  name: bootstrap-secrets
+  vault:
+    # Vault server URL (required)
+    # For external Vault: https://vault.example.com:8200
+    # For in-cluster Vault: https://vault.vault.svc.cluster.local:8200
+    server: "https://vault.example.com:8200"
+    
+    # Secrets engine path
+    path: secret
+    
+    # Secrets engine version (v1 or v2)
+    version: v2
+    
+    # Authentication method
+    auth:
+      kubernetes:
+        # Kubernetes auth mount path
+        mountPath: kubernetes
+        # Role configured in Vault (required)
+        role: "external-secrets"
+```
+
+### Authentication Methods
+
+#### Kubernetes Authentication (Recommended)
+
+For in-cluster workloads, use Kubernetes authentication:
+
+```yaml
+clusterSecretStore:
+  vault:
+    server: "https://vault.vault.svc.cluster.local:8200"
+    auth:
+      kubernetes:
+        mountPath: kubernetes
+        role: "external-secrets"
+```
+
+#### Token Authentication
+
+For external Vault or static token authentication:
+
+```yaml
+clusterSecretStore:
+  vault:
+    server: "https://vault.example.com:8200"
+    auth:
+      token:
+        secretName: vault-token
+        namespace: external-secrets-system
+        key: token
+```
 
 ### Adding ExternalSecrets
 
@@ -58,22 +116,39 @@ externalSecrets:
     data:
       - secretKey: api-key
         remoteRef:
-          key: my-api-key
-          namespace: external-secrets-system
+          key: my-app/my-api-key
           property: api-key
 ```
 
-## Bootstrap Secrets
+## Vault Setup Requirements
 
-Bootstrap secrets must be manually created before deploying this chart:
+Before using this chart, ensure your Vault instance is configured:
 
-```bash
-kubectl create namespace external-secrets-system
+1. **Enable Kubernetes Auth Method** (if using Kubernetes auth):
+   ```bash
+   vault auth enable kubernetes
+   ```
 
-kubectl create secret generic my-api-key \
-  --namespace=external-secrets-system \
-  --from-literal=api-key=your-api-key
-```
+2. **Configure Kubernetes Auth Role**:
+   ```bash
+   vault write auth/kubernetes/role/external-secrets \
+     bound_service_account_names=external-secrets-bootstrap \
+     bound_service_account_namespaces=external-secrets-system \
+     policies=external-secrets \
+     ttl=1h
+   ```
+
+3. **Create Policy for Secrets Access**:
+   ```bash
+   vault policy write external-secrets - <<EOF
+   path "secret/data/*" {
+     capabilities = ["read"]
+   }
+   path "secret/metadata/*" {
+     capabilities = ["list"]
+   }
+   EOF
+   ```
 
 ## Architecture
 
@@ -86,12 +161,17 @@ flowchart TD
 
     subgraph ThisChart["This Helm Chart"]
         direction TB
-        CSS["ClusterSecretStore<br/>(Provides access to bootstrap secrets)"]
+        CSS["ClusterSecretStore<br/>(Connects to remote Vault)"]
         ES["ExternalSecret CRDs<br/>(Synchronizes secrets to app namespaces)"]
     end
 
+    subgraph Vault["HashiCorp Vault"]
+        Secrets["Secrets Engine<br/>(Stores secrets)"]
+    end
+
     ESOOperator -->|Watches| CSS
-    CSS -->|References| ES
+    CSS -->|Authenticates| Vault
+    Vault -->|Returns Secrets| ESOOperator
     ESOOperator -->|Creates/Updates| ES
 ```
 

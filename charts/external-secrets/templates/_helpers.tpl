@@ -23,27 +23,6 @@ Return the ClusterSecretStore name.
 {{- end -}}
 
 {{/*
-Return the ServiceAccount name for the ClusterSecretStore.
-*/}}
-{{- define "external-secrets.serviceAccountName" -}}
-{{- .Values.serviceAccount.bootstrap.name | default (printf "%s-bootstrap" (include "common.names.fullname" .)) -}}
-{{- end -}}
-
-{{/*
-Return the ClusterRole name for the ClusterSecretStore.
-*/}}
-{{- define "external-secrets.clusterRoleName" -}}
-{{- printf "%s-bootstrap-reader" (include "common.names.fullname" .) -}}
-{{- end -}}
-
-{{/*
-Return the ClusterRoleBinding name for the ClusterSecretStore.
-*/}}
-{{- define "external-secrets.clusterRoleBindingName" -}}
-{{- printf "%s-bootstrap-reader" (include "common.names.fullname" .) -}}
-{{- end -}}
-
-{{/*
 Return the sync wave annotation for ArgoCD.
 Usage: {{ include "external-secrets.syncWave" (dict "wave" "1" "context" $) }}
 */}}

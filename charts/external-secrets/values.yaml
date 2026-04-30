@@ -18,106 +18,46 @@ global:
 namespace:
   name: external-secrets-system
 
-# ServiceAccount for the ClusterSecretStore
-# BJW-S common library will create the ServiceAccount
-serviceAccount:
-  bootstrap:
-    enabled: true
-    # -- ArgoCD sync wave annotation (must be before ClusterSecretStore)
-    annotations:
-      argocd.argoproj.io/sync-wave: "0"
-
-# RBAC configuration
-# BJW-S common library will create ClusterRole and ClusterRoleBinding
-rbac:
-  roles:
-    # ClusterRole for bootstrap ClusterSecretStore
-    # Allows ESO to read secrets from any namespace for bootstrap purposes
-    bootstrap-reader:
-      enabled: true
-      type: ClusterRole
-      rules:
-        - apiGroups: [""]
-          resources:
-            - secrets
-          verbs:
-            - get
-            - list
-            - watch
-        - apiGroups: [""]
-          resources:
-            - namespaces
-          verbs:
-            - get
-            - list
-            - watch
-        # Required for ESO Kubernetes provider to validate access
-        # https://external-secrets.io/latest/provider/kubernetes/
-        - apiGroups: ["authorization.k8s.io"]
-          resources:
-            - selfsubjectaccessreviews
-          verbs:
-            - create
-  bindings:
-    # ClusterRoleBinding for bootstrap ClusterSecretStore
-    bootstrap-reader:
-      enabled: true
-      type: ClusterRoleBinding
-      roleRef:
-        identifier: bootstrap-reader
-      subjects:
-        - identifier: bootstrap
-          namespace: external-secrets-system
-
 # ClusterSecretStore configuration
-# This store references bootstrap secrets that must be manually created
+# This store connects to a remote HashiCorp Vault instance
 clusterSecretStore:
   enabled: true
   name: bootstrap-secrets
   # Sync wave for ArgoCD
   syncWave: "1"
   
-  # Provider type: "kubernetes" or "vault"
-  # - kubernetes: Uses in-cluster Kubernetes secrets as the source
-  # - vault: Uses HashiCorp Vault as the external secret store
-  provider:
-    type: kubernetes
+  # Vault provider configuration
+  # Configure connection to your remote Vault instance
+  vault:
+    # Vault server URL (required)
+    # For external Vault, use the external URL (e.g., https://vault.example.com:8200)
+    # For in-cluster Vault, use the service URL (e.g., https://vault.vault.svc.cluster.local:8200)
+    server: ""
     
-    # Kubernetes provider configuration (default)
-    # Uses in-cluster secrets from a specific namespace
-    kubernetes:
-      # Kubernetes API server URL
-      url: https://kubernetes.default.svc.cluster.local
-      # CA certificate provider for TLS
-      # Note: namespace is required for ClusterSecretStore (cluster-scoped)
-      caProvider:
-        type: ConfigMap
-        name: kube-root-ca.crt
-        key: ca.crt
-        namespace: kube-system
+    # Vault secrets engine path (default: secret)
+    path: secret
     
-    # Vault provider configuration (for future use)
-    # Uncomment and configure when migrating to Vault
-    # vault:
-    #   # Vault server URL
-    #   server: https://vault.vault.svc.cluster.local:8200
-    #   # Vault secrets engine path
-    #   path: secret
-    #   # Vault secrets engine version (v1 or v2)
-    #   version: v2
-    #   # Vault namespace (optional, for Vault Enterprise)
-    #   namespace: ""
-    #   # Authentication method
-    #   auth:
-    #     # Kubernetes authentication (recommended for in-cluster)
-    #     kubernetes:
-    #       mountPath: kubernetes
-    #       role: external-secrets
-    #     # OR token authentication (for external Vault)
-    #     # token:
-    #     #   secretName: vault-token
-    #     #   namespace: external-secrets-system
-    #     #   key: token
+    # Vault secrets engine version (v1 or v2, default: v2)
+    version: v2
+    
+    # Vault namespace (optional, for Vault Enterprise)
+    # namespace: ""
+    
+    # Authentication method
+    auth:
+      # Kubernetes authentication (recommended for in-cluster workloads)
+      kubernetes:
+        # Mount path for Kubernetes auth method (default: kubernetes)
+        mountPath: kubernetes
+        # Role to use for authentication (required)
+        role: ""
+      
+      # Token authentication (for external Vault or static token)
+      # token:
+      #   # Secret containing the Vault token
+      #   secretName: vault-token
+      #   namespace: external-secrets-system
+      #   key: token
 
 # ExternalSecrets configuration
 externalSecretsConfig:
