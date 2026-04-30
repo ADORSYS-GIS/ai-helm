@@ -1,6 +1,7 @@
 # Keycloak Baseline Values
 # ========================
 # This chart provides reusable Keycloak baseline configuration using BJWS app-template.
+# Configuration matches the camer-digital realm export.
 
 global:
   nameOverride: keycloak-baseline
@@ -23,88 +24,404 @@ pvc:
 # Keycloak Realm Configuration
 #=========================
 keycloak-config:
-  url: "http://keycloak.keycloak.svc.cluster.local:8080"
-  realm: "platform"
+  realm: "camer-digital"
 
-  # Realm-level configuration with defaults
+  # Realm-level configuration
   realmConfig:
     enabled: true
-    displayName: "Platform Services"
-    displayNameHtml: "<div class='kc-logo-text'><span>Platform Services</span></div>"
+    displayName: "CDigital"
+    displayNameHtml: ""
     sslRequired: "external"
-    registrationAllowed: false
+    registrationAllowed: true
     registrationEmailAsUsername: true
+    rememberMe: true
     verifyEmail: true
+    loginWithEmailAllowed: true
     resetPasswordAllowed: true
     passwordPolicy: "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notEmail()"
+    # Session timeouts (in seconds)
+    accessTokenLifespan: 300
+    accessTokenLifespanForImplicitFlow: 900
+    ssoSessionIdleTimeout: 1800
+    ssoSessionMaxLifespan: 36000
+    offlineSessionIdleTimeout: 2592000
+    # Theme settings
+    loginTheme: "vaam-01"
     attributes:
       darkMode: "true"
+      frontendUrl: "https://accounts.camer.digital"
 
+  # SMTP Server Configuration
+  smtpServer:
+    host: "mail.mail.svc.cluster.local"
+    port: "587"
+    from: "no-reply@mail.ssegning.com"
+    fromDisplayName: "SSegning Accounts"
+    replyTo: "hello@camer.digital"
+    replyToDisplayName: "Camer Digital Accounts"
+    ssl: "false"
+    starttls: "true"
+    auth: ""
+    debug: "false"
+
+  # Identity Providers
+  identityProviders:
+    ssegning-dev:
+      enabled: true
+      alias: "ssegning-dev"
+      displayName: "SSegning Dev"
+      providerId: "keycloak-oidc"
+      config:
+        clientId: "camer-digital-sso"
+        authorizationUrl: "https://accounts.ssegning.com/realms/ssegning-dev/protocol/openid-connect/auth"
+        tokenUrl: "https://accounts.ssegning.com/realms/ssegning-dev/protocol/openid-connect/token"
+        userInfoUrl: "https://accounts.ssegning.com/realms/ssegning-dev/protocol/openid-connect/userinfo"
+        logoutUrl: "https://accounts.ssegning.com/realms/ssegning-dev/protocol/openid-connect/logout"
+        issuer: "https://accounts.ssegning.com/realms/ssegning-dev"
+        jwksUrl: "https://accounts.ssegning.com/realms/ssegning-dev/protocol/openid-connect/certs"
+        validateSignature: "true"
+        useJwksUrl: "true"
+        pkceEnabled: "false"
+        syncMode: "LEGACY"
+        clientAuthMethod: "client_secret_post"
+
+  # Client Scopes with Protocol Mappers
+  clientScopes:
+    phoenix:
+      name: "phoenix"
+      description: ""
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        - name: phoenix_role
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "false"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "phoenix_role"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "phoenix"
+    librechat:
+      name: "librechat"
+      description: ""
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        - name: librechat_roles
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "false"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "librechat_roles"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "converse"
+
+  # OIDC Clients
   clients:
     phoenix:
-      enabled: false
+      enabled: true
       clientId: "phoenix"
       name: "Phoenix"
-      description: "Phoenix AI Dashboard"
+      description: ""
       publicClient: false
       standardFlowEnabled: true
       implicitFlowEnabled: false
       directAccessGrantsEnabled: false
       serviceAccountsEnabled: false
-      redirectUris: []
+      redirectUris:
+        - "*"
+        - "/*"
       webOrigins: []
-      pkce: "S256"
+      rootUrl: "https://analytics.ai.camer.digital"
+      baseUrl: "/"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - phoenix
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+      # Client roles
+      roles:
+        - name: "admin"
+          description: ""
+        - name: "viewer"
+          description: ""
+        - name: "user"
+          description: ""
+
     converse:
-      enabled: false
+      enabled: true
       clientId: "converse"
       name: "Converse Chats"
-      description: "LibreChat Backend"
+      description: ""
       publicClient: false
       standardFlowEnabled: true
       implicitFlowEnabled: false
       directAccessGrantsEnabled: false
       serviceAccountsEnabled: false
-      redirectUris: []
+      redirectUris:
+        - "*"
       webOrigins: []
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - librechat
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - phoenix
+        - address
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+      # Client roles
+      roles:
+        - name: "admin"
+          description: ""
+        - name: "user"
+          description: ""
+
     coder:
-      enabled: false
+      enabled: true
       clientId: "coder"
       name: "Coder"
-      description: "Coder Development Environment"
+      description: ""
       publicClient: false
       standardFlowEnabled: true
       implicitFlowEnabled: false
-      directAccessGrantsEnabled: false
+      directAccessGrantsEnabled: true
       serviceAccountsEnabled: false
-      redirectUris: []
-      webOrigins: []
+      redirectUris:
+        - "/*"
+      webOrigins:
+        - "/*"
+      rootUrl: "https://coder.ai.camer.digital"
+      baseUrl: "/"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - phoenix
+        - address
+        - librechat
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+
     selfServiceMcpApi:
-      enabled: false
+      enabled: true
       clientId: "self-service-mcp-api"
-      name: "Self Service MCP API"
-      description: "MCP service API client"
+      name: "Self Service"
+      description: ""
       publicClient: false
-      standardFlowEnabled: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: true
+      directAccessGrantsEnabled: true
+      serviceAccountsEnabled: false
+      redirectUris:
+        - "https://ai.camer.digital/api/mcp/lightbridge_self_service/oauth/callback"
+        - "*"
+      webOrigins:
+        - "*"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - phoenix
+        - address
+        - librechat
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+
+    converseFrontend:
+      enabled: true
+      clientId: "converse-frontend"
+      name: "Converse Frontend"
+      description: ""
+      publicClient: true
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: true
+      serviceAccountsEnabled: false
+      redirectUris:
+        - "https://self-service.ai.camer.digital/*"
+      webOrigins:
+        - "https://self-service.ai.camer.digital"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - phoenix
+        - address
+        - librechat
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+
+    testingClient:
+      enabled: true
+      clientId: "testing-client"
+      name: "Testing Client"
+      description: ""
+      publicClient: false
+      standardFlowEnabled: true
       implicitFlowEnabled: false
       directAccessGrantsEnabled: true
       serviceAccountsEnabled: true
-      redirectUris: []
-      webOrigins: []
+      redirectUris:
+        - "*"
+      webOrigins:
+        - "*"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - service_account
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - phoenix
+        - address
+        - librechat
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
 
-  serviceAccounts:
-    aiGateway:
-      enabled: false
-      clientId: "ai-gateway"
-      name: "AI Model Gateway"
-      description: "AI gateway service account"
-    mcpOrchestrator:
-      enabled: false
-      clientId: "mcp-orchestrator"
-      name: "MCP Orchestrator"
-      description: "MCP orchestration service"
+    adorsysGisGithubCi:
+      enabled: true
+      clientId: "adorsys-gis-github-ci"
+      name: "Adorsys GIS Github CI"
+      description: ""
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: true
+      redirectUris:
+        - "/*"
+      webOrigins:
+        - "/*"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - service_account
+        - web-origins
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - phoenix
+        - address
+        - librechat
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+
+  # Groups with client role mappings
+  groups:
+    cdAdmins:
+      enabled: true
+      name: "CDAdmins"
+      realmRoles: []
+      clientRoles:
+        realm-management:
+          - realm-admin
+
+    libreChatAdmin:
+      enabled: true
+      name: "LibreChatAdmin"
+      realmRoles: []
+      clientRoles:
+        converse:
+          - admin
+
+    libreChatUser:
+      enabled: true
+      name: "LibreChatUser"
+      realmRoles: []
+      clientRoles:
+        converse:
+          - user
+
+    phoenixAdmin:
+      enabled: true
+      name: "PhoenixAdmin"
+      realmRoles: []
+      clientRoles:
+        phoenix:
+          - admin
+
+    phoenixUser:
+      enabled: true
+      name: "PhoenixUser"
+      realmRoles: []
+      clientRoles:
+        phoenix:
+          - user
+
+    phoenixViewer:
+      enabled: true
+      name: "PhoenixViewer"
+      realmRoles: []
+      clientRoles:
+        phoenix:
+          - viewer
 
 # Keycloak config-sync CronJob (app-template dependency)
 # =====================================================
+# For production with external/different-namespace Keycloak,
+# override: config-sync.containers.main.env.KEYCLOAK_URL.value
 config-sync:
   controllers:
     configSync:
@@ -131,6 +448,10 @@ config-sync:
               value: "true"
             IMPORT_ENABLED:
               value: "true"
+            IMPORT_REALM_FILE:
+              value: "/config/camer-digital-realm.yaml"
+            LOG_LEVEL:
+              value: "DEBUG"
           resources:
             requests:
               cpu: 100m

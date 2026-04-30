@@ -1,4 +1,5 @@
 {{- $kc := index .Values "keycloak-config" -}}
+{{- $keycloakUrl := $kc.url | default "http://keycloak.keycloak.svc.cluster.local:8080" -}}
 {{- $realm := $kc.realm | default "platform" -}}
 apiVersion: v1
 kind: ConfigMap
@@ -17,54 +18,216 @@ data:
     realm: {{ $realm }}
     enabled: {{ $kc.realmConfig.enabled }}
     displayName: {{ $kc.realmConfig.displayName }}
+    {{- if $kc.realmConfig.displayNameHtml }}
     displayNameHtml: {{ $kc.realmConfig.displayNameHtml }}
+    {{- end }}
     sslRequired: {{ $kc.realmConfig.sslRequired }}
     registrationAllowed: {{ $kc.realmConfig.registrationAllowed }}
     registrationEmailAsUsername: {{ $kc.realmConfig.registrationEmailAsUsername }}
+    {{- if $kc.realmConfig.rememberMe }}
+    rememberMe: {{ $kc.realmConfig.rememberMe }}
+    {{- end }}
     verifyEmail: {{ $kc.realmConfig.verifyEmail }}
+    {{- if $kc.realmConfig.loginWithEmailAllowed }}
+    loginWithEmailAllowed: {{ $kc.realmConfig.loginWithEmailAllowed }}
+    {{- end }}
     resetPasswordAllowed: {{ $kc.realmConfig.resetPasswordAllowed }}
     passwordPolicy: {{ $kc.realmConfig.passwordPolicy }}
+    {{- /* Session timeout settings */ -}}
+    {{- if $kc.realmConfig.accessTokenLifespan }}
+    accessTokenLifespan: {{ $kc.realmConfig.accessTokenLifespan }}
+    {{- end }}
+    {{- if $kc.realmConfig.accessTokenLifespanForImplicitFlow }}
+    accessTokenLifespanForImplicitFlow: {{ $kc.realmConfig.accessTokenLifespanForImplicitFlow }}
+    {{- end }}
+    {{- if $kc.realmConfig.ssoSessionIdleTimeout }}
+    ssoSessionIdleTimeout: {{ $kc.realmConfig.ssoSessionIdleTimeout }}
+    {{- end }}
+    {{- if $kc.realmConfig.ssoSessionMaxLifespan }}
+    ssoSessionMaxLifespan: {{ $kc.realmConfig.ssoSessionMaxLifespan }}
+    {{- end }}
+    {{- if $kc.realmConfig.offlineSessionIdleTimeout }}
+    offlineSessionIdleTimeout: {{ $kc.realmConfig.offlineSessionIdleTimeout }}
+    {{- end }}
+    {{- /* Theme settings */ -}}
+    {{- if $kc.realmConfig.loginTheme }}
+    loginTheme: {{ $kc.realmConfig.loginTheme }}
+    {{- end }}
     attributes:
     {{- range $key, $value := $kc.realmConfig.attributes }}
       {{ $key }}: {{ $value | quote }}
+    {{- end }}
+    {{- /* SMTP Server Configuration */ -}}
+    {{- if $kc.smtpServer }}
+    smtpServer:
+      host: {{ $kc.smtpServer.host }}
+      port: {{ $kc.smtpServer.port }}
+      from: {{ $kc.smtpServer.from }}
+      fromDisplayName: {{ $kc.smtpServer.fromDisplayName }}
+      {{- if $kc.smtpServer.replyTo }}
+      replyTo: {{ $kc.smtpServer.replyTo }}
+      {{- end }}
+      {{- if $kc.smtpServer.replyToDisplayName }}
+      replyToDisplayName: {{ $kc.smtpServer.replyToDisplayName }}
+      {{- end }}
+      ssl: {{ $kc.smtpServer.ssl | default "false" }}
+      starttls: {{ $kc.smtpServer.starttls | default "false" }}
+      {{- if $kc.smtpServer.auth }}
+      auth: {{ $kc.smtpServer.auth }}
+      {{- end }}
+      debug: {{ $kc.smtpServer.debug | default "false" }}
+    {{- end }}
+    {{- /* Identity Providers */ -}}
+    {{- if $kc.identityProviders }}
+    identityProviders:
+    {{- range $name, $idp := $kc.identityProviders }}
+    {{- if $idp.enabled }}
+      - alias: {{ $idp.alias }}
+        displayName: {{ $idp.displayName }}
+        providerId: {{ $idp.providerId }}
+        enabled: true
+        config:
+          clientId: {{ $idp.config.clientId }}
+          clientSecret: {{ $idp.config.clientSecret }}
+          authorizationUrl: {{ $idp.config.authorizationUrl }}
+          tokenUrl: {{ $idp.config.tokenUrl }}
+          userInfoUrl: {{ $idp.config.userInfoUrl }}
+          logoutUrl: {{ $idp.config.logoutUrl }}
+          issuer: {{ $idp.config.issuer }}
+          jwksUrl: {{ $idp.config.jwksUrl }}
+          validateSignature: {{ $idp.config.validateSignature | default "true" }}
+          useJwksUrl: {{ $idp.config.useJwksUrl | default "true" }}
+          pkceEnabled: {{ $idp.config.pkceEnabled | default "false" }}
+          syncMode: {{ $idp.config.syncMode | default "LEGACY" }}
+          clientAuthMethod: {{ $idp.config.clientAuthMethod | default "client_secret_post" }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- /* Client Scopes */ -}}
+    {{- if $kc.clientScopes }}
+    clientScopes:
+    {{- range $name, $scope := $kc.clientScopes }}
+      - name: {{ $scope.name }}
+        description: {{ $scope.description | default "" }}
+        protocol: {{ $scope.protocol | default "openid-connect" }}
+        attributes:
+        {{- range $key, $value := $scope.attributes }}
+          {{ $key }}: {{ $value | quote }}
+        {{- end }}
+        {{- if $scope.protocolMappers }}
+        protocolMappers:
+        {{- range $mapper := $scope.protocolMappers }}
+          - name: {{ $mapper.name }}
+            protocol: {{ $mapper.protocol }}
+            protocolMapper: {{ $mapper.protocolMapper }}
+            consentRequired: {{ $mapper.consentRequired | default false }}
+            config:
+            {{- range $key, $value := $mapper.config }}
+              {{ $key }}: {{ $value | quote }}
+            {{- end }}
+        {{- end }}
+        {{- end }}
+    {{- end }}
     {{- end }}
     {{- /* Only include clients section if ANY client is enabled */ -}}
     {{- $enabledClients := list }}
     {{- range $name, $client := $kc.clients }}
     {{- if $client.enabled }}
-    {{- $enabledClients = append $enabledClients $client }}
-    {{- end }}
-    {{- end }}
-    {{- range $name, $sa := $kc.serviceAccounts }}
-    {{- if $sa.enabled }}
-    {{- $saWithDefaults := merge $sa (dict "serviceAccountsEnabled" true) }}
-    {{- $enabledClients = append $enabledClients $saWithDefaults }}
+    {{- $enabledClients = append $enabledClients (dict "name" $name "client" $client) }}
     {{- end }}
     {{- end }}
     {{- if gt (len $enabledClients) 0 }}
     clients:
-      {{- range $client := $enabledClients }}
+      {{- range $item := $enabledClients }}
+      {{- $client := $item.client }}
       - clientId: {{ $client.clientId }}
         name: {{ $client.name }}
+        {{- if $client.description }}
         description: {{ $client.description }}
+        {{- end }}
         enabled: true
         publicClient: {{ $client.publicClient | default false }}
         standardFlowEnabled: {{ $client.standardFlowEnabled | default true }}
         implicitFlowEnabled: {{ $client.implicitFlowEnabled | default false }}
         directAccessGrantsEnabled: {{ $client.directAccessGrantsEnabled | default false }}
         serviceAccountsEnabled: {{ $client.serviceAccountsEnabled | default false }}
+        {{- if $client.secret }}
+        secret: {{ $client.secret }}
+        {{- end }}
+        {{- if $client.rootUrl }}
+        rootUrl: {{ $client.rootUrl }}
+        {{- end }}
+        {{- if $client.baseUrl }}
+        baseUrl: {{ $client.baseUrl }}
+        {{- end }}
+        {{- if $client.frontchannelLogout }}
+        frontchannelLogout: {{ $client.frontchannelLogout }}
+        {{- end }}
         redirectUris:
           {{- range $client.redirectUris }}
-          - {{ . }}
+          - {{ . | quote }}
           {{- end }}
         webOrigins:
           {{- range $client.webOrigins }}
-          - {{ . }}
+          - {{ . | quote }}
           {{- end }}
         protocol: openid-connect
         {{- if $client.pkce }}
         attributes:
           pkce.code.challenge.method: {{ $client.pkce }}
         {{- end }}
+        {{- if $client.defaultClientScopes }}
+        defaultClientScopes:
+          {{- range $client.defaultClientScopes }}
+          - {{ . }}
+          {{- end }}
+        {{- end }}
+        {{- if $client.optionalClientScopes }}
+        optionalClientScopes:
+          {{- range $client.optionalClientScopes }}
+          - {{ . }}
+          {{- end }}
+        {{- end }}
       {{- end }}
+    {{- end }}
+    {{- /* Client Roles - must be at realm level under roles.client */ -}}
+    {{- if $kc.clients }}
+    roles:
+      client:
+      {{- range $clientName, $client := $kc.clients }}
+      {{- if and $client.enabled $client.roles }}
+        {{ $client.clientId }}:
+        {{- range $role := $client.roles }}
+          - name: {{ $role.name }}
+            clientRole: true
+            {{- if $role.description }}
+            description: {{ $role.description }}
+            {{- end }}
+        {{- end }}
+      {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- /* Groups with client role mappings */ -}}
+    {{- if $kc.groups }}
+    groups:
+    {{- range $groupName, $group := $kc.groups }}
+    {{- if $group.enabled }}
+      - name: {{ $group.name }}
+        realmRoles:
+        {{- range $group.realmRoles }}
+          - {{ . }}
+        {{- else }}
+          []
+        {{- end }}
+        {{- if $group.clientRoles }}
+        clientRoles:
+        {{- range $clientName, $roles := $group.clientRoles }}
+          {{ $clientName }}:
+            {{- range $roles }}
+            - {{ . }}
+            {{- end }}
+        {{- end }}
+        {{- end }}
+    {{- end }}
+    {{- end }}
     {{- end }}
