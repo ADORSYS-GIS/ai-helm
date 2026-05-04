@@ -211,7 +211,7 @@ flowchart TB
 │                     ObjectStore CR                              │
 │  name: lightbridge-main-db                                      │
 │  spec.configuration.destinationPath: s3://ai-ops-backups/...    │
-│  spec.retentionPolicy: 6m                                       │
+│  spec.retentionPolicy: 180d                                     │
 └─────────────────────────────────────────────────────────────────┘
            │                                    ▲
            │ barmanObjectName: lightbridge-main-db
@@ -315,7 +315,7 @@ kind: ObjectStore
 metadata:
   name: lightbridge-main-db
 spec:
-  retentionPolicy: 6m
+  retentionPolicy: 180d
   configuration:
     destinationPath: s3://ai-ops-backups/lightbridge-main-db/
     endpointURL: https://s3.ssegning.me
@@ -335,7 +335,11 @@ spec:
 |-------|-------------|
 | `spec.configuration.destinationPath` | S3 bucket and prefix |
 | `spec.configuration.endpointURL` | S3-compatible endpoint |
-| `spec.retentionPolicy` | Backup retention (6m = 6 months) |
+| `spec.retentionPolicy` | Backup retention (180d = 6 months) |
+
+> [!IMPORTANT]
+> Always use `d` (days) or `w` (weeks) for retention policies. While some documentation mentions `m` for months, it is often misinterpreted by underlying tools (like Barman Cloud) as **minutes**, leading to premature deletion of backups or `RetentionPolicyFailed` events.
+
 
 ### 4. Where to Configure WAL Compression
 
@@ -667,7 +671,7 @@ kind: ObjectStore
 metadata:
   name: lightbridge-main-db
 spec:
-  retentionPolicy: 6m
+  retentionPolicy: 180d
   configuration:
     destinationPath: s3://ai-ops-backups/lightbridge-main-db/
 ```
