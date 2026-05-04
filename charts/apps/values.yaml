@@ -167,6 +167,59 @@ applications:
         prune: true
         selfHeal: true
 
+  # --- Secret Management ---
+  # External Secrets Operator - installed from official upstream Helm chart
+  - name: external-secrets-operator
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-2"
+    source:
+      repoURL: https://charts.external-secrets.io
+      targetRevision: 2.4.0
+      chart: external-secrets
+      helm:
+        releaseName: external-secrets
+        valuesObject:
+          installCRDs: true
+          replicaCount: 1
+          leaderElect: true
+          serviceAccount:
+            create: true
+            name: external-secrets-controller
+    destination:
+      namespace: external-secrets-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # External Secrets Configuration - ClusterSecretStore and RBAC
+  - name: external-secrets-config
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm.git
+      targetRevision: HEAD
+      path: charts/external-secrets
+      helm:
+        releaseName: external-secrets-config
+        valuesObject: {}
+    destination:
+      namespace: external-secrets-system
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Core Infrastructure ---
   - name: redis
     finalizers:
