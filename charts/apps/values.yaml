@@ -1469,6 +1469,27 @@ applications:
         prune: true
         selfHeal: true
 
+  - name: librechat-admin-panel
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "1"
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/librechat-admin-panel
+      helm:
+        releaseName: librechat-admin-panel
+        valuesObject: {}
+    destination:
+      namespace: converse-chat
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- MongoDB Backup ---
   - name: mongodb-backup
     finalizers:

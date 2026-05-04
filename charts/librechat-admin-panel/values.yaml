@@ -1,0 +1,100 @@
+global:
+  librechat:
+    version: "v0.8.5"
+
+admin-panel:
+  ingress:
+    main:
+      enabled: true
+      annotations:
+        cert-manager.io/cluster-issuer: cert-home-cert-http
+      className: traefik
+      hosts:
+        - host: admin.ai.camer.digital
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: http
+      tls:
+        - secretName: admin.ai.camer.digital-tls
+          hosts:
+            - admin.ai.camer.digital
+
+  service:
+    main:
+      enabled: true
+      annotations: {}
+      type: ClusterIP
+      controller: main
+      ports:
+        http:
+          enabled: true
+          port: 3000
+          targetPort: 3000
+
+  controllers:
+    main:
+      type: deployment
+      strategy: RollingUpdate
+      replicas: 1
+      pod:
+        labels:
+          app: librechat-admin-panel
+      containers:
+        main:
+          image:
+            repository: ghcr.io/clickhouse/librechat-admin-panel
+            tag: "latest"
+            pullPolicy: Always
+          env:
+            PUID: "1000"
+            PGID: "1000"
+            TZ: "Europe/Berlin"
+
+            PORT: "3000"
+            SESSION_SECRET:
+              secretKeyRef:
+                name: librechat-admin-panel-secret
+                key: session_secret
+
+            VITE_API_BASE_URL: "https://admin.ai.camer.digital"
+            API_SERVER_URL: "http://librechat-librechat.librechat.svc.cluster.local:3080"
+
+            ADMIN_SSO_ONLY: "false"
+            ADMIN_SESSION_IDLE_TIMEOUT_MS: "1800000"
+
+            SESSION_COOKIE_SECURE: "true"
+
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+          probes:
+            liveness:
+              enabled: true
+              path: /
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+            readiness:
+              enabled: true
+              path: /
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+            startup:
+              enabled: true
+              path: /
+              type: HTTP
+              spec:
+                httpGet:
+                  port: http
+                failureThreshold: 30
+                periodSeconds: 5
