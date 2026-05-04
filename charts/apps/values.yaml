@@ -86,7 +86,7 @@ applications:
             create: true
             minAvailable: 1
             #maxUnavailable: 1
-        #manager:
+        # manager:
         #  collectorImage:
         #    repository: "otel/opentelemetry-collector-k8s"
     destination:
@@ -95,6 +95,139 @@ applications:
       syncOptions:
         - CreateNamespace=true
         - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: Prometheus Operator CRDs ---
+  # CRDs only (no operator) — registers ServiceMonitor, PodMonitor, etc.
+  - name: prometheus-operator-crds
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-3"
+    source:
+      repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 28.0.1
+      chart: prometheus-operator-crds
+      helm:
+        releaseName: prometheus-operator-crds
+    destination:
+      namespace: monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - Replace=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: Grafana Alloy ---
+  # Unified telemetry collector — discovers ServiceMonitors and scrapes metrics.
+  # Using StatefulSet for stable identities (required for production-grade clustering).
+  - name: alloy
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-2"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 1.0.1
+      chart: alloy
+      helm:
+        releaseName: alloy
+        valuesObject:
+          controller:
+            type: StatefulSet
+            replicas: 1
+
+          alloy:
+            clustering:
+              enabled: true
+            configMap:
+              content: |-
+                logging {
+                  level  = "info"
+                  format = "logfmt"
+                }
+
+                // 1. Metrics Destination
+                // Placeholder for Phase 2. Alloy buffers in its WAL and retries gracefully.
+                // We use Helm templating to inject the cluster name if desired.
+                prometheus.remote_write "default" {
+                  endpoint {
+                    url = "http://placeholder:9009/api/v1/push"
+                  }
+                  external_labels = {
+                    cluster = "ai-helm",
+                  }
+                }
+
+                // 2. Global Relabeling (Sanitization)
+                // Middle-stage to strip noisy or sensitive labels from all metrics before forwarding.
+                prometheus.relabel "global_sanitize" {
+                  forward_to = [prometheus.remote_write.default.receiver]
+
+                  rule {
+                    action = "replace"
+                    source_labels = ["__name__"]
+                    target_label = "cluster_origin"
+                    replacement = "{{ .Release.Name }}"
+                  }
+                }
+
+                // 3. ServiceMonitor Discovery
+                prometheus.operator.servicemonitors "cluster" {
+                  forward_to = [prometheus.relabel.global_sanitize.receiver]
+                }
+
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+
+            # Guardrails for the monitoring namespace, managed directly by the Alloy app
+            extraObjects:
+              - apiVersion: v1
+                kind: LimitRange
+                metadata:
+                  name: monitoring-defaults
+                  namespace: monitoring
+                spec:
+                  limits:
+                    - type: Container
+                      defaultRequest: { cpu: 50m, memory: 64Mi }
+                      default:        { cpu: 200m, memory: 256Mi }
+                      max:            { cpu: "2", memory: 2Gi }
+              - apiVersion: v1
+                kind: ResourceQuota
+                metadata:
+                  name: monitoring-quota
+                  namespace: monitoring
+                spec:
+                  hard:
+                    requests.cpu: 500m
+                    requests.memory: 512Mi
+                    limits.cpu: "2"
+                    limits.memory: 3Gi
+                    count/pods: "10"
+
+          # Alloy monitors its own /metrics endpoint via a ServiceMonitor
+          serviceMonitor:
+            enabled: true
+            interval: "60s"
+
+    destination:
+      namespace: monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
       automated:
         prune: true
         selfHeal: true
