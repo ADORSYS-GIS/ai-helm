@@ -636,13 +636,13 @@ applications:
           global:
             authz:
               image:
-                version: "sha-12616fc5363357292524293c4a989011808091d7"
+                version: "sha-c05d297758e7cbed3dbdd0234d0a3a12fc325ae0"
             authz_usage:
               image:
-                version: "sha-12616fc5363357292524293c4a989011808091d7"
+                version: "sha-c05d297758e7cbed3dbdd0234d0a3a12fc325ae0"
             authz_mcp:
               image:
-                version: "sha-12616fc5363357292524293c4a989011808091d7"
+                version: "sha-c05d297758e7cbed3dbdd0234d0a3a12fc325ae0"
             tls:
               enabled: false
 
@@ -660,6 +660,13 @@ applications:
                       pool_size: 10
                     oauth2:
                       jwks_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/certs
+                      oauth2_url: "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token"
+                      issuance:
+                        enabled: true
+                        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange"
+                        client_id: "${API_KEY_CLIENT_ID}"
+                        subject_token_type: "urn:ietf:params:oauth:token-type:access_token"
+                        requested_token_type: "urn:ietf:params:oauth:token-type:access_token"
                     server:
                       api:
                         address: 0.0.0.0
@@ -687,6 +694,7 @@ applications:
                   authz:
                     env:
                       RUST_LOG: "INFO"
+                      API_KEY_CLIENT_ID: "lightbridge-api-key"
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
@@ -773,6 +781,7 @@ applications:
                   authz:
                     env:
                       RUST_LOG: "INFO"
+                      API_KEY_CLIENT_ID: "lightbridge-api-key"
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
@@ -850,6 +859,7 @@ applications:
                   authz:
                     env:
                       RUST_LOG: "INFO"
+                      API_KEY_CLIENT_ID: "lightbridge-api-key"
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
@@ -908,7 +918,7 @@ applications:
                 containers:
                   authz:
                     env:
-                      RUST_LOG: "debug"
+                      RUST_LOG: "INFO"
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
