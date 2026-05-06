@@ -1,14 +1,12 @@
-# Configuring and Tracing LibreChat Headers and MCP Headers via Envoy
+# Configuring and Tracing LibreChat & MCP Headers via Envoy
 
-This guide documents how to inject dynamic user session information as custom HTTP headers into Model Context Protocol (MCP) servers configured via LibreChat, and how to trace their successful propagation using Envoy Gateway logs.
+This guide documents how to inject user session information as custom HTTP headers into Model Context Protocol (MCP) servers and upstream endpoints via LibreChat, and how to verify propagation using Envoy Gateway logs.
 
 ---
 
 ## 1. Injecting Headers in `values.yaml`
 
-LibreChat supports passing dynamic variables via custom API headers down to MCP servers and custom endpoints. Inside your `values.yaml` (under the `librechat` chart configuration), you can declare an `mcpServers` or `custom` endpoints block. 
-
-Because we deploy via Helm, we need to escape the double curly braces `{{ }}` natively expected by LibreChat so that Helm does not attempt to evaluate them during template processing. You can do this by using the `{{ `{{` }} ... {{ `}}` }}` trick.
+LibreChat supports passing internal session variables via custom API headers. Inside your `values.yaml` (under the `librechat` chart configuration), you can declare an `mcpServers` or `custom` endpoints block. 
 
 ### Configuration Example
 
@@ -21,85 +19,91 @@ Here is how you can pass the relevant user information down to downstream endpoi
       title: "LightBridge API KEYs"
       description: "LightBridge Self Service API-KEYs"
       type: "streamable-http"
-      initTimeout: 150000
       url: "https://mcp.ai.camer.digital/mcp"
       headers:
         X-ACCOUNT-ID: 'LIBRECHAT'
+        # These variables are substituted by LibreChat using its internal user record
         X-PROJECT-ID: 'sso:{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
         X-USER-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
         X-USER-EMAIL: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
         X-USER-ROLE: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
-        X-USER-NAME: '{{ `{{` }}LIBRECHAT_USER_NAME{{ `}}` }}'
 ```
 
-When LibreChat performs requests upstream towards the MCP server, it will automatically replace markers like `{{LIBRECHAT_USER_EMAIL}}` with the active user's session context (e.g., `mfrancksorel@gmail.com`).
+> [!IMPORTANT]
+> Because we deploy via Helm, you must escape the double curly braces `{{ }}` natively expected by LibreChat so that Helm does not evaluate them during template processing. Use the `{{ `{{` }} ... {{ `}}` }}` trick shown above.
 
 ---
 
-## 2. Keycloak OIDC Context
+## 2. Understanding Variable Provenance
 
-To understand where LibreChat obtains variables like `LIBRECHAT_USER_ID` or `LIBRECHAT_USER_ROLE`, we must look at the underlying Identity Provider integration. 
+It is critical to distinguish between LibreChat's **internal variables** and **Keycloak JWT claims**.
 
-LibreChat is integrated with our Keycloak realm (`camer-digital`). Upon successful authentication, Keycloak issues an **ID Token** and an **Access Token**. LibreChat automatically maps the claims from these tokens to its internal dynamic variables. 
+### LibreChat Internal Variables (`{{ LIBRECHAT_USER_... }}`)
+When you use a placeholder like `{{LIBRECHAT_USER_ROLE}}`, the value is pulled from the **LibreChat MongoDB database**, not directly from the current OIDC Access Token.
 
-![alt text](./images/image-11.png)
+*   **`LIBRECHAT_USER_ROLE`**: This identifies the user's role within the LibreChat application (e.g., `ADMIN` or `USER`). By default, LibreChat assigns `ADMIN` to the first user created and `USER` to everyone else. It does **not** automatically sync with Keycloak roles.
+*   **`LIBRECHAT_USER_EMAIL` / `ID`**: These are initially populated from Keycloak during the first login (OIDC registration) but are subsequently served from the internal user profile record.
 
-* **`LIBRECHAT_USER_ID`**: Maps directly to the `sub` claim (the Keycloak UUID).
-* **`LIBRECHAT_USER_EMAIL`**: Maps to the standard `email` claim.
-* **`LIBRECHAT_USER_OPENIDID`**: Corresponds to the persistent user's OpenID ID.
-* **`LIBRECHAT_USER_ROLE`**: Derived from the custom `librechat_roles` array injected into the token payload (via Keycloak Client Scopes).
+### Keycloak Roles (Authorino Injection)
+If your downstream MCP server requires the **true roles defined in Keycloak** (e.g., `beta-tester`, `mcp-access`), LibreChat's internal substitution cannot provide them. 
 
-For deeper architectural context on how these tokens are structured, propagated, and how custom roles are built, review the following guides:
-- [LibreChat OIDC Integration with Keycloak](./librechat-oidc-integration.md) - Details the SSO mapping contract and standard configuration.
-- [LibreChat OIDC Experiments and Advanced Access Control](./librechat-oidc-experiments.md) - Documents experiments surrounding custom role propagation and downstream claim usage.
-
----
-
-## 3. Tracing Custom Headers in Envoy Logs
-
-Once the headers are forwarded by LibreChat, they will hit the Gateway (Envoy) before reaching the MCP Server or upstream API. To verify that headers are successfully attached in **production**, you should observe Envoy's routing logs.
-
-
-### Enabling Envoy Debug Logging in Production
-
-By default, Envoy logs at the `info` or `warn` level, which is insufficient to inspect raw HTTP headers. You must temporarily set the logging level to `debug` via your Helm configuration for the Envoy Gateway:
+Instead, you should leverage the **Envoy Gateway & Authorino** to inject these claims. Because LibreChat forwards the Bearer token to the gateway, Authorino can extract the `librechat_roles` claim and inject it into a new header:
 
 ```yaml
-# In your apps/values.yaml under the Envoy Gateway section:
+# Inside security-policies in apps/values.yaml
+authConfigs:
+  main:
+    response:
+      success:
+        headers:
+          "x-keycloak-roles":
+            plain:
+              selector: "auth.identity.librechat_roles"
+```
+
+For more details on OIDC mapping, see:
+- [LibreChat OIDC Integration with Keycloak](./librechat-oidc-integration.md)
+- [LibreChat OIDC Experiments](./librechat-oidc-experiments.md)
+
+---
+
+## 3. Tracing Headers in Envoy (Production)
+
+To verify that headers (internal or injected) are successfully attached in **production**, you must set Envoy's routing logs to `debug` level.
+
+### Enabling Debug Logging
+Modify your Envoy Gateway configuration in `apps/values.yaml` and sync via ArgoCD:
+
+```yaml
 eg:
   config:
     envoyGateway:
        logging:
          level:
-           default: debug  # Change from warn to debug
+           default: debug  # Change to debug for tracing
 ```
 
-
-### Analyzing the Envoy Trace
-
-Once the configuration is synced, monitor the Envoy proxy logs either directly using `kubectl logs` or k9s or your centralized logging dashboard .
+### Analyzing the Trace
+Monitor the Envoy proxy logs using `kubectl` or your centralized logging stack:
 
 ```bash
-# Example using kubectl for a specific gateway namespace
 kubectl logs -l app.kubernetes.io/name=envoy -n converse-gateway -c envoy --tail=200 -f
 ```
 
-
-When LibreChat issues an MCP request, you will observe Envoy decoding and forwarding your custom headers, confirming that the data propagates exactly as configured in `values.yaml`. For example:
-
 ![alt text](./images/image-12.png)
 
+When a request is processed, you will see Envoy decoding the headers:
 
-### Explanation of Fields
-* **`[router] router decoding headers`**: Specifically shows exactly which downstream request headers Envoy received from LibreChat.
-* **`x-project-id`**: The template `sso:{{LIBRECHAT_USER_OPENIDID}}` successfully evaluated to the user SSO ID.
-* **`x-user-role`**: Shows that the `ADMIN` role mapped successfully via Keycloak claims.
-* **`x-user-email`**: Safely extracted the logged in user email matching the dynamic placeholder.
+```text
+[debug][router] ... router decoding headers:
+':authority', 'services.api.ai.camer.digital'
+...
+'x-user-role', 'ADMIN'  <-- Internal LibreChat Role
+'x-keycloak-roles', '["user", "beta-tester"]' <-- Injected by Authorino
+```
 
 ---
 
 ## 4. Best Practices
-* **Security**: Only configure sensitive user payloads downstream to trusted, internal MCP/RAG services over HTTPS. Never pass role bindings or admin emails to external or unvetted MCP servers.
-* **Helm Escaping**: Always remember that `values.yaml` natively leverages Go templates. The `{{ `{{` }} ... {{ `}}` }}` wrapping syntax is strictly necessary to prevent helm from incorrectly evaluating the variable at deployment time.
-* **Performance**: Always revert Envoy's debug logging to `warn` or `error` in production environments immediately after confirming header traces to prevent disk space exhaustion and CPU overhead.
-
+*   **Performance**: Always revert Envoy's logging level to `warn` after verification to avoid log bloat and performance degradation.
+*   **Security**: Do not pass sensitive internal metadata to untrusted or external MCP servers. Use HTTPS for all upstream connections.
