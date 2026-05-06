@@ -636,13 +636,13 @@ applications:
           global:
             authz:
               image:
-                version: "sha-c05d297758e7cbed3dbdd0234d0a3a12fc325ae0"
+                version: "sha-eb5ae990d66b49a6f01d7f391130bf8c6c19e016"
             authz_usage:
               image:
-                version: "sha-c05d297758e7cbed3dbdd0234d0a3a12fc325ae0"
+                version: "sha-eb5ae990d66b49a6f01d7f391130bf8c6c19e016"
             authz_mcp:
               image:
-                version: "sha-c05d297758e7cbed3dbdd0234d0a3a12fc325ae0"
+                version: "sha-eb5ae990d66b49a6f01d7f391130bf8c6c19e016"
             tls:
               enabled: false
 
@@ -665,6 +665,7 @@ applications:
                         enabled: true
                         grant_type: "urn:ietf:params:oauth:grant-type:token-exchange"
                         client_id: "${API_KEY_CLIENT_ID}"
+                        client_secret: "${API_KEY_CLIENT_SECRET}"
                         subject_token_type: "urn:ietf:params:oauth:token-type:access_token"
                         requested_token_type: "urn:ietf:params:oauth:token-type:access_token"
                     server:
@@ -695,6 +696,11 @@ applications:
                     env:
                       RUST_LOG: "INFO"
                       API_KEY_CLIENT_ID: "lightbridge-api-key"
+                      API_KEY_CLIENT_SECRET:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-api-client
+                            key: secret-id
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
@@ -781,7 +787,6 @@ applications:
                   authz:
                     env:
                       RUST_LOG: "INFO"
-                      API_KEY_CLIENT_ID: "lightbridge-api-key"
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
@@ -859,7 +864,6 @@ applications:
                   authz:
                     env:
                       RUST_LOG: "INFO"
-                      API_KEY_CLIENT_ID: "lightbridge-api-key"
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
