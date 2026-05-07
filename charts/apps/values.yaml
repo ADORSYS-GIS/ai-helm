@@ -70,13 +70,6 @@ applications:
 
     destination:
       namespace: traefik-system
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: opentelemetry-operator
     finalizers:
@@ -97,13 +90,6 @@ applications:
         #    repository: "otel/opentelemetry-collector-k8s"
     destination:
       namespace: opentelemetry-system
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Observability: Prometheus Operator CRDs ---
   # CRDs only (no operator) — registers ServiceMonitor, PodMonitor, etc.
@@ -120,14 +106,6 @@ applications:
         releaseName: prometheus-operator-crds
     destination:
       namespace: monitoring
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-        - Replace=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Observability: Grafana Alloy ---
   # Unified telemetry collector — discovers ServiceMonitors and scrapes metrics.
@@ -229,14 +207,6 @@ applications:
 
     destination:
       namespace: monitoring
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-        - SkipDryRunOnMissingResource=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: cnpg
     finalizers:
@@ -257,13 +227,6 @@ applications:
               memory: 100Mi
     destination:
       namespace: cnpg-system
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: cnpg-barman-cloud
     finalizers:
@@ -278,13 +241,6 @@ applications:
         releaseName: cnpg-barman-cloud
     destination:
       namespace: cnpg-system
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: cert
     finalizers:
@@ -298,13 +254,6 @@ applications:
         valuesObject: { }
     destination:
       namespace: cert-system
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Secret Management ---
   # External Secrets Operator - installed from official upstream Helm chart
@@ -328,13 +277,6 @@ applications:
             name: external-secrets-controller
     destination:
       namespace: external-secrets-system
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # External Secrets Configuration - ClusterSecretStore and RBAC
   - name: external-secrets-config
@@ -351,13 +293,6 @@ applications:
         valuesObject: {}
     destination:
       namespace: external-secrets-system
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Core Infrastructure ---
   - name: redis
@@ -385,13 +320,6 @@ applications:
             replicaCount: 1
     destination:
       namespace: redis-system
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: aieg-crd
     finalizers:
@@ -404,12 +332,6 @@ applications:
         releaseName: aieg-crd
     destination:
       namespace: envoy-ai-gateway-system
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: eg
     finalizers:
@@ -499,12 +421,6 @@ applications:
                     port: 1063
     destination:
       namespace: envoy-gateway-system
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: aieg
     finalizers:
@@ -527,12 +443,6 @@ applications:
             logLevel: info
     destination:
       namespace: envoy-ai-gateway-system
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: metrics-server
     finalizers:
@@ -560,12 +470,6 @@ applications:
             minAvailable: 1
     destination:
       namespace: kube-system
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: secrets
     finalizers:
@@ -576,12 +480,6 @@ applications:
       path: manifests
     destination:
       namespace: manifests
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Gateway ---
   - name: core-gateway
@@ -600,13 +498,6 @@ applications:
             issuer: cert-home-cert-envoy
     destination:
       namespace: converse-gateway
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-        - CreateNamespace=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Security & Policy ---
   - name: authorino-operator
@@ -620,12 +511,6 @@ applications:
         releaseName: authorino-operator
     destination:
       namespace: authorino-system
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: security-policies
     finalizers:
@@ -734,12 +619,6 @@ applications:
                       prefix: Bearer
     destination:
       namespace: converse-gateway
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Lightbridge Backend ---
   - name: lightbridge-backend
@@ -757,13 +636,13 @@ applications:
           global:
             authz:
               image:
-                version: "sha-a6c0917bdb0a73baa8df7d4fd1ffb380e016a91b"
+                version: "sha-eb5ae990d66b49a6f01d7f391130bf8c6c19e016"
             authz_usage:
               image:
-                version: "fix-formatting8ddaddf2c8da10480ada48a83e9bad41e4848e00"
+                version: "sha-eb5ae990d66b49a6f01d7f391130bf8c6c19e016"
             authz_mcp:
               image:
-                version: "sha-a6c0917bdb0a73baa8df7d4fd1ffb380e016a91b"
+                version: "sha-eb5ae990d66b49a6f01d7f391130bf8c6c19e016"
             tls:
               enabled: false
 
@@ -781,6 +660,14 @@ applications:
                       pool_size: 10
                     oauth2:
                       jwks_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/certs
+                      oauth2_url: "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token"
+                      issuance:
+                        enabled: true
+                        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange"
+                        client_id: "${API_KEY_CLIENT_ID}"
+                        client_secret: "${API_KEY_CLIENT_SECRET}"
+                        subject_token_type: "urn:ietf:params:oauth:token-type:access_token"
+                        requested_token_type: "urn:ietf:params:oauth:token-type:access_token"
                     server:
                       api:
                         address: 0.0.0.0
@@ -808,6 +695,12 @@ applications:
                   authz:
                     env:
                       RUST_LOG: "INFO"
+                      API_KEY_CLIENT_ID: "lightbridge-api-key"
+                      API_KEY_CLIENT_SECRET:
+                        valueFrom:
+                          secretKeyRef:
+                            name: lightbridge-api-client
+                            key: secret-id
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
@@ -1029,7 +922,7 @@ applications:
                 containers:
                   authz:
                     env:
-                      RUST_LOG: "info"
+                      RUST_LOG: "INFO"
                       PORT: "3000"
                       POD_NAME:
                         valueFrom:
@@ -1271,6 +1164,21 @@ applications:
                   - server auth
                   - client auth
             - |
+              # NOTE: RetentionPolicyFailed warning caused by MinIO incompatibility with
+              # trailing slashes in destinationPath.
+              #
+              # Root cause: When barman-cloud calls ListObjectsV2 to enforce retention
+              # policy, MinIO returns object names that cause XMinioInvalidObjectName errors
+              # if destinationPath contains a trailing slash.
+              #
+              # Fix: Remove trailing slash from destinationPath.
+              # See: https://github.com/cloudnative-pg/cloudnative-pg/issues/4890
+              #
+              # Wrong (fails with MinIO):
+              #   destinationPath: s3://ai-ops-backups/lightbridge-main-db/
+              #
+              # Correct (works with MinIO):
+              #   destinationPath: s3://ai-ops-backups/lightbridge-main-db
               apiVersion: barmancloud.cnpg.io/v1
               kind: ObjectStore
               metadata:
@@ -1282,7 +1190,7 @@ applications:
               spec:
                 retentionPolicy: "180d"
                 configuration:
-                  destinationPath: s3://ai-ops-backups/lightbridge-main-db/
+                  destinationPath: s3://ai-ops-backups/lightbridge-main-db
                   endpointURL: https://s3.ssegning.me
                   s3Credentials:
                     accessKeyId:
@@ -1295,6 +1203,21 @@ applications:
                       name: lightbridge-cnpg-s3
                       key: s3_region_name
             - |
+              # NOTE: RetentionPolicyFailed warning caused by MinIO incompatibility with
+              # trailing slashes in destinationPath.
+              #
+              # Root cause: When barman-cloud calls ListObjectsV2 to enforce retention
+              # policy, MinIO returns object names that cause XMinioInvalidObjectName errors
+              # if destinationPath contains a trailing slash.
+              #
+              # Fix: Remove trailing slash from destinationPath.
+              # See: https://github.com/cloudnative-pg/cloudnative-pg/issues/4890
+              #
+              # Wrong (fails with MinIO):
+              #   destinationPath: s3://ai-ops-backups/lightbridge-usage-db/
+              #
+              # Correct (works with MinIO):
+              #   destinationPath: s3://ai-ops-backups/lightbridge-usage-db
               apiVersion: barmancloud.cnpg.io/v1
               kind: ObjectStore
               metadata:
@@ -1306,7 +1229,7 @@ applications:
               spec:
                 retentionPolicy: "180d"
                 configuration:
-                  destinationPath: s3://ai-ops-backups/lightbridge-usage-db/
+                  destinationPath: s3://ai-ops-backups/lightbridge-usage-db
                   endpointURL: https://s3.ssegning.me
                   s3Credentials:
                     accessKeyId:
@@ -1485,12 +1408,6 @@ applications:
                   name: barman-cloud.cloudnative-pg.io
     destination:
       namespace: converse
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Converse UI ---
   - name: converse-ui
@@ -1524,12 +1441,6 @@ applications:
                       EXPO_PUBLIC_KEYCLOAK_SCHEME: "self-service"
     destination:
       namespace: converse
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- LibreChat & Phoenix ---
   - name: phoenix
@@ -1579,13 +1490,6 @@ applications:
                   scopes: "openid phoenix"
     destination:
       namespace: converse-monitoring
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   - name: librechat
     finalizers:
@@ -1606,13 +1510,6 @@ applications:
 
     destination:
       namespace: converse-chat
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- MongoDB Backup ---
   - name: mongodb-backup
@@ -1640,12 +1537,6 @@ applications:
                       MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017, #librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
     destination:
       namespace: converse-chat
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Models ---
   - name: models
@@ -1660,12 +1551,6 @@ applications:
         valuesObject: { }
     destination:
       namespace: converse
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- MCPs ---
   - name: mcps
@@ -1680,12 +1565,6 @@ applications:
         valuesObject: { }
     destination:
       namespace: converse-mcp
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Coder DB ---
   - name: coder-db
@@ -1702,13 +1581,6 @@ applications:
         valuesObject: {}
     destination:
       namespace: coder
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Coder ---
   - name: coder
@@ -1813,13 +1685,6 @@ applications:
                   wildcardSecretName: coder.ai.camer.digital-tls
     destination:
       namespace: coder
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Adminer ---
   - name: adminer
@@ -1918,12 +1783,6 @@ applications:
 
     destination:
       namespace: converse
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
 extraObjects:
   # ==========================================
