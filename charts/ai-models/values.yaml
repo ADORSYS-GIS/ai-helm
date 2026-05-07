@@ -129,6 +129,22 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
 
+  reviewer:
+    kind: text
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.60
+        cachedInputPer1M: 0.12
+        outputPer1M: 2.08
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "zai-org/GLM-5"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "zai-org/GLM-5"
+
   glm-5:
     kind: text
     pricing:
@@ -144,6 +160,47 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-5"
+    rateLimitBudgeting:
+      free: 10
+      pro: 50
+
+  adorsys-planner:
+    kind: text
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.60
+        cachedInputPer1M: 0.12
+        outputPer1M: 2.08
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "zai-org/GLM-5"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "zai-org/GLM-5"
+    rateLimitBudgeting:
+      free: 10
+      pro: 50
+
+  adorsys-planner-pro:
+    kind: text
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 1.05
+        cachedInputPer1M: 0.205
+        outputPer1M: 3.50
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "zai-org/GLM-5.1"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "zai-org/GLM-5.1"
+    rateLimitBudgeting:
+      free: 5
+      pro: 25
 
   qwen3p6-plus:
     kind: multimodal
@@ -238,6 +295,22 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "MiniMaxAI/MiniMax-M2.5"
 
+  reviewer-flash:
+    kind: text
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.30
+        cachedInputPer1M: 0.06
+        outputPer1M: 1.20
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+
   minimax-m2p7:
     kind: text
     pricing:
@@ -254,21 +327,21 @@ models:
         <<: *fwBackendSecondary
         modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
 
-  gemini-3.1-flash-lite:
-    kind: text
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.25
-        cachedInputPer1M: 0.025
-        outputPer1M: 1.50
-    backends:
-      google-ai-studio-01:
-        <<: *googleAiStudioBackendPrimary
-        modelNameOverride: "gemini-3.1-flash-lite-preview"
-      google-ai-studio-02:
-        <<: *googleAiStudioBackendSecondary
-        modelNameOverride: "gemini-3.1-flash-lite-preview"
+  #  gemini-3.1-flash-lite:
+  #    kind: text
+  #    pricing:
+  #      strategy: weighted
+  #      standard:
+  #        inputPer1M: 0.25
+  #        cachedInputPer1M: 0.025
+  #        outputPer1M: 1.50
+  #    backends:
+  #      google-ai-studio-01:
+  #        <<: *googleAiStudioBackendPrimary
+  #        modelNameOverride: "gemini-3.1-flash-lite-preview"
+  #      google-ai-studio-02:
+  #        <<: *googleAiStudioBackendSecondary
+  #        modelNameOverride: "gemini-3.1-flash-lite-preview"
 
   gemma-4:
     kind: text

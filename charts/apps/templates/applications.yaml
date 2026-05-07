@@ -33,9 +33,21 @@ spec:
   destination:
     name: lke560142-ctx
     namespace: {{ .destination.namespace }}
+  {{ if .syncPolicy }}
   {{- with .syncPolicy }}
-  syncPolicy:
     {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{ else }}
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - Replace=true
+      - SkipDryRunOnMissingResource=true
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
   {{- end }}
   {{- with .revisionHistoryLimit }}
   revisionHistoryLimit: {{ . }}
