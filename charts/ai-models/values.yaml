@@ -129,6 +129,22 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
 
+  reviewer:
+    kind: text
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.60
+        cachedInputPer1M: 0.12
+        outputPer1M: 2.08
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "zai-org/GLM-5"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "zai-org/GLM-5"
+
   glm-5:
     kind: text
     pricing:
@@ -278,6 +294,22 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "MiniMaxAI/MiniMax-M2.5"
+
+  reviewer-flash:
+    kind: text
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.30
+        cachedInputPer1M: 0.06
+        outputPer1M: 1.20
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
 
   minimax-m2p7:
     kind: text
