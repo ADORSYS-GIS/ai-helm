@@ -20,7 +20,8 @@ This chart requires the `core-gateway` chart to be installed first, which provid
 
 - Kubernetes 1.24+
 - Helm 3.0+
-- [Envoy Gateway](https://gateway.envoyproxy.io/docs/tasks/quickstart/) installed in the cluster with rate limiting enabled
+- [Envoy Gateway](https://gateway.envoyproxy.io/docs/tasks/quickstart/) installed in the cluster with rate limiting
+  enabled
 - [Envoy AI Gateway](https://aigateway.envoyproxy.io/docs/getting-started/installation/) installed too
 - `core-gateway` chart installed
 - `redis` installed
@@ -58,7 +59,8 @@ helm install ai-models ./charts/ai-models -n converse-gateway -f my-values.yaml
 
 ## Testing
 
-After installing the chart, you can test the AI Gateway locally using curl requests. First, ensure the Gateway is accessible (e.g., via port-forwarding or LoadBalancer IP).
+After installing the chart, you can test the AI Gateway locally using curl requests. First, ensure the Gateway is
+accessible (e.g., via port-forwarding or LoadBalancer IP).
 
 ### Port Forwarding (for local testing)
 
@@ -118,71 +120,74 @@ Docs: [rate-limit-investigation.md](./rate-limit-investigation.md)
 
 ### Gateway Reference
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `gatewayRef.name` | Name of the shared gateway resource | `core-gateway` |
+| Parameter              | Description                              | Default            |
+|------------------------|------------------------------------------|--------------------|
+| `gatewayRef.name`      | Name of the shared gateway resource      | `core-gateway`     |
 | `gatewayRef.namespace` | Namespace of the shared gateway resource | `converse-gateway` |
 
 ### Rate Limiting And Budgeting
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Monthly estimated spend guard per account, plan, and model | `free=30`, `pro=200` |
-| `models.<name>.pricing.strategy` | Cost model used to compute `llm_custom_total_cost` | `weighted`, `flat`, `tieredWeighted` |
+| Parameter                                          | Description                                                | Default                              |
+|----------------------------------------------------|------------------------------------------------------------|--------------------------------------|
+| `rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd` | Monthly estimated spend guard per account, plan, and model | `free=30`, `pro=200`                 |
+| `models.<name>.pricing.strategy`                   | Cost model used to compute `llm_custom_total_cost`         | `weighted`, `flat`, `tieredWeighted` |
 
 The chart uses one rate-limit control:
 
 1. A monthly budget rule based on estimated request cost.
 
 The budget rule matches `x-account-id + x-billing-plan + x-ai-eg-model`.
-The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the upstream provider.
+The budget is decremented from response metadata, so the request that crosses the budget can still succeed. Once Redis
+already contains an exhausted bucket from earlier responses, the next matching request is rejected before it reaches the
+upstream provider.
 
 ### Backend Traffic Policy
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
+| Parameter                     | Description                                            | Default          |
+|-------------------------------|--------------------------------------------------------|------------------|
 | `BackendTrafficPolicy` target | One `BackendTrafficPolicy` is rendered per model route | each `HTTPRoute` |
-| Monthly budget selector | `x-account-id`, `x-billing-plan`, `x-ai-eg-model` | generated |
-| Budget limit unit | Same unit as `llm_custom_total_cost` | micro-USD |
+| Monthly budget selector       | `x-account-id`, `x-billing-plan`, `x-ai-eg-model`      | generated        |
+| Budget limit unit             | Same unit as `llm_custom_total_cost`                   | micro-USD        |
 
-`BackendTrafficPolicy` does not calculate cost by itself. It reads the `llm_custom_total_cost` value produced by `AIGatewayRoute` and uses that response metadata as the cost of the request.
+`BackendTrafficPolicy` does not calculate cost by itself. It reads the `llm_custom_total_cost` value produced by
+`AIGatewayRoute` and uses that response metadata as the cost of the request.
 
 ### Pricing Strategies
 
-| Strategy | When to use it | Required fields |
-|-----------|-------------|---------|
-| `weighted` | Provider publishes separate prices for input, cached input, and output tokens | `standard.inputPer1M`, `standard.cachedInputPer1M`, `standard.outputPer1M` |
-| `flat` | Provider publishes one blended price for total tokens | `standard.effectivePer1M` |
-| `tieredWeighted` | Provider publishes weighted prices and a more expensive long-context tier | `thresholdTokens`, `standard.*`, `longContext.*` |
+| Strategy         | When to use it                                                                | Required fields                                                            |
+|------------------|-------------------------------------------------------------------------------|----------------------------------------------------------------------------|
+| `weighted`       | Provider publishes separate prices for input, cached input, and output tokens | `standard.inputPer1M`, `standard.cachedInputPer1M`, `standard.outputPer1M` |
+| `flat`           | Provider publishes one blended price for total tokens                         | `standard.effectivePer1M`                                                  |
+| `tieredWeighted` | Provider publishes weighted prices and a more expensive long-context tier     | `thresholdTokens`, `standard.*`, `longContext.*`                           |
 
 ### Backends
 
 Backends define the upstream AI service endpoints:
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `backends.<name>.resourceName` | Kubernetes resource name | `gcp-backend-svc` |
-| `backends.<name>.schema` | AI service schema (OpenAI, etc.) | `OpenAI` |
-| `backends.<name>.prefix` | Optional URL prefix | `/inference/v1` |
-| `backends.<name>.fqdn.hostname` | Backend hostname | `api.openai.com` |
-| `backends.<name>.fqdn.port` | Backend port | `443` |
-| `backends.<name>.secretRef.name` | Secret name for API key | `openai-apikey` |
-| `backends.<name>.tlsHostname` | TLS hostname for validation | `api.openai.com` |
+| Parameter                        | Description                      | Example           |
+|----------------------------------|----------------------------------|-------------------|
+| `backends.<name>.resourceName`   | Kubernetes resource name         | `gcp-backend-svc` |
+| `backends.<name>.schema`         | AI service schema (OpenAI, etc.) | `OpenAI`          |
+| `backends.<name>.prefix`         | Optional URL prefix              | `/inference/v1`   |
+| `backends.<name>.fqdn.hostname`  | Backend hostname                 | `api.openai.com`  |
+| `backends.<name>.fqdn.port`      | Backend port                     | `443`             |
+| `backends.<name>.secretRef.name` | Secret name for API key          | `openai-apikey`   |
+| `backends.<name>.tlsHostname`    | TLS hostname for validation      | `api.openai.com`  |
 
 ### Models
 
 Models define routing rules for AI model requests:
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `models.<name>.enabled` | Enable this model route | `true` |
-| `models.<name>.kind` | Model family used for routing and telemetry expectations | `text` |
-| `models.<name>.pricing` | Cost formula inputs for `llm_custom_total_cost` | See [cost-tracking.md](./cost-tracking.md) |
-| `models.<name>.backends.<ref>.enabled` | Enable this backend for the model | `true` |
-| `models.<name>.backends.<ref>.ref` | Reference to backend definition | `gcp-primary` |
-| `models.<name>.backends.<ref>.modelNameOverride` | Override model name sent to backend | `gpt-4-turbo` |
-| `models.<name>.backends.<ref>.priority` | Failover priority (0 = primary) | `0` |
-| `models.<name>.backends.<ref>.weight` | Load balancing weight | `50` |
+| Parameter                                        | Description                                              | Example                                    |
+|--------------------------------------------------|----------------------------------------------------------|--------------------------------------------|
+| `models.<name>.enabled`                          | Enable this model route                                  | `true`                                     |
+| `models.<name>.kind`                             | Model family used for routing and telemetry expectations | `text`                                     |
+| `models.<name>.pricing`                          | Cost formula inputs for `llm_custom_total_cost`          | See [cost-tracking.md](./cost-tracking.md) |
+| `models.<name>.backends.<ref>.enabled`           | Enable this backend for the model                        | `true`                                     |
+| `models.<name>.backends.<ref>.ref`               | Reference to backend definition                          | `gcp-primary`                              |
+| `models.<name>.backends.<ref>.modelNameOverride` | Override model name sent to backend                      | `gpt-4-turbo`                              |
+| `models.<name>.backends.<ref>.priority`          | Failover priority (0 = primary)                          | `0`                                        |
+| `models.<name>.backends.<ref>.weight`            | Load balancing weight                                    | `50`                                       |
 
 ## Example Values
 
@@ -270,7 +275,8 @@ Instead, rate limiting works like this:
 
 1. `AIGatewayRoute` computes `llm_custom_total_cost` from token usage and the model's pricing block.
 2. `BackendTrafficPolicy` charges that value against the monthly budget for the account, billing plan, and model.
-3. If Redis already shows that budget bucket as exhausted, the next matching request is rejected before it reaches the upstream provider.
+3. If Redis already shows that budget bucket as exhausted, the next matching request is rejected before it reaches the
+   upstream provider.
 4. The request that actually crosses the budget is still allowed, because the cost is applied on the response path.
 
 If you need to tune behavior, update:
@@ -284,11 +290,13 @@ In this chart, `BackendTrafficPolicy` is responsible for:
 
 1. enforcing the monthly estimated-spend budget
 
-The policy does not contain provider pricing. Provider pricing lives in `values.yaml` and is rendered into `AIGatewayRoute`.
+The policy does not contain provider pricing. Provider pricing lives in `values.yaml` and is rendered into
+`AIGatewayRoute`.
 
 ## Model Routing Requirements
 
-Each enabled model route must have **at least 2 enabled backends**. This is enforced by the chart to ensure high availability.
+Each enabled model route must have **at least 2 enabled backends**. This is enforced by the chart to ensure high
+availability.
 
 ## Related Charts
 
