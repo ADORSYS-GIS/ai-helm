@@ -130,7 +130,7 @@ applications:
         releaseName: alloy
         valuesObject:
           controller:
-            type: StatefulSet
+            type: statefulset
             replicas: 1
 
           alloy:
@@ -174,31 +174,31 @@ applications:
                 cpu: 500m
                 memory: 512Mi
 
-            # Guardrails for the monitoring namespace
-            extraObjects:
-              - apiVersion: v1
-                kind: LimitRange
-                metadata:
-                  name: monitoring-defaults
-                  namespace: monitoring
-                spec:
-                  limits:
-                    - type: Container
-                      defaultRequest: { cpu: 50m, memory: 64Mi }
-                      default:        { cpu: 200m, memory: 256Mi }
-                      max:            { cpu: "2", memory: 2Gi }
-              - apiVersion: v1
-                kind: ResourceQuota
-                metadata:
-                  name: monitoring-quota
-                  namespace: monitoring
-                spec:
-                  hard:
-                    requests.cpu: 500m
-                    requests.memory: 512Mi
-                    limits.cpu: "2"
-                    limits.memory: 3Gi
-                    count/pods: "10"
+          # Guardrails for the monitoring namespace
+          extraObjects:
+            - apiVersion: v1
+              kind: LimitRange
+              metadata:
+                name: monitoring-defaults
+                namespace: monitoring
+              spec:
+                limits:
+                  - type: Container
+                    defaultRequest: { cpu: 50m, memory: 64Mi }
+                    default:        { cpu: 200m, memory: 256Mi }
+                    max:            { cpu: "2", memory: 2Gi }
+            - apiVersion: v1
+              kind: ResourceQuota
+              metadata:
+                name: monitoring-quota
+                namespace: monitoring
+              spec:
+                hard:
+                  requests.cpu: 500m
+                  requests.memory: 512Mi
+                  limits.cpu: "2"
+                  limits.memory: 3Gi
+                  count/pods: "10"
 
           serviceMonitor:
             enabled: true
