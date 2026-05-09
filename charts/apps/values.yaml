@@ -130,12 +130,13 @@ applications:
         releaseName: alloy
         valuesObject:
           controller:
-            type: statefulset
-            replicas: 1
+            type: daemonset
 
           alloy:
             clustering:
               enabled: true
+            mounts:
+              varlog: true
             configMap:
               content: |-
                 logging {
@@ -145,7 +146,7 @@ applications:
 
                 prometheus.remote_write "default" {
                   endpoint {
-                    url = "http://placeholder:9009/api/v1/push"
+                    url = "http://mimir-nginx.monitoring.svc.cluster.local/api/v1/push"
                   }
                   external_labels = {
                     cluster = "ai-helm",
@@ -166,6 +167,47 @@ applications:
                   forward_to = [prometheus.relabel.global_sanitize.receiver]
                 }
 
+                local.file_match "pod_logs" {
+                  path_targets = [{
+                    __path__ = "/var/log/pods/*/*/*.log",
+                    job       = "kubernetes-pods",
+                  }]
+                }
+
+                loki.source.file "pod_logs" {
+                  targets    = local.file_match.pod_logs.targets
+                  forward_to = [loki.process.kubernetes_labels.receiver]
+                }
+
+                loki.process "kubernetes_labels" {
+                  stage.regex {
+                    expression = "/var/log/pods/(?P<namespace>[^_]+)_(?P<pod>[^_]+)_[^/]+/(?P<container>[^/]+)/"
+                  }
+                  stage.labels {
+                    values = {
+                      namespace = "namespace",
+                      pod       = "pod",
+                      container = "container",
+                    }
+                  }
+                  stage.json {
+                    expressions = { level = "level", trace_id = "trace_id" }
+                  }
+                  stage.labels {
+                    values = { level = "level" }
+                  }
+                  forward_to = [loki.write.default.receiver]
+                }
+
+                loki.write "default" {
+                  endpoint {
+                    url = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+                  }
+                  external_labels = {
+                    cluster = "ai-helm",
+                  }
+                }
+
             resources:
               requests:
                 cpu: 100m
@@ -173,32 +215,6 @@ applications:
               limits:
                 cpu: 500m
                 memory: 512Mi
-
-          # Guardrails for the monitoring namespace
-          extraObjects:
-            - apiVersion: v1
-              kind: LimitRange
-              metadata:
-                name: monitoring-defaults
-                namespace: monitoring
-              spec:
-                limits:
-                  - type: Container
-                    defaultRequest: { cpu: 50m, memory: 64Mi }
-                    default:        { cpu: 200m, memory: 256Mi }
-                    max:            { cpu: "2", memory: 2Gi }
-            - apiVersion: v1
-              kind: ResourceQuota
-              metadata:
-                name: monitoring-quota
-                namespace: monitoring
-              spec:
-                hard:
-                  requests.cpu: 500m
-                  requests.memory: 512Mi
-                  limits.cpu: "2"
-                  limits.memory: 3Gi
-                  count/pods: "10"
 
           serviceMonitor:
             enabled: true
@@ -216,6 +232,535 @@ applications:
         - CreateNamespace=true
         - ServerSideApply=true
         - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Observability: Mimir — long-term metrics store + built-in Alertmanager
+  # Sync wave -1: backends before Grafana
+  # Secrets required (via ESO):
+  #   mimir-s3:
+  #     MIMIR_S3_ACCESS_KEY_ID: <linode-or-custom-s3-access-key>
+  #     MIMIR_S3_SECRET_ACCESS_KEY: <linode-or-custom-s3-secret-key>
+  # Buckets to create before first sync:
+  #   converse-mimir-blocks, converse-mimir-alertmanager, converse-mimir-ruler
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: mimir
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 5.3.0
+      chart: mimir-distributed
+      helm:
+        releaseName: mimir
+        valuesObject:
+          fullnameOverride: mimir
+
+          global:
+            extraEnvFrom:
+              - secretRef:
+                  name: mimir-s3
+
+          mimir:
+            structuredConfig:
+              multitenancy_enabled: false
+
+              common:
+                storage:
+                  backend: s3
+                  s3:
+                    endpoint: us-east-1.linodeobjects.com
+                    access_key_id: ${MIMIR_S3_ACCESS_KEY_ID}
+                    secret_access_key: ${MIMIR_S3_SECRET_ACCESS_KEY}
+
+              blocks_storage:
+                s3:
+                  bucket_name: converse-mimir-blocks
+              alertmanager_storage:
+                s3:
+                  bucket_name: converse-mimir-alertmanager
+              ruler_storage:
+                s3:
+                  bucket_name: converse-mimir-ruler
+
+              alertmanager:
+                enable_api: true
+                external_url: https://grafana.ai.camer.digital/alerting
+                fallback_config_file: /etc/mimir/alertmanager-fallback-config.yaml
+
+              limits:
+                compactor_blocks_retention_period: 90d
+                ingestion_rate: 30000
+                ingestion_burst_size: 50000
+                max_global_series_per_user: 2000000
+
+          ingester:
+            replicas: 1
+            zoneAwareReplication:
+              enabled: false
+            resources:
+              requests: { cpu: 200m, memory: 512Mi }
+              limits:   { cpu: 1,    memory: 2Gi   }
+
+          distributor:
+            replicas: 1
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 1Gi   }
+
+          querier:
+            replicas: 1
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 1Gi   }
+
+          query_frontend:
+            replicas: 1
+            resources:
+              requests: { cpu: 100m, memory: 128Mi }
+              limits:   { cpu: 500m, memory: 512Mi }
+
+          query_scheduler:
+            enabled: false
+
+          store_gateway:
+            replicas: 1
+            zoneAwareReplication:
+              enabled: false
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 1Gi   }
+
+          compactor:
+            replicas: 1
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 2Gi   }
+
+          alertmanager:
+            enabled: true
+            replicas: 1
+            resources:
+              requests: { cpu: 50m,  memory: 64Mi  }
+              limits:   { cpu: 200m, memory: 256Mi }
+            fallbackConfig: |
+              route:
+                receiver: blackhole
+              receivers:
+                - name: blackhole
+
+          ruler:
+            enabled: false
+
+          nginx:
+            enabled: true
+            replicas: 1
+            resources:
+              requests: { cpu: 50m,  memory: 64Mi  }
+              limits:   { cpu: 200m, memory: 128Mi }
+
+          minio:
+            enabled: false
+
+          extraObjects:
+            - apiVersion: v1
+              kind: ResourceQuota
+              metadata:
+                name: monitoring-quota
+                namespace: monitoring
+              spec:
+                hard:
+                  requests.cpu: "4"
+                  requests.memory: "8Gi"
+                  limits.cpu: "16"
+                  limits.memory: "24Gi"
+                  count/pods: "40"
+            - apiVersion: v1
+              kind: LimitRange
+              metadata:
+                name: monitoring-defaults
+                namespace: monitoring
+              spec:
+                limits:
+                  - type: Container
+                    defaultRequest: { cpu: 100m, memory: 128Mi }
+                    default:        { cpu: 500m, memory: 512Mi }
+                    max:            { cpu: "4",  memory: 8Gi   }
+
+    destination:
+      namespace: monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Observability: Loki — log aggregation store
+  # Sync wave -1: alongside Mimir, before Grafana
+  # Secrets required (via ESO):
+  #   loki-s3:
+  #     LOKI_S3_ACCESS_KEY_ID: <key>
+  #     LOKI_S3_SECRET_ACCESS_KEY: <secret>
+  # Buckets to create: converse-loki-chunks, converse-loki-ruler
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: loki
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 6.6.0
+      chart: loki
+      helm:
+        releaseName: loki
+        valuesObject:
+          deploymentMode: SingleBinary
+
+          loki:
+            auth_enabled: false
+
+            commonConfig:
+              replication_factor: 1
+
+            schemaConfig:
+              configs:
+                - from: "2024-01-01"
+                  store: tsdb
+                  object_store: s3
+                  schema: v13
+                  index:
+                    prefix: loki_index_
+                    period: 24h
+
+            storage:
+              type: s3
+              s3:
+                s3ForcePathStyle: true
+                endpoint: us-east-1.linodeobjects.com
+                region: us-east-1
+                secretAccessKey: ${LOKI_S3_SECRET_ACCESS_KEY}
+                accessKeyId: ${LOKI_S3_ACCESS_KEY_ID}
+                bucketNames:
+                  chunks: converse-loki-chunks
+                  ruler:  converse-loki-ruler
+
+            limits_config:
+              retention_period: 90d
+              ingestion_rate_mb: 8
+              ingestion_burst_size_mb: 16
+
+            compactor:
+              retention_enabled: true
+
+          singleBinary:
+            replicas: 1
+            extraEnvFrom:
+              - secretRef:
+                  name: loki-s3
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 2Gi   }
+            persistence:
+              enabled: true
+              storageClass: linode-block-storage
+              size: 10Gi
+
+          ingester:       { replicas: 0 }
+          querier:        { replicas: 0 }
+          queryFrontend:  { replicas: 0 }
+          queryScheduler: { replicas: 0 }
+          distributor:    { replicas: 0 }
+          compactor:      { replicas: 0 }
+          indexGateway:   { replicas: 0 }
+          bloomCompactor: { enabled: false }
+          bloomGateway:   { enabled: false }
+
+          gateway:
+            enabled: true
+            replicas: 1
+            resources:
+              requests: { cpu: 50m,  memory: 64Mi  }
+              limits:   { cpu: 200m, memory: 128Mi }
+
+          minio:
+            enabled: false
+
+    destination:
+      namespace: monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Observability: Tempo — distributed trace store
+  # Sync wave -1: alongside Mimir and Loki, before Grafana
+  # Secrets required (via ESO):
+  #   tempo-s3:
+  #     TEMPO_S3_ACCESS_KEY: <key>
+  #     TEMPO_S3_SECRET_KEY: <secret>
+  # Bucket to create: converse-tempo-traces
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: tempo
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 1.9.0
+      chart: tempo
+      helm:
+        releaseName: tempo
+        valuesObject:
+          replicas: 1
+
+          tempo:
+            extraEnvFrom:
+              - secretRef:
+                  name: tempo-s3
+
+            retention: 720h
+
+            storage:
+              trace:
+                backend: s3
+                s3:
+                  bucket:           converse-tempo-traces
+                  endpoint:         us-east-1.linodeobjects.com
+                  access_key:       ${TEMPO_S3_ACCESS_KEY}
+                  secret_key:       ${TEMPO_S3_SECRET_KEY}
+                  forcepathstyle:   true
+                  insecure:         false
+
+            receivers:
+              otlp:
+                protocols:
+                  grpc:
+                    endpoint: 0.0.0.0:4317
+                  http:
+                    endpoint: 0.0.0.0:4318
+              jaeger:
+                protocols:
+                  thrift_http:
+                    endpoint: 0.0.0.0:14268
+                  grpc:
+                    endpoint: 0.0.0.0:14250
+
+            metricsGenerator:
+              enabled: true
+              remoteWriteUrl: http://mimir-nginx.monitoring.svc.cluster.local/api/v1/push
+
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 2Gi   }
+
+          persistence:
+            enabled: true
+            storageClass: linode-block-storage
+            size: 5Gi
+
+          serviceMonitor:
+            enabled: true
+            interval: 60s
+
+    destination:
+      namespace: monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Observability: Grafana — visualization, dashboards, unified alerting
+  # Sync wave 0: after backends are up
+  # Secrets required (via ESO):
+  #   grafana-admin:
+  #     admin-user:     admin
+  #     admin-password: <strong-password>
+  #   grafana-keycloak:
+  #     client-secret: <keycloak-client-secret-for-grafana-realm-client>
+  # Keycloak client to create: "grafana" in the camer-digital realm,
+  #   redirect URI: https://grafana.ai.camer.digital/login/generic_oauth
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: grafana
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "0"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 8.0.0
+      chart: grafana
+      helm:
+        releaseName: grafana
+        valuesObject:
+          replicas: 1
+
+          admin:
+            existingSecret: grafana-admin
+            userKey:        admin-user
+            passwordKey:    admin-password
+
+          envFromSecrets:
+            - name: grafana-keycloak
+
+          grafana.ini:
+            server:
+              domain:   grafana.ai.camer.digital
+              root_url: https://grafana.ai.camer.digital
+
+            auth.generic_oauth:
+              enabled:              true
+              name:                 "CDigital"
+              icon:                 signin
+              client_id:            grafana
+              client_secret:        $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+              scopes:               "openid profile email"
+              auth_url:             "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth"
+              token_url:            "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token"
+              api_url:              "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/userinfo"
+              role_attribute_path:  "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'editor') && 'Editor' || 'Viewer'"
+              allow_sign_up:        true
+              auto_login:           false
+
+            auth:
+              disable_login_form: false
+
+            unified_alerting:
+              enabled: true
+            unified_alerting.alertmanager:
+              implementation: external
+              url: http://mimir-nginx.monitoring.svc.cluster.local/alertmanager
+
+            alerting:
+              enabled: false
+
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+                - name:      Mimir
+                  type:      prometheus
+                  uid:       mimir
+                  url:       http://mimir-nginx.monitoring.svc.cluster.local/prometheus
+                  isDefault: true
+                  jsonData:
+                    timeInterval: 30s
+                    httpMethod:   POST
+
+                - name: Loki
+                  type: loki
+                  uid:  loki
+                  url:  http://loki-gateway.monitoring.svc.cluster.local
+                  jsonData:
+                    derivedFields:
+                      - name:             TraceID
+                        matcherRegex:     '"trace_id":"(\w+)"'
+                        url:              "$${__value.raw}"
+                        datasourceUid:    tempo
+
+                - name: Tempo
+                  type: tempo
+                  uid:  tempo
+                  url:  http://tempo.monitoring.svc.cluster.local:3100
+                  jsonData:
+                    tracesToLogsV2:
+                      datasourceUid:    loki
+                      spanStartTimeShift: "-1m"
+                      spanEndTimeShift:   "1m"
+                      filterByTraceID:  true
+                      filterBySpanID:   false
+                      customQuery:      false
+                    serviceMap:
+                      datasourceUid:    mimir
+                    nodeGraph:
+                      enabled: true
+
+                - name: Alertmanager
+                  type: alertmanager
+                  uid:  alertmanager
+                  url:  http://mimir-nginx.monitoring.svc.cluster.local/alertmanager
+                  jsonData:
+                    implementation: mimir
+
+          dashboardProviders:
+            dashboardproviders.yaml:
+              apiVersion: 1
+              providers:
+                - name: community
+                  orgId: 1
+                  folder: "Kubernetes"
+                  type: file
+                  options:
+                    path: /var/lib/grafana/dashboards/community
+
+          dashboards:
+            community:
+              kubernetes-cluster:
+                gnetId: 7249
+                revision: 1
+                datasource: Mimir
+              kubernetes-pods:
+                gnetId: 6417
+                revision: 1
+                datasource: Mimir
+              argocd:
+                gnetId: 14584
+                revision: 1
+                datasource: Mimir
+              loki-logs:
+                gnetId: 13639
+                revision: 2
+                datasource: Loki
+
+          persistence:
+            enabled:      true
+            storageClass: linode-block-storage
+            size:         2Gi
+
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+
+          ingress:
+            enabled:          true
+            ingressClassName: traefik
+            annotations:
+              cert-manager.io/cluster-issuer: cert-home-cert-http
+            hosts:
+              - grafana.ai.camer.digital
+            tls:
+              - secretName: grafana.ai.camer.digital-tls
+                hosts:
+                  - grafana.ai.camer.digital
+
+          serviceMonitor:
+            enabled:  true
+            interval: 60s
+
+    destination:
+      namespace: monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
       automated:
         prune: true
         selfHeal: true
