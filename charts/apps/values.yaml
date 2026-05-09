@@ -1,3 +1,27 @@
+global:
+  cluster:
+    name: &cluster-name ai-helm
+  
+  s3:
+    endpoint: &s3-endpoint us-east-1.linodeobjects.com
+    region: &s3-region us-east-1
+  
+  buckets:
+    mimir:
+      blocks: &mimir-blocks-bucket converse-mimir-blocks
+      alertmanager: &mimir-alertmanager-bucket converse-mimir-alertmanager
+      ruler: &mimir-ruler-bucket converse-mimir-ruler
+    loki:
+      chunks: &loki-chunks-bucket converse-loki-chunks
+      ruler: &loki-ruler-bucket converse-loki-ruler
+    tempo:
+      traces: &tempo-traces-bucket converse-tempo-traces
+  
+  domains:
+    grafana: &grafana-domain grafana.ai.camer.digital
+    auth: &auth-domain auth.verif.fyi
+    api: &api-domain api.ai.camer.digital
+
 applications:
 
   - name: traefik
@@ -273,19 +297,19 @@ applications:
                 storage:
                   backend: s3
                   s3:
-                    endpoint: us-east-1.linodeobjects.com
+                    endpoint: *s3-endpoint
                     access_key_id: ${MIMIR_S3_ACCESS_KEY_ID}
                     secret_access_key: ${MIMIR_S3_SECRET_ACCESS_KEY}
 
               blocks_storage:
                 s3:
-                  bucket_name: converse-mimir-blocks
+                  bucket_name: *mimir-blocks-bucket
               alertmanager_storage:
                 s3:
-                  bucket_name: converse-mimir-alertmanager
+                  bucket_name: *mimir-alertmanager-bucket
               ruler_storage:
                 s3:
-                  bucket_name: converse-mimir-ruler
+                  bucket_name: *mimir-ruler-bucket
 
               alertmanager:
                 enable_api: true
@@ -304,6 +328,10 @@ applications:
               enabled: false
             podDisruptionBudget:
               maxUnavailable: 1
+            persistence:
+              enabled: true
+              storageClass: linode-block-storage
+              size: 10Gi
             resources:
               requests: { cpu: 200m, memory: 512Mi }
               limits:   { cpu: 1,    memory: 2Gi   }
@@ -406,6 +434,71 @@ applications:
                     defaultRequest: { cpu: 100m, memory: 128Mi }
                     default:        { cpu: 500m, memory: 512Mi }
                     max:            { cpu: "4",  memory: 8Gi   }
+            - apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: monitoring-allow-ingress
+                namespace: monitoring
+              spec:
+                podSelector: {}
+                policyTypes:
+                  - Ingress
+                  - Egress
+                ingress:
+                  - from:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: monitoring
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: traefik-system
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: converse
+                    ports:
+                      - port: http-metrics
+                        protocol: TCP
+                      - port: http
+                        protocol: TCP
+                      - port: grpc
+                        protocol: TCP
+                      - port: 3100
+                        protocol: TCP
+                      - port: 4317
+                        protocol: TCP
+                      - port: 4318
+                        protocol: TCP
+                      - port: 3000
+                        protocol: TCP
+                egress:
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: monitoring
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: converse
+                    ports:
+                      - port: http-metrics
+                        protocol: TCP
+                      - port: http
+                        protocol: TCP
+                      - port: grpc
+                        protocol: TCP
+                      - port: dns
+                        protocol: UDP
+                      - port: dns
+                        protocol: TCP
+                  - to:
+                      - ipBlock:
+                          cidr: 0.0.0.0/0
+                          except:
+                            - 10.0.0.0/8
+                            - 172.16.0.0/12
+                            - 192.168.0.0/16
+                    ports:
+                      - port: 443
+                        protocol: TCP
 
     destination:
       namespace: monitoring
@@ -461,13 +554,13 @@ applications:
               type: s3
               s3:
                 s3ForcePathStyle: true
-                endpoint: us-east-1.linodeobjects.com
-                region: us-east-1
+                endpoint: *s3-endpoint
+                region: *s3-region
                 secretAccessKey: ${LOKI_S3_SECRET_ACCESS_KEY}
                 accessKeyId: ${LOKI_S3_ACCESS_KEY_ID}
                 bucketNames:
-                  chunks: converse-loki-chunks
-                  ruler:  converse-loki-ruler
+                  chunks: *loki-chunks-bucket
+                  ruler:  *loki-ruler-bucket
 
             limits_config:
               retention_period: 90d
@@ -562,8 +655,8 @@ applications:
               trace:
                 backend: s3
                 s3:
-                  bucket:           converse-tempo-traces
-                  endpoint:         us-east-1.linodeobjects.com
+                  bucket:           *tempo-traces-bucket
+                  endpoint:         *s3-endpoint
                   access_key:       ${TEMPO_S3_ACCESS_KEY}
                   secret_key:       ${TEMPO_S3_SECRET_KEY}
                   forcepathstyle:   true
@@ -649,7 +742,7 @@ applications:
 
           grafana.ini:
             server:
-              domain:   grafana.ai.camer.digital
+              domain:   *grafana-domain
               root_url: https://grafana.ai.camer.digital
 
             auth.generic_oauth:
@@ -802,11 +895,11 @@ applications:
             annotations:
               cert-manager.io/cluster-issuer: cert-home-cert-http
             hosts:
-              - grafana.ai.camer.digital
+              - *grafana-domain
             tls:
               - secretName: grafana.ai.camer.digital-tls
                 hosts:
-                  - grafana.ai.camer.digital
+                  - *grafana-domain
 
           serviceMonitor:
             enabled:  true
