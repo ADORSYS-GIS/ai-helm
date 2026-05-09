@@ -159,7 +159,7 @@ applications:
                     action = "replace"
                     source_labels = ["__name__"]
                     target_label = "cluster_origin"
-                    replacement = "{{ .Release.Name }}"
+                    replacement = "alloy"
                   }
                 }
 
@@ -181,7 +181,7 @@ applications:
 
                 loki.process "kubernetes_labels" {
                   stage.regex {
-                    expression = "/var/log/pods/(?P<namespace>[^_]+)_(?P<pod>[^_]+)_[^/]+/(?P<container>[^/]+)/"
+                    expression = "/var/log/pods/(?P<namespace>[^/]+?)_(?P<pod>[^/]+)_[a-f0-9-]+/(?P<container>[^/]+)/"
                   }
                   stage.labels {
                     values = {
@@ -302,24 +302,32 @@ applications:
             replicas: 1
             zoneAwareReplication:
               enabled: false
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 200m, memory: 512Mi }
               limits:   { cpu: 1,    memory: 2Gi   }
 
           distributor:
             replicas: 1
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           querier:
             replicas: 1
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           query_frontend:
             replicas: 1
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 100m, memory: 128Mi }
               limits:   { cpu: 500m, memory: 512Mi }
@@ -331,12 +339,16 @@ applications:
             replicas: 1
             zoneAwareReplication:
               enabled: false
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           compactor:
             replicas: 1
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 2Gi   }
@@ -344,6 +356,8 @@ applications:
           alertmanager:
             enabled: true
             replicas: 1
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 256Mi }
@@ -359,6 +373,8 @@ applications:
           nginx:
             enabled: true
             replicas: 1
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 128Mi }
@@ -463,6 +479,8 @@ applications:
 
           singleBinary:
             replicas: 1
+            podDisruptionBudget:
+              maxUnavailable: 1
             extraEnvFrom:
               - secretRef:
                   name: loki-s3
@@ -487,6 +505,8 @@ applications:
           gateway:
             enabled: true
             replicas: 1
+            podDisruptionBudget:
+              maxUnavailable: 1
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 128Mi }
@@ -528,6 +548,9 @@ applications:
         valuesObject:
           replicas: 1
 
+          podDisruptionBudget:
+            maxUnavailable: 1
+
           tempo:
             extraEnvFrom:
               - secretRef:
@@ -563,6 +586,9 @@ applications:
             metricsGenerator:
               enabled: true
               remoteWriteUrl: http://mimir-nginx.monitoring.svc.cluster.local/api/v1/push
+
+            search:
+              enabled: true
 
           resources:
             requests: { cpu: 100m, memory: 256Mi }
@@ -675,6 +701,7 @@ applications:
                         matcherRegex:     '"trace_id":"(\w+)"'
                         url:              "$${__value.raw}"
                         datasourceUid:    tempo
+                    maxLines: 1000
 
                 - name: Tempo
                   type: tempo
@@ -692,6 +719,8 @@ applications:
                       datasourceUid:    mimir
                     nodeGraph:
                       enabled: true
+                    search:
+                      hide: false
 
                 - name: Alertmanager
                   type: alertmanager
@@ -729,6 +758,22 @@ applications:
                 gnetId: 13639
                 revision: 2
                 datasource: Loki
+              mimir-overview:
+                gnetId: 16067
+                revision: 1
+                datasource: Mimir
+              loki-operational:
+                gnetId: 14055
+                revision: 1
+                datasource: Loki
+              tempo-operations:
+                gnetId: 18030
+                revision: 1
+                datasource: Mimir
+              alloy-metrics:
+                gnetId: 21048
+                revision: 1
+                datasource: Mimir
 
           persistence:
             enabled:      true
@@ -738,6 +783,18 @@ applications:
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 500m, memory: 512Mi }
+
+          livenessProbe:
+            path: /api/health
+            initialDelaySeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 10
+          readinessProbe:
+            path: /api/health
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
 
           ingress:
             enabled:          true
