@@ -32,6 +32,14 @@ jobs:
             chart_dir=$(dirname "$chart_file")
             chart_name=$(yq eval '.name' "$chart_file")
             chart_version=$(yq eval '.version' "$chart_file")
+            chart_type=$(yq eval '.type // "application"' "$chart_file")
+
+            # Skip library charts as they are not installable
+            if [[ "$chart_type" == "library" ]]; then
+              echo "⏭️  $chart_name (library chart - skipped)"
+              continue
+            fi
+
             echo "🔍 $chart_name ($chart_version)"
 
             # Download dependencies (fixes missing deps issue)
