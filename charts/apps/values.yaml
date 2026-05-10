@@ -446,9 +446,8 @@ applications:
                     defaultRequest: { cpu: 100m, memory: 128Mi }
                     default:        { cpu: 500m, memory: 512Mi }
                     max:            { cpu: "4",  memory: 8Gi   }
-            - |
-              {{- if .Values.global.monitoring.networkPolicy.enabled }}
-              apiVersion: networking.k8s.io/v1
+            {{- if .Values.global.monitoring.networkPolicy.enabled }}
+            - apiVersion: networking.k8s.io/v1
               kind: NetworkPolicy
               metadata:
                 name: monitoring-allow-ingress
@@ -518,7 +517,7 @@ applications:
                     ports:
                       - port: 443
                         protocol: TCP
-              {{- end }}
+            {{- end }}
 
     destination:
       namespace: monitoring
