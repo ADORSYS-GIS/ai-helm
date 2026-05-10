@@ -292,10 +292,6 @@ applications:
             extraEnvFrom:
               - secretRef:
                   name: mimir-s3
-            # Pass through monitoring config for extraObjects templating
-            monitoring:
-              networkPolicy:
-                enabled: true
 
           mimir:
             structuredConfig:
@@ -446,78 +442,78 @@ applications:
                     defaultRequest: { cpu: 100m, memory: 128Mi }
                     default:        { cpu: 500m, memory: 512Mi }
                     max:            { cpu: "4",  memory: 8Gi   }
-            {{- if .Values.global.monitoring.networkPolicy.enabled }}
-            - apiVersion: networking.k8s.io/v1
-              kind: NetworkPolicy
-              metadata:
-                name: monitoring-allow-ingress
-                namespace: monitoring
-              spec:
-                podSelector: {}
-                policyTypes:
-                  - Ingress
-                  - Egress
-                ingress:
-                  - from:
-                      - namespaceSelector:
-                          matchLabels:
-                            kubernetes.io/metadata.name: monitoring
-                      - namespaceSelector:
-                          matchLabels:
-                            kubernetes.io/metadata.name: traefik-system
-                      - namespaceSelector:
-                          matchLabels:
-                            kubernetes.io/metadata.name: converse
-                    ports:
-                      - port: http-metrics
-                        protocol: TCP
-                      - port: http
-                        protocol: TCP
-                      - port: grpc
-                        protocol: TCP
-                      - port: 3100
-                        protocol: TCP
-                      - port: 4317
-                        protocol: TCP
-                      - port: 4318
-                        protocol: TCP
-                      - port: 3000
-                        protocol: TCP
-                egress:
-                  - to:
-                      - namespaceSelector:
-                          matchLabels:
-                            kubernetes.io/metadata.name: kube-system
-                    ports:
-                      - port: dns
-                        protocol: UDP
-                      - port: dns
-                        protocol: TCP
-                  - to:
-                      - namespaceSelector:
-                          matchLabels:
-                            kubernetes.io/metadata.name: monitoring
-                      - namespaceSelector:
-                          matchLabels:
-                            kubernetes.io/metadata.name: converse
-                    ports:
-                      - port: http-metrics
-                        protocol: TCP
-                      - port: http
-                        protocol: TCP
-                      - port: grpc
-                        protocol: TCP
-                  - to:
-                      - ipBlock:
-                          cidr: 0.0.0.0/0
-                          except:
-                            - 10.0.0.0/8
-                            - 172.16.0.0/12
-                            - 192.168.0.0/16
-                    ports:
-                      - port: 443
-                        protocol: TCP
-            {{- end }}
+            # NetworkPolicy for monitoring namespace
+            # To disable: comment out or remove this entire block
+            # - apiVersion: networking.k8s.io/v1
+            #   kind: NetworkPolicy
+            #   metadata:
+            #     name: monitoring-allow-ingress
+            #     namespace: monitoring
+            #   spec:
+            #     podSelector: {}
+            #     policyTypes:
+            #       - Ingress
+            #       - Egress
+            #     ingress:
+            #       - from:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: monitoring
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: traefik-system
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: converse
+            #         ports:
+            #           - port: http-metrics
+            #             protocol: TCP
+            #           - port: http
+            #             protocol: TCP
+            #           - port: grpc
+            #             protocol: TCP
+            #           - port: 3100
+            #             protocol: TCP
+            #           - port: 4317
+            #             protocol: TCP
+            #           - port: 4318
+            #             protocol: TCP
+            #           - port: 3000
+            #             protocol: TCP
+            #     egress:
+            #       - to:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: kube-system
+            #         ports:
+            #           - port: dns
+            #             protocol: UDP
+            #           - port: dns
+            #             protocol: TCP
+            #       - to:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: monitoring
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: converse
+            #         ports:
+            #           - port: http-metrics
+            #             protocol: TCP
+            #           - port: http
+            #             protocol: TCP
+            #           - port: grpc
+            #             protocol: TCP
+            #       - to:
+            #           - ipBlock:
+            #               cidr: 0.0.0.0/0
+            #               except:
+            #                 - 10.0.0.0/8
+            #                 - 172.16.0.0/12
+            #                 - 192.168.0.0/16
+            #         ports:
+            #           - port: 443
+            #             protocol: TCP
 
     destination:
       namespace: monitoring
