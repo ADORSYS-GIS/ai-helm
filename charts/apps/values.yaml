@@ -205,7 +205,7 @@ applications:
 
                 loki.process "kubernetes_labels" {
                   stage.regex {
-                    expression = "/var/log/pods/(?P<namespace>[^/]+?)_(?P<pod>[^/]+)_[a-f0-9-]+/(?P<container>[^/]+)/"
+                    expression = "/var/log/pods/(?P<namespace>[^/]+?)_(?P<pod>[^/]+)_[a-fA-F0-9-]+/(?P<container>[^/]+)/"
                   }
                   stage.labels {
                     values = {
@@ -327,7 +327,7 @@ applications:
             zoneAwareReplication:
               enabled: false
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             persistence:
               enabled: true
               storageClass: linode-block-storage
@@ -339,7 +339,7 @@ applications:
           distributor:
             replicas: 1
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
@@ -347,7 +347,7 @@ applications:
           querier:
             replicas: 1
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
@@ -355,7 +355,7 @@ applications:
           query_frontend:
             replicas: 1
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             resources:
               requests: { cpu: 100m, memory: 128Mi }
               limits:   { cpu: 500m, memory: 512Mi }
@@ -368,7 +368,7 @@ applications:
             zoneAwareReplication:
               enabled: false
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
@@ -376,7 +376,7 @@ applications:
           compactor:
             replicas: 1
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 2Gi   }
@@ -385,7 +385,7 @@ applications:
             enabled: true
             replicas: 1
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 256Mi }
@@ -402,13 +402,17 @@ applications:
             enabled: true
             replicas: 1
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 128Mi }
 
           minio:
             enabled: false
+
+          serviceMonitor:
+            enabled: true
+            interval: 60s
 
           extraObjects:
             - apiVersion: v1
@@ -474,6 +478,15 @@ applications:
                   - to:
                       - namespaceSelector:
                           matchLabels:
+                            kubernetes.io/metadata.name: kube-system
+                    ports:
+                      - port: dns
+                        protocol: UDP
+                      - port: dns
+                        protocol: TCP
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
                             kubernetes.io/metadata.name: monitoring
                       - namespaceSelector:
                           matchLabels:
@@ -484,10 +497,6 @@ applications:
                       - port: http
                         protocol: TCP
                       - port: grpc
-                        protocol: TCP
-                      - port: dns
-                        protocol: UDP
-                      - port: dns
                         protocol: TCP
                   - to:
                       - ipBlock:
@@ -542,7 +551,7 @@ applications:
 
             schemaConfig:
               configs:
-                - from: "2024-01-01"
+                - from: "2025-01-01"
                   store: tsdb
                   object_store: s3
                   schema: v13
@@ -573,7 +582,7 @@ applications:
           singleBinary:
             replicas: 1
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             extraEnvFrom:
               - secretRef:
                   name: loki-s3
@@ -599,7 +608,7 @@ applications:
             enabled: true
             replicas: 1
             podDisruptionBudget:
-              maxUnavailable: 1
+              minAvailable: 1
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 128Mi }
@@ -642,7 +651,7 @@ applications:
           replicas: 1
 
           podDisruptionBudget:
-            maxUnavailable: 1
+            minAvailable: 1
 
           tempo:
             extraEnvFrom:
@@ -743,7 +752,7 @@ applications:
           grafana.ini:
             server:
               domain:   *grafana-domain
-              root_url: https://grafana.ai.camer.digital
+              root_url: https://*grafana-domain
 
             auth.generic_oauth:
               enabled:              true
@@ -752,9 +761,9 @@ applications:
               client_id:            grafana
               client_secret:        $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
               scopes:               "openid profile email"
-              auth_url:             "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth"
-              token_url:            "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token"
-              api_url:              "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/userinfo"
+              auth_url:             "https://*auth-domain/realms/camer-digital/protocol/openid-connect/auth"
+              token_url:            "https://*auth-domain/realms/camer-digital/protocol/openid-connect/token"
+              api_url:              "https://*auth-domain/realms/camer-digital/protocol/openid-connect/userinfo"
               role_attribute_path:  "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'editor') && 'Editor' || 'Viewer'"
               allow_sign_up:        true
               auto_login:           false
@@ -879,12 +888,12 @@ applications:
 
           livenessProbe:
             path: /api/health
-            initialDelaySeconds: 60
+            initialDelaySeconds: 30
             timeoutSeconds: 30
             failureThreshold: 10
           readinessProbe:
             path: /api/health
-            initialDelaySeconds: 30
+            initialDelaySeconds: 15
             timeoutSeconds: 10
             periodSeconds: 10
             failureThreshold: 3

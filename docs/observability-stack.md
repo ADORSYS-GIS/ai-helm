@@ -785,17 +785,18 @@ When zone replication is enabled, ensure your nodes are labeled with topology zo
 
 | Concern | File | Lines | Field |
 |---------|------|-------|-------|
-| Alloy controller type | `values.yaml` | 133 | `controller.type: daemonset` |
-| Alloy remote_write URL | `values.yaml` | 149 | `prometheus.remote_write.default.endpoint.url` |
-| Alloy Loki write URL | `values.yaml` | 204 | `loki.write.default.endpoint.url` |
-| Mimir retention | `values.yaml` | 297 | `mimir.structuredConfig.limits.compactor_blocks_retention_period` |
-| Mimir S3 endpoint | `values.yaml` | 276 | `mimir.structuredConfig.common.s3.endpoint` |
-| Mimir resource quota | `values.yaml` | 370 | `extraObjects[0]` (ResourceQuota) |
-| Loki retention | `values.yaml` | 457 | `loki.limits_config.retention_period` |
-| Loki S3 endpoint | `values.yaml` | 448 | `loki.storage.s3.endpoint` |
-| Tempo retention | `values.yaml` | 536 | `tempo.retention` |
-| Tempo S3 endpoint | `values.yaml` | 543 | `tempo.storage.trace.s3.endpoint` |
-| Grafana domain | `values.yaml` | 626 | `grafana.ini.server.domain` |
-| Grafana Keycloak secret | `values.yaml` | 634 | `auth.generic_oauth.client_secret` |
-| Grafana datasources | `values.yaml` | 655 | `datasources.datasources.yaml.datasources` |
-| Grafana ingress | `values.yaml` | 742 | `ingress.hosts[0]` |
+| Alloy controller type | `values.yaml` | 157 | `controller.type: daemonset` |
+| Alloy remote_write URL | `values.yaml` | 171-173 | `prometheus.remote_write.default.endpoint.url` |
+| Alloy Loki write URL | `values.yaml` | 226-228 | `loki.write.default.endpoint.url` |
+| Mimir retention | `values.yaml` | 320 | `mimir.structuredConfig.limits.compactor_blocks_retention_period` |
+| Mimir S3 endpoint | `values.yaml` | 300 | `mimir.structuredConfig.common.s3.endpoint` |
+| Mimir resource quota | `values.yaml` | 421 | `extraObjects[0]` (ResourceQuota) |
+| Loki retention | `values.yaml` | 575 | `loki.limits_config.retention_period` |
+| Loki S3 endpoint | `values.yaml` | 566 | `loki.storage.s3.endpoint` |
+| Loki schema date | `values.yaml` | 554 | `loki.schemaConfig.configs[0].from` |
+| Tempo retention | `values.yaml` | 661 | `tempo.retention` |
+| Tempo S3 endpoint | `values.yaml` | 668 | `tempo.storage.trace.s3.endpoint` |
+| Grafana domain | `values.yaml` | 752-753 | `grafana.ini.server.domain` |
+| Grafana Keycloak secret | `values.yaml` | 749 | `envFromSecrets` |
+| Grafana datasources | `values.yaml` | 786 | `datasources.datasources.yaml.datasources` |
+| Grafana ingress | `values.yaml` | 901 | `ingress.hosts[0]` |
