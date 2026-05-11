@@ -579,6 +579,23 @@ The Grafana PVC holds configuration, not telemetry. Backup strategies:
 
 ## Future Improvements
 
+### Network Policy Toggle
+
+The monitoring namespace NetworkPolicy can be enabled or disabled via:
+
+```yaml
+global:
+  monitoring:
+    networkPolicy:
+      enabled: true  # Set to false to disable
+```
+
+When enabled (default), the NetworkPolicy restricts:
+- **Ingress:** From monitoring, traefik-system, and converse namespaces
+- **Egress:** To kube-system (DNS), monitoring, converse, and external S3 endpoints (port 443)
+
+Set `enabled: false` if you need to troubleshoot connectivity issues or run in environments where NetworkPolicies are not supported.
+
 ### 1. Enable Mimir Ruler for Recording Rules
 
 Currently `ruler.enabled: false`. Enable it when you want to pre-aggregate expensive queries:
@@ -785,17 +802,20 @@ When zone replication is enabled, ensure your nodes are labeled with topology zo
 
 | Concern | File | Lines | Field |
 |---------|------|-------|-------|
-| Alloy controller type | `values.yaml` | 133 | `controller.type: daemonset` |
-| Alloy remote_write URL | `values.yaml` | 149 | `prometheus.remote_write.default.endpoint.url` |
-| Alloy Loki write URL | `values.yaml` | 204 | `loki.write.default.endpoint.url` |
-| Mimir retention | `values.yaml` | 297 | `mimir.structuredConfig.limits.compactor_blocks_retention_period` |
-| Mimir S3 endpoint | `values.yaml` | 276 | `mimir.structuredConfig.common.s3.endpoint` |
-| Mimir resource quota | `values.yaml` | 370 | `extraObjects[0]` (ResourceQuota) |
-| Loki retention | `values.yaml` | 457 | `loki.limits_config.retention_period` |
-| Loki S3 endpoint | `values.yaml` | 448 | `loki.storage.s3.endpoint` |
-| Tempo retention | `values.yaml` | 536 | `tempo.retention` |
-| Tempo S3 endpoint | `values.yaml` | 543 | `tempo.storage.trace.s3.endpoint` |
-| Grafana domain | `values.yaml` | 626 | `grafana.ini.server.domain` |
-| Grafana Keycloak secret | `values.yaml` | 634 | `auth.generic_oauth.client_secret` |
-| Grafana datasources | `values.yaml` | 655 | `datasources.datasources.yaml.datasources` |
-| Grafana ingress | `values.yaml` | 742 | `ingress.hosts[0]` |
+| Alloy controller type | `values.yaml` | 157 | `controller.type: daemonset` |
+| Alloy remote_write URL | `values.yaml` | 171-173 | `prometheus.remote_write.default.endpoint.url` |
+| Alloy Loki write URL | `values.yaml` | 226-228 | `loki.write.default.endpoint.url` |
+| Mimir retention | `values.yaml` | 320 | `mimir.structuredConfig.limits.compactor_blocks_retention_period` |
+| Mimir S3 endpoint | `values.yaml` | 300 | `mimir.structuredConfig.common.s3.endpoint` |
+| Mimir resource quota | `values.yaml` | 417-429 | `mimir.extraObjects` (ResourceQuota, LimitRange) |
+| Monitoring NetworkPolicy | `values.yaml` | 445-517 | `mimir.extraObjects` (conditional on `global.monitoring.networkPolicy.enabled`) |
+| NetworkPolicy toggle | `values.yaml` | 25-27 | `global.monitoring.networkPolicy.enabled` |
+| Loki retention | `values.yaml` | 584 | `loki.limits_config.retention_period` |
+| Loki S3 endpoint | `values.yaml` | 575 | `loki.storage.s3.endpoint` |
+| Loki schema date | `values.yaml` | 563 | `loki.schemaConfig.configs[0].from` |
+| Tempo retention | `values.yaml` | 670 | `tempo.retention` |
+| Tempo S3 endpoint | `values.yaml` | 677 | `tempo.storage.trace.s3.endpoint` |
+| Grafana domain | `values.yaml` | 761-762 | `grafana.ini.server.domain` |
+| Grafana Keycloak secret | `values.yaml` | 758 | `envFromSecrets` |
+| Grafana datasources | `values.yaml` | 793 | `datasources.datasources.yaml.datasources` |
+| Grafana ingress | `values.yaml` | 910 | `ingress.hosts[0]` |

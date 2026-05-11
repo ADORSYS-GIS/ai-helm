@@ -1,3 +1,31 @@
+global:
+  cluster:
+    name: &cluster-name ai-helm
+  
+  s3:
+    endpoint: &s3-endpoint us-east-1.linodeobjects.com
+    region: &s3-region us-east-1
+  
+  buckets:
+    mimir:
+      blocks: &mimir-blocks-bucket converse-mimir-blocks
+      alertmanager: &mimir-alertmanager-bucket converse-mimir-alertmanager
+      ruler: &mimir-ruler-bucket converse-mimir-ruler
+    loki:
+      chunks: &loki-chunks-bucket converse-loki-chunks
+      ruler: &loki-ruler-bucket converse-loki-ruler
+    tempo:
+      traces: &tempo-traces-bucket converse-tempo-traces
+  
+  domains:
+    grafana: &grafana-domain grafana.ai.camer.digital
+    auth: &auth-domain auth.verif.fyi
+    api: &api-domain api.ai.camer.digital
+
+  monitoring:
+    networkPolicy:
+      enabled: true
+
 applications:
 
   - name: traefik
@@ -121,7 +149,7 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "-2"
+      argocd.argoproj.io/sync-wave: "-1"
     source:
       repoURL: https://grafana.github.io/helm-charts
       targetRevision: 1.0.1
@@ -159,7 +187,7 @@ applications:
                     action = "replace"
                     source_labels = ["__name__"]
                     target_label = "cluster_origin"
-                    replacement = "{{ .Release.Name }}"
+                    replacement = "alloy"
                   }
                 }
 
@@ -181,7 +209,7 @@ applications:
 
                 loki.process "kubernetes_labels" {
                   stage.regex {
-                    expression = "/var/log/pods/(?P<namespace>[^_]+)_(?P<pod>[^_]+)_[^/]+/(?P<container>[^/]+)/"
+                    expression = "/var/log/pods/(?P<namespace>[^/]+?)_(?P<pod>[^/]+)_[a-fA-F0-9-]+/(?P<container>[^/]+)/"
                   }
                   stage.labels {
                     values = {
@@ -250,7 +278,7 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "-1"
+      argocd.argoproj.io/sync-wave: "-2"
     source:
       repoURL: https://grafana.github.io/helm-charts
       targetRevision: 5.3.0
@@ -273,19 +301,19 @@ applications:
                 storage:
                   backend: s3
                   s3:
-                    endpoint: us-east-1.linodeobjects.com
+                    endpoint: *s3-endpoint
                     access_key_id: ${MIMIR_S3_ACCESS_KEY_ID}
                     secret_access_key: ${MIMIR_S3_SECRET_ACCESS_KEY}
 
               blocks_storage:
                 s3:
-                  bucket_name: converse-mimir-blocks
+                  bucket_name: *mimir-blocks-bucket
               alertmanager_storage:
                 s3:
-                  bucket_name: converse-mimir-alertmanager
+                  bucket_name: *mimir-alertmanager-bucket
               ruler_storage:
                 s3:
-                  bucket_name: converse-mimir-ruler
+                  bucket_name: *mimir-ruler-bucket
 
               alertmanager:
                 enable_api: true
@@ -302,24 +330,36 @@ applications:
             replicas: 1
             zoneAwareReplication:
               enabled: false
+            podDisruptionBudget:
+              enabled: false
+            persistence:
+              enabled: true
+              storageClass: linode-block-storage
+              size: 10Gi
             resources:
               requests: { cpu: 200m, memory: 512Mi }
               limits:   { cpu: 1,    memory: 2Gi   }
 
           distributor:
             replicas: 1
+            podDisruptionBudget:
+              enabled: false
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           querier:
             replicas: 1
+            podDisruptionBudget:
+              enabled: false
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           query_frontend:
             replicas: 1
+            podDisruptionBudget:
+              enabled: false
             resources:
               requests: { cpu: 100m, memory: 128Mi }
               limits:   { cpu: 500m, memory: 512Mi }
@@ -331,12 +371,16 @@ applications:
             replicas: 1
             zoneAwareReplication:
               enabled: false
+            podDisruptionBudget:
+              enabled: false
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           compactor:
             replicas: 1
+            podDisruptionBudget:
+              enabled: false
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 2Gi   }
@@ -344,6 +388,8 @@ applications:
           alertmanager:
             enabled: true
             replicas: 1
+            podDisruptionBudget:
+              enabled: false
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 256Mi }
@@ -359,12 +405,18 @@ applications:
           nginx:
             enabled: true
             replicas: 1
+            podDisruptionBudget:
+              enabled: false
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 128Mi }
 
           minio:
             enabled: false
+
+          serviceMonitor:
+            enabled: true
+            interval: 60s
 
           extraObjects:
             - apiVersion: v1
@@ -382,7 +434,7 @@ applications:
             - apiVersion: v1
               kind: LimitRange
               metadata:
-                name: monitoring-defaults
+                name: monitoring-quota
                 namespace: monitoring
               spec:
                 limits:
@@ -390,6 +442,78 @@ applications:
                     defaultRequest: { cpu: 100m, memory: 128Mi }
                     default:        { cpu: 500m, memory: 512Mi }
                     max:            { cpu: "4",  memory: 8Gi   }
+            # NetworkPolicy for monitoring namespace
+            # To disable: comment out or remove this entire block
+            # - apiVersion: networking.k8s.io/v1
+            #   kind: NetworkPolicy
+            #   metadata:
+            #     name: monitoring-allow-ingress
+            #     namespace: monitoring
+            #   spec:
+            #     podSelector: {}
+            #     policyTypes:
+            #       - Ingress
+            #       - Egress
+            #     ingress:
+            #       - from:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: monitoring
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: traefik-system
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: converse
+            #         ports:
+            #           - port: http-metrics
+            #             protocol: TCP
+            #           - port: http
+            #             protocol: TCP
+            #           - port: grpc
+            #             protocol: TCP
+            #           - port: 3100
+            #             protocol: TCP
+            #           - port: 4317
+            #             protocol: TCP
+            #           - port: 4318
+            #             protocol: TCP
+            #           - port: 3000
+            #             protocol: TCP
+            #     egress:
+            #       - to:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: kube-system
+            #         ports:
+            #           - port: dns
+            #             protocol: UDP
+            #           - port: dns
+            #             protocol: TCP
+            #       - to:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: monitoring
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: converse
+            #         ports:
+            #           - port: http-metrics
+            #             protocol: TCP
+            #           - port: http
+            #             protocol: TCP
+            #           - port: grpc
+            #             protocol: TCP
+            #       - to:
+            #           - ipBlock:
+            #               cidr: 0.0.0.0/0
+            #               except:
+            #                 - 10.0.0.0/8
+            #                 - 172.16.0.0/12
+            #                 - 192.168.0.0/16
+            #         ports:
+            #           - port: 443
+            #             protocol: TCP
 
     destination:
       namespace: monitoring
@@ -415,7 +539,7 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "-1"
+      argocd.argoproj.io/sync-wave: "-2"
     source:
       repoURL: https://grafana.github.io/helm-charts
       targetRevision: 6.6.0
@@ -433,7 +557,7 @@ applications:
 
             schemaConfig:
               configs:
-                - from: "2024-01-01"
+                - from: "2025-01-01"
                   store: tsdb
                   object_store: s3
                   schema: v13
@@ -443,15 +567,16 @@ applications:
 
             storage:
               type: s3
+              bucketNames:
+                chunks: *loki-chunks-bucket
+                ruler:  *loki-ruler-bucket
+                admin:  *loki-chunks-bucket
               s3:
                 s3ForcePathStyle: true
-                endpoint: us-east-1.linodeobjects.com
-                region: us-east-1
+                endpoint: *s3-endpoint
+                region: *s3-region
                 secretAccessKey: ${LOKI_S3_SECRET_ACCESS_KEY}
                 accessKeyId: ${LOKI_S3_ACCESS_KEY_ID}
-                bucketNames:
-                  chunks: converse-loki-chunks
-                  ruler:  converse-loki-ruler
 
             limits_config:
               retention_period: 90d
@@ -463,6 +588,8 @@ applications:
 
           singleBinary:
             replicas: 1
+            podDisruptionBudget:
+              minAvailable: 1
             extraEnvFrom:
               - secretRef:
                   name: loki-s3
@@ -484,9 +611,16 @@ applications:
           bloomCompactor: { enabled: false }
           bloomGateway:   { enabled: false }
 
+          # SimpleScalable mode components (must be 0 for SingleBinary)
+          read:           { replicas: 0 }
+          write:          { replicas: 0 }
+          backend:        { replicas: 0 }
+
           gateway:
             enabled: true
             replicas: 1
+            podDisruptionBudget:
+              minAvailable: 1
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 128Mi }
@@ -518,7 +652,7 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "-1"
+      argocd.argoproj.io/sync-wave: "-2"
     source:
       repoURL: https://grafana.github.io/helm-charts
       targetRevision: 1.9.0
@@ -527,6 +661,9 @@ applications:
         releaseName: tempo
         valuesObject:
           replicas: 1
+
+          podDisruptionBudget:
+            minAvailable: 1
 
           tempo:
             extraEnvFrom:
@@ -539,8 +676,8 @@ applications:
               trace:
                 backend: s3
                 s3:
-                  bucket:           converse-tempo-traces
-                  endpoint:         us-east-1.linodeobjects.com
+                  bucket:           *tempo-traces-bucket
+                  endpoint:         *s3-endpoint
                   access_key:       ${TEMPO_S3_ACCESS_KEY}
                   secret_key:       ${TEMPO_S3_SECRET_KEY}
                   forcepathstyle:   true
@@ -563,6 +700,9 @@ applications:
             metricsGenerator:
               enabled: true
               remoteWriteUrl: http://mimir-nginx.monitoring.svc.cluster.local/api/v1/push
+
+            search:
+              enabled: true
 
           resources:
             requests: { cpu: 100m, memory: 256Mi }
@@ -623,8 +763,8 @@ applications:
 
           grafana.ini:
             server:
-              domain:   grafana.ai.camer.digital
-              root_url: https://grafana.ai.camer.digital
+              domain:   *grafana-domain
+              root_url: https://*grafana-domain
 
             auth.generic_oauth:
               enabled:              true
@@ -633,9 +773,9 @@ applications:
               client_id:            grafana
               client_secret:        $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
               scopes:               "openid profile email"
-              auth_url:             "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth"
-              token_url:            "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token"
-              api_url:              "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/userinfo"
+              auth_url:             "https://*auth-domain/realms/camer-digital/protocol/openid-connect/auth"
+              token_url:            "https://*auth-domain/realms/camer-digital/protocol/openid-connect/token"
+              api_url:              "https://*auth-domain/realms/camer-digital/protocol/openid-connect/userinfo"
               role_attribute_path:  "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'editor') && 'Editor' || 'Viewer'"
               allow_sign_up:        true
               auto_login:           false
@@ -675,6 +815,7 @@ applications:
                         matcherRegex:     '"trace_id":"(\w+)"'
                         url:              "$${__value.raw}"
                         datasourceUid:    tempo
+                    maxLines: 1000
 
                 - name: Tempo
                   type: tempo
@@ -692,6 +833,8 @@ applications:
                       datasourceUid:    mimir
                     nodeGraph:
                       enabled: true
+                    search:
+                      hide: false
 
                 - name: Alertmanager
                   type: alertmanager
@@ -729,6 +872,22 @@ applications:
                 gnetId: 13639
                 revision: 2
                 datasource: Loki
+              mimir-overview:
+                gnetId: 16067
+                revision: 1
+                datasource: Mimir
+              loki-operational:
+                gnetId: 14055
+                revision: 1
+                datasource: Loki
+              tempo-operations:
+                gnetId: 18030
+                revision: 1
+                datasource: Mimir
+              alloy-metrics:
+                gnetId: 21048
+                revision: 1
+                datasource: Mimir
 
           persistence:
             enabled:      true
@@ -739,17 +898,29 @@ applications:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 500m, memory: 512Mi }
 
+          livenessProbe:
+            path: /api/health
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+            failureThreshold: 10
+          readinessProbe:
+            path: /api/health
+            initialDelaySeconds: 15
+            timeoutSeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
           ingress:
             enabled:          true
             ingressClassName: traefik
             annotations:
               cert-manager.io/cluster-issuer: cert-home-cert-http
             hosts:
-              - grafana.ai.camer.digital
+              - *grafana-domain
             tls:
               - secretName: grafana.ai.camer.digital-tls
                 hosts:
-                  - grafana.ai.camer.digital
+                  - *grafana-domain
 
           serviceMonitor:
             enabled:  true
@@ -1988,7 +2159,7 @@ applications:
                   frontend:
                     image:
                       repository: ghcr.io/adorsys-gis/converse-frontends
-                      tag: sha-ab70746
+                      tag: sha-170b560
                       pullPolicy: IfNotPresent
                     env:
                       EXPO_PUBLIC_BACKEND_URL: "https://self-service.ai.camer.digital"
