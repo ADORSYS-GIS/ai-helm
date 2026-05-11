@@ -547,6 +547,10 @@ applications:
           loki:
             auth_enabled: false
 
+            # Enable environment variable expansion for S3 credentials
+            extraArgs:
+              config.expand-env: "true"
+
             commonConfig:
               replication_factor: 1
 
@@ -711,6 +715,12 @@ applications:
 
             search:
               enabled: true
+
+          # Fix filesystem permissions for WAL directory
+          securityContext:
+            fsGroup: 10001
+            runAsUser: 10001
+            runAsNonRoot: true
 
           resources:
             requests: { cpu: 100m, memory: 256Mi }
