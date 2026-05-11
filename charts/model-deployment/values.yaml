@@ -1,0 +1,318 @@
+# ─Serving infrastructure (bjw-s app-template) ──
+serving:
+  global:
+    nameOverride: model-deployment
+    createDefaultServiceAccount: false
+
+  serviceAccount:
+    main:
+      enabled: true
+      forceRename: llm-serviceaccount
+
+  configMaps:
+    llm-config:
+      enabled: true
+      forceRename: llm-config
+      data:
+        MODEL_NAME: microsoft/phi-2
+        TENSOR_PARALLEL_SIZE: "1"
+        GPU_MEMORY_UTILIZATION: "0.85"
+        MAX_NUM_BATCHED_TOKENS: "8192"
+        MAX_NUM_SEQS: "256"
+    phi2-chat-template:
+      enabled: true
+      forceRename: phi2-chat-template
+      data:
+        chat_template.jinja: |
+          {% for message in messages %}
+          {% if message['role'] == 'user' %}
+          User: {{ "{{" }} message['content'] {{ "}}" }}
+          {% elif message['role'] == 'assistant' %}
+          Assistant: {{ "{{" }} message['content'] {{ "}}" }}
+          {% elif message['role'] == 'system' %}
+          System: {{ "{{" }} message['content'] {{ "}}" }}
+          {% endif %}
+          {% endfor %}
+          {% if add_generation_prompt %}
+          Assistant:
+          {% endif %}
+
+  secrets:
+    llm-secrets:
+      enabled: true
+      forceRename: llm-secrets
+      type: Opaque
+      stringData:
+        REDIS_PASSWORD: llm_cache_password
+        HUGGINGFACE_TOKEN: ""
+
+  rbac:
+    roles:
+      llm-role:
+        enabled: true
+        type: Role
+        forceRename: llm-role
+        rules:
+          - apiGroups: [""]
+            resources: ["endpoints", "pods", "services"]
+            verbs: ["get", "list", "watch"]
+    bindings:
+      llm-binding:
+        enabled: true
+        type: RoleBinding
+        forceRename: llm-binding
+        subjects:
+          - kind: ServiceAccount
+            name: llm-serviceaccount
+            namespace: llm-system
+        roleRef:
+          identifier: llm-role
+
+  persistence:
+    model-cache:
+      enabled: true
+      type: persistentVolumeClaim
+      forceRename: model-cache
+      size: 10Gi
+      accessMode: ReadWriteOnce
+      retain: true
+      storageClass: ""
+
+  # ── Raw resources (KServe InferenceServices + Traefik IngressRoute) ──
+  rawResources:
+
+    # ── Phi-2 InferenceService ──
+    phi2:
+      enabled: true
+      forceRename: vllm-phi2
+      apiVersion: serving.kserve.io/v1beta1
+      kind: InferenceService
+      labels:
+        app: vllm-phi2
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "3"
+        autoscaling.knative.dev/target: "1"
+      spec:
+        spec:
+          predictor:
+            serviceAccountName: llm-serviceaccount
+            containers:
+              - name: kserve-container
+                image: "{{ .Values.vllm.image.repository }}:{{ .Values.vllm.image.tag }}"
+                imagePullPolicy: "{{ .Values.vllm.image.pullPolicy }}"
+                args:
+                  - --host={{ .Values.vllm.args.host }}
+                  - --port={{ .Values.vllm.args.port }}
+                  - --model={{ .Values.models.phi2.model }}
+                  - --max-model-len={{ .Values.models.phi2.maxModelLen }}
+                  - --device={{ .Values.vllm.args.device }}
+                  - --dtype={{ .Values.vllm.args.dtype }}
+                  - --chat-template=/chat-template/chat_template.jinja
+                env:
+                  - name: HF_HOME
+                    value: "{{ .Values.vllm.env.HF_HOME }}"
+                  - name: HF_HUB_DOWNLOAD_TIMEOUT
+                    value: "{{ .Values.vllm.env.HF_HUB_DOWNLOAD_TIMEOUT }}"
+                  - name: VLLM_CPU_KVCACHE_SPACE
+                    value: "{{ .Values.vllm.env.VLLM_CPU_KVCACHE_SPACE }}"
+                ports:
+                  - containerPort: 8080
+                    name: http1
+                    protocol: TCP
+                resources:
+                  requests:
+                    cpu: "{{ .Values.models.phi2.resources.requests.cpu }}"
+                    memory: "{{ .Values.models.phi2.resources.requests.memory }}"
+                  limits:
+                    cpu: "{{ .Values.models.phi2.resources.limits.cpu }}"
+                    memory: "{{ .Values.models.phi2.resources.limits.memory }}"
+                volumeMounts:
+                  - name: hf-cache
+                    mountPath: /hf-cache
+                  - name: chat-template
+                    mountPath: /chat-template
+                    readOnly: true
+                startupProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  initialDelaySeconds: 10
+                  periodSeconds: 30
+                  failureThreshold: 60
+                  timeoutSeconds: 5
+                readinessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  initialDelaySeconds: 1800
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+            volumes:
+              - name: hf-cache
+                persistentVolumeClaim:
+                  claimName: model-cache
+              - name: chat-template
+                configMap:
+                  name: phi2-chat-template
+
+    # ── DialoGPT-small InferenceService ──
+    dialogpt:
+      enabled: true
+      forceRename: vllm-dialogpt
+      apiVersion: serving.kserve.io/v1beta1
+      kind: InferenceService
+      labels:
+        app: vllm-dialogpt
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "3"
+        autoscaling.knative.dev/target: "1"
+      spec:
+        spec:
+          predictor:
+            serviceAccountName: llm-serviceaccount
+            containers:
+              - name: kserve-container
+                image: "{{ .Values.vllm.image.repository }}:{{ .Values.vllm.image.tag }}"
+                imagePullPolicy: "{{ .Values.vllm.image.pullPolicy }}"
+                args:
+                  - --host={{ .Values.vllm.args.host }}
+                  - --port={{ .Values.vllm.args.port }}
+                  - --model={{ .Values.models.dialogpt.model }}
+                  - --max-model-len={{ .Values.models.dialogpt.maxModelLen }}
+                  - --device={{ .Values.vllm.args.device }}
+                  - --dtype={{ .Values.vllm.args.dtype }}
+                env:
+                  - name: HF_HOME
+                    value: "{{ .Values.vllm.env.HF_HOME }}"
+                  - name: HF_HUB_DOWNLOAD_TIMEOUT
+                    value: "{{ .Values.vllm.env.HF_HUB_DOWNLOAD_TIMEOUT }}"
+                  - name: VLLM_CPU_KVCACHE_SPACE
+                    value: "{{ .Values.vllm.env.VLLM_CPU_KVCACHE_SPACE }}"
+                ports:
+                  - containerPort: 8080
+                    name: http1
+                    protocol: TCP
+                resources:
+                  requests:
+                    cpu: "{{ .Values.models.dialogpt.resources.requests.cpu }}"
+                    memory: "{{ .Values.models.dialogpt.resources.requests.memory }}"
+                  limits:
+                    cpu: "{{ .Values.models.dialogpt.resources.limits.cpu }}"
+                    memory: "{{ .Values.models.dialogpt.resources.limits.memory }}"
+                volumeMounts:
+                  - name: hf-cache
+                    mountPath: /hf-cache
+                startupProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  initialDelaySeconds: 10
+                  periodSeconds: 30
+                  failureThreshold: 60
+                  timeoutSeconds: 5
+                readinessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  initialDelaySeconds: 1800
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+            volumes:
+              - name: hf-cache
+                persistentVolumeClaim:
+                  claimName: model-cache
+
+    # ── Traefik IngressRoute ──
+    traefik-ingress:
+      enabled: true
+      forceRename: llm-ingress
+      apiVersion: traefik.io/v1alpha1
+      kind: IngressRoute
+      labels:
+        app: model-deployment
+      spec:
+        spec:
+          entryPoints:
+            - web
+          routes:
+            - match: Host(`vllm-phi2-predictor.llm-system.{{ .Values.ingressConfig.domain }}`)
+              kind: Rule
+              services:
+                - name: "{{ .Values.knative.gateway.service }}"
+                  kind: Service
+                  namespace: "{{ .Values.knative.gateway.namespace }}"
+                  port: 80
+            - match: Host(`vllm-dialogpt-predictor.llm-system.{{ .Values.ingressConfig.domain }}`)
+              kind: Rule
+              services:
+                - name: "{{ .Values.knative.gateway.service }}"
+                  kind: Service
+                  namespace: "{{ .Values.knative.gateway.namespace }}"
+                  port: 80
+
+  # ── Custom values (referenced by rawResources via tpl) ──
+
+  models:
+    phi2:
+      inferenceService: vllm-phi2
+      model: microsoft/phi-2
+      maxModelLen: 2048
+      resources:
+        requests:
+          cpu: "4"
+          memory: 8Gi
+        limits:
+          cpu: "8"
+          memory: 16Gi
+    dialogpt:
+      inferenceService: vllm-dialogpt
+      model: microsoft/DialoGPT-small
+      maxModelLen: 1024
+      resources:
+        requests:
+          cpu: "4"
+          memory: 8Gi
+        limits:
+          cpu: "8"
+          memory: 16Gi
+
+  vllm:
+    image:
+      repository: substratusai/vllm
+      tag: main-cpu
+      pullPolicy: IfNotPresent
+    args:
+      host: 0.0.0.0
+      port: 8080
+      portName: http1
+      device: cpu
+      dtype: float32
+    env:
+      HF_HOME: /hf-cache
+      HF_HUB_DOWNLOAD_TIMEOUT: "600"
+      VLLM_CPU_KVCACHE_SPACE: "4"
+  ingressConfig:
+    controller: traefik
+    domain: llm.local
+
+  knative:
+    gateway:
+      service: kourier
+      namespace: kourier-system
+      port: 80
