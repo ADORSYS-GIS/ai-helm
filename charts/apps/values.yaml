@@ -3,7 +3,7 @@ global:
     name: &cluster-name ai-helm
   
   s3:
-    endpoint: &s3-endpoint us-east-1.linodeobjects.com
+    endpoint: &s3-endpoint s3.ssegning.me
     region: &s3-region us-east-1
     bucket: &s3-bucket monitoring  # Single bucket for all observability data
 
@@ -582,7 +582,10 @@ applications:
               delete_request_store: s3
 
           memcached:
-            enabled: false
+            chunk_cache:
+              enabled: false
+            results_cache:
+              enabled: false
 
           singleBinary:
             replicas: 1
