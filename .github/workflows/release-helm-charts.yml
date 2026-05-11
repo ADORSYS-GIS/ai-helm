@@ -35,6 +35,10 @@ jobs:
                 echo "Skipping OCI registry: $repo"
                 continue
               fi
+              if [[ "$repo" == file://* ]]; then
+                echo "Skipping local chart: $repo"
+                continue
+              fi
               name=$(basename "$repo" | tr -cd '[:alnum:]-')
               if [ -z "$name" ]; then
                 echo "Error: Could not generate valid name for $repo"
