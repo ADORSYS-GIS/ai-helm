@@ -409,6 +409,23 @@ applications:
           minio:
             enabled: false
 
+          # Disable all memcached caches - not needed for small-scale deployment
+          # Note: memcached section has no 'enabled' flag - controlled by individual caches
+          memcachedExporter:
+            enabled: false
+
+          chunks-cache:
+            enabled: false
+          
+          index-cache:
+            enabled: false
+          
+          metadata-cache:
+            enabled: false
+          
+          results-cache:
+            enabled: false
+
           serviceMonitor:
             enabled: true
             interval: 60s
@@ -596,6 +613,15 @@ applications:
             enabled: false
           resultsCache:
             enabled: false
+
+          # Loki canary - synthetic monitoring
+          # Disabled: DaemonSet creates 1 pod per node (4 pods total)
+          # For single-binary Loki, canary is optional and resource-intensive
+          # Can be re-enabled if synthetic monitoring is needed
+          lokiCanary:
+            enabled: true
+            kind: Deployment  # Switch from DaemonSet to Deployment
+            replicas: 1       # Only 1 canary pod instead of 4
 
           singleBinary:
             replicas: 1
