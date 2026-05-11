@@ -547,10 +547,6 @@ applications:
           loki:
             auth_enabled: false
 
-            # Enable environment variable expansion for S3 credentials
-            extraArgs:
-              config.expand-env: "true"
-
             commonConfig:
               replication_factor: 1
 
@@ -598,6 +594,9 @@ applications:
             replicas: 1
             podDisruptionBudget:
               enabled: false
+            # Enable environment variable expansion for S3 credentials
+            extraArgs:
+              - -config.expand-env=true
             extraEnvFrom:
               - secretRef:
                   name: loki-s3
