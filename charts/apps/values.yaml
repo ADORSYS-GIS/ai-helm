@@ -5,17 +5,9 @@ global:
   s3:
     endpoint: &s3-endpoint us-east-1.linodeobjects.com
     region: &s3-region us-east-1
-  
+    bucket: &s3-bucket monitoring  # Single bucket for all observability data
+
   buckets:
-    mimir:
-      blocks: &mimir-blocks-bucket converse-mimir-blocks
-      alertmanager: &mimir-alertmanager-bucket converse-mimir-alertmanager
-      ruler: &mimir-ruler-bucket converse-mimir-ruler
-    loki:
-      chunks: &loki-chunks-bucket converse-loki-chunks
-      ruler: &loki-ruler-bucket converse-loki-ruler
-    tempo:
-      traces: &tempo-traces-bucket converse-tempo-traces
   
   domains:
     grafana: &grafana-domain grafana.ai.camer.digital
@@ -303,23 +295,23 @@ applications:
                   backend: s3
                   s3:
                     endpoint: *s3-endpoint
+                    prefix: mimir
                     access_key_id: ${MIMIR_S3_ACCESS_KEY_ID}
                     secret_access_key: ${MIMIR_S3_SECRET_ACCESS_KEY}
 
               blocks_storage:
                 s3:
-                  bucket_name: *mimir-blocks-bucket
+                  bucket_name: *s3-bucket
               alertmanager_storage:
                 s3:
-                  bucket_name: *mimir-alertmanager-bucket
+                  bucket_name: *s3-bucket
               ruler_storage:
                 s3:
-                  bucket_name: *mimir-ruler-bucket
+                  bucket_name: *s3-bucket
 
               alertmanager:
                 enable_api: true
                 external_url: https://grafana.ai.camer.digital/alerting
-                fallback_config_file: /etc/mimir/alertmanager-fallback-config.yaml
 
               limits:
                 compactor_blocks_retention_period: 90d
@@ -569,12 +561,13 @@ applications:
             storage:
               type: s3
               bucketNames:
-                chunks: *loki-chunks-bucket
-                ruler:  *loki-ruler-bucket
-                admin:  *loki-chunks-bucket
+                chunks: *s3-bucket
+                ruler:  *s3-bucket
+                admin:  *s3-bucket
               s3:
                 s3ForcePathStyle: true
                 endpoint: *s3-endpoint
+                prefix: loki
                 region: *s3-region
                 secretAccessKey: ${LOKI_S3_SECRET_ACCESS_KEY}
                 accessKeyId: ${LOKI_S3_ACCESS_KEY_ID}
@@ -586,6 +579,10 @@ applications:
 
             compactor:
               retention_enabled: true
+              delete_request_store: s3
+
+          memcached:
+            enabled: false
 
           singleBinary:
             replicas: 1
@@ -677,8 +674,9 @@ applications:
               trace:
                 backend: s3
                 s3:
-                  bucket:           *tempo-traces-bucket
+                  bucket:           *s3-bucket
                   endpoint:         *s3-endpoint
+                  prefix:           tempo
                   access_key:       ${TEMPO_S3_ACCESS_KEY}
                   secret_key:       ${TEMPO_S3_SECRET_KEY}
                   forcepathstyle:   true
