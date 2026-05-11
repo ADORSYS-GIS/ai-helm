@@ -86,13 +86,13 @@ jobs:
       #     severity: 'HIGH,CRITICAL'
 
       - name: Configure Git
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'model-deployment-helm-chart'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run chart-releaser
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'model-deployment-helm-chart'
         uses: helm/chart-releaser-action@v1.7.0
         with:
           charts_dir: charts
