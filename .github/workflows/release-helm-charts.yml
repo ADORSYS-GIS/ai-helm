@@ -6,6 +6,7 @@ on:
       - "**"
     paths:
       - "charts/**"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -59,6 +60,11 @@ jobs:
           set -e
           for dir in charts/*; do
             if [ -f "$dir/Chart.yaml" ]; then
+              chart_type=$(yq e '.type // "application"' "$dir/Chart.yaml")
+              if [[ "$chart_type" == "library" ]]; then
+                echo "Skipping library chart: $dir"
+                continue
+              fi
               echo "Linting $dir"
               helm lint "$dir" || { echo "Linting failed for $dir"; exit 1; }
             fi
@@ -76,13 +82,13 @@ jobs:
           severity: 'HIGH,CRITICAL'
 
       - name: Configure Git
-        if: github.ref == 'refs/heads/feat/main'
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run chart-releaser
-        if: github.ref == 'refs/heads/feat/main'
+        if: github.event_name == 'workflow_dispatch'
         uses: helm/chart-releaser-action@v1.7.0
         with:
           charts_dir: charts
