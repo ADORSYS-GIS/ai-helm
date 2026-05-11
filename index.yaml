@@ -12,6 +12,61 @@ entries:
     urls:
     - https://github.com/ADORSYS-GIS/ai-helm/releases/download/ai-gateway-core-0.1.0/ai-gateway-core-0.1.0.tgz
     version: 0.1.0
+  apps:
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2026-05-11T12:10:58.296062278Z"
+    dependencies:
+    - name: common
+      repository: file://../common
+      tags:
+      - common
+      - bitnami-common
+      version: '*'
+    description: A Helm chart for Kubernetes
+    digest: 9af1e67bae8327bfd23529f88ff6aee02e9f8165824c6343bb1db5fb7aab9243
+    name: apps
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/apps-1.1.0/apps-1.1.0.tgz
+    version: 1.1.0
+  chat:
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2026-05-11T12:10:58.547802905Z"
+    dependencies:
+    - alias: librechat
+      condition: librechat.enabled
+      name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: 4.6.2
+    - name: common
+      repository: file://../common
+      tags:
+      - common
+      - bitnami-common
+      version: '*'
+    - alias: db
+      condition: db.enabled
+      name: mongodb
+      repository: https://repo.helmforge.dev
+      version: 1.7.6
+    - alias: search
+      condition: search.enabled
+      name: meilisearch
+      repository: https://meilisearch.github.io/meilisearch-kubernetes
+      version: 0.25.1
+    description: A Helm chart for Kubernetes
+    digest: 81ee2ae0fe1cd8f5b482dfeccf2ebdcd18ea6c6a6274758793a642f500e397bd
+    keywords:
+    - llm
+    - chat
+    - librechat
+    name: chat
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/chat-1.1.0/chat-1.1.0.tgz
+    version: 1.1.0
   chat-ui:
   - apiVersion: v2
     appVersion: v0.0.1
@@ -83,6 +138,197 @@ entries:
     type: application
     urls:
     - https://github.com/ADORSYS-GIS/ai-helm/releases/download/cnpg-pgdump-backup-0.1.0/cnpg-pgdump-backup-0.1.0.tgz
+    version: 0.1.0
+  coder-db:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-05-11T12:10:58.728923787Z"
+    description: CNPG Cluster for Coder
+    digest: 8bc08af6dbd84f5df9f39ffe4c2b20255d99ae359b0c789026c29a09d04a26af
+    name: coder-db
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/coder-db-0.1.0/coder-db-0.1.0.tgz
+    version: 0.1.0
+  common:
+  - annotations:
+      category: Infrastructure
+      licenses: Apache-2.0
+    apiVersion: v2
+    appVersion: 2.31.4
+    created: "2026-05-11T12:10:58.924950583Z"
+    description: A Library Helm Chart for grouping common logic between bitnami charts.
+      This chart is not deployable by itself.
+    digest: 8b2d136f654d2011aa44990c93aca8bd731fa9113b06ac9600735653014a479a
+    home: https://bitnami.com
+    icon: https://dyltqmyl993wv.cloudfront.net/downloads/logos/bitnami-mark.png
+    keywords:
+    - common
+    - helper
+    - template
+    - function
+    - bitnami
+    maintainers:
+    - name: Broadcom, Inc. All Rights Reserved.
+      url: https://github.com/bitnami/charts
+    name: common
+    sources:
+    - https://github.com/bitnami/charts/tree/main/bitnami/common
+    type: library
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/common-2.31.4/common-2.31.4.tgz
+    version: 2.31.4
+  core-gateway:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-05-11T12:10:59.191549027Z"
+    dependencies:
+    - name: common
+      repository: file://../common
+      version: '*'
+    description: Core Envoy Gateway configuration
+    digest: 4596467303775076200d673287abf8e9787b675a0c2f16f6bb413c891cbff0fc
+    name: core-gateway
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/core-gateway-0.1.0/core-gateway-0.1.0.tgz
+    version: 0.1.0
+  external-secrets-config:
+  - annotations:
+      artifacthub.io/category: security
+      artifacthub.io/license: Apache-2.0
+    apiVersion: v2
+    appVersion: 2.4.0
+    created: "2026-05-11T12:10:59.406317484Z"
+    dependencies:
+    - name: common
+      repository: file://../common
+      version: 2.31.4
+    description: 'External Secrets Operator configuration for the AI platform. Provides
+      ClusterSecretStore, RBAC, and ExternalSecret patterns. This chart does NOT install
+      the ESO operator - use the upstream chart for that. '
+    digest: 90585ecec3e38750ceb9960fdbbe284aa4ea054794d778202798935c5b249b8b
+    home: https://external-secrets.io
+    keywords:
+    - external-secrets
+    - secrets-management
+    - gitops
+    - kubernetes
+    maintainers:
+    - email: Derick.Kunga@adorsys.com
+      name: AI-Ops Team
+    name: external-secrets-config
+    sources:
+    - https://github.com/external-secrets/external-secrets
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/external-secrets-config-0.2.0/external-secrets-config-0.2.0.tgz
+    version: 0.2.0
+  home-cert:
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2026-05-11T12:10:59.641487413Z"
+    dependencies:
+    - name: common
+      repository: file://../common
+      tags:
+      - common
+      - bitnami-common
+      version: '*'
+    - name: cert-manager
+      repository: https://charts.jetstack.io
+      version: '*'
+    description: A Helm chart for Kubernetes
+    digest: 0d50d333fc3277b36fc569f55b959aee39d7a083faf8b56ee2e438a999305b83
+    name: home-cert
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/home-cert-1.1.0/home-cert-1.1.0.tgz
+    version: 1.1.0
+  keycloak-backup:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-05-11T12:10:59.883028111Z"
+    dependencies:
+    - name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: 4.6.2
+    description: Automated Keycloak database backup to S3-compatible storage
+    digest: 8e55a3e1b4638e833a946e73efc7d228825a23843a929bd65d6198b1a318f914
+    name: keycloak-backup
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/keycloak-backup-0.1.1/keycloak-backup-0.1.1.tgz
+    version: 0.1.1
+  keycloak-baseline:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-05-11T12:11:00.071516902Z"
+    dependencies:
+    - alias: config-sync
+      name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: 4.6.2
+    description: Reusable Keycloak baseline configuration for enterprise AI services
+    digest: 9f488316359578f71b4f94b2d097837c5c0cbc6f326c5f22cf97983eea7b9036
+    keywords:
+    - keycloak
+    - oidc
+    - sso
+    - authentication
+    maintainers:
+    - email: Derick.Kunga@adorsys.com
+      name: Adorsys
+    name: keycloak-baseline
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/keycloak-baseline-0.4.0/keycloak-baseline-0.4.0.tgz
+    version: 0.4.0
+  kuadrant-policies:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-05-11T12:11:00.268940627Z"
+    dependencies:
+    - name: common
+      repository: file://../common
+      tags:
+      - common
+      - bitnami-common
+      version: '*'
+    description: Kuadrant Auth and RateLimit policies
+    digest: af9e4ff2a1f060885ecc517206cb15adaf274e5995ca5cdf704d2cd9ff7f85d6
+    name: kuadrant-policies
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/kuadrant-policies-1.1.0/kuadrant-policies-1.1.0.tgz
+    version: 1.1.0
+  librechat-admin-panel:
+  - apiVersion: v2
+    appVersion: latest
+    created: "2026-05-11T12:11:00.457070662Z"
+    dependencies:
+    - alias: admin-panel
+      name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: 4.6.2
+    - name: common
+      repository: file://../common
+      tags:
+      - common
+      - bitnami-common
+      version: '*'
+    description: A Helm chart for LibreChat Admin Panel - standalone management interface
+    digest: fff0ba8c4cb9e6b42306a312a1cbe02c781e1982e3c64b5a18dc21f153609d7b
+    icon: https://raw.githubusercontent.com/ClickHouse/librechat-admin-panel/main/public/favicon.png
+    keywords:
+    - librechat
+    - admin
+    - clickhouse
+    - management
+    name: librechat-admin-panel
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/librechat-admin-panel-0.1.0/librechat-admin-panel-0.1.0.tgz
     version: 0.1.0
   lightbridge-authz:
   - apiVersion: v2
@@ -277,7 +523,75 @@ entries:
     urls:
     - https://github.com/ADORSYS-GIS/ai-helm/releases/download/mcpo-0.0.1/mcpo-0.0.1.tgz
     version: 0.0.1
+  mcps:
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2026-05-11T12:11:00.654705806Z"
+    dependencies:
+    - name: common
+      repository: file://../common
+      tags:
+      - common
+      - bitnami-common
+      version: '*'
+    description: A Helm chart for Kubernetes
+    digest: eb7e5d398dca54a7539aa6bab79538a407a3abce7766ab2c116ccf7d7e2b1266
+    name: mcps
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/mcps-1.1.0/mcps-1.1.0.tgz
+    version: 1.1.0
+  model-deployment:
+  - apiVersion: v2
+    appVersion: "1.0"
+    created: "2026-05-11T12:11:00.866639891Z"
+    dependencies:
+    - alias: serving
+      name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: 4.6.2
+    description: 'Deploys LLM models (Phi-2, DialoGPT-small) using vLLM, KServe, and
+      Knative. Provides an OpenAI-compatible API endpoint per model. '
+    digest: 3be742d83ecaaaf4182bbce57c3d242ece84fbc801f00ebffbd27aa388529e88
+    home: https://github.com/adorsys/model-deployment
+    keywords:
+    - llm
+    - vllm
+    - kserve
+    - knative
+    - inference
+    - phi-2
+    - dialogpt
+    kubeVersion: '>=1.28.0-0'
+    maintainers:
+    - email: Derick.Kunga@adorsys.com
+      name: adorsys
+    name: model-deployment
+    sources:
+    - https://github.com/adorsys/model-deployment
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/model-deployment-0.2.0/model-deployment-0.2.0.tgz
+    version: 0.2.0
   models:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-05-11T12:11:01.109373739Z"
+    dependencies:
+    - name: common
+      repository: file://../common
+      tags:
+      - common
+      - bitnami-common
+      version: '*'
+    description: AI model backends and routing configuration chart - deploys Backend,
+      AIServiceBackend, AIGatewayRoute, and security policies
+    digest: 246ce286bd05e9546a60039476a8756480f58d9fee7848dfa5c5be52dc7ffead
+    name: models
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/models-1.1.0/models-1.1.0.tgz
+    version: 1.1.0
   - apiVersion: v2
     appVersion: 1.16.0
     created: "2026-01-26T16:16:07.62342733Z"
@@ -337,6 +651,61 @@ entries:
     urls:
     - https://github.com/ADORSYS-GIS/ai-helm/releases/download/models-0.1.0/models-0.1.0.tgz
     version: 0.1.0
+  models-proxy:
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2026-05-11T12:11:01.34688537Z"
+    dependencies:
+    - alias: proxy
+      condition: proxy.enabled
+      name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: '*'
+    - name: common
+      repository: file://../common
+      tags:
+      - common
+      - bitnami-common
+      version: '*'
+    description: A Helm chart for Kubernetes
+    digest: 05adaa354c3cd4263641b98ba67414dc8acf766548e69dfcdd6f0b3fff6e5f02
+    name: models-proxy
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/models-proxy-1.1.0/models-proxy-1.1.0.tgz
+    version: 1.1.0
+  mongodb-backup:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-05-11T12:11:01.617396845Z"
+    dependencies:
+    - alias: mongodb-backup
+      name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: 4.6.2
+    description: Automated mongo database backup to S3-compatible storage
+    digest: 3398d30677f2aee54e358ae557245dc94ab8c00894676a65b3a31967b35a1890
+    name: mongodb-backup
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/mongodb-backup-0.1.2/mongodb-backup-0.1.2.tgz
+    version: 0.1.2
+  pgdump-backup:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-05-11T12:11:01.939115378Z"
+    dependencies:
+    - name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: 4.6.2
+    description: Automated PostgreSQL backup and restore solution for CloudNativePG
+      clusters
+    digest: 5b86e3083d31d33d192b8aaf60346f848dc84e44a297e336c79a16bbe5957883
+    name: pgdump-backup
+    type: application
+    urls:
+    - https://github.com/ADORSYS-GIS/ai-helm/releases/download/pgdump-backup-0.1.0/pgdump-backup-0.1.0.tgz
+    version: 0.1.0
   proxy:
   - apiVersion: v2
     appVersion: 1.16.0
@@ -357,4 +726,4 @@ entries:
     urls:
     - https://github.com/ADORSYS-GIS/ai-helm/releases/download/proxy-0.1.0/proxy-0.1.0.tgz
     version: 0.1.0
-generated: "2026-01-26T16:16:07.623457356Z"
+generated: "2026-05-11T12:11:01.939155499Z"
