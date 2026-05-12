@@ -283,6 +283,16 @@ applications:
             structuredConfig:
               multitenancy_enabled: false
 
+              ingester:
+                ring:
+                  replication_factor: 1
+                  zone_awareness_enabled: false
+
+              store_gateway:
+                sharding_ring:
+                  replication_factor: 1
+                  zone_awareness_enabled: false
+
               common:
                 storage:
                   backend: s3
@@ -547,7 +557,7 @@ applications:
       argocd.argoproj.io/sync-wave: "-2"
     source:
       repoURL: https://grafana.github.io/helm-charts
-      targetRevision: 6.6.0
+      targetRevision: 7.0.0
       chart: loki
       helm:
         releaseName: loki
@@ -608,13 +618,11 @@ applications:
             enabled: false
 
           # Loki canary - synthetic monitoring
-          # Disabled: DaemonSet creates 1 pod per node (4 pods total)
-          # For single-binary Loki, canary is optional and resource-intensive
-          # Can be re-enabled if synthetic monitoring is needed
+          # Using Deployment kind (supported in chart 7.x) to avoid DaemonSet spawning 1 pod per node.
           lokiCanary:
             enabled: true
-            kind: Deployment  # Switch from DaemonSet to Deployment
-            replicas: 1       # Only 1 canary pod instead of 4
+            kind: Deployment
+            replicas: 1
 
           singleBinary:
             replicas: 1
