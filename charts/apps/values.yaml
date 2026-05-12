@@ -158,6 +158,9 @@ applications:
                 prometheus.remote_write "default" {
                   endpoint {
                     url = "http://mimir-nginx.monitoring.svc.cluster.local/api/v1/push"
+                    headers = {
+                      "X-Scope-OrgID" = "anonymous",
+                    }
                   }
                   external_labels = {
                     cluster = "ai-helm",
@@ -734,6 +737,8 @@ applications:
             metricsGenerator:
               enabled: true
               remoteWriteUrl: http://mimir-nginx.monitoring.svc.cluster.local/api/v1/push
+              remoteWriteHeaders:
+                X-Scope-OrgID: anonymous
 
             search:
               enabled: true
@@ -844,6 +849,9 @@ applications:
                   jsonData:
                     timeInterval: 30s
                     httpMethod:   POST
+                    httpHeaderName1: "X-Scope-OrgID"
+                  secureJsonData:
+                    httpHeaderValue1: "anonymous"
 
                 - name: Loki
                   type: loki
@@ -882,6 +890,9 @@ applications:
                   url:  http://mimir-nginx.monitoring.svc.cluster.local/alertmanager
                   jsonData:
                     implementation: mimir
+                    httpHeaderName1: "X-Scope-OrgID"
+                  secureJsonData:
+                    httpHeaderValue1: "anonymous"
 
           dashboardProviders:
             dashboardproviders.yaml:
