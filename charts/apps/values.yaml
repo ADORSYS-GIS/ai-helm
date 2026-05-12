@@ -1,22 +1,12 @@
 global:
-  cluster:
-    name: &cluster-name ai-helm
   
   s3:
     endpoint: &s3-endpoint s3.ssegning.me
     region: &s3-region us-east-1
     bucket: &s3-bucket monitoring  # Single bucket for all observability data
-
-  buckets:
   
   domains:
     grafana: &grafana-domain grafana.ai.camer.digital
-    auth: &auth-domain auth.verif.fyi
-    api: &api-domain api.ai.camer.digital
-
-  monitoring:
-    networkPolicy:
-      enabled: true
 
 applications:
 
@@ -813,8 +803,8 @@ applications:
 
           grafana.ini:
             server:
-              domain:   *grafana-domain
-              root_url: https://*grafana-domain
+              domain:   grafana.ai.camer.digital
+              root_url: https://grafana.ai.camer.digital
 
             auth.generic_oauth:
               enabled:              true
@@ -823,9 +813,9 @@ applications:
               client_id:            grafana
               client_secret:        $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
               scopes:               "openid profile email"
-              auth_url:             "https://*auth-domain/realms/camer-digital/protocol/openid-connect/auth"
-              token_url:            "https://*auth-domain/realms/camer-digital/protocol/openid-connect/token"
-              api_url:              "https://*auth-domain/realms/camer-digital/protocol/openid-connect/userinfo"
+              auth_url:             "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth"
+              token_url:            "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token"
+              api_url:              "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/userinfo"
               role_attribute_path:  "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'editor') && 'Editor' || 'Viewer'"
               allow_sign_up:        true
               auto_login:           false
