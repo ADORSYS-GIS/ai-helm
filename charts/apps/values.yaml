@@ -599,6 +599,7 @@ applications:
                 region: *s3-region
                 secretAccessKey: ${LOKI_S3_SECRET_ACCESS_KEY}
                 accessKeyId: ${LOKI_S3_ACCESS_KEY_ID}
+                signatureVersion: v4
 
             limits_config:
               retention_period: 90d
@@ -2298,26 +2299,26 @@ applications:
     destination:
       namespace: converse-chat
 
-  - name: librechat-admin-panel
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "1"
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/librechat-admin-panel
-      helm:
-        releaseName: librechat-admin-panel
-        valuesObject: {}
-    destination:
-      namespace: converse-chat
-    syncPolicy:
-      syncOptions:
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
+  # - name: librechat-admin-panel
+  #   finalizers:
+  #     - resources-finalizer.argocd.argoproj.io
+  #   additionalAnnotations:
+  #     argocd.argoproj.io/sync-wave: "1"
+  #   source:
+  #     repoURL: https://github.com/ADORSYS-GIS/ai-helm
+  #     targetRevision: HEAD
+  #     path: charts/librechat-admin-panel
+  #     helm:
+  #       releaseName: librechat-admin-panel
+  #       valuesObject: {}
+  #   destination:
+  #     namespace: converse-chat
+  #   syncPolicy:
+  #     syncOptions:
+  #       - ServerSideApply=true
+  #     automated:
+  #       prune: true
+  #       selfHeal: true
 
   # --- MongoDB Backup ---
   - name: mongodb-backup
