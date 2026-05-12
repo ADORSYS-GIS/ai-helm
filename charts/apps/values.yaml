@@ -593,13 +593,18 @@ applications:
                 chunks: *s3-bucket
                 ruler:  *s3-bucket
                 admin:  *s3-bucket
-              s3:
-                s3ForcePathStyle: true
-                endpoint: *s3-endpoint
-                region: *s3-region
-                secretAccessKey: ${LOKI_S3_SECRET_ACCESS_KEY}
-                accessKeyId: ${LOKI_S3_ACCESS_KEY_ID}
-                signatureVersion: v4
+              use_thanos_objstore: true
+              object_store:
+                type: s3
+                storage_prefix: loki
+                s3:
+                  endpoint: *s3-endpoint
+                  region: *s3-region
+                  secret_access_key: ${LOKI_S3_SECRET_ACCESS_KEY}
+                  access_key_id: ${LOKI_S3_ACCESS_KEY_ID}
+                  insecure: false
+                  http:
+                    insecure_skip_verify: false
 
             limits_config:
               retention_period: 90d
