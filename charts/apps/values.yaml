@@ -912,7 +912,9 @@ applications:
               enabled: true
             unified_alerting.alertmanager:
               implementation: external
-              url: http://mimir-nginx.observability.svc.cluster.local
+              # Points to the grafana-apprise-adapter which translates
+              # Grafana webhook alerts into Apprise notifications.
+              url: http://grafana-apprise-adapter.observability.svc.cluster.local:5000
 
             alerting:
               enabled: false
@@ -1057,8 +1059,192 @@ applications:
             enabled:  true
             interval: 60s
 
+          # ── Grafana Apprise Adapter ───────────────────────────────────────
+          # Translates Grafana unified alerting webhooks into Apprise
+          # notifications. Grafana sends alerts here; this adapter forwards
+          # them to the Apprise API (apprise-api application in monitoring ns).
+          # Source: https://github.com/RealOrangeOne/grafana-apprise-adapter
+          # Env vars:
+          #   APPRISE_URL: base URL of the Apprise API service
+          #   PORT:        port to listen on (default 5000)
+          extraObjects:
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: grafana-apprise-adapter
+                namespace: observability
+                labels:
+                  app.kubernetes.io/name: grafana-apprise-adapter
+              spec:
+                replicas: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/name: grafana-apprise-adapter
+                template:
+                  metadata:
+                    labels:
+                      app.kubernetes.io/name: grafana-apprise-adapter
+                  spec:
+                    containers:
+                      - name: grafana-apprise-adapter
+                        image: theorangeone/grafana-apprise-adapter:latest
+                        ports:
+                          - containerPort: 5000
+                            name: http
+                        env:
+                          - name: APPRISE_URL
+                            value: "http://apprise-api.monitoring.svc.cluster.local:8000"
+                          - name: PORT
+                            value: "5000"
+                        resources:
+                          requests:
+                            cpu: 50m
+                            memory: 32Mi
+                          limits:
+                            cpu: 200m
+                            memory: 128Mi
+                        readinessProbe:
+                          httpGet:
+                            path: /
+                            port: 5000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        livenessProbe:
+                          httpGet:
+                            path: /
+                            port: 5000
+                          initialDelaySeconds: 10
+                          periodSeconds: 30
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: grafana-apprise-adapter
+                namespace: observability
+                labels:
+                  app.kubernetes.io/name: grafana-apprise-adapter
+              spec:
+                selector:
+                  app.kubernetes.io/name: grafana-apprise-adapter
+                ports:
+                  - name: http
+                    port: 5000
+                    targetPort: 5000
+                type: ClusterIP
+
     destination:
       namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Notifications: Apprise API — multi-channel notification gateway
+  # Receives webhook calls from grafana-apprise-adapter and fans out to
+  # configured channels (Discord, Slack, email, etc.).
+  # Secrets required:
+  #   apprise-api-config (optional): pre-configured notification URLs
+  # Source: https://github.com/ADORSYS-GIS/opencode-k8s-agent
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: apprise-api
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
+      targetRevision: HEAD
+      path: helm/apprise-api
+      helm:
+        releaseName: apprise-api
+        valuesObject:
+          apprise-api:
+            controllers:
+              main:
+                replicas: 1
+                containers:
+                  main:
+                    # Apprise API config secret (optional):
+                    #   apprise-api-config:
+                    #     APPRISE_STATELESS_URLS: <default notification URLs>
+                    #     APPRISE_STORAGE_PATH:   /config (if persistence needed)
+                    envFrom:
+                      - secretRef:
+                          name: apprise-api-config
+                          optional: true
+                    resources:
+                      requests: { cpu: 100m, memory: 64Mi }
+                      limits:   { cpu: 500m, memory: 256Mi }
+            service:
+              main:
+                controller: main
+                ports:
+                  http:
+                    port: 8000
+    destination:
+      namespace: monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # AI Monitoring: OpenCode K8s Agent — AI-powered cluster health monitor
+  # Runs as a CronJob (every 12h by default), uses OpenCode + Kubernetes MCP
+  # to investigate cluster state and send structured reports via Apprise.
+  # Secrets required:
+  #   opencode-k8s-agent-secrets:
+  #     OPENCODE_API_KEY:       <api-key-for-opencode-model-endpoint>
+  #     APPRISE_URLS:           <apprise-notification-url e.g. discord://...>
+  #     KEYCLOAK_CLIENT_SECRET: <keycloak-client-secret-for-opencode-k8s>
+  # Source: https://github.com/ADORSYS-GIS/opencode-k8s-agent
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: opencode-k8s-agent
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
+      targetRevision: HEAD
+      path: helm/opencode-k8s-agent
+      helm:
+        releaseName: opencode-k8s-agent
+        valuesObject:
+          opencode-k8s-agent:
+            controllers:
+              main:
+                cronjob:
+                  schedule: "0 */12 * * *"
+                  concurrencyPolicy: Forbid
+                  successfulJobsHistory: 1
+                  failedJobsHistory: 1
+                  backoffLimit: 1
+                  activeDeadlineSeconds: 3600
+                containers:
+                  main:
+                    env:
+                      OPENCODE_MODEL: "minimax-m2p7"
+                      OPENCODE_BASE_URL: "https://api.ai.camer.digital/v1"
+                      APPRISE_API_URL: "http://apprise-api.monitoring.svc.cluster.local:8000"
+                      KEYCLOAK_URL: "https://auth.verif.fyi"
+                      KEYCLOAK_REALM: "camer-digital"
+                      KEYCLOAK_CLIENT_ID: "opencode-k8s"
+                    # Secret required (via ESO):
+                    #   opencode-k8s-agent-secrets:
+                    #     OPENCODE_API_KEY:       <api-key for model endpoint>
+                    #     APPRISE_URLS:           <apprise URL e.g. discord://...>
+                    #     KEYCLOAK_CLIENT_SECRET: <keycloak client secret>
+                    envFrom:
+                      - secretRef:
+                          name: opencode-k8s-agent-secret
+                    resources:
+                      requests: { cpu: 100m, memory: 256Mi }
+                      limits:   { cpu: 1000m, memory: 1Gi }
+    destination:
+      namespace: monitoring
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
