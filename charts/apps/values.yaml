@@ -115,7 +115,7 @@ applications:
       helm:
         releaseName: prometheus-operator-crds
     destination:
-      namespace: monitoring
+      namespace: observability
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
@@ -157,7 +157,7 @@ applications:
 
                 prometheus.remote_write "default" {
                   endpoint {
-                    url = "http://mimir-nginx.monitoring.svc.cluster.local/api/v1/push"
+                    url = "http://mimir-nginx.observability.svc.cluster.local/api/v1/push"
                     headers = {
                       "X-Scope-OrgID" = "anonymous",
                     }
@@ -215,7 +215,7 @@ applications:
 
                 loki.write "default" {
                   endpoint {
-                    url = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+                    url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
                   }
                   external_labels = {
                     cluster = "ai-helm",
@@ -233,7 +233,7 @@ applications:
 
                 otelcol.exporter.otlp "tempo" {
                   client {
-                    endpoint = "tempo.monitoring.svc.cluster.local:4317"
+                    endpoint = "tempo.observability.svc.cluster.local:4317"
                     tls { insecure = true }
                   }
                 }
@@ -256,7 +256,7 @@ applications:
             create: true
 
     destination:
-      namespace: monitoring
+      namespace: observability
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
@@ -468,8 +468,8 @@ applications:
             - apiVersion: v1
               kind: ResourceQuota
               metadata:
-                name: monitoring-quota
-                namespace: monitoring
+                name: observability-quota
+                namespace: observability
               spec:
                 hard:
                   requests.cpu: "8"
@@ -480,21 +480,21 @@ applications:
             - apiVersion: v1
               kind: LimitRange
               metadata:
-                name: monitoring-defaults
-                namespace: monitoring
+                name: observability-defaults
+                namespace: observability
               spec:
                 limits:
                   - type: Container
                     defaultRequest: { cpu: 100m, memory: 128Mi }
                     default:        { cpu: 500m, memory: 512Mi }
                     max:            { cpu: "8",  memory: 16Gi   }
-            # NetworkPolicy for monitoring namespace
+            # NetworkPolicy for observability namespace
             # To disable: comment out or remove this entire block
             # - apiVersion: networking.k8s.io/v1
             #   kind: NetworkPolicy
             #   metadata:
-            #     name: monitoring-allow-ingress
-            #     namespace: monitoring
+            #     name: observability-allow-ingress
+            #     namespace: observability
             #   spec:
             #     podSelector: {}
             #     policyTypes:
@@ -504,7 +504,7 @@ applications:
             #       - from:
             #           - namespaceSelector:
             #               matchLabels:
-            #                 kubernetes.io/metadata.name: monitoring
+            #                 kubernetes.io/metadata.name: observability
             #           - namespaceSelector:
             #               matchLabels:
             #                 kubernetes.io/metadata.name: traefik-system
@@ -539,7 +539,7 @@ applications:
             #       - to:
             #           - namespaceSelector:
             #               matchLabels:
-            #                 kubernetes.io/metadata.name: monitoring
+            #                 kubernetes.io/metadata.name: observability
             #           - namespaceSelector:
             #               matchLabels:
             #                 kubernetes.io/metadata.name: converse
@@ -562,7 +562,7 @@ applications:
             #             protocol: TCP
 
     destination:
-      namespace: monitoring
+      namespace: observability
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
@@ -673,7 +673,7 @@ applications:
           resultsCache:
             enabled: false
 
-          # Loki canary - synthetic monitoring
+          # Loki canary - synthetic observability
           # Using Deployment kind (supported in chart 7.x) to avoid DaemonSet spawning 1 pod per node.
           lokiCanary:
             enabled: true
@@ -726,7 +726,7 @@ applications:
             enabled: false
 
     destination:
-      namespace: monitoring
+      namespace: observability
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
@@ -816,7 +816,7 @@ applications:
 
             metricsGenerator:
               enabled: true
-              remoteWriteUrl: http://mimir-nginx.monitoring.svc.cluster.local/api/v1/push
+              remoteWriteUrl: http://mimir-nginx.observability.svc.cluster.local/api/v1/push
               remoteWriteHeaders:
                 X-Scope-OrgID: anonymous
 
@@ -843,7 +843,7 @@ applications:
             interval: 60s
 
     destination:
-      namespace: monitoring
+      namespace: observability
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
@@ -912,7 +912,7 @@ applications:
               enabled: true
             unified_alerting.alertmanager:
               implementation: external
-              url: http://mimir-nginx.monitoring.svc.cluster.local
+              url: http://mimir-nginx.observability.svc.cluster.local
 
             alerting:
               enabled: false
@@ -924,7 +924,7 @@ applications:
                 - name:      Mimir
                   type:      prometheus
                   uid:       mimir
-                  url:       http://mimir-nginx.monitoring.svc.cluster.local/prometheus
+                  url:       http://mimir-nginx.observability.svc.cluster.local/prometheus
                   isDefault: true
                   jsonData:
                     timeInterval: 30s
@@ -936,7 +936,7 @@ applications:
                 - name: Loki
                   type: loki
                   uid:  loki
-                  url:  http://loki-gateway.monitoring.svc.cluster.local
+                  url:  http://loki-gateway.observability.svc.cluster.local
                   jsonData:
                     derivedFields:
                       - name:             TraceID
@@ -948,7 +948,7 @@ applications:
                 - name: Tempo
                   type: tempo
                   uid:  tempo
-                  url:  http://tempo.monitoring.svc.cluster.local:3100
+                  url:  http://tempo.observability.svc.cluster.local:3100
                   jsonData:
                     tracesToLogsV2:
                       datasourceUid:    loki
@@ -967,7 +967,7 @@ applications:
                 - name: Alertmanager
                   type: alertmanager
                   uid:  alertmanager
-                  url:  http://mimir-nginx.monitoring.svc.cluster.local/alertmanager
+                  url:  http://mimir-nginx.observability.svc.cluster.local/alertmanager
                   jsonData:
                     implementation: mimir
                     httpHeaderName1: "X-Scope-OrgID"
@@ -1058,7 +1058,7 @@ applications:
             interval: 60s
 
     destination:
-      namespace: monitoring
+      namespace: observability
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
