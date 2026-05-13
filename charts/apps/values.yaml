@@ -782,14 +782,7 @@ applications:
                 wal:
                   path: /var/tempo/wal
                   # How long a trace can stay in the WAL before being flushed.
-                  # Longer = more complete traces; shorter = lower memory use.
                   ingestion_time_range_slack: 30s
-                # ── Block settings ────────────────────────────────────────
-                block:
-                  # Target block duration before it is flushed to S3.
-                  block_duration: 5m
-                  # How long a block stays in the blocklist after being cut.
-                  retention: 720h
                 s3:
                   bucket:           *s3-bucket
                   endpoint:         *s3-endpoint
@@ -822,6 +815,21 @@ applications:
 
             search:
               enabled: true
+
+            # ── Compaction ────────────────────────────────────────────────
+            # block_retention: how long blocks are kept in S3 before deletion.
+            #   Must match tempo.retention above. Set here explicitly so it's
+            #   visible alongside other compaction knobs.
+            # compacted_block_retention: how long compacted (superseded) blocks
+            #   are kept before deletion. Short value reduces storage waste.
+            # compaction_window: blocks within this time window are compacted
+            #   together. Larger = fewer but bigger blocks; smaller = more
+            #   frequent compaction cycles.
+            compactor:
+              compaction:
+                block_retention: 720h
+                compacted_block_retention: 1h
+                compaction_window: 1h
 
           # Fix filesystem permissions for WAL directory
           securityContext:
