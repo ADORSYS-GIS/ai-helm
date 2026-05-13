@@ -335,11 +335,25 @@ applications:
                 external_url: https://grafana.ai.camer.digital/alerting
 
               limits:
+                # ── Retention ──────────────────────────────────────────────
+                # How long blocks are kept in S3 before the compactor deletes them.
+                # Set to 0d to disable retention (keep forever).
                 compactor_blocks_retention_period: 90d
+
+                # ── Ingestion ───────────────────────────────────────────────
                 ingestion_rate: 30000
                 ingestion_burst_size: 50000
                 max_global_series_per_user: 2000000
+                # Allow samples up to 10m behind the latest ingested timestamp.
+                # Prevents rejections from Alloy self-scrape timing skew.
                 out_of_order_time_window: 10m
+
+              compactor:
+                # How often the compactor runs a cleanup cycle.
+                compaction_interval: 1h
+                # How long the compactor waits before deleting blocks marked for deletion.
+                # Gives time to abort accidental deletions.
+                deletion_delay: 12h
 
           ingester:
             replicas: 1
@@ -624,13 +638,33 @@ applications:
                     insecure_skip_verify: false
 
             limits_config:
+              # ── Retention ──────────────────────────────────────────────
+              # How long log chunks are kept before the compactor deletes them.
+              # Requires compactor.retention_enabled: true to take effect.
               retention_period: 90d
+
+              # ── Ingestion ───────────────────────────────────────────────
               ingestion_rate_mb: 8
               ingestion_burst_size_mb: 16
 
+              # ── Query limits ────────────────────────────────────────────
+              # Maximum time range a query can span.
+              max_query_length: 0h       # 0 = unlimited
+              # Maximum number of log entries returned per query.
+              max_entries_limit_per_query: 5000
+
             compactor:
+              # Enable time-based retention deletion.
               retention_enabled: true
+              # Where delete requests are stored (must match object store type).
               delete_request_store: s3
+              # How often the compactor runs.
+              compaction_interval: 1h
+              # How long before marked chunks are actually deleted.
+              # Gives a window to cancel accidental deletions.
+              retention_delete_delay: 2h
+              # Number of workers processing delete requests in parallel.
+              retention_delete_worker_count: 150
 
           # Disable memcached - not needed for single-binary mode
           # Must be at root level, not under loki.memcached
@@ -735,11 +769,27 @@ applications:
               - secretRef:
                   name: tempo-s3
 
+            # ── Retention ────────────────────────────────────────────────
+            # How long trace blocks are kept in S3.
+            # Format: duration string (e.g. 720h = 30d, 2160h = 90d).
             retention: 720h
 
             storage:
               trace:
                 backend: s3
+                # ── WAL (Write-Ahead Log) ─────────────────────────────────
+                # Local WAL buffers traces before flushing to S3.
+                wal:
+                  path: /var/tempo/wal
+                  # How long a trace can stay in the WAL before being flushed.
+                  # Longer = more complete traces; shorter = lower memory use.
+                  ingestion_time_range_slack: 30s
+                # ── Block settings ────────────────────────────────────────
+                block:
+                  # Target block duration before it is flushed to S3.
+                  block_duration: 5m
+                  # How long a block stays in the blocklist after being cut.
+                  retention: 720h
                 s3:
                   bucket:           *s3-bucket
                   endpoint:         *s3-endpoint
