@@ -278,29 +278,6 @@ long-term performance analysis requires it.
 
 ---
 
-#### `storage.trace.block.block_duration: 5m`
-
-**What it does:** How long Tempo accumulates traces in memory before cutting a
-new block and flushing it to S3. Shorter = more frequent flushes, lower memory
-use, more S3 objects. Longer = fewer S3 objects, higher memory use, longer
-gap before traces are queryable.
-
-**Current value:** 5 minutes (Tempo default). Suitable for this scale. Increase
-to `10m` or `15m` on high-volume deployments to reduce S3 object count.
-
----
-
-#### `storage.trace.block.retention: 720h`
-
-**What it does:** Block-level retention, mirrors the top-level `retention`
-setting. Explicitly set here so the value is visible alongside other block
-configuration and easy to change independently if needed.
-
-**Current value:** 720 hours (30 days). Must match the top-level `retention`
-value unless you intentionally want different behavior at the block level.
-
----
-
 #### `storage.trace.wal.path: /var/tempo/wal`
 
 **What it does:** Filesystem path for the Write-Ahead Log inside the Tempo pod.
@@ -317,6 +294,38 @@ current time Tempo tolerates before rejecting a span. Spans arriving more than
 
 **Current value:** 30 seconds. Standard default. Increase to `60s` if you see
 spans being dropped due to clock drift between services.
+
+---
+
+#### `compactor.compaction.block_retention: 720h`
+
+**What it does:** Block-level retention enforced by the compactor. Mirrors the
+top-level `retention` setting. Explicitly set here so the value is visible
+alongside other compaction knobs and easy to change independently.
+
+**Current value:** 720 hours (30 days). Must match the top-level `retention`.
+
+---
+
+#### `compactor.compaction.compacted_block_retention: 1h`
+
+**What it does:** How long superseded (already compacted) blocks are kept in
+S3 before being deleted. These blocks have been merged into larger blocks and
+are no longer needed for queries.
+
+**Current value:** 1 hour. Short value minimises storage waste from redundant
+blocks. Increase to `24h` if you want a longer window to recover from a bad
+compaction.
+
+---
+
+#### `compactor.compaction.compaction_window: 1h`
+
+**What it does:** Blocks whose data falls within this time window are compacted
+together into a single larger block. Larger window = fewer, bigger blocks and
+less query fan-out; smaller window = more frequent compaction cycles.
+
+**Current value:** 1 hour (Tempo default). Suitable for this scale.
 
 ---
 
