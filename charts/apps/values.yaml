@@ -988,46 +988,149 @@ applications:
             dashboardproviders.yaml:
               apiVersion: 1
               providers:
-                - name: community
+                - name: kubernetes
                   orgId: 1
                   folder: "Kubernetes"
                   type: file
                   options:
-                    path: /var/lib/grafana/dashboards/community
+                    path: /var/lib/grafana/dashboards/kubernetes
+                - name: observability
+                  orgId: 1
+                  folder: "Observability Stack"
+                  type: file
+                  options:
+                    path: /var/lib/grafana/dashboards/observability
+                - name: infrastructure
+                  orgId: 1
+                  folder: "Infrastructure"
+                  type: file
+                  options:
+                    path: /var/lib/grafana/dashboards/infrastructure
+                - name: gitops
+                  orgId: 1
+                  folder: "GitOps"
+                  type: file
+                  options:
+                    path: /var/lib/grafana/dashboards/gitops
 
           dashboards:
-            community:
-              kubernetes-cluster:
-                gnetId: 7249
-                revision: 1
+            # ── Kubernetes ────────────────────────────────────────────────
+            kubernetes:
+              # Modern cluster-level view: CPU/memory/network per namespace
+              # Replaces gnetId 7249 (outdated, uses deprecated graph panels)
+              k8s-views-global:
+                gnetId: 15757
+                revision: 37
                 datasource: Mimir
-              kubernetes-pods:
-                gnetId: 6417
-                revision: 1
+              # Per-node resource usage (dotdc modern set)
+              k8s-views-nodes:
+                gnetId: 15759
+                revision: 32
                 datasource: Mimir
-              argocd:
-                gnetId: 14584
-                revision: 1
+              # Per-pod resource usage with drill-down
+              k8s-views-pods:
+                gnetId: 15760
+                revision: 38
                 datasource: Mimir
-              loki-logs:
-                gnetId: 13639
-                revision: 2
-                datasource: Loki
+              # Namespace-level resource usage
+              k8s-views-namespaces:
+                gnetId: 15758
+                revision: 38
+                datasource: Mimir
+              # Kubernetes API server health
+              k8s-system-api-server:
+                gnetId: 15761
+                revision: 21
+                datasource: Mimir
+              # CoreDNS
+              k8s-system-coredns:
+                gnetId: 15762
+                revision: 20
+                datasource: Mimir
+
+            # ── Observability Stack ───────────────────────────────────────
+            observability:
+              # Mimir overview — official Grafana Labs dashboard
+              # Replaces gnetId 16067 (older community version)
               mimir-overview:
-                gnetId: 16067
+                gnetId: 17607
+                revision: 2
+                datasource: Mimir
+              # Alloy metrics pipeline
+              alloy-metrics:
+                gnetId: 21048
                 revision: 1
                 datasource: Mimir
+              # Loki operational — stack health, errors, resource usage
               loki-operational:
                 gnetId: 14055
                 revision: 1
                 datasource: Loki
+              # Loki logs explorer
+              loki-logs:
+                gnetId: 13639
+                revision: 2
+                datasource: Loki
+              # Tempo operations via service graph metrics in Mimir
               tempo-operations:
                 gnetId: 18030
                 revision: 1
                 datasource: Mimir
-              alloy-metrics:
-                gnetId: 21048
+              # OpenTelemetry + Tempo traces
+              otel-tempo:
+                gnetId: 23242
                 revision: 1
+                datasource: Tempo
+
+            # ── Infrastructure ────────────────────────────────────────────
+            infrastructure:
+              # Traefik v2/v3 — modern dashboard with request rates, errors, latency
+              traefik:
+                gnetId: 17931
+                revision: 12
+                datasource: Mimir
+              # CloudNativePG — official CNPG dashboard
+              cnpg:
+                gnetId: 20417
+                revision: 3
+                datasource: Mimir
+              # Redis — Bitnami replication mode compatible
+              redis:
+                gnetId: 19157
+                revision: 3
+                datasource: Mimir
+              # cert-manager — certificate expiry and renewal tracking
+              cert-manager:
+                gnetId: 20340
+                revision: 1
+                datasource: Mimir
+              # External Secrets Operator
+              external-secrets:
+                gnetId: 21640
+                revision: 1
+                datasource: Mimir
+              # Envoy Gateway overview
+              envoy-gateway:
+                gnetId: 24460
+                revision: 1
+                datasource: Mimir
+              # Envoy proxy per-listener metrics
+              envoy-proxy:
+                gnetId: 24459
+                revision: 1
+                datasource: Mimir
+
+            # ── GitOps ────────────────────────────────────────────────────
+            gitops:
+              # ArgoCD operational overview — replaces gnetId 14584
+              argocd-operational:
+                gnetId: 19993
+                revision: 3
+                datasource: Mimir
+              # ArgoCD application-level detail
+              argocd-applications:
+                gnetId: 19974
+                revision: 3
                 datasource: Mimir
 
           persistence:
