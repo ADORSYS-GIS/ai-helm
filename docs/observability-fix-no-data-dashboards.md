@@ -108,6 +108,36 @@ All changes are GitOps — commit, push, and ArgoCD reconciles. No `kubectl appl
 - **Usage collector** (`*-usage`, logs): same `otlp/alloy` exporter added to the
   `logs` pipeline. Logs now go to Lightbridge **and** to Alloy → Loki.
 
+### 2.4 Envoy Gateway metrics — new PodMonitors
+
+The Envoy Gateway and Envoy proxy dashboards were empty because nothing
+scraped them. Envoy Gateway already exposes Prometheus metrics by default
+(data plane on `:19001/stats/prometheus`, control plane on `:19001/metrics`),
+so the only gap was discovery.
+
+- **`charts/core-gateway/templates/podmonitors-observability.yaml`** (new) —
+  two `PodMonitor`s in `envoy-gateway-system`: one selecting the managed Envoy
+  proxy pods (`app.kubernetes.io/managed-by: envoy-gateway`,
+  `app.kubernetes.io/name: envoy`) on `targetPort: 19001` path
+  `/stats/prometheus`, and one selecting the controller (`control-plane:
+  envoy-gateway`) on `targetPort: 19001` path `/metrics`. Alloy discovers these
+  cluster-wide via `prometheus.operator.podmonitors`.
+- **`charts/core-gateway/templates/envoy-proxy.yaml`** — added an explicit
+  `telemetry.metrics.prometheus: {}` to the `EnvoyProxy` spec. This is the
+  default, but stating it makes the scrape contract explicit.
+
+### 2.5 CloudNativePG metrics — new PodMonitors
+
+Each CNPG instance runs a metrics exporter on port `9187` (named `metrics`),
+but no PodMonitor existed, so the CNPG dashboard had no data. `.spec.monitoring.
+enablePodMonitor` is deprecated, so manual PodMonitors are used instead.
+
+- **`charts/coder-db/values.yaml`** — added a `PodMonitor` for the `coder-cnpg`
+  cluster (selector `cnpg.io/cluster: coder-cnpg`, port `metrics`).
+- **`charts/apps/values.yaml`** (lightbridge resources list) — added
+  `PodMonitor`s for `lightbridge-main-db` and `lightbridge-usage-db` (selector
+  `cnpg.io/cluster: <name>`, port `metrics`).
+
 ---
 
 ## 3. How to Verify
