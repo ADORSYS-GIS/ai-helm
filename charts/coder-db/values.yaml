@@ -23,3 +23,24 @@ resources:
         initdb:
           database: coder
           owner: coder
+  - |
+    # PodMonitor so Grafana Alloy scrapes the CloudNativePG per-instance
+    # metrics exporter (port 9187, name "metrics"). Defining the PodMonitor
+    # manually is the recommended approach now that .spec.monitoring.enablePodMonitor
+    # is deprecated.
+    apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: coder-cnpg
+      namespace: coder
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+      labels:
+        app.kubernetes.io/part-of: coder-db
+    spec:
+      selector:
+        matchLabels:
+          cnpg.io/cluster: coder-cnpg
+      podMetricsEndpoints:
+        - port: metrics
+          interval: 30s

@@ -1,0 +1,46 @@
+# PodMonitors so Grafana Alloy (LGTM stack) scrapes Envoy Gateway metrics.
+# Alloy discovers PodMonitors cluster-wide via prometheus.operator.podmonitors,
+# so these can live here even though the targets run in envoy-gateway-system.
+#
+# Envoy Gateway exposes Prometheus metrics by default:
+#   - Data-plane (managed Envoy proxies): port 19001, path /stats/prometheus
+#   - Control-plane (envoy-gateway controller): port 19001, path /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-envoy-proxy
+  namespace: envoy-gateway-system
+  labels:
+    app.kubernetes.io/part-of: core-gateway
+spec:
+  namespaceSelector:
+    matchNames:
+      - envoy-gateway-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/managed-by: envoy-gateway
+      app.kubernetes.io/name: envoy
+  podMetricsEndpoints:
+    - targetPort: 19001
+      path: /stats/prometheus
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-envoy-gateway-controller
+  namespace: envoy-gateway-system
+  labels:
+    app.kubernetes.io/part-of: core-gateway
+spec:
+  namespaceSelector:
+    matchNames:
+      - envoy-gateway-system
+  selector:
+    matchLabels:
+      control-plane: envoy-gateway
+  podMetricsEndpoints:
+    - targetPort: 19001
+      path: /metrics
+      interval: 30s
