@@ -120,8 +120,6 @@ applications:
       syncOptions:
         - CreateNamespace=true
         - ServerSideApply=true
-        - Replace=true
-        - Prune=true
       automated:
         prune: true
         selfHeal: true
@@ -148,6 +146,17 @@ applications:
               enabled: true
             mounts:
               varlog: true
+            # Expose the OTLP receiver ports on the Alloy Service so in-cluster
+            # OpenTelemetry collectors and SDKs can push traces / logs / metrics.
+            extraPorts:
+              - name: otlp-grpc
+                port: 4317
+                targetPort: 4317
+                protocol: TCP
+              - name: otlp-http
+                port: 4318
+                targetPort: 4318
+                protocol: TCP
             configMap:
               content: |-
                 logging {
@@ -155,6 +164,7 @@ applications:
                   format = "logfmt"
                 }
 
+                // ── Metrics: remote-write to Mimir ─────────────────────────────
                 prometheus.remote_write "default" {
                   endpoint {
                     url = "http://mimir-nginx.observability.svc.cluster.local/api/v1/push"
@@ -177,10 +187,91 @@ applications:
                   }
                 }
 
+                // ── ServiceMonitor / PodMonitor discovery ──────────────────────
+                // clustering{} is REQUIRED here: Alloy runs as a DaemonSet with
+                // clustering enabled, so without it every pod scrapes every
+                // target and ships duplicate samples that Mimir rejects.
                 prometheus.operator.servicemonitors "cluster" {
                   forward_to = [prometheus.relabel.global_sanitize.receiver]
+                  clustering {
+                    enabled = true
+                  }
                 }
 
+                prometheus.operator.podmonitors "cluster" {
+                  forward_to = [prometheus.relabel.global_sanitize.receiver]
+                  clustering {
+                    enabled = true
+                  }
+                }
+
+                // ── Node / kubelet / cAdvisor scraping ─────────────────────────
+                // Supplies the container_* (cAdvisor) and kubelet_* series the
+                // Kubernetes dashboards depend on. Scraped through the API server
+                // proxy so no kubelet host-certificate handling is needed.
+                discovery.kubernetes "nodes" {
+                  role = "node"
+                }
+
+                discovery.relabel "kubelet" {
+                  targets = discovery.kubernetes.nodes.targets
+                  rule {
+                    action       = "replace"
+                    target_label = "__address__"
+                    replacement  = "kubernetes.default.svc.cluster.local:443"
+                  }
+                  rule {
+                    source_labels = ["__meta_kubernetes_node_name"]
+                    regex         = "(.+)"
+                    action        = "replace"
+                    target_label  = "__metrics_path__"
+                    replacement   = "/api/v1/nodes/${1}/proxy/metrics"
+                  }
+                }
+
+                discovery.relabel "cadvisor" {
+                  targets = discovery.kubernetes.nodes.targets
+                  rule {
+                    action       = "replace"
+                    target_label = "__address__"
+                    replacement  = "kubernetes.default.svc.cluster.local:443"
+                  }
+                  rule {
+                    source_labels = ["__meta_kubernetes_node_name"]
+                    regex         = "(.+)"
+                    action        = "replace"
+                    target_label  = "__metrics_path__"
+                    replacement   = "/api/v1/nodes/${1}/proxy/metrics/cadvisor"
+                  }
+                }
+
+                prometheus.scrape "kubelet" {
+                  targets         = discovery.relabel.kubelet.output
+                  forward_to      = [prometheus.relabel.global_sanitize.receiver]
+                  job_name        = "kubelet"
+                  scheme          = "https"
+                  scrape_interval = "60s"
+                  clustering { enabled = true }
+                  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                  tls_config {
+                    ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  }
+                }
+
+                prometheus.scrape "cadvisor" {
+                  targets         = discovery.relabel.cadvisor.output
+                  forward_to      = [prometheus.relabel.global_sanitize.receiver]
+                  job_name        = "cadvisor"
+                  scheme          = "https"
+                  scrape_interval = "60s"
+                  clustering { enabled = true }
+                  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                  tls_config {
+                    ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  }
+                }
+
+                // ── Logs: tail this node's pod logs ────────────────────────────
                 local.file_match "pod_logs" {
                   path_targets = [{
                     __path__ = "/var/log/pods/*/*/*.log",
@@ -222,12 +313,16 @@ applications:
                   }
                 }
 
-                // ── Traces: receive OTLP and forward to Tempo ──────────────────
+                // ── OTLP receiver: fan telemetry out to the LGTM stack ─────────
+                // In-cluster OpenTelemetry collectors / SDKs push here; Alloy
+                // routes traces → Tempo, logs → Loki, metrics → Mimir.
                 otelcol.receiver.otlp "default" {
                   grpc { endpoint = "0.0.0.0:4317" }
                   http { endpoint = "0.0.0.0:4318" }
                   output {
-                    traces = [otelcol.exporter.otlp.tempo.input]
+                    traces  = [otelcol.exporter.otlp.tempo.input]
+                    logs    = [otelcol.exporter.loki.default.input]
+                    metrics = [otelcol.exporter.prometheus.default.input]
                   }
                 }
 
@@ -236,6 +331,14 @@ applications:
                     endpoint = "tempo.observability.svc.cluster.local:4317"
                     tls { insecure = true }
                   }
+                }
+
+                otelcol.exporter.loki "default" {
+                  forward_to = [loki.write.default.receiver]
+                }
+
+                otelcol.exporter.prometheus "default" {
+                  forward_to = [prometheus.relabel.global_sanitize.receiver]
                 }
 
             resources:
@@ -255,6 +358,78 @@ applications:
           serviceAccount:
             create: true
 
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: kube-state-metrics ---
+  # Exposes Kubernetes object state (kube_pod_*, kube_deployment_*, kube_node_*,
+  # etc.) as Prometheus metrics. This is NOT the same as metrics-server — the
+  # metrics-server app only serves the Kubernetes Metrics API (kubectl top / HPA)
+  # and is not scrapeable. Without kube-state-metrics the Kubernetes and
+  # Infrastructure dashboards have no source data.
+  # Its ServiceMonitor is discovered automatically by Alloy.
+  - name: kube-state-metrics
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 5.25.1
+      chart: kube-state-metrics
+      helm:
+        releaseName: kube-state-metrics
+        valuesObject:
+          # ServiceMonitor so Alloy's prometheus.operator.servicemonitors scrapes it.
+          prometheus:
+            monitor:
+              enabled: true
+              interval: 60s
+          resources:
+            requests: { cpu: 50m,  memory: 128Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: prometheus-node-exporter ---
+  # DaemonSet exposing per-node hardware/OS metrics (node_cpu_*, node_memory_*,
+  # node_filesystem_*, node_network_*). Required by the K8s Nodes / Global
+  # dashboards. Its ServiceMonitor is discovered automatically by Alloy.
+  - name: node-exporter
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 4.39.0
+      chart: prometheus-node-exporter
+      helm:
+        releaseName: node-exporter
+        valuesObject:
+          prometheus:
+            monitor:
+              enabled: true
+              interval: 60s
+          resources:
+            requests: { cpu: 50m,  memory: 32Mi }
+            limits:   { cpu: 200m, memory: 64Mi }
     destination:
       namespace: observability
     syncPolicy:
