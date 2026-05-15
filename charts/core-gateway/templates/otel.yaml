@@ -33,6 +33,12 @@ spec:
           # Phoenix docs: Bearer auth; lowercase header for compatibility.
           authorization: "Bearer ${env:PHOENIX_API_KEY}"
 
+      # Fan traces out to Grafana Alloy as well, which forwards them to Tempo.
+      otlp/alloy:
+        endpoint: "alloy.observability.svc.cluster.local:4317"
+        tls:
+          insecure: true
+
       debug: { }
 
     service:
@@ -44,6 +50,7 @@ spec:
             - batch
           exporters:
             - otlphttp/phoenix
+            - otlp/alloy
             - debug
 ---
 apiVersion: opentelemetry.io/v1beta1
@@ -84,6 +91,13 @@ spec:
         #compression: none
         tls:
           ca_file: /etc/otel/tls/ca.crt
+
+      # Fan logs out to Grafana Alloy as well, which forwards them to Loki.
+      otlp/alloy:
+        endpoint: "alloy.observability.svc.cluster.local:4317"
+        tls:
+          insecure: true
+
       debug: { }
 
     service:
@@ -95,4 +109,5 @@ spec:
             - batch
           exporters:
             - otlphttp/lightbridge_usage
+            - otlp/alloy
             - debug
