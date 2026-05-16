@@ -1241,132 +1241,132 @@ applications:
                   options:
                     path: /var/lib/grafana/dashboards/gitops
 
-          alerting:
-            contactpoints.yaml:
-              apiVersion: 1
-              contactPoints:
-                - orgId: 1
-                  name: apprise
-                  receivers:
-                    - uid: apprise-webhook
-                      type: webhook
-                      settings:
-                        url: http://grafana-apprise-adapter.observability.svc.cluster.local:5000/notify/alerts
-                        httpMethod: POST
-                        payload:
-                          template: |
-                            {
-                              "title": "{{ `{{ .CommonLabels.alertname }}` }}",
-                              "message": "{{ `{{ if .CommonAnnotations.summary }}{{ .CommonAnnotations.summary }}{{ else }}{{ .CommonLabels.alertname }} is {{ .Status }}{{ end }}` }}",
-                              "state": "alerting",
-                              "imageUrl": "",
-                              "tags": {}
-                            }
+          # alerting:
+          #   contactpoints.yaml:
+          #     apiVersion: 1
+          #     contactPoints:
+          #       - orgId: 1
+          #         name: apprise
+          #         receivers:
+          #           - uid: apprise-webhook
+          #             type: webhook
+          #             settings:
+          #               url: http://grafana-apprise-adapter.observability.svc.cluster.local:5000/notify/alerts
+          #               httpMethod: POST
+          #               payload:
+          #                 template: |
+          #                   {
+          #                     "title": "{{ `{{ .CommonLabels.alertname }}` }}",
+          #                     "message": "{{ `{{ if .CommonAnnotations.summary }}{{ .CommonAnnotations.summary }}{{ else }}{{ .CommonLabels.alertname }} is {{ .Status }}{{ end }}` }}",
+          #                     "state": "alerting",
+          #                     "imageUrl": "",
+          #                     "tags": {}
+          #                   }
 
-            policies.yaml:
-              apiVersion: 1
-              policies:
-                - orgId: 1
-                  receiver: apprise
-                  group_by:
-                    - grafana_folder
-                    - alertname
-                  group_wait: 30s
-                  group_interval: 1m
-                  repeat_interval: 2m
+          #   policies.yaml:
+          #     apiVersion: 1
+          #     policies:
+          #       - orgId: 1
+          #         receiver: apprise
+          #         group_by:
+          #           - grafana_folder
+          #           - alertname
+          #         group_wait: 30s
+          #         group_interval: 1m
+          #         repeat_interval: 2m
 
-            rules.yaml:
-              apiVersion: 1
-              groups:
-                - orgId: 1
-                  name: 1m group
-                  folder: Observability Stack
-                  interval: 1m
-                  rules:
-                    - uid: afm5fxdv88kxsa
-                      title: Pod OOMKilled
-                      condition: C
-                      data:
-                        - refId: A
-                          relativeTimeRange:
-                            from: 600
-                            to: 0
-                          datasourceUid: mimir
-                          model:
-                            editorMode: code
-                            expr: |-
-                              # Fires when a pod has been OOMKilled in the last 15m
-                              increase(kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}[15m]) > 0
-                            instant: true
-                            intervalMs: 1000
-                            legendFormat: __auto
-                            maxDataPoints: 43200
-                            range: false
-                            refId: A
-                        - refId: B
-                          relativeTimeRange:
-                            from: 600
-                            to: 0
-                          datasourceUid: __expr__
-                          model:
-                            conditions:
-                              - evaluator:
-                                  params: []
-                                  type: gt
-                                operator:
-                                  type: and
-                                query:
-                                  params:
-                                    - B
-                                reducer:
-                                  params: []
-                                  type: last
-                                type: query
-                            datasource:
-                              type: __expr__
-                              uid: __expr__
-                            expression: A
-                            intervalMs: 1000
-                            maxDataPoints: 43200
-                            reducer: last
-                            refId: B
-                            type: reduce
-                        - refId: C
-                          relativeTimeRange:
-                            from: 600
-                            to: 0
-                          datasourceUid: __expr__
-                          model:
-                            conditions:
-                              - evaluator:
-                                  params:
-                                    - 0
-                                  type: gt
-                                operator:
-                                  type: and
-                                query:
-                                  params:
-                                    - C
-                                reducer:
-                                  params: []
-                                  type: last
-                                type: query
-                            datasource:
-                              type: __expr__
-                              uid: __expr__
-                            expression: B
-                            intervalMs: 1000
-                            maxDataPoints: 43200
-                            refId: C
-                            type: threshold
-                      noDataState: NoData
-                      execErrState: Error
-                      for: 3m
-                      labels:
-                        security: critical
-                      isPaused: false
-                      notification_settings:
-                        receiver: apprise
+          #   rules.yaml:
+          #     apiVersion: 1
+          #     groups:
+          #       - orgId: 1
+          #         name: 1m group
+          #         folder: Observability Stack
+          #         interval: 1m
+          #         rules:
+          #           - uid: afm5fxdv88kxsa
+          #             title: Pod OOMKilled
+          #             condition: C
+          #             data:
+          #               - refId: A
+          #                 relativeTimeRange:
+          #                   from: 600
+          #                   to: 0
+          #                 datasourceUid: mimir
+          #                 model:
+          #                   editorMode: code
+          #                   expr: |-
+          #                     # Fires when a pod has been OOMKilled in the last 15m
+          #                     increase(kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}[15m]) > 0
+          #                   instant: true
+          #                   intervalMs: 1000
+          #                   legendFormat: __auto
+          #                   maxDataPoints: 43200
+          #                   range: false
+          #                   refId: A
+          #               - refId: B
+          #                 relativeTimeRange:
+          #                   from: 600
+          #                   to: 0
+          #                 datasourceUid: __expr__
+          #                 model:
+          #                   conditions:
+          #                     - evaluator:
+          #                         params: []
+          #                         type: gt
+          #                       operator:
+          #                         type: and
+          #                       query:
+          #                         params:
+          #                           - B
+          #                       reducer:
+          #                         params: []
+          #                         type: last
+          #                       type: query
+          #                   datasource:
+          #                     type: __expr__
+          #                     uid: __expr__
+          #                   expression: A
+          #                   intervalMs: 1000
+          #                   maxDataPoints: 43200
+          #                   reducer: last
+          #                   refId: B
+          #                   type: reduce
+          #               - refId: C
+          #                 relativeTimeRange:
+          #                   from: 600
+          #                   to: 0
+          #                 datasourceUid: __expr__
+          #                 model:
+          #                   conditions:
+          #                     - evaluator:
+          #                         params:
+          #                           - 0
+          #                         type: gt
+          #                       operator:
+          #                         type: and
+          #                       query:
+          #                         params:
+          #                           - C
+          #                       reducer:
+          #                         params: []
+          #                         type: last
+          #                       type: query
+          #                   datasource:
+          #                     type: __expr__
+          #                     uid: __expr__
+          #                   expression: B
+          #                   intervalMs: 1000
+          #                   maxDataPoints: 43200
+          #                   refId: C
+          #                   type: threshold
+          #             noDataState: NoData
+          #             execErrState: Error
+          #             for: 3m
+          #             labels:
+          #               security: critical
+          #             isPaused: false
+          #             notification_settings:
+          #               receiver: apprise
 
           dashboards:
             # ── Kubernetes ────────────────────────────────────────────────
