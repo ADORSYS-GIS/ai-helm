@@ -272,6 +272,53 @@ applications:
                   }
                 }
 
+                // ── Kubernetes API server ───────────────────────────────────────
+                prometheus.scrape "apiserver" {
+                  targets = [{
+                    __address__ = "kubernetes.default.svc.cluster.local:443",
+                  }]
+                  forward_to      = [prometheus.relabel.global_sanitize.receiver]
+                  job_name        = "apiserver"
+                  scheme          = "https"
+                  metrics_path    = "/metrics"
+                  scrape_interval = "60s"
+                  clustering { enabled = true }
+                  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                  tls_config {
+                    ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  }
+                }
+
+                // ── CoreDNS ────────────────────────────────────────────────────
+                discovery.kubernetes "coredns" {
+                  role = "pod"
+                  namespaces {
+                    names = ["kube-system"]
+                  }
+                  selectors {
+                    role  = "pod"
+                    label = "k8s-app=kube-dns"
+                  }
+                }
+
+                discovery.relabel "coredns" {
+                  targets = discovery.kubernetes.coredns.targets
+                  rule {
+                    source_labels = ["__meta_kubernetes_pod_ip"]
+                    action        = "replace"
+                    target_label  = "__address__"
+                    replacement   = "$1:9153"
+                  }
+                }
+
+                prometheus.scrape "coredns" {
+                  targets         = discovery.relabel.coredns.output
+                  forward_to      = [prometheus.relabel.global_sanitize.receiver]
+                  job_name        = "coredns"
+                  scrape_interval = "60s"
+                  clustering { enabled = true }
+                }
+
                 // ── Logs: tail this node's pod logs ────────────────────────────
                 local.file_match "pod_logs" {
                   path_targets = [{
@@ -524,6 +571,11 @@ applications:
                 # Prevents rejections from Alloy self-scrape timing skew.
                 out_of_order_time_window: 10m
 
+                # ── Query ────────────────────────────────────────────────────
+                # Raise the query-frontend concurrency cap to prevent 429s when
+                # multiple dashboard panels fire simultaneous queries.
+                max_outstanding_requests_per_tenant: 1000
+
               compactor:
                 # How often the compactor runs a cleanup cycle.
                 compaction_interval: 1h
@@ -566,8 +618,8 @@ applications:
             podDisruptionBudget:
               enabled: false
             resources:
-              requests: { cpu: 100m, memory: 128Mi }
-              limits:   { cpu: 500m, memory: 512Mi }
+              requests: { cpu: 200m, memory: 256Mi }
+              limits:   { cpu: 1,    memory: 1Gi   }
 
           query_scheduler:
             enabled: false
@@ -1015,7 +1067,7 @@ applications:
 
           resources:
             requests: { cpu: 200m, memory: 512Mi }
-            limits:   { cpu: 1000m, memory: 4Gi   }
+            limits:   { cpu: 1000m, memory: 6Gi   }
 
           persistence:
             enabled: true
