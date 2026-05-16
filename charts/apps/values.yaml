@@ -1452,10 +1452,9 @@ applications:
                 replicas: 1
                 containers:
                   main:
-                    # Apprise API config secret (optional):
-                    #   apprise-api-config:
-                    #     APPRISE_STATELESS_URLS: <default notification URLs>
-                    #     APPRISE_STORAGE_PATH:   /config (if persistence needed)
+                    env:
+                      APPRISE_STATEFUL_MODE: simple
+                      APPRISE_CONFIG_DIR: /apprise-config
                     envFrom:
                       - secretRef:
                           name: apprise-api-config
@@ -1463,6 +1462,17 @@ applications:
                     resources:
                       requests: { cpu: 100m, memory: 128Mi }
                       limits:   { cpu: 500m, memory: 512Mi }
+            # Secret 'apprise-channels' must exist in the monitoring namespace.
+            # Each key becomes a file — key 'alerts.cfg' is read when
+            # POST /notify/alerts is called (one Apprise URL per line):
+            #   kubectl create secret generic apprise-channels -n monitoring \
+            #     --from-literal=alerts.cfg='discord://WEBHOOK_ID/WEBHOOK_TOKEN'
+            persistence:
+              config:
+                type: secret
+                name: apprise-channels
+                globalMounts:
+                  - path: /apprise-config
             service:
               main:
                 controller: main
