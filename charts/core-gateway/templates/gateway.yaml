@@ -19,7 +19,7 @@ spec:
       port: 80
       allowedRoutes:
         namespaces:
-          from: Same
+          from: All
     - name: api-https
       protocol: HTTPS
       port: 443
@@ -28,19 +28,6 @@ spec:
         mode: Terminate
         certificateRefs:
           - name: {{ include "core-gateway.fullname" . }}-api-tls
-            kind: Secret
-            group: ''
-      allowedRoutes:
-        namespaces:
-          from: All
-    - name: service-https
-      protocol: HTTPS
-      port: 443
-      hostname: {{ .Values.gateway.serviceApiHostname }}
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: {{ include "core-gateway.fullname" . }}-service-tls
             kind: Secret
             group: ''
       allowedRoutes:
