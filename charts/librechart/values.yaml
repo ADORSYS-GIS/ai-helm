@@ -240,6 +240,11 @@ librechat:
                 name: librechat-config
                 key: jwt_refresh_secret
 
+            CONVERSE_OPENAI_API_KEY:
+              secretKeyRef:
+                name: librechat-main-config
+                key: converse_openai_api_key
+
             # Web Search Configuration - Reference environment variables from secrets
             # Search Provider: Serper (you can also use SearXNG)
             SERPER_API_KEY:
@@ -659,7 +664,7 @@ config:
       #excludedIds: ["asst_excludedAssistantId"]
     custom:
       - name: "Converse"
-
+        apiKey: "${CONVERSE_OPENAI_API_KEY}"
         baseURL: "http://envoy-converse-gateway-core-gateway-c480b207.envoy-gateway-system.svc.cluster.local/v1"
         models:
           default:
