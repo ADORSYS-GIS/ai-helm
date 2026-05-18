@@ -2015,6 +2015,7 @@ applications:
         valuesObject:
           gateway:
             apiHostname: api.ai.camer.digital
+            serviceApiHostname: services.api.ai.camer.digital
             issuer: cert-home-cert-envoy
     destination:
       namespace: converse-gateway
@@ -2125,7 +2126,18 @@ applications:
                     "x-api-key-status":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.api_key.status"
-
+            services:
+              hosts:
+                - services.api.ai.camer.digital
+              authentication:
+                librechat-api-key:
+                  apiKey:
+                    selector:
+                      matchLabels:
+                        group: converse-api-key # Labels on your API Key Secrets
+                  credentials:
+                    authorizationHeader:
+                      prefix: Bearer
     destination:
       namespace: converse-gateway
 

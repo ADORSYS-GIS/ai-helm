@@ -96,7 +96,7 @@ When a request is processed, you will see Envoy decoding the headers:
 
 ```text
 [debug][router] ... router decoding headers:
-':authority', 'envoy-converse-gateway-core-gateway-c480b207.envoy-gateway-system.svc.cluster.local'
+':authority', 'services.api.ai.camer.digital'
 ...
 'x-user-role', 'ADMIN'  <-- Internal LibreChat Role
 'x-keycloak-roles', '["user", "beta-tester"]' <-- Injected by Authorino

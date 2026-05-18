@@ -55,7 +55,7 @@ Authorino adds several headers after a successful LightBridge validation, includ
 
 Those headers are configured in `charts/apps/values.yaml` under the `AuthConfig` response block.
 The `SecurityPolicy` in `charts/kuadrant-policies/templates/securitypolicy.yaml` attaches ext auth
-to the `core-gateway` `api-https` listener.
+to the `core-gateway` `api-https` and `service-https` listeners.
 
 For the current budget rule, the rate-limit selectors specifically rely on:
 

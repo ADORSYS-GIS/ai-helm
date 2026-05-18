@@ -112,8 +112,8 @@ API keys for external services and MCP tools.
 
 | Secret Name | Namespace | Type | Keys | Description |
 |-------------|-----------|------|------|-------------|
-| ~~`converse-api-key`~~ | ~~converse-gateway~~ | ~~Opaque~~ | ~~`key`~~ | ~~Converse Gateway API key - decommissioned with services endpoint~~ |
-| ~~`converse-api-key-dev`~~ | ~~converse-gateway~~ | ~~Opaque~~ | ~~`key`~~ | ~~Converse Gateway API key (dev) - decommissioned with services endpoint~~ |
+| `converse-api-key` | converse-gateway | Opaque | `key` | Converse Gateway API key |
+| `converse-api-key-dev` | converse-gateway | Opaque | `key` | Converse Gateway API key (dev) |
 | `proxy-api-key` | converse-proxy | Opaque | `key` | Proxy API key |
 | `proxy-api-key-01` | converse-proxy | Opaque | `key` | Proxy API key |
 | `context7-token` | converse-mcp | Opaque | `token` | Context7 token |
