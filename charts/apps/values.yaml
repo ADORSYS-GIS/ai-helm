@@ -2068,6 +2068,14 @@ applications:
               hosts:
                 - api.ai.camer.digital
               authentication:
+                keycloak-oidc:
+                  jwt:
+                    issuerUrl: https://auth.verif.fyi/realms/camer-digital
+                    tokenSource:
+                      header: Authorization
+                      prefix: Bearer
+                    jwks:
+                      - url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/certs
                 anonymous:
                   anonymous: { }
               metadata:
@@ -2087,44 +2095,105 @@ applications:
                       ip:
                         selector: "context.request.http.headers.x-forwarded-for"
                     contentType: "application/json"
+                  conditions:
+                    - selector: "auth.identity.keycloak-oidc.iss"
+                      operator: "neq"
+                      value: "https://auth.verif.fyi/realms/camer-digital"
               authorization:
                 "enforce-valid-key":
+                  conditions:
+                    - selector: "auth.identity.keycloak-oidc.iss"
+                      operator: "neq"
+                      value: "https://auth.verif.fyi/realms/camer-digital"
                   patternMatching:
                     patterns:
                       - selector: "auth.metadata.lightbridge-validation.project.id"
                         operator: "neq"
                         value: ""
+                "enforce-oidc-access":
+                  conditions:
+                    - selector: "auth.identity.keycloak-oidc.iss"
+                      operator: "eq"
+                      value: "https://auth.verif.fyi/realms/camer-digital"
+                  patternMatching:
+                    patterns:
+                      - selector: "auth.identity.keycloak-oidc.aud"
+                        operator: "eq"
+                        value: "envoy-ai-gateway"
               response:
                 success:
                   dynamicMetadata:
                     "llm_project_id":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.project.id"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
                     "llm_account_id":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.account.id"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
                     "llm_api_key_id":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.api_key.id"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
                     "llm_billing_plan":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.project.billing_plan"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
                   headers:
                     "x-project-id":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.project.id"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
                     "x-account-id":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.account.id"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
                     "x-api-key-id":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.api_key.id"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
                     "x-billing-plan":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.project.billing_plan"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
                     "x-api-key-status":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.api_key.status"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "neq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
+                    "x-oidc-sub":
+                      plain:
+                        selector: "auth.identity.keycloak-oidc.sub"
+                      conditions:
+                        - selector: "auth.identity.keycloak-oidc.iss"
+                          operator: "eq"
+                          value: "https://auth.verif.fyi/realms/camer-digital"
 
     destination:
       namespace: converse-gateway

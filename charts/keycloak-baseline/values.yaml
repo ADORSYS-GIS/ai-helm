@@ -84,9 +84,56 @@ keycloak-config:
         pkceEnabled: "false"
         syncMode: "LEGACY"
         clientAuthMethod: "client_secret_post"
+    github:
+      enabled: true
+      alias: "github"
+      displayName: "GitHub Actions"
+      providerId: "keycloak-oidc"
+      linkOnly: true
+      storeToken: false
+      config:
+        issuer: "https://token.actions.githubusercontent.com"
+        authorizationUrl: "https://token.actions.githubusercontent.com"
+        tokenUrl: "https://token.actions.githubusercontent.com"
+        jwksUrl: "https://token.actions.githubusercontent.com/.well-known/jwks"
+        validateSignature: "true"
+        useJwksUrl: "true"
+        clientAuthMethod: "client_secret_post"
+      identityProviderMappers:
+        - name: "github-repository"
+          identityProviderMapper: "oidc-attribute-importer-mapper"
+          config:
+            claim: "repository"
+            user.attribute: "github_repository"
+        - name: "github-workflow"
+          identityProviderMapper: "oidc-attribute-importer-mapper"
+          config:
+            claim: "workflow"
+            user.attribute: "github_workflow"
+        - name: "github-ref"
+          identityProviderMapper: "oidc-attribute-importer-mapper"
+          config:
+            claim: "ref"
+            user.attribute: "github_ref"
 
   # Client Scopes with Protocol Mappers
   clientScopes:
+    envoyAiGateway:
+      name: "envoy-ai-gateway"
+      description: "Scope for AI Gateway access via OIDC"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "true"
+        display.on.consent.screen: "false"
+      protocolMappers:
+        - name: "audience-envoy"
+          protocol: "openid-connect"
+          protocolMapper: "oidc-audience-mapper"
+          consentRequired: false
+          config:
+            included.client.audience: "envoy-ai-gateway"
+            id.token.claim: "true"
+            access.token.claim: "true"
     phoenix:
       name: "phoenix"
       description: ""
@@ -340,25 +387,31 @@ keycloak-config:
       enabled: true
       clientId: "adorsys-gis-github-ci"
       name: "Adorsys GIS Github CI"
-      description: ""
+      description: "OIDC client for GitHub Actions CI — token exchange and AI gateway access"
       publicClient: false
-      standardFlowEnabled: true
+      standardFlowEnabled: false
       implicitFlowEnabled: false
-      directAccessGrantsEnabled: false
+      directAccessGrantsEnabled: true
       serviceAccountsEnabled: true
+      secret: "github-ci-client-secret"
       redirectUris:
         - "/*"
       webOrigins:
-        - "/*"
-      frontchannelLogout: true
+        - "*"
+      attributes:
+        token.exchange: "true"
+        access.token.lifespan: "1200"
+        pkce.code.challenge.method: S256
       defaultClientScopes:
         - service_account
+        - token-exchange
         - web-origins
         - acr
         - profile
         - roles
         - basic
         - email
+        - envoy-ai-gateway
       optionalClientScopes:
         - phoenix
         - address
@@ -417,6 +470,29 @@ keycloak-config:
       clientRoles:
         phoenix:
           - viewer
+
+  # Extra realm-level configuration
+  # Used for configuring advanced features like identity provider token exchange permissions
+  realmExtraConfig:
+    clients:
+      - clientId: "realm-management"
+        authorizationSettings:
+          allowRemoteResourceManagement: false
+          policyEnforcementMode: "ENFORCING"
+          resources:
+            - name: "idp.resource.$github"
+              type: "IdentityProvider"
+              ownerManagedAccess: false
+              scopes:
+                - name: "token-exchange"
+          policies:
+            - name: "token-exchange.permission.idp.$github"
+              type: "scope"
+              logic: "POSITIVE"
+              decisionStrategy: "UNANIMOUS"
+              config:
+                resources: '["idp.resource.$github"]'
+                scopes: '["token-exchange"]'
 
 # Keycloak config-sync CronJob (app-template dependency)
 # =====================================================
