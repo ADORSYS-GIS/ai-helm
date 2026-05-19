@@ -2068,8 +2068,9 @@ applications:
               hosts:
                 - api.ai.camer.digital
               authentication:
-                anonymous:
-                  anonymous: { }
+                keycloak:
+                  jwt:
+                    issuerUrl: https://auth.verif.fyi/realms/camer-digital
               metadata:
                 "lightbridge-validation":
                   http:
@@ -2110,6 +2111,9 @@ applications:
                       plain:
                         selector: "auth.metadata.lightbridge-validation.project.billing_plan"
                   headers:
+                    "x-validated-jwt":
+                      plain:
+                        selector: "auth.identity.jwt"
                     "x-project-id":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.project.id"
