@@ -250,19 +250,19 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "Qwen/Qwen3-Reranker-8B"
 
-  qwen3-embedding-8b:
-    kind: embedding
-    pricing:
-      strategy: flat
-      standard:
-        effectivePer1M: 0.010
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "Qwen/Qwen3-Embedding-8B"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "Qwen/Qwen3-Embedding-8B"
+  # qwen3-embedding-8b:
+  #   kind: embedding
+  #   pricing:
+  #     strategy: flat
+  #     standard:
+  #       effectivePer1M: 0.010
+  #   backends:
+  #     deepinfra-01:
+  #       <<: *deepinfraBackendPrimary
+  #       modelNameOverride: "Qwen/Qwen3-Embedding-8B"
+  #     deepinfra-02:
+  #       <<: *deepinfraBackendSecondary
+  #       modelNameOverride: "Qwen/Qwen3-Embedding-8B"
 
   minimax-m2p5:
     kind: text
@@ -295,6 +295,20 @@ models:
       fw-02:
         <<: *fwBackendSecondary
         modelNameOverride: "accounts/fireworks/models/glm-5p1"
+
+  qwen3-embedding-8b:
+    kind: multimodal
+    pricing:
+      strategy: flat
+      standard:
+        effectivePer1M: 0.10
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
 
   qwen3p6-plus:
     kind: multimodal
