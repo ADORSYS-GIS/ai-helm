@@ -1,0 +1,24 @@
+{{- if .Values.model.storage.pvc.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "model-serving.pvcName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+  annotations:
+    # Keep this PVC (and the downloaded model) when the Helm release is
+    # deleted or rolled back. Remove manually only when you intend to
+    # permanently discard the cached model weights.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.model.storage.pvc.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.model.storage.pvc.size | quote }}
+  {{- if .Values.model.storage.pvc.storageClassName }}
+  storageClassName: {{ .Values.model.storage.pvc.storageClassName | quote }}
+  {{- end }}
+{{- end }}

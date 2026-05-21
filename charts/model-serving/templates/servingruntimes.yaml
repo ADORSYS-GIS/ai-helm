@@ -1,0 +1,99 @@
+{{- if .Values.servingRuntime.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: {{ include "model-serving.runtimeName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+  annotations:
+    # Tell KServe's metrics aggregation where to find vLLM Prometheus metrics.
+    prometheus.kserve.io/port: {{ .Values.servingRuntime.port | quote }}
+    prometheus.kserve.io/path: "/metrics"
+spec:
+  # Annotations forwarded to Pods created by this runtime.
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ .Values.servingRuntime.port | quote }}
+    prometheus.io/path: "/metrics"
+
+  # Model formats this runtime can serve.  "autoSelect: true" lets KServe
+  # pick this runtime automatically when an InferenceService references one
+  # of these formats without an explicit runtime field.
+  supportedModelFormats:
+    - name: vllm
+      version: "1"
+      autoSelect: true
+    - name: huggingface
+      version: "1"
+      autoSelect: true
+
+  protocolVersions:
+    - v2
+    - grpc-v2
+
+  # Each InferenceService gets its own dedicated set of runtime containers
+  # (multiModel: false). Set to true only for multiplexed model loading.
+  multiModel: false
+
+  containers:
+    - name: kserve-container
+      image: "{{ .Values.servingRuntime.image.repository }}:{{ .Values.servingRuntime.image.tag }}"
+      imagePullPolicy: {{ .Values.servingRuntime.image.pullPolicy }}
+
+      # KServe's storage-initializer mounts the model at /mnt/models before
+      # this container starts. We point vLLM there explicitly.
+      command:
+        - python
+        - -m
+        - vllm.entrypoints.openai.api_server
+      args:
+        - "--port={{ .Values.servingRuntime.port }}"
+        - "--model=/mnt/models"
+        - "--served-model-name={{ .Values.model.name }}"
+        {{- range .Values.servingRuntime.args }}
+        - {{ . | quote }}
+        {{- end }}
+
+      env:
+        # vLLM writes model files here; must be writable in the container.
+        - name: HF_HOME
+          value: "/tmp/hf_home"
+        {{- if .Values.model.huggingFaceToken.secretName }}
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.model.huggingFaceToken.secretName }}
+              key: {{ .Values.model.huggingFaceToken.secretKey | default "token" }}
+        {{- end }}
+        {{- range $key, $val := .Values.servingRuntime.env }}
+        - name: {{ $key }}
+          value: {{ $val | quote }}
+        {{- end }}
+
+      resources:
+        {{- toYaml .Values.servingRuntime.resources | nindent 8 }}
+
+      ports:
+        - name: http1
+          containerPort: {{ .Values.servingRuntime.port }}
+          protocol: TCP
+
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: {{ .Values.servingRuntime.port }}
+        initialDelaySeconds: {{ .Values.servingRuntime.probes.readiness.initialDelaySeconds }}
+        periodSeconds: {{ .Values.servingRuntime.probes.readiness.periodSeconds }}
+        timeoutSeconds: {{ .Values.servingRuntime.probes.readiness.timeoutSeconds }}
+        failureThreshold: {{ .Values.servingRuntime.probes.readiness.failureThreshold }}
+
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: {{ .Values.servingRuntime.port }}
+        initialDelaySeconds: {{ .Values.servingRuntime.probes.liveness.initialDelaySeconds }}
+        periodSeconds: {{ .Values.servingRuntime.probes.liveness.periodSeconds }}
+        timeoutSeconds: {{ .Values.servingRuntime.probes.liveness.timeoutSeconds }}
+        failureThreshold: {{ .Values.servingRuntime.probes.liveness.failureThreshold }}
+{{- end }}

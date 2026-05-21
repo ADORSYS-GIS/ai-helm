@@ -1,0 +1,72 @@
+{{- if and .Values.model.storage.pvc.enabled .Values.model.storage.downloader.enabled }}
+{{- $srcUri := required "model.storageUri is required for the downloader Job" .Values.model.storageUri }}
+{{- $destDir := include "model-serving.downloaderDestDir" . | trim }}
+---
+# One-shot model downloader Job.
+# Runs as a post-install / post-upgrade Helm hook and writes model weights
+# into the PVC so cold-starts skip the remote download entirely.
+#
+# Idempotency: the script checks whether the destination directory is
+# already non-empty and exits immediately if so — safe to re-run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "model-serving.fullname" . }}-model-downloader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+  annotations:
+    # Helm hook wiring.
+    helm.sh/hook: post-install,post-upgrade
+    # Delete the previous (completed) Job before creating a new one on the
+    # next upgrade. This avoids immutable-field conflicts while still
+    # keeping the Job visible for inspection until the next release.
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "0"
+spec:
+  backoffLimit: {{ .Values.model.storage.downloader.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.model.storage.downloader.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "model-serving.labels" . | nindent 8 }}
+        app.kubernetes.io/component: model-downloader
+    spec:
+      restartPolicy: OnFailure
+      volumes:
+        - name: model-store
+          persistentVolumeClaim:
+            claimName: {{ include "model-serving.pvcName" . }}
+      containers:
+        - name: downloader
+          image: "{{ .Values.model.storage.downloader.image.repository }}:{{ .Values.model.storage.downloader.image.tag }}"
+          imagePullPolicy: {{ .Values.model.storage.downloader.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              DEST="{{ $destDir }}"
+              if [ "$(ls -A "$DEST" 2>/dev/null)" ]; then
+                echo "Model already present at $DEST — skipping download."
+                exit 0
+              fi
+              echo "Downloading {{ $srcUri }} → $DEST"
+              /ko-app/storage-initializer "{{ $srcUri }}" "$DEST"
+              echo "Download complete."
+          env:
+            {{- if .Values.model.huggingFaceToken.secretName }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.model.huggingFaceToken.secretName }}
+                  key: {{ .Values.model.huggingFaceToken.secretKey | default "token" }}
+            {{- end }}
+            # Scratch space for huggingface_hub cache within the container.
+            - name: HF_HOME
+              value: "/tmp/hf_home"
+          resources:
+            {{- toYaml .Values.model.storage.downloader.resources | nindent 12 }}
+          volumeMounts:
+            - name: model-store
+              mountPath: /mnt/models
+{{- end }}
