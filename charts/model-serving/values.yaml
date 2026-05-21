@@ -1,0 +1,288 @@
+# ---------------------------------------------------------------------------
+# model-serving – values reference
+# ---------------------------------------------------------------------------
+# Operators assumed present in the cluster (not installed by this chart):
+#   - KServe controller (serving.kserve.io CRDs)
+#   - Knative Serving (serving.knative.dev CRDs)
+#   - cert-manager (cert-manager.io CRDs) – required only when adapters.tls.enabled
+#   - Prometheus Operator (monitoring.coreos.com CRDs) – required only when adapters.metrics.enabled
+# ---------------------------------------------------------------------------
+
+global:
+  nameOverride: ""
+  fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+model:
+  # Used as the InferenceService name, and as --served-model-name in vLLM.
+  name: "my-model"
+
+  # Model storage URI used when model.storage.pvc.enabled is false.
+  # KServe's storage-initializer fetches the model before the predictor starts.
+  # Examples:
+  #   hf://meta-llama/Llama-3.1-8B-Instruct   (HuggingFace Hub)
+  #   s3://my-bucket/models/llama-3.1-8b       (S3-compatible)
+  #   gs://my-bucket/models/llama-3.1-8b       (GCS)
+  # When model.storage.pvc.enabled is true this value is used only by the
+  # downloader Job; the InferenceService receives the pvc:// URI automatically.
+  storageUri: ""
+
+  # modelFormat controls which ServingRuntime autoSelect entry matches this
+  # InferenceService. Keep "vllm" when using the ServingRuntime below.
+  format:
+    name: vllm
+
+  # Optional: secret containing a HuggingFace token for gated models.
+  huggingFaceToken:
+    secretName: ""
+    secretKey: "token"
+
+  # ---------------------------------------------------------------------------
+  # Persistent model storage
+  # ---------------------------------------------------------------------------
+  storage:
+    # -- PVC -----------------------------------------------------------------
+    # When enabled the chart creates a PVC to cache the downloaded model.
+    # helm.sh/resource-policy: keep is set so the PVC (and its data) survives
+    # helm uninstall or helm upgrade.
+    pvc:
+      enabled: false
+
+      # Override PVC name. Defaults to <model.name>-model-store.
+      nameOverride: ""
+
+      accessModes:
+        - ReadWriteOnce
+
+      # Size must comfortably fit the model weights. Rule of thumb:
+      #   7B  model in fp16  → ~14 Gi
+      #   13B model in fp16  → ~26 Gi
+      #   70B model in fp16  → ~140 Gi
+      size: "50Gi"
+
+      # Leave empty to use the cluster's default StorageClass.
+      storageClassName: ""
+
+      # Optional sub-directory within the PVC where the model is stored.
+      # Useful when sharing one PVC across multiple model releases.
+      # The InferenceService storageUri becomes: pvc://<name>/<subPath>
+      # Leave empty to use the PVC root: pvc://<name>
+      subPath: ""
+
+    # -- Downloader Job ------------------------------------------------------
+    # One-shot Helm hook Job that downloads the model from model.storageUri
+    # into the PVC. Has no effect when storage.pvc.enabled is false.
+    #
+    # Lifecycle:
+    #   - Runs as a post-install / post-upgrade hook.
+    #   - hook-delete-policy: before-hook-creation — the completed Job is
+    #     removed at the start of the next hook run, not immediately after.
+    #   - Idempotent: if the destination directory is already non-empty the
+    #     Job exits 0 without re-downloading.
+    #   - Once the model is stable you can set enabled: false to stop the
+    #     hook from running on future upgrades.
+    downloader:
+      enabled: false
+
+      # kserve/storage-initializer handles hf://, s3://, gs://, pvc://, etc.
+      # Match the tag to the KServe version running in your cluster.
+      image:
+        repository: kserve/storage-initializer
+        tag: v0.14.1
+        pullPolicy: IfNotPresent
+
+      resources:
+        requests:
+          cpu: "1"
+          memory: "4Gi"
+        limits:
+          cpu: "2"
+          memory: "8Gi"
+
+      # Kubernetes Job retry budget.
+      backoffLimit: 3
+
+      # Hard deadline for the download in seconds (default 2 hours).
+      # Increase for very large models on slow links.
+      activeDeadlineSeconds: 7200
+
+# ---------------------------------------------------------------------------
+# ServingRuntime
+# ---------------------------------------------------------------------------
+# Creates a namespace-scoped ServingRuntime that describes the vLLM container.
+# Set enabled: false to reference a pre-existing runtime via
+# inferenceService.runtime instead.
+servingRuntime:
+  enabled: true
+
+  # Overrides the generated runtime name (<model.name>-runtime by default).
+  nameOverride: ""
+
+  image:
+    repository: vllm/vllm-openai
+    tag: v0.6.4.post1
+    pullPolicy: IfNotPresent
+
+  # HTTP port vLLM listens on inside the container.
+  port: 8080
+
+  # Extra CLI flags appended after the mandatory ones.
+  # Mandatory flags set by the template (not overridable here):
+  #   --port, --model=/mnt/models, --served-model-name
+  args:
+    - --tensor-parallel-size=1
+    - --dtype=auto
+    - --max-model-len=4096
+
+  # Extra environment variables injected into the vLLM container.
+  env: {}
+  # env:
+  #   VLLM_ATTENTION_BACKEND: FLASHINFER
+  #   PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+
+  resources:
+    limits:
+      nvidia.com/gpu: "1"
+      cpu: "8"
+      memory: "32Gi"
+    requests:
+      nvidia.com/gpu: "1"
+      cpu: "4"
+      memory: "16Gi"
+
+  # Override liveness / readiness probe defaults.
+  probes:
+    liveness:
+      initialDelaySeconds: 90
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 5
+    readiness:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+
+# ---------------------------------------------------------------------------
+# InferenceService
+# ---------------------------------------------------------------------------
+inferenceService:
+  # Deployment mode: Serverless (Knative-backed, supports scale-to-zero)
+  # or RawDeployment (plain K8s Deployment, Knative not required).
+  deploymentMode: Serverless
+
+  # Knative autoscaling bounds.
+  minReplicas: 1
+  maxReplicas: 3
+
+  # KPA scale metric and target. Ignored in RawDeployment mode.
+  # scaleMetric: concurrency | rps | cpu | memory
+  scaleMetric: concurrency
+  scaleTarget: 1
+
+  # How long Knative waits after the last request before scaling to zero.
+  # Set to "0s" for immediate scale-down. Ignored in RawDeployment mode.
+  scaleDownDelay: "0s"
+
+  # gRPC / HTTP request deadline in seconds.
+  timeout: 300
+
+  # Reference an existing ServingRuntime / ClusterServingRuntime by name.
+  # Defaults to the runtime created by servingRuntime above.
+  runtime: ""
+
+  # Resource overrides at the predictor level. When set, these take
+  # precedence over the ServingRuntime container defaults.
+  resources: {}
+  # resources:
+  #   limits:
+  #     nvidia.com/gpu: "2"
+  #     memory: "48Gi"
+  #   requests:
+  #     nvidia.com/gpu: "2"
+  #     memory: "32Gi"
+
+  # GPU / spot-instance scheduling.
+  nodeSelector: {}
+  # nodeSelector:
+  #   cloud.google.com/gke-accelerator: nvidia-l4
+
+  tolerations: []
+  # tolerations:
+  #   - key: nvidia.com/gpu
+  #     operator: Exists
+  #     effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# Adapters
+# ---------------------------------------------------------------------------
+# Adapters are thin, optional integration bridges to infrastructure-level
+# components that are already installed in the cluster.
+
+adapters:
+
+  # -- TLS adapter --------------------------------------------------------
+  # Emits a cert-manager Certificate resource that requests a TLS credential
+  # from an existing ClusterIssuer / Issuer.
+  # Requires: cert-manager installed and a matching Issuer/ClusterIssuer.
+  tls:
+    enabled: false
+
+    issuerRef:
+      name: ""          # e.g. letsencrypt-prod
+      kind: ClusterIssuer
+      group: cert-manager.io
+
+    # The K8s Secret where cert-manager will write the TLS keypair.
+    secretName: ""      # e.g. my-model-tls
+
+    # DNS names covered by the certificate.
+    dnsNames: []
+    # dnsNames:
+    #   - my-model.ai.example.com
+
+    duration: "2160h"    # 90 days
+    renewBefore: "360h"  # 15 days
+
+  # -- Observability adapter -----------------------------------------------
+  # Emits a Prometheus ServiceMonitor that instructs the Prometheus Operator
+  # to scrape vLLM's /metrics endpoint from the KServe-managed Service.
+  # Requires: Prometheus Operator (monitoring.coreos.com/v1 CRDs).
+  metrics:
+    enabled: false
+
+    serviceMonitor:
+      # Labels merged onto the ServiceMonitor — use to match your Prometheus
+      # instance's serviceMonitorSelector.
+      labels: {}
+      # labels:
+      #   release: kube-prometheus-stack
+
+      # Port name exposed by the KServe-created Service.
+      # In Serverless mode Knative names the port "http-userport".
+      # In RawDeployment mode KServe names it "h2c" or "http1".
+      portName: "http-userport"
+
+      path: /metrics
+      interval: "30s"
+      scrapeTimeout: "10s"
+
+# ---------------------------------------------------------------------------
+# bjw-s app-template extension (disabled by default)
+# ---------------------------------------------------------------------------
+# Set serving.enabled: true to activate the bjw-s app-template dependency.
+# Use this to add supplementary workloads or standard K8s resources that run
+# alongside the KServe InferenceService (e.g. a model-cache filler Job,
+# a ServiceAccount, ConfigMaps, or arbitrary rawResources).
+#
+# Full bjw-s app-template v4.x reference:
+#   https://bjw-s-labs.github.io/helm-charts/docs/app-template/
+serving:
+  enabled: false
+  # controllers: {}
+  # serviceAccount:
+  #   default:
+  #     enabled: true
+  # rawResources: {}

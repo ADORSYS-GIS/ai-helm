@@ -1,0 +1,36 @@
+{{- if .Values.adapters.metrics.enabled }}
+{{- $sm := .Values.adapters.metrics.serviceMonitor }}
+---
+# Observability adapter — instructs the Prometheus Operator to scrape vLLM
+# metrics from the Service that KServe creates for the InferenceService.
+#
+# KServe labels its predictor Service with:
+#   serving.kserve.io/inferenceservice: <InferenceService name>
+#
+# In Serverless mode Knative exposes the port as "http-userport".
+# In RawDeployment mode KServe exposes it as "http1".
+# Override adapters.metrics.serviceMonitor.portName if your setup differs.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "model-serving.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # Match the Service KServe creates in the same namespace.
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      serving.kserve.io/inferenceservice: {{ include "model-serving.fullname" . }}
+  endpoints:
+    - port: {{ $sm.portName | default "http-userport" | quote }}
+      path: {{ $sm.path | default "/metrics" | quote }}
+      interval: {{ $sm.interval | default "30s" | quote }}
+      scrapeTimeout: {{ $sm.scrapeTimeout | default "10s" | quote }}
+{{- end }}

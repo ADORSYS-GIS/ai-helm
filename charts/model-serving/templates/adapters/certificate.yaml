@@ -1,0 +1,33 @@
+{{- if .Values.adapters.tls.enabled }}
+{{- $tls := .Values.adapters.tls }}
+{{- if not $tls.issuerRef.name }}
+  {{- fail "adapters.tls.issuerRef.name is required when adapters.tls.enabled=true" }}
+{{- end }}
+{{- if not $tls.secretName }}
+  {{- fail "adapters.tls.secretName is required when adapters.tls.enabled=true" }}
+{{- end }}
+{{- if not $tls.dnsNames }}
+  {{- fail "adapters.tls.dnsNames must not be empty when adapters.tls.enabled=true" }}
+{{- end }}
+---
+# TLS adapter — requests a certificate from an existing cert-manager Issuer.
+# The resulting Secret (adapters.tls.secretName) can be referenced by the
+# Knative / Istio Gateway that fronts the InferenceService.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "model-serving.fullname" . }}-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $tls.secretName }}
+  issuerRef:
+    name: {{ $tls.issuerRef.name }}
+    kind: {{ $tls.issuerRef.kind | default "ClusterIssuer" }}
+    group: {{ $tls.issuerRef.group | default "cert-manager.io" }}
+  dnsNames:
+    {{- toYaml $tls.dnsNames | nindent 4 }}
+  duration: {{ $tls.duration | default "2160h" | quote }}
+  renewBefore: {{ $tls.renewBefore | default "360h" | quote }}
+{{- end }}
