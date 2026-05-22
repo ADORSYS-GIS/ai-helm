@@ -36,6 +36,9 @@ spec:
           containerPort: {{ .Values.servingRuntime.port }}
           protocol: TCP
 
+      resources:
+        {{- toYaml .Values.servingRuntime.resources | nindent 8 }}
+
       env:
         - name: HF_HOME
           value: {{ .Values.servingRuntime.hfHome | default "/hf-cache" | quote }}
