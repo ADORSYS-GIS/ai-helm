@@ -30,6 +30,10 @@ spec:
     scaleTarget: {{ .Values.inferenceService.scaleTarget | default 10 }}
     {{- end }}
 
+    {{- with .Values.inferenceService.runtimeClassName }}
+    runtimeClassName: {{ . }}
+    {{- end }}
+
     model:
       modelFormat:
         {{- toYaml .Values.model.format | nindent 8 }}
