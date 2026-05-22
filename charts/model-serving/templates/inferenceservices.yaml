@@ -28,16 +28,6 @@ spec:
     scaleMetric: {{ .Values.inferenceService.scaleMetric | default "concurrency" }}
     {{- end }}
 
-    {{- with .Values.inferenceService.nodeSelector }}
-    nodeSelector:
-      {{- toYaml . | nindent 6 }}
-    {{- end }}
-
-    {{- with .Values.inferenceService.tolerations }}
-    tolerations:
-      {{- toYaml . | nindent 6 }}
-    {{- end }}
-
     model:
       modelFormat:
         {{- toYaml .Values.model.format | nindent 8 }}

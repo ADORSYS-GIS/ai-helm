@@ -36,6 +36,16 @@ spec:
   # (multiModel: false). Set to true only for multiplexed model loading.
   multiModel: false
 
+  {{- with .Values.servingRuntime.nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  {{- with .Values.servingRuntime.tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
   containers:
     - name: kserve-container
       image: "{{ .Values.servingRuntime.image.repository }}:{{ .Values.servingRuntime.image.tag }}"
