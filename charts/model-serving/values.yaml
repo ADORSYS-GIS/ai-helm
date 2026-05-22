@@ -220,31 +220,20 @@ inferenceService:
 # ---------------------------------------------------------------------------
 # Adapters are thin, optional integration bridges to infrastructure-level
 # components that are already installed in the cluster.
+#
+# Note on TLS: there is intentionally no TLS/Certificate adapter here.
+# cert-manager provisions certificates automatically via its shims:
+#   - Ingress shim: watches Ingress objects annotated with
+#       cert-manager.io/cluster-issuer: <name>
+#   - Gateway shim: watches Gateway API objects with the same annotation
+#       (requires enableGatewayAPI: true in your cert-manager config)
+# TLS for a KServe InferenceService terminates at the Gateway or Ingress
+# in front of it — those already carry the right annotation in this repo
+# (see core-gateway chart). In Knative Serverless mode the net-certmanager
+# integration handles per-model certificates cluster-wide automatically.
+# Neither case requires a Certificate resource in this chart.
 
 adapters:
-
-  # -- TLS adapter --------------------------------------------------------
-  # Emits a cert-manager Certificate resource that requests a TLS credential
-  # from an existing ClusterIssuer / Issuer.
-  # Requires: cert-manager installed and a matching Issuer/ClusterIssuer.
-  tls:
-    enabled: false
-
-    issuerRef:
-      name: ""          # e.g. letsencrypt-prod
-      kind: ClusterIssuer
-      group: cert-manager.io
-
-    # The K8s Secret where cert-manager will write the TLS keypair.
-    secretName: ""      # e.g. my-model-tls
-
-    # DNS names covered by the certificate.
-    dnsNames: []
-    # dnsNames:
-    #   - my-model.ai.example.com
-
-    duration: "2160h"    # 90 days
-    renewBefore: "360h"  # 15 days
 
   # -- Observability adapter -----------------------------------------------
   # Emits a Prometheus ServiceMonitor that instructs the Prometheus Operator
