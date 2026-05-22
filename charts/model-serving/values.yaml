@@ -3,8 +3,8 @@ global:
   fullnameOverride: ""
 
 model:
-  name: "my-model"
-  storageUri: "hf://my-org/my-model"
+  name: "phi-2"
+  storageUri: "hf://microsoft/phi-2"
   format:
     name: vllm
   huggingFaceToken:
@@ -17,7 +17,7 @@ model:
       nameOverride: ""
       accessModes:
         - ReadWriteOnce
-      size: "50Gi"
+      size: "10Gi"
       storageClassName: ""
       subPath: ""
 
@@ -41,24 +41,25 @@ servingRuntime:
   enabled: true
   nameOverride: ""
   image:
-    repository: vllm/vllm-openai
-    tag: v0.6.4.post1
+    repository: substratusai/vllm
+    tag: main-cpu
     pullPolicy: IfNotPresent
   port: 8080
   args:
     - --tensor-parallel-size=1
-    - --dtype=auto
-    - --max-model-len=4096
-  env: {}
+    - --dtype=float32
+    - --max-model-len=2048
+    - --device=cpu
+  env:
+    HF_HUB_DOWNLOAD_TIMEOUT: "600"
+    VLLM_CPU_KVCACHE_SPACE: "4"
   resources:
     limits:
-      nvidia.com/gpu: "1"
       cpu: "8"
-      memory: "32Gi"
-    requests:
-      nvidia.com/gpu: "1"
-      cpu: "4"
       memory: "16Gi"
+    requests:
+      cpu: "4"
+      memory: "8Gi"
   probes:
     liveness:
       initialDelaySeconds: 90
