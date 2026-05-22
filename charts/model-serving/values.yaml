@@ -6,7 +6,23 @@ model:
   name: "phi-2"
   storageUri: "hf://microsoft/phi-2"
   format:
-    name: vllm
+    name: huggingface
+  args:
+    - --chat-template=/chat-template/chat_template.jinja
+    - --device=cpu
+    - --dtype=float32
+    - --host=0.0.0.0
+    - --max-model-len=2048
+    - --model=microsoft/phi-2
+    - --port=8080
+  resources:
+    limits:
+      cpu: "8"
+      memory: "16Gi"
+    requests:
+      cpu: "4"
+      memory: "8Gi"
+  volumeMounts: []
   huggingFaceToken:
     secretName: ""
     secretKey: "token"
@@ -45,45 +61,44 @@ servingRuntime:
     tag: main-cpu
     pullPolicy: IfNotPresent
   port: 8080
-  args:
-    - --tensor-parallel-size=1
-    - --dtype=float32
-    - --max-model-len=2048
-    - --device=cpu
+  hfHome: "/hf-cache"
+  protocolVersions:
+    - v1
+  supportedModelFormats:
+    - name: huggingface
+      version: "1"
+      autoSelect: true
+      priority: 1
   env:
     HF_HUB_DOWNLOAD_TIMEOUT: "600"
     VLLM_CPU_KVCACHE_SPACE: "4"
-  resources:
-    limits:
-      cpu: "8"
-      memory: "16Gi"
-    requests:
-      cpu: "4"
-      memory: "8Gi"
   probes:
-    liveness:
-      initialDelaySeconds: 90
-      periodSeconds: 15
+    startup:
+      initialDelaySeconds: 10
+      periodSeconds: 30
       timeoutSeconds: 5
-      failureThreshold: 5
+      failureThreshold: 60
     readiness:
-      initialDelaySeconds: 30
+      initialDelaySeconds: 10
       periodSeconds: 10
       timeoutSeconds: 5
-      failureThreshold: 3
+    liveness:
+      initialDelaySeconds: 300
+      periodSeconds: 30
+      timeoutSeconds: 5
   nodeSelector: {}
   tolerations: []
 
 inferenceService:
   deploymentMode: Serverless
-  minReplicas: 1
   maxReplicas: 3
   scaleMetric: concurrency
-  scaleTarget: 1
+  scaleTarget: 10
   scaleDownDelay: "0s"
   timeout: 300
   runtime: ""
-  resources: {}
+  annotations: {}
+  volumes: []
 
 adapters:
   metrics:
