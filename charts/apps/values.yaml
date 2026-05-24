@@ -499,7 +499,8 @@ applications:
       argocd.argoproj.io/sync-wave: "-1"
     source:
       repoURL: https://prometheus-community.github.io/helm-charts
-      targetRevision: 4.39.0
+      # 4.55.0 per audit (16 minors bump; metrics surface stable).
+      targetRevision: 4.55.0
       chart: prometheus-node-exporter
       helm:
         releaseName: node-exporter
@@ -548,7 +549,8 @@ applications:
       argocd.argoproj.io/sync-wave: "-1"
     source:
       repoURL: oci://ghcr.io/grafana/helm-charts
-      targetRevision: v5.18.0
+      # 5.23.0 (2026-05-21) per audit. Adds automatic restart-on-secret-change.
+      targetRevision: v5.23.0
       chart: grafana-operator
       helm:
         releaseName: grafana-operator
@@ -1851,7 +1853,8 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://cloudnative-pg.github.io/charts
-      targetRevision: 0.27.1
+      # 0.28.2 per audit.
+      targetRevision: 0.28.2
       chart: cloudnative-pg
       helm:
         releaseName: cnpg
@@ -1873,7 +1876,8 @@ applications:
       argocd.argoproj.io/sync-wave: "-1"
     source:
       repoURL: https://cloudnative-pg.github.io/charts
-      targetRevision: 0.5.0
+      # 0.6.0 per audit.
+      targetRevision: 0.6.0
       chart: plugin-barman-cloud
       helm:
         releaseName: cnpg-barman-cloud
@@ -1902,7 +1906,8 @@ applications:
       argocd.argoproj.io/sync-wave: "-2"
     source:
       repoURL: https://charts.external-secrets.io
-      targetRevision: 2.4.0
+      # 2.5.0 (2026-05-15) per audit.
+      targetRevision: 2.5.0
       chart: external-secrets
       helm:
         releaseName: external-secrets
@@ -1977,7 +1982,8 @@ applications:
     project: ai
     source:
       repoURL: oci://docker.io/envoyproxy/gateway-helm
-      targetRevision: v1.7.0
+      # v1.8.0 (2026-05-13) per audit. Clean minor; no CRD breaking changes.
+      targetRevision: v1.8.0
       path: .
       helm:
         releaseName: eg
@@ -2142,7 +2148,8 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://kuadrant.io/helm-charts
-      targetRevision: 0.23.1
+      # 0.24.0 per audit.
+      targetRevision: 0.24.0
       chart: authorino-operator
       helm:
         releaseName: authorino-operator
@@ -2984,7 +2991,7 @@ applications:
                   argocd.argoproj.io/sync-wave: "2"
               spec:
                 instances: 2
-                imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+                imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
                 storage:
                   storageClass: linode-block-storage
                   size: "5Gi"
