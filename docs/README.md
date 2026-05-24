@@ -27,6 +27,13 @@ How the system is wired and how to integrate against it.
 | [`librechat_headers_tracing_doc.md`](./librechat_headers_tracing_doc.md) | How LibreChat templated headers flow into downstream MCP/Converse calls |
 | [`authorino-service-account-bypass.md`](./authorino-service-account-bypass.md) | How service-account tokens skip OPA / external metadata in Authorino |
 | [`per-user-observability.md`](./per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki `user_id`/`azp` labels |
+| [`2026-currency-audit.md`](./2026-currency-audit.md) | Helm chart + Kubernetes API + tooling currency audit, mid-2026 |
+
+## Architecture Decision Records
+
+The **why** behind every meaningful architectural choice. See
+[`docs/adr/README.md`](./adr/README.md) for the full index, status legend, and
+how to add a new ADR.
 | [`bifrost_comprehensive_report.md`](./bifrost_comprehensive_report.md) | Bifrost gateway evaluation report |
 | [`service-endpoint-decommission.md`](./service-endpoint-decommission.md) | Decommission checklist for cluster-internal service endpoints |
 | [`models-chart-docs/`](./models-chart-docs/) | `ai-models` chart deep-dive: cost tracking, rate-limit investigation, secret schema |
