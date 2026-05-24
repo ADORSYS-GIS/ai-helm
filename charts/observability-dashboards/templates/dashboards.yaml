@@ -1,0 +1,57 @@
+{{- /*
+GrafanaDashboard CRs. Each entry is rendered into one CR; supply the dashboard
+JSON via .json (inline) or .jsonRef (ConfigMap reference). At least one must
+be set.
+
+values.yaml shape:
+
+dashboards:
+  - name: envoy-ai-gateway-per-user      # CR / k8s object name
+    folderRef: ai-gateway                # GrafanaFolder name (see folders.yaml)
+    # one of:
+    json: |
+      { "title": "...", "panels": [...] }
+    # OR
+    jsonRef:
+      configMapRef:
+        name: <configmap>
+        key:  <key>
+    resyncPeriod: 5m                     # optional
+    allowCrossNamespaceImport: false     # optional, default false
+*/ -}}
+{{- range .Values.dashboards }}
+{{- if and (not .json) (not .jsonRef) }}
+{{- fail (printf "observability-dashboards: dashboard %q requires .json or .jsonRef" .name) }}
+{{- end }}
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "observability-dashboards.labels" $ | nindent 4 }}
+spec:
+  instanceSelector:
+    {{- include "observability-dashboards.instanceSelectorYaml" $ | nindent 4 }}
+  {{- with .folderRef }}
+  folderRef: {{ . | quote }}
+  {{- end }}
+  {{- with .resyncPeriod }}
+  resyncPeriod: {{ . | quote }}
+  {{- end }}
+  {{- with .allowCrossNamespaceImport }}
+  allowCrossNamespaceImport: {{ . }}
+  {{- end }}
+  {{- with .json }}
+  json: |
+    {{- . | nindent 4 }}
+  {{- end }}
+  {{- with .jsonRef }}
+  {{- if .configMapRef }}
+  configMapRef:
+    name: {{ .configMapRef.name | quote }}
+    key:  {{ .configMapRef.key | quote }}
+  {{- end }}
+  {{- end }}
+{{- end }}

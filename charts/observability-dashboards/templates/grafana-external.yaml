@@ -1,0 +1,25 @@
+{{- /*
+External-mode Grafana CR. The operator does NOT stand up grafana itself —
+it talks to the existing grafana Service installed by the `grafana` app, using
+admin credentials from the grafana-admin Secret.
+
+Dashboards / folders match this instance via the
+`{{ .Values.grafana.instanceLabel.key }}={{ .Values.grafana.instanceLabel.value }}` label.
+*/ -}}
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: {{ .Values.grafana.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-dashboards.labels" . | nindent 4 }}
+    {{ .Values.grafana.instanceLabel.key }}: {{ .Values.grafana.instanceLabel.value | quote }}
+spec:
+  external:
+    url: {{ .Values.grafana.url | quote }}
+    adminUser:
+      name: {{ .Values.grafana.adminSecret.name | quote }}
+      key:  {{ .Values.grafana.adminSecret.userKey | quote }}
+    adminPassword:
+      name: {{ .Values.grafana.adminSecret.name | quote }}
+      key:  {{ .Values.grafana.adminSecret.passwordKey | quote }}

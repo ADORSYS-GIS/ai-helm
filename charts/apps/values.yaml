@@ -489,6 +489,60 @@ applications:
         prune: true
         selfHeal: true
 
+  # --- Observability: grafana-operator ---
+  # Installs the grafana-operator controller + its CRDs (Grafana,
+  # GrafanaDashboard, GrafanaFolder, GrafanaDatasource, GrafanaContactPoint,
+  # GrafanaAlertRuleGroup). The operator runs cluster-wide.
+  #
+  # The cluster's actual Grafana workload is still the `grafana` app below
+  # (vanilla grafana/grafana chart, sync-wave 0). The operator manages content
+  # only — it talks to grafana via the admin API in EXTERNAL mode. The wiring
+  # lives in the `observability-dashboards` app (sync-wave 1) which ships the
+  # `Grafana` CR and folders / dashboards / datasources.
+  #
+  # Cutover from sidecar-discovered dashboards: not applicable here — the
+  # existing grafana app loads dashboards via the chart's `dashboards:` map
+  # (file-provider, baked into the deployment), not via the sidecar. New
+  # dashboards go through CRs; existing in-values dashboards stay until
+  # migrated one-by-one. See docs/grafana-operator-and-dashboards.md.
+  #
+  # NOTE: chart version pinned to a known-good. Verify against
+  # `helm search repo grafana-operator` before bumping.
+  - name: grafana-operator
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: oci://ghcr.io/grafana/helm-charts
+      targetRevision: v5.18.0
+      chart: grafana-operator
+      helm:
+        releaseName: grafana-operator
+        valuesObject:
+          # Cluster-wide watch: operator picks up CRs from any namespace.
+          namespaceScope: false
+          leaderElection:
+            enabled: true
+          metricsService:
+            enabled: true
+            type: ClusterIP
+          serviceMonitor:
+            enabled: true
+          resources:
+            requests: { cpu: 50m,  memory: 64Mi  }
+            limits:   { cpu: 250m, memory: 256Mi }
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # ─────────────────────────────────────────────────────────────────────────────
   # Observability: Mimir — long-term metrics store + built-in Alertmanager
   # Sync wave -1: backends before Grafana
@@ -1603,6 +1657,36 @@ applications:
       syncOptions:
         - CreateNamespace=true
         - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: dashboards / folders (grafana-operator CRs) ---
+  # Owns ONLY operator CRs (Grafana external-mode, GrafanaFolder, future
+  # GrafanaDashboard / GrafanaDatasource / GrafanaContactPoint /
+  # GrafanaAlertRuleGroup). No workloads — the actual grafana pod is owned by
+  # the `grafana` app above.
+  # Sync-wave 1: depends on grafana-operator (-1) AND the grafana app (0)
+  # being healthy. Grafana CR in external mode hits the admin API on first
+  # reconcile.
+  - name: observability-dashboards
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "1"
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: HEAD
+      path: charts/observability-dashboards
+      helm:
+        releaseName: observability-dashboards
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
       automated:
         prune: true
         selfHeal: true
