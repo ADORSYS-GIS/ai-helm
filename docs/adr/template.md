@@ -2,7 +2,7 @@
 
 **Status:** Proposed | Accepted | Deprecated | Superseded by ADR-NNNN
 **Date:** YYYY-MM-DD
-**Deciders:** <names / handles / "repo maintainers via <branch>">
+**Deciders:** @stephane-segning
 
 ## Context
 
