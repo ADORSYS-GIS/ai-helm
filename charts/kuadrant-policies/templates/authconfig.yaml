@@ -9,30 +9,38 @@ metadata:
   labels:
     {{ include "common.labels.standard" $ | nindent 4 }}
 spec:
-  {{ with $config.hosts }}
+  {{- with $config.hosts }}
   hosts:
     {{- toYaml . | nindent 4 }}
-  {{ end }}
+  {{- end }}
 
-  {{ with $config.authentication }}
+  {{- with $config.authentication }}
   authentication:
     {{- toYaml . | nindent 4 }}
-  {{ end }}
+  {{- end }}
 
-  {{ with $config.metadata }}
+  {{- /* metadata: iterate per-entry so we can honor _skipForServiceAccounts */}}
+  {{- with $config.metadata }}
   metadata:
-    {{- toYaml . | nindent 4 }}
-  {{ end }}
+    {{- range $stepName, $stepCfg := . }}
+    {{ $stepName | quote }}:
+      {{- include "kuadrant-policies.authStep" (dict "step" $stepCfg "saClients" $config.serviceAccountClients) | nindent 6 }}
+    {{- end }}
+  {{- end }}
 
-  {{ with $config.authorization }}
+  {{- /* authorization: same per-entry treatment */}}
+  {{- with $config.authorization }}
   authorization:
-    {{- toYaml . | nindent 4 }}
-  {{ end }}
+    {{- range $stepName, $stepCfg := . }}
+    {{ $stepName | quote }}:
+      {{- include "kuadrant-policies.authStep" (dict "step" $stepCfg "saClients" $config.serviceAccountClients) | nindent 6 }}
+    {{- end }}
+  {{- end }}
 
-  {{ with $config.response }}
+  {{- with $config.response }}
   response:
     {{- toYaml . | nindent 4 }}
-  {{ end }}
+  {{- end }}
 
 {{- end }}
 {{- end }}
