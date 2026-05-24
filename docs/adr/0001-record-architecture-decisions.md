@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-05-24
-**Deciders:** repo maintainers via `claude/magical-bohr-390242`
+**Deciders:** @stephane-segning
 
 ## Context
 

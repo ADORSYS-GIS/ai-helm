@@ -2,7 +2,7 @@
 
 **Status:** Superseded by [ADR-0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) (2026-05-24)
 **Date:** 2026-05-24
-**Deciders:** repo maintainers via `claude/magical-bohr-390242`
+**Deciders:** @stephane-segning
 
 > **Why superseded:** Two assumptions in this ADR did not hold under
 > scrutiny. (1) Humans don't need a CLI — the existing Lightbridge
