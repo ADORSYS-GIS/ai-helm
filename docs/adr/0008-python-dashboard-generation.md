@@ -33,11 +33,19 @@ Adopt a **Python generator** under `tools/dashboards/` that emits
 dashboard JSON to `charts/observability-dashboards/files/<area>/<name>.json`
 (Layout B) and `charts/<chart>/files/dashboards/<name>.json` (Layout A).
 
-**Tool:** `grafana-foundation-sdk-python` — Grafana Labs' official,
+**Tool:** `grafana-foundation-sdk` (Python flavor) — Grafana Labs' official,
 multi-language, typed builder SDK. The 2026 currency audit
 (`docs/2026-currency-audit.md`) confirmed it has overtaken `grafanalib`
-as the dominant Python-for-Grafana approach and is the only path with
-first-party Grafana 12 (CUE-based v2 dashboard schema) support.
+as the dominant Python-for-Grafana approach.
+
+**Version pin (as of 2026-05-24):** `grafana-foundation-sdk==1769699452!11.5.0`.
+PyPI uses a `<epoch>!<grafana-version>` local-version scheme — one
+Python release per Grafana minor. As of audit time, the newest Grafana
+the SDK is published for on PyPI is **11.5.0** (emits dashboard
+`schemaVersion: 39`). No Grafana-12 SDK on PyPI yet; vendor from the
+project's GitHub releases if needed urgently, otherwise wait until the
+grafana chart upgrade (audit task #15) and the SDK both move to 12.x
+together.
 
 Conventions:
 - Project at `tools/dashboards/` with `pyproject.toml` (PEP 621), managed
@@ -78,10 +86,11 @@ Conventions:
   Python source. Helper script can ease this; document it.
 
 **Neutral / follow-ups**
-- The generator's target schema version tracks the cluster's grafana.
-  Today: `schemaVersion: 42` (Grafana 12). Bumping grafana to 12.x (per
-  the audit punch list item #8) and re-emitting all dashboards happen
-  together.
+- The generator's target schema version is whatever the pinned SDK
+  emits. Today: `schemaVersion: 39` (Grafana 11.5). Bumping the SDK
+  pin AND the grafana chart pin (audit task #15) together is the only
+  safe path — generating Grafana 12 dashboards into a Grafana 11
+  instance is asking for migration noise on every reconcile.
 - Eventual successor ADR if a different generator approach proves
   better (e.g. jsonnet via `grafonnet`, or a TypeScript-based emitter
   for parity with frontend tooling). Not on the horizon.

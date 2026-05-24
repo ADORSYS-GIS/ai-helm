@@ -1,0 +1,46 @@
+name: Dashboard drift check
+
+# Guards `charts/observability-dashboards/files/**/*.json` (and any chart-local
+# `files/dashboards/**/*.json`) against drift from their generator sources in
+# `tools/dashboards/`. Fails the PR if a committed JSON differs from what the
+# generator would emit.
+#
+# See: docs/python-dashboard-generation.md, ADR-0008
+
+on:
+  pull_request:
+    paths:
+      - "tools/dashboards/**"
+      - "charts/observability-dashboards/files/**/*.json"
+      - "charts/**/files/dashboards/**/*.json"
+      - ".github/workflows/dashboards-drift.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tools/dashboards/**"
+      - "charts/observability-dashboards/files/**/*.json"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Pin Python
+        run: uv python install 3.12
+
+      - name: Install deps
+        working-directory: tools/dashboards
+        run: uv sync --frozen
+
+      - name: Verify dashboards match generators
+        working-directory: tools/dashboards
+        run: uv run dashboards check

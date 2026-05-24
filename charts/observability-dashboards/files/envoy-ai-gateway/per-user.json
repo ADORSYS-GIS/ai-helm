@@ -1,166 +1,334 @@
 {
-  "title": "AI Gateway — per-user activity",
-  "uid": "envoy-ai-gateway-per-user",
-  "tags": ["ai-gateway", "per-user", "loki"],
-  "timezone": "browser",
-  "schemaVersion": 42,
-  "version": 1,
-  "editable": true,
-  "graphTooltip": 1,
-  "fiscalYearStartMonth": 0,
-  "liveNow": false,
-  "weekStart": "",
-  "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
-  "timepicker": { "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h", "6h"] },
-  "annotations": { "list": [] },
+  "schemaVersion": 39,
   "templating": {
     "list": [
       {
+        "type": "query",
         "name": "azp",
         "label": "Client (azp)",
-        "type": "query",
-        "datasource": { "type": "loki", "uid": "loki" },
-        "query": { "label": "azp", "type": 1 },
-        "definition": "label_values(azp)",
-        "refresh": 2,
+        "skipUrlSync": false,
+        "query": "label_values(azp)",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
         "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
         "includeAll": true,
         "allValue": ".+",
-        "sort": 1,
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
       },
       {
+        "type": "query",
         "name": "user_id",
         "label": "User",
-        "type": "query",
-        "datasource": { "type": "loki", "uid": "loki" },
-        "query": { "label": "user_id", "type": 1 },
-        "definition": "label_values({azp=~\"$azp\"}, user_id)",
-        "refresh": 2,
+        "skipUrlSync": false,
+        "query": "label_values({azp=~\"$azp\"}, user_id)",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
         "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
         "includeAll": true,
         "allValue": ".+",
-        "sort": 1,
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
       },
       {
+        "type": "query",
         "name": "model",
         "label": "Model",
-        "type": "query",
-        "datasource": { "type": "loki", "uid": "loki" },
-        "query": { "label": "gen_ai_request_model", "type": 1 },
-        "definition": "label_values(gen_ai_request_model)",
-        "refresh": 2,
+        "skipUrlSync": false,
+        "query": "label_values(gen_ai_request_model)",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
         "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
         "includeAll": true,
         "allValue": ".+",
-        "sort": 1,
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
       }
     ]
   },
+  "annotations": {},
+  "uid": "envoy-ai-gateway-per-user",
+  "title": "AI Gateway — per-user activity",
+  "description": "Per-user activity for the Envoy AI Gateway. Data flows: JWT -> Authorino response headers (x-cd-user-id, x-cd-azp) -> Envoy access log JSON -> OTLP -> Alloy loki.process 'ai_gateway_user_attribution' -> Loki labels (user_id, azp). See docs/per-user-observability.md. GENERATED — source: tools/dashboards/envoy_ai_gateway/per_user.py.",
+  "tags": [
+    "ai-gateway",
+    "per-user",
+    "loki"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "30s",
   "panels": [
     {
-      "id": 1,
       "type": "stat",
-      "title": "Requests (range)",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "orientation": "horizontal",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue" } ] }
-        }
-      },
       "targets": [
         {
-          "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range]))",
+          "refId": "A",
           "queryType": "range",
-          "instant": false
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
         }
-      ]
-    },
-    {
-      "id": 2,
-      "type": "stat",
-      "title": "Unique users (range)",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      ],
+      "title": "Requests (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "repeatDirection": "h",
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "orientation": "horizontal",
-        "textMode": "auto",
+        "graphMode": "area",
         "colorMode": "value",
-        "graphMode": "area"
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "purple" } ] }
-        }
-      },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
       "targets": [
         {
-          "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "count(sum by (user_id) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range])))",
+          "refId": "A",
           "queryType": "range",
-          "instant": false
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
         }
-      ]
-    },
-    {
-      "id": 3,
-      "type": "stat",
-      "title": "Total tokens (range)",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      ],
+      "title": "Unique users (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "repeatDirection": "h",
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "orientation": "horizontal",
-        "textMode": "auto",
+        "graphMode": "area",
         "colorMode": "value",
-        "graphMode": "area"
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(sum_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap gen_ai_usage_total_tokens [$__range]))",
-          "queryType": "range",
-          "instant": false
-        }
-      ]
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "purple"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
-      "id": 4,
       "type": "stat",
-      "title": "p95 latency (range)",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap gen_ai_usage_total_tokens [$__range]))",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Total tokens (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "repeatDirection": "h",
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "orientation": "horizontal",
-        "textMode": "auto",
+        "graphMode": "area",
         "colorMode": "value",
-        "graphMode": "area"
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "quantile_over_time(0.95, {azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap duration [$__range])",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "p95 latency (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
@@ -168,168 +336,366 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green" },
-              { "color": "orange", "value": 1000 },
-              { "color": "red", "value": 5000 }
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1000.0,
+                "color": "orange"
+              },
+              {
+                "value": 5000.0,
+                "color": "red"
+              }
             ]
           }
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "quantile_over_time(0.95, {azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap duration [$__range])",
-          "queryType": "range",
-          "instant": false
-        }
-      ]
+        },
+        "overrides": []
+      }
     },
     {
-      "id": 5,
       "type": "timeseries",
-      "title": "Requests per user / minute",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 4 },
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never", "stacking": { "mode": "normal" } },
-          "unit": "short"
-        }
-      },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum by (user_id) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [1m]))",
-          "legendFormat": "{{user_id}}",
-          "queryType": "range"
-        }
-      ]
-    },
-    {
-      "id": 6,
-      "type": "table",
-      "title": "Top users by requests",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 13 },
-      "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
-      },
-      "options": { "showHeader": true, "sortBy": [{ "displayName": "Value", "desc": true }] },
-      "targets": [
-        {
           "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "topk(20, sum by (user_id, azp) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range])))",
-          "queryType": "instant",
-          "instant": true
+          "legendFormat": "{{user_id}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
         }
       ],
-      "transformations": [
-        { "id": "labelsToFields", "options": { "valueLabel": "Requests" } },
-        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
-      ]
-    },
-    {
-      "id": 7,
-      "type": "piechart",
-      "title": "Model distribution (selected scope)",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 13 },
-      "options": {
-        "pieType": "donut",
-        "legend": { "displayMode": "table", "placement": "right", "calcs": ["value", "percent"] },
-        "tooltip": { "mode": "single" }
+      "title": "Requests per user / minute",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
       },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (gen_ai_request_model) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range]))",
-          "legendFormat": "{{gen_ai_request_model}}",
-          "queryType": "instant",
-          "instant": true
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
         }
-      ]
-    },
-    {
-      "id": 8,
-      "type": "timeseries",
-      "title": "Latency per user — p50 / p95",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 22 },
+      },
       "fieldConfig": {
         "defaults": {
-          "custom": { "drawStyle": "line", "lineInterpolation": "linear", "fillOpacity": 0, "showPoints": "never" },
-          "unit": "ms"
-        }
-      },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10.0,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
       "targets": [
         {
+          "expr": "topk(20, sum by (user_id, azp) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range])))",
           "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "quantile_over_time(0.50, {azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap duration [5m]) by (user_id)",
-          "legendFormat": "p50 {{user_id}}",
-          "queryType": "range"
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Top users by requests",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "repeatDirection": "h",
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "valueLabel": "Requests"
+          }
         },
         {
-          "refId": "B",
-          "datasource": { "type": "loki", "uid": "loki" },
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ],
+      "options": {
+        "frameIndex": 0,
+        "showHeader": true,
+        "showTypeIcons": false,
+        "sortBy": [
+          {
+            "displayName": "Value",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false,
+          "reducer": [],
+          "countRows": false
+        },
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "type": "piechart",
+      "targets": [
+        {
+          "expr": "sum by (gen_ai_request_model) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range]))",
+          "refId": "A",
+          "legendFormat": "{{gen_ai_request_model}}",
+          "queryType": "instant",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Model distribution (selected scope)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "repeatDirection": "h",
+      "options": {
+        "pieType": "donut",
+        "tooltip": {
+          "mode": "single",
+          "sort": "asc"
+        },
+        "reduceOptions": {
+          "calcs": []
+        },
+        "legend": {
+          "values": [
+            "value",
+            "percent"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": []
+        },
+        "orientation": "auto"
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "quantile_over_time(0.50, {azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap duration [5m]) by (user_id)",
+          "refId": "A",
+          "legendFormat": "p50 {{user_id}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        },
+        {
           "expr": "quantile_over_time(0.95, {azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap duration [5m]) by (user_id)",
+          "refId": "B",
           "legendFormat": "p95 {{user_id}}",
-          "queryType": "range"
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
         }
-      ]
-    },
-    {
-      "id": 9,
-      "type": "timeseries",
-      "title": "Failed requests per user (5xx)",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 31 },
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 0, "stacking": { "mode": "normal" } },
-          "unit": "short"
+      ],
+      "title": "Latency per user — p50 / p95",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
         }
       },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 0.0,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
       "targets": [
         {
-          "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum by (user_id) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | response_code >= 500 [1m]))",
+          "refId": "A",
           "legendFormat": "{{user_id}}",
-          "queryType": "range"
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
         }
-      ]
-    },
-    {
-      "id": 10,
-      "type": "timeseries",
-      "title": "Token usage per user (total)",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 31 },
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 5, "showPoints": "never" },
-          "unit": "short"
+      ],
+      "title": "Failed requests per user (5xx)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "asc"
         }
       },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "mean"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0.0,
+            "fillOpacity": 70.0,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
       "targets": [
         {
-          "refId": "A",
-          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum by (user_id) (sum_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap gen_ai_usage_total_tokens [1m]))",
+          "refId": "A",
           "legendFormat": "{{user_id}}",
-          "queryType": "range"
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
         }
-      ]
+      ],
+      "title": "Token usage per user (total)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": [
+            "sum",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "asc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 5.0,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
     }
-  ],
-  "description": "Per-user activity for the Envoy AI Gateway. Data flows: JWT -> Authorino response headers (x-cd-user-id, x-cd-azp) -> Envoy access log JSON -> OTLP -> Alloy loki.process 'ai_gateway_user_attribution' -> Loki labels (user_id, azp). See docs/per-user-observability.md."
+  ]
 }
