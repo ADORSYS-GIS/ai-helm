@@ -24,8 +24,9 @@ how thinking evolved.
 | [0004](./0004-grafana-operator-external-mode.md) | Adopt grafana-operator in external mode for dashboards-as-code | Accepted | 2026-05-24 | — |
 | [0005](./0005-per-user-attribution-via-authorino-headers.md) | Propagate per-user identity via Authorino response headers → Loki labels | Accepted | 2026-05-24 | — |
 | [0006](./0006-multi-source-applicationset.md) | Migrate charts/apps to a multi-source ApplicationSet (List generator, no-dup) | Proposed | 2026-05-24 | — |
-| [0007](./0007-kc-token-go-cli.md) | Build `kc-token` as a single static Go binary + GH composite action | Proposed | 2026-05-24 | — |
-| [0008](./0008-python-dashboard-generation.md) | Generate Grafana dashboards from Python | Proposed | 2026-05-24 | — |
+| [0007](./0007-kc-token-go-cli.md) | Build `kc-token` as a single static Go binary + GH composite action | Superseded by [0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) | 2026-05-24 | — |
+| [0008](./0008-python-dashboard-generation.md) | Generate Grafana dashboards from Python | Accepted | 2026-05-24 | — |
+| [0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) | AI in CI via Keycloak OIDC token exchange (Python step, shared SA, fork-deny) | Accepted | 2026-05-24 | [0007](./0007-kc-token-go-cli.md) |
 
 ## Status legend
 
