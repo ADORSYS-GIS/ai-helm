@@ -1,8 +1,19 @@
 # ADR-0007: Build `kc-token` as a single static Go binary + GH composite action
 
-**Status:** Proposed
+**Status:** Superseded by [ADR-0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) (2026-05-24)
 **Date:** 2026-05-24
 **Deciders:** repo maintainers via `claude/magical-bohr-390242`
+
+> **Why superseded:** Two assumptions in this ADR did not hold under
+> scrutiny. (1) Humans don't need a CLI — the existing Lightbridge
+> self-service portal (`self-service.ai.camer.digital`,
+> `selfServiceMcpApi` Keycloak client) already issues API keys, so the
+> device-flow rationale evaporated. (2) For CI, client-credentials with
+> a static `client_secret` is the wrong shape — Keycloak OIDC token
+> exchange (RFC 8693) lets us drop the long-lived secret entirely.
+> ADR-0009 captures the replacement: a Python token-exchange step
+> wrapped as a GitHub composite action. The content below is preserved
+> as the historical record.
 
 ## Context
 
