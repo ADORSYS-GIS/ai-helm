@@ -14,9 +14,8 @@ This document outlines the standard operating procedures for configuring and man
 The following clients are managed within this environment:
 *   `coder`
 *   `converse`
-*   `converse-frontend` 
-*   `phoenix` 
-*   `lightbridge-api-key` 
+*   `converse-frontend`
+*   `lightbridge-api-key`
 
 ## 3. Understanding the Audience Claim
 The `aud` (Audience) claim identifies the intended recipients of the JWT. An OAuth 2.0 Resource Server (API) SHOULD verify that the `aud` claim matches its own identifier before accepting a token.
@@ -57,7 +56,7 @@ When disabled, the client is only granted the roles explicitly mapped to it via 
 
 | State | Resulting Audience (Example) |
 | :--- | :--- |
-| **ON** | `["lightbridge-api-key", "converse-frontend", "realm-management", "phoenix", "converse", "account"]` |
+| **ON** | `["lightbridge-api-key", "converse-frontend", "realm-management", "converse", "account"]` |
 | **OFF** | `["lightbridge-api-key", "converse-frontend"]` |
 
 ![Image Placeholder - Full Scope Allowed enabled](./images/full-scope-enabled.png)

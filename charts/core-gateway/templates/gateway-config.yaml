@@ -15,7 +15,7 @@ items:
         kubernetes:
           env:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://core-gateway-phoenix-collector.converse-gateway:4318"
+              value: "http://{{ include "core-gateway.fullname" $ }}-traces-collector.{{ .Release.Namespace }}.svc.cluster.local:4318"
             - name: OTEL_METRICS_EXPORTER
               value: "none"
             - name: OTEL_SERVICE_NAME

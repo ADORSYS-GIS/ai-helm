@@ -1,17 +1,10 @@
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:
-  name: {{ include "core-gateway.fullname" . }}-phoenix
+  name: {{ include "core-gateway.fullname" . }}-traces
   namespace: {{ .Release.Namespace }}
 spec:
   # mode: deployment  # optional; defaults to deployment in most setups
-  env:
-    - name: PHOENIX_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: pheonix-otel-key
-          key: token
-
   config:
     receivers:
       otlp:
@@ -25,15 +18,7 @@ spec:
       batch: { }
 
     exporters:
-      # Phoenix HTTP ingest endpoint:
-      # - If Phoenix is inside the cluster, keep http://
-      otlphttp/phoenix:
-        endpoint: "http://phoenix-svc.converse-monitoring.svc.cluster.local:6006"
-        headers:
-          # Phoenix docs: Bearer auth; lowercase header for compatibility.
-          authorization: "Bearer ${env:PHOENIX_API_KEY}"
-
-      # Fan traces out to Grafana Alloy as well, which forwards them to Tempo.
+      # Forward traces to Grafana Alloy, which fans out to Tempo.
       otlp/alloy:
         endpoint: "alloy.observability.svc.cluster.local:4317"
         tls:
@@ -49,7 +34,6 @@ spec:
           processors:
             - batch
           exporters:
-            - otlphttp/phoenix
             - otlp/alloy
             - debug
 ---
