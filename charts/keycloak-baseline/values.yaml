@@ -87,27 +87,6 @@ keycloak-config:
 
   # Client Scopes with Protocol Mappers
   clientScopes:
-    phoenix:
-      name: "phoenix"
-      description: ""
-      protocol: "openid-connect"
-      attributes:
-        include.in.token.scope: "false"
-        display.on.consent.screen: "true"
-      protocolMappers:
-        - name: phoenix_role
-          protocol: "openid-connect"
-          protocolMapper: "oidc-usermodel-client-role-mapper"
-          consentRequired: false
-          config:
-            introspection.token.claim: "true"
-            multivalued: "false"
-            userinfo.token.claim: "true"
-            id.token.claim: "true"
-            access.token.claim: "true"
-            claim.name: "phoenix_role"
-            jsonType.label: "String"
-            usermodel.clientRoleMapping.clientId: "phoenix"
     librechat:
       name: "librechat"
       description: ""
@@ -132,46 +111,6 @@ keycloak-config:
 
   # OIDC Clients
   clients:
-    phoenix:
-      enabled: true
-      clientId: "phoenix"
-      name: "Phoenix"
-      description: ""
-      publicClient: false
-      standardFlowEnabled: true
-      implicitFlowEnabled: false
-      directAccessGrantsEnabled: false
-      serviceAccountsEnabled: false
-      redirectUris:
-        - "*"
-        - "/*"
-      webOrigins: []
-      rootUrl: "https://analytics.ai.camer.digital"
-      baseUrl: "/"
-      frontchannelLogout: true
-      defaultClientScopes:
-        - web-origins
-        - acr
-        - phoenix
-        - profile
-        - roles
-        - basic
-        - email
-      optionalClientScopes:
-        - address
-        - phone
-        - organization
-        - offline_access
-        - microprofile-jwt
-      # Client roles
-      roles:
-        - name: "admin"
-          description: ""
-        - name: "viewer"
-          description: ""
-        - name: "user"
-          description: ""
-
     converse:
       enabled: true
       clientId: "converse"
@@ -195,7 +134,6 @@ keycloak-config:
         - basic
         - email
       optionalClientScopes:
-        - phoenix
         - address
         - phone
         - organization
@@ -233,7 +171,6 @@ keycloak-config:
         - basic
         - email
       optionalClientScopes:
-        - phoenix
         - address
         - librechat
         - phone
@@ -265,7 +202,6 @@ keycloak-config:
         - basic
         - email
       optionalClientScopes:
-        - phoenix
         - address
         - librechat
         - phone
@@ -296,7 +232,6 @@ keycloak-config:
         - basic
         - email
       optionalClientScopes:
-        - phoenix
         - address
         - librechat
         - phone
@@ -328,7 +263,6 @@ keycloak-config:
         - basic
         - email
       optionalClientScopes:
-        - phoenix
         - address
         - librechat
         - phone
@@ -360,7 +294,6 @@ keycloak-config:
         - basic
         - email
       optionalClientScopes:
-        - phoenix
         - address
         - librechat
         - phone
@@ -393,30 +326,6 @@ keycloak-config:
       clientRoles:
         converse:
           - user
-
-    phoenixAdmin:
-      enabled: true
-      name: "PhoenixAdmin"
-      realmRoles: []
-      clientRoles:
-        phoenix:
-          - admin
-
-    phoenixUser:
-      enabled: true
-      name: "PhoenixUser"
-      realmRoles: []
-      clientRoles:
-        phoenix:
-          - user
-
-    phoenixViewer:
-      enabled: true
-      name: "PhoenixViewer"
-      realmRoles: []
-      clientRoles:
-        phoenix:
-          - viewer
 
 # Keycloak config-sync CronJob (app-template dependency)
 # =====================================================

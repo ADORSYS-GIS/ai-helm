@@ -3011,55 +3011,9 @@ applications:
     destination:
       namespace: converse
 
-  # --- LibreChat & Phoenix ---
-  - name: phoenix
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: oci://registry-1.docker.io/arizephoenix/phoenix-helm
-      targetRevision: 4.0.36
-      path: .
-      helm:
-        releaseName: phoenix
-        valuesObject:
-          persistence:
-            storageClass: linode-block-storage
-          service:
-            type: "ClusterIP"
-          ingress:
-            host: "analytics.ai.camer.digital"
-            annotations:
-              cert-manager.io/cluster-issuer: cert-home-cert-http
-            tls:
-              enabled: true
-          additionalEnv:
-            - name: PHOENIX_OAUTH2_KEYCLOAK_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: converse-phoenix-keycloak
-                  key: client_secret
-          auth:
-            disableBasicAuth: true
-            useSecureCookies: true
-            createSecret: false
-            name: "converse-phoenix"
-            oauth2:
-              enabled: true
-              providers:
-                keycloak:
-                  client_id: "phoenix"
-                  oidc_config_url: "https://auth.verif.fyi/realms/camer-digital/.well-known/openid-configuration"
-                  display_name: "CDigital"
-                  allow_sign_up: true
-                  auto_login: true
-                  role_attribute_path: "phoenix_role"
-                  role_mapping: "admin:ADMIN,user:MEMBER,viewer:VIEWER"
-                  role_attribute_strict: true
-                  use_pkce: true
-                  scopes: "openid phoenix"
-    destination:
-      namespace: converse-monitoring
-
+  # --- LibreChat ---
+  # NOTE: Phoenix (Arize) was removed; tracing is now served by Grafana Tempo
+  # via the core-gateway `-traces` OpenTelemetryCollector -> Alloy -> Tempo path.
   - name: librechat
     finalizers:
       - resources-finalizer.argocd.argoproj.io

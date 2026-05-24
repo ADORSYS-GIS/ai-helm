@@ -21,7 +21,7 @@ Grafana were fine; nothing was being fed into them correctly.
 | 1 | **No cluster metric sources deployed.** Alloy only discovered ServiceMonitors. There was no kube-state-metrics, no node-exporter, and no kubelet/cAdvisor scrape anywhere in the repo. | The entire Kubernetes folder (Global/Nodes/Pods/Namespaces) and most of the Infrastructure folder had no `node_*`, `kube_*`, or `container_*` series to draw from — hence all `N/A`. |
 | 2 | **Alloy clustering bug.** Alloy runs as a DaemonSet with clustering enabled globally, but `prometheus.operator.servicemonitors` had no `clustering {}` block. Every Alloy pod scraped every target and shipped duplicate samples. | Mimir rejected duplicate/out-of-order samples. The `out_of_order_time_window: 10m` in the Mimir config was a band-aid for exactly this. Even the stack's own dashboards (Mimir Overview, Alloy Metrics) were unreliable. |
 | 3 | **Alloy never exposed its OTLP ports.** The Alloy config opened OTLP listeners on 4317/4318, but `alloy.extraPorts` was not set, so the Alloy Service did not expose them. | Nothing could send traces/logs to Alloy at `alloy.observability.svc:4317`. Tempo could never receive traces through Alloy. |
-| 4 | **The existing OTel collectors did not forward to the stack.** The two `OpenTelemetryCollector` CRs in `core-gateway` (the Phoenix traces collector and the Lightbridge usage logs collector) exported only to Phoenix / Lightbridge. | Traces and logs flowing through those collectors never reached Tempo or Loki. |
+| 4 | **The existing OTel collectors did not forward to the stack.** The two `OpenTelemetryCollector` CRs in `core-gateway` (the traces collector — formerly named `*-phoenix`, since renamed to `*-traces` after the Phoenix removal — and the Lightbridge usage logs collector) exported only to Phoenix / Lightbridge. | Traces and logs flowing through those collectors never reached Tempo or Loki. |
 
 ### A note on `metrics-server` vs `kube-state-metrics`
 
@@ -102,9 +102,10 @@ All changes are GitOps — commit, push, and ArgoCD reconciles. No `kubectl appl
 
 ### 2.3 `charts/core-gateway/templates/otel.yaml` — OTel collectors fan out to Alloy
 
-- **Phoenix collector** (`*-phoenix`, traces): added an `otlp/alloy` exporter
-  pointing at `alloy.observability.svc.cluster.local:4317` and added it to the
-  `traces` pipeline. Traces now go to Phoenix **and** to Alloy → Tempo.
+- **Traces collector** (`*-traces`, formerly `*-phoenix`): added an `otlp/alloy`
+  exporter pointing at `alloy.observability.svc.cluster.local:4317` and added it
+  to the `traces` pipeline. Traces now go to Alloy → Tempo only (Phoenix has
+  since been removed from the stack).
 - **Usage collector** (`*-usage`, logs): same `otlp/alloy` exporter added to the
   `logs` pipeline. Logs now go to Lightbridge **and** to Alloy → Loki.
 

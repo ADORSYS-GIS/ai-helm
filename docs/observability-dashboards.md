@@ -160,21 +160,23 @@ immediately visible to end users.
 
 ---
 
-### 2.4 Phoenix (Analytics / Arize)
+### 2.4 LLM tracing (Tempo)
 
-**What it is:** LLM observability platform for tracing AI model calls.
+**What it is:** LLM call traces collected by the core-gateway `-traces`
+OpenTelemetryCollector, forwarded via Alloy into Tempo, queried in Grafana
+(datasource `tempo`, `http://tempo.observability.svc.cluster.local:3100`).
 
-**Current state:** No Grafana dashboards (Phoenix has its own UI at
-`analytics.ai.camer.digital`).
+**Previous state:** Until 2026-Q2 this role was served by Arize Phoenix at
+`analytics.ai.camer.digital`. Phoenix has been removed; all LLM observability
+now lives in Grafana on top of Tempo.
 
 **Instrumentation plan:**
 
-1. Phoenix exposes Prometheus metrics. Add a `ServiceMonitor` for the Phoenix
-   service and use gnetId `21694` (Phoenix / LLM Observability) if available,
-   or build a custom dashboard tracking:
-   - LLM trace ingestion rate
-   - Evaluation scores over time
-   - Model latency distribution
+1. Use Grafana's built-in Tempo "Service Graph" + "Explore" for ad-hoc.
+2. Build a saved dashboard tracking:
+   - LLM trace ingestion rate (TraceQL `{ resource.service.name=~".+" } | rate()`)
+   - Per-model latency p50/p95/p99
+   - Error spans by model and backend
 
 ---
 
@@ -266,7 +268,6 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 | 🟡 Medium | Authorino | Low | Auth latency directly affects API response time |
 | 🟡 Medium | Coder | Low | ServiceMonitor already supported upstream |
 | 🟢 Low | Converse UI (nginx) | Low | Frontend availability signal |
-| 🟢 Low | Phoenix | Low | Has its own UI; Grafana integration is additive |
 | 🟢 Low | OpenCode Agent | Low | Operational nicety, not critical path |
 
 ---
