@@ -12,6 +12,11 @@ concurrency:
   group: opencode-review-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
+# Team default: zsh over bash. See dashboards-drift.yml for the rationale.
+defaults:
+  run:
+    shell: zsh -eo pipefail {0}
+
 jobs:
   detect-trigger:
     runs-on: ubuntu-latest
