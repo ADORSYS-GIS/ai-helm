@@ -1,0 +1,20 @@
+apiVersion: v2
+name: observability-dashboards
+description: |
+  Ships Grafana custom resources (Grafana, GrafanaFolder, GrafanaDashboard,
+  GrafanaDatasource, GrafanaContactPoint, GrafanaAlertRuleGroup) for the
+  cluster's existing Grafana instance, managed by the grafana-operator.
+
+  This chart owns ONLY operator CRs — never Deployments, Services, or
+  ConfigMaps. The actual Grafana workload is owned by the `grafana` app
+  (vanilla grafana/grafana chart) at sync-wave 0; this chart sits at
+  sync-wave 1 and points at it via an external-mode Grafana CR.
+type: application
+version: 0.1.0
+appVersion: "5.18.0"   # tracks the grafana-operator API the CRs target
+keywords:
+  - grafana
+  - observability
+  - dashboards
+maintainers:
+  - name: ai-helm

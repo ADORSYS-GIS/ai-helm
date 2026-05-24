@@ -1,0 +1,35 @@
+# Pointer to the existing Grafana the operator should manage in EXTERNAL mode.
+# We do not let the operator stand up a new Grafana — the `grafana` Application
+# (vanilla grafana/grafana chart) already runs one with OIDC/datasources/etc.
+grafana:
+  # Unique name for the Grafana CR; CRs target it via instanceSelector.
+  name: grafana-external
+  # In-cluster URL of the existing grafana Service.
+  url: http://grafana.observability.svc.cluster.local
+  # Secret holding admin credentials (must already exist; created by the
+  # `grafana` app via grafana-admin ExternalSecret).
+  adminSecret:
+    name: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  # Label every Grafana CR carries. GrafanaDashboard / GrafanaFolder CRs match
+  # against this via `spec.instanceSelector.matchLabels.dashboards: <value>`.
+  instanceLabel:
+    key: dashboards
+    value: grafana-external
+
+# Initial folder set. Each folder becomes a GrafanaFolder CR; dashboards
+# placed in a folder reference it by `spec.folderRef`.
+# Add new folders here as new dashboard areas appear.
+folders:
+  - name: ai-gateway
+    title: "AI Gateway"
+  - name: applications
+    title: "Applications"
+  - name: gitops
+    title: "GitOps"
+
+# Future: dashboards, datasources, contactPoints, alertRules can land here.
+# Kept empty for now — the operator install is the load-bearing change.
+dashboards: []
+datasources: []
