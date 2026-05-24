@@ -27,6 +27,7 @@ how thinking evolved.
 | [0007](./0007-kc-token-go-cli.md) | Build `kc-token` as a single static Go binary + GH composite action | Superseded by [0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) | 2026-05-24 | — |
 | [0008](./0008-python-dashboard-generation.md) | Generate Grafana dashboards from Python | Accepted | 2026-05-24 | — |
 | [0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) | AI in CI via Keycloak OIDC token exchange (Python step, shared SA, fork-deny) | Accepted | 2026-05-24 | [0007](./0007-kc-token-go-cli.md) |
+| [0010](./0010-argocd-image-updater-writeback-to-ai-gitops.md) | argocd-image-updater with git write-back to `ai-gitops` (PR + auto-merge, GitHub App auth, once per Application) | Accepted | 2026-05-24 | — |
 
 ## Status legend
 
