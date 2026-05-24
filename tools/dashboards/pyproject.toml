@@ -1,0 +1,57 @@
+[project]
+name = "ai-helm-dashboards"
+version = "0.1.0"
+description = "Python dashboard generators for ai-helm's Grafana instance. Emits JSON consumed by the grafana-operator GrafanaDashboard CRs."
+requires-python = ">=3.12"
+readme = "README.md"
+license = { text = "MIT" }
+# SDK has no runtime dependencies. The PyPI package uses a local-version
+# identifier of the form `<epoch>!<grafana-version>` — pinning to a specific
+# Grafana release. Grafana 12 SDKs are not yet published to PyPI as of
+# 2026-05-24, so we pin the latest Grafana-11.x SDK (emits schemaVersion 39).
+# Bump when:
+#   - A 12.x SDK lands on PyPI, AND
+#   - The grafana chart in charts/apps/values.yaml moves to a 12.x line
+#     (audit task #15).
+# Both should happen together to avoid generated dashboards ahead of the
+# Grafana version actually running.
+dependencies = [
+    "grafana-foundation-sdk==1769699452!11.5.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.4.0",
+    # ty (Python type checker, beta) — opt-in once it stabilises:
+    # "ty>=0.1.0",
+]
+
+[project.scripts]
+# Run with:  uv run dashboards [build|check]
+dashboards = "dashboards.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dashboards"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Default + a few sensible extras.
+select = ["E", "F", "I", "W", "B", "UP", "RUF"]
+ignore = [
+    "E501",  # line length is handled by formatter
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.uv]
+# Reproducible installs via uv.lock (checked into git).
+managed = true
