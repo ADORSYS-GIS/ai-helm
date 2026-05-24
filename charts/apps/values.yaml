@@ -2226,16 +2226,20 @@ applications:
                       ip:
                         selector: "context.request.http.headers.x-forwarded-for"
                     contentType: "application/json"
-              authorization:
-                "enforce-valid-key":
-                  # Depends on the lightbridge-validation metadata above;
-                  # skipped together for SAs.
-                  _skipForServiceAccounts: true
-                  patternMatching:
-                    patterns:
-                      - selector: "auth.metadata.lightbridge-validation.project.id"
-                        operator: "neq"
-                        value: ""
+              # The `enforce-valid-key` authorization step was disabled in
+              # commit db36eeb ("chore: authorization"). When re-enabling,
+              # keep `_skipForServiceAccounts: true` so SA tokens bypass the
+              # check — they have no lightbridge API key, so the metadata
+              # call upstream is also skipped (see ADR-0003 and
+              # docs/authorino-service-account-bypass.md).
+              #authorization:
+              #  "enforce-valid-key":
+              #    _skipForServiceAccounts: true
+              #    patternMatching:
+              #      patterns:
+              #        - selector: "auth.metadata.lightbridge-validation.project.id"
+              #          operator: "neq"
+              #          value: ""
               response:
                 success:
                   dynamicMetadata:
