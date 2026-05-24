@@ -86,7 +86,11 @@ jobs:
           git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf https://github.com/
 
       - name: Run OpenCode Review
-        uses: anomalyco/opencode/github@latest
+        # Pinned 2026-05-24. `@latest` is not a real Git ref — GitHub resolves
+        # it as a literal branch/tag named "latest" (or silently fails). Third-
+        # party action invoked with repo-write scopes; pinning is a supply-chain
+        # control. Bump deliberately and verify the release notes.
+        uses: anomalyco/opencode/github@v1.15.10
         env:
           LIGHTBRIDGE_API_KEY: ${{ secrets.LIGHTBRIDGE_API_KEY }}
           LIGHTBRIDGE_BASE_URL: ${{ vars.LIGHTBRIDGE_BASE_URL }}
