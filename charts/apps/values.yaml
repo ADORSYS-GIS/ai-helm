@@ -382,6 +382,39 @@ applications:
                 }
 
                 otelcol.exporter.loki "default" {
+                  // Route OTel logs through a per-user-attribution stage so
+                  // dashboards can break down by Keycloak user_id / azp.
+                  // See docs/per-user-observability.md.
+                  forward_to = [loki.process.ai_gateway_user_attribution.receiver]
+                }
+
+                // Promote selected JSON fields from Envoy AI Gateway access
+                // logs into Loki labels.
+                //
+                // Cardinality budget:
+                //   user_id  — Keycloak `sub` (UUID per user). Bounded by
+                //              user count; safe up to a few thousand.
+                //   azp      — Keycloak client_id. Bounded by client count
+                //              (<20 today). Very cheap.
+                //
+                // user_name is intentionally NOT promoted (display field).
+                // Lines without these fields (e.g. non-gateway logs flowing
+                // through the same OTLP receiver) pass through unchanged —
+                // stage.json silently no-ops on missing keys, and
+                // stage.labels skips empty values.
+                loki.process "ai_gateway_user_attribution" {
+                  stage.json {
+                    expressions = {
+                      user_id = "user_id",
+                      azp     = "azp",
+                    }
+                  }
+                  stage.labels {
+                    values = {
+                      user_id = "user_id",
+                      azp     = "azp",
+                    }
+                  }
                   forward_to = [loki.write.default.receiver]
                 }
 
@@ -2230,6 +2263,28 @@ applications:
                     "x-api-key-status":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.api_key.status"
+                    # Per-user attribution headers — populated for every
+                    # authenticated request (human OR service account).
+                    # Consumed by the Envoy access-log JSON (envoy-proxy.yaml)
+                    # and promoted to Loki labels by Alloy.
+                    # See: docs/per-user-observability.md
+                    "x-cd-user-id":
+                      plain:
+                        # JWT `sub` — Keycloak user UUID. Stable per identity.
+                        selector: "auth.identity.sub"
+                    "x-cd-user-name":
+                      plain:
+                        # `preferred_username` — for humans: their login; for
+                        # SAs: literally `service-account-<clientid>`.
+                        # Carried for display only; NOT promoted to a Loki
+                        # label (cardinality).
+                        selector: "auth.identity.preferred_username"
+                    "x-cd-azp":
+                      plain:
+                        # Authorized Party — the Keycloak client_id that
+                        # requested the token. Cheap label, bounded by the
+                        # number of registered clients.
+                        selector: "auth.identity.azp"
 
     destination:
       namespace: converse-gateway
