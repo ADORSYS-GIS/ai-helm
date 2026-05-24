@@ -29,7 +29,14 @@ folders:
   - name: gitops
     title: "GitOps"
 
-# Future: dashboards, datasources, contactPoints, alertRules can land here.
-# Kept empty for now — the operator install is the load-bearing change.
-dashboards: []
+# Dashboards. Each entry becomes one GrafanaDashboard CR. Supply the JSON via
+# `file:` (preferred — keeps the source diffable in git), `json:` (inline) or
+# `jsonRef:` (ConfigMap reference). See templates/dashboards.yaml.
+dashboards:
+  - name: envoy-ai-gateway-per-user
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/per-user.json
+    resyncPeriod: 5m
+
+# Future: datasources, contactPoints, alertRules can land here.
 datasources: []

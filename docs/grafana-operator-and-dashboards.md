@@ -73,32 +73,33 @@ This is the bjw-s app-template extension pattern — dashboards are "Source C" i
 
 ### Layout B — central (this chart)
 
-For cross-app dashboards (per-user AI Gateway view, total cost per user, GitOps overview). They ship via `charts/observability-dashboards`, with the dashboard JSON committed under `dashboards/<area>/<name>.json` and referenced from `values.yaml`:
+For cross-app dashboards (per-user AI Gateway view, total cost per user, GitOps overview). They ship via `charts/observability-dashboards`, with the dashboard JSON committed under `charts/observability-dashboards/files/<area>/<name>.json` (read via Helm's `.Files.Get`) and referenced from `values.yaml`:
 
 ```yaml
 # charts/observability-dashboards/values.yaml
 dashboards:
   - name: envoy-ai-gateway-per-user
     folderRef: ai-gateway
-    json: |
-      { ... full dashboard JSON ... }
+    file: files/envoy-ai-gateway/per-user.json
+    resyncPeriod: 5m
 ```
 
-The JSON should live as a file checked into git (e.g. `dashboards/envoy-ai-gateway/per-user.json`) and be `include`'d into values via a Helm helper, or kept inline if short. (Today the chart accepts inline `json:` or a ConfigMap ref via `jsonRef.configMapRef`.)
+The chart template accepts exactly one of `file:` (read from chart's `files/`), `json:` (inline string, only for trivial dashboards), or `jsonRef.configMapRef`. The template will `fail` at render time if more than one or none are set.
 
-> **Convention:** dashboard JSON files live under `dashboards/<area>/<name>.json`, NOT inside chart `templates/`. Templates contain the CR wrapper only.
+> **Convention:** dashboard JSON files live under `charts/observability-dashboards/files/<area>/<name>.json`, alongside a short `README.md` per dashboard describing its panels and data path. Templates contain the CR wrapper only.
 
 ## Authoring a new dashboard
 
 1. Build it in Grafana (or copy an upstream JSON).
-2. Export → "View JSON". Save under `dashboards/<area>/<name>.json`.
+2. Export → "View JSON". Save under `charts/observability-dashboards/files/<area>/<name>.json` (Layout B) or `charts/<chart>/files/dashboards/<name>.json` (Layout A).
 3. **Strip these** before committing:
    - `id` (Grafana will assign one)
-   - `uid` (set it explicitly to a stable string in the file, not the auto-generated one)
-   - any `__inputs` and `__elements` blocks from a fresh import
-4. Replace datasource references with **uid** references that match the in-cluster datasources (`mimir`, `loki`, `tempo`, `alertmanager`).
-5. Add a `GrafanaDashboard` entry — choose Layout A or B.
-6. Open a PR with `helm template` output in the description so reviewers can diff the CR.
+   - `__inputs` and `__elements` blocks from a fresh import
+4. Set `uid` to a stable, descriptive string (e.g. `envoy-ai-gateway-per-user`). Bookmark URLs depend on the uid — never change it after publishing.
+5. Replace datasource references with **uid** references that match the in-cluster datasources (`mimir`, `loki`, `tempo`, `alertmanager`).
+6. Add a `GrafanaDashboard` entry in the relevant chart's `values.yaml` referring to the file.
+7. Drop a `README.md` next to the JSON describing each panel and its data path (see `charts/observability-dashboards/files/envoy-ai-gateway/README.md` for the template).
+8. Open a PR with `helm template` output in the description so reviewers can diff the CR.
 
 ## Adding a folder
 
@@ -151,10 +152,10 @@ charts/observability-dashboards/
     grafana-external.yaml              # Grafana CR (external mode)
     folders.yaml                       # GrafanaFolder CRs (range over values.folders)
     dashboards.yaml                    # GrafanaDashboard CRs (range over values.dashboards)
-
-dashboards/                            # JSON sources (one file per dashboard)
-  envoy-ai-gateway/
-    per-user.json                      # populated in task #7
+  files/                               # dashboard JSON, read via .Files.Get
+    envoy-ai-gateway/
+      per-user.json                    # first dashboard (task #7)
+      README.md                        # one per dashboard, describing panels + data path
 
 docs/grafana-operator-and-dashboards.md  # this file
 ```
