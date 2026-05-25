@@ -32,7 +32,7 @@ and model.
 The dashboard relies on labels added by the per-user attribution pipeline:
 
 ```
-JWT → Authorino response headers (x-cd-user-id, x-cd-azp)
+JWT → Authorino response headers (x-oidc-user-id, x-oidc-azp; full x-oidc-* contract in ADR-0011)
     → Envoy access-log JSON (user_id, azp fields)
     → OTLP → -usage-collector → Alloy
     → loki.process "ai_gateway_user_attribution"

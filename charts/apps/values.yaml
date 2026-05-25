@@ -2274,28 +2274,72 @@ applications:
                     "x-api-key-status":
                       plain:
                         selector: "auth.metadata.lightbridge-validation.api_key.status"
-                    # Per-user attribution headers — populated for every
-                    # authenticated request (human OR service account).
-                    # Consumed by the Envoy access-log JSON (envoy-proxy.yaml)
-                    # and promoted to Loki labels by Alloy.
-                    # See: docs/per-user-observability.md
-                    "x-cd-user-id":
+                    # ── x-oidc-* downstream header contract (ADR-0011) ────
+                    # Set on every successful auth, for both human and SA tokens.
+                    # Envoy access-log JSON sink reads these via %REQ(...)%
+                    # (envoy-proxy.yaml); Alloy promotes user_id + azp to
+                    # Loki labels (ADR-0005). The remaining headers ride in
+                    # the access-log body and are queried via LogQL `| json`.
+                    # See: docs/per-user-observability.md, ADR-0011
+                    #
+                    # IDENTITY — who made the request
+                    "x-oidc-user-id":
                       plain:
                         # JWT `sub` — Keycloak user UUID. Stable per identity.
                         selector: "auth.identity.sub"
-                    "x-cd-user-name":
+                    "x-oidc-user-name":
                       plain:
-                        # `preferred_username` — for humans: their login; for
-                        # SAs: literally `service-account-<clientid>`.
-                        # Carried for display only; NOT promoted to a Loki
-                        # label (cardinality).
+                        # `preferred_username` — for humans: their login;
+                        # for SAs: `service-account-<clientid>`.
+                        # Carried in the body; NOT a Loki label (cardinality).
                         selector: "auth.identity.preferred_username"
-                    "x-cd-azp":
+                    "x-oidc-azp":
                       plain:
                         # Authorized Party — the Keycloak client_id that
-                        # requested the token. Cheap label, bounded by the
-                        # number of registered clients.
+                        # requested the token. Bounded by registered client
+                        # count; promoted to a Loki label.
                         selector: "auth.identity.azp"
+                    "x-oidc-iss":
+                      plain:
+                        # Issuer URL. Multi-realm future-proofing; today one
+                        # realm so the value is constant.
+                        selector: "auth.identity.iss"
+                    #
+                    # AUTHORIZATION — what the caller is allowed to do
+                    "x-oidc-roles-realm":
+                      plain:
+                        # `realm_access.roles` — realm-level role array,
+                        # JSON-encoded. Bounded by realm role count.
+                        selector: "auth.identity.realm_access.roles"
+                    "x-oidc-resource-access":
+                      plain:
+                        # Full `resource_access` map, JSON-encoded — gives
+                        # downstream services per-client role visibility
+                        # without coordinating which client the gateway pins
+                        # to. Format: {"converse":["admin"], "phoenix":[...]}
+                        selector: "auth.identity.resource_access"
+                    "x-oidc-scope":
+                      plain:
+                        # OAuth scopes granted, space-separated as per spec.
+                        selector: "auth.identity.scope"
+                    #
+                    # TRACING — request-level correlation
+                    "x-oidc-jti":
+                      plain:
+                        # JWT ID. Per-request unique; pair with x-request-id
+                        # for cross-system tracing. Body only — NEVER a label.
+                        selector: "auth.identity.jti"
+                    #
+                    # PROFILE (PII) — opt-in per ADR-0011; downstream services
+                    # that surface these in their own logs MUST treat them as
+                    # PII (redact, restrict, expire). Empty for SA tokens.
+                    "x-oidc-email":
+                      plain:
+                        selector: "auth.identity.email"
+                    "x-oidc-name":
+                      plain:
+                        # Full display name, e.g. "Stephane Segning".
+                        selector: "auth.identity.name"
 
     destination:
       namespace: converse-gateway

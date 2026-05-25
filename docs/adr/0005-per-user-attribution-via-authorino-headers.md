@@ -3,6 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-05-24
 **Deciders:** @stephane-segning
+**Supplemented by:** [ADR-0011](./0011-oidc-downstream-headers.md) — header prefix renamed `x-cd-*` → `x-oidc-*`, header inventory expanded (roles, scope, jti, email, name). The propagation pipeline (this ADR) is unchanged; the payload contract is now in ADR-0011.
 
 ## Context
 

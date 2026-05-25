@@ -16,10 +16,18 @@ authenticated user.
                             │  Authorino (kuadrant-policies) │
                             │  AuthConfig: api-https / main  │
                             └──────────────┬─────────────────┘
-                                           │  on success, set headers:
-                                           │    x-cd-user-id   ← auth.identity.sub
-                                           │    x-cd-user-name ← auth.identity.preferred_username
-                                           │    x-cd-azp       ← auth.identity.azp
+                                           │  on success, set headers
+                                           │  (ADR-0011 x-oidc-* contract):
+                                           │    x-oidc-user-id   ← auth.identity.sub
+                                           │    x-oidc-user-name ← auth.identity.preferred_username
+                                           │    x-oidc-azp       ← auth.identity.azp
+                                           │    x-oidc-iss       ← auth.identity.iss
+                                           │    x-oidc-roles-realm
+                                           │    x-oidc-resource-access
+                                           │    x-oidc-scope
+                                           │    x-oidc-jti
+                                           │    x-oidc-email     ← (PII)
+                                           │    x-oidc-name      ← (PII)
                                            ▼
                             ┌────────────────────────────────┐
                             │  Envoy access log (JSON sink)  │
@@ -54,7 +62,7 @@ authenticated user.
 
 | Step | File | Change |
 |---|---|---|
-| Authorino emits the three headers | `charts/apps/values.yaml` `security-policies.authConfigs.main.response.success.headers` | New entries `x-cd-user-id` / `x-cd-user-name` / `x-cd-azp` |
+| Authorino emits the OIDC header set (ADR-0011) | `charts/apps/values.yaml` `security-policies.authConfigs.main.response.success.headers` | Entries `x-oidc-user-id`, `x-oidc-user-name`, `x-oidc-azp`, `x-oidc-iss`, `x-oidc-roles-realm`, `x-oidc-resource-access`, `x-oidc-scope`, `x-oidc-jti`, `x-oidc-email`, `x-oidc-name` |
 | Envoy access log carries them through | `charts/core-gateway/templates/envoy-proxy.yaml` `telemetry.accessLog.settings[0].format.json` | New fields `user_id` / `user_name` / `azp` |
 | OTel collector forwards to Alloy | `charts/core-gateway/templates/otel.yaml` `-usage` collector | Unchanged — already forwards to `otlp/alloy` |
 | Alloy promotes JSON fields to Loki labels | `charts/apps/values.yaml` Alloy `extraConfig` | New `loki.process "ai_gateway_user_attribution"` stage between `otelcol.exporter.loki` and `loki.write.default` |
@@ -86,9 +94,12 @@ SAs get the same three headers as humans, with the following semantics:
 
 | Header | Human token | SA token |
 |---|---|---|
-| `x-cd-user-id` | Keycloak user UUID | The SA's internal user UUID (Keycloak auto-creates a user behind every SA client) |
-| `x-cd-user-name` | `alice` | `service-account-adorsys-gis-github-ci` |
-| `x-cd-azp` | `converse-frontend` etc. | `adorsys-gis-github-ci`, `lightbridge-api-key`, … |
+| `x-oidc-user-id` | Keycloak user UUID | The SA's internal user UUID (Keycloak auto-creates a user behind every SA client) |
+| `x-oidc-user-name` | `alice` | `service-account-adorsys-gis-github-ci` |
+| `x-oidc-azp` | `converse-frontend` etc. | `adorsys-gis-github-ci`, `lightbridge-api-key`, … |
+| `x-oidc-email` | `alice@example.com` | empty |
+| `x-oidc-name` | `Alice Lastname` | empty |
+| `x-oidc-resource-access` | `{"converse":["admin"],"phoenix":["admin"],...}` | `{"<sa-client-id>":["uma_protection"],"account":[...]}` |
 
 To filter human-only or SA-only in dashboards, use the `azp` label and the
 allowlist from `docs/authorino-service-account-bypass.md`:
@@ -160,7 +171,7 @@ sum by (gen_ai_request_model) (
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `user_id` label present but empty | Authorino didn't set the header for this request | Was the request authenticated? Check Authorino logs — selector `auth.identity.sub` resolves to empty for unauthenticated requests |
-| `user_id` label absent entirely on AI Gateway logs | Alloy stage isn't seeing the field | `kubectl logs -n observability daemonset/alloy` and look for parse errors; verify the access-log JSON contains `"user_id":` (not `"x-cd-user-id":`) |
+| `user_id` label absent entirely on AI Gateway logs | Alloy stage isn't seeing the field | `kubectl logs -n observability daemonset/alloy` and look for parse errors; verify the access-log JSON contains `"user_id":` (not the header name `"x-oidc-user-id":`) |
 | Header reaches the upstream but no Loki label | Access log not flowing through the OTel collector | Check the `-usage` collector pod logs; ensure it's healthy and exporting to `alloy.observability.svc:4317` |
 | SA tokens missing labels too | `auth.identity.sub` selector returns empty for some tokens | Some Keycloak realm configs hide `sub` on SA tokens. Switch the selector to `auth.identity.<claim-actually-present>` and update this doc |
 | All requests label as same user | Authorino is using the wrong identity source | Confirm the AuthConfig `authentication.keycloak.jwt.issuerUrl` matches the realm issuing the tokens you're sending |
