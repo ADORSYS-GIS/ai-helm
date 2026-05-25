@@ -373,9 +373,9 @@ def _panel_token_usage() -> timeseries.Panel:
 
 _DESCRIPTION = (
     "Per-user activity for the Envoy AI Gateway. "
-    "Data flows: JWT -> Authorino response headers (x-cd-user-id, x-cd-azp) -> "
-    "Envoy access log JSON -> OTLP -> Alloy loki.process "
-    "'ai_gateway_user_attribution' -> Loki labels (user_id, azp). "
+    "Data flows: JWT -> Authorino response headers (x-oidc-user-id, x-oidc-azp; "
+    "full x-oidc-* contract in ADR-0011) -> Envoy access log JSON -> OTLP -> "
+    "Alloy loki.process 'ai_gateway_user_attribution' -> Loki labels (user_id, azp). "
     "See docs/per-user-observability.md. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/per_user.py."
 )

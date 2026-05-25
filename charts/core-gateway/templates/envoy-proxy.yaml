@@ -92,8 +92,21 @@ spec:
               lc_user_email: "%REQ(X-USER-EMAIL)%"
               lc_user_role: "%REQ(X-USER-ROLE)%"
               lc_user_name: "%REQ(X-USER-NAME)%"
-              # Authorino-injected per-user attribution. Promoted to Loki
-              # labels by Alloy. See docs/per-user-observability.md.
-              user_id: "%REQ(X-CD-USER-ID)%"
-              user_name: "%REQ(X-CD-USER-NAME)%"
-              azp: "%REQ(X-CD-AZP)%"
+              # Authorino-injected OIDC claim headers (ADR-0011).
+              # user_id + azp are promoted to Loki labels by Alloy
+              # (ADR-0005). The rest ride in the body and are queried via
+              # LogQL `| json`. See docs/per-user-observability.md.
+              # IDENTITY
+              user_id:              "%REQ(X-OIDC-USER-ID)%"
+              user_name:            "%REQ(X-OIDC-USER-NAME)%"
+              azp:                  "%REQ(X-OIDC-AZP)%"
+              oidc_iss:             "%REQ(X-OIDC-ISS)%"
+              # AUTHORIZATION
+              oidc_roles_realm:     "%REQ(X-OIDC-ROLES-REALM)%"
+              oidc_resource_access: "%REQ(X-OIDC-RESOURCE-ACCESS)%"
+              oidc_scope:           "%REQ(X-OIDC-SCOPE)%"
+              # TRACING
+              oidc_jti:             "%REQ(X-OIDC-JTI)%"
+              # PROFILE (PII — see ADR-0011)
+              oidc_email:           "%REQ(X-OIDC-EMAIL)%"
+              oidc_name:            "%REQ(X-OIDC-NAME)%"
