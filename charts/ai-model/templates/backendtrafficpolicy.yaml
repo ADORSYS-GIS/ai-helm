@@ -1,37 +1,32 @@
-{{/*
+{{- /*
 BackendTrafficPolicy — per-model, per-plan rate limiting via Global Rate Limit.
 
-Each model gets its own rate limit based on its pricing strategy:
-- Weighted/Tiered models: limit in micro-USD (Budget * 1e6)
-- Flat models: limit in USD (budget used directly)
-
-Budget values in values.yaml are in USD.
-*/}}
-{{- range $routeName, $routeConfig := $.Values.models }}
-{{- if not (eq $routeConfig.enabled false) }}
-{{- $modelBudgets := default dict $routeConfig.rateLimitBudgeting }}
-{{- $strategy := $routeConfig.pricing.strategy }}
+Weighted/Tiered models: limits expressed in micro-USD (budget * 1e6).
+Flat models: limits in USD (budget used directly).
+*/ -}}
+{{- $modelName := .Values.modelName -}}
+{{- $modelBudgets := default dict .Values.rateLimitBudgeting -}}
+{{- $strategy := .Values.pricing.strategy -}}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
-  name: {{ $routeName }}
+  name: {{ $modelName }}
 spec:
   targetRefs:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: {{ $routeName }}
+      name: {{ $modelName }}
   rateLimit:
     type: Global
     global:
       rules:
         {{- if $modelBudgets }}
-        {{- $freeBudget := index $modelBudgets "free" | default (index $.Values.rateLimitBudgeting.plans "free" "monthlyBudgetUsd" | default 30) }}
-        {{- $proBudget := index $modelBudgets "pro" | default (index $.Values.rateLimitBudgeting.plans "pro" "monthlyBudgetUsd" | default 200) }}
+        {{- $freeBudget := index $modelBudgets "free" | default (index $.Values.plans "free" "monthlyBudgetUsd" | default 30) }}
+        {{- $proBudget := index $modelBudgets "pro" | default (index $.Values.plans "pro" "monthlyBudgetUsd" | default 200) }}
 
-        {{- $freeLimit := 0 }}{{ $proLimit := 0 }}
-        {{- $freeLimit = mulf $freeBudget 1000000 | int64 }}
-        {{- $proLimit = mulf $proBudget 1000000 | int64 }}
+        {{- $freeLimit := mulf $freeBudget 1000000 | int64 }}
+        {{- $proLimit := mulf $proBudget 1000000 | int64 }}
         - clientSelectors:
             - headers:
                 - name: x-account-id
@@ -41,9 +36,9 @@ spec:
                   value: "free"
                 - name: x-ai-eg-model
                   type: Exact
-                  value: {{ $routeName | quote }}
+                  value: {{ $modelName | quote }}
           limit:
-            requests: {{ $freeLimit }} # custom free budget for {{ $routeName | quote }} / ${{ $freeBudget }}
+            requests: {{ $freeLimit }} # custom free budget for {{ $modelName | quote }} / ${{ $freeBudget }}
             unit: Month
           cost:
             request:
@@ -53,7 +48,7 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                key: {{ include "ai-models.metadataKeySafe" $routeName }}
+                key: {{ include "ai-model.metadataKeySafe" $modelName }}
         - clientSelectors:
             - headers:
                 - name: x-account-id
@@ -63,9 +58,9 @@ spec:
                   value: "pro"
                 - name: x-ai-eg-model
                   type: Exact
-                  value: {{ $routeName | quote }}
+                  value: {{ $modelName | quote }}
           limit:
-            requests: {{ $proLimit }} # custom pro budget for {{ $routeName | quote }} / ${{ $proBudget }}
+            requests: {{ $proLimit }} # custom pro budget for {{ $modelName | quote }} / ${{ $proBudget }}
             unit: Month
           cost:
             request:
@@ -75,9 +70,9 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                key: {{ include "ai-models.metadataKeySafe" $routeName }}
+                key: {{ include "ai-model.metadataKeySafe" $modelName }}
         {{- else }}
-        {{- range $planName, $planConfig := $.Values.rateLimitBudgeting.plans }}
+        {{- range $planName, $planConfig := $.Values.plans }}
         {{- $budget := $planConfig.monthlyBudgetUsd | default 30 }}
         {{- $planLimit := mulf $budget 1000000 | int64 }}
         - clientSelectors:
@@ -89,9 +84,9 @@ spec:
                   value: {{ $planName | quote }}
                 - name: x-ai-eg-model
                   type: Exact
-                  value: {{ $routeName | quote }}
+                  value: {{ $modelName | quote }}
           limit:
-            requests: {{ $planLimit }} # {{ $planName | quote }} budget for {{ $routeName | quote }}
+            requests: {{ $planLimit }} # {{ $planName | quote }} budget for {{ $modelName | quote }}
             unit: Month
           cost:
             request:
@@ -101,8 +96,6 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                key: {{ include "ai-models.metadataKeySafe" $routeName }}
+                key: {{ include "ai-model.metadataKeySafe" $modelName }}
         {{- end }}
         {{- end }}
-{{- end }}
-{{- end }}

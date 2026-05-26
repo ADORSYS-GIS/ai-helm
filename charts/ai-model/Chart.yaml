@@ -1,0 +1,27 @@
+apiVersion: v2
+name: ai-model
+description: |
+  Renders one AI model on the gateway: AIGatewayRoute + BackendTrafficPolicy
+  for a single `modelName`. Designed to be instantiated N times by the
+  orchestrating ApplicationSet in charts/ai-models — one Application per
+  enabled model.
+
+  Per-model rate limits, pricing strategy, and backend routing all flow
+  via values. The shared cost-expression helpers live in this chart's
+  _helpers.tpl (consolidated from the pre-split ai-models chart).
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ai-gateway
+  - envoy-ai-gateway
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

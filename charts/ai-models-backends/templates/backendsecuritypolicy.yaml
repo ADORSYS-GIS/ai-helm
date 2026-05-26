@@ -1,4 +1,10 @@
 {{- range $backendName, $backendConfig := .Values.backends }}
+{{- /*
+Audit fix from the pre-split chart: gate on `enabled: false` to avoid
+emitting a security policy that references a non-existent AIServiceBackend
+when a backend is disabled.
+*/ -}}
+{{- if not (eq $backendConfig.enabled false) }}
 ---
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: BackendSecurityPolicy
@@ -26,4 +32,5 @@ spec:
     secretRef:
       name: {{ $backendConfig.secretRef.name }}
   {{- end }}
+{{- end }}
 {{- end }}

@@ -1,0 +1,26 @@
+apiVersion: v2
+name: ai-models-backends
+description: |
+  Shared backend infrastructure for the AI gateway. Renders one Backend +
+  AIServiceBackend + BackendSecurityPolicy + BackendTLSPolicy per upstream
+  provider account (fw-01, deepinfra-01, …).
+
+  Deployed as a single ArgoCD Application that owns all backends. Each
+  per-model Application (charts/ai-model) references these by name. See
+  ADR-0012 and charts/ai-models for the orchestrator that fans out.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ai-gateway
+  - envoy-ai-gateway
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

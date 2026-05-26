@@ -1,0 +1,60 @@
+{{- /* Required-field guards */ -}}
+{{- if not .Values.modelName }}{{- fail "ai-model: .Values.modelName is required" -}}{{- end -}}
+{{- if not .Values.gatewayRef.name }}{{- fail "ai-model: .Values.gatewayRef.name is required" -}}{{- end -}}
+{{- if not .Values.backendsInventory }}{{- fail "ai-model: .Values.backendsInventory is required (the parent's backends map, for resourceName lookup)" -}}{{- end -}}
+{{- $modelName := .Values.modelName -}}
+{{- /* Filter and validate backends */ -}}
+{{- $activeBackends := dict -}}
+{{- range $bKey, $bVal := .Values.backends }}
+  {{- if not (eq $bVal.enabled false) }}
+    {{- $_ := set $activeBackends $bKey $bVal -}}
+  {{- end }}
+{{- end }}
+{{- $minBackends := default 2 .Values.minBackends | int -}}
+{{- if lt (len $activeBackends) $minBackends -}}
+{{- fail (printf "Model '%s' must have at least %d enabled backends. Found: %d" $modelName $minBackends (len $activeBackends)) -}}
+{{- end }}
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: {{ $modelName }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gatewayRef.name }}
+      namespace: {{ .Values.gatewayRef.namespace }}
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_cached_input_token
+      type: CachedInputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_total_token
+      type: TotalToken
+    - metadataKey: {{ include "ai-model.metadataKeySafe" $modelName }}
+      type: CEL
+      cel: {{ include "ai-model.costExpression" (dict "modelName" $modelName "pricing" .Values.pricing) | quote }}
+
+  rules:
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: {{ $modelName }}
+      modelsOwnedBy: GIS AI Models
+      backendRefs:
+        {{- range $bKey, $bVal := $activeBackends }}
+        {{- $backendBase := index $.Values.backendsInventory $bVal.ref }}
+        {{- if not $backendBase }}
+        {{- fail (printf "Model '%s' references backend '%s' not present in backendsInventory" $modelName $bVal.ref) }}
+        {{- end }}
+        - name: {{ $backendBase.resourceName }}
+          {{- if $bVal.modelNameOverride }}
+          modelNameOverride: {{ $bVal.modelNameOverride }}
+          {{- end }}
+          weight: {{ $bVal.weight | default 1 }}
+          priority: {{ $bVal.priority | default 0 }}
+        {{- end }}

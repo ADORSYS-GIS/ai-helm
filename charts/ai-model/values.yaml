@@ -1,0 +1,66 @@
+# A single model. Instantiated per-model by charts/ai-models's
+# ApplicationSet. ADR-0012 explains the split.
+
+# Required ─────────────────────────────────────────────────────────────────
+# Name of the model — used as the AIGatewayRoute / BackendTrafficPolicy
+# object name AND as the `x-ai-eg-model` header value the gateway matches on.
+modelName: ""
+
+# Kind of model: text | multimodal | embedding | reranker. Informational;
+# not consumed by template logic today but kept for downstream observability.
+kind: text
+
+# Required: backendsInventory provides the resourceName lookup for each
+# backend ref. Mirrors the parent's `backends:` map. Without it, AIGatewayRoute
+# can't resolve a backend's Service name.
+backendsInventory: {}
+# Example:
+#   fw-01:
+#     resourceName: fw-backend-01-svc
+#   deepinfra-01:
+#     resourceName: deepinfra-backend-01-svc
+
+# Required: the upstream backends + priorities this model routes to.
+backends: {}
+# Example:
+#   fw-01:
+#     ref: fw-01
+#     priority: 0
+#     modelNameOverride: "accounts/fireworks/models/glm-5p1"
+#     # weight: 1
+#     # enabled: true   (default)
+
+# Required: which Gateway this route attaches to.
+gatewayRef:
+  name: ""
+  namespace: ""
+
+# Required: pricing strategy. Drives the cost CEL expression rendered by
+# AIGatewayRoute. See _helpers.tpl for the supported strategies
+# (weighted, tieredWeighted, flat).
+pricing: {}
+# Example weighted:
+#   strategy: weighted
+#   standard:
+#     inputPer1M: 0.60
+#     cachedInputPer1M: 0.12
+#     outputPer1M: 2.08
+
+# Optional minimum-backends invariant (HA safety). Default 2.
+minBackends: 2
+
+# Optional: per-model rate-limit overrides. When absent, the model inherits
+# from `plans` below.
+rateLimitBudgeting: {}
+# Example:
+#   free: 10
+#   pro: 50
+
+# Required: monthly-budget defaults across plans (in USD). Used when the
+# model doesn't override via `rateLimitBudgeting:`.
+plans: {}
+# Example:
+#   free:
+#     monthlyBudgetUsd: 30
+#   pro:
+#     monthlyBudgetUsd: 200
