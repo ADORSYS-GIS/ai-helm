@@ -1,0 +1,508 @@
+# -----------------------------------------------------------------------------
+# ServiceAccount
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cnpg-restore-test-sa
+  namespace: converse
+  labels:
+    app.kubernetes.io/name: cnpg-restore-test
+    app.kubernetes.io/component: backup-validation
+
+---
+# -----------------------------------------------------------------------------
+# Role  —  least-privilege permissions for everything the script touches
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cnpg-restore-test-role
+  namespace: converse
+  labels:
+    app.kubernetes.io/name: cnpg-restore-test
+    app.kubernetes.io/component: backup-validation
+rules:
+  # CNPG Clusters
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+
+  # Pods — list/get for validation queries and cleanup pod-count polling
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+  # Pod exec — running psql validation queries inside the cluster pod
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+
+  # PVCs — patch required to annotate volume.kubernetes.io/selected-node so that
+  # rancher.io/local-path (Immediate binding mode) knows which node to provision on;
+  # delete required because CNPG intentionally leaves PVCs behind
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "patch", "delete"]
+
+  # Secrets — CNPG creates per-cluster credential secrets
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "delete"]
+
+  # ConfigMaps — belt-and-suspenders cleanup of any orphaned CNPG config maps
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["list", "delete"]
+
+  # Services — CNPG creates per-cluster services; normally cascade-deleted
+  # with the Cluster but included for defensive cleanup
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["list", "delete"]
+
+---
+# -----------------------------------------------------------------------------
+# RoleBinding
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cnpg-restore-test-rolebinding
+  namespace: converse
+  labels:
+    app.kubernetes.io/name: cnpg-restore-test
+    app.kubernetes.io/component: backup-validation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cnpg-restore-test-role
+subjects:
+  - kind: ServiceAccount
+    name: cnpg-restore-test-sa
+    namespace: converse
+---
+
+# -----------------------------------------------------------------------------
+# CronJob
+# -----------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cnpg-native-backup-test
+  namespace: converse
+  labels:
+    app.kubernetes.io/name: cnpg-restore-test
+    app.kubernetes.io/component: backup-validation
+  annotations:
+    # Human-readable description for operators
+    description: "Biweekly CNPG backup restore & validation test for main-db and usage-db"
+spec:
+  # Every two weeks — 1st and 15th of each month at 03:15 AM
+  schedule: "15 3 1,15 * *"
+
+  # Never run two jobs simultaneously; skip if the previous one is still running
+  concurrencyPolicy: Forbid
+
+  # Keep a small audit trail in the cluster without unbounded growth
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cnpg-restore-test
+        app.kubernetes.io/component: backup-validation
+    spec:
+      # No retries — this is a validation job; a failure must surface immediately
+      backoffLimit: 0
+
+      # Hard cap: both restores (30 min + 25 min) + validation + cleanup overhead
+      # 2 hours gives comfortable headroom without masking runaway restores
+      activeDeadlineSeconds: 7200
+
+      # Auto-delete the finished Job object after 24 hours to keep the namespace tidy
+      ttlSecondsAfterFinished: 86400
+
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: cnpg-restore-test
+            app.kubernetes.io/component: backup-validation
+        spec:
+          serviceAccountName: cnpg-restore-test-sa
+          restartPolicy: Never
+
+          # Pod-level security hardening
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+          containers:
+            - name: restore-and-validate
+              # Pinned to a specific minor version — never use :latest in production
+              image: alpine/k8s:1.32.3
+              imagePullPolicy: IfNotPresent
+
+              # Container-level security hardening
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+
+              # Right-sized for a kubectl-only workload
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "256Mi"
+
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+
+                  # Unique ephemeral names derived from the Job pod hostname
+                  CLUSTER_NAME="r-t-${HOSTNAME:-$(date +%s)}"
+                  USAGE_CLUSTER_NAME="r-t-usage-${HOSTNAME:-$(date +%s)}"
+                  NS="converse"
+
+                  # Resolve the single cluster node once — used to annotate PVCs so that
+                  # rancher.io/local-path (Immediate mode) knows where to provision the volume.
+                  # This replicates what the scheduler does automatically for WaitForFirstConsumer.
+                  NODE_NAME=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+                  if [ -z "${NODE_NAME}" ]; then
+                    echo "❌ Could not determine cluster node name — cannot annotate PVCs"
+                    exit 1
+                  fi
+                  echo "  Node             : ${NODE_NAME}"
+
+                  echo "================================================================"
+                  echo "CNPG Native Backup Restore Test — $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+                  echo "  Main-DB  cluster : $CLUSTER_NAME"
+                  echo "  Usage-DB cluster : $USAGE_CLUSTER_NAME"
+                  echo "================================================================"
+
+                  # ------------------------------------------------------------------
+                  # CLEANUP — Runs automatically on EXIT (success OR failure).
+                  # Order matters:
+                  #   1. Delete the CNPG Cluster object (triggers operator teardown)
+                  #   2. Wait for all cluster pods to terminate (releases PVC mounts)
+                  #   3. Delete PVCs (CNPG leaves these behind by design)
+                  #   4. Delete orphaned Secrets / ConfigMaps / Services
+                  # ------------------------------------------------------------------
+                  cleanup() {
+                    local exit_code=$?
+
+                    echo ""
+                    echo "================================================================"
+                    echo "CLEANUP — $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+                    echo "================================================================"
+
+                    # ---- Helper: tear down one cluster and its leftover resources ----
+                    cleanup_cluster() {
+                      local name="$1"
+
+                      echo ""
+                      echo "--- Cleaning up cluster: ${name} ---"
+
+                      # Step 1: Delete the Cluster object if it still exists
+                      if kubectl get cluster "${name}" -n "${NS}" >/dev/null 2>&1; then
+                        echo "  Deleting CNPG Cluster ${name}..."
+                        kubectl delete cluster "${name}" -n "${NS}" \
+                          --ignore-not-found=true \
+                          --timeout=120s \
+                          || echo "  Warning: cluster deletion did not finish cleanly — continuing"
+                      else
+                        echo "  Cluster ${name} not found — skipping cluster deletion"
+                      fi
+
+                      # Step 2: Poll until all cluster pods are gone so PVC mounts are
+                      # released before deletion. Using a poll loop instead of
+                      # `kubectl wait --for=delete` to avoid exhausting inotify watchers
+                      # (too many open files) on systems with low fs.inotify.max_user_watches.
+                      echo "  Waiting for cluster pods to terminate..."
+                      pod_wait=0
+                      while [ "${pod_wait}" -lt 120 ]; do
+                        POD_COUNT=$(kubectl get pods -n "${NS}" -l "cnpg.io/cluster=${name}" --no-headers 2>/dev/null | wc -l)
+                        if [ "${POD_COUNT}" -eq 0 ]; then break; fi
+                        sleep 5
+                        pod_wait=$((pod_wait + 5))
+                      done
+                      if [ "${pod_wait}" -ge 120 ]; then
+                        echo "  Warning: pods did not terminate within 120s — proceeding with PVC cleanup anyway"
+                      fi
+
+                      # Step 3: Delete PVCs (not cascade-deleted by CNPG — must be explicit)
+                      echo "  Deleting PVCs for cluster ${name}..."
+                      kubectl delete pvc \
+                        -n "${NS}" \
+                        -l "cnpg.io/cluster=${name}" \
+                        --ignore-not-found=true \
+                        --timeout=120s \
+                        || echo "  Warning: PVC deletion did not finish cleanly — continuing"
+
+                      # Step 4: Delete per-cluster Secrets
+                      echo "  Deleting Secrets for cluster ${name}..."
+                      kubectl delete secret \
+                        -n "${NS}" \
+                        -l "cnpg.io/cluster=${name}" \
+                        --ignore-not-found=true \
+                        || echo "  Warning: Secret deletion encountered an error — continuing"
+
+                      # Step 5: Delete orphaned ConfigMaps (defensive — normally cascade-deleted)
+                      echo "  Deleting ConfigMaps for cluster ${name}..."
+                      kubectl delete configmap \
+                        -n "${NS}" \
+                        -l "cnpg.io/cluster=${name}" \
+                        --ignore-not-found=true \
+                        || echo "  Warning: ConfigMap deletion encountered an error — continuing"
+
+                      # Step 6: Delete orphaned Services (defensive — normally cascade-deleted)
+                      echo "  Deleting Services for cluster ${name}..."
+                      kubectl delete service \
+                        -n "${NS}" \
+                        -l "cnpg.io/cluster=${name}" \
+                        --ignore-not-found=true \
+                        || echo "  Warning: Service deletion encountered an error — continuing"
+
+                      echo "  Cleanup complete for cluster ${name}"
+                    }
+
+                    cleanup_cluster "${CLUSTER_NAME}"
+                    cleanup_cluster "${USAGE_CLUSTER_NAME}"
+
+                    echo ""
+                    echo "================================================================"
+                    if [ "${exit_code}" -ne 0 ]; then
+                      echo "RESULT: ❌ Job FAILED with exit code ${exit_code}"
+                    else
+                      echo "RESULT: ✅ Job SUCCEEDED"
+                    fi
+                    echo "================================================================"
+
+                    # Re-exit with the original code so Kubernetes records the correct status
+                    exit "${exit_code}"
+                  }
+                  trap cleanup EXIT
+
+                  # ================================================================
+                  # PART 1: RESTORE AND VALIDATE MAIN-DB
+                  # ================================================================
+                  echo ""
+                  echo "================================================================"
+                  echo "PART 1: RESTORING MAIN-DB"
+                  echo "================================================================"
+
+                  echo "Applying ephemeral CloudNativePG restore manifest..."
+                  cat <<EOFMANIFEST | kubectl apply -f -
+                  apiVersion: postgresql.cnpg.io/v1
+                  kind: Cluster
+                  metadata:
+                    name: ${CLUSTER_NAME}
+                    namespace: converse
+                    labels:
+                      type: backup-test
+                  spec:
+                    instances: 1
+                    imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+                    storage:
+                      # local-path-immediate: same provisioner as the cluster default but with
+                      # VolumeBindingMode: Immediate — required to avoid the WaitForFirstConsumer
+                      # deadlock where CNPG waits for PVC Bound before creating the Pod, while
+                      # the PVC waits for a Pod before binding.
+                      storageClass: local-path-immediate
+                      size: 5Gi
+                    bootstrap:
+                      recovery:
+                        source: lightbridge-main-db-backup
+                    externalClusters:
+                      - name: lightbridge-main-db-backup
+                        barmanObjectStore:
+                          destinationPath: "s3://ai-ops-backups/lightbridge-cnpg-backups/"
+                          endpointURL: "https://s3.ssegning.me"
+                          serverName: lightbridge-main-db
+                          s3Credentials:
+                            accessKeyId:
+                              name: s3-credentials
+                              key: s3_access_key_id
+                            secretAccessKey:
+                              name: s3-credentials
+                              key: s3_secret_access_key
+                  EOFMANIFEST
+
+                  # Annotate the PVC with the node name so local-path (Immediate mode) can
+                  # provision the volume. We wait up to 30s for CNPG to create the PVC first.
+                  echo "Waiting for main-db PVC to be created by CNPG operator..."
+                  for i in $(seq 1 30); do
+                    PVC_COUNT=$(kubectl get pvc -n "${NS}" -l "cnpg.io/cluster=${CLUSTER_NAME}" --no-headers 2>/dev/null | wc -l)
+                    if [ "${PVC_COUNT}" -gt 0 ]; then break; fi
+                    sleep 1
+                  done
+                  echo "Annotating main-db PVCs with node: ${NODE_NAME}"
+                  for pvc in $(kubectl get pvc -n "${NS}" -l "cnpg.io/cluster=${CLUSTER_NAME}" -o jsonpath='{.items[*].metadata.name}'); do
+                    kubectl annotate pvc "${pvc}" -n "${NS}" \
+                      "volume.kubernetes.io/selected-node=${NODE_NAME}" \
+                      --overwrite
+                  done
+
+                  echo "Polling for main-db cluster readiness (timeout: 30m)..."
+                  timeout=1800
+                  elapsed=0
+                  while true; do
+                    READY=$(kubectl get cluster "${CLUSTER_NAME}" -n converse \
+                      -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' \
+                      2>/dev/null || echo "Unknown")
+
+                    if [ "${READY}" = "True" ]; then
+                      echo "✅ Main-DB cluster restored and Ready!"
+                      break
+                    fi
+
+                    sleep 10
+                    elapsed=$((elapsed + 10))
+                    if [ "${elapsed}" -ge "${timeout}" ]; then
+                      echo "❌ Timeout waiting for main-db cluster. Last status: ${READY}"
+                      exit 1
+                    fi
+                  done
+
+                  echo "Retrieving main-db primary pod..."
+                  POD=$(kubectl get pods -n converse \
+                    -l "cnpg.io/cluster=${CLUSTER_NAME},role=primary" \
+                    -o jsonpath='{.items[0].metadata.name}')
+
+                  if [ -z "${POD}" ]; then
+                    echo "❌ Failed to locate the main-db primary pod."
+                    exit 1
+                  fi
+
+                  echo "Running validation query inside pod: ${POD}"
+                  kubectl exec -n converse "${POD}" -c postgres -- psql -U postgres -c "\l"
+                  echo "✅ Main-DB validation succeeded!"
+
+                  # ================================================================
+                  # PART 2: RESTORE AND VALIDATE USAGE-DB (TIMESCALEDB)
+                  # ================================================================
+                  echo ""
+                  echo "================================================================"
+                  echo "PART 2: RESTORING USAGE-DB (TimescaleDB)"
+                  echo "================================================================"
+
+                  echo "Applying usage-db restore manifest..."
+                  cat <<EOFMANIFEST_USAGE | kubectl apply -f -
+                  apiVersion: postgresql.cnpg.io/v1
+                  kind: Cluster
+                  metadata:
+                    name: ${USAGE_CLUSTER_NAME}
+                    namespace: converse
+                    labels:
+                      type: backup-test
+                      test-type: usage-db
+                  spec:
+                    instances: 1
+                    imageCatalogRef:
+                      apiGroup: postgresql.cnpg.io
+                      kind: ClusterImageCatalog
+                      name: lightbridge-usage-db
+                      major: 17
+                    storage:
+                      storageClass: local-path-immediate
+                      size: 5Gi
+                    postgresql:
+                      shared_preload_libraries:
+                        - timescaledb
+                    postgresUID: 70
+                    postgresGID: 70
+                    bootstrap:
+                      recovery:
+                        source: lightbridge-usage-db-backup
+                    externalClusters:
+                      - name: lightbridge-usage-db-backup
+                        barmanObjectStore:
+                          destinationPath: "s3://ai-ops-backups/lightbridge-cnpg-backups/"
+                          endpointURL: "https://s3.ssegning.me"
+                          serverName: lightbridge-usage-db
+                          s3Credentials:
+                            accessKeyId:
+                              name: s3-credentials
+                              key: s3_access_key_id
+                            secretAccessKey:
+                              name: s3-credentials
+                              key: s3_secret_access_key
+                  EOFMANIFEST_USAGE
+
+                  # Same node annotation for usage-db PVCs
+                  echo "Waiting for usage-db PVC to be created by CNPG operator..."
+                  for i in $(seq 1 30); do
+                    PVC_COUNT=$(kubectl get pvc -n "${NS}" -l "cnpg.io/cluster=${USAGE_CLUSTER_NAME}" --no-headers 2>/dev/null | wc -l)
+                    if [ "${PVC_COUNT}" -gt 0 ]; then break; fi
+                    sleep 1
+                  done
+                  echo "Annotating usage-db PVCs with node: ${NODE_NAME}"
+                  for pvc in $(kubectl get pvc -n "${NS}" -l "cnpg.io/cluster=${USAGE_CLUSTER_NAME}" -o jsonpath='{.items[*].metadata.name}'); do
+                    kubectl annotate pvc "${pvc}" -n "${NS}" \
+                      "volume.kubernetes.io/selected-node=${NODE_NAME}" \
+                      --overwrite
+                  done
+
+                  echo "Polling for usage-db cluster readiness (timeout: 25m)..."
+                  timeout=1500
+                  elapsed=0
+                  while true; do
+                    READY=$(kubectl get cluster "${USAGE_CLUSTER_NAME}" -n converse \
+                      -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' \
+                      2>/dev/null || echo "Unknown")
+
+                    if [ "${READY}" = "True" ]; then
+                      echo "✅ Usage-DB cluster restored and Ready!"
+                      break
+                    fi
+
+                    sleep 10
+                    elapsed=$((elapsed + 10))
+                    if [ "${elapsed}" -ge "${timeout}" ]; then
+                      echo "❌ Timeout waiting for usage-db cluster. Last status: ${READY}"
+                      exit 1
+                    fi
+                  done
+
+                  echo "Retrieving usage-db primary pod..."
+                  USAGE_POD=$(kubectl get pods -n converse \
+                    -l "cnpg.io/cluster=${USAGE_CLUSTER_NAME},role=primary" \
+                    -o jsonpath='{.items[0].metadata.name}')
+
+                  if [ -z "${USAGE_POD}" ]; then
+                    echo "❌ Failed to locate the usage-db primary pod."
+                    exit 1
+                  fi
+
+                  echo ""
+                  echo "================================================================"
+                  echo "VALIDATING USAGE-DB"
+                  echo "================================================================"
+
+                  echo "→ Test 1: List databases"
+                  kubectl exec -n converse "${USAGE_POD}" -c postgres -- psql -U postgres -c "\l"
+
+                  echo "→ Test 2: PostgreSQL version"
+                  kubectl exec -n converse "${USAGE_POD}" -c postgres -- psql -U postgres -c "SELECT version();"
+
+                  echo "→ Test 3: TimescaleDB extension"
+                  kubectl exec -n converse "${USAGE_POD}" -c postgres -- psql -U postgres \
+                    -c "SELECT extname, extversion FROM pg_extension WHERE extname IN ('timescaledb', 'pg_partman');"
+
+                  echo ""
+                  echo "================================================================"
+                  echo "FINAL SUMMARY"
+                  echo "================================================================"
+                  echo "✅ Main-DB  : PASS (${CLUSTER_NAME})"
+                  echo "✅ Usage-DB : PASS (${USAGE_CLUSTER_NAME})"
+                  echo "================================================================"
+                  echo ""
+                  echo "Cleanup will now run automatically via trap..."
