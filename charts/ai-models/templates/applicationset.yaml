@@ -1,0 +1,79 @@
+{{- /*
+ai-models orchestrator — one ApplicationSet fans out to the backends
+sub-chart + N model sub-charts.
+
+Pattern: Helm pre-computes every element (with its inline per-app values
+as a YAML string), and the ApplicationSet's `template:` substitutes those
+values at AppSet-controller time via goTemplate. The `{{ "{{ .field }}" }}`
+literal pattern emits `{{ .field }}` for the AppSet controller to evaluate.
+*/ -}}
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - list:
+        elements:
+          # ── Backends (shared infra) — sync-wave -1 ────────────────────
+          - appName: {{ printf "%s-backends" .Release.Name | quote }}
+            chartPath: charts/ai-models-backends
+            syncWave: "-1"
+            valuesYaml: |-
+{{ (dict "backends" .Values.backends) | toYaml | indent 14 }}
+{{- range $modelName, $modelConfig := .Values.models }}
+{{- if not (eq $modelConfig.enabled false) }}
+          # ── Model: {{ $modelName }} — sync-wave 0 ───────────────────────
+          - appName: {{ printf "%s-%s" $.Release.Name $modelName | quote }}
+            chartPath: charts/ai-model
+            syncWave: "0"
+            valuesYaml: |-
+{{- $childValues := dict
+      "modelName" $modelName
+      "kind" (default "text" $modelConfig.kind)
+      "gatewayRef" $.Values.gatewayRef
+      "pricing" $modelConfig.pricing
+      "backends" $modelConfig.backends
+      "rateLimitBudgeting" (default (dict) $modelConfig.rateLimitBudgeting)
+      "plans" $.Values.rateLimitBudgeting.plans
+      "backendsInventory" $.Values.backends
+      "minBackends" (default 2 $modelConfig.minBackends)
+}}
+{{ $childValues | toYaml | indent 14 }}
+{{- end }}
+{{- end }}
+  template:
+    metadata:
+      name: '{{ "{{ .appName }}" }}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{ "{{ .syncWave }}" }}'
+    spec:
+      project: {{ .Values.argocd.project | quote }}
+      source:
+        repoURL: {{ .Values.argocd.repoURL | quote }}
+        targetRevision: {{ .Values.argocd.targetRevision | quote }}
+        path: '{{ "{{ .chartPath }}" }}'
+        helm:
+          releaseName: '{{ "{{ .appName }}" }}'
+          values: |
+            {{ "{{ .valuesYaml | nindent 12 }}" }}
+      destination:
+        name: {{ .Values.argocd.destination.name | quote }}
+        namespace: {{ .Values.argocd.destination.namespace | quote }}
+      syncPolicy:
+        {{- with .Values.argocd.syncPolicy.syncOptions }}
+        syncOptions:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.argocd.syncPolicy.automated }}
+        automated:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}

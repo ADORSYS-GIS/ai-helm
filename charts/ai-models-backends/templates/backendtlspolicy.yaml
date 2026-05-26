@@ -1,5 +1,5 @@
 {{- range $backendName, $backendConfig := .Values.backends }}
-{{- if $backendConfig.tlsHostname }}
+{{- if and (not (eq $backendConfig.enabled false)) $backendConfig.tlsHostname }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: BackendTLSPolicy
