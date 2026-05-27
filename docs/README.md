@@ -8,6 +8,10 @@ know where a topic lives, grep — file names are stable and descriptive.
 > several files (backups, secrets, model gateway) get their own subdirectory
 > with a local `README.md` that indexes the contents.
 
+**Start here:** [`architecture.md`](./architecture.md) for the system map,
+[`adr/README.md`](./adr/README.md) for every architectural decision,
+[`../CONTRIBUTING.md`](../CONTRIBUTING.md) for how to ship a change.
+
 ---
 
 ## Architecture & integration
@@ -28,6 +32,7 @@ How the system is wired and how to integrate against it.
 | [`authorino-service-account-bypass.md`](./authorino-service-account-bypass.md) | How service-account tokens skip OPA / external metadata in Authorino |
 | [`per-user-observability.md`](./per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki `user_id`/`azp` labels |
 | [`opencode-well-known.md`](./opencode-well-known.md) | opencode `.well-known/opencode` flow at `ai.camer.digital`; prerequisites, plugin install, troubleshooting |
+| [`architecture.md`](./architecture.md) | System-level map: ArgoCD topology, sync waves, auth flow, observability pipeline, glossary |
 | [`2026-currency-audit.md`](./2026-currency-audit.md) | Helm chart + Kubernetes API + tooling currency audit, mid-2026 |
 | [`python-dashboard-generation.md`](./python-dashboard-generation.md) | How dashboards are generated from Python (grafana-foundation-sdk), the drift check, layouts |
 
@@ -77,5 +82,4 @@ not a subsystem. Linked here for discoverability.
 
 ## Stale / cleanup candidates
 
-- `redirect_308_explained.md.resolved` — bogus extension, content is real. Rename to `.md`.
 - `librechat-oidc-experiments.md` — exploratory; consider archiving under `docs/archive/` once the production OIDC setup is stable.
