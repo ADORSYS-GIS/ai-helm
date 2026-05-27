@@ -33,7 +33,7 @@ spec:
     exporters:
       # Phoenix HTTP ingest endpoint:
       # - If Phoenix is inside the cluster, keep http://
-      otlphttp/phoenix:
+      otlp_http/phoenix:
         endpoint: "http://phoenix-svc.converse-monitoring.svc.cluster.local:6006"
         headers:
           # Phoenix docs: Bearer auth; lowercase header for compatibility.
@@ -48,7 +48,7 @@ spec:
           max_elapsed_time: 300s
 
       # Fan traces out to Grafana Alloy as well, which forwards them to Tempo.
-      otlp/alloy:
+      otlp_grpc/alloy:
         endpoint: "alloy.observability.svc.cluster.local:4317"
         tls:
           insecure: true
@@ -70,8 +70,8 @@ spec:
             - memory_limiter
             - batch
           exporters:
-            - otlphttp/phoenix
-            - otlp/alloy
+            - otlp_http/phoenix
+            - otlp_grpc/alloy
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -91,6 +91,8 @@ metadata:
   name: {{ include "core-gateway.fullname" . }}-usage
   namespace: {{ .Release.Namespace }}
 spec:
+  podSecurityContext:
+    fsGroup: 10001
   volumes:
     - name: authz-tls
       secret:
@@ -139,7 +141,7 @@ spec:
         timeout: 5s
 
     exporters:
-      otlphttp/lightbridge_usage:
+      otlp_http/lightbridge_usage:
         logs_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/logs"
         tls:
           ca_file: /etc/otel/tls/ca.crt
@@ -154,7 +156,7 @@ spec:
           max_elapsed_time: 300s
 
       # Fan logs out to Grafana Alloy as well, which forwards them to Loki.
-      otlp/alloy:
+      otlp_grpc/alloy:
         endpoint: "alloy.observability.svc.cluster.local:4317"
         tls:
           insecure: true
@@ -179,5 +181,5 @@ spec:
             - memory_limiter
             - batch
           exporters:
-            - otlphttp/lightbridge_usage
-            - otlp/alloy
+            - otlp_http/lightbridge_usage
+            - otlp_grpc/alloy
