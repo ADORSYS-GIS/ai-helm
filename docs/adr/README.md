@@ -31,6 +31,7 @@ how thinking evolved.
 | [0011](./0011-oidc-downstream-headers.md) | Canonical `x-oidc-*` downstream header contract (supplements ADR-0005) | Accepted | 2026-05-24 | — |
 | [0012](./0012-split-ai-models-applicationset.md) | Split `charts/ai-models` into 3 sub-charts + ApplicationSet (1 backends App + N per-model Apps) | Accepted | 2026-05-24 | — |
 | [0013](./0013-defer-image-updater-writeback.md) | Defer argocd-image-updater write-back; manual chart-version bumps stay (supersedes ADR-0010) | Accepted | 2026-05-24 | [0010](./0010-argocd-image-updater-writeback-to-ai-gitops.md) |
+| [0014](./0014-split-librechart-and-opencode-wellknown.md) | Split `charts/librechart` into 3 leaf charts + add opencode `.well-known` endpoint | Accepted | 2026-05-24 | — |
 
 ## Status legend
 

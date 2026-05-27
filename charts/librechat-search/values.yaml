@@ -1,0 +1,25 @@
+# Meilisearch instance for LibreChat full-text search.
+#
+# Service name: by Helm convention the chart's release-name becomes the
+# Service name (e.g. release `librechat-search` => Service `librechat-search`
+# on port 7700). LibreChat references this via MEILI_HOST env in the
+# librechat-app chart.
+
+search:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: ~
+  auth:
+    # Master key sourced from a pre-existing Kubernetes Secret. The same
+    # Secret is mounted by librechat-app via its MEILI_MASTER_KEY env.
+    existingMasterKeySecret: "librechat-meili-config"
+  environment:
+    MEILI_ENV: "production"
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi

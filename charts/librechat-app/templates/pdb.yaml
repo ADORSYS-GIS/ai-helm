@@ -8,5 +8,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/component: mongodb
-      app.kubernetes.io/instance: librechat
+      # Use .Release.Name instead of the hardcoded 'librechat' in the
+      # pre-split chart (audit fix — release name varies by environment).
+      app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/name: db
