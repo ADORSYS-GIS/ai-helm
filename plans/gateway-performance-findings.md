@@ -328,17 +328,40 @@ hold an Envoy worker thread open indefinitely.
 ```yaml
 # After
 connection:
-  bufferLimit: 64Mi    # generous for multimodal (images) while safe under load
-http:
-  requestTimeout: 620s # 20s above the backend ceiling; only fires for hung connections
+  bufferLimit: 64Mi
+timeout:
+  http:
+    streamIdleTimeout: 620s
 ```
 
 **Rationale:** 64Mi is chosen specifically because the stack handles image inputs.
 A 4K image base64-encoded is ~10MB; 64Mi comfortably accommodates several large images
-in one request while removing the risk of RAM exhaustion under load. The `requestTimeout`
-of 620s is deliberately set 20 seconds above the backend's 600s `requestTimeout` so it
-acts purely as a safety net for truly hung connections — it will never fire for a normal
-streaming response.
+in one request while removing the risk of RAM exhaustion under load.
+
+**On the timeout field choice — `streamIdleTimeout` vs `requestReceivedTimeout`:**
+The `ClientTrafficPolicy.spec.timeout.http` block exposes three fields:
+
+| Field | What it measures | Stops when |
+|---|---|---|
+| `requestReceivedTimeout` | Time to receive the full client request | Last request byte sent upstream **or response begins** |
+| `streamIdleTimeout` | Inactivity on the stream in either direction | Any upstream or downstream activity resets it |
+| `idleTimeout` | Connection idle (no active requests) | A new request starts |
+
+`requestReceivedTimeout` was the wrong choice here. For streaming AI responses, Envoy
+considers the request "received" the moment the first response token arrives from the
+backend — after that the timer is done and stops. It would never fire during a long
+generation, which is exactly when zombie connections occur.
+
+`streamIdleTimeout: 620s` is the correct safety net: it fires only if there is genuinely
+zero activity in either direction for 620 seconds — no tokens arriving, no client ACKs,
+nothing. That is an unambiguously dead connection. The 620s value is set 20 seconds above
+the backend's 600s `requestTimeout` ceiling so it never interferes with a slow but alive
+stream.
+
+> **Schema note:** `spec.http.requestTimeout` does not exist in the
+> `ClientTrafficPolicy` CRD. The correct path is `spec.timeout.http.<field>`.
+> Always verify field names with `kubectl explain` before applying — do not infer
+> them from other resource types.
 
 ---
 
@@ -357,9 +380,9 @@ the provider's connection limits.
 **Fix applied:**
 ```yaml
 tcpKeepalive:
-  time: 120s      # probe after 2 minutes idle
-  interval: 30s   # probe every 30s
-  probes: 3       # close after 3 missed probes
+  idleTime: 120s    # probe after 2 minutes idle
+  interval: 30s     # probe every 30s
+  probes: 3         # close after 3 missed probes
 
 circuitBreaker:
   maxConnections: 200
@@ -376,6 +399,11 @@ simultaneous TLS connections; instead, requests queue (up to 100 pending) and ar
 as connections become available. When `maxPendingRequests` is reached, Envoy returns 503
 immediately rather than silently queueing — this gives clients a fast, actionable signal
 rather than a timeout.
+
+> **Schema note:** The correct field name is `tcpKeepalive.idleTime`, not `.time`.
+> `kubectl explain BackendTrafficPolicy.spec.tcpKeepalive` is the source of truth.
+> The field `.time` does not exist in the schema and will cause a typed patch failure
+> at apply time.
 
 ---
 
