@@ -92,6 +92,15 @@ hooks — `config` (registers/patches the provider, fetches and caches
 the model list) and `chat.headers` (sets `Authorization: Bearer
 <token>` per request) — obviate `auth.command` entirely.
 
+**Plugin auto-install:** opencode reads `config.plugin` and runs
+`bun install` automatically at startup, caching under
+`~/.cache/opencode/node_modules/`. So shipping the plugin name in the
+well-known JSON is sufficient — end users only run
+`opencode auth login https://ai.camer.digital/opencode` and the plugin
+arrives on first launch. No manual `opencode plugin add` or
+`npm install` step. (Documented at
+<https://opencode.ai/docs/plugins/>.)
+
 **`auth.command` ships as a no-op stub.** It satisfies opencode's
 auth-login schema check; opencode never uses the token because the
 plugin's `chat.headers` hook overrides the Authorization header per
