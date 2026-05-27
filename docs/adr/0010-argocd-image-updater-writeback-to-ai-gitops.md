@@ -1,8 +1,20 @@
 # ADR-0010: ArgoCD Image Updater with git write-back to `ai-gitops`
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0013](./0013-defer-image-updater-writeback.md) (2026-05-24)
 **Date:** 2026-05-24
 **Deciders:** @stephane-segning
+
+> **Why superseded:** Re-examining the actual repo structure surfaced
+> that image tags live in `ai-helm` chart values, not in `ai-gitops`
+> Application overrides — so write-back to `ai-gitops` has no clean
+> target, and write-back to `ai-helm` violates the chart-source-vs-
+> deployment-state split the two-repo design was built on. Combined
+> with the auto-merge-on-green-CI risk surface, image-updater
+> write-back is deferred. argocd-image-updater stays installed but
+> unused; revisit when per-env image overrides land in `ai-gitops`
+> or when first-party SHA cadence outruns manual bumps. ADR-0013
+> captures the rationale. Content below preserved as historical
+> record.
 
 ## Context
 
