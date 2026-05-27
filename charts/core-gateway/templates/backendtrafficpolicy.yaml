@@ -8,15 +8,27 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: {{ include "core-gateway.fullname" . }}
+  timeout:
+    http:
+      requestTimeout: 600s
   connection:
     bufferLimit: 100Mi
+  tcpKeepalive:
+    time: 120s
+    interval: 30s
+    probes: 3
+  circuitBreaker:
+    maxConnections: 200
+    maxParallelRequests: 200
+    maxPendingRequests: 100
+    maxRequestsPerConnection: 0
   retry:
     numRetries: 1
     perRetry:
       backOff:
         baseInterval: 100ms
         maxInterval: 10s
-      timeout: 30s
+      timeout: 300s
     retryOn:
       httpStatusCodes:
         - 500

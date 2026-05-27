@@ -22,7 +22,13 @@ spec:
             endpoint: 0.0.0.0:4318
 
     processors:
-      batch: { }
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      batch:
+        send_batch_size: 512
+        timeout: 5s
 
     exporters:
       # Phoenix HTTP ingest endpoint:
@@ -32,14 +38,28 @@ spec:
         headers:
           # Phoenix docs: Bearer auth; lowercase header for compatibility.
           authorization: "Bearer ${env:PHOENIX_API_KEY}"
+        sending_queue:
+          enabled: true
+          queue_size: 1000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
 
       # Fan traces out to Grafana Alloy as well, which forwards them to Tempo.
       otlp/alloy:
         endpoint: "alloy.observability.svc.cluster.local:4317"
         tls:
           insecure: true
-
-      debug: { }
+        sending_queue:
+          enabled: true
+          queue_size: 1000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
 
     service:
       pipelines:
@@ -47,11 +67,23 @@ spec:
           receivers:
             - otlp
           processors:
+            - memory_limiter
             - batch
           exporters:
             - otlphttp/phoenix
             - otlp/alloy
-            - debug
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-usage-queue
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
 ---
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
@@ -70,11 +102,25 @@ spec:
             path: tls.crt
           - key: tls.key
             path: tls.key
+    - name: queue-storage
+      persistentVolumeClaim:
+        claimName: {{ include "core-gateway.fullname" . }}-usage-queue
   volumeMounts:
     - name: authz-tls
       mountPath: /etc/otel/tls
       readOnly: true
+    - name: queue-storage
+      mountPath: /var/otel/storage
   config:
+    extensions:
+      file_storage/queue:
+        directory: /var/otel/storage
+        timeout: 10s
+        compaction:
+          on_start: true
+          on_rebound: true
+          rebound_needed_threshold_mib: 100
+
     receivers:
       otlp:
         protocols:
@@ -82,32 +128,56 @@ spec:
             endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
+
     processors:
-      batch: { }
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      batch:
+        send_batch_size: 512
+        timeout: 5s
 
     exporters:
       otlphttp/lightbridge_usage:
         logs_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/logs"
-        #compression: none
         tls:
           ca_file: /etc/otel/tls/ca.crt
+        sending_queue:
+          enabled: true
+          storage: file_storage/queue
+          queue_size: 5000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
 
       # Fan logs out to Grafana Alloy as well, which forwards them to Loki.
       otlp/alloy:
         endpoint: "alloy.observability.svc.cluster.local:4317"
         tls:
           insecure: true
-
-      debug: { }
+        sending_queue:
+          enabled: true
+          storage: file_storage/queue
+          queue_size: 5000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
 
     service:
+      extensions:
+        - file_storage/queue
       pipelines:
         logs:
           receivers:
             - otlp
           processors:
+            - memory_limiter
             - batch
           exporters:
             - otlphttp/lightbridge_usage
             - otlp/alloy
-            - debug
