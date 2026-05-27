@@ -27,9 +27,10 @@ how thinking evolved.
 | [0007](./0007-kc-token-go-cli.md) | Build `kc-token` as a single static Go binary + GH composite action | Superseded by [0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) | 2026-05-24 | — |
 | [0008](./0008-python-dashboard-generation.md) | Generate Grafana dashboards from Python | Accepted | 2026-05-24 | — |
 | [0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) | AI in CI via Keycloak OIDC token exchange (Python step, shared SA, fork-deny) | Accepted | 2026-05-24 | [0007](./0007-kc-token-go-cli.md) |
-| [0010](./0010-argocd-image-updater-writeback-to-ai-gitops.md) | argocd-image-updater with git write-back to `ai-gitops` (PR + auto-merge, GitHub App auth, once per Application) | Accepted | 2026-05-24 | — |
+| [0010](./0010-argocd-image-updater-writeback-to-ai-gitops.md) | argocd-image-updater with git write-back to `ai-gitops` (PR + auto-merge, GitHub App auth, once per Application) | Superseded by [0013](./0013-defer-image-updater-writeback.md) | 2026-05-24 | — |
 | [0011](./0011-oidc-downstream-headers.md) | Canonical `x-oidc-*` downstream header contract (supplements ADR-0005) | Accepted | 2026-05-24 | — |
 | [0012](./0012-split-ai-models-applicationset.md) | Split `charts/ai-models` into 3 sub-charts + ApplicationSet (1 backends App + N per-model Apps) | Accepted | 2026-05-24 | — |
+| [0013](./0013-defer-image-updater-writeback.md) | Defer argocd-image-updater write-back; manual chart-version bumps stay (supersedes ADR-0010) | Accepted | 2026-05-24 | [0010](./0010-argocd-image-updater-writeback-to-ai-gitops.md) |
 
 ## Status legend
 
