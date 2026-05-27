@@ -1,55 +1,36 @@
 apiVersion: v2
-name: chat
-description: A Helm chart for Kubernetes
+name: librechart
+description: |
+  Orchestrator chart for the LibreChat stack. Renders ONE ArgoCD
+  ApplicationSet that fans out to three leaf Applications:
 
-# A chart can be either an 'application' or a 'library' chart.
-#
-# Application charts are a collection of templates that can be packaged into versioned archives
-# to be deployed.
-#
-# Library charts provide useful utilities or functions for the chart developer. They're included as
-# a dependency of application charts to inject those utilities and functions into the rendering
-# pipeline. Library charts do not define any templates and therefore cannot be deployed.
+    1. librechat-search             — Meilisearch (sync-wave -1)
+    2. librechat-app                — LibreChat + MongoDB (sync-wave 0)
+    3. librechat-opencode-wellknown — nginx serving opencode well-known JSON
+                                       so `opencode auth login` resolves
+                                       at https://ai.camer.digital/opencode
+                                       (sync-wave 1)
+
+  See ADR-0014 for the split rationale. The chart owns NO resources
+  directly; it owns the ApplicationSet that owns everything.
+
+  Audit fix: pre-split Chart.yaml carried `name: chat` while the
+  directory is `librechart`; aligned to `name: librechart`.
 type: application
-
-# This is the chart version. This version number should be incremented each time you make changes
-# to the chart and its templates, including the app version.
-# Versions are expected to follow Semantic Versioning (https://semver.org/)
-version: 1.1.0
-
-# This is the version number of the application being deployed. This version number should be
-# incremented each time you make changes to the application. Versions are not expected to
-# follow Semantic Versioning. They should reflect the version the application is using.
-# It is recommended to use it with quotes.
-appVersion: "1.16.0"
-
+version: 2.0.0
+appVersion: "v0.8.5"
 keywords:
   - llm
   - chat
   - librechat
+  - applicationset
+maintainers:
+  - name: ai-helm
 
 dependencies:
-  - condition: librechat.enabled
-    name: app-template
-    version: '4.6.2'
-    repository: https://bjw-s-labs.github.io/helm-charts
-    alias: librechat
-
   - name: common
     version: '*'
     repository: "file://../common"
     tags:
       - common
       - bitnami-common
-
-  - condition: db.enabled
-    name: mongodb
-    version: "1.7.6"
-    repository: https://repo.helmforge.dev
-    alias: db
-
-  - condition: search.enabled
-    name: meilisearch
-    version: "0.25.1"
-    repository: https://meilisearch.github.io/meilisearch-kubernetes
-    alias: search

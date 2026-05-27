@@ -1,0 +1,31 @@
+apiVersion: v2
+name: librechat-search
+description: |
+  Meilisearch instance for LibreChat full-text search. Independent
+  Application (sync-wave -1) so LibreChat finds the search service
+  ready when it starts.
+
+  Leaf chart under the `librechart` orchestrator (ADR-0014).
+type: application
+version: 1.0.0
+appVersion: "0.25.1"
+keywords:
+  - librechat
+  - meilisearch
+  - search
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - condition: search.enabled
+    name: meilisearch
+    version: "0.25.1"
+    repository: https://meilisearch.github.io/meilisearch-kubernetes
+    alias: search
+
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

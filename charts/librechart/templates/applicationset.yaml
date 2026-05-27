@@ -1,0 +1,58 @@
+{{- /*
+librechart orchestrator — one ApplicationSet generates child Applications
+for each leaf chart (see values.yaml children list). Leaves carry their
+own values; no per-app valuesObject overrides flow from here today.
+
+Pattern matches ai-models (ADR-0012): Helm pre-computes elements;
+ApplicationSet's `template:` substitutes per-element values at AppSet-
+controller time via goTemplate. The `{{ "{{ .field }}" }}` literal
+pattern emits `{{ .field }}` for the AppSet controller.
+*/ -}}
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - list:
+        elements:
+{{- range $child := .Values.children }}
+{{- if not (eq $child.enabled false) }}
+          - appName: {{ $child.name | quote }}
+            chartPath: {{ $child.chartPath | quote }}
+            syncWave: {{ $child.syncWave | quote }}
+{{- end }}
+{{- end }}
+  template:
+    metadata:
+      name: '{{ "{{ .appName }}" }}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{ "{{ .syncWave }}" }}'
+    spec:
+      project: {{ .Values.argocd.project | quote }}
+      source:
+        repoURL: {{ .Values.argocd.repoURL | quote }}
+        targetRevision: {{ .Values.argocd.targetRevision | quote }}
+        path: '{{ "{{ .chartPath }}" }}'
+        helm:
+          releaseName: '{{ "{{ .appName }}" }}'
+      destination:
+        name: {{ .Values.argocd.destination.name | quote }}
+        namespace: {{ .Values.argocd.destination.namespace | quote }}
+      syncPolicy:
+        {{- with .Values.argocd.syncPolicy.syncOptions }}
+        syncOptions:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.argocd.syncPolicy.automated }}
+        automated:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}

@@ -1,0 +1,96 @@
+# Static JSON served at `https://ai.camer.digital/opencode/.well-known/opencode`
+# so `opencode auth login https://ai.camer.digital/opencode` works.
+#
+# The contract is opencode-proprietary (NOT OIDC discovery) and undocumented
+# upstream; the agent that researched the source identified two consumer
+# shapes:
+#   1. `auth.command` / `auth.env` — spawned locally by opencode CLI;
+#      stdout is the bearer token. Since we use @vymalo/opencode-oauth2 to
+#      handle OAuth in-config, this is a NO-OP STUB (opencode reads
+#      something from .well-known, the plugin then takes over).
+#   2. `config` — inline opencode config merged at bootstrap. Carries the
+#      provider definition + the OAuth2 plugin wiring.
+#
+# See ADR-0014 + docs/opencode-well-known.md.
+
+image:
+  repository: nginxinc/nginx-unprivileged
+  tag: "1.27-alpine"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+# ────────────────────────────────────────────────────────────────────────
+# Ingress — same host as LibreChat (`ai.camer.digital`) with a more
+# specific path. Traefik (className: traefik) handles longest-path-wins
+# routing automatically.
+# ────────────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: traefik
+  host: ai.camer.digital
+  path: /opencode/.well-known/opencode
+  annotations:
+    cert-manager.io/cluster-issuer: cert-home-cert-http
+  tls:
+    enabled: true
+    secretName: ai.camer.digital-tls
+
+# ────────────────────────────────────────────────────────────────────────
+# The well-known JSON itself.
+#
+# `auth.command` is a no-op stub. The OAuth2 work is delegated to the
+# @vymalo/opencode-oauth2 plugin declared in `config.plugin` and configured
+# in `config.provider.camer-digital.options.oauth2`.
+#
+# `authFlow: device_code` is set explicitly (the plugin's default is
+# `authorization_code` which would try to bind a localhost callback port).
+# Device flow works headless and on remote dev machines without browser
+# coupling.
+#
+# For audience pinning to `lightbridge-api-key`: configure a Keycloak
+# client-scope audience mapper on the `opencode-cli` client (the plugin
+# does not expose a non-federated `audience` parameter; that's the only
+# route documented).
+# ────────────────────────────────────────────────────────────────────────
+wellKnown:
+  auth:
+    # Stub. The plugin manages auth; opencode never reads this token
+    # because the plugin's chat.headers hook overrides Authorization
+    # per request. Keep the field to satisfy opencode's auth-login
+    # schema check.
+    command:
+      - sh
+      - "-c"
+      - "echo plugin-managed"
+    env: OPENAI_API_KEY
+
+  config:
+    $schema: https://opencode.ai/config.json
+    plugin:
+      - "@vymalo/opencode-oauth2"
+    provider:
+      camer-digital:
+        name: "Camer Digital"
+        options:
+          baseURL: "https://api.ai.camer.digital/v1"
+          oauth2:
+            issuer: "https://auth.verif.fyi/realms/camer-digital"
+            clientId: "opencode-cli"
+            scopes:
+              - openid
+              - profile
+              - offline_access
+            # Explicit device_code; the plugin defaults to
+            # authorization_code which binds a local callback port and
+            # breaks headless / remote-dev use.
+            authFlow: device_code
+            syncIntervalMinutes: 60

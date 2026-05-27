@@ -1,0 +1,40 @@
+apiVersion: v2
+name: librechat-app
+description: |
+  LibreChat application + its MongoDB store, packaged together because
+  they share lifecycle (LibreChat's runtime state lives in Mongo; pairing
+  them in one Application means one ArgoCD sync brings up the pair).
+
+  This is one of three leaves under the `librechart` orchestrator
+  (ADR-0014). The other two are `librechat-search` (Meilisearch) and
+  `librechat-opencode-wellknown` (static .well-known JSON for opencode).
+type: application
+version: 1.0.0
+appVersion: "v0.8.5"
+keywords:
+  - llm
+  - chat
+  - librechat
+  - mongodb
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - condition: librechat.enabled
+    name: app-template
+    version: '4.6.2'
+    repository: https://bjw-s-labs.github.io/helm-charts
+    alias: librechat
+
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
+
+  - condition: db.enabled
+    name: mongodb
+    version: "1.7.6"
+    repository: https://repo.helmforge.dev
+    alias: db

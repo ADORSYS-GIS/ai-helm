@@ -1,0 +1,58 @@
+{{- /*
+Two ConfigMaps:
+  1. nginx-config — custom default.conf so the served file gets the
+     right Content-Type (no file extension on the well-known URL).
+  2. content — the well-known JSON itself, materialised at the path
+     the deployment volume-mounts.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-nginx-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+      listen       8080;
+      server_name  _;
+
+      # The well-known file has no extension; force JSON Content-Type.
+      types { application/json json; }
+      default_type application/json;
+
+      # Health probe.
+      location = /healthz {
+        access_log off;
+        add_header Content-Type "text/plain";
+        return 200 "ok\n";
+      }
+
+      # Exact-match for the opencode well-known endpoint.
+      # File lives at /usr/share/nginx/html/opencode/.well-known/opencode
+      # (mounted by the Deployment from the content ConfigMap).
+      location = /opencode/.well-known/opencode {
+        add_header Cache-Control "no-store" always;
+        try_files /opencode/.well-known/opencode =404;
+      }
+
+      # Everything else 404s — this nginx serves exactly one endpoint.
+      location / {
+        return 404;
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-content
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+data:
+  # The well-known JSON. Render the structured `wellKnown` value as JSON
+  # (compact, deterministic) so a YAML→JSON drift in the values doesn't
+  # change the serialized output.
+  opencode: |
+    {{- .Values.wellKnown | toJson | nindent 4 }}
