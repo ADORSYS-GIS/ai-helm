@@ -27,6 +27,9 @@ $ opencode auth login \
     │
     │  merges `config` into ~/.opencode/config.json
     │
+    │  reads config.plugin → runs `bun install @vymalo/opencode-oauth2`
+    │  (auto, cached under ~/.cache/opencode/node_modules/)
+    │
     │  loads @vymalo/opencode-oauth2 plugin
     │
     │  plugin sees authFlow=device_code, starts RFC 8628 flow
@@ -140,28 +143,34 @@ have the plugin exchange the user's identity token for an
 audience-correct token. Heavier; only justified if the audience-mapper
 approach proves insufficient.
 
-## Installing the plugin (user-side)
-
-Users install `@vymalo/opencode-oauth2` once per machine:
-
-```bash
-opencode plugin add @vymalo/opencode-oauth2
-# or via npm in ~/.opencode/plugins/
-```
-
-Then:
+## End-user workflow
 
 ```bash
 opencode auth login https://ai.camer.digital/opencode
 ```
 
-The plugin handles the rest. Token is cached at:
+That's it. opencode:
 
-- macOS: `~/Library/Caches/opencode-oauth2/<namespace>/camer-digital.json`
-- Linux: `$XDG_CACHE_HOME/opencode-oauth2/<namespace>/camer-digital.json`
+1. Fetches `https://ai.camer.digital/opencode/.well-known/opencode`.
+2. Reads the `config.plugin` list (`["@vymalo/opencode-oauth2"]`) and
+   runs `bun install` automatically — the package is cached under
+   `~/.cache/opencode/node_modules/` so this only happens once per
+   plugin per machine.
+3. Loads the plugin, which kicks off the OAuth 2.0 device-authorization
+   flow against Keycloak. User code + verification URL print to the
+   terminal; user opens the URL in any browser (laptop, phone), enters
+   the code, approves.
+4. Plugin caches the resulting tokens at:
+   - macOS: `~/Library/Caches/opencode-oauth2/<namespace>/camer-digital.json`
+   - Linux: `$XDG_CACHE_HOME/opencode-oauth2/<namespace>/camer-digital.json`
 
 The cache file is mode `0700` and contains the refresh token. **Treat it
 as a credential** — don't commit it, don't sync via Dropbox.
+
+> No manual `opencode plugin add` or `npm install` is required. The
+> auto-install behaviour is documented at
+> <https://opencode.ai/docs/plugins/> ("npm plugins are installed
+> automatically using Bun at startup").
 
 ## Why `auth.command` is a stub
 
@@ -205,6 +214,7 @@ client config above).
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `opencode auth login` errors "fetch failed" | Endpoint not reachable | `curl -v https://ai.camer.digital/opencode/.well-known/opencode` from the user's machine. Check DNS / cert / Traefik route. |
+| `bun install` fails (no network, registry unreachable) | Auto-install of `@vymalo/opencode-oauth2` blocked | Confirm npm registry reachable. Worst case, pre-seed `~/.cache/opencode/node_modules/@vymalo/opencode-oauth2/` from a known-good machine. |
 | `opencode auth login` succeeds but `opencode chat` 401s | Token has wrong audience | Keycloak audience mapper missing (see prereq 2). Decode the JWT (`jwt-cli` or `jwt.io`), check `aud` claim. |
 | Plugin says "discovery failed" | Keycloak issuer URL wrong or realm down | Try `curl https://auth.verif.fyi/realms/camer-digital/.well-known/openid-configuration`. |
 | "device authorization not enabled" | Keycloak client misconfigured | Enable device-grant on the `opencode-cli` client (see prereq 1). |
