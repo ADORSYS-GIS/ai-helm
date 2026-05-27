@@ -407,6 +407,84 @@ rather than a timeout.
 
 ---
 
+### Issue 9 — AIGatewayRoute 60s default timeout kills streaming responses
+
+**File:** `charts/ai-models/templates/aigatewayroute.yaml` + `charts/ai-models/values.yaml`
+
+**Root cause:**
+```yaml
+# Before — no timeouts block on any AIGatewayRoute rule
+rules:
+  - matches:
+      - headers:
+          - type: Exact
+            name: x-ai-eg-model
+            value: glm-5p1
+    modelsOwnedBy: GIS AI Models
+    backendRefs:
+      - ...
+```
+The `AIGatewayRoute` CRD defaults `rules[].timeouts.request` to **60 seconds** when not set
+(documented in the CRD: "Envoy AI Gateway defaults to set 60s for the request timeout").
+This is independent of — and takes precedence over — the `BackendTrafficPolicy.requestTimeout: 600s`
+that we already set in Issue 3. The result: every streaming response was hard-killed at exactly
+60 seconds, regardless of the 600s ceiling configured elsewhere.
+
+This was the root cause of the persistent "connection terminated mid-stream" reports on long
+generations (code architecture analysis, multi-file refactors) even after Issue 3 was resolved.
+The symptom appeared identical to Issue 3, but the 60s cutoff (vs the old 30s) was the
+distinguishing detail.
+
+**Fix applied:**
+```yaml
+# After — explicit timeouts on every rule, configurable per-model with a global default
+routeDefaults:      # values.yaml
+  timeouts:
+    request: "600s"
+    backendRequest: "600s"
+
+rules:
+  - matches:
+      - headers:
+          - type: Exact
+            name: x-ai-eg-model
+            value: glm-5p1
+    modelsOwnedBy: GIS AI Models
+    timeouts:
+      request: {{ default $.Values.routeDefaults.timeouts.request ($routeConfig.timeouts).request | default "600s" }}
+      backendRequest: {{ default $.Values.routeDefaults.timeouts.backendRequest ($routeConfig.timeouts).backendRequest | default "600s" }}
+    backendRefs:
+      - ...
+```
+
+All 14 active routes now render with explicit `request: 600s` and `backendRequest: 600s`.
+Individual models can override via `models.<name>.timeouts.request` / `.backendRequest` in values.
+
+**Additional fix — API version upgrade:**
+```yaml
+# Before
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+
+# After
+apiVersion: aigateway.envoyproxy.io/v1beta1
+```
+The CRD marks `v1alpha1` as deprecated (`storage: false`) and recommends `v1beta1`. The schemas
+are identical between the two versions, so this is a zero-risk upgrade that eliminates the
+deprecation warning on every apply.
+
+**Rationale:** The `BackendTrafficPolicy` timeout (Issue 3) governs the Envoy proxy's retry
+and upstream behaviour. The `AIGatewayRoute` timeout governs the HTTPRoute that Envoy AI Gateway
+generates — it becomes the route-level `request_timeout` in Envoy's route config. Route-level
+timeouts take precedence over listener/global timeouts, so the 60s AIGatewayRoute default
+was silently overriding the 600s BackendTrafficPolicy ceiling.
+
+> **Schema note:** The `AIGatewayRoute` CRD explicitly documents this default: "If this field
+> is not set, or the timeout.requestTimeout is nil, Envoy AI Gateway defaults to set 60s for
+> the request timeout." The CRD also enforces `backendRequest <= request` via a CEL validation
+> rule. Always set both fields together.
+
+---
+
 ## Issues Found — Not Yet Addressed
 
 ---
@@ -570,6 +648,7 @@ reasoning) to allow fine-grained quota monitoring and provider-side usage visibi
 | 6 | OTel blocking on slow downstream | `otel.yaml` | ✅ Fixed | Billing slowness → response slowness |
 | 7 | No client buffer/timeout bounds | `client-traffic-policy.yaml` | ✅ Fixed | RAM exhaustion + hung threads |
 | 8 | No connection pool / TCP keepalive | `backendtrafficpolicy.yaml` | ✅ Fixed | TLS reconnect cost per request |
+| 9 | AIGatewayRoute 60s default timeout | `ai-models/aigatewayroute.yaml` | ✅ Fixed | Streaming cut at 60s despite 600s BTP |
 | A | DeepInfra shared API key | `ai-models/values.yaml` | ⏳ Pending | Fake HA — both fail under throttle |
 | B | Access log field audit | `envoy-proxy.yaml` | ⏳ Pending Lightbridge input | Per-request serialization overhead |
 | C | No per-model timeout tuning | `ai-models/backendtrafficpolicy.yaml` | ⏳ Pending | Slow failure detection |
