@@ -3156,125 +3156,125 @@ applications:
     destination:
       namespace: converse-mcp
 
-  # --- Coder DB ---
-  - name: coder-db
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "1"
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: HEAD
-      path: charts/coder-db
-      helm:
-        releaseName: coder-db
-        valuesObject: {}
-    destination:
-      namespace: coder
+  # # --- Coder DB ---
+  # - name: coder-db
+  #   finalizers:
+  #     - resources-finalizer.argocd.argoproj.io
+  #   additionalAnnotations:
+  #     argocd.argoproj.io/sync-wave: "1"
+  #   source:
+  #     repoURL: https://github.com/ADORSYS-GIS/ai-helm
+  #     targetRevision: HEAD
+  #     path: charts/coder-db
+  #     helm:
+  #       releaseName: coder-db
+  #       valuesObject: {}
+  #   destination:
+  #     namespace: coder
 
-  # --- Coder ---
-  - name: coder
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "2"
-    sources:
-      - repoURL: oci://ghcr.io/coder/chart/coder
-        targetRevision: 2.31.9
-        chart: coder
-        helm:
-          releaseName: coder
-          valuesObject:
-            coder:
-              env:
-                - name: CODER_PG_CONNECTION_URL
-                  valueFrom:
-                    secretKeyRef:
-                      name: coder-cnpg-app
-                      key: uri
-                - name: CODER_PG_OPTIONS
-                  value: "sslmode=disable"
-                - name: CODER_ACCESS_URL
-                  value: "https://coder.ai.camer.digital"
-                - name: CODER_WILDCARD_ACCESS_URL
-                  value: "*.coder-ai.camer.digital"
-                - name: CODER_OIDC_ISSUER_URL
-                  value: "https://auth.verif.fyi/realms/camer-digital"
-                - name: CODER_OIDC_CLIENT_ID
-                  valueFrom:
-                    secretKeyRef:
-                      name: coder-keycloak-secret
-                      key: client_id
-                - name: CODER_OIDC_CLIENT_SECRET
-                  valueFrom:
-                    secretKeyRef:
-                      name: coder-keycloak-secret
-                      key: client_secret
-                - name: CODER_OIDC_SCOPES
-                  value: "openid,profile,email,offline_access"
-                - name: CODER_OIDC_ICON_URL
-                  value: "https://www.keycloak.org/resources/images/logo.svg"
-                - name: CODER_OIDC_SIGN_IN_TEXT
-                  value: "Sign in with Keycloak"
-                - name: CODER_EXPERIMENTS
-                  value: "oauth2,mcp-server-http"
-                - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
-                  value: "false"
-                - name: CODER_USERNAME
-                  valueFrom:
-                    secretKeyRef:
-                      name: coder-admin-secret
-                      key: username
-                - name: CODER_EMAIL
-                  valueFrom:
-                    secretKeyRef:
-                      name: coder-admin-secret
-                      key: username
-                - name: CODER_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: coder-admin-secret
-                      key: password
-              lifecycle:
-                postStart:
-                  exec:
-                    command:
-                      - /bin/sh
-                      - -c
-                      - |
-                        echo "Waiting for Coder server to be ready..."
-                        until curl -sf http://localhost:8080/healthz > /dev/null 2>&1; do
-                          sleep 2
-                        done
-                        sleep 5
-                        echo "Creating admin user..."
-                        coder server create-admin-user --username "$CODER_USERNAME" --email "$CODER_EMAIL" --password "$CODER_PASSWORD" 2>&1 || true
-              tolerations:
-                - key: ai.camer.digital/offline-work
-                  operator: Equal
-                  value: dev-container
-              resources:
-                requests:
-                  cpu: 1000m
-                  memory: 1024Mi
-                limits:
-                  cpu: 2000m
-                  memory: 4096Mi
-              service:
-                type: ClusterIP
-              ingress:
-                enable: true
-                className: traefik
-                annotations:
-                  cert-manager.io/cluster-issuer: cert-home-cert-http
-                host: "coder.ai.camer.digital"
-                wildcardHost: "*.coder-ai.camer.digital"
-                tls:
-                  enable: true
-                  secretName: coder.ai.camer.digital-tls
-                  wildcardSecretName: coder.ai.camer.digital-tls
-    destination:
-      namespace: coder
+  # # --- Coder ---
+  # - name: coder
+  #   finalizers:
+  #     - resources-finalizer.argocd.argoproj.io
+  #   additionalAnnotations:
+  #     argocd.argoproj.io/sync-wave: "2"
+  #   sources:
+  #     - repoURL: oci://ghcr.io/coder/chart/coder
+  #       targetRevision: 2.31.9
+  #       chart: coder
+  #       helm:
+  #         releaseName: coder
+  #         valuesObject:
+  #           coder:
+  #             env:
+  #               - name: CODER_PG_CONNECTION_URL
+  #                 valueFrom:
+  #                   secretKeyRef:
+  #                     name: coder-cnpg-app
+  #                     key: uri
+  #               - name: CODER_PG_OPTIONS
+  #                 value: "sslmode=disable"
+  #               - name: CODER_ACCESS_URL
+  #                 value: "https://coder.ai.camer.digital"
+  #               - name: CODER_WILDCARD_ACCESS_URL
+  #                 value: "*.coder-ai.camer.digital"
+  #               - name: CODER_OIDC_ISSUER_URL
+  #                 value: "https://auth.verif.fyi/realms/camer-digital"
+  #               - name: CODER_OIDC_CLIENT_ID
+  #                 valueFrom:
+  #                   secretKeyRef:
+  #                     name: coder-keycloak-secret
+  #                     key: client_id
+  #               - name: CODER_OIDC_CLIENT_SECRET
+  #                 valueFrom:
+  #                   secretKeyRef:
+  #                     name: coder-keycloak-secret
+  #                     key: client_secret
+  #               - name: CODER_OIDC_SCOPES
+  #                 value: "openid,profile,email,offline_access"
+  #               - name: CODER_OIDC_ICON_URL
+  #                 value: "https://www.keycloak.org/resources/images/logo.svg"
+  #               - name: CODER_OIDC_SIGN_IN_TEXT
+  #                 value: "Sign in with Keycloak"
+  #               - name: CODER_EXPERIMENTS
+  #                 value: "oauth2,mcp-server-http"
+  #               - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
+  #                 value: "false"
+  #               - name: CODER_USERNAME
+  #                 valueFrom:
+  #                   secretKeyRef:
+  #                     name: coder-admin-secret
+  #                     key: username
+  #               - name: CODER_EMAIL
+  #                 valueFrom:
+  #                   secretKeyRef:
+  #                     name: coder-admin-secret
+  #                     key: username
+  #               - name: CODER_PASSWORD
+  #                 valueFrom:
+  #                   secretKeyRef:
+  #                     name: coder-admin-secret
+  #                     key: password
+  #             lifecycle:
+  #               postStart:
+  #                 exec:
+  #                   command:
+  #                     - /bin/sh
+  #                     - -c
+  #                     - |
+  #                       echo "Waiting for Coder server to be ready..."
+  #                       until curl -sf http://localhost:8080/healthz > /dev/null 2>&1; do
+  #                         sleep 2
+  #                       done
+  #                       sleep 5
+  #                       echo "Creating admin user..."
+  #                       coder server create-admin-user --username "$CODER_USERNAME" --email "$CODER_EMAIL" --password "$CODER_PASSWORD" 2>&1 || true
+  #             tolerations:
+  #               - key: ai.camer.digital/offline-work
+  #                 operator: Equal
+  #                 value: dev-container
+  #             resources:
+  #               requests:
+  #                 cpu: 1000m
+  #                 memory: 1024Mi
+  #               limits:
+  #                 cpu: 2000m
+  #                 memory: 4096Mi
+  #             service:
+  #               type: ClusterIP
+  #             ingress:
+  #               enable: true
+  #               className: traefik
+  #               annotations:
+  #                 cert-manager.io/cluster-issuer: cert-home-cert-http
+  #               host: "coder.ai.camer.digital"
+  #               wildcardHost: "*.coder-ai.camer.digital"
+  #               tls:
+  #                 enable: true
+  #                 secretName: coder.ai.camer.digital-tls
+  #                 wildcardSecretName: coder.ai.camer.digital-tls
+  #   destination:
+  #     namespace: coder
 
   # --- Adminer ---
   - name: adminer
