@@ -99,8 +99,8 @@ The restore cluster files are already defined:
 Apply the restore clusters:
 
 ```bash
-kubectl apply -f docs/cnpg-native-backuplightbridge-main-db-restore.yaml
-kubectl apply -f docs/cnpg-native-backuplightbridge-usage-db-restore.yaml
+kubectl apply -f docs/cnpg-native-backup/lightbridge-main-db-restore.yaml
+kubectl apply -f docs/cnpg-native-backup/lightbridge-usage-db-restore.yaml
 ```
 
 Or commit and push for ArgoCD to sync:
@@ -348,6 +348,304 @@ After successful recovery, the `bootstrap.recovery` setting is harmless and can 
 - No data loss on pod restarts
 
 **No need to remove the recovery configuration** - it won't cause re-recovery as long as PVCs have data.
+
+---
+
+## Approach 3: Point-in-Time Recovery (PITR)
+
+**Use this when:** You need to recover to a specific moment — e.g., just before accidental data deletion, a bad migration, or data corruption at a known time.
+
+**Downtime:** Depends on approach (combines with Alias Services for near-zero downtime, or In-Place for full restore time)
+
+**Prerequisite:** WAL archiving must be enabled (it is — `archive_timeout: 30min`). The maximum data loss window is up to 30 minutes of WAL not yet archived.
+
+### How It Works
+
+PITR replays WAL segments on top of the most recent base backup up to a target you specify. CNPG automatically selects the closest base backup before your target and replays WAL from there.
+
+```
+Base Backup (2AM) ──── WAL segments ────► Target Time (e.g., 10:45 AM)
+                        ▲
+                  Replay stops here
+```
+
+### Understanding WAL File Names
+
+WAL files in MinIO (under `wals/`) have 24-character hex names following PostgreSQL's naming convention:
+
+```
+0000000B  00000023  000000EF
+────────  ────────  ────────
+Timeline  LSN high  LSN low (segment number)
+```
+
+**Deriving the LSN:** Take the middle 8 and last 8 hex characters, separated by `/`, and append `000000`:
+
+```
+0000000B00000023000000EF  →  LSN 23/EF000000
+```
+
+Each segment covers 16 MiB of WAL data.
+
+**Deriving the timestamp:** The "Last Modified" timestamp in MinIO is when the WAL was archived. With `archive_timeout: 30min`, WALs upload at roughly `:01` and `:31` past the hour. Transactions in that segment happened in the ~30 minutes before the upload timestamp. **Note:** MinIO's console shows timestamps in your browser's local timezone, not UTC. Convert to UTC before using as a `targetTime` (e.g., if your browser is GMT+1, subtract 1 hour).
+
+**Deriving the XID:** Requires inspecting WAL contents with `pg_waldump` on a running pod:
+
+```bash
+kubectl exec -it lightbridge-main-db-1 -n converse -- \
+  pg_waldump /var/lib/postgresql/data/pgdata/pg_wal/0000000B00000023000000EF 2>/dev/null | head -20
+# Output includes tx: <XID>, lsn: <LSN> for each WAL record
+```
+
+**In practice, you rarely need to decode WAL filenames.** For most PITR scenarios, identify when the incident happened from application logs or alerts and use `targetTime` with a UTC timestamp a couple of minutes before the incident.
+
+### Recovery Target Options
+
+You can recover to one of these targets (choose **one**):
+
+| Target | Field | Example | Use Case |
+|--------|-------|---------|----------|
+| **Timestamp** | `targetTime` | `"2026-05-22T10:45:00Z"` | Most common — recover to just before an incident |
+| **Transaction ID** | `targetXID` | `"12345"` | Recover up to a specific transaction |
+| **Named Restore Point** | `targetName` | `"before-migration-v42"` | Recover to a point created via `SELECT pg_create_restore_point('name')` |
+| **LSN** | `targetLSN` | `"0/1234568"` | Recover to a specific WAL position |
+| **Immediate** | `targetImmediate` | `true` | Recover to end of backup (consistent state, no WAL replay) |
+
+Additional options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `exclusive` | `false` | If `true`, stops **before** the target (exclusive). If `false`, includes the target (inclusive). |
+| `backupID` | _(auto)_ | Force recovery from a specific base backup instead of letting CNPG auto-select. |
+
+### Step-by-Step: PITR with Alias Services (Recommended)
+
+#### 1. Determine the Target Time
+
+Identify the exact moment you want to recover to. Use UTC timestamps in RFC 3339 format.
+
+```bash
+# Check when the incident happened — look at application logs, alerts, etc.
+# Example: accidental DELETE happened at 10:47 AM UTC
+# Target: recover to 10:45:00 UTC (2 minutes before)
+TARGET_TIME="2026-05-22T10:45:00Z"
+```
+
+If you need to find a transaction ID instead:
+
+```bash
+# Check PostgreSQL logs for the problematic transaction
+kubectl logs lightbridge-main-db-1 -n converse | grep -i "DELETE\|DROP\|TRUNCATE"
+```
+
+#### 2. Check WAL Coverage
+
+Verify that WAL segments covering your target time exist in the backup:
+
+```bash
+# List available base backups
+mc ls myminio/ai-ops-backups/lightbridge-main-db/server=lightbridge-main-db/base/
+
+# List WAL files (check timestamps around your target)
+mc ls myminio/ai-ops-backups/lightbridge-main-db/server=lightbridge-main-db/wals/
+
+# Check the most recent backup status
+kubectl get backups -n converse -l postgresql.cnpg.io/cluster=lightbridge-main-db \
+  -o custom-columns='NAME:.metadata.name,STARTED:.status.beginWal,STOPPED:.status.endWal,TIME:.status.startedAt'
+```
+
+**Important:** Your target time must be:
+- **After** the oldest available base backup
+- **Before** the most recently archived WAL segment
+- Within the 180-day retention window
+
+#### 3. Create PITR Restore Cluster
+
+Copy the restore template and add `recoveryTarget`:
+
+```yaml
+# lightbridge-main-db-restore.yaml — with PITR target
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lightbridge-main-db-restore
+  namespace: converse
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  storage:
+    storageClass: linode-block-storage
+    size: 5Gi
+  resources:
+    limits:
+      cpu: 300m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 500Mi
+  postgresUID: 26
+  postgresGID: 26
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lightbridge-main-db
+        serverName: lightbridge-main-db-restore
+  bootstrap:
+    recovery:
+      source: lightbridge-main-db-backup
+      recoveryTarget:
+        targetTime: "2026-05-22T10:45:00Z"   # <-- YOUR TARGET TIME (UTC, RFC 3339)
+        # exclusive: false                    # include the target transaction (default)
+        # backupID: "20260522T020000"          # optional: force a specific base backup
+  externalClusters:
+    - name: lightbridge-main-db-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: lightbridge-main-db
+          serverName: lightbridge-main-db
+```
+
+For usage-db (TimescaleDB), apply the same pattern:
+
+```yaml
+# lightbridge-usage-db-restore.yaml — with PITR target
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lightbridge-usage-db-restore
+  namespace: converse
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  instances: 2
+  imageCatalogRef:
+    apiGroup: postgresql.cnpg.io
+    kind: ClusterImageCatalog
+    name: lightbridge-usage-db
+    major: 17
+  storage:
+    storageClass: linode-block-storage
+    size: 10Gi
+  resources:
+    limits:
+      cpu: 300m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 500Mi
+  postgresql:
+    shared_preload_libraries:
+      - timescaledb
+  postgresUID: 70
+  postgresGID: 70
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lightbridge-usage-db
+        serverName: lightbridge-usage-db-restore
+  bootstrap:
+    recovery:
+      source: lightbridge-usage-db-backup
+      recoveryTarget:
+        targetTime: "2026-05-22T10:45:00Z"   # <-- YOUR TARGET TIME (UTC, RFC 3339)
+  externalClusters:
+    - name: lightbridge-usage-db-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: lightbridge-usage-db
+          serverName: lightbridge-usage-db
+```
+
+#### 4. Apply and Monitor
+
+```bash
+kubectl apply -f docs/cnpg-native-backup/lightbridge-main-db-restore.yaml
+kubectl apply -f docs/cnpg-native-backup/lightbridge-usage-db-restore.yaml
+
+# Watch recovery progress
+kubectl get clusters.postgresql.cnpg.io -n converse -w
+
+# Check recovery logs — look for "recovery stopping" at your target
+kubectl logs lightbridge-main-db-restore-1 -n converse | grep -i "recovery\|consistent\|redo"
+```
+
+Expected log output when PITR succeeds:
+
+```
+LOG:  starting point-in-time recovery to "2026-05-22 10:45:00+00"
+LOG:  consistent recovery state reached
+LOG:  recovery stopping before commit of transaction ...
+LOG:  redo done
+```
+
+#### 5. Validate the Recovery Point
+
+This is the most critical step — confirm the data state matches your expectation:
+
+```bash
+# Connect to the restored cluster
+kubectl exec -it lightbridge-main-db-restore-1 -n converse -- psql -U postgres
+
+# Check that data deleted after your target time is present
+# Check that data inserted after your target time is absent
+# Example:
+#   SELECT count(*) FROM my_table WHERE created_at < '2026-05-22T10:45:00Z';
+#   SELECT count(*) FROM my_table WHERE created_at > '2026-05-22T10:45:00Z';  -- should be 0 or near-0
+```
+
+#### 6. Switch Traffic and Cleanup
+
+Follow **Approach 1, Phases 5-8** (switch alias service selectors, verify, cleanup old cluster).
+
+### Step-by-Step: PITR with In-Place Recovery
+
+Same as Approach 2 above, but add `recoveryTarget` to the `bootstrap.recovery` section:
+
+```yaml
+spec:
+  bootstrap:
+    recovery:
+      source: lightbridge-main-db-backup
+      recoveryTarget:
+        targetTime: "2026-05-22T10:45:00Z"
+```
+
+Then follow Approach 2, Phases 2-7.
+
+### Using Named Restore Points (Proactive)
+
+For planned risky operations (migrations, bulk deletes), create named restore points **before** the operation:
+
+```bash
+# Before running a migration
+kubectl exec -it lightbridge-main-db-1 -n converse -- \
+  psql -U postgres -c "SELECT pg_create_restore_point('before-migration-v42');"
+```
+
+Then recover to it:
+
+```yaml
+recoveryTarget:
+  targetName: "before-migration-v42"
+```
+
+### PITR Limitations
+
+- **Maximum data loss window:** Up to 30 minutes (the `archive_timeout` interval). WAL not yet archived at crash time is lost.
+- **WAL gaps:** If WAL archiving was interrupted (e.g., S3 outage), recovery cannot proceed past the gap.
+- **Forward only:** Once you recover to a point, you cannot "fast-forward" to a later point on the same cluster. Create a new restore cluster if you need a different target.
+- **TimescaleDB:** PITR works with TimescaleDB but continuous aggregates may need manual refresh after recovery:
+
+  ```bash
+  kubectl exec -it lightbridge-usage-db-restore-1 -n converse -- \
+    psql -U postgres -d app -c "CALL refresh_continuous_aggregate('my_aggregate', NULL, NULL);"
+  ```
 
 ---
 
