@@ -6,16 +6,19 @@ metadata:
   labels:
     {{- include "model-serving.labels" . | nindent 4 }}
   annotations:
-    # Deployment mode: Serverless delegates lifecycle to Knative;
-    # RawDeployment creates a plain K8s Deployment instead.
     serving.kserve.io/deploymentMode: {{ .Values.inferenceService.deploymentMode | quote }}
-    {{- if and (eq .Values.inferenceService.deploymentMode "Serverless") .Values.inferenceService.scaleDownDelay }}
-    # Grace period before Knative scales a cold replica back to zero.
+    serving.kserve.io/enable-prometheus-scraping: "true"
+    {{- if eq .Values.inferenceService.deploymentMode "Serverless" }}
+    autoscaling.knative.dev/maxScale: {{ .Values.inferenceService.maxReplicas | quote }}
+    {{- if .Values.inferenceService.scaleDownDelay }}
     autoscaling.knative.dev/scale-down-delay: {{ .Values.inferenceService.scaleDownDelay | quote }}
+    {{- end }}
+    {{- end }}
+    {{- with .Values.inferenceService.annotations }}
+    {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   predictor:
-    minReplicas: {{ .Values.inferenceService.minReplicas }}
     maxReplicas: {{ .Values.inferenceService.maxReplicas }}
 
     {{- if .Values.inferenceService.timeout }}
@@ -23,34 +26,62 @@ spec:
     {{- end }}
 
     {{- if eq .Values.inferenceService.deploymentMode "Serverless" }}
-    # Knative Pod Autoscaler target — one in-flight request per replica by default.
-    scaleTarget: {{ .Values.inferenceService.scaleTarget | default 1 }}
     scaleMetric: {{ .Values.inferenceService.scaleMetric | default "concurrency" }}
+    scaleTarget: {{ .Values.inferenceService.scaleTarget | default 10 }}
     {{- end }}
 
-    {{- with .Values.inferenceService.nodeSelector }}
-    nodeSelector:
-      {{- toYaml . | nindent 6 }}
-    {{- end }}
-
-    {{- with .Values.inferenceService.tolerations }}
-    tolerations:
-      {{- toYaml . | nindent 6 }}
+    {{- with .Values.inferenceService.runtimeClassName }}
+    runtimeClassName: {{ . }}
     {{- end }}
 
     model:
       modelFormat:
         {{- toYaml .Values.model.format | nindent 8 }}
 
-      # Resolved runtime name: either the explicit override from
-      # inferenceService.runtime or the chart-managed ServingRuntime.
       runtime: {{ include "model-serving.inferenceRuntimeRef" . }}
 
-      storageUri: {{ include "model-serving.resolvedStorageUri" . | trim | quote }}
-
-      {{- if .Values.inferenceService.resources }}
-      # Predictor-level resource overrides take precedence over the
-      # ServingRuntime container defaults.
-      resources:
-        {{- toYaml .Values.inferenceService.resources | nindent 8 }}
+      {{- if not .Values.model.storage.pvc.enabled }}
+      storageUri: {{ .Values.model.storageUri | required "model.storageUri is required when PVC storage is disabled" | quote }}
       {{- end }}
+
+      args:
+        - --model={{ include "model-serving.modelArg" . | trim }}
+        {{- if .Values.chatTemplate.enabled }}
+        - --chat-template=/chat-template/chat_template.jinja
+        {{- end }}
+        {{- with .Values.model.args }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+      {{- if or .Values.chatTemplate.enabled .Values.model.storage.pvc.enabled .Values.model.volumeMounts }}
+      volumeMounts:
+        {{- if .Values.chatTemplate.enabled }}
+        - name: chat-template
+          mountPath: /chat-template
+          readOnly: true
+        {{- end }}
+        {{- if .Values.model.storage.pvc.enabled }}
+        - name: model-store
+          mountPath: {{ .Values.model.storage.pvc.mountPath | default "/mnt/models" }}
+        {{- end }}
+        {{- with .Values.model.volumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+
+    {{- if or .Values.chatTemplate.enabled .Values.model.storage.pvc.enabled .Values.inferenceService.volumes }}
+    volumes:
+      {{- if .Values.chatTemplate.enabled }}
+      - name: chat-template
+        configMap:
+          name: {{ .Values.chatTemplate.configMapName }}
+      {{- end }}
+      {{- if .Values.model.storage.pvc.enabled }}
+      - name: model-store
+        persistentVolumeClaim:
+          claimName: {{ include "model-serving.pvcName" . }}
+      {{- end }}
+      {{- with .Values.inferenceService.volumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+    {{- end }}
