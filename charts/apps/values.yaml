@@ -393,9 +393,6 @@ applications:
               requests:
                 cpu: 100m
                 memory: 256Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
 
           serviceMonitor:
             enabled: true
@@ -557,6 +554,14 @@ applications:
                 enable_api: true
                 external_url: https://grafana.ai.camer.digital/alerting
 
+              frontend:
+                # ── Query concurrency ────────────────────────────────────────
+                # Max queued requests per tenant at the query-frontend level.
+                # (query_scheduler is disabled so the frontend owns the queue.)
+                # Raise this to prevent 429s when dashboards fire many panels
+                # simultaneously. Default is 100.
+                max_outstanding_per_tenant: 1000
+
               limits:
                 # ── Retention ──────────────────────────────────────────────
                 # How long blocks are kept in S3 before the compactor deletes them.
@@ -570,11 +575,6 @@ applications:
                 # Allow samples up to 10m behind the latest ingested timestamp.
                 # Prevents rejections from Alloy self-scrape timing skew.
                 out_of_order_time_window: 10m
-
-                # ── Query ────────────────────────────────────────────────────
-                # Raise the query-frontend concurrency cap to prevent 429s when
-                # multiple dashboard panels fire simultaneous queries.
-                max_outstanding_requests_per_tenant: 1000
 
               compactor:
                 # How often the compactor runs a cleanup cycle.
@@ -1067,7 +1067,6 @@ applications:
 
           resources:
             requests: { cpu: 200m, memory: 512Mi }
-            limits:   { cpu: 1000m, memory: 6Gi   }
 
           persistence:
             enabled: true
