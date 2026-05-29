@@ -95,6 +95,9 @@ spec:
     count/pods: "10"
 ---
 # envoy-gateway-system
+# CPU budget per Envoy pod = proxy container (2000m) + extProc sidecar (2000m) = 4000m limits / 800m requests
+# 2 replicas = 8000m limits / 1600m requests at steady state
+# Rolling update (maxSurge=1) = 3 pods = 12000m limits / 2400m requests peak
 apiVersion: v1
 kind: LimitRange
 metadata:
@@ -120,11 +123,11 @@ metadata:
   namespace: envoy-gateway-system
 spec:
   hard:
-    requests.cpu: "2"
-    requests.memory: "4Gi"
-    limits.cpu: "6"
-    limits.memory: "10Gi"
-    count/pods: "15"
+    requests.cpu: "4"
+    requests.memory: "6Gi"
+    limits.cpu: "14"
+    limits.memory: "14Gi"
+    count/pods: "20"
 ---
 # envoy-ai-gateway-system
 apiVersion: v1
@@ -255,39 +258,20 @@ spec:
     count/pods: "70"
 ---
 # kube-system (limitrange only)
-apiVersion: v1
-kind: LimitRange
-metadata:
-  name: kube-system-defaults
-  namespace: kube-system
-spec:
-  limits:
-    - type: Container
-      defaultRequest:
-        cpu: "50m"
-        memory: "64Mi"
-      default:
-        cpu: "200m"
-        memory: "256Mi"
-      max:
-        cpu: "4"
-        memory: "8Gi"
----
-# converse-proxy (limitrange only)
-apiVersion: v1
-kind: LimitRange
-metadata:
-  name: converse-proxy-defaults
-  namespace: converse-proxy
-spec:
-  limits:
-    - type: Container
-      defaultRequest:
-        cpu: "50m"
-        memory: "64Mi"
-      default:
-        cpu: "200m"
-        memory: "256Mi"
-      max:
-        cpu: "4"
-        memory: "8Gi"
+# apiVersion: v1
+# kind: LimitRange
+# metadata:
+#   name: kube-system-defaults
+#   namespace: kube-system
+# spec:
+#   limits:
+#     - type: Container
+#       defaultRequest:
+#         cpu: "50m"
+#         memory: "64Mi"
+#       default:
+#         cpu: "200m"
+#         memory: "256Mi"
+#       max:
+#         cpu: "4"
+#         memory: "8Gi"

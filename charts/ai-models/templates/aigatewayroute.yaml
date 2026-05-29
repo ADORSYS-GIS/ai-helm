@@ -15,7 +15,7 @@
 {{- end }}
 
 ---
-apiVersion: aigateway.envoyproxy.io/v1alpha1
+apiVersion: aigateway.envoyproxy.io/v1beta1
 kind: AIGatewayRoute
 metadata:
   name: {{ $routeName }}
@@ -45,6 +45,9 @@ spec:
               name: x-ai-eg-model
               value: {{ $routeName }}
       modelsOwnedBy: GIS AI Models
+      timeouts:
+        request: {{ default $.Values.routeDefaults.timeouts.request ($routeConfig.timeouts).request | default "600s" }}
+        backendRequest: {{ default $.Values.routeDefaults.timeouts.backendRequest ($routeConfig.timeouts).backendRequest | default "600s" }}
       backendRefs:
         {{- range $bKey, $bVal := $activeBackends }}
         {{- $backendBase := index $.Values.backends $bVal.ref }}
