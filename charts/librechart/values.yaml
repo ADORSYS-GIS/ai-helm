@@ -1,6 +1,10 @@
 global:
   librechat:
-    version: "v0.8.6-rc1"
+    # Using dev image to include fix for GitHub issue #13179
+    # (strip redirect_uri and redirectTo params for admin panel OAuth)
+    # TODO: Switch back to stable release once v0.8.6+ includes commit 6cfecd4
+    version: "latest"
+    imageRepository: "ghcr.io/danny-avila/librechat-dev"
   rag_librechat:
     version: "v0.7.2"
   mongo:
@@ -123,7 +127,7 @@ librechat:
       containers:
         librechat:
           image:
-            repository: ghcr.io/danny-avila/librechat
+            repository: "{{ .Values.global.librechat.imageRepository }}"
             tag: "{{ .Values.global.librechat.version }}"
             pullPolicy: Always
           env:
