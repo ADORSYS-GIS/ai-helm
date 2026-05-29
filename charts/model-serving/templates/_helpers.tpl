@@ -83,6 +83,24 @@ Mirrors the subPath logic so the storage-initializer writes to the right place.
 {{- end }}
 
 {{/*
+Resolved --model argument for the vLLM container.
+When PVC storage is enabled the model is served from the local mount path.
+Otherwise KServe downloads via storageUri to /mnt/models.
+*/}}
+{{- define "model-serving.modelArg" -}}
+{{- if .Values.model.storage.pvc.enabled }}
+  {{- $mountPath := .Values.model.storage.pvc.mountPath | default "/mnt/models" }}
+  {{- if .Values.model.storage.pvc.subPath }}
+    {{- printf "%s/%s" $mountPath .Values.model.storage.pvc.subPath }}
+  {{- else }}
+    {{- $mountPath }}
+  {{- end }}
+{{- else }}
+  {{- "/mnt/models" }}
+{{- end }}
+{{- end }}
+
+{{/*
 Common labels applied to all chart-managed resources.
 */}}
 {{- define "model-serving.labels" -}}
