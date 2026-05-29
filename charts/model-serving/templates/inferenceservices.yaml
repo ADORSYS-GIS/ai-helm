@@ -40,19 +40,48 @@ spec:
 
       runtime: {{ include "model-serving.inferenceRuntimeRef" . }}
 
-      storageUri: {{ include "model-serving.resolvedStorageUri" . | trim | quote }}
+      {{- if not .Values.model.storage.pvc.enabled }}
+      storageUri: {{ .Values.model.storageUri | required "model.storageUri is required when PVC storage is disabled" | quote }}
+      {{- end }}
 
-      {{- with .Values.model.args }}
       args:
+        - --model={{ include "model-serving.modelArg" . | trim }}
+        {{- if .Values.chatTemplate.enabled }}
+        - --chat-template=/chat-template/chat_template.jinja
+        {{- end }}
+        {{- with .Values.model.args }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
 
-      {{- with .Values.model.volumeMounts }}
+      {{- if or .Values.chatTemplate.enabled .Values.model.storage.pvc.enabled .Values.model.volumeMounts }}
       volumeMounts:
+        {{- if .Values.chatTemplate.enabled }}
+        - name: chat-template
+          mountPath: /chat-template
+          readOnly: true
+        {{- end }}
+        {{- if .Values.model.storage.pvc.enabled }}
+        - name: model-store
+          mountPath: {{ .Values.model.storage.pvc.mountPath | default "/mnt/models" }}
+        {{- end }}
+        {{- with .Values.model.volumeMounts }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
 
-    {{- with .Values.inferenceService.volumes }}
+    {{- if or .Values.chatTemplate.enabled .Values.model.storage.pvc.enabled .Values.inferenceService.volumes }}
     volumes:
+      {{- if .Values.chatTemplate.enabled }}
+      - name: chat-template
+        configMap:
+          name: {{ .Values.chatTemplate.configMapName }}
+      {{- end }}
+      {{- if .Values.model.storage.pvc.enabled }}
+      - name: model-store
+        persistentVolumeClaim:
+          claimName: {{ include "model-serving.pvcName" . }}
+      {{- end }}
+      {{- with .Values.inferenceService.volumes }}
       {{- toYaml . | nindent 6 }}
+      {{- end }}
     {{- end }}

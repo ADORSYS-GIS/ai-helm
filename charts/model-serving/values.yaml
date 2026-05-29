@@ -8,12 +8,10 @@ model:
   format:
     name: huggingface
   args:
-    - --chat-template=/chat-template/chat_template.jinja
     - --device=cpu
     - --dtype=float32
     - --host=0.0.0.0
     - --max-model-len=2048
-    - --model=microsoft/phi-2
     - --port=8080
   volumeMounts: []
   huggingFaceToken:
@@ -29,9 +27,10 @@ model:
       size: "10Gi"
       storageClassName: ""
       subPath: ""
+      mountPath: "/mnt/models"
 
     downloader:
-      enabled: false
+      enabled: true
       image:
         repository: kserve/storage-initializer
         tag: v0.14.1
@@ -45,6 +44,10 @@ model:
           memory: "8Gi"
       backoffLimit: 3
       activeDeadlineSeconds: 7200
+
+chatTemplate:
+  enabled: true
+  configMapName: "phi2-chat-template"
 
 servingRuntime:
   enabled: true
@@ -114,4 +117,24 @@ adapters:
 # bjw-s app-template: extension point for supplementary workloads.
 # https://bjw-s-labs.github.io/helm-charts/docs/app-template/
 serving:
-  enabled: false
+  enabled: true
+  global:
+    createDefaultServiceAccount: false
+  configMaps:
+    phi2-chat-template:
+      enabled: true
+      forceRename: phi2-chat-template
+      data:
+        chat_template.jinja: |
+          {% for message in messages %}
+          {% if message['role'] == 'user' %}
+          User: {{ "{{" }} message['content'] {{ "}}" }}
+          {% elif message['role'] == 'assistant' %}
+          Assistant: {{ "{{" }} message['content'] {{ "}}" }}
+          {% elif message['role'] == 'system' %}
+          System: {{ "{{" }} message['content'] {{ "}}" }}
+          {% endif %}
+          {% endfor %}
+          {% if add_generation_prompt %}
+          Assistant:
+          {% endif %}
