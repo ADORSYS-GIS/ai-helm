@@ -50,6 +50,28 @@ gatewayRef:
   name: core-gateway
   namespace: converse-gateway
 
+# ────────────────────────────────────────────────────────────────────────
+# Models-info endpoint (charts/ai-models-info). Adds a sync-wave 1
+# child Application that serves an OpenRouter-shape catalog at
+# api.ai.camer.digital/v1/models/info so opencode's
+# @vymalo/opencode-models-info plugin can enrich its in-process model
+# registry. See ADR-0015.
+# ────────────────────────────────────────────────────────────────────────
+modelsInfo:
+  enabled: true
+  # Kinds we omit from the catalog (chat-only catalog by default).
+  excludeKinds:
+    - embedding
+    - reranker
+  route:
+    enabled: true
+    parentRef:
+      name: core-gateway
+      namespace: converse-gateway
+      sectionName: api-https
+    hostname: api.ai.camer.digital
+    path: /v1/models/info
+
 backendDefaults:
   fireworks: &fireworksBackend
     schema: OpenAI

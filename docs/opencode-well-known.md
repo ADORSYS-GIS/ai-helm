@@ -152,15 +152,20 @@ opencode auth login https://ai.camer.digital/opencode
 That's it. opencode:
 
 1. Fetches `https://ai.camer.digital/opencode/.well-known/opencode`.
-2. Reads the `config.plugin` list (`["@vymalo/opencode-oauth2"]`) and
-   runs `bun install` automatically — the package is cached under
+2. Reads the `config.plugin` list (currently `["@vymalo/opencode-oauth2", "@vymalo/opencode-models-info"]`)
+   and runs `bun install` automatically — the packages are cached under
    `~/.cache/opencode/node_modules/` so this only happens once per
    plugin per machine.
-3. Loads the plugin, which kicks off the OAuth 2.0 device-authorization
-   flow against Keycloak. User code + verification URL print to the
-   terminal; user opens the URL in any browser (laptop, phone), enters
-   the code, approves.
-4. Plugin caches the resulting tokens at:
+3. Loads the OAuth2 plugin, which kicks off the OAuth 2.0
+   device-authorization flow against Keycloak. User code + verification
+   URL print to the terminal; user opens the URL in any browser (laptop,
+   phone), enters the code, approves.
+4. Loads the models-info plugin, which fetches the OpenRouter-shape
+   catalog at `https://api.ai.camer.digital/v1/models/info` (ADR-0015,
+   served by [`charts/ai-models-info`](../charts/ai-models-info/)) and
+   enriches every model with context length, pricing, modalities, and
+   capability flags. Cached locally for 24h.
+5. Plugin caches the resulting tokens at:
    - macOS: `~/Library/Caches/opencode-oauth2/<namespace>/camer-digital.json`
    - Linux: `$XDG_CACHE_HOME/opencode-oauth2/<namespace>/camer-digital.json`
 

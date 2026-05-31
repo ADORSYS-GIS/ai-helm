@@ -27,6 +27,19 @@ spec:
             syncWave: "-1"
             valuesYaml: |-
 {{ (dict "backends" .Values.backends) | toYaml | indent 14 }}
+{{- if .Values.modelsInfo.enabled }}
+          # ── Models info (OpenRouter-shape catalog) — sync-wave 1 ──────
+          - appName: {{ printf "%s-info" .Release.Name | quote }}
+            chartPath: charts/ai-models-info
+            syncWave: "1"
+            valuesYaml: |-
+{{- $infoValues := dict
+      "models" .Values.models
+      "excludeKinds" .Values.modelsInfo.excludeKinds
+      "route" .Values.modelsInfo.route
+}}
+{{ $infoValues | toYaml | indent 14 }}
+{{- end }}
 {{- range $modelName, $modelConfig := .Values.models }}
 {{- if not (eq $modelConfig.enabled false) }}
           # ── Model: {{ $modelName }} — sync-wave 0 ───────────────────────
