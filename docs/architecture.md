@@ -59,11 +59,35 @@ into any specific subsystem.
 
 Everything is GitOps:
 
+The **entrypoint** is a single root Application that lives in the
+`ai-gitops` repo (not here) and points at `charts/apps` in this repo:
+
+```yaml
+# ai-gitops — the GitOps entrypoint
+- name: ai-apps-v2
+  project: ai
+  source:
+    repoURL: https://github.com/ADORSYS-GIS/ai-helm
+    targetRevision: <branch>      # main on merge; the PR branch while testing
+    path: charts/apps
+  destination:
+    name: home-remote             # registered cluster name (see ADR-0017)
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
 ```
-ArgoCD
-  ├─ Application: ai-apps                  (entry point; points at charts/apps)
+
+`charts/apps` is reconciled onto the `home-remote` cluster; the
+Application CRDs it emits land in that cluster's `argocd` namespace and
+are reconciled there. **Every** generated Application references the same
+cluster by the same registered name `home-remote` — never ArgoCD's
+built-in in-cluster handle (a render-time guard enforces this; ADR-0017).
+
+```
+ArgoCD (on home-remote)
+  ├─ Application: ai-apps-v2               (entry point; points at charts/apps)
   │
-  └─ charts/apps emits 1 Application per workload:
+  └─ charts/apps emits 1 Application per workload (all → cluster home-remote):
        │
        ├─ Application: cert                 (charts/cert)
        ├─ Application: external-secrets-operator
