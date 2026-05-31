@@ -125,7 +125,7 @@ proxy:
             PGID: "1000"
             TZ: "Europe/Berlin"
             LITELLM_MODE: "production"
-            REDIS_URL: "redis://redis-master.redis-system.svc.cluster.local:6379"
+            REDIS_URL: "redis://redis-ha-redis.redis-system.svc.cluster.local:6379"
             OPENAI_API_KEY:
               secretKeyRef:
                 name: openai-api-key

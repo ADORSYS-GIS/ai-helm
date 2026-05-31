@@ -1562,7 +1562,7 @@ applications:
                 gnetId: 20417
                 revision: 3
                 datasource: Mimir
-              # Redis — Bitnami replication mode compatible
+              # Redis — monitors the externally-managed redis-ha (home-os)
               redis:
                 gnetId: 19157
                 revision: 3
@@ -1962,31 +1962,11 @@ applications:
       namespace: external-secrets-system
 
   # --- Core Infrastructure ---
-  - name: redis
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: registry-1.docker.io/bitnamicharts
-      targetRevision: 24.0.0
-      chart: redis
-      helm:
-        releaseName: redis
-        valuesObject:
-          global:
-            pdb:
-              create: true
-              minAvailable: ""
-              maxUnavailable: "1"
-            defaultStorageClass: linode-block-storage
-          auth:
-            enabled: false
-          image:
-            repository: bitnamilegacy/redis
-          architecture: replication
-          replica:
-            replicaCount: 1
-    destination:
-      namespace: redis-system
+  # NOTE: Redis is NOT deployed by this repo. It's managed externally
+  # (home-os repo: charts/home-apps/redis-ha → redis-ha-redis in the
+  # redis-system namespace on the home-remote cluster). Consumers here
+  # point at `redis-ha-redis.redis-system.svc.cluster.local:6379`.
+  # Do not re-add a redis Application here.
 
   - name: aieg-crd
     finalizers:
@@ -2033,9 +2013,9 @@ applications:
                 backend:
                   type: Redis
                   redis:
-                    # Update this URL to match your Redis service location
-                    # This assumes Redis is deployed using the redis.yaml in this directory
-                    url: redis-master.redis-system.svc.cluster.local:6379
+                    # Externally-managed Redis (home-os redis-ha). Service
+                    # name is `redis-ha-redis` in the redis-system namespace.
+                    url: redis-ha-redis.redis-system.svc.cluster.local:6379
               provider:
                 type: Kubernetes
                 kubernetes:
