@@ -21,7 +21,14 @@ argocd:
   repoURL: https://github.com/ADORSYS-GIS/ai-helm
   targetRevision: claude/magical-bohr-390242
   destination:
-    name: in-cluster
+    # The home-remote cluster every child Application targets. Repo
+    # invariant (ADR-0017): workloads NEVER deploy to the cluster ArgoCD
+    # runs in. The destination helper hard-fails the render if this
+    # resolves to `in-cluster` / `https://kubernetes.default.svc` unless
+    # `allowInCluster: true` is set.
+    name: home-remote
+    # Escape hatch — only set true if you genuinely want in-cluster.
+    allowInCluster: false
     namespace: converse
   syncPolicy:
     syncOptions:

@@ -35,6 +35,8 @@ per-model YAML.
 |---|---|
 | `argocd.targetRevision` | Branch / SHA the children pull leaf charts from. **Must flip to `main` on PR merge.** |
 | `argocd.project`, `argocd.destination.{name,namespace}` | ArgoCD wiring inherited by every child |
+| `argocd.destination.name` / `.server` | Home-remote cluster every child targets (default `home-remote`). Render **hard-fails** if this resolves to in-cluster — see ADR-0017. |
+| `argocd.destination.allowInCluster` | Escape hatch (default `false`). Set `true` only to deliberately permit an in-cluster destination. |
 | `gatewayRef` | Reference to the `core-gateway` Gateway each model's HTTPRoute attaches to |
 | `backendDefaults` (YAML anchors) | Provider-level shape: schema, prefix, fqdn, security type |
 | `backends` | Map of provider accounts (fw-01, deepinfra-01, …). Flows into `ai-models-backends` and to each model's `backendsInventory`. |

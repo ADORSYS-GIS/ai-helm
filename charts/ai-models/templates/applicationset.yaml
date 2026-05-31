@@ -82,7 +82,7 @@ spec:
           values: |
             {{ "{{ .valuesYaml | nindent 12 }}" }}
       destination:
-        name: {{ .Values.argocd.destination.name | quote }}
+        {{- include "ai-models.argocd.destinationClusterRef" .Values.argocd.destination | nindent 8 }}
         namespace: {{ .Values.argocd.destination.namespace | quote }}
       syncPolicy:
         {{- with .Values.argocd.syncPolicy.syncOptions }}

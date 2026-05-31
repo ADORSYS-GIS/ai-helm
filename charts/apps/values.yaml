@@ -1,12 +1,36 @@
 global:
-  
+
   s3:
     endpoint: &s3-endpoint s3.ssegning.me
     region: &s3-region us-east-1
     bucket: &s3-bucket monitoring  # Single bucket for all observability data
-  
+
   domains:
     grafana: &grafana-domain grafana.ai.camer.digital
+
+# ────────────────────────────────────────────────────────────────────────
+# ArgoCD destination — the home-remote cluster every generated Application
+# targets. Single source of truth for the cluster identity (was previously
+# the hardcoded `lke560142-ctx` in the template — see ADR-0006, ADR-0017).
+#
+# Repo invariant: workloads must NEVER deploy to the cluster ArgoCD itself
+# runs in. `templates/_helpers.tpl::apps.argocd.destinationClusterRef`
+# hard-fails the render if this resolves to `in-cluster` /
+# `https://kubernetes.default.svc` unless `allowInCluster: true`.
+#
+# Per-app `destination.namespace` (under each `applications[]` entry) still
+# selects the namespace; the cluster identity is shared from here.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  destination:
+    # Cluster context name registered in ArgoCD. Used verbatim as
+    # `spec.destination.name`.
+    name: home-remote
+    # Alternative to `name` — set a cluster API URL for
+    # `spec.destination.server` instead. Leave empty to use `name`.
+    server: ""
+    # Escape hatch — only set true if you genuinely want in-cluster.
+    allowInCluster: false
 
 applications:
 
