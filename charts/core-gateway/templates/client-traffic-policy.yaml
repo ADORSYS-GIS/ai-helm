@@ -1,3 +1,4 @@
+{{- $ctp := .Values.clientTrafficPolicy | default dict -}}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: ClientTrafficPolicy
 metadata:
@@ -8,7 +9,36 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: {{ include "core-gateway.fullname" . }}
+  {{- with $ctp.tcpKeepalive }}
+  tcpKeepalive:
+    probes: {{ .probes }}
+    idleTime: {{ .idleTime | quote }}
+    interval: {{ .interval | quote }}
+  {{- end }}
   connection:
-    bufferLimit: 500Mi
+    {{- with $ctp.connection }}
+    {{- if .connectionLimit }}
+    connectionLimit:
+      value: {{ .connectionLimit }}
+      {{- with .closeDelay }}
+      closeDelay: {{ . | quote }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+    bufferLimit: {{ $ctp.bufferLimit | default "500Mi" | quote }}
+  {{- with $ctp.http2 }}
+  http2:
+    maxConcurrentStreams: {{ .maxConcurrentStreams }}
+    initialStreamWindowSize: {{ .initialStreamWindowSize | quote }}
+    initialConnectionWindowSize: {{ .initialConnectionWindowSize | quote }}
+  {{- end }}
+  {{- with $ctp.timeout }}
+  timeout:
+    tcp:
+      idleTimeout: {{ .tcpIdleTimeout | quote }}
+    http:
+      requestReceivedTimeout: {{ .httpRequestReceivedTimeout | quote }}
+      idleTimeout: {{ .httpIdleTimeout | quote }}
+  {{- end }}
   headers:
     enableEnvoyHeaders: true
