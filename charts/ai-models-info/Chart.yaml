@@ -26,17 +26,19 @@ maintainers:
   - name: ai-helm
 
 dependencies:
-  # bjw-s app-template renders the Deployment, Service, and HTTPRoute
-  # (`route:` block in v4). The two ConfigMaps holding the nginx config
-  # and the catalog JSON are emitted by this chart's own
+  # bjw-template (local fork of bjw-s app-template@4.6.2 — see
+  # charts/bjw-template/) renders the Deployment, Service, and
+  # HTTPRoute (`route:` block in v4). The two ConfigMaps holding the
+  # nginx config and the catalog JSON are emitted by this chart's own
   # `templates/configmap.yaml` — the catalog content is computed at
   # render time from `.Values.models` via
-  # `templates/_helpers.tpl::ai-models-info.catalog`, which app-template's
-  # `configMaps:` block can't templatize. app-template references the
-  # two ConfigMaps by name via `persistence` (type: configMap).
-  - name: app-template
+  # `templates/_helpers.tpl::ai-models-info.catalog`, which
+  # bjw-template's `configMaps:` block can't templatize. bjw-template
+  # references the two ConfigMaps by name via `persistence`
+  # (type: configMap).
+  - name: bjw-template
     version: '4.6.2'
-    repository: https://bjw-s-labs.github.io/helm-charts
+    repository: file://../bjw-template
     alias: models-info
 
   # `common` library kept only for `common.labels.standard` used inside
