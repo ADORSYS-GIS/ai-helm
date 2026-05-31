@@ -38,7 +38,7 @@ months behind, and a few are on tracks that have moved or are being phased out.
 | authorino-operator | 0.23.1 | 0.24.0 (2025-04-01) | 1 minor | Bump |
 | cnpg (cloudnative-pg) | 0.27.1 | 0.28.2 | 1 minor | Bump |
 | plugin-barman-cloud | 0.5.0 | 0.6.0 | 1 minor | Bump |
-| **cert-manager** (`charts/cert`) | `'*'` | **v1.20.2** (2025-04-11) | Unpinned | **Pin explicitly**; floating `'*'` breaks GitOps determinism |
+| ~~**cert-manager** (`charts/cert`)~~ | ~~`'*'`~~ | ~~**v1.20.2** (2025-04-11)~~ | — | **Superseded:** cert-manager + its ClusterIssuers are now deployed externally by the `home-os` repo. `charts/cert` removed from this repo (ADR-noted in CLAUDE.md). This pin no longer applies here. |
 | bjw-s/app-template | 4.1.2 / 4.3.0 / 4.5.0 / 4.6.2 across charts | **5.0.1** (2026-05-14) | 1 major + drift | Standardize on 5.0.1 |
 | traefik | 39.0.2 | 40.2.0 (2026-05-13) | 1 major | Bump; v40 drops bundled Gateway API CRDs (we already set `kubernetesGateway.enabled: false`) |
 | external-secrets | 2.4.0 | 2.5.0 (2026-05-15) | 1 minor | Bump |
