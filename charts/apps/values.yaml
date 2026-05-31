@@ -2089,6 +2089,10 @@ applications:
         valuesObject:
           instances:
             main:
+              # HA — every request hits Authorino; run 2 replicas so it's
+              # not a single point of failure / throughput bottleneck under
+              # thousands of concurrent clients.
+              replicas: 2
               listener:
                 tls:
                   enabled: false
@@ -2127,6 +2131,22 @@ applications:
                 keycloak:
                   jwt:
                     issuerUrl: https://auth.verif.fyi/realms/camer-digital
+                    # Cache the OIDC config + JWKS (Authorino refreshes in
+                    # the background on this interval, NOT per request — so
+                    # token verification stays local/fast and the issuer is
+                    # hit at most hourly). See note below on in-cluster certs.
+                    ttl: 3600
+                    # NOTE on fetching /certs in-cluster: Keycloak runs here
+                    # (svc keycloak-ha-app-service.keycloak:8443), but a
+                    # naive swap to that SVC URL breaks both (a) the `iss`
+                    # match — tokens carry iss=https://auth.verif.fyi/... —
+                    # and (b) TLS, since the cert is for the public hostname,
+                    # not the SVC DNS name. The clean way to keep certs
+                    # in-cluster WITHOUT breaking either is a CoreDNS rewrite
+                    # of auth.verif.fyi → the Keycloak ClusterIP (belongs in
+                    # home-os / cluster DNS). With ttl caching above, the
+                    # JWKS fetch is already off the request hot path, so this
+                    # is a resilience nicety, not a latency fix.
               metadata:
                 "lightbridge-validation":
                   # Skip for service-account tokens — lightbridge-opa keys an

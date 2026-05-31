@@ -9,6 +9,12 @@ metadata:
   labels:
     {{ include "common.labels.standard" $ | nindent 4 }}
 spec:
+  {{- with $config.replicas }}
+  # HA: every request to the gateway hits Authorino (JWT verify + metadata
+  # + authorization), so run more than one replica — no single point of
+  # failure or throughput bottleneck under thousands of concurrent clients.
+  replicas: {{ . }}
+  {{- end }}
   listener:
     {{- toYaml $config.listener | nindent 4 }}
   oidcServer:

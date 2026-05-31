@@ -4,28 +4,48 @@ metadata:
   name: {{ include "core-gateway.fullname" . }}
   namespace: {{ .Release.Namespace }}
 spec:
+  {{- $ep := .Values.envoyProxy | default dict }}
   provider:
     type: Kubernetes
     kubernetes:
       envoyPDB:
-        maxUnavailable: 1
+        maxUnavailable: {{ (default dict $ep.pdb).maxUnavailable | default 1 }}
+      {{- with $ep.hpa }}
+      # Autoscale the data plane on CPU. envoyHpa supersedes a static
+      # envoyDeployment.replicas, so 2000+ clients aren't funnelled through
+      # a fixed pod count. (The HPA in the `eg` app scales the Envoy Gateway
+      # *controller* — not this, the data plane that serves requests.)
+      envoyHpa:
+        minReplicas: {{ .minReplicas }}
+        maxReplicas: {{ .maxReplicas }}
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: {{ .cpuUtilization | default 60 }}
+      {{- end }}
       envoyDeployment:
-        replicas: 2
         container:
-          # Note: this is to clear the large default memory/cpu requirements for local tests.
-          # In production, you should set these to values that make sense for your environment.
           resources:
-            requests:
-              cpu: "300m"
-              memory: "300Mi"
-            limits:
-              cpu: "2000m"
-              memory: "1Gi"
+            {{- toYaml ($ep.resources | default dict) | nindent 12 }}
+        {{- if (default dict $ep.topologySpread).enabled }}
+        pod:
+          topologySpreadConstraints:
+            - maxSkew: {{ $ep.topologySpread.maxSkew | default 1 }}
+              topologyKey: kubernetes.io/hostname
+              # Soft: spread across nodes when possible, never block scheduling.
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  gateway.envoyproxy.io/owning-gateway-name: {{ include "core-gateway.fullname" . }}
+        {{- end }}
       envoyService:
         type: LoadBalancer
   shutdown:
-    drainTimeout: 30s
-    minDrainDuration: 5s
+    drainTimeout: {{ (default dict $ep.shutdown).drainTimeout | default "60s" }}
+    minDrainDuration: {{ (default dict $ep.shutdown).minDrainDuration | default "15s" }}
   logging:
     level:
       default: warn
