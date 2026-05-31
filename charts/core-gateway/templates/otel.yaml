@@ -36,62 +36,8 @@ spec:
           exporters:
             - otlp/alloy
             - debug
----
-apiVersion: opentelemetry.io/v1beta1
-kind: OpenTelemetryCollector
-metadata:
-  name: {{ include "core-gateway.fullname" . }}-usage
-  namespace: {{ .Release.Namespace }}
-spec:
-  volumes:
-    - name: authz-tls
-      secret:
-        secretName: authz-tls
-        items:
-          - key: ca.crt
-            path: ca.crt
-          - key: tls.crt
-            path: tls.crt
-          - key: tls.key
-            path: tls.key
-  volumeMounts:
-    - name: authz-tls
-      mountPath: /etc/otel/tls
-      readOnly: true
-  config:
-    receivers:
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-    processors:
-      batch: { }
-
-    exporters:
-      otlphttp/lightbridge_usage:
-        logs_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/logs"
-        #compression: none
-        tls:
-          ca_file: /etc/otel/tls/ca.crt
-
-      # Fan logs out to Grafana Alloy as well, which forwards them to Loki.
-      otlp/alloy:
-        endpoint: "alloy.observability.svc.cluster.local:4317"
-        tls:
-          insecure: true
-
-      debug: { }
-
-    service:
-      pipelines:
-        logs:
-          receivers:
-            - otlp
-          processors:
-            - batch
-          exporters:
-            - otlphttp/lightbridge_usage
-            - otlp/alloy
-            - debug
+# NOTE: the `-usage` OpenTelemetryCollector was removed. Usage/billing
+# metering now goes through the Envoy AI Gateway + OAuth2 path, not a
+# dedicated OTel access-log pipeline to lightbridge-usage. The Envoy
+# access logs that fed it are pointed straight at Alloy (-> Loki) for the
+# per-user observability of ADR-0005 — see templates/envoy-proxy.yaml.

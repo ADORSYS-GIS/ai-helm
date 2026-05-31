@@ -204,7 +204,10 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
               └──────────┘
                    ▲
                    │
-    OTLP from core-gateway -traces & -usage OTel collectors
+    OTLP: traces via the core-gateway -traces OTel collector;
+          Envoy access logs pushed direct to Alloy (the -usage
+          collector was removed — usage/billing is via the AI
+          Gateway + OAuth2 path)
     /metrics scrape from kube-state-metrics, node-exporter, every
     workload that ships a Service/PodMonitor
 ```

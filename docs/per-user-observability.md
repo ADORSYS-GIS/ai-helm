@@ -133,7 +133,9 @@ sum by (user_id) (count_over_time({namespace="converse-gateway"} | json [5m]))
 If you see the JSON fields but no labels, Alloy's
 `loki.process "ai_gateway_user_attribution"` stage didn't fire — typical
 causes: typo in the field name in the access log JSON, or the access log
-isn't reaching the `-usage-collector` (check the collector pod logs).
+isn't reaching Alloy's OTLP receiver (Envoy now pushes access logs
+straight to `alloy.observability:4317` — the old `-usage` OTel collector
+was removed; check the Alloy pod logs).
 
 ## LogQL queries for common dashboards
 
