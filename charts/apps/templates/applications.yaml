@@ -31,8 +31,19 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   destination:
+    {{- if .controlPlane }}
+    # This app deploys ArgoCD CONTROL objects (Application / ApplicationSet
+    # CRs) — e.g. an orchestrator that emits an ApplicationSet. Those must
+    # live on the cluster ArgoCD runs in (in-cluster), in the argocd
+    # namespace, so the Application/ApplicationSet controllers watch them.
+    # The workloads they fan out to still target home-remote (set on the
+    # generated child Applications / the ApplicationSet template). ADR-0017.
+    name: {{ $.Values.argocd.inClusterName | default "in-cluster" | quote }}
+    namespace: {{ $.Values.argocd.controlPlaneNamespace | default "argocd" | quote }}
+    {{- else }}
     {{- include "apps.argocd.destinationClusterRef" $.Values.argocd.destination | nindent 4 }}
     namespace: {{ .destination.namespace }}
+    {{- end }}
   {{ if .syncPolicy }}
   {{- with .syncPolicy }}
     {{- toYaml . | nindent 4 }}

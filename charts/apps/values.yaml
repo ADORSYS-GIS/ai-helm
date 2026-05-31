@@ -28,9 +28,18 @@ argocd:
   # (ai-models / librechart ApplicationSets) derive their names from their
   # own `helm.releaseName`, not this prefix, so they're unaffected.
   appNamePrefix: "aii-"
+  # ── Two-tier destination model (ADR-0017) ──────────────────────────────
+  # ArgoCD CONTROL objects (Application / ApplicationSet CRs) must live on
+  # the cluster ArgoCD runs in (in-cluster), in the argocd namespace, so the
+  # controllers watch them. WORKLOADS go to home-remote (the `destination`
+  # block below). An app whose deployed content is itself a control object
+  # (an orchestrator that emits an ApplicationSet) sets `controlPlane: true`
+  # on its entry; the template then targets in-cluster/argocd instead.
+  inClusterName: in-cluster
+  controlPlaneNamespace: argocd
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
-    # `spec.destination.name`.
+    # `spec.destination.name`. This is the WORKLOAD destination.
     name: home-remote
     # Alternative to `name` — set a cluster API URL for
     # `spec.destination.server` instead. Leave empty to use `name`.
@@ -3140,6 +3149,11 @@ applications:
   - name: librechat
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Orchestrator — charts/librechart emits an ApplicationSet (a control
+    # object). The ApplicationSet must land in-cluster/argocd where the
+    # controller watches it; its child Applications deploy workloads to
+    # home-remote. See ADR-0017.
+    controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: claude/magical-bohr-390242
@@ -3209,6 +3223,11 @@ applications:
   - name: models
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Orchestrator — charts/ai-models emits an ApplicationSet (a control
+    # object). The ApplicationSet must land in-cluster/argocd where the
+    # controller watches it; its child Applications deploy workloads to
+    # home-remote. See ADR-0017.
+    controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: claude/magical-bohr-390242
