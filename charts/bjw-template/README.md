@@ -83,8 +83,6 @@ Every chart that uses bjw-template:
 - `charts/lmcache` (`alias: lmcache`)
 - `charts/mcpo` (`alias: mcpo`)
 - `charts/model-deployment` (`alias: serving`)
-- `charts/models-proxy` (`alias: proxy`, conditional)
 - `charts/mongodb-backup` (`alias: mongodb-backup`)
-- `charts/pgdump-backup` (no alias — values keyed under `bjw-template:`)
 
 See ADR-0016 for the decision context.
