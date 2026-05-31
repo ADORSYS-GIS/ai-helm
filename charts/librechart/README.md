@@ -25,7 +25,7 @@ each pointing at a leaf chart in this repo.
 
 | Key | What |
 |---|---|
-| `argocd.targetRevision` | Branch / SHA the children pull leaf charts from. **Must flip to `main` on PR merge.** |
+| `argocd.targetRevision` | Branch / SHA / tag the children pull leaf charts from. Deploys run from the branch now; pins to a release **tag** next. **Never `main`.** |
 | `argocd.{project, namespace, destination.{name, namespace}, syncPolicy}` | ArgoCD wiring inherited by every child |
 | `children[]` | List of leaves. Each: `{ name, chartPath, syncWave, enabled }`. Set `enabled: false` to omit a child. |
 
