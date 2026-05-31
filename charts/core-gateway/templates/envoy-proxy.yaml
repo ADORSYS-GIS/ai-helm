@@ -61,7 +61,11 @@ spec:
         - sinks:
             - type: OpenTelemetry
               openTelemetry:
-                host: {{ include "core-gateway.fullname" . }}-usage-collector.converse-gateway.svc.cluster.local
+                # Send access logs straight to Alloy (→ Loki) for per-user
+                # observability (ADR-0005). The old `-usage` OTel collector
+                # middleman (→ lightbridge-usage billing) was removed —
+                # usage/billing is handled via the AI Gateway + OAuth2 path.
+                host: alloy.observability.svc.cluster.local
                 port: 4317
                 resources:
                   k8s.cluster.name: "converse-llm-1"

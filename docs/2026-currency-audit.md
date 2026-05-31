@@ -42,7 +42,7 @@ months behind, and a few are on tracks that have moved or are being phased out.
 | bjw-s/app-template | 4.1.2 / 4.3.0 / 4.5.0 / 4.6.2 across charts | **5.0.1** (2026-05-14) | 1 major + drift | Standardize on 5.0.1 |
 | ~~traefik~~ | ~~39.0.2~~ | ~~40.2.0~~ | — | **Superseded:** Traefik installed externally; removed from this repo. |
 | ~~external-secrets~~ | ~~2.4.0~~ | ~~2.5.0~~ | — | **Superseded:** ESO is installed externally now; removed from this repo. Pin no longer applies here. |
-| opentelemetry-operator | 0.106.0 | Active 0.5x in 2026 | Numbering changed | Verify migration notes |
+| ~~opentelemetry-operator~~ | ~~0.106.0~~ | — | — | **Superseded:** OTel Operator installed externally; removed from this repo. |
 | coder | 2.31.9 | Verify upstream | unverified | Check |
 
 ## Kubernetes APIs

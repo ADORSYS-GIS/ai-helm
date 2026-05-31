@@ -60,25 +60,12 @@ applications:
   # those resolve to the external controller. Don't re-add a traefik
   # Application here.
 
-  - name: opentelemetry-operator
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
-      targetRevision: 0.106.0
-      chart: opentelemetry-operator
-      helm:
-        releaseName: opentelemetry-operator
-        valuesObject:
-          pdb:
-            create: true
-            minAvailable: 1
-            #maxUnavailable: 1
-        # manager:
-        #  collectorImage:
-        #    repository: "otel/opentelemetry-collector-k8s"
-    destination:
-      namespace: opentelemetry-system
+  # NOTE: the OpenTelemetry Operator is NOT deployed by this repo — it's
+  # installed externally (running in the `opentelemetry-system` namespace;
+  # CRDs opentelemetry.io present on-cluster). This repo only defines
+  # OpenTelemetryCollector CRs (charts/core-gateway: the `-traces`
+  # collector → Alloy → Tempo) that the external operator reconciles.
+  # Don't re-add an otel-operator Application here.
 
   # --- Observability: Prometheus Operator CRDs ---
   # CRDs only (no operator) — registers ServiceMonitor, PodMonitor, etc.
