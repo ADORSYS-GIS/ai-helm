@@ -148,7 +148,7 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 
 ## Where the cluster's actual state lives that this repo doesn't track
 
-- **Secrets** — managed by External Secrets Operator (ESO) sourced from `ai-ops-secrets.git`. This repo references Secret names; values live in the ESO provider.
+- **Secrets + ESO** — the External Secrets Operator (controller + CRDs) is **installed externally**, not by this repo (it runs in the `external-secrets` namespace, Helm-managed). The `ClusterSecretStore` is `ssegning-aws` (cluster-scoped, external). ExternalSecret CRs are sourced from `ai-ops-secrets.git` (the `secrets` Application) + other external sources; all reference `ssegning-aws`. This repo references Secret names only. Don't re-add an ESO operator or a ClusterSecretStore chart here (the old Vault `bootstrap-secrets` store config was removed — it was never the store actually used).
 - **Keycloak realm clients/scopes/groups** — `charts/keycloak-baseline/values.yaml` defines them; keycloak-config-cli applies. Client secrets come from ESO at sync time.
 - **Backups** — `charts/*-backup/` define the CronJobs; the S3 buckets + retention policies are out-of-band.
 - **ArgoCD root Application** — in `ai-gitops`. The chart `charts/apps/` in this repo is what that root Application points at.

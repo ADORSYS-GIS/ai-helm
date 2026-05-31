@@ -2,6 +2,15 @@
 
 This directory contains documentation for the External Secrets Operator (ESO) integration and secret management patterns used in the AI platform.
 
+> **Note (ownership):** ESO itself — the operator (controller + CRDs)
+> and the `ClusterSecretStore` (`ssegning-aws`) — is **provisioned
+> externally**, not by this repo. The old in-repo `charts/external-secrets`
+> (a Vault-based `bootstrap-secrets` store + operator install) was
+> removed; it was never the store actually used. The patterns below
+> still describe how ExternalSecrets are authored and referenced — just
+> note the real store is `ssegning-aws` and the operator lives in the
+> `external-secrets` namespace, both managed out-of-band.
+
 ## Overview
 
 The platform uses [External Secrets Operator](https://external-secrets.io/) to synchronize secrets from external secret management systems into Kubernetes secrets. This provides:
@@ -98,27 +107,41 @@ Application secrets are synchronized from bootstrap secrets using `ExternalSecre
 - [`bootstrap-secrets-inventory.md`](./bootstrap-secrets-inventory.md) - Complete inventory of bootstrap secrets
 - [`reference-patterns.md`](./reference-patterns.md) - Patterns for application secret synchronization
 
-## Configuration Chart
+## Where the configuration lives
 
-Configuration is managed via the [`charts/external-secrets/`](../../charts/external-secrets/) Helm chart:
+ESO and its `ClusterSecretStore` (`ssegning-aws`) are **not** in this
+repo (see the ownership note at the top). The in-repo
+`charts/external-secrets` chart was removed.
 
-- `templates/rbac.yaml` - ServiceAccount and RBAC for ClusterSecretStore
-- `templates/clustersecretstore.yaml` - ClusterSecretStore configuration
-- `templates/externalsecrets.yaml` - ExternalSecret resources
+- **ClusterSecretStore** (`ssegning-aws`) — provisioned externally
+  (cluster bootstrap / home-os). Cluster-scoped, so every namespace can
+  reference it.
+- **ExternalSecret CRs** — authored in `ai-ops-secrets.git` (synced by
+  the `secrets` Application in `charts/apps/values.yaml`) and other
+  external sources.
 
-### Adding New ExternalSecrets
+### Adding a new ExternalSecret
 
-To add a new ExternalSecret, edit [`charts/external-secrets/values.yaml`](../../charts/external-secrets/values.yaml):
+Add it to `ai-ops-secrets.git` (or the relevant external source),
+referencing the `ssegning-aws` store. Shape:
 
 ```yaml
-externalSecrets:
-  my-api-key:
-    namespace: my-app-namespace
-    secretName: my-api-key
-    refreshInterval: 1h
-    data:
-      - secretKey: api-key
-        remoteRef:
-          key: my-api-key
-          namespace: external-secrets-system
-          property: api-key
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: my-api-key
+  namespace: my-app-namespace
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: ssegning-aws
+  target:
+    name: my-api-key
+    creationPolicy: Owner
+  data:
+    - secretKey: api-key
+      remoteRef:
+        key: prod/path/to/my-secret
+        property: api-key
+```

@@ -89,8 +89,6 @@ ArgoCD (on home-remote)
   │
   └─ charts/apps emits 1 Application per workload (all → cluster home-remote):
        │
-       ├─ Application: external-secrets-operator
-       ├─ Application: external-secrets-config
        ├─ Application: cnpg                 (cloudnative-pg operator)
        ├─ Application: kube-state-metrics, node-exporter
        ├─ Application: mimir, loki, tempo, alloy, grafana, grafana-operator
@@ -128,7 +126,7 @@ Lower waves sync first. Conventions:
 |---|---|
 | `-5` to `-3` | (reserved for namespace bootstrap, ResourceQuota / LimitRange — see [SYNC_WAVE_PATTERN.md](../SYNC_WAVE_PATTERN.md)) |
 | `-2` | Storage / observability backends (Mimir, Loki, Tempo, kube-state-metrics, node-exporter) |
-| `-1` | Operators + ESO + grafana-operator + collectors (Alloy). NOTE: cert-manager is **not** synced here anymore — its controller, CRDs, and the shared ClusterIssuers (`cert-home-cert-http`, `self-signed-ca`, …) are provisioned externally by the home-os repo. |
+| `-1` | Operators + grafana-operator + collectors (Alloy). NOTE: **cert-manager and the External Secrets Operator (ESO) are no longer synced here** — both their controllers/CRDs, the shared ClusterIssuers (`cert-home-cert-http`, `self-signed-ca`, …), and the `ssegning-aws` ClusterSecretStore are provisioned externally (home-os / cluster bootstrap). This repo only references the issuers + Secret names. |
 | `0` | Workloads (LibreChat, AI Gateway, Coder, all per-model apps) |
 | `1` | Content (Grafana dashboards, opencode-wellknown, anything that depends on a running gateway) |
 | `2+` | Per-app post-sync work |
@@ -232,9 +230,12 @@ The high-impact ones:
 
 ## What is *not* in this repo
 
-- **Secrets.** All Secrets are managed by ESO via the
-  `ai-ops-secrets.git` repo. This repo references the Secret names; the
-  secret values live in the ESO provider (Vault / cloud KMS).
+- **Secrets + the External Secrets Operator.** ESO itself (controller +
+  CRDs) is installed externally — *not* by this repo. The
+  `ClusterSecretStore` in use is `ssegning-aws` (cluster-scoped,
+  external). ExternalSecret CRs come from `ai-ops-secrets.git` (the
+  `secrets` Application) and other external sources; they all reference
+  `ssegning-aws`. This repo only references the resulting Secret names.
 - **ai-gitops state.** Per-cluster image-tag overrides, environment
   config, the actual ArgoCD `Application` for the root umbrella —
   all in the separate `ai-gitops` repo.

@@ -1929,44 +1929,18 @@ applications:
   # Do not re-add a cert Application here.
 
   # --- Secret Management ---
-  # External Secrets Operator - installed from official upstream Helm chart
-  - name: external-secrets-operator
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "-2"
-    source:
-      repoURL: https://charts.external-secrets.io
-      # 2.5.0 (2026-05-15) per audit.
-      targetRevision: 2.5.0
-      chart: external-secrets
-      helm:
-        releaseName: external-secrets
-        valuesObject:
-          installCRDs: true
-          replicaCount: 1
-          leaderElect: true
-          serviceAccount:
-            create: true
-            name: external-secrets-controller
-    destination:
-      namespace: external-secrets-system
-
-  # External Secrets Configuration - ClusterSecretStore and RBAC
-  - name: external-secrets-config
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "-1"
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm.git
-      targetRevision: claude/magical-bohr-390242
-      path: charts/external-secrets
-      helm:
-        releaseName: external-secrets-config
-        valuesObject: {}
-    destination:
-      namespace: external-secrets-system
+  # NOTE: the External Secrets Operator (controller + CRDs) is NOT
+  # installed by this repo — it's deployed externally (Helm-managed in
+  # the `external-secrets` namespace on the target cluster). The
+  # ClusterSecretStore in use is `ssegning-aws` (cluster-scoped, also
+  # external — verified on-cluster). This repo's old Vault-based
+  # `bootstrap-secrets` store config (charts/external-secrets) was
+  # removed: it was never the store actually used. Don't re-add an ESO
+  # operator or ClusterSecretStore here.
+  #
+  # The actual ExternalSecret CRs are pulled from ai-ops-secrets.git by
+  # the `secrets` Application below (and others provisioned externally);
+  # they all reference the `ssegning-aws` store.
 
   # --- Core Infrastructure ---
   # NOTE: Redis is NOT deployed by this repo. It's managed externally
