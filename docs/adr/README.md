@@ -33,6 +33,7 @@ how thinking evolved.
 | [0013](./0013-defer-image-updater-writeback.md) | Defer argocd-image-updater write-back; manual chart-version bumps stay (supersedes ADR-0010) | Accepted | 2026-05-24 | [0010](./0010-argocd-image-updater-writeback-to-ai-gitops.md) |
 | [0014](./0014-split-librechart-and-opencode-wellknown.md) | Split `charts/librechart` into 3 leaf charts + add opencode `.well-known` endpoint | Accepted | 2026-05-24 | — |
 | [0015](./0015-models-info-catalog-endpoint.md) | OpenRouter-shape `/v1/models/info` catalog endpoint for opencode (charts/ai-models-info) | Accepted | 2026-05-24 | — |
+| [0016](./0016-fork-bjw-s-app-template-locally.md) | Fork bjw-s app-template + common locally as `bjw-template` / `bjw-common` (rewire 12 consumers) | Accepted | 2026-05-31 | — |
 
 ## Status legend
 
