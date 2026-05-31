@@ -44,7 +44,15 @@ argocd:
   # This repo, used as the source for kustomize `depsOverlay` sources (the
   # app-scoped dependency CRs of umbrella Applications — ADR-0018). The deps
   # overlays live under `environments/<env>/deps/<app>` in this repo.
-  # TODO(merge): flip selfTargetRevision back to `main` on PR merge.
+  #
+  # ── Deployment-revision strategy (canonical note) ───────────────────────
+  # This deployment runs from the branch `claude/magical-bohr-390242` — NOT
+  # from `main`. Do NOT "flip to main on merge"; that plan is retired. Once
+  # this deployment is settled, every self-referencing `targetRevision` in
+  # this repo (this `selfTargetRevision`, the per-app self-Source revisions,
+  # and the orchestrator children in charts/ai-models + charts/librechart)
+  # moves to a release **tag** (tag-based deploys only). main is never a
+  # deploy target.
   selfRepoURL: https://github.com/ADORSYS-GIS/ai-helm
   selfTargetRevision: claude/magical-bohr-390242
   destination:
@@ -3143,7 +3151,7 @@ applications:
   # Both sources deploy to the same destination (home-remote / converse-chat).
   # The flat `range` template already passes `.sources` through, so no
   # ApplicationSet conversion is required (ADR-0018 supersedes ADR-0006).
-  # TODO(merge): flip Source targetRevision back to `main` (see top-of-file note).
+  # Revision tracks the deploy branch → tag (see argocd.selfTargetRevision note).
   - name: librechat-admin-panel
     finalizers:
       - resources-finalizer.argocd.argoproj.io

@@ -68,7 +68,7 @@ The **entrypoint** is a single root Application that lives in the
   project: ai
   source:
     repoURL: https://github.com/ADORSYS-GIS/ai-helm
-    targetRevision: <branch>      # main on merge; the PR branch while testing
+    targetRevision: <branch>      # deploy branch now, release tag next — never main
     path: charts/apps
   destination:
     name: home-remote             # registered cluster name (see ADR-0017)

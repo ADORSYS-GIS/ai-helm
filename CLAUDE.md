@@ -91,9 +91,9 @@ The umbrella needs **no ApplicationSet** — `applications.yaml` already passes 
 
 **ADR-0010** proposed automated image-updater write-back between them; **ADR-0013** deferred it. See those for the reasoning.
 
-## `targetRevision: HEAD/main` while testing
+## `targetRevision`: deploy branch now → release tag next, **never `main`**
 
-During an active PR, all `targetRevision` fields in `charts/apps/values.yaml` that point at this repo (and the orchestrator children in `charts/ai-models/values.yaml` + `charts/librechart/values.yaml`) get flipped to the testing branch (e.g. `claude/<branch>`). **They must flip back to `main` (or `HEAD`) on PR merge.** TODO'd in comments in those values files. Don't forget this on merge.
+The current deployment runs from the branch **`claude/magical-bohr-390242`**, not `main`. The earlier "flip back to `main` on PR merge" plan is **retired** — `main` is never a deploy target. After this deployment settles, every self-referencing `targetRevision` (in `charts/apps/values.yaml` — `argocd.selfTargetRevision` + the per-app self-Source revisions — and the orchestrator children in `charts/ai-models/values.yaml` + `charts/librechart/values.yaml`) moves to a **release tag** (tag-based deploys only). The canonical note lives at `argocd.selfTargetRevision` in `charts/apps/values.yaml`. (`HEAD` revisions that point at *other* repos are unaffected.)
 
 ## ArgoCD destinations: two-tier — control objects in-cluster, workloads home-remote (ADR-0017)
 

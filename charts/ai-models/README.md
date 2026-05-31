@@ -33,7 +33,7 @@ per-model YAML.
 
 | Key | What |
 |---|---|
-| `argocd.targetRevision` | Branch / SHA the children pull leaf charts from. **Must flip to `main` on PR merge.** |
+| `argocd.targetRevision` | Branch / SHA / tag the children pull leaf charts from. Deploys run from the branch now; pins to a release **tag** next. **Never `main`.** |
 | `argocd.project`, `argocd.destination.{name,namespace}` | ArgoCD wiring inherited by every child |
 | `argocd.destination.name` / `.server` | Home-remote cluster every child targets (default `home-remote`). Render **hard-fails** if this resolves to in-cluster — see ADR-0017. |
 | `argocd.destination.allowInCluster` | Escape hatch (default `false`). Set `true` only to deliberately permit an in-cluster destination. |
