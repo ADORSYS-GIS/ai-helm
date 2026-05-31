@@ -1,3 +1,4 @@
+{{- $btp := .Values.backendTrafficPolicy | default dict -}}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -8,8 +9,32 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: {{ include "core-gateway.fullname" . }}
+  {{- with $btp.loadBalancer }}
+  loadBalancer:
+    type: {{ .type }}
+  {{- end }}
+  {{- with $btp.circuitBreaker }}
+  circuitBreaker:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $btp.outlierDetection }}
+  # Outlier detection = Envoy Gateway's passive health check.
+  healthCheck:
+    passive:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
+  {{- with $btp.tcpKeepalive }}
+  tcpKeepalive:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $btp.compression }}
+  compression:
+    {{- range . }}
+    - type: {{ . }}
+    {{- end }}
+  {{- end }}
   connection:
-    bufferLimit: 100Mi
+    bufferLimit: {{ $btp.bufferLimit | default "100Mi" | quote }}
   retry:
     numRetries: 1
     perRetry:

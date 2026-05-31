@@ -2,6 +2,43 @@ gateway:
   apiHostname: dummy.example.com
 
 # ────────────────────────────────────────────────────────────────────────
+# Envoy data plane (the proxy pods that actually serve client traffic).
+# Sized for ≥2000 concurrent HTTP/2 clients — the previous static 2
+# replicas + placeholder resources were the real capacity ceiling.
+# ────────────────────────────────────────────────────────────────────────
+envoyProxy:
+  # Horizontal autoscaling for the proxy pods. When set, this supersedes a
+  # static replica count. NOTE: the HPA in the `eg` app (charts/apps) scales
+  # the Envoy Gateway *controller* — this scales the data plane that serves
+  # requests, which is the one that matters for client capacity.
+  hpa:
+    minReplicas: 3
+    maxReplicas: 20
+    cpuUtilization: 60
+  # Real production resources (the chart shipped placeholder values tagged
+  # "cleared for local tests").
+  resources:
+    requests:
+      cpu: "1"
+      memory: 512Mi
+    limits:
+      cpu: "4"
+      memory: 2Gi
+  pdb:
+    maxUnavailable: 1
+  # Spread proxy pods across nodes so a single node drain doesn't take a
+  # large slice of capacity. Soft (ScheduleAnyway) so it never blocks
+  # scheduling.
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+  # Graceful shutdown. Longer drain than the 30s default so long-lived
+  # HTTP/2 streams (SSE / token streams) aren't cut mid-flight on rollouts.
+  shutdown:
+    drainTimeout: 60s
+    minDrainDuration: 15s
+
+# ────────────────────────────────────────────────────────────────────────
 # ClientTrafficPolicy — downstream (client → gateway) connection tuning.
 # Sized for ≥2000 concurrent users (laptops, long-lived opencode sessions)
 # + GitHub CI runners, all multiplexing over HTTP/2.
@@ -55,3 +92,50 @@ clientTrafficPolicy:
     # Time allowed to receive the full set of request headers.
     httpRequestReceivedTimeout: 60s
     httpIdleTimeout: 1h
+
+# ────────────────────────────────────────────────────────────────────────
+# BackendTrafficPolicy — upstream (gateway → model backends) resilience.
+# Protects backends + keeps client latency stable under load: one slow or
+# failing provider shouldn't stall everyone. Rendered by
+# templates/backendtrafficpolicy.yaml (targets the Gateway → applies to all
+# routes). Per-model budget rate limits stay in charts/ai-model.
+# ────────────────────────────────────────────────────────────────────────
+backendTrafficPolicy:
+  bufferLimit: 100Mi
+
+  # Spread load across a backend's endpoints by in-flight request count —
+  # better tail latency than round-robin when request durations vary wildly
+  # (streaming LLM responses do).
+  loadBalancer:
+    type: LeastRequest
+
+  # Circuit breaking — generous ceilings (budget rate limits do the real
+  # throttling; these just stop unbounded queue/connection explosion to a
+  # single backend cluster so a stuck provider fails fast instead of
+  # piling up).
+  circuitBreaker:
+    maxConnections: 50000
+    maxPendingRequests: 50000
+    maxParallelRequests: 50000
+    maxParallelRetries: 1000
+
+  # Passive health check (outlier detection) — eject a backend endpoint
+  # that starts throwing 5xx / gateway errors, so clients stop hitting it.
+  outlierDetection:
+    consecutive5XxErrors: 5
+    consecutiveGatewayErrors: 5
+    interval: 10s
+    baseEjectionTime: 30s
+    maxEjectionPercent: 50
+
+  # Reuse upstream connections to the model backends (cut TLS/handshake
+  # churn) and keep them warm.
+  tcpKeepalive:
+    probes: 3
+    idleTime: 5m
+    interval: 30s
+
+  # Compress responses to clients (model lists, large JSON, non-streamed
+  # bodies) — meaningful bandwidth savings across thousands of laptops.
+  compression:
+    - Gzip
