@@ -27,6 +27,14 @@ go.work.sum
 # env file
 .env
 charts/*/charts/
+# Exception: bjw-template must carry its forked bjw-common library tarball
+# in git. ArgoCD renders each consumer with `helm dependency build`, which
+# does NOT recurse into a sub-dependency's own deps — so when it pulls
+# bjw-template (file://), bjw-template's nested bjw-common must already be
+# present or the render fails with "no template bjw-s.common.loader.init".
+# (Other charts/*/charts/ deps are remote and rebuilt fine by ArgoCD.)
+!charts/bjw-template/charts/
+!charts/bjw-template/charts/*.tgz
 */*/values.schema.json
 # **/secret.yaml
 
