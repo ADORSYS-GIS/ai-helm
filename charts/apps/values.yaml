@@ -653,7 +653,6 @@ applications:
               enabled: false
             persistence:
               enabled: true
-              storageClass: linode-block-storage
               size: 10Gi
             resources:
               requests: { cpu: 200m, memory: 512Mi }
@@ -755,29 +754,6 @@ applications:
             interval: 60s
 
           extraObjects:
-            - apiVersion: v1
-              kind: ResourceQuota
-              metadata:
-                name: observability-quota
-                namespace: observability
-              spec:
-                hard:
-                  requests.cpu: "8"
-                  requests.memory: "17Gi"
-                  limits.cpu: "24"
-                  limits.memory: "25Gi"
-                  count/pods: "60"
-            - apiVersion: v1
-              kind: LimitRange
-              metadata:
-                name: observability-defaults
-                namespace: observability
-              spec:
-                limits:
-                  - type: Container
-                    defaultRequest: { cpu: 100m, memory: 128Mi }
-                    default:        { cpu: 1000m, memory: 1Gi }
-                    max:            { cpu: "8",  memory: 18Gi   }
             # NetworkPolicy for observability namespace
             # To disable: comment out or remove this entire block
             # - apiVersion: networking.k8s.io/v1
@@ -985,7 +961,6 @@ applications:
               limits:   { cpu: 500m, memory: 2Gi   }
             persistence:
               enabled: true
-              storageClass: linode-block-storage
               size: 10Gi
 
           ingester:       { replicas: 0 }
@@ -1133,7 +1108,6 @@ applications:
 
           persistence:
             enabled: true
-            storageClass: linode-block-storage
             size: 5Gi
 
           serviceMonitor:
@@ -1552,7 +1526,6 @@ applications:
 
           persistence:
             enabled:      true
-            storageClass: linode-block-storage
             size:         2Gi
 
           resources:
@@ -2653,37 +2626,6 @@ applications:
           # doesn't support controller PDBs natively. Ensure at least 1 instance is always available.
           rawRessources:
             - |
-              apiVersion: v1
-              kind: LimitRange
-              metadata:
-                name: converse-defaults
-                namespace: {{ $.Release.Namespace }}
-              spec:
-                limits:
-                  - type: Container
-                    defaultRequest:
-                      cpu: "100m"
-                      memory: "128Mi"
-                    default:
-                      cpu: "400m"
-                      memory: "512Mi"
-                    max:
-                      cpu: "4"
-                      memory: "8Gi"
-            - |
-              apiVersion: v1
-              kind: ResourceQuota
-              metadata:
-                name: converse-quota
-                namespace: {{ $.Release.Namespace }}
-              spec:
-                hard:
-                  requests.cpu: "4"
-                  requests.memory: "7Gi"
-                  limits.cpu: "15"
-                  limits.memory: "17Gi"
-                  count/pods: "35"
-            - |
               apiVersion: policy/v1
               kind: PodDisruptionBudget
               metadata:
@@ -2980,7 +2922,6 @@ applications:
                 instances: 2
                 imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
                 storage:
-                  storageClass: linode-block-storage
                   size: "5Gi"
                 plugins:
                   - name: barman-cloud.cloudnative-pg.io
@@ -3025,7 +2966,6 @@ applications:
                   name: lightbridge-usage-db
                   major: 17
                 storage:
-                  storageClass: linode-block-storage
                   size: "10Gi"
                 plugins:
                   - name: barman-cloud.cloudnative-pg.io
@@ -3178,13 +3118,9 @@ applications:
       path: charts/librechart
       helm:
         releaseName: librechat
-        valuesObject:
-          search:
-            persistence:
-              storageClass: "linode-block-storage"
-          db:
-            persistence:
-              storageClass: linode-block-storage
+        # No storageClass override — PVCs use the cluster's default
+        # StorageClass (the leaf charts default to null).
+        valuesObject: {}
 
     destination:
       namespace: converse-chat
