@@ -13,53 +13,11 @@
 #
 # See ADR-0014 + docs/opencode-well-known.md.
 
-image:
-  repository: nginxinc/nginx-unprivileged
-  tag: "1.27-alpine"
-  pullPolicy: IfNotPresent
-
-replicaCount: 2
-
-resources:
-  requests:
-    cpu: 10m
-    memory: 16Mi
-  limits:
-    cpu: 100m
-    memory: 64Mi
-
 # ────────────────────────────────────────────────────────────────────────
-# Ingress — same host as LibreChat (`ai.camer.digital`) with a more
-# specific path. Traefik (className: traefik) handles longest-path-wins
-# routing automatically.
-# ────────────────────────────────────────────────────────────────────────
-ingress:
-  enabled: true
-  className: traefik
-  host: ai.camer.digital
-  path: /opencode/.well-known/opencode
-  annotations:
-    cert-manager.io/cluster-issuer: cert-home-cert-http
-  tls:
-    enabled: true
-    secretName: ai.camer.digital-tls
-
-# ────────────────────────────────────────────────────────────────────────
-# The well-known JSON itself.
-#
-# `auth.command` is a no-op stub. The OAuth2 work is delegated to the
-# @vymalo/opencode-oauth2 plugin declared in `config.plugin` and configured
-# in `config.provider.camer-digital.options.oauth2`.
-#
-# `authFlow: device_code` is set explicitly (the plugin's default is
-# `authorization_code` which would try to bind a localhost callback port).
-# Device flow works headless and on remote dev machines without browser
-# coupling.
-#
-# For audience pinning to `lightbridge-api-key`: configure a Keycloak
-# client-scope audience mapper on the `opencode-cli` client (the plugin
-# does not expose a non-federated `audience` parameter; that's the only
-# route documented).
+# The well-known JSON itself — used by `templates/configmap.yaml` to
+# build the `content` ConfigMap that the nginx pod mounts. Lives at the
+# ROOT (not under the `opencode-wellknown:` sub-chart key) so the
+# template helper can read it directly.
 # ────────────────────────────────────────────────────────────────────────
 wellKnown:
   auth:
@@ -109,3 +67,147 @@ wellKnown:
             # TTL (24h default upstream); override if you want fresher
             # catalogs:
             # modelsInfoTtlSeconds: 3600
+
+# ────────────────────────────────────────────────────────────────────────
+# bjw-s app-template (aliased to `opencode-wellknown`). Renders the
+# Deployment + Service + Ingress. The two ConfigMaps that hold the
+# nginx config and the well-known JSON are emitted by this chart's
+# own `templates/configmap.yaml` (the JSON content is built from
+# `.Values.wellKnown` above and can't be expressed as plain string data
+# in app-template values).
+# ────────────────────────────────────────────────────────────────────────
+opencode-wellknown:
+  controllers:
+    main:
+      type: deployment
+      replicas: 2
+      strategy: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 0
+      pod:
+        automountServiceAccountToken: false
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        # Note: no checksum/wellknown annotation here — the wellKnown
+        # value lives at the parent chart's root and isn't reachable
+        # from the sub-chart's tpl context. JSON edits require
+        # `kubectl rollout restart` (documented in
+        # `docs/opencode-well-known.md`).
+      containers:
+        nginx:
+          image:
+            repository: nginxinc/nginx-unprivileged
+            tag: "1.27-alpine"
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 8080
+                periodSeconds: 30
+                timeoutSeconds: 3
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 8080
+                periodSeconds: 5
+                timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          enabled: true
+          port: 80
+          targetPort: 8080
+          protocol: HTTP
+
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-home-cert-http
+      hosts:
+        - host: ai.camer.digital
+          paths:
+            - path: /opencode/.well-known/opencode
+              pathType: Exact
+              service:
+                identifier: main
+                port: http
+      tls:
+        - secretName: ai.camer.digital-tls
+          hosts:
+            - ai.camer.digital
+
+  # Mount the two externally-rendered ConfigMaps + nginx-unprivileged's
+  # required writable scratch dirs.
+  persistence:
+    # The nginx server block (custom default.conf with the right
+    # Content-Type and exact-match location for the well-known URL).
+    # Name matches what templates/configmap.yaml emits.
+    nginx-config:
+      enabled: true
+      type: configMap
+      name: '{{ .Release.Name }}-nginx-config'
+      advancedMounts:
+        main:
+          nginx:
+            - path: /etc/nginx/conf.d
+              readOnly: true
+    # The well-known JSON itself (rendered from `.Values.wellKnown`).
+    content:
+      enabled: true
+      type: configMap
+      name: '{{ .Release.Name }}-content'
+      advancedMounts:
+        main:
+          nginx:
+            - path: /usr/share/nginx/html/opencode/.well-known
+              readOnly: true
+    # nginx-unprivileged needs writable scratch space (root FS is RO).
+    tmp:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          nginx:
+            - path: /tmp
+    nginx-cache:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          nginx:
+            - path: /var/cache/nginx
+    nginx-run:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          nginx:
+            - path: /var/run
