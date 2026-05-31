@@ -41,7 +41,7 @@ months behind, and a few are on tracks that have moved or are being phased out.
 | ~~**cert-manager** (`charts/cert`)~~ | ~~`'*'`~~ | ~~**v1.20.2** (2025-04-11)~~ | — | **Superseded:** cert-manager + its ClusterIssuers are now deployed externally by the `home-os` repo. `charts/cert` removed from this repo (ADR-noted in CLAUDE.md). This pin no longer applies here. |
 | bjw-s/app-template | 4.1.2 / 4.3.0 / 4.5.0 / 4.6.2 across charts | **5.0.1** (2026-05-14) | 1 major + drift | Standardize on 5.0.1 |
 | traefik | 39.0.2 | 40.2.0 (2026-05-13) | 1 major | Bump; v40 drops bundled Gateway API CRDs (we already set `kubernetesGateway.enabled: false`) |
-| external-secrets | 2.4.0 | 2.5.0 (2026-05-15) | 1 minor | Bump |
+| ~~external-secrets~~ | ~~2.4.0~~ | ~~2.5.0~~ | — | **Superseded:** ESO is installed externally now; removed from this repo. Pin no longer applies here. |
 | opentelemetry-operator | 0.106.0 | Active 0.5x in 2026 | Numbering changed | Verify migration notes |
 | coder | 2.31.9 | Verify upstream | unverified | Check |
 
