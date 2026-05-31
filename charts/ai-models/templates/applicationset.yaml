@@ -29,6 +29,10 @@ spec:
 {{ (dict "backends" .Values.backends) | toYaml | indent 14 }}
 {{- if .Values.modelsInfo.enabled }}
           # ── Models info (OpenRouter-shape catalog) — sync-wave 1 ──────
+          # The route/host/path are pinned in `charts/ai-models-info`'s
+          # own defaults (core-gateway api-https, api.ai.camer.digital,
+          # /v1/models/info). Per-env overrides should hit that leaf
+          # chart directly via ai-gitops rather than this orchestrator.
           - appName: {{ printf "%s-info" .Release.Name | quote }}
             chartPath: charts/ai-models-info
             syncWave: "1"
@@ -36,7 +40,6 @@ spec:
 {{- $infoValues := dict
       "models" .Values.models
       "excludeKinds" .Values.modelsInfo.excludeKinds
-      "route" .Values.modelsInfo.route
 }}
 {{ $infoValues | toYaml | indent 14 }}
 {{- end }}

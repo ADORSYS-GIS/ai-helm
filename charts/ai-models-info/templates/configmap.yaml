@@ -58,5 +58,10 @@ metadata:
 data:
   # OpenRouter-shape catalog. Computed at Helm-render time from
   # `.Values.models` via templates/_helpers.tpl. Compact JSON (deterministic).
-  catalog: |
+  #
+  # The key is `info` (not `catalog`) because bjw-s persistence (type:
+  # configMap) projects each data key as a file. Mounting this ConfigMap
+  # at `/usr/share/nginx/html/v1/models` → file `info` → nginx serves
+  # `/v1/models/info` (matching the location block above).
+  info: |
     {{- include "ai-models-info.catalog" . | nindent 4 }}

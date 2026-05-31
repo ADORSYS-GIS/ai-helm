@@ -10,19 +10,28 @@ Tiny nginx serving a static JSON at
 
 ## What it renders
 
-- `Deployment` — `nginxinc/nginx-unprivileged:1.27-alpine`, 2 replicas,
-  10m / 16Mi requests. Hardened: `runAsNonRoot`,
+The Deployment, Service, and Ingress come from
+[`bjw-s app-template` v4.6.2](https://bjw-s-labs.github.io/helm-charts/docs/app-template/)
+(aliased as `opencode-wellknown` in `Chart.yaml`). The two ConfigMaps
+are emitted by this chart's own `templates/configmap.yaml` because their
+content is computed from `.Values.wellKnown` at Helm-render time —
+app-template's `configMaps:` block expects static string data.
+
+- `Deployment` (app-template) — `nginxinc/nginx-unprivileged:1.27-alpine`,
+  2 replicas, 10m / 16Mi requests. Hardened: `runAsNonRoot`,
   `readOnlyRootFilesystem`, drop ALL capabilities, seccomp
-  `RuntimeDefault`, `automountServiceAccountToken: false`.
-- `Service` — ClusterIP, port 80 → 8080
-- `Ingress` — Traefik, exact-match `/opencode/.well-known/opencode` on
-  `ai.camer.digital`, same TLS cert as LibreChat (longest-path-wins
-  routing means this doesn't conflict with the `/` ingress)
-- Two `ConfigMap`s:
+  `RuntimeDefault`, `automountServiceAccountToken: false`. ConfigMaps
+  + scratch dirs come in via the `persistence:` block.
+- `Service` (app-template) — ClusterIP, port 80 → 8080
+- `Ingress` (app-template) — Traefik, exact-match
+  `/opencode/.well-known/opencode` on `ai.camer.digital`, same TLS cert
+  as LibreChat (longest-path-wins routing means this doesn't conflict
+  with the `/` ingress)
+- Two `ConfigMap`s (this chart's `templates/configmap.yaml`):
   - `nginx-config` — custom `default.conf` with one exact-match
     location, `Content-Type: application/json`, `Cache-Control: no-store`
   - `content` — the well-known JSON itself, rendered via `toJson`
-    (compact, deterministic)
+    (compact, deterministic) from `.Values.wellKnown`
 
 ## The contract
 
@@ -51,16 +60,21 @@ under `~/.cache/opencode/node_modules/`).
 
 ## Values
 
+The `wellKnown:` block lives at the **root** of `values.yaml` (read by
+`templates/configmap.yaml`). The Deployment / Service / Ingress knobs
+live under the `opencode-wellknown:` sub-chart alias (bjw-s
+app-template's standard schema).
+
 | Key | What |
 |---|---|
 | `wellKnown.auth.{command, env}` | The stub argv + env name |
 | `wellKnown.config.plugin` | Array of npm packages opencode auto-installs |
 | `wellKnown.config.provider.<id>.options.baseURL` | OpenAI-compatible endpoint |
 | `wellKnown.config.provider.<id>.options.oauth2.{issuer, clientId, scopes, authFlow}` | Keycloak OAuth config for the plugin. **Set `authFlow: device_code`** (plugin default is `authorization_code` which binds a localhost callback port and breaks headless use). |
-| `image.{repository, tag, pullPolicy}` | nginx image pin |
-| `replicaCount` | Defaults to 2 |
-| `resources` | requests/limits |
-| `ingress.{enabled, className, host, path, annotations, tls.{enabled, secretName}}` | Ingress shape |
+| `opencode-wellknown.controllers.main.containers.nginx.image.{repository, tag, pullPolicy}` | nginx image pin |
+| `opencode-wellknown.controllers.main.replicas` | Defaults to 2 |
+| `opencode-wellknown.controllers.main.containers.nginx.resources` | requests/limits |
+| `opencode-wellknown.ingress.main` | bjw-s `ingress.<name>` shape (className, hosts, tls, annotations) |
 
 ## Cluster prerequisites (out of scope; see `docs/opencode-well-known.md`)
 

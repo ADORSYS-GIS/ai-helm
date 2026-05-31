@@ -9,19 +9,31 @@ opencode's `@vymalo/opencode-models-info` plugin (ADR-0015).
 
 ## What it renders
 
-- `Deployment` — `nginxinc/nginx-unprivileged:1.27-alpine`, 2 replicas,
-  10m / 16Mi requests. Hardened (`runAsNonRoot`,
+The Deployment, Service, and HTTPRoute come from
+[`bjw-s app-template` v4.6.2](https://bjw-s-labs.github.io/helm-charts/docs/app-template/)
+(aliased as `models-info` in `Chart.yaml`). The two ConfigMaps are
+emitted by this chart's own `templates/configmap.yaml` because the
+catalog content is computed by `templates/_helpers.tpl::ai-models-info.catalog`
+at Helm-render time — app-template's `configMaps:` block expects
+static string data.
+
+- `Deployment` (app-template) — `nginxinc/nginx-unprivileged:1.27-alpine`,
+  2 replicas, 10m / 16Mi requests. Hardened (`runAsNonRoot`,
   `readOnlyRootFilesystem`, drop ALL caps, seccomp `RuntimeDefault`,
-  `automountServiceAccountToken: false`).
-- `Service` — ClusterIP, port 80 → 8080
-- `HTTPRoute` — attached to `core-gateway` (`api.ai.camer.digital`,
-  exact match `/v1/models/info`). **NOT an Ingress** — the API host is
-  on Envoy AI Gateway, so the right attach is `HTTPRoute`.
-- Two `ConfigMap`s:
+  `automountServiceAccountToken: false`). ConfigMaps + scratch dirs
+  come in via the `persistence:` block.
+- `Service` (app-template) — ClusterIP, port 80 → 8080
+- `HTTPRoute` (app-template's `route:` block) — attached to
+  `core-gateway` (`api.ai.camer.digital`, exact match
+  `/v1/models/info`). **NOT an Ingress** — the API host is on Envoy AI
+  Gateway, so the right attach is `HTTPRoute`.
+- Two `ConfigMap`s (this chart's `templates/configmap.yaml`):
   - `nginx-config` — `default.conf` with one exact-match location,
     JSON Content-Type, `Cache-Control: public, max-age=300`
   - `content` — the OpenRouter-shape catalog JSON, computed at
-    Helm-render time by `templates/_helpers.tpl`
+    Helm-render time by `templates/_helpers.tpl`. Data key is `info`
+    (not `catalog`) so bjw-s persistence projects it to `models/info`
+    under the mount root.
 
 ## How the catalog is computed
 
@@ -76,14 +88,19 @@ Output (per entry):
 
 ## Values
 
+The `models:` + `excludeKinds:` blocks live at the **root** of
+`values.yaml` (read by the catalog helper + `templates/configmap.yaml`).
+The Deployment / Service / HTTPRoute knobs live under the `models-info:`
+sub-chart alias (bjw-s app-template's standard schema).
+
 | Key | What |
 |---|---|
-| `image.{repository, tag, pullPolicy}` | nginx image pin |
-| `replicaCount` | Defaults to 2 |
-| `resources` | requests/limits |
-| `route.{enabled, parentRef.{name, namespace, sectionName}, hostname, path}` | HTTPRoute attach point. Defaults to `core-gateway` `api-https` listener, exact path `/v1/models/info`. |
 | `models` | Mirror of the orchestrator's `models:` map. Populated by the orchestrator's ApplicationSet element values; default `{}` for standalone testing. |
 | `excludeKinds` | Kinds omitted from the catalog. Defaults to `[embedding, reranker]`. |
+| `models-info.controllers.main.containers.nginx.image.{repository, tag, pullPolicy}` | nginx image pin |
+| `models-info.controllers.main.replicas` | Defaults to 2 |
+| `models-info.controllers.main.containers.nginx.resources` | requests/limits |
+| `models-info.route.main.{hostnames, parentRefs, rules}` | bjw-s `route.<name>` shape. Defaults to `core-gateway` `api-https` listener, host `api.ai.camer.digital`, exact path `/v1/models/info`. |
 
 ## How it slots into opencode
 

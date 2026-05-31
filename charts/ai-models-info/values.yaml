@@ -18,39 +18,13 @@
 # field mapping in the consumer plugin is partial, so an entry only
 # needs to emit the fields you want enriched.
 
-image:
-  repository: nginxinc/nginx-unprivileged
-  tag: "1.27-alpine"
-  pullPolicy: IfNotPresent
-
-replicaCount: 2
-
-resources:
-  requests:
-    cpu: 10m
-    memory: 16Mi
-  limits:
-    cpu: 100m
-    memory: 64Mi
-
 # ────────────────────────────────────────────────────────────────────────
-# HTTPRoute attachment.
-# ────────────────────────────────────────────────────────────────────────
-route:
-  enabled: true
-  # The Envoy AI Gateway this route attaches to.
-  parentRef:
-    name: core-gateway
-    namespace: converse-gateway
-    sectionName: api-https
-  hostname: api.ai.camer.digital
-  # Exact-match path so it doesn't shadow other /v1/* routes.
-  path: /v1/models/info
-
-# ────────────────────────────────────────────────────────────────────────
-# Source data — populated by the orchestrator (charts/ai-models) via the
-# ApplicationSet's per-child valuesYaml. Defaults below let the chart
-# render in isolation for testing.
+# Source data — lives at the parent chart's ROOT (NOT under the
+# `models-info:` sub-chart key) so `templates/_helpers.tpl::catalog`
+# and `templates/configmap.yaml` can read it directly. Populated by the
+# orchestrator (`charts/ai-models`) via the ApplicationSet's per-child
+# `valuesYaml`. Defaults below let the chart render in isolation for
+# testing.
 # ────────────────────────────────────────────────────────────────────────
 
 # `models:` mirrors the orchestrator's `models:` map exactly.
@@ -78,3 +52,157 @@ models: {}
 excludeKinds:
   - embedding
   - reranker
+
+# ────────────────────────────────────────────────────────────────────────
+# bjw-s app-template (aliased to `models-info`). Renders the
+# Deployment + Service + HTTPRoute. The two ConfigMaps holding the
+# nginx config and the catalog JSON are emitted by this chart's own
+# `templates/configmap.yaml`.
+# ────────────────────────────────────────────────────────────────────────
+models-info:
+  controllers:
+    main:
+      type: deployment
+      replicas: 2
+      strategy: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 0
+      pod:
+        automountServiceAccountToken: false
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        # Note: no checksum/catalog annotation here — the catalog is
+        # computed from the parent chart's root `models:` value, which
+        # isn't reachable from the sub-chart's tpl context. Catalog
+        # edits require `kubectl rollout restart` (or just bump
+        # `image.tag` if you want an automatic roll).
+      containers:
+        nginx:
+          image:
+            repository: nginxinc/nginx-unprivileged
+            tag: "1.27-alpine"
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 8080
+                periodSeconds: 30
+                timeoutSeconds: 3
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 8080
+                periodSeconds: 5
+                timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          enabled: true
+          port: 80
+          targetPort: 8080
+          protocol: HTTP
+
+  # HTTPRoute (Gateway API) attached to the existing `core-gateway`
+  # Envoy AI Gateway — same listener Authorino already guards. The
+  # `core-gateway`'s `api-https` listener serves `api.ai.camer.digital`,
+  # so the catalog inherits the AuthConfig automatically.
+  #
+  # NOT a Traefik Ingress — `api.ai.camer.digital` is on Envoy AI
+  # Gateway, so HTTPRoute is the right attach point.
+  route:
+    main:
+      enabled: true
+      annotations: {}
+      hostnames:
+        - api.ai.camer.digital
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: core-gateway
+          namespace: converse-gateway
+          sectionName: api-https
+      rules:
+        - matches:
+            - path:
+                type: Exact
+                value: /v1/models/info
+          backendRefs:
+            - identifier: main
+              port: 80
+
+  # Mount the two externally-rendered ConfigMaps + nginx-unprivileged's
+  # required writable scratch dirs.
+  persistence:
+    # The nginx server block (custom default.conf with the right
+    # Content-Type, exact-match location, Cache-Control header).
+    nginx-config:
+      enabled: true
+      type: configMap
+      name: '{{ .Release.Name }}-nginx-config'
+      advancedMounts:
+        main:
+          nginx:
+            - path: /etc/nginx/conf.d
+              readOnly: true
+    # The catalog JSON itself (rendered from `.Values.models` via
+    # `templates/_helpers.tpl::ai-models-info.catalog`).
+    content:
+      enabled: true
+      type: configMap
+      name: '{{ .Release.Name }}-content'
+      # Mount at `/usr/share/nginx/html/v1/models` so the ConfigMap's
+      # `info` key projects to file `/usr/share/nginx/html/v1/models/info`
+      # — matching the nginx `location = /v1/models/info` block.
+      advancedMounts:
+        main:
+          nginx:
+            - path: /usr/share/nginx/html/v1/models
+              readOnly: true
+    # nginx-unprivileged needs writable scratch space (root FS is RO).
+    tmp:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          nginx:
+            - path: /tmp
+    nginx-cache:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          nginx:
+            - path: /var/cache/nginx
+    nginx-run:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          nginx:
+            - path: /var/run

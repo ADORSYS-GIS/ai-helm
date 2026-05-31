@@ -13,7 +13,7 @@ description: |
   Leaf chart under the `librechart` orchestrator. Independent
   Application (sync-wave 1).
 type: application
-version: 1.0.0
+version: 2.0.0
 appVersion: "1.0.0"
 keywords:
   - opencode
@@ -23,6 +23,19 @@ maintainers:
   - name: ai-helm
 
 dependencies:
+  # bjw-s app-template renders the Deployment, Service, and Ingress.
+  # The well-known JSON + nginx config live in two ConfigMaps emitted
+  # by this chart's own `templates/configmap.yaml` (the content is
+  # dynamically built from `.Values.wellKnown`, which app-template's
+  # `configMaps:` block can't templatize). app-template references
+  # those two ConfigMaps by name via `persistence` (type: configMap).
+  - name: app-template
+    version: '4.6.2'
+    repository: https://bjw-s-labs.github.io/helm-charts
+    alias: opencode-wellknown
+
+  # `common` library kept only for `common.labels.standard` used inside
+  # templates/configmap.yaml. Drop once we standardize on bjw-s labels.
   - name: common
     version: '*'
     repository: "file://../common"
