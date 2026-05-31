@@ -76,7 +76,12 @@ wellKnown:
   config:
     $schema: https://opencode.ai/config.json
     plugin:
+      # opencode auto-installs both via `bun install` at startup; cached
+      # under ~/.cache/opencode/node_modules/. No user action needed.
       - "@vymalo/opencode-oauth2"
+      # Enriches the model catalog with context length, pricing,
+      # modalities, capability flags. See ADR-0015.
+      - "@vymalo/opencode-models-info"
     provider:
       camer-digital:
         name: "Camer Digital"
@@ -94,3 +99,13 @@ wellKnown:
             # breaks headless / remote-dev use.
             authFlow: device_code
             syncIntervalMinutes: 60
+          meta:
+            # Relative path → resolves to baseURL + "models/info" =
+            # https://api.ai.camer.digital/v1/models/info (the
+            # ai-models-info chart serves this).
+            # NOT vanilla /v1/models — opencode-models-info needs the
+            # richer OpenRouter shape, not OpenAI's `id/object/owned_by`.
+            modelsInfoUrl: "models/info"
+            # TTL (24h default upstream); override if you want fresher
+            # catalogs:
+            # modelsInfoTtlSeconds: 3600

@@ -1,0 +1,80 @@
+# OpenRouter-shape model catalog endpoint for opencode.
+#
+# Computed at Helm-render time from `.Values.models` + `.Values.pricing`-
+# style fields the orchestrator passes through. The mapping:
+#
+#   model `id` (map key)           → `id`
+#   model `info.displayName`        → `name`            (defaults to id)
+#   model `info.contextLength`      → `context_length`  (optional)
+#   model `info.maxOutputTokens`    → `top_provider.max_completion_tokens` (optional)
+#   model `info.supportedParameters`→ `supported_parameters[]` (optional)
+#   model `pricing.standard.inputPer1M`  / 1e6 (USD/tok string) → `pricing.prompt`
+#   model `pricing.standard.outputPer1M` / 1e6                  → `pricing.completion`
+#   model `pricing.standard.cachedInputPer1M` / 1e6             → `pricing.input_cache_read`
+#   model `pricing.standard.effectivePer1M`     / 1e6 (flat)    → both prompt + completion
+#   model `kind` (text|multimodal|embedding|reranker) → architecture.{input,output}_modalities
+#
+# Per-model metadata (info, modalities) is OPTIONAL — the OpenRouter
+# field mapping in the consumer plugin is partial, so an entry only
+# needs to emit the fields you want enriched.
+
+image:
+  repository: nginxinc/nginx-unprivileged
+  tag: "1.27-alpine"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+# ────────────────────────────────────────────────────────────────────────
+# HTTPRoute attachment.
+# ────────────────────────────────────────────────────────────────────────
+route:
+  enabled: true
+  # The Envoy AI Gateway this route attaches to.
+  parentRef:
+    name: core-gateway
+    namespace: converse-gateway
+    sectionName: api-https
+  hostname: api.ai.camer.digital
+  # Exact-match path so it doesn't shadow other /v1/* routes.
+  path: /v1/models/info
+
+# ────────────────────────────────────────────────────────────────────────
+# Source data — populated by the orchestrator (charts/ai-models) via the
+# ApplicationSet's per-child valuesYaml. Defaults below let the chart
+# render in isolation for testing.
+# ────────────────────────────────────────────────────────────────────────
+
+# `models:` mirrors the orchestrator's `models:` map exactly.
+models: {}
+#  glm-5:
+#    kind: text
+#    pricing:
+#      strategy: weighted
+#      standard:
+#        inputPer1M: 0.60
+#        cachedInputPer1M: 0.12
+#        outputPer1M: 2.08
+#    info:
+#      displayName: "GLM-5"
+#      contextLength: 128000
+#      maxOutputTokens: 8192
+#      supportedParameters:
+#        - tools
+#        - tool_choice
+#        - temperature
+#        - reasoning
+
+# Skip these model kinds from the catalog (chat-only catalog by default).
+# Empty list = include everything.
+excludeKinds:
+  - embedding
+  - reranker
