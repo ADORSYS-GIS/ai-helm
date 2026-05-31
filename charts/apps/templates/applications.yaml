@@ -44,11 +44,10 @@ spec:
     {{- include "apps.argocd.destinationClusterRef" $.Values.argocd.destination | nindent 4 }}
     namespace: {{ .destination.namespace }}
     {{- end }}
-  {{ if .syncPolicy }}
-  {{- with .syncPolicy }}
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-  {{ else }}
+  {{- if .syncPolicy }}
+  syncPolicy:
+    {{- toYaml .syncPolicy | nindent 4 }}
+  {{- else }}
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
