@@ -62,6 +62,24 @@ The orchestrator's `Chart.yaml` depends only on `common`. Its `templates/applica
 
 See ADR-0012 (`ai-models`) and ADR-0014 (`librechart`) for the canonical examples + the rationale. **Don't reinvent this pattern** — copy from one of these when you need it again.
 
+## Umbrella Applications + `environments/` overlays (ADR-0018)
+
+Flat leaf apps in `charts/apps/values.yaml` use a multi-source **umbrella** so a workload and its app-scoped prerequisites sync as one Application:
+
+- **Source A — workload**: the Helm chart (`path: charts/<x>` or an upstream `chart:`).
+- **Source B — app-scoped deps**: a **kustomize** overlay at `path: environments/<env>/deps/<app>` emitting the ingress `Certificate` and any per-app image-pull / session `ExternalSecret`. Kustomize is confined to these plain CRs — **never kustomize-over-Helm** (that needs the controller-wide `--enable-helm` flag).
+- **Source C — `ref: values`** (optional): a `$values` ref so Source A can pull a per-env values file when a *workload* knob actually diverges between environments.
+
+Per-env knobs (`clusterIssuer`, `secretStore`, `ingressClass`, `storageClass`, `domainBase`) live in `environments/<env>/cluster.yaml` (source of truth) and are patched into the dep CRs by the `environments/<env>/deps/<app>/` kustomize overlay (base under `environments/base/deps/<app>/`). Today only `environments/prod/` exists (Hetzner); a second env is a drop-in sibling directory.
+
+Ownership split: umbrellas own **app-scoped** secrets/certs (referencing `ssegning-aws` by name). **Platform/shared** secrets (S3, Keycloak, redis-auth) stay external in `ai-ops-secrets.git`. The store is never defined here.
+
+**How to attach deps:** add one field to the app entry — `depsOverlay: environments/<env>/deps/<app>`. `applications.yaml` folds it in as Source B (pointing at this repo via `argocd.selfRepoURL` @ `argocd.selfTargetRevision`), keeping the workload's `source:` + `valuesObject` verbatim (no re-indenting big value blocks). Also drop the `cert-manager.io/cluster-issuer` annotation from that chart's ingress — the overlay `Certificate` now owns the TLS secret. Converted so far: `grafana`, `coder`, `lightbridge-backend`, `librechat-admin-panel`. Dep-less infra/backends stay single-source.
+
+The umbrella needs **no ApplicationSet** — `applications.yaml` already passes `.sources` through. (The List/Matrix-generator conversion, old ADR-0006, is decoupled future work.) Orchestrators (`models`, `librechat`) are **not** wrapped — they're already ApplicationSets.
+
+> ⚠️ The `applications.yaml` template's custom-`syncPolicy` branch previously omitted the `syncPolicy:` wrapper key (contents leaked into `destination:`), so ~13 apps that declared their own `syncPolicy` rendered with **no** `spec.syncPolicy` (manual sync, declared automation silently dropped). Fixed in the ADR-0018 work — those apps now get their declared `automated: {prune, selfHeal}`. Sanity-check sync behaviour on the live cluster after merge.
+
 ## ai-helm ↔ ai-gitops separation
 
 | | `ai-helm` (this repo) | `ai-gitops` (other repo) |

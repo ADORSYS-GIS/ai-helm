@@ -1,8 +1,17 @@
 # ADR-0006: Migrate `charts/apps` to a multi-source ApplicationSet (List generator, no-dup)
 
-**Status:** Proposed
+**Status:** Superseded by [ADR-0018](./0018-umbrella-apps-and-env-overlays.md)
 **Date:** 2026-05-24
 **Deciders:** @stephane-segning
+
+> **Superseded (2026-05-31):** ADR-0018 keeps this ADR's workload/dependency
+> source split but (1) makes the dependency layer **kustomize** rather than a
+> second Helm source, (2) moves env-specific knobs into an in-repo
+> `environments/<env>/` overlay, and (3) decouples the ApplicationSet
+> conversion (umbrellas land inside the existing `range` template, which
+> already passes `.sources` through). The List/Matrix-generator migration
+> described below remains valid future work, not a prerequisite. The original
+> decision body is preserved unchanged.
 
 ## Context
 

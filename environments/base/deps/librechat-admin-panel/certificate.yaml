@@ -1,0 +1,18 @@
+# App-scoped dependency: ingress TLS Certificate for the LibreChat admin panel.
+# The issuer name is a per-env placeholder, patched by the environment overlay
+# (environments/<env>/deps/librechat-admin-panel). cert-manager writes the
+# resulting key/cert into the `secretName` Secret, which the chart's Ingress
+# `tls[].secretName` references — so the chart no longer needs the
+# `cert-manager.io/cluster-issuer` auto-issue annotation.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: librechat-admin-panel-tls
+  namespace: converse-chat
+spec:
+  secretName: admin.ai.camer.digital-tls
+  issuerRef:
+    name: PLACEHOLDER_ISSUER # ← patched per env (cluster.yaml: clusterIssuer)
+    kind: ClusterIssuer
+  dnsNames:
+    - admin.ai.camer.digital # ← patched per env (cluster.yaml: domainBase)

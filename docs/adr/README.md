@@ -23,7 +23,7 @@ how thinking evolved.
 | [0003](./0003-skip-opa-for-service-accounts.md) | Skip OPA / external metadata for service-account tokens via `azp` allowlist | Accepted | 2026-05-24 | — |
 | [0004](./0004-grafana-operator-external-mode.md) | Adopt grafana-operator in external mode for dashboards-as-code | Accepted | 2026-05-24 | — |
 | [0005](./0005-per-user-attribution-via-authorino-headers.md) | Propagate per-user identity via Authorino response headers → Loki labels | Accepted | 2026-05-24 | — |
-| [0006](./0006-multi-source-applicationset.md) | Migrate charts/apps to a multi-source ApplicationSet (List generator, no-dup) | Proposed | 2026-05-24 | — |
+| [0006](./0006-multi-source-applicationset.md) | Migrate charts/apps to a multi-source ApplicationSet (List generator, no-dup) | Superseded by [0018](./0018-umbrella-apps-and-env-overlays.md) | 2026-05-24 | — |
 | [0007](./0007-kc-token-go-cli.md) | Build `kc-token` as a single static Go binary + GH composite action | Superseded by [0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) | 2026-05-24 | — |
 | [0008](./0008-python-dashboard-generation.md) | Generate Grafana dashboards from Python | Accepted | 2026-05-24 | — |
 | [0009](./0009-ai-in-ci-via-keycloak-token-exchange.md) | AI in CI via Keycloak OIDC token exchange (Python step, shared SA, fork-deny) | Accepted | 2026-05-24 | [0007](./0007-kc-token-go-cli.md) |
@@ -35,6 +35,7 @@ how thinking evolved.
 | [0015](./0015-models-info-catalog-endpoint.md) | OpenRouter-shape `/v1/models/info` catalog endpoint for opencode (charts/ai-models-info) | Accepted | 2026-05-24 | — |
 | [0016](./0016-fork-bjw-s-app-template-locally.md) | Fork bjw-s app-template + common locally as `bjw-template` / `bjw-common` (rewire 12 consumers) | Accepted | 2026-05-31 | — |
 | [0017](./0017-home-remote-destination-invariant.md) | Workloads target the home-remote cluster, never in-cluster (render-time guard + `allowInCluster` escape hatch) | Accepted | 2026-05-31 | — |
+| [0018](./0018-umbrella-apps-and-env-overlays.md) | Umbrella Applications (workload + app-scoped deps via kustomize) + per-env `environments/` overlays | Proposed | 2026-05-31 | [0006](./0006-multi-source-applicationset.md) |
 
 ## Status legend
 
