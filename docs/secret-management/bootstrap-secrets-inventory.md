@@ -88,7 +88,7 @@ Secrets for platform-level authentication and authorization.
 
 ### Category 3: AI Model API Keys
 
-API keys for AI model providers used by the LiteLLM proxy and other AI services.
+API keys for AI model providers, consumed by the Envoy AI Gateway service backends (see `charts/ai-models-backends`).
 
 | Secret Name | Namespace | Type | Keys | Description |
 |-------------|-----------|------|------|-------------|
@@ -563,8 +563,8 @@ kubectl create secret generic openai-api-key \
   -n converse \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# Restart affected pods
-kubectl rollout restart deployment/litellm -n converse
+# Restart affected pods (example: the AI gateway / a workload that reads the key)
+kubectl rollout restart deployment/eg-converse-gateway -n envoy-gateway-system
 ```
 
 ### Automatic Rotation (ESO Managed)

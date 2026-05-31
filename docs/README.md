@@ -54,7 +54,6 @@ Step-by-step recipes for recurring or break-glass operations.
 | [`cnpg-native-backup/`](./cnpg-native-backup/) | CNPG `BarmanObjectStore` setup; `lightbridge-db` restore runbook + restore YAMLs |
 | [`mongodb-restoration-guide.md`](./mongodb-restoration-guide.md) | Restore a MongoDB backup into the `librechat-db` StatefulSet |
 | [`observability-fix-no-data-dashboards.md`](./observability-fix-no-data-dashboards.md) | Postmortem + fix for empty Grafana dashboards (Alloy clustering, OTLP fan-out) |
-| [`gemini-patch-removal-guide.md`](./gemini-patch-removal-guide.md) | How to retire the LiteLLM gemini-patch ConfigMap once upstream catches up |
 | [`secret-management/`](./secret-management/) | Bootstrap secret inventory, ExternalSecret reference patterns |
 
 ## Migrations
