@@ -89,7 +89,6 @@ ArgoCD (on home-remote)
   │
   └─ charts/apps emits 1 Application per workload (all → cluster home-remote):
        │
-       ├─ Application: cert                 (charts/cert)
        ├─ Application: external-secrets-operator
        ├─ Application: external-secrets-config
        ├─ Application: cnpg                 (cloudnative-pg operator)
@@ -129,7 +128,7 @@ Lower waves sync first. Conventions:
 |---|---|
 | `-5` to `-3` | (reserved for namespace bootstrap, ResourceQuota / LimitRange — see [SYNC_WAVE_PATTERN.md](../SYNC_WAVE_PATTERN.md)) |
 | `-2` | Storage / observability backends (Mimir, Loki, Tempo, kube-state-metrics, node-exporter) |
-| `-1` | Operators + ESO + cert-manager + grafana-operator + collectors (Alloy) |
+| `-1` | Operators + ESO + grafana-operator + collectors (Alloy). NOTE: cert-manager is **not** synced here anymore — its controller, CRDs, and the shared ClusterIssuers (`cert-home-cert-http`, `self-signed-ca`, …) are provisioned externally by the home-os repo. |
 | `0` | Workloads (LibreChat, AI Gateway, Coder, all per-model apps) |
 | `1` | Content (Grafana dashboards, opencode-wellknown, anything that depends on a running gateway) |
 | `2+` | Per-app post-sync work |

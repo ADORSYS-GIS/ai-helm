@@ -152,6 +152,8 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 - **Keycloak realm clients/scopes/groups** — `charts/keycloak-baseline/values.yaml` defines them; keycloak-config-cli applies. Client secrets come from ESO at sync time.
 - **Backups** — `charts/*-backup/` define the CronJobs; the S3 buckets + retention policies are out-of-band.
 - **ArgoCD root Application** — in `ai-gitops`. The chart `charts/apps/` in this repo is what that root Application points at.
+- **Redis** — deployed by the `home-os` repo (`charts/home-apps/redis-ha`) as `redis-ha-redis` in the `redis-system` namespace. This repo only *consumes* it (LibreChat, LiteLLM proxy, Envoy rate-limit point at `redis-ha-redis.redis-system.svc.cluster.local:6379`). Don't re-add a redis chart here.
+- **cert-manager** — controller, CRDs, **and** the shared cluster-scoped ClusterIssuers (`cert-home-cert-http`, `self-signed-ca`, `cert-cloudflare`) are deployed by `home-os` (`charts/cert`, `cert-remote` Application). This repo only references the issuers via `cert-manager.io/cluster-issuer:` annotations. ⚠️ `cert-home-cert-envoy` (the Gateway-API ACME issuer `core-gateway` uses for `api.ai.camer.digital`) is referenced here but **not yet defined in home-os** — it must be added there. Don't re-add a cert chart here.
 
 ## When you finish substantive work
 

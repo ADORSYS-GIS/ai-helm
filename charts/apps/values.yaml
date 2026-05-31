@@ -1908,18 +1908,19 @@ applications:
     destination:
       namespace: cnpg-system
 
-  - name: cert
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/adorsys-gis/ai-helm.git
-      targetRevision: claude/magical-bohr-390242
-      path: charts/cert
-      helm:
-        releaseName: cert
-        valuesObject: { }
-    destination:
-      namespace: cert-system
+  # NOTE: cert-manager is NOT deployed by this repo. It's managed
+  # externally (home-os repo: charts/cert via the `cert-remote`
+  # Application, releaseName `cert`, in kube-system on the home-remote
+  # cluster). That deployment installs the cert-manager controller +
+  # CRDs AND the shared cluster-scoped ClusterIssuers this repo
+  # references: `cert-home-cert-http` and `self-signed-ca`.
+  #
+  # GAP: home-os's cert chart does NOT yet define `cert-home-cert-envoy`
+  # (the Gateway-API / gatewayHTTPRoute ACME issuer that core-gateway
+  # uses for api.ai.camer.digital — see the `gateway.issuer` value
+  # below). That issuer must be added to home-os, otherwise the Envoy
+  # gateway's ACME cert won't be issued. Tracked out-of-band.
+  # Do not re-add a cert Application here.
 
   # --- Secret Management ---
   # External Secrets Operator - installed from official upstream Helm chart
@@ -2142,6 +2143,11 @@ applications:
         valuesObject:
           gateway:
             apiHostname: api.ai.camer.digital
+            # Gateway-API ACME ClusterIssuer. Must exist on the cluster —
+            # provided externally (home-os). NOT defined in this repo
+            # anymore (cert-manager + issuers are external). If TLS for
+            # api.ai.camer.digital fails to issue, this issuer is missing
+            # from home-os's cert chart.
             issuer: cert-home-cert-envoy
     destination:
       namespace: converse-gateway
