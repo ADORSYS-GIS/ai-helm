@@ -514,8 +514,15 @@ applications:
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "-1"
     source:
-      repoURL: oci://ghcr.io/grafana/helm-charts
+      # OCI chart path must include the chart name (grafana-operator).
+      # This ArgoCD resolves the artifact from repoURL as-is and does NOT
+      # append `chart:` to the path (matches the coder/envoy OCI apps here)
+      # — with the chart name left out, it pulled `grafana/helm-charts`
+      # and GHCR returned 403. See the envoy-* apps for the same shape.
+      repoURL: oci://ghcr.io/grafana/helm-charts/grafana-operator
       # 5.23.0 (2026-05-21) per audit. Adds automatic restart-on-secret-change.
+      # If this 404s after the path fix, the tag doesn't exist — bump to a
+      # published grafana-operator chart tag (vX.Y.Z).
       targetRevision: v5.23.0
       chart: grafana-operator
       helm:
