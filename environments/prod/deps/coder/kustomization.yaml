@@ -1,0 +1,20 @@
+# prod overlay: app-scoped deps for the coder umbrella.
+# Keep values in sync with environments/prod/cluster.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/deps/coder
+
+patches:
+  # clusterIssuer: cert-home-cert-http
+  - target:
+      kind: Certificate
+      name: coder-tls
+    patch: |-
+      - op: replace
+        path: /spec/issuerRef/name
+        value: cert-home-cert-http
+      - op: replace
+        path: /spec/dnsNames/0
+        value: coder.ai.camer.digital

@@ -41,6 +41,12 @@ argocd:
   # that cluster being registered under that name.
   inClusterServer: "https://kubernetes.default.svc"
   controlPlaneNamespace: argocd
+  # This repo, used as the source for kustomize `depsOverlay` sources (the
+  # app-scoped dependency CRs of umbrella Applications — ADR-0018). The deps
+  # overlays live under `environments/<env>/deps/<app>` in this repo.
+  # TODO(merge): flip selfTargetRevision back to `main` on PR merge.
+  selfRepoURL: https://github.com/ADORSYS-GIS/ai-helm
+  selfTargetRevision: claude/magical-bohr-390242
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
     # `spec.destination.name`. This is the WORKLOAD destination.
@@ -1141,6 +1147,8 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "0"
+    # Umbrella (ADR-0018): app-scoped ingress Certificate via the overlay.
+    depsOverlay: environments/prod/deps/grafana
     source:
       repoURL: https://grafana.github.io/helm-charts
       targetRevision: 9.4.5
@@ -1547,8 +1555,10 @@ applications:
           ingress:
             enabled:          true
             ingressClassName: traefik
-            annotations:
-              cert-manager.io/cluster-issuer: cert-home-cert-http
+            # TLS Secret (grafana.ai.camer.digital-tls) is provisioned by the
+            # umbrella's app-scoped Certificate (Source B); no auto-issue
+            # annotation here — issuer is a per-env overlay knob (ADR-0018).
+            annotations: {}
             hosts:
               - *grafana-domain
             tls:
@@ -2262,6 +2272,9 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "0"
+    # Umbrella (ADR-0018): app-scoped ingress Certificates (self-service, mcp)
+    # via the overlay. The disabled api-* sub-ingresses get no Certificate.
+    depsOverlay: environments/prod/deps/lightbridge-backend
     source:
       repoURL: https://adorsys-gis.github.io/lightbridge-authz
       targetRevision: 0.8.1
@@ -2679,8 +2692,6 @@ applications:
               metadata:
                 name: "{{ $.Release.Name }}-apis"
                 namespace: {{ $.Release.Namespace }}
-                annotations:
-                  cert-manager.io/cluster-issuer: cert-home-cert-http
               spec:
                 ingressClassName: traefik
                 tls:
@@ -2719,8 +2730,6 @@ applications:
               metadata:
                 name: "{{ $.Release.Name }}-mcp"
                 namespace: {{ $.Release.Namespace }}
-                annotations:
-                  cert-manager.io/cluster-issuer: cert-home-cert-http
               spec:
                 ingressClassName: traefik
                 tls:
@@ -3125,26 +3134,40 @@ applications:
     destination:
       namespace: converse-chat
 
-  # - name: librechat-admin-panel
-  #   finalizers:
-  #     - resources-finalizer.argocd.argoproj.io
-  #   additionalAnnotations:
-  #     argocd.argoproj.io/sync-wave: "1"
-  #   source:
-  #     repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  #     targetRevision: HEAD
-  #     path: charts/librechat-admin-panel
-  #     helm:
-  #       releaseName: librechat-admin-panel
-  #       valuesObject: {}
-  #   destination:
-  #     namespace: converse-chat
-  #   syncPolicy:
-  #     syncOptions:
-  #       - ServerSideApply=true
-  #     automated:
-  #       prune: true
-  #       selfHeal: true
+  # --- LibreChat Admin Panel (umbrella: workload + app-scoped deps) ---
+  # Pilot for ADR-0018. A multi-source ("umbrella") Application:
+  #   Source A — the workload Helm chart (charts/librechat-admin-panel).
+  #   Source B — app-scoped dependency CRs via the per-env kustomize overlay
+  #              (the ingress Certificate + the session-secret ExternalSecret;
+  #              issuer/secret-store patched per environment).
+  # Both sources deploy to the same destination (home-remote / converse-chat).
+  # The flat `range` template already passes `.sources` through, so no
+  # ApplicationSet conversion is required (ADR-0018 supersedes ADR-0006).
+  # TODO(merge): flip Source targetRevision back to `main` (see top-of-file note).
+  - name: librechat-admin-panel
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "1"
+    # Umbrella (ADR-0018): workload source + app-scoped deps via the overlay.
+    # The template folds in environments/<env>/deps/<app> as a second source.
+    depsOverlay: environments/prod/deps/librechat-admin-panel
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: claude/magical-bohr-390242
+      path: charts/librechat-admin-panel
+      helm:
+        releaseName: librechat-admin-panel
+        valuesObject: {}
+    destination:
+      namespace: converse-chat
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
 
   # --- MongoDB Backup ---
   - name: mongodb-backup
@@ -3228,6 +3251,9 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "2"
+    # Umbrella (ADR-0018): app-scoped ingress Certificate via the overlay
+    # (appended to the sources list below by the template).
+    depsOverlay: environments/prod/deps/coder
     sources:
       - repoURL: oci://ghcr.io/coder/chart/coder
         targetRevision: 2.31.9
@@ -3315,8 +3341,10 @@ applications:
               ingress:
                 enable: true
                 className: traefik
-                annotations:
-                  cert-manager.io/cluster-issuer: cert-home-cert-http
+                # TLS Secret (coder.ai.camer.digital-tls) is provisioned by the
+                # umbrella's app-scoped Certificate (Source B); issuer is a
+                # per-env overlay knob (ADR-0018).
+                annotations: {}
                 host: "coder.ai.camer.digital"
                 wildcardHost: "*.coder-ai.camer.digital"
                 tls:

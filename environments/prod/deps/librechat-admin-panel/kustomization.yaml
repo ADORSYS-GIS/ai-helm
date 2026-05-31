@@ -1,0 +1,29 @@
+# prod overlay: app-scoped deps for the librechat-admin-panel umbrella.
+# Patches the prod environment's issuer / secret-store / hostname into the
+# base placeholders. Keep these values in sync with environments/prod/cluster.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/deps/librechat-admin-panel
+
+patches:
+  # clusterIssuer: cert-home-cert-http
+  - target:
+      kind: Certificate
+      name: librechat-admin-panel-tls
+    patch: |-
+      - op: replace
+        path: /spec/issuerRef/name
+        value: cert-home-cert-http
+      - op: replace
+        path: /spec/dnsNames/0
+        value: admin.ai.camer.digital
+  # secretStore: ssegning-aws
+  - target:
+      kind: ExternalSecret
+      name: librechat-admin-panel-secret
+    patch: |-
+      - op: replace
+        path: /spec/secretStoreRef/name
+        value: ssegning-aws

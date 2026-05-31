@@ -22,13 +22,35 @@ metadata:
   {{- end }}
 spec:
   project: ai
-  {{- with .source }}
-  source:
-    {{- toYaml . | nindent 4 }}
+  {{- /*
+    Multi-source "umbrella" assembly (ADR-0018). An app entry may set
+    `depsOverlay: environments/<env>/deps/<app>` to attach a kustomize source
+    that emits its app-scoped dependency CRs (ingress Certificate, app-scoped
+    ExternalSecret). The deps source always points at THIS repo
+    (argocd.selfRepoURL @ argocd.selfTargetRevision). When `depsOverlay` is
+    set we MUST emit `sources:` (plural); the singular `source:` block is kept
+    intact and folded in as the first element — so a workload's big
+    `valuesObject` never needs re-indenting.
+  */}}
+  {{- $depsSource := dict }}
+  {{- if .depsOverlay }}
+  {{- $depsSource = dict "repoURL" $.Values.argocd.selfRepoURL "targetRevision" $.Values.argocd.selfTargetRevision "path" .depsOverlay }}
   {{- end }}
-  {{- with .sources }}
+  {{- if .sources }}
   sources:
-    {{- toYaml . | nindent 4 }}
+    {{- if .depsOverlay }}
+    {{- toYaml (append .sources $depsSource) | nindent 4 }}
+    {{- else }}
+    {{- toYaml .sources | nindent 4 }}
+    {{- end }}
+  {{- else if .source }}
+  {{- if .depsOverlay }}
+  sources:
+    {{- toYaml (list .source $depsSource) | nindent 4 }}
+  {{- else }}
+  source:
+    {{- toYaml .source | nindent 4 }}
+  {{- end }}
   {{- end }}
   destination:
     {{- if .controlPlane }}

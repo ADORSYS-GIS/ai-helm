@@ -6,8 +6,12 @@ admin-panel:
   ingress:
     main:
       enabled: true
-      annotations:
-        cert-manager.io/cluster-issuer: cert-home-cert-http
+      # TLS is owned by the umbrella's app-scoped Certificate (Source B,
+      # environments/<env>/deps/librechat-admin-panel) — cert-manager writes
+      # the `admin.ai.camer.digital-tls` Secret referenced under tls[] below.
+      # No `cert-manager.io/cluster-issuer` auto-issue annotation here; the
+      # issuer is a per-env overlay knob (ADR-0018).
+      annotations: {}
       className: traefik
       hosts:
         - host: admin.ai.camer.digital
