@@ -36,11 +36,11 @@ months behind, and a few are on tracks that have moved or are being phased out.
 | envoy-gateway (eg) | v1.7.0 | **v1.8.0** (2026-05-13) | 1 minor | Bump |
 | envoy-ai-gateway (aieg + aieg-crd) | v0.5.0 | **v0.6.0** (2026-05-05) — *first production-ready API surface, CRDs promoted to `v1beta1`* | 1 minor, big | **Bump now**; required to use `v1beta1` CRDs; v1.0 GA targeted June 2026 |
 | authorino-operator | 0.23.1 | 0.24.0 (2025-04-01) | 1 minor | Bump |
-| cnpg (cloudnative-pg) | 0.27.1 | 0.28.2 | 1 minor | Bump |
-| plugin-barman-cloud | 0.5.0 | 0.6.0 | 1 minor | Bump |
+| ~~cnpg (cloudnative-pg)~~ | ~~0.27.1~~ | ~~0.28.2~~ | — | **Superseded:** CNPG operator installed externally; removed from this repo. |
+| ~~plugin-barman-cloud~~ | ~~0.5.0~~ | ~~0.6.0~~ | — | **Superseded:** Barman Cloud plugin installed externally; removed from this repo. |
 | ~~**cert-manager** (`charts/cert`)~~ | ~~`'*'`~~ | ~~**v1.20.2** (2025-04-11)~~ | — | **Superseded:** cert-manager + its ClusterIssuers are now deployed externally by the `home-os` repo. `charts/cert` removed from this repo (ADR-noted in CLAUDE.md). This pin no longer applies here. |
 | bjw-s/app-template | 4.1.2 / 4.3.0 / 4.5.0 / 4.6.2 across charts | **5.0.1** (2026-05-14) | 1 major + drift | Standardize on 5.0.1 |
-| traefik | 39.0.2 | 40.2.0 (2026-05-13) | 1 major | Bump; v40 drops bundled Gateway API CRDs (we already set `kubernetesGateway.enabled: false`) |
+| ~~traefik~~ | ~~39.0.2~~ | ~~40.2.0~~ | — | **Superseded:** Traefik installed externally; removed from this repo. |
 | ~~external-secrets~~ | ~~2.4.0~~ | ~~2.5.0~~ | — | **Superseded:** ESO is installed externally now; removed from this repo. Pin no longer applies here. |
 | opentelemetry-operator | 0.106.0 | Active 0.5x in 2026 | Numbering changed | Verify migration notes |
 | coder | 2.31.9 | Verify upstream | unverified | Check |

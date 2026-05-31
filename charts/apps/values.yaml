@@ -40,76 +40,12 @@ argocd:
 
 applications:
 
-  - name: traefik
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://traefik.github.io/charts
-      targetRevision: 39.0.2
-      chart: traefik
-      helm:
-        releaseName: traefik
-        valuesObject:
-          deployment:
-            # High-availability: 2 replicas for redundancy; PDB ensures at least 1 remains available during maintenance.
-            replicas: 2
-          podDisruptionBudget:
-            enabled: true
-            maxUnavailable: 1
-          additionalArguments:
-            - "--entryPoints.web.http.redirections.entryPoint.to=:443"
-            - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
-            - "--global.sendAnonymousUsage=false"
-          logs:
-            access:
-              enabled: false
-          ports:
-            traefik:
-              expose:
-                web: true
-                websecure: true
-          providers:
-            kubernetesCRD:
-              allowCrossNamespace: true
-            kubernetesGateway:
-              enabled: false
-
-          gateway:
-            namespacePolicy: All
-          
-          extraObjects:
-            - apiVersion: v1
-              kind: LimitRange
-              metadata:
-                name: traefik-system-defaults
-                namespace: traefik-system
-              spec:
-                limits:
-                  - type: Container
-                    defaultRequest:
-                      cpu: "50m"
-                      memory: "64Mi"
-                    default:
-                      cpu: "200m"
-                      memory: "256Mi"
-                    max:
-                      cpu: "2"
-                      memory: "2Gi"
-            - apiVersion: v1
-              kind: ResourceQuota
-              metadata:
-                name: traefik-system-quota
-                namespace: traefik-system
-              spec:
-                hard:
-                  requests.cpu: "500m"
-                  requests.memory: "512Mi"
-                  limits.cpu: "2"
-                  limits.memory: "1Gi"
-                  count/pods: "10"
-
-    destination:
-      namespace: traefik-system
+  # NOTE: Traefik (ingress controller + the `traefik` IngressClass) is
+  # NOT deployed by this repo — it's installed externally (running in the
+  # `traefik` namespace on the target cluster). Charts here still set
+  # `ingressClassName: traefik` / `className: traefik` on their Ingresses;
+  # those resolve to the external controller. Don't re-add a traefik
+  # Application here.
 
   - name: opentelemetry-operator
     finalizers:
@@ -1878,41 +1814,13 @@ applications:
         prune: true
         selfHeal: true
 
-  - name: cnpg
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://cloudnative-pg.github.io/charts
-      # 0.28.2 per audit.
-      targetRevision: 0.28.2
-      chart: cloudnative-pg
-      helm:
-        releaseName: cnpg
-        valuesObject:
-          resources:
-            limits:
-              cpu: 100m
-              memory: 200Mi
-            requests:
-              cpu: 100m
-              memory: 100Mi
-    destination:
-      namespace: cnpg-system
-
-  - name: cnpg-barman-cloud
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "-1"
-    source:
-      repoURL: https://cloudnative-pg.github.io/charts
-      # 0.6.0 per audit.
-      targetRevision: 0.6.0
-      chart: plugin-barman-cloud
-      helm:
-        releaseName: cnpg-barman-cloud
-    destination:
-      namespace: cnpg-system
+  # NOTE: CloudNativePG (the `cnpg` operator) and the Barman Cloud plugin
+  # (`cnpg-barman-cloud`) are NOT deployed by this repo — both are
+  # installed externally (running in the `cnpg-system` namespace; CRDs
+  # postgresql.cnpg.io + barmancloud.cnpg.io present on-cluster). Charts
+  # here still define CNPG `Cluster` CRs (e.g. charts/coder-db) and rely
+  # on the external operator + plugin to reconcile them. Don't re-add a
+  # cnpg or plugin-barman-cloud Application here.
 
   # NOTE: cert-manager is NOT deployed by this repo. It's managed
   # externally (home-os repo: charts/cert via the `cert-remote`

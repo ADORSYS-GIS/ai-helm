@@ -89,11 +89,10 @@ ArgoCD (on home-remote)
   │
   └─ charts/apps emits 1 Application per workload (all → cluster home-remote):
        │
-       ├─ Application: cnpg                 (cloudnative-pg operator)
        ├─ Application: kube-state-metrics, node-exporter
        ├─ Application: mimir, loki, tempo, alloy, grafana, grafana-operator
        ├─ Application: observability-dashboards
-       ├─ Application: traefik, eg, aieg, aieg-crd
+       ├─ Application: eg, aieg, aieg-crd
        ├─ Application: core-gateway, authorino-operator, security-policies
        ├─ Application: keycloak-baseline    (keycloak-config-cli realm sync)
        ├─ Application: librechat            ─┐
@@ -230,6 +229,18 @@ The high-impact ones:
 
 ## What is *not* in this repo
 
+- **Shared cluster infrastructure (installed externally).** Several
+  platform components are deployed/owned outside this repo — this repo
+  only *consumes* them by name. None of them have an Application here:
+  - **Traefik** — the ingress controller + `traefik` IngressClass (runs
+    in the `traefik` namespace). Charts here set `ingressClassName:
+    traefik`.
+  - **CloudNativePG** — the `cnpg` Postgres operator + the Barman Cloud
+    backup plugin (`cnpg-system`). This repo defines CNPG `Cluster` CRs
+    (e.g. `charts/coder-db`) that the external operator reconciles.
+  - **cert-manager** — controller, CRDs, and the shared ClusterIssuers
+    (home-os). This repo references `cert-manager.io/cluster-issuer:`.
+  - **Redis** — `redis-ha` (home-os, `redis-system`).
 - **Secrets + the External Secrets Operator.** ESO itself (controller +
   CRDs) is installed externally — *not* by this repo. The
   `ClusterSecretStore` in use is `ssegning-aws` (cluster-scoped,

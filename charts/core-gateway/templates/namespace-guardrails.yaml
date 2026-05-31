@@ -36,37 +36,11 @@ spec:
 # could throttle or block the externally-managed redis-ha pods. Consumers
 # only reach the redis-ha-redis service; they don't manage the namespace.
 ---
-# cnpg-system
-apiVersion: v1
-kind: LimitRange
-metadata:
-  name: cnpg-system-defaults
-  namespace: cnpg-system
-spec:
-  limits:
-    - type: Container
-      defaultRequest:
-        cpu: "50m"
-        memory: "64Mi"
-      default:
-        cpu: "200m"
-        memory: "256Mi"
-      max:
-        cpu: "2"
-        memory: "2Gi"
----
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: cnpg-system-quota
-  namespace: cnpg-system
-spec:
-  hard:
-    requests.cpu: "500m"
-    requests.memory: "512Mi"
-    limits.cpu: "1"
-    limits.memory: "3Gi"
-    count/pods: "10"
+# cnpg-system: intentionally NOT governed here. CloudNativePG (operator +
+# Barman Cloud plugin) is deployed and owned externally; this repo must
+# not impose a LimitRange / ResourceQuota on a namespace it doesn't own.
+# This repo only defines CNPG `Cluster` CRs (e.g. charts/coder-db) that
+# the external operator reconciles.
 ---
 # envoy-gateway-system
 apiVersion: v1
