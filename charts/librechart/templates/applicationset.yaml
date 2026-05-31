@@ -45,7 +45,7 @@ spec:
         helm:
           releaseName: '{{ "{{ .appName }}" }}'
       destination:
-        name: {{ .Values.argocd.destination.name | quote }}
+        {{- include "librechart.argocd.destinationClusterRef" .Values.argocd.destination | nindent 8 }}
         namespace: {{ .Values.argocd.destination.namespace | quote }}
       syncPolicy:
         {{- with .Values.argocd.syncPolicy.syncOptions }}

@@ -34,6 +34,7 @@ how thinking evolved.
 | [0014](./0014-split-librechart-and-opencode-wellknown.md) | Split `charts/librechart` into 3 leaf charts + add opencode `.well-known` endpoint | Accepted | 2026-05-24 | — |
 | [0015](./0015-models-info-catalog-endpoint.md) | OpenRouter-shape `/v1/models/info` catalog endpoint for opencode (charts/ai-models-info) | Accepted | 2026-05-24 | — |
 | [0016](./0016-fork-bjw-s-app-template-locally.md) | Fork bjw-s app-template + common locally as `bjw-template` / `bjw-common` (rewire 12 consumers) | Accepted | 2026-05-31 | — |
+| [0017](./0017-home-remote-destination-invariant.md) | Workloads target the home-remote cluster, never in-cluster (render-time guard + `allowInCluster` escape hatch) | Accepted | 2026-05-31 | — |
 
 ## Status legend
 

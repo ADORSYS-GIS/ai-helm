@@ -77,6 +77,10 @@ See ADR-0012 (`ai-models`) and ADR-0014 (`librechart`) for the canonical example
 
 During an active PR, all `targetRevision` fields in `charts/apps/values.yaml` that point at this repo (and the orchestrator children in `charts/ai-models/values.yaml` + `charts/librechart/values.yaml`) get flipped to the testing branch (e.g. `claude/<branch>`). **They must flip back to `main` (or `HEAD`) on PR merge.** TODO'd in comments in those values files. Don't forget this on merge.
 
+## ArgoCD destinations: home-remote, never in-cluster (ADR-0017)
+
+All generated Applications target the **`home-remote`** cluster — the cluster ArgoCD pushes to, never the one it runs in. The cluster identity is a single knob, `argocd.destination` (`name` / `server` / `allowInCluster`), in each of `charts/{apps,ai-models,librechart}/values.yaml`. A shared helper `<chart>.argocd.destinationClusterRef` (in each chart's `templates/_helpers.tpl`) **hard-fails the render** if a destination resolves to `in-cluster` or `https://kubernetes.default.svc`, unless `argocd.destination.allowInCluster: true` is set. So a bad destination breaks `helm template` / CI / ArgoCD's own render before anything syncs. Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone); change the value. The render-time guard is complemented (out-of-band, in `ai-gitops`) by the `ai` AppProject's `destinations:` allowlist.
+
 ## Sync waves
 
 Lower waves sync first:
