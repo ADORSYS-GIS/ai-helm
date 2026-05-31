@@ -100,17 +100,21 @@ Mapping that onto this repo's charts:
 | Chart emits… | Its Application's `spec.destination` |
 |---|---|
 | Workloads (mimir, grafana, core-gateway, leaf charts, …) | `home-remote` |
-| A control object — an **ApplicationSet** (orchestrators `ai-models`, `librechart`) | **in-cluster / argocd** |
+| A control object — an **ApplicationSet** (orchestrators `ai-models`, `librechart`) | **`server: https://kubernetes.default.svc`** / `argocd` |
 
 So in `charts/apps`, an app whose deployed content is itself a control
 object sets **`controlPlane: true`** on its entry; the template then
-targets `inClusterName` (`in-cluster`) / `controlPlaneNamespace`
-(`argocd`) and bypasses the workload guard. The orchestrators'
+targets `inClusterServer` (**`server: https://kubernetes.default.svc`**) /
+`controlPlaneNamespace` (`argocd`) and bypasses the workload guard. We use
+the in-cluster **server URL** rather than the `name: in-cluster` handle:
+the URL is always recognised as the local cluster, whereas the name
+depends on that cluster being registered under it. The orchestrators'
 ApplicationSet `template.spec.destination` (the **child** Applications)
 stays `home-remote` — children deploy workloads. And `charts/apps` itself
 is deployed by the root `ai-apps-v2` Application, whose destination must
-also be in-cluster so the generated Application CRs land where the
-controller watches them (that lives in `ai-gitops`).
+also be `server: https://kubernetes.default.svc` so the generated
+Application CRs land where the local controller watches them (that lives
+in `ai-gitops`).
 
 ### One controllable knob per emitting chart
 
@@ -127,9 +131,9 @@ argocd:
     namespace: <ns>          # (ai-models / librechart) or per-app (apps)
 ```
 
-`charts/apps` additionally exposes `argocd.inClusterName` (default
-`in-cluster`) + `argocd.controlPlaneNamespace` (default `argocd`) for the
-`controlPlane: true` apps.
+`charts/apps` additionally exposes `argocd.inClusterServer` (default
+`https://kubernetes.default.svc`) + `argocd.controlPlaneNamespace`
+(default `argocd`) for the `controlPlane: true` apps.
 
 The canonical home-remote cluster identity is the literal name
 **`home-remote`** — a cluster registered under that name in ArgoCD, used

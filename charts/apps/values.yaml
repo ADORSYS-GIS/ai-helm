@@ -30,12 +30,16 @@ argocd:
   appNamePrefix: "aii-"
   # ── Two-tier destination model (ADR-0017) ──────────────────────────────
   # ArgoCD CONTROL objects (Application / ApplicationSet CRs) must live on
-  # the cluster ArgoCD runs in (in-cluster), in the argocd namespace, so the
+  # the cluster ArgoCD runs in (local), in the argocd namespace, so the
   # controllers watch them. WORKLOADS go to home-remote (the `destination`
   # block below). An app whose deployed content is itself a control object
   # (an orchestrator that emits an ApplicationSet) sets `controlPlane: true`
-  # on its entry; the template then targets in-cluster/argocd instead.
-  inClusterName: in-cluster
+  # on its entry; the template then targets the local cluster instead.
+  #
+  # Use the canonical in-cluster SERVER URL (always recognised as the local
+  # cluster by ArgoCD) rather than the `in-cluster` NAME, which depends on
+  # that cluster being registered under that name.
+  inClusterServer: "https://kubernetes.default.svc"
   controlPlaneNamespace: argocd
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
