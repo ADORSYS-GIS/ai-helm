@@ -22,6 +22,12 @@ global:
 # selects the namespace; the cluster identity is shared from here.
 # ────────────────────────────────────────────────────────────────────────
 argocd:
+  # Prefix prepended to every generated Application name (so app `traefik`
+  # → Application `aii-traefik`). Single source of truth — the template
+  # references this, nothing is hardcoded. Note: the orchestrator children
+  # (ai-models / librechart ApplicationSets) derive their names from their
+  # own `helm.releaseName`, not this prefix, so they're unaffected.
+  appNamePrefix: "aii-"
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
     # `spec.destination.name`.
