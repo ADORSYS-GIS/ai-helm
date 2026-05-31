@@ -2034,6 +2034,20 @@ applications:
                                 - imagePullPolicy: IfNotPresent
                                   name: envoy-ratelimit
                                   image: docker.io/envoyproxy/ratelimit:3fb70258
+                                  # The Lyft ratelimit service reads the Redis
+                                  # password from the REDIS_AUTH env var (the
+                                  # EnvoyGateway rateLimit.backend.redis config
+                                  # has no auth field). Secret `redis-ha-redis-auth`
+                                  # (key `redis-password`) must exist in the
+                                  # envoy-gateway-system namespace — provisioned
+                                  # by an ExternalSecret from the ssegning-aws
+                                  # store (mirror the redis-system one).
+                                  env:
+                                    - name: REDIS_AUTH
+                                      valueFrom:
+                                        secretKeyRef:
+                                          name: redis-ha-redis-auth
+                                          key: redis-password
               extensionApis:
                 # Not strictly required, but recommended for backward/future compatibility.
                 enableEnvoyPatchPolicy: true

@@ -214,6 +214,15 @@ librechat:
             USE_REDIS: "true"
             REDIS_KEY_PREFIX: "librechat-prod-v2"
             REDIS_URI: "redis://redis-ha-redis.redis-system.svc.cluster.local:6379"
+            # redis-ha requires auth. LibreChat applies REDIS_PASSWORD on top
+            # of REDIS_URI. Secret `redis-ha-redis-auth` (key `redis-password`)
+            # must exist in this namespace (converse) — provisioned by an
+            # ExternalSecret from the ssegning-aws store (mirror the
+            # redis-system one).
+            REDIS_PASSWORD:
+              secretKeyRef:
+                name: redis-ha-redis-auth
+                key: redis-password
             FORCED_IN_MEMORY_CACHE_NAMESPACES: "APP_CONFIG,CONFIG_STORE,STARTUP_CONFIG"
 
             SEARCH: true
