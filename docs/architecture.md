@@ -83,11 +83,15 @@ are reconciled there. **Every** generated Application references the same
 cluster by the same registered name `home-remote` — never ArgoCD's
 built-in in-cluster handle (a render-time guard enforces this; ADR-0017).
 
+Two-tier destination (ADR-0017): the `Application` / `ApplicationSet`
+CRs themselves live **in-cluster** (the `argocd` namespace where ArgoCD's
+controllers run); the **workloads** they deploy target **`home-remote`**.
+
 ```
-ArgoCD (on home-remote)
-  ├─ Application: ai-apps-v2               (entry point; points at charts/apps)
+ArgoCD (in-cluster)                         ← Application/ApplicationSet CRs live here (argocd ns)
+  ├─ Application: ai-apps-v2               (entry point; points at charts/apps; dest in-cluster)
   │
-  └─ charts/apps emits 1 Application per workload (all → cluster home-remote):
+  └─ charts/apps emits 1 Application per workload (workloads → home-remote):
        │
        ├─ Application: kube-state-metrics, node-exporter
        ├─ Application: mimir, loki, tempo, alloy, grafana, grafana-operator
@@ -95,11 +99,10 @@ ArgoCD (on home-remote)
        ├─ Application: eg, aieg, aieg-crd
        ├─ Application: core-gateway, authorino-operator, security-policies
        ├─ Application: keycloak-baseline    (keycloak-config-cli realm sync)
-       ├─ Application: librechat            ─┐
-       ├─ Application: models               ─┤  These three emit
-       ├─ Application: <future orchestrators>┘  ApplicationSets that
-       │                                        fan out further
-       └─ Application: <≈ 25 more apps>
+       ├─ Application: librechat  ─┐  controlPlane:true → the ApplicationSet
+       ├─ Application: models     ─┤  lands in-cluster; its child Applications
+       │                           ┘  deploy workloads to home-remote
+       └─ Application: <≈ 25 more apps>     (workloads → home-remote)
 ```
 
 **Two render patterns** for complex charts:

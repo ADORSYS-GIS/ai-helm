@@ -71,11 +71,70 @@ larger multi-source AppSet migration ADR-0006 still proposes).
 
 ## Decision
 
-**Invariant:** every Application this repo generates references the target
-cluster by its registered name **`home-remote`** — matching the GitOps
-entrypoint. Using ArgoCD's built-in in-cluster handle (`name: in-cluster`
-/ `server: https://kubernetes.default.svc`) is forbidden unless explicitly
-opted in.
+> **Correction (2026-05-31, same PR):** the original single-tier framing
+> below — "every Application targets `home-remote`" — was wrong for
+> ArgoCD **control objects**. An `Application` / `ApplicationSet` CR must
+> live on the cluster ArgoCD runs in, in the `argocd` namespace, or the
+> controllers never see it. So the model is **two-tier** (see "Control
+> objects vs workloads" below). The home-remote invariant + the guard
+> still apply to **workloads**.
+
+**Invariant (workloads):** every Application that deploys **workloads**
+references the target cluster by its registered name **`home-remote`**.
+Using ArgoCD's built-in in-cluster handle (`name: in-cluster` /
+`server: https://kubernetes.default.svc`) for a workload is forbidden
+unless explicitly opted in (`allowInCluster: true`).
+
+### Control objects vs workloads (two-tier)
+
+ArgoCD has two distinct "where" questions:
+
+1. **Where the control object lives** — `Application` / `ApplicationSet`
+   CRs are watched by the ArgoCD controllers in the `argocd` namespace on
+   the cluster ArgoCD runs in. They must be created **in-cluster**.
+2. **Where the workload deploys** (`spec.destination`) — the target for
+   the actual Deployments/Services/etc. → **`home-remote`**.
+
+Mapping that onto this repo's charts:
+
+| Chart emits… | Its Application's `spec.destination` |
+|---|---|
+| Workloads (mimir, grafana, core-gateway, leaf charts, …) | `home-remote` |
+| A control object — an **ApplicationSet** (orchestrators `ai-models`, `librechart`) | **in-cluster / argocd** |
+
+So in `charts/apps`, an app whose deployed content is itself a control
+object sets **`controlPlane: true`** on its entry; the template then
+targets `inClusterName` (`in-cluster`) / `controlPlaneNamespace`
+(`argocd`) and bypasses the workload guard. The orchestrators'
+ApplicationSet `template.spec.destination` (the **child** Applications)
+stays `home-remote` — children deploy workloads. And `charts/apps` itself
+is deployed by the root `ai-apps-v2` Application, whose destination must
+also be in-cluster so the generated Application CRs land where the
+controller watches them (that lives in `ai-gitops`).
+
+### One controllable knob per emitting chart
+
+Each of `apps`, `ai-models`, `librechart` exposes the same
+`argocd.destination` block (this is the **workload** destination — for the
+orchestrators it's the destination of the child Applications):
+
+```yaml
+argocd:
+  destination:
+    name: home-remote        # cluster context registered in ArgoCD (verbatim → spec.destination.name)
+    server: ""               # alternative to name → spec.destination.server (a cluster API URL)
+    allowInCluster: false    # escape hatch
+    namespace: <ns>          # (ai-models / librechart) or per-app (apps)
+```
+
+`charts/apps` additionally exposes `argocd.inClusterName` (default
+`in-cluster`) + `argocd.controlPlaneNamespace` (default `argocd`) for the
+`controlPlane: true` apps.
+
+The canonical home-remote cluster identity is the literal name
+**`home-remote`** — a cluster registered under that name in ArgoCD, used
+verbatim as `spec.destination.name`. This replaces the old
+`lke560142-ctx` magic string.
 
 ### One controllable knob per emitting chart
 
