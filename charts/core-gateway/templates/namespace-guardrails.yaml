@@ -30,37 +30,11 @@ spec:
     limits.memory: "4Gi"
     count/pods: "15"
 ---
-# redis-system
-apiVersion: v1
-kind: LimitRange
-metadata:
-  name: redis-system-defaults
-  namespace: redis-system
-spec:
-  limits:
-    - type: Container
-      defaultRequest:
-        cpu: "50m"
-        memory: "64Mi"
-      default:
-        cpu: "200m"
-        memory: "256Mi"
-      max:
-        cpu: "2"
-        memory: "2Gi"
----
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: redis-system-quota
-  namespace: redis-system
-spec:
-  hard:
-    requests.cpu: "500m"
-    requests.memory: "1Gi"
-    limits.cpu: "2"
-    limits.memory: "3Gi"
-    count/pods: "10"
+# redis-system: intentionally NOT governed here. Redis is deployed and
+# owned by an external repo (home-os). This repo must not impose a
+# LimitRange / ResourceQuota on a namespace it doesn't own — doing so
+# could throttle or block the externally-managed redis-ha pods. Consumers
+# only reach the redis-ha-redis service; they don't manage the namespace.
 ---
 # cnpg-system
 apiVersion: v1
