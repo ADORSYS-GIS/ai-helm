@@ -1,2 +1,57 @@
 gateway:
   apiHostname: dummy.example.com
+
+# ────────────────────────────────────────────────────────────────────────
+# ClientTrafficPolicy — downstream (client → gateway) connection tuning.
+# Sized for ≥2000 concurrent users (laptops, long-lived opencode sessions)
+# + GitHub CI runners, all multiplexing over HTTP/2.
+#
+# Rendered by templates/client-traffic-policy.yaml. Every block is
+# optional — drop one and that section is omitted (Envoy defaults apply).
+# ────────────────────────────────────────────────────────────────────────
+clientTrafficPolicy:
+  # Per-connection read/write buffer. Large to absorb big request/response
+  # bodies + streaming without back-pressuring the socket.
+  bufferLimit: 500Mi
+
+  # HTTP/2 multiplexing — the headline knob. Each client holds a small
+  # number of HTTP/2 connections and multiplexes many concurrent streams
+  # (requests) over each, so 2000+ clients stay cheap on socket count while
+  # still getting high per-client request concurrency.
+  http2:
+    # Max concurrent streams (in-flight requests) per HTTP/2 connection.
+    # Envoy default is 100; raised for heavy multiplexing (parallel tool
+    # calls from agents, CI fan-out).
+    maxConcurrentStreams: 1000
+    # Flow-control windows — raised from Envoy defaults (64Ki stream /
+    # 1Mi connection) for higher streaming throughput (LLM token streams,
+    # SSE) without window stalls. Connection window = 16× stream window so
+    # many busy streams can fill the pipe concurrently.
+    initialStreamWindowSize: 1Mi
+    initialConnectionWindowSize: 16Mi
+
+  connection:
+    # Concurrent downstream connection ceiling for the listener. Generous —
+    # far above 2000 laptops (≈1–2 HTTP/2 conns each) + CI runners — but
+    # bounded so a connection flood can't exhaust the proxy. Raise if the
+    # fleet outgrows it.
+    connectionLimit: 100000
+    # Grace period before forcibly closing a connection once the limit is
+    # hit (lets in-flight requests drain).
+    closeDelay: 1s
+
+  # Keep idle client connections alive (laptops behind NAT / corporate
+  # load balancers, long-lived opencode sessions) so they aren't silently
+  # dropped and forced to reconnect.
+  tcpKeepalive:
+    probes: 3
+    idleTime: 5m
+    interval: 30s
+
+  # Long idle timeouts: streaming responses (SSE / token streams) and idle
+  # agent sessions hold connections open well beyond a typical web idle.
+  timeout:
+    tcpIdleTimeout: 1h
+    # Time allowed to receive the full set of request headers.
+    httpRequestReceivedTimeout: 60s
+    httpIdleTimeout: 1h
