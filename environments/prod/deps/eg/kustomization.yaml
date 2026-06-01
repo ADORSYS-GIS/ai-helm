@@ -1,0 +1,17 @@
+# prod overlay: app-scoped deps for the eg (Envoy Gateway) umbrella.
+# Keep values in sync with environments/prod/cluster.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/deps/eg
+
+patches:
+  # secretStore: ssegning-aws
+  - target:
+      kind: ExternalSecret
+      name: redis-ha-redis-auth
+    patch: |-
+      - op: replace
+        path: /spec/secretStoreRef/name
+        value: ssegning-aws
