@@ -1,0 +1,16 @@
+# prod overlay: app-scoped deps for the apprise-api umbrella.
+# Keep in sync with environments/prod/cluster.yaml (secretStore).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/deps/apprise-api
+
+patches:
+  - target:
+      kind: ExternalSecret
+      name: apprise-channels
+    patch: |-
+      - op: replace
+        path: /spec/secretStoreRef/name
+        value: ssegning-aws
