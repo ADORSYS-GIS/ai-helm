@@ -4,7 +4,11 @@ metadata:
   name: {{ include "core-gateway.fullname" $ }}
   namespace: {{ .Release.Namespace }}
   annotations:
-    cert-manager.io/cluster-issuer: {{ .Values.gateway.issuer | default "self-signed-ca" }}
+    # NOTE: TLS for the api-https listener is issued by an explicit Certificate
+    # (templates/certificate.yaml) writing `<fullname>-api-tls`, NOT via the
+    # cert-manager Gateway-API shim — so we deliberately do NOT set
+    # `cert-manager.io/cluster-issuer` here (it would double-manage the secret
+    # if the shim were enabled). `.Values.gateway.issuer` drives the Certificate.
     aigateway.envoyproxy.io/gateway-config: {{ include "core-gateway.fullname" $ }}-config
 spec:
   gatewayClassName: {{ .Values.gateway.className | default "core-gateway" }}

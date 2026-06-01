@@ -501,12 +501,14 @@ applications:
         valuesObject:
           gateway:
             apiHostname: api.ai-v2.camer.digital
-            # Gateway-API ACME ClusterIssuer. Must exist on the cluster —
-            # provided externally (home-os). NOT defined in this repo
-            # anymore (cert-manager + issuers are external). If TLS for
-            # api.ai-v2.camer.digital fails to issue, this issuer is missing
-            # from home-os's cert chart.
-            issuer: cert-home-cert-envoy
+            # ClusterIssuer for the api-https TLS cert (templates/certificate.yaml
+            # issues it explicitly — see that file for why not the gateway-shim).
+            # `cert-cloudflare` = Let's Encrypt + Cloudflare DNS-01, which exists
+            # on the cluster and validates public domains without HTTP routing
+            # (api.<domain> points at the Envoy LB, not Traefik, so HTTP-01 can't
+            # reach). The previously-referenced `cert-home-cert-envoy` was never
+            # defined in home-os — that's why TLS never issued.
+            issuer: cert-cloudflare
     destination:
       namespace: converse-gateway
 

@@ -1,0 +1,26 @@
+{{- if .Values.gateway.apiHostname }}
+# TLS certificate for the Gateway's `api-https` listener
+# ({{ .Values.gateway.apiHostname }}). Issued explicitly here rather than via
+# the cert-manager Gateway-API shim annotation, so it does NOT depend on
+# cert-manager's `--enable-gateway-api` feature being turned on in the (external,
+# home-os) cert-manager. cert-manager writes the `<fullname>-api-tls` Secret that
+# the Gateway listener references (charts/core-gateway/templates/gateway.yaml).
+#
+# Issuer is `.Values.gateway.issuer` — for a PUBLIC endpoint this must be an ACME
+# issuer that can actually validate the domain. On prod we use `cert-cloudflare`
+# (Let's Encrypt + Cloudflare DNS-01): DNS-01 works regardless of HTTP routing,
+# which matters here because api.<domain> resolves to the Envoy Gateway LB (not
+# Traefik), so an HTTP-01 ingress solver would not be reachable.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-api-tls
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "core-gateway.fullname" . }}-api-tls
+  dnsNames:
+    - {{ .Values.gateway.apiHostname | quote }}
+  issuerRef:
+    name: {{ .Values.gateway.issuer | default "self-signed-ca" }}
+    kind: ClusterIssuer
+{{- end }}
