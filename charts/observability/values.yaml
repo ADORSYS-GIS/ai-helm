@@ -523,16 +523,21 @@ children:
       # — with the chart name left out, it pulled `grafana/helm-charts`
       # and GHCR returned 403. See the envoy-* apps for the same shape.
       repoURL: oci://ghcr.io/grafana/helm-charts/grafana-operator
-      # v5.20.0 (latest available tag; v5.23.0 never existed). The operator
-      # CrashLoopBackOff'd (exit 2, ~30s, health port :8081 never opening, 90+
-      # restarts) — confirmed NOT version-specific (v5.18.0 crashed identically)
-      # and NOT RBAC (SA + ClusterRoleBinding present). It dies during slow
-      # manager construction: cluster-wide cache (namespaceScope:false) +
-      # ENFORCE_CACHE_LABELS + GOMAXPROCS=1 on a 250m pod, killed by the chart's
-      # liveness probe (initialDelaySeconds:0 → ~30s kill window) before :8081
-      # opens. Fix: scope the watch to observability + more CPU + generous
-      # startup window (valuesObject below). If it STILL crashes, raise
-      # --zap-log-level=debug to capture the real error.
+      # v5.20.0 (latest available tag; v5.23.0 never existed).
+      # ⚠️ The operator CrashLoopBackOffs (exit 2, killed at EXACTLY 30s by its
+      # liveness probe before :8081 opens) — but this is NOT a grafana-operator
+      # problem, and NOT fixable here. ROOT CAUSE: the `metrics.k8s.io`
+      # APIService is broken (MissingEndpoints — the metrics-server Service
+      # selector `app.kubernetes.io/*` from aii-metrics-server doesn't match the
+      # running pod's `k8s-app` labels from the OLD ai-metrics-server; the
+      # Deployment selector is immutable so the cutover is stuck → no
+      # endpoints). controller-runtime's startup API discovery hangs ~30s on
+      # that dead aggregated API, so the operator never reaches its health
+      # server and the probe kills it. It will recover ON ITS OWN once
+      # metrics.k8s.io is Available — fix metrics-server (decommission the old
+      # ai-metrics-server / resolve the old↔new collision). Config tweaks here
+      # (namespaceScope/probes/resources) were tried and do NOT help — reverted.
+      # See docs/2026-hetzner-cutover.md.
       # (available tags v5.15.0–v5.20.0; verify before bump:
       #   curl -s "https://ghcr.io/token?scope=repository:grafana/helm-charts/grafana-operator:pull" | jq -r .token
       #   then GET https://ghcr.io/v2/grafana/helm-charts/grafana-operator/tags/list )
@@ -541,12 +546,8 @@ children:
       helm:
         releaseName: grafana-operator
         valuesObject:
-          # Watch only the release namespace (observability) — all Grafana CRs
-          # (the observability-dashboards Grafana/Folder/Dashboard objects) live
-          # here. Cluster-wide (false) made the cache/startup slow enough that
-          # the liveness probe killed the pod before :8081 opened. Flip to a
-          # broader scope only if Grafana CRs ever land in other namespaces.
-          namespaceScope: true
+          # Cluster-wide watch: operator picks up CRs from any namespace.
+          namespaceScope: false
           leaderElection:
             enabled: true
           metricsService:
@@ -554,24 +555,9 @@ children:
             type: ClusterIP
           serviceMonitor:
             enabled: true
-          # More CPU so startup isn't throttled (GOMAXPROCS floors to 1 at
-          # 250m; the extra quota speeds the first cache sync).
           resources:
-            requests: { cpu: 100m, memory: 128Mi }
-            limits:   { cpu: "1",  memory: 512Mi }
-          # Generous startup window — the chart's default liveness probe has
-          # initialDelaySeconds:0, which killed the operator (~30s) before its
-          # health server (:8081) came up. Full probes so they replace cleanly.
-          livenessProbe:
-            httpGet: { path: /healthz, port: 8081 }
-            initialDelaySeconds: 60
-            periodSeconds: 10
-            failureThreshold: 6
-          readinessProbe:
-            httpGet: { path: /readyz, port: 8081 }
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            failureThreshold: 6
+            requests: { cpu: 50m,  memory: 64Mi  }
+            limits:   { cpu: 250m, memory: 256Mi }
     destination:
       namespace: observability
     syncPolicy:
