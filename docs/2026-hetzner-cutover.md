@@ -281,3 +281,16 @@ Two-repo change:
 DNS-01 challenge from the cert-cloudflare attempt was cleaned up. (Providing
 `cloudflare-secret` in kube-system is no longer required for this endpoint;
 cert-cloudflare/DNS-01 remains an option for wildcards.)
+
+### HTTP→HTTPS redirect (ACME-safe) ✅
+A core-gateway HTTPRoute (`core-gateway-https-redirect`, pinned to the `http`
+listener) redirects `/`→`https` (308, preserves POST). Stays compatible with the
+HTTP-01 solver: cert-manager's challenge route matches the EXACT
+`/.well-known/acme-challenge/<token>` path, which out-ranks the `/` PathPrefix
+(Gateway-API precedence) — so renewals keep serving on :80 while everything else
+redirects. To make the redirect COMPLETE, model + MCP routes are pinned to the
+`api-https` listener via `gatewayRef.sectionName: api-https` (AIGatewayRoute in
+charts/ai-model, MCPRoute in charts/mcps) — otherwise their header/path matches
+out-rank the `/` redirect on :80 and serve plaintext. **Verified live:** `http`
+listener attachedRoutes 22→1 (redirect only), `api-https` 23; `curl http://…`
+→ 308 → https; `https://…` → HTTP/2 401 (Authorino auth-gate, TLS good).
