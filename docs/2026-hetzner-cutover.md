@@ -95,11 +95,17 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   identical), OOM (exit 2≠137), RBAC (SA+CRB present), cache scope/resources
   (namespaceScope:true + 1 CPU didn't help — reverted), AND broken discovery
   (fixed `metrics.k8s.io` + confirmed ALL APIServices Available — still crashes).
-  Needs the operator's real error via `--zap-log-level=debug`, which requires
-  the chart's logging value (the OCI chart isn't readable from the work
-  machine — ghcr 403) or a live debug edit. **Non-critical:** grafana itself +
-  its file-provider dashboards work without the operator; only dashboards-as-
-  code CRs (observability-dashboards) don't reconcile. Decision pending.
+  **Remote diagnosis exhausted** (all tested live): not version, OOM, RBAC,
+  cache-scope/resources/probes, not discovery (`metrics.k8s.io` fixed + ALL
+  APIServices Available), not the label-cache feature (removed
+  `ENFORCE_CACHE_LABELS` env → still crashes), and **`--zap-log-level=debug`
+  produced NO extra output** — so it dies *inside* `ctrl.NewManager()`, after
+  the last setup log, before any further logging, exit 2, silently. Next step
+  requires hands-on debugging (run the image with a shell + dlv/strace, or
+  match against grafana-operator upstream issues for a silent NewManager exit
+  on this k8s version) — beyond kubectl. **Non-critical:** grafana itself + its
+  file-provider dashboards work without the operator; only dashboards-as-code
+  CRs (observability-dashboards) don't reconcile.
 
 ### ⏳ Pre-existing / unrelated (not caused by this branch)
 - **lightbridge-backend** — `CreateContainerConfigError` (missing referenced
