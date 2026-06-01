@@ -1,0 +1,25 @@
+# prod (Cilium) — the egress allow that actually unblocks kube-state-metrics.
+# Cilium gives node IPs the `remote-node`/`host` identity, so a plain ipBlock
+# can't match the API server; the reserved `kube-apiserver` entity is the
+# supported way. ksm only needs the API server (to watch objects) + DNS.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kube-state-metrics-allow-egress
+  namespace: observability
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+  egress:
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP

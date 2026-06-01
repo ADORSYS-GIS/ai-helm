@@ -431,6 +431,12 @@ children:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "-1"
+    # ksm watches the API server to generate object metrics; under the namespace
+    # default-deny-egress baseline (allow-dns) it can't reach it and crashloops
+    # (`Get https://10.43.0.1:443/version: i/o timeout`). This overlay ships an
+    # additive egress allow (CiliumNetworkPolicy kube-apiserver entity + DNS),
+    # same pattern as grafana-operator. See docs/2026-hetzner-cutover.md.
+    depsOverlay: environments/prod/deps/kube-state-metrics
     source:
       repoURL: https://prometheus-community.github.io/helm-charts
       targetRevision: 7.4.0
