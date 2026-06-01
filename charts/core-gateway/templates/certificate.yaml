@@ -6,11 +6,12 @@
 # home-os) cert-manager. cert-manager writes the `<fullname>-api-tls` Secret that
 # the Gateway listener references (charts/core-gateway/templates/gateway.yaml).
 #
-# Issuer is `.Values.gateway.issuer` — for a PUBLIC endpoint this must be an ACME
-# issuer that can actually validate the domain. On prod we use `cert-cloudflare`
-# (Let's Encrypt + Cloudflare DNS-01): DNS-01 works regardless of HTTP routing,
-# which matters here because api.<domain> resolves to the Envoy Gateway LB (not
-# Traefik), so an HTTP-01 ingress solver would not be reachable.
+# Issuer must be an ACME issuer that can actually validate this PUBLIC domain.
+# Two supported modes (see values + acme-issuer.yaml):
+#   • acmeHttp01.enabled → the in-chart ns-scoped ACME Issuer solving HTTP-01
+#     through this Gateway (no DNS token; needs cert-manager --enable-gateway-api).
+#   • else → an external issuer named `.Values.gateway.issuer` of kind
+#     `.Values.gateway.issuerKind` (e.g. a DNS-01 ClusterIssuer like cert-cloudflare).
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -21,6 +22,11 @@ spec:
   dnsNames:
     - {{ .Values.gateway.apiHostname | quote }}
   issuerRef:
+  {{- if .Values.gateway.acmeHttp01.enabled }}
+    name: {{ include "core-gateway.fullname" . }}-acme
+    kind: Issuer
+  {{- else }}
     name: {{ .Values.gateway.issuer | default "self-signed-ca" }}
-    kind: ClusterIssuer
+    kind: {{ .Values.gateway.issuerKind | default "ClusterIssuer" }}
+  {{- end }}
 {{- end }}

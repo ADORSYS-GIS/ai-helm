@@ -1,0 +1,34 @@
+{{- if and .Values.gateway.apiHostname .Values.gateway.acmeHttp01.enabled }}
+# Namespace-scoped ACME Issuer that solves HTTP-01 *through this Gateway*
+# (cert-manager creates a temporary HTTPRoute attached to the Gateway, served on
+# the :80 http listener). This is fully self-contained — the ACME account key
+# lives here in {{ .Release.Namespace }}, and no DNS API token is needed.
+#
+# ⚠️ Requires cert-manager's `--enable-gateway-api` controller flag (the
+# gatewayHTTPRoute solver is part of the Gateway-API integration). The challenge
+# is reachable because api.<domain> resolves to the Envoy Gateway LB whose :80
+# listener is up even while api-https is still certless.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-acme
+  namespace: {{ .Release.Namespace }}
+spec:
+  acme:
+    server: {{ .Values.gateway.acmeHttp01.server | default "https://acme-v02.api.letsencrypt.org/directory" }}
+    email: {{ required "gateway.acmeHttp01.email is required when acmeHttp01.enabled" .Values.gateway.acmeHttp01.email | quote }}
+    privateKeySecretRef:
+      name: {{ include "core-gateway.fullname" . }}-acme-account
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            # cert-manager attaches the solver HTTPRoute to this Gateway. No
+            # sectionName → it binds to the listeners; the HTTP-01 challenge is
+            # served over :80 (the http listener). The http listener is
+            # allowedRoutes.from: All, so the cross-/same-namespace route attaches.
+            parentRefs:
+              - name: {{ include "core-gateway.fullname" . }}
+                namespace: {{ .Release.Namespace }}
+                kind: Gateway
+                group: gateway.networking.k8s.io
+{{- end }}
