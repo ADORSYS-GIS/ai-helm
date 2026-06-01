@@ -88,15 +88,18 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   attached to `HCLOUD_NETWORK`? is `cp-1` in it?). **Open — not a chart fix.**
   Options: add `load-balancer.hetzner.cloud/network: <name>`, fix `cp-1`'s
   network membership, or keep the LB off `cp-1`.
-- **grafana-operator — CrashLoopBackOff (pinned v5.20.0 → v5.18.0).** The pod
-  exited 2 (~30s, 90 restarts), health port `:8081` never opened, dying right
-  after the v5.20.0 `label restrictions for cached resources are active`
-  (`ENFORCE_CACHE_LABELS=safe`) log with no error — i.e. failing in manager
-  construction in that new label-cache path. Pinned down to **v5.18.0** (pre-
-  feature) as the best-evidence fix. **Verify on reconcile**: if it still
-  crashes, the cause is deeper (RBAC on the cluster-wide watch / metrics
-  secure-serving) — raise operator verbosity + check its ClusterRole. Blocks
-  `grafana` + `observability-dashboards` until healthy.
+- **grafana-operator — CrashLoopBackOff (startup killed by the liveness probe).**
+  Exited 2 (~30s, 90+ restarts), health port `:8081` never opened. Ruled out:
+  version (v5.18.0 crashed identically → not the label-cache feature), OOM
+  (exit 2 ≠ 137), RBAC (SA + ClusterRoleBinding present). Root cause: the chart
+  liveness probe has `initialDelaySeconds: 0` (kill at ~30s) and the operator's
+  cluster-wide cache build (`namespaceScope:false`) on a `GOMAXPROCS=1`/250m pod
+  doesn't open `:8081` in time → SIGTERM mid-startup → exit 2, forever. **Fix
+  (kept at v5.20.0):** `namespaceScope: true` (watch only `observability`, where
+  all Grafana CRs live → fast cache), CPU limit 250m→1, and generous
+  liveness/readiness probes (initialDelay 60/30, failureThreshold 6). **Verify
+  on reconcile**; if it still crashes, `--zap-log-level=debug` to capture the
+  real error. Blocks `grafana` + `observability-dashboards` until healthy.
 
 ### ⏳ Pre-existing / unrelated (not caused by this branch)
 - **lightbridge-backend** — `CreateContainerConfigError` (missing referenced
