@@ -36,6 +36,7 @@ how thinking evolved.
 | [0016](./0016-fork-bjw-s-app-template-locally.md) | Fork bjw-s app-template + common locally as `bjw-template` / `bjw-common` (rewire 12 consumers) | Accepted | 2026-05-31 | — |
 | [0017](./0017-home-remote-destination-invariant.md) | Workloads target the home-remote cluster, never in-cluster (render-time guard + `allowInCluster` escape hatch) | Accepted | 2026-05-31 | — |
 | [0018](./0018-umbrella-apps-and-env-overlays.md) | Umbrella Applications (workload + app-scoped deps via kustomize) + per-env `environments/` overlays | Proposed | 2026-05-31 | [0006](./0006-multi-source-applicationset.md) |
+| [0019](./0019-coder-app-of-apps-orchestrator.md) | Factor Coder into an App-of-Apps orchestrator (db + app as separate Applications) | Accepted | 2026-06-01 | — |
 
 ## Status legend
 

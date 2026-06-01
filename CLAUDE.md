@@ -62,6 +62,8 @@ The orchestrator's `Chart.yaml` depends only on `common`. Its `templates/applica
 
 See ADR-0012 (`ai-models`) and ADR-0014 (`librechart`) for the canonical examples + the rationale. **Don't reinvent this pattern** — copy from one of these when you need it again.
 
+> **App-of-Apps variant (`coder`, ADR-0019).** When an orchestrator's children are *fixed and heterogeneous* — e.g. one local Helm chart + one upstream **OCI** chart that must deploy as a source (not a Helm dependency) — an ApplicationSet List generator handles it poorly (OCI-as-dep needs a `Chart.lock`; inline-OCI needs controller-time goTemplate). `charts/coder` instead renders its two child `Application` CRs (`coder-db` + `coder-app`) directly via plain Helm (`templates/applications.yaml`). Same controlPlane/destination rules; the `coder-app` child is multi-source (OCI workload + the `environments/<env>/deps/coder` cert overlay).
+
 ## Umbrella Applications + `environments/` overlays (ADR-0018)
 
 Flat leaf apps in `charts/apps/values.yaml` use a multi-source **umbrella** so a workload and its app-scoped prerequisites sync as one Application:
@@ -74,7 +76,7 @@ Per-env knobs (`clusterIssuer`, `secretStore`, `ingressClass`, `storageClass`, `
 
 Ownership split: umbrellas own **app-scoped** secrets/certs (referencing `ssegning-aws` by name). **Platform/shared** secrets (S3, Keycloak, redis-auth) stay external in `ai-ops-secrets.git`. The store is never defined here.
 
-**How to attach deps:** add one field to the app entry — `depsOverlay: environments/<env>/deps/<app>`. `applications.yaml` folds it in as Source B (pointing at this repo via `argocd.selfRepoURL` @ `argocd.selfTargetRevision`), keeping the workload's `source:` + `valuesObject` verbatim (no re-indenting big value blocks). Also drop the `cert-manager.io/cluster-issuer` annotation from that chart's ingress — the overlay `Certificate` now owns the TLS secret. Converted: `grafana`, `coder`, `lightbridge-backend`. Dep-less infra/backends stay single-source.
+**How to attach deps:** add one field to the app entry — `depsOverlay: environments/<env>/deps/<app>`. `applications.yaml` folds it in as Source B (pointing at this repo via `argocd.selfRepoURL` @ `argocd.selfTargetRevision`), keeping the workload's `source:` + `valuesObject` verbatim (no re-indenting big value blocks). Also drop the `cert-manager.io/cluster-issuer` annotation from that chart's ingress — the overlay `Certificate` now owns the TLS secret. Converted: `grafana`, `lightbridge-backend`. Dep-less infra/backends stay single-source. (`coder` consumes the same `environments/<env>/deps/coder` cert overlay, but as a child of the `coder` App-of-Apps orchestrator — ADR-0019 — not as a flat umbrella.)
 
 The umbrella needs **no ApplicationSet** — `applications.yaml` already passes `.sources` through. (The List/Matrix-generator conversion, old ADR-0006, is decoupled future work.) Orchestrators (`models`, `librechat`) are **not** wrapped — they're already ApplicationSets.
 

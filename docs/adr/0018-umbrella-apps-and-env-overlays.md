@@ -139,7 +139,9 @@ next.
 ## Rollout scope (initial)
 
 Converted to umbrellas (have a live ingress `Certificate`): **grafana**,
-**coder**, **lightbridge-backend** (two certs: self-service + mcp).
+**lightbridge-backend** (two certs: self-service + mcp). (**coder** uses the
+same per-env cert overlay but as a child of the `coder` App-of-Apps
+orchestrator — ADR-0019 — rather than a flat umbrella.)
 
 Left single-source — **no app-scoped deps**: the observability backends /
 collectors / CRD installers (alloy, mimir, loki, tempo, grafana-operator,
