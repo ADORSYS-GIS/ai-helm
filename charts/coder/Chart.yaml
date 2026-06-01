@@ -1,0 +1,36 @@
+apiVersion: v2
+name: coder
+description: |
+  App-of-Apps orchestrator for the Coder stack. Renders TWO ArgoCD
+  Application CRs:
+
+    1. coder-db   — CloudNativePG Cluster + PodMonitor (leaf chart,
+                    sync-wave 1)
+    2. coder-app  — the Coder workload (upstream OCI chart, deployed as an
+                    ArgoCD source) + its ingress TLS Certificate via the
+                    per-env kustomize overlay (sync-wave 2)
+
+  Same orchestrator-plus-leaves intent as ai-models (ADR-0012) / librechart
+  (ADR-0014), but rendered as direct Application CRs rather than an
+  ApplicationSet — coder's two children are fixed and heterogeneous (one
+  local Helm chart, one upstream OCI chart + cert overlay), which an
+  ApplicationSet List generator handles poorly. Rationale in ADR-0019. The
+  chart owns NO workload resources directly — it owns the two child
+  Applications that own everything.
+type: application
+version: 1.0.0
+appVersion: "2.31.9"
+keywords:
+  - coder
+  - dev-environments
+  - applicationset
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
