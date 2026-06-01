@@ -197,3 +197,39 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
    `environments/base/deps/apprise-api/external-secret.yaml` (store the Apprise
    channel URL[s] there); ESO then materialises it and apprise-api starts.
 7. On settle: move every self-referencing `targetRevision` to a release tag.
+
+## 2026-06-02 — version upgrades + further egress findings
+
+### Chart/operator upgrades to latest
+Bumped (all render-verified against our valuesObjects; live-rolled):
+- grafana-operator `v5.20.0`→`5.23.0` (⚠️ tag `v` prefix dropped from 5.21+;
+  the old `v5.23.0` pin failed because the real tag is `5.23.0`).
+- alloy `1.0.1`→`1.8.2`; kube-state-metrics `5.25.1`→`7.4.0`;
+  prometheus-operator-crds `28.0.1`→`29.0.0`.
+- grafana `9.4.5`→`10.5.15` (chart major 9→10; bundled app only 12.1.1→12.3.1).
+- tempo `1.9.0`→`1.24.4`.
+- mimir-distributed `5.3.0`→**`5.8.0`** (latest within 5.x; **6.0 deferred** —
+  breaking: top-level `nginx`→unified `gateway` migration + rollout-operator
+  CRDs/disable required. Do as a dedicated change).
+- Envoy AI Gateway `0.5.0`→`0.6.0` (CRDs + controller in lockstep; EG v1.8.0
+  satisfies the v1.7+ requirement; our v1alpha1 CRs convert cleanly and stay
+  Accepted; we don't use the removed `filterConfig`/`version`-as-prefix).
+Already latest (unchanged): loki 7.0.0, node-exporter, metrics-server,
+authorino-operator, lightbridge, envoy gateway-helm v1.8.0.
+
+### kube-state-metrics egress (same Cilium deny-egress disease as grafana-operator)
+ksm had been CrashLoopBackOff'd ~11h (pre-existing) — it watches the API server
+and couldn't reach it under the `allow-dns` baseline + Cilium node-identity.
+Fixed with the same overlay pattern (CiliumNetworkPolicy `kube-apiserver`
+entity); ksm 7.4.0 now 1/1.
+
+### ⚠️ OPEN BLOCKER — observability stores can't reach S3
+mimir (ingester / store-gateway / querier) and tempo crashloop on
+`dial https://s3.ssegning.me:443: i/o timeout` — the SAME default-deny-egress
+baseline, now blocking egress to **external object storage** (Cilium `world`).
+So the metrics/traces stores have never worked on this cluster. loki uses the
+same S3 and is likely affected too. **Fix (same family, not yet applied):** a
+CiliumNetworkPolicy granting the store components egress to S3 — `toFQDNs`
+`s3.ssegning.me` :443 (+ DNS), per component (mimir/loki/tempo). Grafana itself
+also has no workload pod yet (its child app needs attention). Tracked for a
+dedicated egress pass.
