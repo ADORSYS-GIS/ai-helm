@@ -88,24 +88,37 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   attached to `HCLOUD_NETWORK`? is `cp-1` in it?). **Open — not a chart fix.**
   Options: add `load-balancer.hetzner.cloud/network: <name>`, fix `cp-1`'s
   network membership, or keep the LB off `cp-1`.
-- **grafana-operator — CrashLoopBackOff (UNDIAGNOSED silent crash).** Exits 2
-  after ~20–30s logging only its two setup lines (`GOMEMLIMIT`, `label
-  restrictions for cached resources are active`) then nothing — no error on
-  stdout/stderr. Ruled out by testing on the cluster: version (v5.18.0
-  identical), OOM (exit 2≠137), RBAC (SA+CRB present), cache scope/resources
-  (namespaceScope:true + 1 CPU didn't help — reverted), AND broken discovery
-  (fixed `metrics.k8s.io` + confirmed ALL APIServices Available — still crashes).
-  **Remote diagnosis exhausted** (all tested live): not version, OOM, RBAC,
-  cache-scope/resources/probes, not discovery (`metrics.k8s.io` fixed + ALL
-  APIServices Available), not the label-cache feature (removed
-  `ENFORCE_CACHE_LABELS` env → still crashes), and **`--zap-log-level=debug`
-  produced NO extra output** — so it dies *inside* `ctrl.NewManager()`, after
-  the last setup log, before any further logging, exit 2, silently. Next step
-  requires hands-on debugging (run the image with a shell + dlv/strace, or
-  match against grafana-operator upstream issues for a silent NewManager exit
-  on this k8s version) — beyond kubectl. **Non-critical:** grafana itself + its
-  file-provider dashboards work without the operator; only dashboards-as-code
-  CRs (observability-dashboards) don't reconcile.
+- **grafana-operator — ✅ ROOT-CAUSED & FIXED this session (was a silent
+  CrashLoop).** The exit-2 "silent crash" was a **NetworkPolicy egress block**,
+  not anything the prior sessions suspected (version / OOM / RBAC / cache-scope
+  / discovery were all red herrings — they were untestable because the pod died
+  *before* the real error logged). How it was found: ran the operator image as
+  a standalone debug pod with `--zap-log-level=debug`, **no probes, no
+  leader-elect**, so nothing killed it at 30s. It then logged the true error at
+  ~32s:
+  `setup: unable to detect the platform … Get "https://10.43.0.1:443/api?timeout=32s": dial tcp 10.43.0.1:443: i/o timeout`
+  → the operator calls the **Kubernetes API server** at startup ("detect
+  platform"), the call timed out after 32s, exit 2 at `main.go:180`. The real
+  Deployment's liveness probe (no `initialDelaySeconds`, 3×10s) killed the pod
+  at exactly 30s — ~2s **before** the error could log — which is why every prior
+  session saw only the two setup lines and called it "silent."
+  **Why the API was unreachable:** the cluster runs a **default-deny-egress
+  baseline** — an `allow-dns` NetworkPolicy (`podSelector: {}`,
+  `policyTypes: [Egress]`, present in `apps`/`data`/`observability`/`platform`,
+  42d old, NOT ArgoCD-managed) whose only egress rule is DNS→kube-system.
+  Selecting a pod for any egress policy flips it to deny-by-default, so every
+  pod in `observability` can reach DNS and nothing else. Data-plane pods
+  (loki/mimir/node-exporter) survive because they never initiate API calls; the
+  operator can't. A plain busybox pod in the namespace reproduced the timeout.
+  **Fix (in-repo, additive):** the grafana-operator child now ships an egress
+  `NetworkPolicy` (`grafana-operator-allow-egress`) via its deps overlay
+  (`environments/prod/deps/grafana-operator`) granting the operator pod egress
+  to the API server (node CIDR `10.0.0.0/24`:6443 post-DNAT + Service CIDR
+  `10.43.0.0/16`:443 pre-DNAT), intra-namespace (Grafana admin API), and DNS.
+  NetworkPolicies union, so it complements `allow-dns` without touching it. The
+  CIDRs are documented knobs in `environments/prod/cluster.yaml`
+  (`nodeCIDR`/`serviceCIDR`). Diagnosis is conclusive (debug pod reproduced the
+  exact error); the live apply needs a sync of the observability orchestrator.
 
 ### ⏳ Pre-existing / unrelated (not caused by this branch)
 - **lightbridge-backend** — `CreateContainerConfigError` (missing referenced
@@ -138,7 +151,9 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
    flip `enabled: true` (currently disabled to avoid clobbering the live
    externally-provisioned secrets).
 3. **Hetzner LB** — resolve the `cp-1` private-target issue (above).
-4. **grafana-operator** — investigate the crashloop.
+4. **grafana-operator** — ✅ root-caused + fixed in-repo (egress NetworkPolicy
+   via its deps overlay). Remaining: sync the observability orchestrator so the
+   policy lands, then confirm the operator goes 1/1 Ready.
 5. **DNS + Keycloak** — `*.ai-v2.camer.digital` records must resolve to the
    cluster; confirm Keycloak OIDC clients accept the new redirect URIs.
 6. **`lightbridge-opa-auth`** — confirm the basic-auth secret exists in
