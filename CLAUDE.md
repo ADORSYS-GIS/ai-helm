@@ -74,7 +74,7 @@ Per-env knobs (`clusterIssuer`, `secretStore`, `ingressClass`, `storageClass`, `
 
 Ownership split: umbrellas own **app-scoped** secrets/certs (referencing `ssegning-aws` by name). **Platform/shared** secrets (S3, Keycloak, redis-auth) stay external in `ai-ops-secrets.git`. The store is never defined here.
 
-**How to attach deps:** add one field to the app entry — `depsOverlay: environments/<env>/deps/<app>`. `applications.yaml` folds it in as Source B (pointing at this repo via `argocd.selfRepoURL` @ `argocd.selfTargetRevision`), keeping the workload's `source:` + `valuesObject` verbatim (no re-indenting big value blocks). Also drop the `cert-manager.io/cluster-issuer` annotation from that chart's ingress — the overlay `Certificate` now owns the TLS secret. Converted so far: `grafana`, `coder`, `lightbridge-backend`, `librechat-admin-panel`. Dep-less infra/backends stay single-source.
+**How to attach deps:** add one field to the app entry — `depsOverlay: environments/<env>/deps/<app>`. `applications.yaml` folds it in as Source B (pointing at this repo via `argocd.selfRepoURL` @ `argocd.selfTargetRevision`), keeping the workload's `source:` + `valuesObject` verbatim (no re-indenting big value blocks). Also drop the `cert-manager.io/cluster-issuer` annotation from that chart's ingress — the overlay `Certificate` now owns the TLS secret. Converted: `grafana`, `coder`, `lightbridge-backend`. Dep-less infra/backends stay single-source.
 
 The umbrella needs **no ApplicationSet** — `applications.yaml` already passes `.sources` through. (The List/Matrix-generator conversion, old ADR-0006, is decoupled future work.) Orchestrators (`models`, `librechat`) are **not** wrapped — they're already ApplicationSets.
 

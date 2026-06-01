@@ -3147,41 +3147,6 @@ applications:
     destination:
       namespace: converse-chat
 
-  # --- LibreChat Admin Panel (umbrella: workload + app-scoped deps) ---
-  # Pilot for ADR-0018. A multi-source ("umbrella") Application:
-  #   Source A — the workload Helm chart (charts/librechat-admin-panel).
-  #   Source B — app-scoped dependency CRs via the per-env kustomize overlay
-  #              (the ingress Certificate + the session-secret ExternalSecret;
-  #              issuer/secret-store patched per environment).
-  # Both sources deploy to the same destination (home-remote / converse-chat).
-  # The flat `range` template already passes `.sources` through, so no
-  # ApplicationSet conversion is required (ADR-0018 supersedes ADR-0006).
-  # Revision tracks the deploy branch → tag (see argocd.selfTargetRevision note).
-  - name: librechat-admin-panel
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "1"
-    # Umbrella (ADR-0018): workload source + app-scoped deps via the overlay.
-    # The template folds in environments/<env>/deps/<app> as a second source.
-    depsOverlay: environments/prod/deps/librechat-admin-panel
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: claude/magical-bohr-390242
-      path: charts/librechat-admin-panel
-      helm:
-        releaseName: librechat-admin-panel
-        valuesObject: {}
-    destination:
-      namespace: converse-chat
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
-
   # --- MongoDB Backup ---
   - name: mongodb-backup
     finalizers:

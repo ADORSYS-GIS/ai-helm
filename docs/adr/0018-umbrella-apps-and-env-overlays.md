@@ -84,10 +84,9 @@ Adopt an **umbrella Application** shape for flat leaf apps, plus an in-repo
    ApplicationSets (ADR-0012/0014, `controlPlane: true`); they keep their
    shape. Umbrellas apply only to the flat leaf apps.
 
-Roll out incrementally: pilot one app end-to-end
-(`charts/librechat-admin-panel` — currently disabled, so zero blast radius),
-verify with `kubectl kustomize` + `helm template`, then convert the remaining
-flat apps app-by-app.
+Roll out incrementally: convert apps with live app-scoped deps one at a
+time, verifying each with `kubectl kustomize` + `helm template` before the
+next.
 
 ## Consequences
 
@@ -140,8 +139,7 @@ flat apps app-by-app.
 ## Rollout scope (initial)
 
 Converted to umbrellas (have a live ingress `Certificate`): **grafana**,
-**coder**, **lightbridge-backend** (two certs: self-service + mcp),
-**librechat-admin-panel** (cert + an app-scoped session `ExternalSecret`).
+**coder**, **lightbridge-backend** (two certs: self-service + mcp).
 
 Left single-source — **no app-scoped deps**: the observability backends /
 collectors / CRD installers (alloy, mimir, loki, tempo, grafana-operator,
@@ -162,5 +160,5 @@ annotation, same as the live ones.
 - Builds on: ADR-0012, ADR-0014 (orchestrators unchanged), ADR-0017
   (destination invariant; store stays external)
 - Charts/files touched: `charts/apps/values.yaml` (umbrella entries),
-  `environments/**` (new), `charts/librechat-admin-panel/values.yaml` (pilot)
+  `environments/**` (new)
 - Docs: `docs/architecture.md` (to note the `environments/` layer)

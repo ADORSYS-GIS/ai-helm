@@ -77,7 +77,6 @@ Every chart that uses bjw-template:
 - `charts/ai-models-info` (`alias: models-info`)
 - `charts/keycloak-baseline` (`alias: config-sync`)
 - `charts/keycloak-backup` (no alias — values keyed under `bjw-template:`)
-- `charts/librechat-admin-panel` (`alias: admin-panel`)
 - `charts/librechat-app` (`alias: librechat`, conditional)
 - `charts/librechat-opencode-wellknown` (`alias: opencode-wellknown`)
 - `charts/lmcache` (`alias: lmcache`)
