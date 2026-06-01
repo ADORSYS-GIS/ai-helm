@@ -17,7 +17,7 @@ librechat:
         cert-manager.io/cluster-issuer: cert-home-cert-http
       className: traefik
       hosts:
-        - host: ai.camer.digital
+        - host: ai-v2.camer.digital
           paths:
             - path: /
               pathType: Prefix
@@ -25,9 +25,9 @@ librechat:
                 identifier: librechat
                 port: http
       tls:
-        - secretName: ai.camer.digital-tls
+        - secretName: ai-v2.camer.digital-tls
           hosts:
-            - ai.camer.digital
+            - ai-v2.camer.digital
 
   rawResources:
     hpa:
@@ -175,7 +175,7 @@ librechat:
 
             #RAG_API_URL: "http://{{ .Release.Name }}-rag-api:8000"
 
-            DOMAIN_CLIENT: &url "https://ai.camer.digital"
+            DOMAIN_CLIENT: &url "https://ai-v2.camer.digital"
             DOMAIN_SERVER: *url
             NO_INDEX: "true"
             # TRUST_PROXY: "-1"
@@ -255,7 +255,7 @@ librechat:
                 key: converse_openai_api_key
 
             # OpenAI-compatible Converse LLM API base URL
-            IMAGE_GEN_OAI_BASEURL: https://api.ai.camer.digital/v1
+            IMAGE_GEN_OAI_BASEURL: https://api.ai-v2.camer.digital/v1
             IMAGE_GEN_OAI_MODEL: gemini-2.5-flash-image
 
 
@@ -464,7 +464,7 @@ config:
         token_url: https://github.com/login/oauth/access_token
         client_id: ${GITHUB_MCP_CLIENT_ID}
         client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_issues/oauth/callback
+        redirect_uri: https://ai-v2.camer.digital/api/mcp/github_issues/oauth/callback
         scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
     github_projects:
       title: "GH Project"
@@ -478,7 +478,7 @@ config:
         token_url: https://github.com/login/oauth/access_token
         client_id: ${GITHUB_MCP_CLIENT_ID}
         client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_projects/oauth/callback
+        redirect_uri: https://ai-v2.camer.digital/api/mcp/github_projects/oauth/callback
         scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
     github_pull_requests:
       title: "GH PR"
@@ -492,7 +492,7 @@ config:
         token_url: https://github.com/login/oauth/access_token
         client_id: ${GITHUB_MCP_CLIENT_ID}
         client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_pull_requests/oauth/callback
+        redirect_uri: https://ai-v2.camer.digital/api/mcp/github_pull_requests/oauth/callback
         scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
     github_repos:
       title: "GH Reps"
@@ -506,7 +506,7 @@ config:
         token_url: https://github.com/login/oauth/access_token
         client_id: ${GITHUB_MCP_CLIENT_ID}
         client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_repos/oauth/callback
+        redirect_uri: https://ai-v2.camer.digital/api/mcp/github_repos/oauth/callback
         scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
     github_github_support_docs_search:
       title: "GH Docs"
@@ -520,14 +520,14 @@ config:
         token_url: https://github.com/login/oauth/access_token
         client_id: ${GITHUB_MCP_CLIENT_ID}
         client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_github_support_docs_search/oauth/callback
+        redirect_uri: https://ai-v2.camer.digital/api/mcp/github_github_support_docs_search/oauth/callback
         scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
     lightbridge_self_service:
       title: "LightBridge API KEYs"
       description: "LightBridge Self Service API-KEYs"
       type: "streamable-http"
       initTimeout: 150000
-      url: "https://mcp.ai.camer.digital/mcp"
+      url: "https://mcp.ai-v2.camer.digital/mcp"
       headers:
         X-ACCOUNT-ID: 'LIBRECHAT'
         X-PROJECT-ID: 'sso:{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
@@ -539,7 +539,7 @@ config:
       chatMenu: false
       serverInstructions: |
         Provides utilities to CRUD accounts, projects, and API keys.
-        - API keys are used to interact with the backend at `https://api.ai.camer.digital/v1`
+        - API keys are used to interact with the backend at `https://api.ai-v2.camer.digital/v1`
         - Backend is OpenAI compatible
         - Api-keys belongs to projects, and projects belongs to Accounts.
         - Billing account is usually arbitrary and mostly used for humain billing.
@@ -550,7 +550,7 @@ config:
         token_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token
         client_id: ${CD_MCP_CLIENT_ID}
         client_secret: ${CD_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/lightbridge_self_service/oauth/callback
+        redirect_uri: https://ai-v2.camer.digital/api/mcp/lightbridge_self_service/oauth/callback
         scope: "email openid offline_access"
 
     coder_mcp:
@@ -558,7 +558,7 @@ config:
       description: "Coder - Development environments in your cloud"
       type: "streamable-http"
       initTimeout: 150000
-      url: "https://coder.ai.camer.digital/api/experimental/mcp/http"
+      url: "https://coder.ai-v2.camer.digital/api/experimental/mcp/http"
       headers:
         X-ACCOUNT-ID: 'LIBRECHAT'
         X-PROJECT-ID: 'sso:{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
@@ -571,11 +571,11 @@ config:
       serverInstructions: |
         Provides development environment management capabilities.
       oauth:
-        authorization_url: https://coder.ai.camer.digital/oauth2/authorize
-        token_url: https://coder.ai.camer.digital/oauth2/tokens
+        authorization_url: https://coder.ai-v2.camer.digital/oauth2/authorize
+        token_url: https://coder.ai-v2.camer.digital/oauth2/tokens
         client_id: ${CODERS_MCP_CLIENT_ID}
         client_secret: ${CODERS_MCP_SECRET}
-        redirect_uri: https://ai.camer.digital/api/mcp/coder_mcp/oauth/callback
+        redirect_uri: https://ai-v2.camer.digital/api/mcp/coder_mcp/oauth/callback
         scope: "openid profile email"
 
   fileConfig:

@@ -37,5 +37,18 @@ ingressClass: traefik
 # A second env with a non-default class sets this and threads it via $values.
 storageClass: ""
 
-# Public DNS suffix for this environment's ingress hostnames.
-domainBase: ai.camer.digital
+# ── Platform domain — SOURCE OF TRUTH for this environment's hostnames ──────
+# Every ingress host / access URL / TLS SAN follows `<sub>.<domainBase>`
+# (e.g. grafana.ai-v2.camer.digital, coder.ai-v2.camer.digital, api.…); the
+# Coder workspace wildcard is `*.coder-<domainBase>`.
+#
+# To change the platform domain: change it here, then sweep the literal across
+# charts/ + environments/ (the hostnames live inside upstream-chart
+# valuesObjects that contain Go-template syntax — Alloy River config, Grafana
+# $__env{} — so they can't be safely `tpl`-templated from this one value;
+# keep this the documented knob and do a guided find-replace).
+#   grep -rl '<old-domain>' charts/ environments/ | xargs sed -i '' \
+#     's/<old-domain>/<new-domain>/g'
+# A second environment overrides hostnames via a per-env $values file
+# (ADR-0018 Source C) layered onto the workload charts.
+domainBase: ai-v2.camer.digital

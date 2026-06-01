@@ -1,5 +1,5 @@
-# Static JSON served at `https://ai.camer.digital/opencode/.well-known/opencode`
-# so `opencode auth login https://ai.camer.digital/opencode` works.
+# Static JSON served at `https://ai-v2.camer.digital/opencode/.well-known/opencode`
+# so `opencode auth login https://ai-v2.camer.digital/opencode` works.
 #
 # The contract is opencode-proprietary (NOT OIDC discovery) and undocumented
 # upstream; the agent that researched the source identified two consumer
@@ -44,7 +44,7 @@ wellKnown:
       camer-digital:
         name: "Camer Digital"
         options:
-          baseURL: "https://api.ai.camer.digital/v1"
+          baseURL: "https://api.ai-v2.camer.digital/v1"
           oauth2:
             issuer: "https://auth.verif.fyi/realms/camer-digital"
             clientId: "opencode-cli"
@@ -59,7 +59,7 @@ wellKnown:
             syncIntervalMinutes: 60
           meta:
             # Relative path → resolves to baseURL + "models/info" =
-            # https://api.ai.camer.digital/v1/models/info (the
+            # https://api.ai-v2.camer.digital/v1/models/info (the
             # ai-models-info chart serves this).
             # NOT vanilla /v1/models — opencode-models-info needs the
             # richer OpenRouter shape, not OpenAI's `id/object/owned_by`.
@@ -152,7 +152,7 @@ opencode-wellknown:
       annotations:
         cert-manager.io/cluster-issuer: cert-home-cert-http
       hosts:
-        - host: ai.camer.digital
+        - host: ai-v2.camer.digital
           paths:
             - path: /opencode/.well-known/opencode
               pathType: Exact
@@ -160,9 +160,9 @@ opencode-wellknown:
                 identifier: main
                 port: http
       tls:
-        - secretName: ai.camer.digital-tls
+        - secretName: ai-v2.camer.digital-tls
           hosts:
-            - ai.camer.digital
+            - ai-v2.camer.digital
 
   # Mount the two externally-rendered ConfigMaps + nginx-unprivileged's
   # required writable scratch dirs.

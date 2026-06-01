@@ -15,10 +15,10 @@ into any specific subsystem.
                           ┌────────────────────────────────────────┐
                           │ Traefik / Envoy AI Gateway             │
                           │   (`core-gateway`)                     │
-                          │   ├── ai.camer.digital      → librechat│
-                          │   ├── ai.camer.digital/opencode/...    │
+                          │   ├── ai-v2.camer.digital      → librechat│
+                          │   ├── ai-v2.camer.digital/opencode/...    │
                           │   │                          → opencode-wellknown
-                          │   ├── api.ai.camer.digital  → AI       │
+                          │   ├── api.ai-v2.camer.digital  → AI       │
                           │   │                            backend │
                           │   │     (Authorino auth + AIGateway-   │
                           │   │      Routes per model)             │
@@ -148,7 +148,7 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
        ┌───────────────────────────────────────────────┴────────┐
        │                                                        │
        ▼                                                        ▼
-  api.ai.camer.digital                                    Self-service portal
+  api.ai-v2.camer.digital                                    Self-service portal
   (Envoy AI Gateway)                                      (selfServiceMcpApi
   ↓                                                       Keycloak client)
   Authorino ext_authz                                     ↓

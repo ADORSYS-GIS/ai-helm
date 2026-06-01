@@ -72,9 +72,9 @@ app:
         - name: CODER_PG_OPTIONS
           value: "sslmode=disable"
         - name: CODER_ACCESS_URL
-          value: "https://coder.ai.camer.digital"
+          value: "https://coder.ai-v2.camer.digital"
         - name: CODER_WILDCARD_ACCESS_URL
-          value: "*.coder-ai.camer.digital"
+          value: "*.coder-ai-v2.camer.digital"
         - name: CODER_OIDC_ISSUER_URL
           value: "https://auth.verif.fyi/realms/camer-digital"
         - name: CODER_OIDC_CLIENT_ID
@@ -127,7 +127,7 @@ app:
                 echo "Creating admin user..."
                 coder server create-admin-user --username "$CODER_USERNAME" --email "$CODER_EMAIL" --password "$CODER_PASSWORD" 2>&1 || true
       tolerations:
-        - key: ai.camer.digital/offline-work
+        - key: ai-v2.camer.digital/offline-work
           operator: Equal
           value: dev-container
       resources:
@@ -145,9 +145,9 @@ app:
         # TLS Secret provisioned by the coder-app child's cert overlay
         # (environments/<env>/deps/coder) — no auto-issue annotation.
         annotations: {}
-        host: "coder.ai.camer.digital"
-        wildcardHost: "*.coder-ai.camer.digital"
+        host: "coder.ai-v2.camer.digital"
+        wildcardHost: "*.coder-ai-v2.camer.digital"
         tls:
           enable: true
-          secretName: coder.ai.camer.digital-tls
-          wildcardSecretName: coder.ai.camer.digital-tls
+          secretName: coder.ai-v2.camer.digital-tls
+          wildcardSecretName: coder.ai-v2.camer.digital-tls
