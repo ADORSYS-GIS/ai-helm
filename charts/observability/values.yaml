@@ -1,0 +1,1682 @@
+# observability App-of-Apps orchestrator values. See ADR-0020. The chart owns
+# no workload resources — it renders one child Application per entry below.
+#
+# S3 + domain anchors used by the child valuesObjects (moved verbatim from
+# charts/apps; the anchor DEFINITIONS must precede the children that use them).
+global:
+  s3:
+    endpoint: &s3-endpoint s3.ssegning.me
+    region: &s3-region us-east-1
+    bucket: &s3-bucket monitoring
+  domains:
+    grafana: &grafana-domain grafana.ai.camer.digital
+
+# ── Shared ArgoCD wiring for the child Applications ──────────────────────────
+argocd:
+  # Namespace the child Application CRs live in (where ArgoCD watches them).
+  namespace: argocd
+  project: ai
+  # This repo, source for the local leaf charts + the secrets overlay.
+  # Deploy branch now → release tag next, never main (see charts/apps note).
+  repoURL: https://github.com/ADORSYS-GIS/ai-helm
+  targetRevision: claude/magical-bohr-390242
+  destination:
+    # home-remote cluster (ADR-0017 guard). Children may override .namespace
+    # but all observability children use `observability`.
+    name: home-remote
+    allowInCluster: false
+    namespace: observability
+
+# PodSecurity enforce level applied to the observability namespace via ArgoCD
+# managedNamespaceMetadata on EVERY child — Alloy (hostPath /var/log) and
+# node-exporter (host /proc,/sys,/) need `privileged` under k3s's cluster-wide
+# baseline default. The per-cluster-kind knob: set "" to skip labelling, or
+# another level for a different cluster. (ADR-0018 / ADR-0020.)
+podSecurityEnforce: privileged
+
+# ── Children ─────────────────────────────────────────────────────────────────
+# Each entry is a full app spec (same schema as charts/apps applications[]):
+# name, additionalAnnotations (sync-wave), source/sources, syncPolicy,
+# destination.namespace. Rendered as a workload Application targeting
+# home-remote. Sync-waves preserved from the pre-split flat apps.
+children:
+  # --- observability-secrets: ExternalSecrets feeding the stack ---
+  # S3 creds (mimir/loki/tempo) + grafana admin/keycloak, from ssegning-aws.
+  # Wave -3 so the secrets exist before the backends (wave -2) start.
+  #
+  # ⚠️ DISABLED until the real remoteRefs are filled. The placeholders in
+  # environments/base/deps/observability-secrets/external-secrets.yaml would
+  # otherwise (creationPolicy: Owner) fight the externally-provisioned Secrets
+  # of the same names and, with failing fetches, break the live stack. To
+  # activate: fill the ssegning-aws keys, ensure the external provisioner
+  # (ai-ops-secrets) no longer manages these Secrets, then set enabled: true.
+  - name: observability-secrets
+    enabled: false
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-3"
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: claude/magical-bohr-390242
+      path: environments/prod/deps/observability-secrets
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: Prometheus Operator CRDs ---
+  # CRDs only (no operator) — registers ServiceMonitor, PodMonitor, etc.
+  - name: prometheus-operator-crds
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-3"
+    source:
+      repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 28.0.1
+      chart: prometheus-operator-crds
+      helm:
+        releaseName: prometheus-operator-crds
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - Replace=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: Grafana Alloy ---
+  # Unified telemetry collector — discovers ServiceMonitors and scrapes metrics.
+  - name: alloy
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 1.0.1
+      chart: alloy
+      helm:
+        releaseName: alloy
+        valuesObject:
+          controller:
+            type: daemonset
+
+          alloy:
+            clustering:
+              enabled: true
+            mounts:
+              varlog: true
+            # Expose the OTLP receiver ports on the Alloy Service so in-cluster
+            # OpenTelemetry collectors and SDKs can push traces / logs / metrics.
+            extraPorts:
+              - name: otlp-grpc
+                port: 4317
+                targetPort: 4317
+                protocol: TCP
+              - name: otlp-http
+                port: 4318
+                targetPort: 4318
+                protocol: TCP
+            configMap:
+              content: |-
+                logging {
+                  level  = "info"
+                  format = "logfmt"
+                }
+
+                // ── Metrics: remote-write to Mimir ─────────────────────────────
+                prometheus.remote_write "default" {
+                  endpoint {
+                    url = "http://mimir-nginx.observability.svc.cluster.local/api/v1/push"
+                    headers = {
+                      "X-Scope-OrgID" = "anonymous",
+                    }
+                  }
+                  external_labels = {
+                    cluster = "ai-helm",
+                  }
+                }
+
+                prometheus.relabel "global_sanitize" {
+                  forward_to = [prometheus.remote_write.default.receiver]
+                  rule {
+                    action = "replace"
+                    source_labels = ["__name__"]
+                    target_label = "cluster_origin"
+                    replacement = "alloy"
+                  }
+                }
+
+                // ── ServiceMonitor / PodMonitor discovery ──────────────────────
+                // clustering{} is REQUIRED here: Alloy runs as a DaemonSet with
+                // clustering enabled, so without it every pod scrapes every
+                // target and ships duplicate samples that Mimir rejects.
+                prometheus.operator.servicemonitors "cluster" {
+                  forward_to = [prometheus.relabel.global_sanitize.receiver]
+                  clustering {
+                    enabled = true
+                  }
+                }
+
+                prometheus.operator.podmonitors "cluster" {
+                  forward_to = [prometheus.relabel.global_sanitize.receiver]
+                  clustering {
+                    enabled = true
+                  }
+                }
+
+                // ── Node / kubelet / cAdvisor scraping ─────────────────────────
+                // Supplies the container_* (cAdvisor) and kubelet_* series the
+                // Kubernetes dashboards depend on. Scraped through the API server
+                // proxy so no kubelet host-certificate handling is needed.
+                discovery.kubernetes "nodes" {
+                  role = "node"
+                }
+
+                discovery.relabel "kubelet" {
+                  targets = discovery.kubernetes.nodes.targets
+                  rule {
+                    action       = "replace"
+                    target_label = "__address__"
+                    replacement  = "kubernetes.default.svc.cluster.local:443"
+                  }
+                  rule {
+                    source_labels = ["__meta_kubernetes_node_name"]
+                    regex         = "(.+)"
+                    action        = "replace"
+                    target_label  = "__metrics_path__"
+                    replacement   = "/api/v1/nodes/${1}/proxy/metrics"
+                  }
+                }
+
+                discovery.relabel "cadvisor" {
+                  targets = discovery.kubernetes.nodes.targets
+                  rule {
+                    action       = "replace"
+                    target_label = "__address__"
+                    replacement  = "kubernetes.default.svc.cluster.local:443"
+                  }
+                  rule {
+                    source_labels = ["__meta_kubernetes_node_name"]
+                    regex         = "(.+)"
+                    action        = "replace"
+                    target_label  = "__metrics_path__"
+                    replacement   = "/api/v1/nodes/${1}/proxy/metrics/cadvisor"
+                  }
+                }
+
+                prometheus.scrape "kubelet" {
+                  targets         = discovery.relabel.kubelet.output
+                  forward_to      = [prometheus.relabel.global_sanitize.receiver]
+                  job_name        = "kubelet"
+                  scheme          = "https"
+                  scrape_interval = "60s"
+                  clustering { enabled = true }
+                  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                  tls_config {
+                    ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  }
+                }
+
+                prometheus.scrape "cadvisor" {
+                  targets         = discovery.relabel.cadvisor.output
+                  forward_to      = [prometheus.relabel.global_sanitize.receiver]
+                  job_name        = "cadvisor"
+                  scheme          = "https"
+                  scrape_interval = "60s"
+                  clustering { enabled = true }
+                  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                  tls_config {
+                    ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  }
+                }
+
+                // ── Kubernetes API server ───────────────────────────────────────
+                prometheus.scrape "apiserver" {
+                  targets = [{
+                    __address__ = "kubernetes.default.svc.cluster.local:443",
+                  }]
+                  forward_to      = [prometheus.relabel.global_sanitize.receiver]
+                  job_name        = "apiserver"
+                  scheme          = "https"
+                  metrics_path    = "/metrics"
+                  scrape_interval = "60s"
+                  clustering { enabled = true }
+                  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                  tls_config {
+                    ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  }
+                }
+
+                // ── CoreDNS ────────────────────────────────────────────────────
+                discovery.kubernetes "coredns" {
+                  role = "pod"
+                  namespaces {
+                    names = ["kube-system"]
+                  }
+                  selectors {
+                    role  = "pod"
+                    label = "k8s-app=kube-dns"
+                  }
+                }
+
+                discovery.relabel "coredns" {
+                  targets = discovery.kubernetes.coredns.targets
+                  rule {
+                    source_labels = ["__meta_kubernetes_pod_ip"]
+                    action        = "replace"
+                    target_label  = "__address__"
+                    replacement   = "$1:9153"
+                  }
+                }
+
+                prometheus.scrape "coredns" {
+                  targets         = discovery.relabel.coredns.output
+                  forward_to      = [prometheus.relabel.global_sanitize.receiver]
+                  job_name        = "coredns"
+                  scrape_interval = "60s"
+                  clustering { enabled = true }
+                }
+
+                // ── Logs: tail this node's pod logs ────────────────────────────
+                local.file_match "pod_logs" {
+                  path_targets = [{
+                    __path__ = "/var/log/pods/*/*/*.log",
+                    job       = "kubernetes-pods",
+                  }]
+                }
+
+                loki.source.file "pod_logs" {
+                  targets    = local.file_match.pod_logs.targets
+                  forward_to = [loki.process.kubernetes_labels.receiver]
+                }
+
+                loki.process "kubernetes_labels" {
+                  stage.regex {
+                    expression = "/var/log/pods/(?P<namespace>[^/]+?)_(?P<pod>[^/]+)_[a-fA-F0-9-]+/(?P<container>[^/]+)/"
+                  }
+                  stage.labels {
+                    values = {
+                      namespace = "namespace",
+                      pod       = "pod",
+                      container = "container",
+                    }
+                  }
+                  stage.json {
+                    expressions = { level = "level", trace_id = "trace_id" }
+                  }
+                  stage.labels {
+                    values = { level = "level" }
+                  }
+                  forward_to = [loki.write.default.receiver]
+                }
+
+                loki.write "default" {
+                  endpoint {
+                    url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
+                  }
+                  external_labels = {
+                    cluster = "ai-helm",
+                  }
+                }
+
+                // ── OTLP receiver: fan telemetry out to the LGTM stack ─────────
+                // In-cluster OpenTelemetry collectors / SDKs push here; Alloy
+                // routes traces → Tempo, logs → Loki, metrics → Mimir.
+                otelcol.receiver.otlp "default" {
+                  grpc { endpoint = "0.0.0.0:4317" }
+                  http { endpoint = "0.0.0.0:4318" }
+                  output {
+                    traces  = [otelcol.exporter.otlp.tempo.input]
+                    logs    = [otelcol.exporter.loki.default.input]
+                    metrics = [otelcol.exporter.prometheus.default.input]
+                  }
+                }
+
+                otelcol.exporter.otlp "tempo" {
+                  client {
+                    endpoint = "tempo.observability.svc.cluster.local:4317"
+                    tls { insecure = true }
+                  }
+                }
+
+                otelcol.exporter.loki "default" {
+                  // Route OTel logs through a per-user-attribution stage so
+                  // dashboards can break down by Keycloak user_id / azp.
+                  // See docs/per-user-observability.md.
+                  forward_to = [loki.process.ai_gateway_user_attribution.receiver]
+                }
+
+                // Promote selected JSON fields from Envoy AI Gateway access
+                // logs into Loki labels.
+                //
+                // Cardinality budget:
+                //   user_id  — Keycloak `sub` (UUID per user). Bounded by
+                //              user count; safe up to a few thousand.
+                //   azp      — Keycloak client_id. Bounded by client count
+                //              (<20 today). Very cheap.
+                //
+                // user_name is intentionally NOT promoted (display field).
+                // Lines without these fields (e.g. non-gateway logs flowing
+                // through the same OTLP receiver) pass through unchanged —
+                // stage.json silently no-ops on missing keys, and
+                // stage.labels skips empty values.
+                loki.process "ai_gateway_user_attribution" {
+                  stage.json {
+                    expressions = {
+                      user_id = "user_id",
+                      azp     = "azp",
+                    }
+                  }
+                  stage.labels {
+                    values = {
+                      user_id = "user_id",
+                      azp     = "azp",
+                    }
+                  }
+                  forward_to = [loki.write.default.receiver]
+                }
+
+                otelcol.exporter.prometheus "default" {
+                  forward_to = [prometheus.relabel.global_sanitize.receiver]
+                }
+
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+
+          serviceMonitor:
+            enabled: true
+            interval: "60s"
+
+          rbac:
+            create: true
+          serviceAccount:
+            create: true
+
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: kube-state-metrics ---
+  # Exposes Kubernetes object state (kube_pod_*, kube_deployment_*, kube_node_*,
+  # etc.) as Prometheus metrics. This is NOT the same as metrics-server — the
+  # metrics-server app only serves the Kubernetes Metrics API (kubectl top / HPA)
+  # and is not scrapeable. Without kube-state-metrics the Kubernetes and
+  # Infrastructure dashboards have no source data.
+  # Its ServiceMonitor is discovered automatically by Alloy.
+  - name: kube-state-metrics
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 5.25.1
+      chart: kube-state-metrics
+      helm:
+        releaseName: kube-state-metrics
+        valuesObject:
+          # ServiceMonitor so Alloy's prometheus.operator.servicemonitors scrapes it.
+          prometheus:
+            monitor:
+              enabled: true
+              interval: 60s
+          resources:
+            requests: { cpu: 50m,  memory: 128Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: prometheus-node-exporter ---
+  # DaemonSet exposing per-node hardware/OS metrics (node_cpu_*, node_memory_*,
+  # node_filesystem_*, node_network_*). Required by the K8s Nodes / Global
+  # dashboards. Its ServiceMonitor is discovered automatically by Alloy.
+  - name: node-exporter
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      repoURL: https://prometheus-community.github.io/helm-charts
+      # 4.55.0 per audit (16 minors bump; metrics surface stable).
+      targetRevision: 4.55.0
+      chart: prometheus-node-exporter
+      helm:
+        releaseName: node-exporter
+        valuesObject:
+          prometheus:
+            monitor:
+              enabled: true
+              interval: 60s
+          resources:
+            requests: { cpu: 50m,  memory: 32Mi }
+            limits:   { cpu: 200m, memory: 64Mi }
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: grafana-operator ---
+  # Installs the grafana-operator controller + its CRDs (Grafana,
+  # GrafanaDashboard, GrafanaFolder, GrafanaDatasource, GrafanaContactPoint,
+  # GrafanaAlertRuleGroup). The operator runs cluster-wide.
+  #
+  # The cluster's actual Grafana workload is still the `grafana` app below
+  # (vanilla grafana/grafana chart, sync-wave 0). The operator manages content
+  # only — it talks to grafana via the admin API in EXTERNAL mode. The wiring
+  # lives in the `observability-dashboards` app (sync-wave 1) which ships the
+  # `Grafana` CR and folders / dashboards / datasources.
+  #
+  # Cutover from sidecar-discovered dashboards: not applicable here — the
+  # existing grafana app loads dashboards via the chart's `dashboards:` map
+  # (file-provider, baked into the deployment), not via the sidecar. New
+  # dashboards go through CRs; existing in-values dashboards stay until
+  # migrated one-by-one. See docs/grafana-operator-and-dashboards.md.
+  #
+  # NOTE: chart version pinned to a known-good. Verify against
+  # `helm search repo grafana-operator` before bumping.
+  - name: grafana-operator
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      # OCI chart path must include the chart name (grafana-operator).
+      # This ArgoCD resolves the artifact from repoURL as-is and does NOT
+      # append `chart:` to the path (matches the coder/envoy OCI apps here)
+      # — with the chart name left out, it pulled `grafana/helm-charts`
+      # and GHCR returned 403. See the envoy-* apps for the same shape.
+      repoURL: oci://ghcr.io/grafana/helm-charts/grafana-operator
+      # v5.20.0 — latest published grafana-operator OCI chart tag on ghcr
+      # (v5.23.0 did not exist: ArgoCD ComparisonError "cannot get digest for
+      # revision v5.23.0 … not found"). Verify tags before bumping:
+      #   curl -s "https://ghcr.io/token?scope=repository:grafana/helm-charts/grafana-operator:pull" | jq -r .token
+      #   then GET https://ghcr.io/v2/grafana/helm-charts/grafana-operator/tags/list
+      targetRevision: v5.20.0
+      chart: grafana-operator
+      helm:
+        releaseName: grafana-operator
+        valuesObject:
+          # Cluster-wide watch: operator picks up CRs from any namespace.
+          namespaceScope: false
+          leaderElection:
+            enabled: true
+          metricsService:
+            enabled: true
+            type: ClusterIP
+          serviceMonitor:
+            enabled: true
+          resources:
+            requests: { cpu: 50m,  memory: 64Mi  }
+            limits:   { cpu: 250m, memory: 256Mi }
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Observability: Mimir — long-term metrics store + built-in Alertmanager
+  # Sync wave -1: backends before Grafana
+  # Secrets required (via ESO):
+  #   mimir-s3:
+  #     MIMIR_S3_ACCESS_KEY_ID: <linode-or-custom-s3-access-key>
+  #     MIMIR_S3_SECRET_ACCESS_KEY: <linode-or-custom-s3-secret-key>
+  # Buckets to create before first sync:
+  #   converse-mimir-blocks, converse-mimir-alertmanager, converse-mimir-ruler
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: mimir
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-2"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 5.3.0
+      chart: mimir-distributed
+      helm:
+        releaseName: mimir
+        valuesObject:
+          fullnameOverride: mimir
+
+          global:
+            extraEnvFrom:
+              - secretRef:
+                  name: mimir-s3
+
+          mimir:
+            structuredConfig:
+              multitenancy_enabled: false
+
+              ingester:
+                ring:
+                  replication_factor: 1
+                  zone_awareness_enabled: false
+
+              store_gateway:
+                sharding_ring:
+                  replication_factor: 1
+                  zone_awareness_enabled: false
+
+              common:
+                storage:
+                  backend: s3
+                  s3:
+                    endpoint: *s3-endpoint
+                    access_key_id: ${MIMIR_S3_ACCESS_KEY_ID}
+                    secret_access_key: ${MIMIR_S3_SECRET_ACCESS_KEY}
+
+              blocks_storage:
+                storage_prefix: blocks
+                s3:
+                  bucket_name: *s3-bucket
+              alertmanager_storage:
+                storage_prefix: alertmanager
+                s3:
+                  bucket_name: *s3-bucket
+              ruler_storage:
+                storage_prefix: ruler
+                s3:
+                  bucket_name: *s3-bucket
+
+              alertmanager:
+                enable_api: true
+                external_url: https://grafana.ai.camer.digital/alerting
+
+              limits:
+                # ── Retention ──────────────────────────────────────────────
+                # How long blocks are kept in S3 before the compactor deletes them.
+                # Set to 0d to disable retention (keep forever).
+                compactor_blocks_retention_period: 90d
+
+                # ── Ingestion ───────────────────────────────────────────────
+                ingestion_rate: 30000
+                ingestion_burst_size: 50000
+                max_global_series_per_user: 2000000
+                # Allow samples up to 10m behind the latest ingested timestamp.
+                # Prevents rejections from Alloy self-scrape timing skew.
+                out_of_order_time_window: 10m
+
+                # ── Query ────────────────────────────────────────────────────
+                # Raise the query-frontend concurrency cap to prevent 429s when
+                # multiple dashboard panels fire simultaneous queries.
+                max_outstanding_requests_per_tenant: 1000
+
+              compactor:
+                # How often the compactor runs a cleanup cycle.
+                compaction_interval: 1h
+                # How long the compactor waits before deleting blocks marked for deletion.
+                # Gives time to abort accidental deletions.
+                deletion_delay: 12h
+
+          ingester:
+            replicas: 1
+            zoneAwareReplication:
+              enabled: false
+            podDisruptionBudget:
+              enabled: false
+            persistence:
+              enabled: true
+              size: 10Gi
+            resources:
+              requests: { cpu: 200m, memory: 512Mi }
+              limits:   { cpu: 1,    memory: 2Gi   }
+
+          distributor:
+            replicas: 1
+            podDisruptionBudget:
+              enabled: false
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 1Gi   }
+
+          querier:
+            replicas: 1
+            podDisruptionBudget:
+              enabled: false
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 1Gi   }
+
+          query_frontend:
+            replicas: 1
+            podDisruptionBudget:
+              enabled: false
+            resources:
+              requests: { cpu: 200m, memory: 256Mi }
+              limits:   { cpu: 1,    memory: 1Gi   }
+
+          query_scheduler:
+            enabled: false
+
+          store_gateway:
+            replicas: 1
+            zoneAwareReplication:
+              enabled: false
+            podDisruptionBudget:
+              enabled: false
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 1Gi   }
+
+          compactor:
+            replicas: 1
+            podDisruptionBudget:
+              enabled: false
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 2Gi   }
+
+          alertmanager:
+            enabled: true
+            replicas: 1
+            podDisruptionBudget:
+              enabled: false
+            resources:
+              requests: { cpu: 50m,  memory: 64Mi  }
+              limits:   { cpu: 200m, memory: 256Mi }
+            # fallbackConfig: |
+            #   route:
+            #     receiver: blackhole
+            #   receivers:
+            #     - name: blackhole
+
+          ruler:
+            enabled: false
+
+          nginx:
+            enabled: true
+            replicas: 1
+            podDisruptionBudget:
+              enabled: false
+            resources:
+              requests: { cpu: 50m,  memory: 64Mi  }
+              limits:   { cpu: 200m, memory: 128Mi }
+
+          minio:
+            enabled: false
+
+          # Disable all memcached caches - not needed for small-scale deployment
+          # Note: memcached section has no 'enabled' flag - controlled by individual caches
+          memcachedExporter:
+            enabled: false
+
+          chunks-cache:
+            enabled: false
+          
+          index-cache:
+            enabled: false
+          
+          metadata-cache:
+            enabled: false
+          
+          results-cache:
+            enabled: false
+
+          serviceMonitor:
+            enabled: true
+            interval: 60s
+
+          extraObjects:
+            # NetworkPolicy for observability namespace
+            # To disable: comment out or remove this entire block
+            # - apiVersion: networking.k8s.io/v1
+            #   kind: NetworkPolicy
+            #   metadata:
+            #     name: observability-allow-ingress
+            #     namespace: observability
+            #   spec:
+            #     podSelector: {}
+            #     policyTypes:
+            #       - Ingress
+            #       - Egress
+            #     ingress:
+            #       - from:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: observability
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: traefik-system
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: converse
+            #         ports:
+            #           - port: http-metrics
+            #             protocol: TCP
+            #           - port: http
+            #             protocol: TCP
+            #           - port: grpc
+            #             protocol: TCP
+            #           - port: 3100
+            #             protocol: TCP
+            #           - port: 4317
+            #             protocol: TCP
+            #           - port: 4318
+            #             protocol: TCP
+            #           - port: 3000
+            #             protocol: TCP
+            #     egress:
+            #       - to:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: kube-system
+            #         ports:
+            #           - port: dns
+            #             protocol: UDP
+            #           - port: dns
+            #             protocol: TCP
+            #       - to:
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: observability
+            #           - namespaceSelector:
+            #               matchLabels:
+            #                 kubernetes.io/metadata.name: converse
+            #         ports:
+            #           - port: http-metrics
+            #             protocol: TCP
+            #           - port: http
+            #             protocol: TCP
+            #           - port: grpc
+            #             protocol: TCP
+            #       - to:
+            #           - ipBlock:
+            #               cidr: 0.0.0.0/0
+            #               except:
+            #                 - 10.0.0.0/8
+            #                 - 172.16.0.0/12
+            #                 - 192.168.0.0/16
+            #         ports:
+            #           - port: 443
+            #             protocol: TCP
+
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Observability: Loki — log aggregation store
+  # Sync wave -1: alongside Mimir, before Grafana
+  # Secrets required (via ESO):
+  #   loki-s3:
+  #     LOKI_S3_ACCESS_KEY_ID: <key>
+  #     LOKI_S3_SECRET_ACCESS_KEY: <secret>
+  # Buckets to create: converse-loki-chunks, converse-loki-ruler
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: loki
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-2"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 7.0.0
+      chart: loki
+      helm:
+        releaseName: loki
+        valuesObject:
+          deploymentMode: SingleBinary
+
+          loki:
+            auth_enabled: false
+
+            commonConfig:
+              replication_factor: 1
+              ring:
+                instance_addr: 127.0.0.1
+                kvstore:
+                  store: inmemory
+
+            memberlist:
+              join_members: []
+
+            schemaConfig:
+              configs:
+                - from: "2025-01-01"
+                  store: tsdb
+                  object_store: s3
+                  schema: v13
+                  index:
+                    prefix: loki_index_
+                    period: 24h
+
+            storage:
+              type: s3
+              bucketNames:
+                chunks: *s3-bucket
+                ruler:  *s3-bucket
+                admin:  *s3-bucket
+              use_thanos_objstore: true
+              object_store:
+                type: s3
+                storage_prefix: loki
+                s3:
+                  endpoint: *s3-endpoint
+                  region: *s3-region
+                  secret_access_key: ${LOKI_S3_SECRET_ACCESS_KEY}
+                  access_key_id: ${LOKI_S3_ACCESS_KEY_ID}
+                  insecure: false
+                  http:
+                    insecure_skip_verify: false
+
+            limits_config:
+              # ── Retention ──────────────────────────────────────────────
+              # How long log chunks are kept before the compactor deletes them.
+              # Requires compactor.retention_enabled: true to take effect.
+              retention_period: 90d
+
+              # ── Ingestion ───────────────────────────────────────────────
+              ingestion_rate_mb: 8
+              ingestion_burst_size_mb: 16
+
+              # ── Query limits ────────────────────────────────────────────
+              # Maximum time range a query can span.
+              max_query_length: 0h       # 0 = unlimited
+              # Maximum number of log entries returned per query.
+              max_entries_limit_per_query: 5000
+
+            compactor:
+              # Enable time-based retention deletion.
+              retention_enabled: true
+              # Where delete requests are stored (must match object store type).
+              delete_request_store: s3
+              # How often the compactor runs.
+              compaction_interval: 1h
+              # How long before marked chunks are actually deleted.
+              # Gives a window to cancel accidental deletions.
+              retention_delete_delay: 2h
+              # Number of workers processing delete requests in parallel.
+              retention_delete_worker_count: 150
+
+          # Disable memcached - not needed for single-binary mode
+          # Must be at root level, not under loki.memcached
+          chunksCache:
+            enabled: false
+          resultsCache:
+            enabled: false
+
+          # Loki canary - synthetic observability
+          # Using Deployment kind (supported in chart 7.x) to avoid DaemonSet spawning 1 pod per node.
+          lokiCanary:
+            enabled: true
+            kind: Deployment
+            replicas: 1
+
+          singleBinary:
+            replicas: 1
+            podDisruptionBudget:
+              enabled: false
+            # Enable environment variable expansion for S3 credentials
+            extraArgs:
+              - -config.expand-env=true
+            extraEnvFrom:
+              - secretRef:
+                  name: loki-s3
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 2Gi   }
+            persistence:
+              enabled: true
+              size: 10Gi
+
+          ingester:       { replicas: 0 }
+          querier:        { replicas: 0 }
+          queryFrontend:  { replicas: 0 }
+          queryScheduler: { replicas: 0 }
+          distributor:    { replicas: 0 }
+          compactor:      { replicas: 0 }
+          indexGateway:   { replicas: 0 }
+          bloomCompactor: { enabled: false }
+          bloomGateway:   { enabled: false }
+
+          # SimpleScalable mode components (must be 0 for SingleBinary)
+          read:           { replicas: 0 }
+          write:          { replicas: 0 }
+          backend:        { replicas: 0 }
+
+          gateway:
+            enabled: true
+            replicas: 1
+            podDisruptionBudget:
+              minAvailable: 1
+            resources:
+              requests: { cpu: 50m,  memory: 64Mi  }
+              limits:   { cpu: 200m, memory: 128Mi }
+
+          minio:
+            enabled: false
+
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Observability: Tempo — distributed trace store
+  # Sync wave -1: alongside Mimir and Loki, before Grafana
+  # Secrets required (via ESO):
+  #   tempo-s3:
+  #     TEMPO_S3_ACCESS_KEY: <key>
+  #     TEMPO_S3_SECRET_KEY: <secret>
+  # Bucket to create: converse-tempo-traces
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: tempo
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-2"
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 1.9.0
+      chart: tempo
+      helm:
+        releaseName: tempo
+        valuesObject:
+          replicas: 1
+
+          podDisruptionBudget:
+            enabled: false
+
+          tempo:
+            extraArgs:
+              config.expand-env: "true"
+            extraEnvFrom:
+              - secretRef:
+                  name: tempo-s3
+
+            # ── Retention ────────────────────────────────────────────────
+            # How long trace blocks are kept in S3.
+            # Format: duration string (e.g. 720h = 30d, 2160h = 90d).
+            retention: 720h
+
+            storage:
+              trace:
+                backend: s3
+                # ── WAL (Write-Ahead Log) ─────────────────────────────────
+                # Local WAL buffers traces before flushing to S3.
+                wal:
+                  path: /var/tempo/wal
+                  # How long a trace can stay in the WAL before being flushed.
+                  ingestion_time_range_slack: 30s
+                s3:
+                  bucket:           *s3-bucket
+                  endpoint:         *s3-endpoint
+                  region:           *s3-region
+                  prefix:           tempo
+                  access_key:       ${TEMPO_S3_ACCESS_KEY}
+                  secret_key:       ${TEMPO_S3_SECRET_KEY}
+                  forcepathstyle:   true
+                  insecure:         false
+
+            receivers:
+              otlp:
+                protocols:
+                  grpc:
+                    endpoint: 0.0.0.0:4317
+                  http:
+                    endpoint: 0.0.0.0:4318
+              jaeger:
+                protocols:
+                  thrift_http:
+                    endpoint: 0.0.0.0:14268
+                  grpc:
+                    endpoint: 0.0.0.0:14250
+
+            metricsGenerator:
+              enabled: true
+              remoteWriteUrl: http://mimir-nginx.observability.svc.cluster.local/api/v1/push
+              remoteWriteHeaders:
+                X-Scope-OrgID: anonymous
+
+            search:
+              enabled: true
+
+            # ── Compaction ────────────────────────────────────────────────
+            # block_retention: how long blocks are kept in S3 before deletion.
+            #   Must match tempo.retention above. Set here explicitly so it's
+            #   visible alongside other compaction knobs.
+            # compacted_block_retention: how long compacted (superseded) blocks
+            #   are kept before deletion. Short value reduces storage waste.
+            # compaction_window: blocks within this time window are compacted
+            #   together. Larger = fewer but bigger blocks; smaller = more
+            #   frequent compaction cycles.
+            compactor:
+              compaction:
+                block_retention: 720h
+                compacted_block_retention: 1h
+                compaction_window: 1h
+
+          # Fix filesystem permissions for WAL directory
+          securityContext:
+            fsGroup: 10001
+            runAsUser: 10001
+            runAsNonRoot: true
+
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits:   { cpu: 1000m, memory: 6Gi   }
+
+          persistence:
+            enabled: true
+            size: 5Gi
+
+          serviceMonitor:
+            enabled: true
+            interval: 60s
+
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Observability: Grafana — visualization, dashboards, unified alerting
+  # Sync wave 0: after backends are up
+  # Secrets required (via ESO):
+  #   grafana-admin:
+  #     admin-user:     admin
+  #     admin-password: <strong-password>
+  #   grafana-keycloak:
+  #     client-secret: <keycloak-client-secret-for-grafana-realm-client>
+  # Keycloak client to create: "grafana" in the camer-digital realm,
+  #   redirect URI: https://grafana.ai.camer.digital/login/generic_oauth
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: grafana
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "0"
+    # Umbrella (ADR-0018): app-scoped ingress Certificate via the overlay.
+    depsOverlay: environments/prod/deps/grafana
+    source:
+      repoURL: https://grafana.github.io/helm-charts
+      targetRevision: 9.4.5
+      chart: grafana
+      helm:
+        releaseName: grafana
+        valuesObject:
+          replicas: 1
+
+          admin:
+            existingSecret: grafana-admin
+            userKey:        admin-user
+            passwordKey:    admin-password
+
+          envFromSecrets:
+            - name: grafana-keycloak
+
+          grafana.ini:
+            server:
+              domain:   grafana.ai.camer.digital
+              root_url: https://grafana.ai.camer.digital
+
+            auth.generic_oauth:
+              enabled:              true
+              name:                 "CDigital"
+              icon:                 signin
+              client_id:            grafana
+              client_secret:        $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+              scopes:               "openid profile email"
+              auth_url:             "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth"
+              token_url:            "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token"
+              api_url:              "https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/userinfo"
+              role_attribute_path:  "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'editor') && 'Editor' || 'Viewer'"
+              allow_sign_up:        true
+              auto_login:           false
+
+            auth:
+              disable_login_form: false
+
+            unified_alerting:
+              enabled: true
+            unified_alerting.alertmanager:
+              implementation: external
+              # Points to the grafana-apprise-adapter which translates
+              # Grafana webhook alerts into Apprise notifications.
+              url: http://grafana-apprise-adapter.observability.svc.cluster.local:5000
+
+            alerting:
+              enabled: false
+
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+                - name:      Mimir
+                  type:      prometheus
+                  uid:       mimir
+                  url:       http://mimir-nginx.observability.svc.cluster.local/prometheus
+                  isDefault: true
+                  jsonData:
+                    timeInterval: 30s
+                    httpMethod:   POST
+                    httpHeaderName1: "X-Scope-OrgID"
+                  secureJsonData:
+                    httpHeaderValue1: "anonymous"
+
+                - name: Loki
+                  type: loki
+                  uid:  loki
+                  url:  http://loki-gateway.observability.svc.cluster.local
+                  jsonData:
+                    derivedFields:
+                      - name:             TraceID
+                        matcherRegex:     '"trace_id":"(\w+)"'
+                        url:              "$${__value.raw}"
+                        datasourceUid:    tempo
+                    maxLines: 1000
+
+                - name: Tempo
+                  type: tempo
+                  uid:  tempo
+                  url:  http://tempo.observability.svc.cluster.local:3100
+                  jsonData:
+                    tracesToLogsV2:
+                      datasourceUid:    loki
+                      spanStartTimeShift: "-1m"
+                      spanEndTimeShift:   "1m"
+                      filterByTraceID:  true
+                      filterBySpanID:   false
+                      customQuery:      false
+                    serviceMap:
+                      datasourceUid:    mimir
+                    nodeGraph:
+                      enabled: true
+                    search:
+                      hide: false
+
+                - name: Alertmanager
+                  type: alertmanager
+                  uid:  alertmanager
+                  url:  http://mimir-nginx.observability.svc.cluster.local/alertmanager
+                  jsonData:
+                    implementation: mimir
+                    httpHeaderName1: "X-Scope-OrgID"
+                  secureJsonData:
+                    httpHeaderValue1: "anonymous"
+
+          dashboardProviders:
+            dashboardproviders.yaml:
+              apiVersion: 1
+              providers:
+                - name: kubernetes
+                  orgId: 1
+                  folder: "Kubernetes"
+                  type: file
+                  options:
+                    path: /var/lib/grafana/dashboards/kubernetes
+                - name: observability
+                  orgId: 1
+                  folder: "Observability Stack"
+                  type: file
+                  options:
+                    path: /var/lib/grafana/dashboards/observability
+                - name: infrastructure
+                  orgId: 1
+                  folder: "Infrastructure"
+                  type: file
+                  options:
+                    path: /var/lib/grafana/dashboards/infrastructure
+                - name: gitops
+                  orgId: 1
+                  folder: "GitOps"
+                  type: file
+                  options:
+                    path: /var/lib/grafana/dashboards/gitops
+
+          # alerting:
+          #   contactpoints.yaml:
+          #     apiVersion: 1
+          #     contactPoints:
+          #       - orgId: 1
+          #         name: apprise
+          #         receivers:
+          #           - uid: apprise-webhook
+          #             type: webhook
+          #             settings:
+          #               url: http://grafana-apprise-adapter.observability.svc.cluster.local:5000/notify/alerts
+          #               httpMethod: POST
+          #               payload:
+          #                 template: |
+          #                   {
+          #                     "title": "{{ `{{ .CommonLabels.alertname }}` }}",
+          #                     "message": "{{ `{{ if .CommonAnnotations.summary }}{{ .CommonAnnotations.summary }}{{ else }}{{ .CommonLabels.alertname }} is {{ .Status }}{{ end }}` }}",
+          #                     "state": "alerting",
+          #                     "imageUrl": "",
+          #                     "tags": {}
+          #                   }
+
+          #   policies.yaml:
+          #     apiVersion: 1
+          #     policies:
+          #       - orgId: 1
+          #         receiver: apprise
+          #         group_by:
+          #           - grafana_folder
+          #           - alertname
+          #         group_wait: 30s
+          #         group_interval: 1m
+          #         repeat_interval: 2m
+
+          #   rules.yaml:
+          #     apiVersion: 1
+          #     groups:
+          #       - orgId: 1
+          #         name: 1m group
+          #         folder: Observability Stack
+          #         interval: 1m
+          #         rules:
+          #           - uid: afm5fxdv88kxsa
+          #             title: Pod OOMKilled
+          #             condition: C
+          #             data:
+          #               - refId: A
+          #                 relativeTimeRange:
+          #                   from: 600
+          #                   to: 0
+          #                 datasourceUid: mimir
+          #                 model:
+          #                   editorMode: code
+          #                   expr: |-
+          #                     # Fires when a pod has been OOMKilled in the last 15m
+          #                     increase(kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}[15m]) > 0
+          #                   instant: true
+          #                   intervalMs: 1000
+          #                   legendFormat: __auto
+          #                   maxDataPoints: 43200
+          #                   range: false
+          #                   refId: A
+          #               - refId: B
+          #                 relativeTimeRange:
+          #                   from: 600
+          #                   to: 0
+          #                 datasourceUid: __expr__
+          #                 model:
+          #                   conditions:
+          #                     - evaluator:
+          #                         params: []
+          #                         type: gt
+          #                       operator:
+          #                         type: and
+          #                       query:
+          #                         params:
+          #                           - B
+          #                       reducer:
+          #                         params: []
+          #                         type: last
+          #                       type: query
+          #                   datasource:
+          #                     type: __expr__
+          #                     uid: __expr__
+          #                   expression: A
+          #                   intervalMs: 1000
+          #                   maxDataPoints: 43200
+          #                   reducer: last
+          #                   refId: B
+          #                   type: reduce
+          #               - refId: C
+          #                 relativeTimeRange:
+          #                   from: 600
+          #                   to: 0
+          #                 datasourceUid: __expr__
+          #                 model:
+          #                   conditions:
+          #                     - evaluator:
+          #                         params:
+          #                           - 0
+          #                         type: gt
+          #                       operator:
+          #                         type: and
+          #                       query:
+          #                         params:
+          #                           - C
+          #                       reducer:
+          #                         params: []
+          #                         type: last
+          #                       type: query
+          #                   datasource:
+          #                     type: __expr__
+          #                     uid: __expr__
+          #                   expression: B
+          #                   intervalMs: 1000
+          #                   maxDataPoints: 43200
+          #                   refId: C
+          #                   type: threshold
+          #             noDataState: NoData
+          #             execErrState: Error
+          #             for: 3m
+          #             labels:
+          #               security: critical
+          #             isPaused: false
+          #             notification_settings:
+          #               receiver: apprise
+
+          dashboards:
+            # ── Kubernetes ────────────────────────────────────────────────
+            kubernetes:
+              # Modern cluster-level view: CPU/memory/network per namespace
+              # Replaces gnetId 7249 (outdated, uses deprecated graph panels)
+              k8s-views-global:
+                gnetId: 15757
+                revision: 37
+                datasource: Mimir
+              # Per-node resource usage (dotdc modern set)
+              k8s-views-nodes:
+                gnetId: 15759
+                revision: 32
+                datasource: Mimir
+              # Per-pod resource usage with drill-down
+              k8s-views-pods:
+                gnetId: 15760
+                revision: 38
+                datasource: Mimir
+              # Namespace-level resource usage
+              k8s-views-namespaces:
+                gnetId: 15758
+                revision: 38
+                datasource: Mimir
+              # Kubernetes API server health
+              k8s-system-api-server:
+                gnetId: 15761
+                revision: 21
+                datasource: Mimir
+              # CoreDNS
+              k8s-system-coredns:
+                gnetId: 15762
+                revision: 20
+                datasource: Mimir
+
+            # ── Observability Stack ───────────────────────────────────────
+            observability:
+              # Mimir overview — official Grafana Labs dashboard
+              # Replaces gnetId 16067 (older community version)
+              mimir-overview:
+                gnetId: 17607
+                revision: 2
+                datasource: Mimir
+              # Alloy metrics pipeline
+              alloy-metrics:
+                gnetId: 21048
+                revision: 1
+                datasource: Mimir
+              # Loki operational — stack health, errors, resource usage
+              loki-operational:
+                gnetId: 14055
+                revision: 1
+                datasource: Loki
+              # Loki logs explorer
+              loki-logs:
+                gnetId: 13639
+                revision: 2
+                datasource: Loki
+              # Tempo operations via service graph metrics in Mimir
+              tempo-operations:
+                gnetId: 18030
+                revision: 1
+                datasource: Mimir
+              # OpenTelemetry + Tempo traces
+              otel-tempo:
+                gnetId: 23242
+                revision: 1
+                datasource: Tempo
+
+            # ── Infrastructure ────────────────────────────────────────────
+            infrastructure:
+              # Traefik v2/v3 — modern dashboard with request rates, errors, latency
+              traefik:
+                gnetId: 17931
+                revision: 12
+                datasource: Mimir
+              # CloudNativePG — official CNPG dashboard
+              cnpg:
+                gnetId: 20417
+                revision: 3
+                datasource: Mimir
+              # Redis — monitors the externally-managed redis-ha (home-os)
+              redis:
+                gnetId: 19157
+                revision: 3
+                datasource: Mimir
+              # cert-manager — certificate expiry and renewal tracking
+              cert-manager:
+                gnetId: 20340
+                revision: 1
+                datasource: Mimir
+              # External Secrets Operator
+              external-secrets:
+                gnetId: 21640
+                revision: 1
+                datasource: Mimir
+              # Envoy Gateway overview
+              envoy-gateway:
+                gnetId: 24460
+                revision: 1
+                datasource: Mimir
+              # Envoy proxy per-listener metrics
+              envoy-proxy:
+                gnetId: 24459
+                revision: 1
+                datasource: Mimir
+
+            # ── GitOps ────────────────────────────────────────────────────
+            gitops:
+              # ArgoCD operational overview — replaces gnetId 14584
+              argocd-operational:
+                gnetId: 19993
+                revision: 3
+                datasource: Mimir
+              # ArgoCD application-level detail
+              argocd-applications:
+                gnetId: 19974
+                revision: 3
+                datasource: Mimir
+
+          persistence:
+            enabled:      true
+            size:         2Gi
+
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+
+          livenessProbe:
+            path: /api/health
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+            failureThreshold: 10
+          readinessProbe:
+            path: /api/health
+            initialDelaySeconds: 15
+            timeoutSeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+          ingress:
+            enabled:          true
+            ingressClassName: traefik
+            # TLS Secret (grafana.ai.camer.digital-tls) is provisioned by the
+            # umbrella's app-scoped Certificate (Source B); no auto-issue
+            # annotation here — issuer is a per-env overlay knob (ADR-0018).
+            annotations: {}
+            hosts:
+              - *grafana-domain
+            tls:
+              - secretName: grafana.ai.camer.digital-tls
+                hosts:
+                  - *grafana-domain
+
+          serviceMonitor:
+            enabled:  true
+            interval: 60s
+
+          # ── Grafana Apprise Adapter ───────────────────────────────────────
+          # Translates Grafana unified alerting webhooks into Apprise
+          # notifications. Grafana sends alerts here; this adapter forwards
+          # them to the Apprise API (apprise-api application in monitoring ns).
+          # Source: https://github.com/RealOrangeOne/grafana-apprise-adapter
+          # Env vars:
+          #   APPRISE_URL: base URL of the Apprise API service
+          #   PORT:        port to listen on (default 5000)
+          extraObjects:
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: grafana-apprise-adapter
+                namespace: observability
+                labels:
+                  app.kubernetes.io/name: grafana-apprise-adapter
+              spec:
+                replicas: 1
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/name: grafana-apprise-adapter
+                template:
+                  metadata:
+                    labels:
+                      app.kubernetes.io/name: grafana-apprise-adapter
+                  spec:
+                    containers:
+                      - name: grafana-apprise-adapter
+                        image: theorangeone/grafana-apprise-adapter:latest
+                        ports:
+                          - containerPort: 5000
+                            name: http
+                        env:
+                          - name: APPRISE_URL
+                            value: "http://apprise-api.monitoring.svc.cluster.local:8000"
+                          - name: PORT
+                            value: "5000"
+                        resources:
+                          requests:
+                            cpu: 50m
+                            memory: 32Mi
+                          limits:
+                            cpu: 200m
+                            memory: 128Mi
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 5000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 5000
+                          initialDelaySeconds: 10
+                          periodSeconds: 30
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: grafana-apprise-adapter
+                namespace: observability
+                labels:
+                  app.kubernetes.io/name: grafana-apprise-adapter
+              spec:
+                selector:
+                  app.kubernetes.io/name: grafana-apprise-adapter
+                ports:
+                  - name: http
+                    port: 5000
+                    targetPort: 5000
+                type: ClusterIP
+
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # --- Observability: dashboards / folders (grafana-operator CRs) ---
+  # Owns ONLY operator CRs (Grafana external-mode, GrafanaFolder, future
+  # GrafanaDashboard / GrafanaDatasource / GrafanaContactPoint /
+  # GrafanaAlertRuleGroup). No workloads — the actual grafana pod is owned by
+  # the `grafana` app above.
+  # Sync-wave 1: depends on grafana-operator (-1) AND the grafana app (0)
+  # being healthy. Grafana CR in external mode hits the admin API on first
+  # reconcile.
+  - name: observability-dashboards
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "1"
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: claude/magical-bohr-390242
+      path: charts/observability-dashboards
+      helm:
+        releaseName: observability-dashboards
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true

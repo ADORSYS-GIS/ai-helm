@@ -1,0 +1,17 @@
+# prod overlay: observability stack ExternalSecrets.
+# Patches secretStore=ssegning-aws onto every ExternalSecret. Keep in sync
+# with environments/prod/cluster.yaml (secretStore).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/deps/observability-secrets
+
+patches:
+  - target:
+      kind: ExternalSecret
+      name: ".*"
+    patch: |-
+      - op: replace
+        path: /spec/secretStoreRef/name
+        value: ssegning-aws

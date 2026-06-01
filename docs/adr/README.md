@@ -37,6 +37,7 @@ how thinking evolved.
 | [0017](./0017-home-remote-destination-invariant.md) | Workloads target the home-remote cluster, never in-cluster (render-time guard + `allowInCluster` escape hatch) | Accepted | 2026-05-31 | — |
 | [0018](./0018-umbrella-apps-and-env-overlays.md) | Umbrella Applications (workload + app-scoped deps via kustomize) + per-env `environments/` overlays | Proposed | 2026-05-31 | [0006](./0006-multi-source-applicationset.md) |
 | [0019](./0019-coder-app-of-apps-orchestrator.md) | Factor Coder into an App-of-Apps orchestrator (db + app as separate Applications) | Accepted | 2026-06-01 | — |
+| [0020](./0020-observability-app-of-apps-orchestrator.md) | Factor the observability stack into an App-of-Apps orchestrator (+ a secrets app) | Accepted | 2026-06-01 | — |
 
 ## Status legend
 
