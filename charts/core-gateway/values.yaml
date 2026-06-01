@@ -1,5 +1,16 @@
 gateway:
   apiHostname: dummy.example.com
+  # api-https TLS issuer (used when acmeHttp01.enabled is false). External
+  # ClusterIssuer/Issuer by name+kind (e.g. a DNS-01 ClusterIssuer).
+  issuer: self-signed-ca
+  issuerKind: ClusterIssuer
+  # In-chart ns-scoped ACME Issuer solving HTTP-01 *through this Gateway*
+  # (cert-manager gatewayHTTPRoute solver). Self-contained, no DNS token.
+  # Requires cert-manager's --enable-gateway-api flag on the controller.
+  acmeHttp01:
+    enabled: false
+    email: ""
+    server: https://acme-v02.api.letsencrypt.org/directory
 
 # ────────────────────────────────────────────────────────────────────────
 # Envoy data plane (the proxy pods that actually serve client traffic).

@@ -501,14 +501,16 @@ applications:
         valuesObject:
           gateway:
             apiHostname: api.ai-v2.camer.digital
-            # ClusterIssuer for the api-https TLS cert (templates/certificate.yaml
-            # issues it explicitly — see that file for why not the gateway-shim).
-            # `cert-cloudflare` = Let's Encrypt + Cloudflare DNS-01, which exists
-            # on the cluster and validates public domains without HTTP routing
-            # (api.<domain> points at the Envoy LB, not Traefik, so HTTP-01 can't
-            # reach). The previously-referenced `cert-home-cert-envoy` was never
-            # defined in home-os — that's why TLS never issued.
-            issuer: cert-cloudflare
+            # api-https TLS via an in-chart ns-scoped ACME Issuer that solves
+            # HTTP-01 THROUGH this Gateway (no DNS token, fully self-contained).
+            # The challenge is reachable because api.<domain> resolves to the
+            # Envoy LB whose :80 listener is up while api-https is certless.
+            # Requires cert-manager `--enable-gateway-api` (enabled in home-os).
+            acmeHttp01:
+              enabled: true
+              email: selastlambou@protonmail.com
+            # (fallback when acmeHttp01.enabled=false: external issuer by name/kind,
+            #  e.g. issuer: cert-cloudflare / issuerKind: ClusterIssuer for DNS-01.)
     destination:
       namespace: converse-gateway
 
