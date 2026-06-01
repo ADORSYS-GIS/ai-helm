@@ -1,3 +1,19 @@
+# ExternalSecret that materialises `librechat-s3-config` (LibreChat S3 file
+# storage). Same Hetzner Object Storage as Keycloak/observability — shared
+# bucket `ssegning-k8s-state` (LibreChat namespaces its own keys: images/,
+# files/…), creds from the SAME ssegning-aws material. region + bucket are plain
+# config (templated into the secret); only the access/secret keys are fetched.
+s3ExternalSecret:
+  enabled: true
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  region: us-east-1
+  bucket: ssegning-k8s-state
+  remoteRef:
+    key: prod/meta/test-app
+    accessKeyIdProperty: s3_backup_cnpg_client_id
+    secretAccessKeyProperty: s3_backup_cnpg_secret
+
 global:
   librechat:
     version: "v0.8.5"
@@ -275,7 +291,9 @@ librechat:
               secretKeyRef:
                 name: librechat-s3-config
                 key: s3_bucket_name
-            AWS_ENDPOINT_URL: "https://s3.camer.digital"
+            # Hetzner Object Storage (nbg1) — the shared `ssegning-k8s-state`
+            # bucket (see s3ExternalSecret below). Path-style for Ceph-RGW.
+            AWS_ENDPOINT_URL: "https://nbg1.your-objectstorage.com"
             AWS_FORCE_PATH_STYLE: "true"
 
           resources:
