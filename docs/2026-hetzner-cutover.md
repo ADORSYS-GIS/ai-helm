@@ -233,3 +233,39 @@ CiliumNetworkPolicy granting the store components egress to S3 — `toFQDNs`
 `s3.ssegning.me` :443 (+ DNS), per component (mimir/loki/tempo). Grafana itself
 also has no workload pod yet (its child app needs attention). Tracked for a
 dedicated egress pass.
+
+## 2026-06-02 (later) — S3 → Hetzner Object Storage + api-https TLS
+
+### Observability stores moved to Hetzner Object Storage ✅
+The S3-egress blocker above is resolved by moving off the personal S3 onto
+Hetzner Object Storage (same pattern as Keycloak's CNPG backups):
+- endpoint `s3.ssegning.me` → `nbg1.your-objectstorage.com`; bucket `monitoring`
+  → `ssegning-k8s-state` (shared with Keycloak; folders: `mimir*` prefixes,
+  `tempo/`, loki at root, keycloak `keycloak-cnpg-backups/`).
+- Creds: mimir-s3 / loki-s3 / tempo-s3 ExternalSecrets reuse Keycloak's exact
+  ssegning-aws material (`prod/meta/test-app` → `s3_backup_cnpg_client_id` /
+  `s3_backup_cnpg_secret`); observability-secrets child ENABLED.
+- Egress: CiliumNetworkPolicy `observability-stores-allow-s3-egress` (toFQDNs
+  `*.your-objectstorage.com` + DNS L7) — the stores are `world`-egress under the
+  deny-egress baseline, same family as the API-server fixes.
+- ⚠️ Gotcha fixed: mimir `storage_prefix` allows ONLY `[0-9A-Za-z]` (no `/`), so
+  folders are `mimirblocks` / `mimiralertmanager` / `mimirruler`, not `mimir/…`.
+- ⚠️ Rollout note: mimir's ArgoCD sync deadlocked (health-gated, StatefulSets
+  crashlooping on old config) — broke it by terminating the op + a
+  ServerSideApply sync, then force-deleting the pods.
+- **Verified live:** tempo 1/1 (`blocklist poll complete`), loki-0 2/2, mimir
+  converging (7/11→), all reaching Hetzner — no more `i/o timeout`.
+
+### api-https TLS (api.ai-v2.camer.digital) — repo done, blocked on one secret
+- Replaced the never-defined `cert-home-cert-envoy` with an explicit cert-manager
+  Certificate (charts/core-gateway/templates/certificate.yaml) issued by
+  **`cert-cloudflare`** (Let's Encrypt + Cloudflare **DNS-01** — required because
+  api.<domain> resolves to the Envoy LB, not Traefik, so HTTP-01 can't reach).
+  Dropped the gateway-shim annotation. DNS A record now points at the LB.
+- **OPEN (external/home-os):** the DNS-01 challenge is `pending` —
+  `error getting cloudflare secret: secrets "cloudflare-secret" not found`. The
+  `cert-cloudflare` issuer's Cloudflare **API token** secret (`cloudflare-secret`,
+  key `api-token`) is missing in cert-manager's cluster-resource-namespace
+  (**kube-system** — where the issuer's account-key secret `cert-cloudflare`
+  lives). Create it there with a Cloudflare API token scoped to the camer.digital
+  zone; the already-pending Certificate then issues automatically.
