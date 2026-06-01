@@ -41,8 +41,16 @@ spec:
                 matchLabels:
                   gateway.envoyproxy.io/owning-gateway-name: {{ include "core-gateway.fullname" . }}
         {{- end }}
+      # Data-plane LoadBalancer Service. `type` defaults to LoadBalancer;
+      # `annotations` are cluster-specific (e.g. Hetzner Cloud LB: private IP
+      # + health checks) and fully configurable via values — empty by default
+      # so non-Hetzner clusters get a plain LB. See envoyProxy.service.
       envoyService:
-        type: LoadBalancer
+        type: {{ (default dict $ep.service).type | default "LoadBalancer" | quote }}
+        {{- with (default dict $ep.service).annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
   shutdown:
     drainTimeout: {{ (default dict $ep.shutdown).drainTimeout | default "60s" }}
     minDrainDuration: {{ (default dict $ep.shutdown).minDrainDuration | default "15s" }}
