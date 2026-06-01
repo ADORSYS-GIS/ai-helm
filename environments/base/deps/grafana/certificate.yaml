@@ -1,15 +1,15 @@
 # App-scoped dependency: ingress TLS Certificate for Grafana.
 # Issuer is patched per env (environments/<env>/deps/grafana). cert-manager
-# writes the `grafana.ai.camer.digital-tls` Secret the chart Ingress references.
+# writes the `grafana.ai-v2.camer.digital-tls` Secret the chart Ingress references.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: grafana-tls
   namespace: observability
 spec:
-  secretName: grafana.ai.camer.digital-tls
+  secretName: grafana.ai-v2.camer.digital-tls
   issuerRef:
     name: PLACEHOLDER_ISSUER # ← patched per env (cluster.yaml: clusterIssuer)
     kind: ClusterIssuer
   dnsNames:
-    - grafana.ai.camer.digital # ← patched per env (cluster.yaml: domainBase)
+    - grafana.ai-v2.camer.digital # ← patched per env (cluster.yaml: domainBase)

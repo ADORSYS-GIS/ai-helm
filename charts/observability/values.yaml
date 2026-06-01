@@ -9,7 +9,7 @@ global:
     region: &s3-region us-east-1
     bucket: &s3-bucket monitoring
   domains:
-    grafana: &grafana-domain grafana.ai.camer.digital
+    grafana: &grafana-domain grafana.ai-v2.camer.digital
 
 # ── Shared ArgoCD wiring for the child Applications ──────────────────────────
 argocd:
@@ -622,7 +622,7 @@ children:
 
               alertmanager:
                 enable_api: true
-                external_url: https://grafana.ai.camer.digital/alerting
+                external_url: https://grafana.ai-v2.camer.digital/alerting
 
               limits:
                 # ── Retention ──────────────────────────────────────────────
@@ -1139,7 +1139,7 @@ children:
   #   grafana-keycloak:
   #     client-secret: <keycloak-client-secret-for-grafana-realm-client>
   # Keycloak client to create: "grafana" in the camer-digital realm,
-  #   redirect URI: https://grafana.ai.camer.digital/login/generic_oauth
+  #   redirect URI: https://grafana.ai-v2.camer.digital/login/generic_oauth
   # ─────────────────────────────────────────────────────────────────────────────
   - name: grafana
     finalizers:
@@ -1167,8 +1167,8 @@ children:
 
           grafana.ini:
             server:
-              domain:   grafana.ai.camer.digital
-              root_url: https://grafana.ai.camer.digital
+              domain:   grafana.ai-v2.camer.digital
+              root_url: https://grafana.ai-v2.camer.digital
 
             auth.generic_oauth:
               enabled:              true
@@ -1554,14 +1554,14 @@ children:
           ingress:
             enabled:          true
             ingressClassName: traefik
-            # TLS Secret (grafana.ai.camer.digital-tls) is provisioned by the
+            # TLS Secret (grafana.ai-v2.camer.digital-tls) is provisioned by the
             # umbrella's app-scoped Certificate (Source B); no auto-issue
             # annotation here — issuer is a per-env overlay knob (ADR-0018).
             annotations: {}
             hosts:
               - *grafana-domain
             tls:
-              - secretName: grafana.ai.camer.digital-tls
+              - secretName: grafana.ai-v2.camer.digital-tls
                 hosts:
                   - *grafana-domain
 

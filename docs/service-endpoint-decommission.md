@@ -1,20 +1,20 @@
-# `services.api.ai.camer.digital` Endpoint Decommission
+# `services.api.ai-v2.camer.digital` Endpoint Decommission
 
 ## Summary
 
-The internal `services.api.ai.camer.digital` endpoint has been decommissioned. Internal services (LibreChat) now communicate with the AI Gateway via HTTP directly through the Envoy proxy's Kubernetes service DNS.
+The internal `services.api.ai-v2.camer.digital` endpoint has been decommissioned. Internal services (LibreChat) now communicate with the AI Gateway via HTTP directly through the Envoy proxy's Kubernetes service DNS.
 
 ## Rationale
 
-LibreChat runs inside the cluster but was routing traffic through an external-facing HTTPS endpoint (`services.api.ai.camer.digital` → DNS → LoadBalancer → back into the cluster). This was an unnecessary round-trip. Internal cluster traffic should use `.svc.` DNS.
+LibreChat runs inside the cluster but was routing traffic through an external-facing HTTPS endpoint (`services.api.ai-v2.camer.digital` → DNS → LoadBalancer → back into the cluster). This was an unnecessary round-trip. Internal cluster traffic should use `.svc.` DNS.
 
 ## Changes
 
 | Component | Before | After |
 |-----------|--------|-------|
-| LibreChat RAG API URL | `https://services.api.ai.camer.digital/v1` | `http://envoy-...svc.cluster.local/v1` |
-| LibreChat Converse URL | `https://services.api.ai.camer.digital/v1` | `http://envoy-...svc.cluster.local/v1` |
-| Gateway `service-https` listener | Present (hostname: `services.api.ai.camer.digital`) | Removed |
+| LibreChat RAG API URL | `https://services.api.ai-v2.camer.digital/v1` | `http://envoy-...svc.cluster.local/v1` |
+| LibreChat Converse URL | `https://services.api.ai-v2.camer.digital/v1` | `http://envoy-...svc.cluster.local/v1` |
+| Gateway `service-https` listener | Present (hostname: `services.api.ai-v2.camer.digital`) | Removed |
 | Gateway `http` listener | `allowedRoutes.from: Same` | `allowedRoutes.from: All` |
 | HTTP-to-HTTPS redirect route | Present | Removed |
 | `services` AuthConfig (API key auth) | Present | Removed |
@@ -52,7 +52,7 @@ kubectl get gateway -n converse-gateway core-gateway \
 # Expected: http api-https
 
 # Old endpoint fails
-curl -k https://services.api.ai.camer.digital/v1
+curl -k https://services.api.ai-v2.camer.digital/v1
 # Expected: DNS failure or connection refused
 
 # New internal route works (from within cluster)
@@ -60,18 +60,18 @@ curl http://envoy-converse-gateway-core-gateway-c480b207.envoy-gateway-system.sv
 # Expected: 200 or 404 (not 301 redirect)
 
 # Public endpoint still works
-curl https://api.ai.camer.digital/v1
+curl https://api.ai-v2.camer.digital/v1
 # Expected: 200
 ```
 
 ### 4. Cleanup (after deployment confirmed)
 
-- Remove `services.api.ai.camer.digital` DNS record
+- Remove `services.api.ai-v2.camer.digital` DNS record
 - Confirm `core-gateway-service-tls` certificate is auto-deleted (cert-manager prunes it when the listener is removed)
 
 ## Rollback
 
 To revert, restore the old values and sync ArgoCD in reverse order:
-1. Sync `librechat` with old `services.api.ai.camer.digital` URLs
+1. Sync `librechat` with old `services.api.ai-v2.camer.digital` URLs
 2. Restore `service-https` listener, `http-to-https-route.yaml`, and `serviceApiHostname` in core-gateway
 3. Restore `services` AuthConfig and `service-https` SecurityPolicy target in security-policies

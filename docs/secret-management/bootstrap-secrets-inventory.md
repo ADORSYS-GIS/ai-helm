@@ -163,7 +163,7 @@ metadata:
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: argocd
-    platform.ai.camer.digital/type: bootstrap
+    platform.ai-v2.camer.digital/type: bootstrap
 type: Opaque
 stringData:
   # SSH private key for Git repository access (preferred)
@@ -194,7 +194,7 @@ metadata:
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: argocd
-    platform.ai.camer.digital/type: bootstrap
+    platform.ai-v2.camer.digital/type: bootstrap
 type: Opaque
 stringData:
   secret: <random-webhook-secret>
@@ -219,7 +219,7 @@ metadata:
   namespace: converse
   labels:
     app.kubernetes.io/component: authorization
-    platform.ai.camer.digital/type: bootstrap
+    platform.ai-v2.camer.digital/type: bootstrap
 type: Opaque
 stringData:
   credentials: <base64-encoded-basic-auth>
@@ -245,7 +245,7 @@ metadata:
   namespace: converse-gateway
   labels:
     app.kubernetes.io/component: authorization
-    platform.ai.camer.digital/type: bootstrap
+    platform.ai-v2.camer.digital/type: bootstrap
 type: Opaque
 data:
   ca.crt: <base64-encoded-ca-certificate>
@@ -276,8 +276,8 @@ metadata:
   namespace: converse
   labels:
     app.kubernetes.io/component: ai-models
-    platform.ai.camer.digital/type: bootstrap
-    ai.camer.digital/provider: openai
+    platform.ai-v2.camer.digital/type: bootstrap
+    ai-v2.camer.digital/provider: openai
 type: Opaque
 stringData:
   apiKey: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -300,8 +300,8 @@ metadata:
   namespace: converse
   labels:
     app.kubernetes.io/component: ai-models
-    platform.ai.camer.digital/type: bootstrap
-    ai.camer.digital/provider: gemini
+    platform.ai-v2.camer.digital/type: bootstrap
+    ai-v2.camer.digital/provider: gemini
 type: Opaque
 stringData:
   apiKey: AIzaxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -324,8 +324,8 @@ metadata:
   namespace: converse
   labels:
     app.kubernetes.io/component: ai-models
-    platform.ai.camer.digital/type: bootstrap
-    ai.camer.digital/provider: fireworks
+    platform.ai-v2.camer.digital/type: bootstrap
+    ai-v2.camer.digital/provider: fireworks
 type: Opaque
 stringData:
   apiKey: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -350,7 +350,7 @@ metadata:
   namespace: librechat
   labels:
     app.kubernetes.io/component: database
-    platform.ai.camer.digital/type: bootstrap
+    platform.ai-v2.camer.digital/type: bootstrap
 type: Opaque
 stringData:
   MONGO_URI: mongodb://username:password@mongodb:27017/librechat?authSource=admin
@@ -373,7 +373,7 @@ metadata:
   namespace: coder
   labels:
     app.kubernetes.io/component: database
-    platform.ai.camer.digital/type: bootstrap
+    platform.ai-v2.camer.digital/type: bootstrap
 type: Opaque
 stringData:
   username: coder
@@ -402,7 +402,7 @@ metadata:
   namespace: backup
   labels:
     app.kubernetes.io/component: backup
-    platform.ai.camer.digital/type: bootstrap
+    platform.ai-v2.camer.digital/type: bootstrap
 type: Opaque
 stringData:
   AWS_ACCESS_KEY_ID: AKIAIOSFODNN7EXAMPLE
@@ -490,7 +490,7 @@ echo "Bootstrap secrets created successfully!"
 
 ```bash
 # List all bootstrap secrets
-kubectl get secrets -A -l platform.ai.camer.digital/type=bootstrap
+kubectl get secrets -A -l platform.ai-v2.camer.digital/type=bootstrap
 
 # Verify secret content (be careful with sensitive data)
 kubectl get secret openai-api-key -n converse -o jsonpath='{.data.apiKey}' | base64 -d
@@ -588,7 +588,7 @@ spec:
 - [ ] All bootstrap secrets use strong, unique values
 - [ ] Secrets are created in correct namespaces
 - [ ] RBAC permissions are properly configured
-- [ ] Secrets are labeled with `platform.ai.camer.digital/type: bootstrap`
+- [ ] Secrets are labeled with `platform.ai-v2.camer.digital/type: bootstrap`
 - [ ] Sensitive values are not logged or exposed
 - [ ] Access to secrets is audited
 - [ ] Secret rotation procedure is documented

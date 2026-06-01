@@ -1,7 +1,7 @@
 # `ai-models-info` — leaf
 
 Tiny nginx + ConfigMap + HTTPRoute serving an OpenRouter-shape JSON
-catalog at `https://api.ai.camer.digital/v1/models/info`. Consumed by
+catalog at `https://api.ai-v2.camer.digital/v1/models/info`. Consumed by
 opencode's `@vymalo/opencode-models-info` plugin (ADR-0015).
 
 **ADR:** [`0015`](../../docs/adr/0015-models-info-catalog-endpoint.md)
@@ -24,7 +24,7 @@ static string data.
   come in via the `persistence:` block.
 - `Service` (app-template) — ClusterIP, port 80 → 8080
 - `HTTPRoute` (app-template's `route:` block) — attached to
-  `core-gateway` (`api.ai.camer.digital`, exact match
+  `core-gateway` (`api.ai-v2.camer.digital`, exact match
   `/v1/models/info`). **NOT an Ingress** — the API host is on Envoy AI
   Gateway, so the right attach is `HTTPRoute`.
 - Two `ConfigMap`s (this chart's `templates/configmap.yaml`):
@@ -100,7 +100,7 @@ sub-chart alias (bjw-s app-template's standard schema).
 | `models-info.controllers.main.containers.nginx.image.{repository, tag, pullPolicy}` | nginx image pin |
 | `models-info.controllers.main.replicas` | Defaults to 2 |
 | `models-info.controllers.main.containers.nginx.resources` | requests/limits |
-| `models-info.route.main.{hostnames, parentRefs, rules}` | bjw-s `route.<name>` shape. Defaults to `core-gateway` `api-https` listener, host `api.ai.camer.digital`, exact path `/v1/models/info`. |
+| `models-info.route.main.{hostnames, parentRefs, rules}` | bjw-s `route.<name>` shape. Defaults to `core-gateway` `api-https` listener, host `api.ai-v2.camer.digital`, exact path `/v1/models/info`. |
 
 ## How it slots into opencode
 
@@ -114,7 +114,7 @@ declares:
   "provider": {
     "camer-digital": {
       "options": {
-        "baseURL": "https://api.ai.camer.digital/v1",
+        "baseURL": "https://api.ai-v2.camer.digital/v1",
         "oauth2": { /* … */ },
         "meta": {
           "modelsInfoUrl": "models/info"      // → /v1/models/info
@@ -128,7 +128,7 @@ declares:
 opencode auto-installs both plugins (`bun install` at startup, cached).
 The models-info plugin fetches the catalog, merges fields onto the
 already-registered models, caches 24h on disk. End-user flow stays
-`opencode auth login https://ai.camer.digital/opencode` and nothing
+`opencode auth login https://ai-v2.camer.digital/opencode` and nothing
 else.
 
 ## Verifying
@@ -152,7 +152,7 @@ Once deployed:
 ```bash
 TOKEN=$(opencode-auth-token-helper)   # see opencode-well-known.md
 curl -fsSL -H "Authorization: Bearer $TOKEN" \
-  https://api.ai.camer.digital/v1/models/info | jq '.data | length'
+  https://api.ai-v2.camer.digital/v1/models/info | jq '.data | length'
 ```
 
 ## See also

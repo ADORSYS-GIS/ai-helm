@@ -19,7 +19,7 @@ Here is how you can pass the relevant user information down to downstream endpoi
       title: "LightBridge API KEYs"
       description: "LightBridge Self Service API-KEYs"
       type: "streamable-http"
-      url: "https://mcp.ai.camer.digital/mcp"
+      url: "https://mcp.ai-v2.camer.digital/mcp"
       headers:
         X-ACCOUNT-ID: 'LIBRECHAT'
         # These variables are substituted by LibreChat using its internal user record
