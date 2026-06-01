@@ -1,0 +1,17 @@
+# prod overlay: app-scoped deps for the security-policies (Authorino) umbrella.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/deps/security-policies
+
+patches:
+  # internal-CA issuer (same root that signs lightbridge-opa's authz-tls) — its
+  # ca.crt is what Authorino trusts to reach the OPA metadata endpoint.
+  - target:
+      kind: Certificate
+      name: authorino-lightbridge-ca
+    patch: |-
+      - op: replace
+        path: /spec/issuerRef/name
+        value: self-signed-ca

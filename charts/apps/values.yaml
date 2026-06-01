@@ -518,6 +518,10 @@ applications:
   - name: security-policies
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Umbrella (ADR-0018): app-scoped dep — the `authz-tls` CA secret the
+    # Authorino instance mounts (ca.crt) to trust the TLS lightbridge-opa
+    # metadata endpoint. Folded in as a second (kustomize) source.
+    depsOverlay: environments/prod/deps/security-policies
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: claude/magical-bohr-390242
