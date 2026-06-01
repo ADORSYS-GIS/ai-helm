@@ -256,16 +256,28 @@ Hetzner Object Storage (same pattern as Keycloak's CNPG backups):
 - **Verified live:** tempo 1/1 (`blocklist poll complete`), loki-0 2/2, mimir
   converging (7/11→), all reaching Hetzner — no more `i/o timeout`.
 
-### api-https TLS (api.ai-v2.camer.digital) — repo done, blocked on one secret
-- Replaced the never-defined `cert-home-cert-envoy` with an explicit cert-manager
-  Certificate (charts/core-gateway/templates/certificate.yaml) issued by
-  **`cert-cloudflare`** (Let's Encrypt + Cloudflare **DNS-01** — required because
-  api.<domain> resolves to the Envoy LB, not Traefik, so HTTP-01 can't reach).
-  Dropped the gateway-shim annotation. DNS A record now points at the LB.
-- **OPEN (external/home-os):** the DNS-01 challenge is `pending` —
-  `error getting cloudflare secret: secrets "cloudflare-secret" not found`. The
-  `cert-cloudflare` issuer's Cloudflare **API token** secret (`cloudflare-secret`,
-  key `api-token`) is missing in cert-manager's cluster-resource-namespace
-  (**kube-system** — where the issuer's account-key secret `cert-cloudflare`
-  lives). Create it there with a Cloudflare API token scoped to the camer.digital
-  zone; the already-pending Certificate then issues automatically.
+### api-https TLS (api.ai-v2.camer.digital) — ✅ ISSUED (HTTP-01 through the Gateway)
+Final approach (no DNS token needed): a **namespace-scoped ACME `Issuer`** in
+`converse-gateway` (`core-gateway-acme`, charts/core-gateway/templates/acme-issuer.yaml)
+with an **HTTP-01 `gatewayHTTPRoute` solver** whose parentRef is the core-gateway.
+cert-manager attaches a temporary solver HTTPRoute to the Gateway; Let's Encrypt
+validates over the LB's `:80` listener (up even while api-https was certless).
+The Certificate references this ns Issuer when `gateway.acmeHttp01.enabled` (set
+in charts/apps), else falls back to an external issuer (`gateway.issuer` /
+`issuerKind`). DNS A record `api.ai-v2.camer.digital` → the LB (46.225.38.138).
+
+Two-repo change:
+- **ai-helm:** acme-issuer.yaml + certificate.yaml issuerRef switch + values
+  (`gateway.acmeHttp01.enabled/email`). The earlier DNS-01/cert-cloudflare wiring
+  is retained as the fallback path.
+- **home-os (`charts/cert`):** enabled cert-manager's Gateway-API integration
+  (`config.enableGatewayAPI: true`) — required for the gatewayHTTPRoute solver
+  (and it turns on the gateway-shim platform-wide). cert-manager redeployed with
+  `--config`.
+
+**Verified live:** ns Issuer READY, Certificate READY (real Let's Encrypt cert,
+`CN=api.ai-v2.camer.digital`, valid 2026-06-01→08-30), Gateway listeners
+`http` + `api-https` both Programmed, LB now serves `80` + `443`. The orphaned
+DNS-01 challenge from the cert-cloudflare attempt was cleaned up. (Providing
+`cloudflare-secret` in kube-system is no longer required for this endpoint;
+cert-cloudflare/DNS-01 remains an option for wildcards.)
