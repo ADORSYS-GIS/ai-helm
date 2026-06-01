@@ -62,8 +62,15 @@ envoyProxy:
       load-balancer.hetzner.cloud/name: "core-gateway"
       # Region the LB is created in (match the cluster's location).
       load-balancer.hetzner.cloud/location: "nbg1"
-      # Route LB→node traffic over the private network (the ask).
-      load-balancer.hetzner.cloud/use-private-ip: "false"
+      # Route LB→node traffic over the private network (the ask), AND add LB
+      # targets by their private IP rather than by hcloud server reference.
+      # MUST be "true": one control-plane node (cp-1) has a stale providerID
+      # (hcloud://127562844 — server recreated), so server-reference targeting
+      # fails the whole LB sync with `cloud target was not found (invalid_input)`.
+      # IP targeting sidesteps the dead server ID. The working `traefik` LB on
+      # this cluster uses exactly this (use-private-ip: true + Cluster policy);
+      # a prior "false" here (linter regression) is what kept the LB unassigned.
+      load-balancer.hetzner.cloud/use-private-ip: "true"
       load-balancer.hetzner.cloud/health-check-interval: "10s"
       load-balancer.hetzner.cloud/health-check-timeout: "5s"
       load-balancer.hetzner.cloud/health-check-retries: "3"

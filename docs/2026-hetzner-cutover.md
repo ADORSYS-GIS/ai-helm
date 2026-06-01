@@ -76,18 +76,34 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
 - **Domain** — certs/SANs render `ai-v2.camer.digital`.
 
 ### ❌ / ⚠️ Not resolved — needs follow-up
-- **core-gateway Hetzner LB — STILL FAILING.** The
-  `externalTrafficPolicy: Cluster` change did **not** fix it; the error
-  persists regardless of policy:
-  `ReconcileHCLBTargets: target ssegning-hetzner-k3s-cp-1: failed to resolve
-  cloud private targets`. The working `traefik` LB (same annotations, same
-  `nbg1`, also `Cluster`) provisions fine, so the difference is **node `cp-1`**
-  (oldest server, `hcloud://127562844`) — its private target can't be resolved
-  for the **new** LB. Almost certainly a Hetzner-network attachment issue for
-  that node / the new LB, needing Hetzner-console insight (is the new LB
-  attached to `HCLOUD_NETWORK`? is `cp-1` in it?). **Open — not a chart fix.**
-  Options: add `load-balancer.hetzner.cloud/network: <name>`, fix `cp-1`'s
-  network membership, or keep the LB off `cp-1`.
+- **core-gateway Hetzner LB — ✅ ROOT-CAUSED & FIXED in-repo this session.**
+  The blocker was `use-private-ip: "false"` on the EnvoyProxy's `envoyService`
+  annotations (a linter regression — the comment said "private network (the
+  ask)" but the value was flipped to false). With it false, the hcloud-ccm adds
+  LB targets **by hcloud server reference**; node **cp-1** has a stale
+  `providerID` (`hcloud://127562844` — far older than every other node's 133M-
+  range ID; the server was recreated), so the CCM hit
+  `ReconcileHCLBTargets: target cp-1: cloud target was not found (invalid_input)`
+  and the **whole** LB sync failed → `AddressNotAssigned` → at one point Envoy
+  Gateway tore down the infra (a transient "GatewayClass not found" window →
+  `DeletedLoadBalancer`), so the Service disappeared entirely.
+  **Fix:** set `use-private-ip: "true"` (matches the working `traefik` LB
+  exactly: private-IP targeting + `Cluster` policy). IP targeting never
+  dereferences cp-1's dead server ID, so the LB provisions. Lands when
+  core-gateway next syncs. **Residual (cluster-admin, out of repo):** cp-1's
+  stale providerID should still be fixed (or cp-1 cordoned/replaced) — it will
+  keep biting any server-reference operation; and control-plane nodes are
+  arguably better excluded from LB target pools
+  (`node.kubernetes.io/exclude-from-external-load-balancers`).
+- **core-gateway `api-https` listener — still invalid (home-os gap).** The
+  HTTPS listener (`api.ai-v2.camer.digital`) refs Secret
+  `converse-gateway/core-gateway-api-tls`, issued by ClusterIssuer
+  `cert-home-cert-envoy` (Gateway annotation) which **isn't defined in home-os
+  yet** → no secret → listener `InvalidCertificateRef`, controller logs the
+  error every reconcile. The HTTP listener (22 routes) is Programmed and the LB
+  fix above is independent of this. **Fix is in home-os** (define the ACME
+  Gateway-API issuer); do NOT stopgap with `self-signed-ca` — this is a public
+  endpoint and clients must trust the cert.
 - **grafana-operator — ✅ ROOT-CAUSED & FIXED this session (was a silent
   CrashLoop).** The exit-2 "silent crash" was a **NetworkPolicy egress block**,
   not anything the prior sessions suspected (version / OOM / RBAC / cache-scope
@@ -150,7 +166,11 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
 2. **`observability-secrets`** — fill the real `ssegning-aws` remoteRefs and
    flip `enabled: true` (currently disabled to avoid clobbering the live
    externally-provisioned secrets).
-3. **Hetzner LB** — resolve the `cp-1` private-target issue (above).
+3. **Hetzner LB** — chart fix done (`use-private-ip: true`). Cluster-admin
+   residual: fix cp-1's stale `providerID` (server recreated) or replace/cordon
+   it; optionally label control-plane nodes
+   `node.kubernetes.io/exclude-from-external-load-balancers`. Also define
+   `cert-home-cert-envoy` in home-os so the `api-https` listener resolves.
 4. **grafana-operator** — ✅ root-caused + fixed in-repo (egress NetworkPolicy
    via its deps overlay). Remaining: sync the observability orchestrator so the
    policy lands, then confirm the operator goes 1/1 Ready.
