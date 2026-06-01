@@ -639,9 +639,12 @@ children:
                 out_of_order_time_window: 10m
 
                 # ── Query ────────────────────────────────────────────────────
-                # Raise the query-frontend concurrency cap to prevent 429s when
-                # multiple dashboard panels fire simultaneous queries.
-                max_outstanding_requests_per_tenant: 1000
+                # NOTE: `max_outstanding_requests_per_tenant` was REMOVED here —
+                # in Mimir (mimir-distributed 5.3.0) it is no longer a `limits`
+                # field ("field ... not found in type validation.plainLimits"),
+                # which crash-looped every Mimir component on config load. If
+                # query 429s reappear, re-add it under `query_scheduler:` /
+                # `frontend:` (its new home), NOT under `limits:`.
 
               compactor:
                 # How often the compactor runs a cleanup cycle.
