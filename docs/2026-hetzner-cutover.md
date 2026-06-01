@@ -126,15 +126,22 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   pod in `observability` can reach DNS and nothing else. Data-plane pods
   (loki/mimir/node-exporter) survive because they never initiate API calls; the
   operator can't. A plain busybox pod in the namespace reproduced the timeout.
-  **Fix (in-repo, additive):** the grafana-operator child now ships an egress
-  `NetworkPolicy` (`grafana-operator-allow-egress`) via its deps overlay
-  (`environments/prod/deps/grafana-operator`) granting the operator pod egress
-  to the API server (node CIDR `10.0.0.0/24`:6443 post-DNAT + Service CIDR
-  `10.43.0.0/16`:443 pre-DNAT), intra-namespace (Grafana admin API), and DNS.
-  NetworkPolicies union, so it complements `allow-dns` without touching it. The
-  CIDRs are documented knobs in `environments/prod/cluster.yaml`
-  (`nodeCIDR`/`serviceCIDR`). Diagnosis is conclusive (debug pod reproduced the
-  exact error); the live apply needs a sync of the observability orchestrator.
+  **Fix (in-repo, additive) — two layers, because the cluster runs Cilium:**
+  the grafana-operator child ships egress policy via its deps overlay
+  (`environments/prod/deps/grafana-operator`):
+  - a portable k8s `NetworkPolicy` (intra-namespace + DNS + API-server-by-CIDR)
+    in `base/` — CIDRs are documented knobs in `cluster.yaml`
+    (`nodeCIDR`/`serviceCIDR`); and
+  - **the one that actually unblocks it: a `CiliumNetworkPolicy`** with the
+    reserved entity `toEntities: [kube-apiserver]`.
+  Why two: Cilium (v1.19, `policy-cidr-match-mode` empty) gives node IPs a
+  `remote-node`/`host` identity, so a plain `ipBlock` CIDR does **not** match
+  the API server (its endpoints live on the control-plane nodes) — the CIDR
+  policy is inert on Cilium (verified: even an operator-labelled busybox pod
+  still timed out to `10.43.0.1:443` with only the k8s NetworkPolicy applied).
+  The `kube-apiserver` entity is Cilium's supported way to allow it. Both union
+  with the `allow-dns` baseline. Lands when the observability orchestrator +
+  the grafana-operator child sync.
 
 ### ⏳ Pre-existing / unrelated (not caused by this branch)
 - **lightbridge-backend** — `CreateContainerConfigError` (missing referenced

@@ -5,6 +5,9 @@ kind: Kustomization
 
 resources:
   - ../../../base/deps/grafana-operator
+  # Cilium-specific: the API-server egress allow that actually works on this
+  # cluster (plain ipBlock can't match node-identity IPs under Cilium).
+  - ciliumnetworkpolicy.yaml
 
 patches:
   # API-server egress CIDRs (Hetzner private network + k3s Service CIDR).

@@ -14,6 +14,15 @@
 # without touching it: it grants the operator pod the egress it needs. The
 # per-cluster CIDRs are patched per env (environments/<env>/deps/grafana-operator;
 # keep in sync with environments/<env>/cluster.yaml nodeCIDR / serviceCIDR).
+#
+# ⚠️ CILIUM CAVEAT: on a Cilium cluster (prod here, v1.19) node IPs carry the
+# `remote-node`/`host` identity, and with the default `policy-cidr-match-mode`
+# a plain k8s `ipBlock` does NOT match traffic to the API server (its endpoints
+# live on the control-plane nodes). So on Cilium the API-server rule below is
+# inert and the real allow comes from the sibling CiliumNetworkPolicy
+# (environments/prod/deps/grafana-operator/ciliumnetworkpolicy.yaml, reserved
+# entity `kube-apiserver`). This portable policy still grants intra-namespace +
+# DNS on any CNI, and the API-server rule works on non-Cilium CNIs.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
