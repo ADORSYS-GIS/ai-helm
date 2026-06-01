@@ -51,6 +51,12 @@ envoyProxy:
   # if annotations is empty the key is omitted entirely (no behaviour change).
   service:
     type: LoadBalancer
+    # Required on Hetzner with use-private-ip: the hcloud-ccm can't resolve
+    # private LB targets under `Local` (resolve_cloud_private_targets_error);
+    # the working traefik LB on this cluster uses `Cluster`. Trade-off: client
+    # source IP is no longer preserved at the node hop (use X-Forwarded-For /
+    # Hetzner PROXY protocol if you need it). Override per cluster if desired.
+    externalTrafficPolicy: Cluster
     annotations:
       # Hetzner LB name (must be unique within the Hetzner project).
       load-balancer.hetzner.cloud/name: "core-gateway"
@@ -163,3 +169,12 @@ backendTrafficPolicy:
   # bodies) — meaningful bandwidth savings across thousands of laptops.
   compression:
     - Gzip
+
+# ────────────────────────────────────────────────────────────────────────
+# OpenTelemetryCollector (-traces): receives OTLP, forwards to Alloy → Tempo.
+# `mode` MUST be set (otel-operator v1beta1 webhook rejects an empty mode);
+# it is immutable on an existing collector. deployment | daemonset |
+# statefulset | sidecar.
+# ────────────────────────────────────────────────────────────────────────
+otelCollector:
+  mode: deployment

@@ -47,6 +47,13 @@ spec:
       # so non-Hetzner clusters get a plain LB. See envoyProxy.service.
       envoyService:
         type: {{ (default dict $ep.service).type | default "LoadBalancer" | quote }}
+        # externalTrafficPolicy: Envoy Gateway defaults this to `Local` (to
+        # preserve client source IP). On Hetzner with `use-private-ip`, the
+        # hcloud-ccm fails to resolve private LB targets under `Local`
+        # (resolve_cloud_private_targets_error) — the working traefik LB on
+        # this cluster uses `Cluster`. Default to Cluster here for that reason;
+        # source IP is recovered via X-Forwarded-For / PROXY protocol if needed.
+        externalTrafficPolicy: {{ (default dict $ep.service).externalTrafficPolicy | default "Cluster" | quote }}
         {{- with (default dict $ep.service).annotations }}
         annotations:
           {{- toYaml . | nindent 10 }}
