@@ -101,13 +101,14 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   generation collision (immutable Deployment selector), missing namespaces
   (`monitoring`/`converse-monitoring`), etc. — clears when the old `ai-apps`
   generation is decommissioned.
-- **apprise-api** — `ContainerCreating`, blocked mounting the **user-provided**
-  `apprise-channels` secret (notification-channel URLs) which doesn't exist.
-  Not a chart bug — the values document it as operator-created, and bjw-s
-  persistence can't mark a secret volume `optional`. Create it (one-time):
-  `kubectl create secret generic apprise-channels -n monitoring
-  --from-literal=alerts.cfg='discord://WEBHOOK_ID/WEBHOOK_TOKEN'` (or provision
-  via ExternalSecret if the channel URLs live in ssegning-aws).
+- **apprise-api** — `ContainerCreating`, blocked mounting the `apprise-channels`
+  secret (notification-channel URLs) which doesn't exist. Now wired as an
+  **ExternalSecret** via the apprise-api umbrella overlay
+  (`environments/prod/deps/apprise-api`, target key `alerts.cfg`, store
+  `ssegning-aws`) — same pattern as `redis-ha-redis-auth`. **Fill the
+  placeholder ssegning-aws remoteRef** (store the Apprise URL[s] there); ESO
+  then creates the secret and the pod starts. bjw-s persistence can't mark the
+  volume `optional`, so the secret must exist.
 
 ## Outstanding manual / external steps
 1. **Old `ai-*` generation** — decommission the previous root (`ai-apps` +
@@ -122,6 +123,7 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
    cluster; confirm Keycloak OIDC clients accept the new redirect URIs.
 6. **`lightbridge-opa-auth`** — confirm the basic-auth secret exists in
    `converse-gateway` (Authorino's OPA metadata call needs it).
-7. **`apprise-channels`** — create the notification-channels secret in
-   `monitoring` (user content; command above) to unblock apprise-api.
+7. **`apprise-channels`** — fill the placeholder ssegning-aws remoteRef in
+   `environments/base/deps/apprise-api/external-secret.yaml` (store the Apprise
+   channel URL[s] there); ESO then materialises it and apprise-api starts.
 7. On settle: move every self-referencing `targetRevision` to a release tag.

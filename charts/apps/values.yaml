@@ -119,6 +119,10 @@ applications:
   - name: apprise-api
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Umbrella (ADR-0018): app-scoped dep — the `apprise-channels` ExternalSecret
+    # (notification-channel URLs) the Deployment mounts at /apprise-config.
+    # Folded in as a second (kustomize) source. Fill the ssegning-aws remoteRef.
+    depsOverlay: environments/prod/deps/apprise-api
     source:
       repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
       targetRevision: HEAD
