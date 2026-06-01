@@ -34,6 +34,7 @@ How the system is wired and how to integrate against it.
 | [`opencode-well-known.md`](./opencode-well-known.md) | opencode `.well-known/opencode` flow at `ai-v2.camer.digital`; prerequisites, plugin install, troubleshooting |
 | [`architecture.md`](./architecture.md) | System-level map: ArgoCD topology, sync waves, auth flow, observability pipeline, glossary |
 | [`2026-currency-audit.md`](./2026-currency-audit.md) | Helm chart + Kubernetes API + tooling currency audit, mid-2026 |
+| [`2026-hetzner-cutover.md`](./2026-hetzner-cutover.md) | Hetzner cutover change-log (ADR-0018/19/20, domain switch, per-cluster knobs) + live fix-verification status + open items |
 | [`python-dashboard-generation.md`](./python-dashboard-generation.md) | How dashboards are generated from Python (grafana-foundation-sdk), the drift check, layouts |
 
 ## Architecture Decision Records
