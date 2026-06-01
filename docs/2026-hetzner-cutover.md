@@ -88,31 +88,30 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   attached to `HCLOUD_NETWORK`? is `cp-1` in it?). **Open — not a chart fix.**
   Options: add `load-balancer.hetzner.cloud/network: <name>`, fix `cp-1`'s
   network membership, or keep the LB off `cp-1`.
-- **grafana-operator — CrashLoopBackOff (SYMPTOM of broken `metrics.k8s.io`).**
-  Killed at *exactly* 30s by its (initialDelaySeconds:0) liveness probe before
-  `:8081` opens. Ruled out: version (v5.18.0 identical), OOM (exit 2≠137), RBAC,
-  cache scope/resources (namespaceScope:true + 1 CPU did NOT help — reverted).
-  **Real cause:** the `v1beta1.metrics.k8s.io` APIService is `MissingEndpoints`,
-  so controller-runtime's startup API discovery (RESTMapper build) hangs ~30s on
-  the dead aggregated API → the operator never reaches its health server. It
-  recovers on its own once `metrics.k8s.io` is Available. **Fix = fix
-  metrics-server (next item)** — no grafana-operator change needed.
+- **grafana-operator — CrashLoopBackOff (UNDIAGNOSED silent crash).** Exits 2
+  after ~20–30s logging only its two setup lines (`GOMEMLIMIT`, `label
+  restrictions for cached resources are active`) then nothing — no error on
+  stdout/stderr. Ruled out by testing on the cluster: version (v5.18.0
+  identical), OOM (exit 2≠137), RBAC (SA+CRB present), cache scope/resources
+  (namespaceScope:true + 1 CPU didn't help — reverted), AND broken discovery
+  (fixed `metrics.k8s.io` + confirmed ALL APIServices Available — still crashes).
+  Needs the operator's real error via `--zap-log-level=debug`, which requires
+  the chart's logging value (the OCI chart isn't readable from the work
+  machine — ghcr 403) or a live debug edit. **Non-critical:** grafana itself +
+  its file-provider dashboards work without the operator; only dashboards-as-
+  code CRs (observability-dashboards) don't reconcile. Decision pending.
 
 ### ⏳ Pre-existing / unrelated (not caused by this branch)
 - **lightbridge-backend** — `CreateContainerConfigError` (missing referenced
   secrets); predates this work.
-- **metrics-server — old/new collision, now a BLOCKER (breaks `metrics.k8s.io`).**
-  Both `ai-metrics-server` (old, Synced) and `aii-metrics-server` (new,
-  OutOfSync) manage metrics-server in `kube-system` with **different selectors**
-  (old `k8s-app=metrics-server`, new `app.kubernetes.io/*`). The Deployment
-  selector is immutable → the cutover is stuck: the Service (new selector) no
-  longer matches the running pod (old labels) → **Endpoints `<none>`** →
-  `metrics.k8s.io` unavailable → **discovery hangs → grafana-operator (and any
-  controller-runtime operator) CrashLoopBackOff**. Fix: remove the old
-  `ai-metrics-server` Application + delete the stuck `metrics-server` Deployment
-  so `aii-metrics-server` recreates it cleanly (matching selector → endpoints →
-  `metrics.k8s.io` Available). This is the highest-priority part of the old-gen
-  decommission (step 1) — it has cluster-wide blast radius.
+- **metrics-server — ✅ RESOLVED this session.** Was an `ai-metrics-server` ↔
+  `aii-metrics-server` collision (immutable selector: old `k8s-app=*` pod vs new
+  `app.kubernetes.io/*` Service → `Endpoints <none>` → `metrics.k8s.io`
+  unavailable). Fixed by: deleting the old `ai-metrics-server` Application +
+  the stuck `metrics-server` Deployment, then force-syncing `aii-metrics-server`
+  (`apply.force`) to recreate it. Now: pod 2/2, endpoints populated,
+  `metrics.k8s.io` **Available**, `kubectl top` works. (Note: this did NOT fix
+  grafana-operator — see above — so it was a real but separate bug.)
 - **secrets / mcps** — `OutOfSync` (missing namespaces `monitoring`/
   `converse-monitoring`, old-gen residue) — clears with the old-gen decommission.
 - **apprise-api** — `ContainerCreating`, blocked mounting the `apprise-channels`
@@ -125,13 +124,10 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   volume `optional`, so the secret must exist.
 
 ## Outstanding manual / external steps
-1. **Old `ai-*` generation — decommission (HIGH PRIORITY).** The `ai-metrics-server`
-   ↔ `aii-metrics-server` collision breaks `metrics.k8s.io` cluster-wide, which
-   cascades into grafana-operator (and any operator doing startup discovery).
-   Concretely: delete the old `ai-metrics-server` Application, then delete the
-   stuck `metrics-server` Deployment in `kube-system` so `aii-metrics-server`
-   recreates it with a matching selector → endpoints → `metrics.k8s.io`
-   Available. Then retire the rest of the old `ai-apps` root + `ai-*` children.
+1. **Old `ai-*` generation — decommission.** `ai-metrics-server` already done
+   (see above). Retire the rest of the old `ai-apps` root + remaining `ai-*`
+   children once their `aii-*` counterparts are green, to clear the duplicate
+   management (each old↔new pair can collide the same way metrics-server did).
 2. **`observability-secrets`** — fill the real `ssegning-aws` remoteRefs and
    flip `enabled: true` (currently disabled to avoid clobbering the live
    externally-provisioned secrets).
