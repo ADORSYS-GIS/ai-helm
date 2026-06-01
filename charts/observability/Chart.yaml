@@ -1,0 +1,45 @@
+apiVersion: v2
+name: observability
+description: |
+  App-of-Apps orchestrator for the observability stack. Renders one child
+  ArgoCD Application per component (all in the `observability` namespace on
+  home-remote), grouped under a single parent:
+
+    • observability-secrets  — ExternalSecrets (S3 creds, grafana admin /
+                               keycloak) feeding the stack       (wave -3)
+    • prometheus-operator-crds                                   (wave -3)
+    • mimir / loki / tempo    — storage backends                 (wave -2)
+    • alloy / kube-state-metrics / node-exporter / grafana-operator
+                               — collectors + operator           (wave -1)
+    • grafana                 — visualization                    (wave 0)
+    • observability-dashboards — grafana-operator CRs            (wave 1)
+
+  Same App-of-Apps intent as coder (ADR-0019); rationale for grouping the
+  whole observability stack + a dedicated secrets app in ADR-0020. The chart
+  owns no workload resources — it owns the child Applications that own them.
+
+  PodSecurity: every child namespace is labelled per `podSecurityEnforce`
+  (privileged) via ArgoCD managedNamespaceMetadata, because Alloy (hostPath
+  /var/log) and node-exporter (host /proc,/sys,/) need it under k3s's
+  cluster-wide baseline default. Customizable per cluster kind (ADR-0018 /
+  the namespacePodSecurity knob in charts/apps).
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - observability
+  - grafana
+  - mimir
+  - loki
+  - tempo
+  - applicationset
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

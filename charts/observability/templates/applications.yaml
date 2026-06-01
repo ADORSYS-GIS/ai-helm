@@ -1,0 +1,82 @@
+{{- /*
+observability App-of-Apps orchestrator — renders one workload Application CR
+per child (see values.yaml `children`). All children live in the
+`observability` namespace on home-remote (ADR-0017 guard). Every child gets
+`managedNamespaceMetadata` PodSecurity labels (podSecurityEnforce, default
+privileged) so Alloy/node-exporter hostPath workloads pass admission under
+k3s's baseline default. Rationale: ADR-0020. Mirrors the coder App-of-Apps
+(ADR-0019); children are deployed as their own ArgoCD sources.
+*/ -}}
+{{- $a := .Values.argocd -}}
+{{- range .Values.children }}
+{{- if not (eq .enabled false) }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  {{- with .additionalAnnotations }}
+  annotations:
+    {{- range $k, $v := . }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+  {{- end }}
+  name: {{ .name }}
+  namespace: {{ $a.namespace | default "argocd" }}
+  {{- with .finalizers }}
+  finalizers:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    {{- include "common.labels.standard" $ | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  {{- /* depsOverlay (ADR-0018) folds a kustomize deps source in as Source B */}}
+  {{- $depsSource := dict }}
+  {{- if .depsOverlay }}
+  {{- $depsSource = dict "repoURL" $a.repoURL "targetRevision" $a.targetRevision "path" .depsOverlay }}
+  {{- end }}
+  {{- if .sources }}
+  sources:
+    {{- if .depsOverlay }}
+    {{- toYaml (append .sources $depsSource) | nindent 4 }}
+    {{- else }}
+    {{- toYaml .sources | nindent 4 }}
+    {{- end }}
+  {{- else if .source }}
+  {{- if .depsOverlay }}
+  sources:
+    {{- toYaml (list .source $depsSource) | nindent 4 }}
+  {{- else }}
+  source:
+    {{- toYaml .source | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  destination:
+    {{- include "observability.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ (.destination.namespace | default $a.destination.namespace) | quote }}
+  syncPolicy:
+    {{- if $.Values.podSecurityEnforce }}
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: {{ $.Values.podSecurityEnforce | quote }}
+        pod-security.kubernetes.io/enforce-version: latest
+    {{- end }}
+    {{- if .syncPolicy }}
+    {{- toYaml .syncPolicy | nindent 4 }}
+    {{- else }}
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+    {{- end }}
+  {{- with .revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
+  {{- with .ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
