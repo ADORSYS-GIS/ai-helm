@@ -534,10 +534,12 @@ applications:
       # — with the chart name left out, it pulled `grafana/helm-charts`
       # and GHCR returned 403. See the envoy-* apps for the same shape.
       repoURL: oci://ghcr.io/grafana/helm-charts/grafana-operator
-      # 5.23.0 (2026-05-21) per audit. Adds automatic restart-on-secret-change.
-      # If this 404s after the path fix, the tag doesn't exist — bump to a
-      # published grafana-operator chart tag (vX.Y.Z).
-      targetRevision: v5.23.0
+      # v5.20.0 — latest published grafana-operator OCI chart tag on ghcr
+      # (v5.23.0 did not exist: ArgoCD ComparisonError "cannot get digest for
+      # revision v5.23.0 … not found"). Verify tags before bumping:
+      #   curl -s "https://ghcr.io/token?scope=repository:grafana/helm-charts/grafana-operator:pull" | jq -r .token
+      #   then GET https://ghcr.io/v2/grafana/helm-charts/grafana-operator/tags/list
+      targetRevision: v5.20.0
       chart: grafana-operator
       helm:
         releaseName: grafana-operator
@@ -2058,8 +2060,11 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://kuadrant.io/helm-charts
-      # 0.24.0 per audit.
-      targetRevision: 0.24.0
+      # 0.23.1 — latest published at kuadrant.io/helm-charts (0.24.0 was a
+      # bad pin: ArgoCD ComparisonError "chart … version 0.24.0 not found").
+      # Bundles AuthConfig v1beta3 + Authorino v1beta1, which security-policies
+      # depends on. Verify with `helm show chart` before bumping.
+      targetRevision: 0.23.1
       chart: authorino-operator
       helm:
         releaseName: authorino-operator
