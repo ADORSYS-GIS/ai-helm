@@ -18,6 +18,13 @@ data:
       listen       8080;
       server_name  _;
 
+      # The well-known file is mounted under /usr/share/nginx/html/opencode/...
+      # This custom server block REPLACES the stock default.conf (which set
+      # `root /usr/share/nginx/html`), so we must set root again — otherwise
+      # try_files resolves against nginx's compiled-in default root
+      # (/etc/nginx/html) and the file is never found → 404.
+      root /usr/share/nginx/html;
+
       # The well-known file has no extension; force JSON Content-Type.
       types { application/json json; }
       default_type application/json;
