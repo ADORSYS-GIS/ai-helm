@@ -1,0 +1,58 @@
+# App-scoped dependency: egress NetworkPolicy for grafana-operator.
+#
+# WHY: the cluster ships a default-deny-egress baseline per namespace — a
+# `allow-dns` NetworkPolicy (podSelector {}, policyTypes [Egress]) whose ONLY
+# egress rule is DNS to kube-system. Selecting a pod for ANY egress policy
+# flips it to deny-by-default, so every pod in `observability` can reach DNS
+# and nothing else. Pure data-plane pods (loki/mimir/node-exporter) survive;
+# grafana-operator does NOT — at startup it calls the Kubernetes API
+# ("detect platform"), the call to 10.43.0.1:443 times out after 32s, and the
+# 30s liveness probe kills the pod ~2s before the error even logs (which is
+# why it presented as a silent exit-2 CrashLoop with only two setup lines).
+#
+# NetworkPolicies are additive (union), so this complements `allow-dns`
+# without touching it: it grants the operator pod the egress it needs. The
+# per-cluster CIDRs are patched per env (environments/<env>/deps/grafana-operator;
+# keep in sync with environments/<env>/cluster.yaml nodeCIDR / serviceCIDR).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-operator-allow-egress
+  namespace: observability
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana-operator
+  policyTypes:
+    - Egress
+  egress:
+    # Kubernetes API server. The ClusterIP (kubernetes.default → 10.43.0.1:443)
+    # DNATs to the control-plane nodes on :6443. We allow both the node private
+    # CIDR (post-DNAT match, the common case) and the Service CIDR (pre-DNAT
+    # ClusterIP match, for CNIs that evaluate the original destination).
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/24 # ← nodeCIDR, patched per env
+        - ipBlock:
+            cidr: 10.43.0.0/16 # ← serviceCIDR, patched per env
+      ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443
+    # Grafana admin API + any intra-namespace target the operator reconciles
+    # against (Grafana CR in EXTERNAL mode hits the grafana Service).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+    # DNS (self-contained; union with the baseline allow-dns).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

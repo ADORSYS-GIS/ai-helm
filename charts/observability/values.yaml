@@ -516,6 +516,14 @@ children:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "-1"
+    # The operator MUST reach the Kubernetes API server at startup ("detect
+    # platform"). The cluster's default-deny-egress baseline (the namespace
+    # `allow-dns` NetworkPolicy permits DNS egress only) blocked that call, so
+    # the pod hung 32s on the API dial and the 30s liveness probe killed it ~2s
+    # before the error logged — presenting as a silent exit-2 CrashLoop. This
+    # overlay ships an additive egress NetworkPolicy granting the operator pod
+    # API-server (+ intra-namespace + DNS) egress. See docs/2026-hetzner-cutover.md.
+    depsOverlay: environments/prod/deps/grafana-operator
     source:
       # OCI chart path must include the chart name (grafana-operator).
       # This ArgoCD resolves the artifact from repoURL as-is and does NOT
@@ -524,16 +532,6 @@ children:
       # and GHCR returned 403. See the envoy-* apps for the same shape.
       repoURL: oci://ghcr.io/grafana/helm-charts/grafana-operator
       # v5.20.0 (latest available tag; v5.23.0 never existed).
-      # ⚠️ The operator CrashLoopBackOffs: exits 2 after ~20–30s, logging only
-      # its two setup lines then nothing (no error on stdout/stderr). Ruled out
-      # on-cluster: version (v5.18.0 identical), OOM (exit 2≠137), RBAC, cache
-      # scope/resources (namespaceScope/probes/CPU didn't help — reverted), and
-      # broken API discovery (metrics.k8s.io was fixed + ALL APIServices
-      # Available — still crashes). UNDIAGNOSED; needs --zap-log-level=debug to
-      # capture the real error (the chart's logging value isn't readable here —
-      # ghcr 403). Non-critical: grafana + its file-provider dashboards work
-      # without the operator; only dashboards-as-code CRs don't reconcile.
-      # See docs/2026-hetzner-cutover.md.
       # (available tags v5.15.0–v5.20.0; verify before bump:
       #   curl -s "https://ghcr.io/token?scope=repository:grafana/helm-charts/grafana-operator:pull" | jq -r .token
       #   then GET https://ghcr.io/v2/grafana/helm-charts/grafana-operator/tags/list )
