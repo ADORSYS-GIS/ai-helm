@@ -107,6 +107,12 @@ The current deployment runs from the branch **`claude/magical-bohr-390242`**, no
 
 Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone). The render-time guard is complemented (out-of-band, in `ai-gitops`) by the `ai` AppProject's `destinations:` allowlist. See ADR-0017.
 
+## Pod Security Standards per namespace (cluster-portability knob)
+
+k3s on Hetzner enforces the `baseline` Pod Security Standard cluster-wide, which forbids `hostPath` / host networking. The observability collectors need them (Alloy tails `/var/log` via a hostPath; node-exporter mounts host `/proc`,`/sys`,`/`), so their namespace must be `privileged`. Rather than per-app pod tweaks, `charts/apps` carries a declarative map **`global.namespacePodSecurity`** (`{ observability: privileged }`); `applications.yaml` injects `syncPolicy.managedNamespaceMetadata.labels.pod-security.kubernetes.io/enforce` for **every** app whose destination namespace is listed — so the namespace is labelled consistently regardless of sync order, with no metadata contention. Control-plane apps (argocd ns) are never elevated.
+
+**This is the per-cluster-kind knob:** a cluster with no Pod Security admission can ignore it (label is harmless); a `restricted`-default cluster still lists the namespaces needing `privileged`; per-env differences override the whole map via a `$values` multi-source (ADR-0018 Source C). A namespace not listed gets no PSS label (cluster default applies).
+
 ## Sync waves
 
 Lower waves sync first:

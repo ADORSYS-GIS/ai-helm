@@ -66,11 +66,31 @@ spec:
     {{- include "apps.argocd.destinationClusterRef" $.Values.argocd.destination | nindent 4 }}
     namespace: {{ .destination.namespace }}
     {{- end }}
-  {{- if .syncPolicy }}
+  {{- /*
+    Pod Security Standards elevation (global.namespacePodSecurity). If this
+    app's target namespace is listed, ArgoCD labels the CreateNamespace-managed
+    namespace so hostPath / host-network workloads pass Pod Security admission
+    on clusters that enforce a stricter default (k3s/Hetzner = baseline).
+    Keyed by the workload namespace; control-plane apps (argocd ns) are not
+    elevated. Applied to every app in the namespace → consistent, no contention.
+  */}}
+  {{- $nsForPolicy := "" }}
+  {{- if .controlPlane }}
+  {{- $nsForPolicy = ($.Values.argocd.controlPlaneNamespace | default "argocd") }}
+  {{- else if .destination }}
+  {{- $nsForPolicy = .destination.namespace }}
+  {{- end }}
+  {{- $psLevel := index ($.Values.global.namespacePodSecurity | default dict) ($nsForPolicy | default "") }}
   syncPolicy:
+    {{- if $psLevel }}
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: {{ $psLevel | quote }}
+        pod-security.kubernetes.io/enforce-version: latest
+    {{- end }}
+    {{- if .syncPolicy }}
     {{- toYaml .syncPolicy | nindent 4 }}
-  {{- else }}
-  syncPolicy:
+    {{- else }}
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -80,7 +100,7 @@ spec:
       enabled: true
       prune: true
       selfHeal: true
-  {{- end }}
+    {{- end }}
   {{- with .revisionHistoryLimit }}
   revisionHistoryLimit: {{ . }}
   {{- end }}
