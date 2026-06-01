@@ -1,0 +1,40 @@
+{{- if and .Values.gateway.apiHostname .Values.gateway.httpsRedirect.enabled }}
+# Redirect plain HTTP → HTTPS for the api host, pinned to the Gateway's `http`
+# (:80) listener only.
+#
+# ACME-safe: cert-manager's HTTP-01 `gatewayHTTPRoute` solver creates a route
+# matching the EXACT `/.well-known/acme-challenge/<token>` path, which out-ranks
+# this `/` PathPrefix per Gateway-API precedence (exact/longer match wins). So
+# challenge requests are still served over :80 while everything else redirects —
+# which is exactly why the solver must stay on :80 (it fails on :443).
+#
+# For this redirect to also catch API/MCP traffic, the AIGatewayRoute / MCPRoute
+# routes are pinned to the `api-https` listener (gatewayRef.sectionName) so they
+# don't serve on :80 and out-rank this redirect by their header matches.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-https-redirect
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ include "core-gateway.fullname" . }}
+      namespace: {{ .Release.Namespace }}
+      sectionName: {{ .Values.gateway.httpsRedirect.listenerName | default "http" }}
+  hostnames:
+    - {{ .Values.gateway.apiHostname | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            # 308 (Permanent Redirect) preserves method + body, so a client that
+            # POSTs to http isn't downgraded to GET (matters for an API gateway).
+            statusCode: {{ .Values.gateway.httpsRedirect.statusCode | default 308 }}
+{{- end }}

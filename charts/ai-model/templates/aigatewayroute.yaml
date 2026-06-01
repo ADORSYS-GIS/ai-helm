@@ -25,6 +25,11 @@ spec:
       kind: Gateway
       name: {{ .Values.gatewayRef.name }}
       namespace: {{ .Values.gatewayRef.namespace }}
+      {{- with .Values.gatewayRef.sectionName }}
+      # Pin to the HTTPS listener so model traffic is HTTPS-only; the :80
+      # listener is left to the http→https redirect + the ACME solver.
+      sectionName: {{ . }}
+      {{- end }}
   llmRequestCosts:
     - metadataKey: llm_input_token
       type: InputToken
