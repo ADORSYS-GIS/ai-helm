@@ -11,6 +11,12 @@ gateway:
     enabled: false
     email: ""
     server: https://acme-v02.api.letsencrypt.org/directory
+  # Redirect plain HTTP → HTTPS (on the :80 listener). ACME HTTP-01 challenges
+  # still serve on :80 (exact challenge path out-ranks this `/` redirect).
+  httpsRedirect:
+    enabled: true
+    listenerName: http
+    statusCode: 308
 
 # ────────────────────────────────────────────────────────────────────────
 # Envoy data plane (the proxy pods that actually serve client traffic).

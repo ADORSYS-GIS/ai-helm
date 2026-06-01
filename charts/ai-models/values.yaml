@@ -55,6 +55,9 @@ rateLimitBudgeting:
 gatewayRef:
   name: core-gateway
   namespace: converse-gateway
+  # Pin model routes to the Gateway's HTTPS listener so they're HTTPS-only; the
+  # :80 listener is reserved for the http→https redirect + the ACME solver.
+  sectionName: api-https
 
 # ────────────────────────────────────────────────────────────────────────
 # Models-info endpoint (charts/ai-models-info). Adds a sync-wave 1
