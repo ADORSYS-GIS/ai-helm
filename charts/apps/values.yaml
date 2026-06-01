@@ -356,6 +356,30 @@ applications:
                                         secretKeyRef:
                                           name: redis-ha-redis-auth
                                           key: redis-password
+                                    # redis-ha is TLS-ONLY (redis.conf: port 0 /
+                                    # tls-port 6379) with an internal CA ("Home
+                                    # SSegning Root CA" via self-signed-ca) and
+                                    # tls-auth-clients no. Connect over TLS and
+                                    # trust that CA via the cert-manager-issued
+                                    # `ratelimit-redis-ca` secret's ca.crt (same
+                                    # root that signs redis) — no client cert
+                                    # needed. CA provisioned by the eg umbrella
+                                    # depsOverlay (environments/<env>/deps/eg).
+                                    - name: REDIS_TLS
+                                      value: "true"
+                                    - name: REDIS_TLS_CACERT
+                                      value: /etc/redis-ca/ca.crt
+                                  volumeMounts:
+                                    - name: redis-ca
+                                      mountPath: /etc/redis-ca
+                                      readOnly: true
+                              volumes:
+                                - name: redis-ca
+                                  secret:
+                                    secretName: ratelimit-redis-ca
+                                    items:
+                                      - key: ca.crt
+                                        path: ca.crt
               extensionApis:
                 # Not strictly required, but recommended for backward/future compatibility.
                 enableEnvoyPatchPolicy: true

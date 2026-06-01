@@ -1,0 +1,26 @@
+# CA-trust helper for the rate-limit → Redis TLS connection.
+#
+# redis-ha is TLS-ONLY (redis.conf: `port 0` / `tls-port 6379`) with a server
+# cert signed by the cluster's INTERNAL CA ("Home SSegning Root CA", the
+# `self-signed-ca` ClusterIssuer), and `tls-auth-clients no` (clients need no
+# client cert, only to TRUST the server). The Lyft rate-limit service connects
+# plaintext by default → Redis resets the connection → CrashLoopBackOff.
+#
+# We issue a throwaway leaf from that SAME internal CA here; we don't use its
+# tls.crt/key — only the `ca.crt` it carries (= the Home Root CA), which the
+# rate-limit pod mounts and trusts via REDIS_TLS_CACERT. Simpler than sharing
+# the CA cross-namespace via an ESO k8s-provider ExternalSecret. The issuer is
+# patched per env (→ the internal-CA ClusterIssuer).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ratelimit-redis-ca
+  namespace: envoy-gateway-system
+spec:
+  secretName: ratelimit-redis-ca
+  commonName: ratelimit-redis-ca
+  dnsNames:
+    - ratelimit-redis-ca
+  issuerRef:
+    name: PLACEHOLDER_INTERNAL_CA # ← patched per env (internal-CA ClusterIssuer)
+    kind: ClusterIssuer
