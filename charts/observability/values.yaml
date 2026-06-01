@@ -588,7 +588,13 @@ children:
       argocd.argoproj.io/sync-wave: "-2"
     source:
       repoURL: https://grafana.github.io/helm-charts
-      targetRevision: 5.3.0
+      # 5.8.0 — latest within the 5.x major. ⚠️ NOT bumped to 6.x: mimir-distributed
+      # 6.0 is a BREAKING migration — our top-level `nginx` block must be migrated
+      # to the unified `gateway` deployment first, and the rollout-operator CRDs
+      # must be installed or the operator explicitly disabled (else the release
+      # errors). Do that as a dedicated, tested change before going to 6.x.
+      # See https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-helm-chart-5.x-to-6.0/
+      targetRevision: 5.8.0
       chart: mimir-distributed
       helm:
         releaseName: mimir
@@ -1040,7 +1046,7 @@ children:
       argocd.argoproj.io/sync-wave: "-2"
     source:
       repoURL: https://grafana.github.io/helm-charts
-      targetRevision: 1.9.0
+      targetRevision: 1.24.4
       chart: tempo
       helm:
         releaseName: tempo
@@ -1168,7 +1174,10 @@ children:
     depsOverlay: environments/prod/deps/grafana
     source:
       repoURL: https://grafana.github.io/helm-charts
-      targetRevision: 9.4.5
+      # 10.5.15 — latest. Chart major 9→10 is mostly template changes; the
+      # bundled Grafana app only moves 12.1.1 → 12.3.1 (we don't pin image.tag),
+      # and our valuesObject renders clean against it.
+      targetRevision: 10.5.15
       chart: grafana
       helm:
         releaseName: grafana
