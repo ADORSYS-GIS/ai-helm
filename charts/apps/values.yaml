@@ -8,6 +8,30 @@ global:
   domains:
     grafana: &grafana-domain grafana.ai.camer.digital
 
+  # ── Pod Security Standards, per namespace ───────────────────────────────
+  # Enforce level applied to a namespace via ArgoCD `managedNamespaceMetadata`
+  # (labels the CreateNamespace-managed namespace). Every app targeting a
+  # listed namespace gets the SAME label, so the namespace is reliably
+  # elevated regardless of which app syncs first, with no metadata contention.
+  #
+  # Why this exists: k3s on Hetzner enforces `baseline` cluster-wide, which
+  # forbids hostPath / host networking — but the observability collectors
+  # (Alloy tails /var/log via a hostPath; node-exporter mounts host
+  # /proc,/sys,/) require them, so `observability` must be `privileged`.
+  #
+  # ── Customizing for other cluster kinds (the elegant knob) ──────────────
+  # This map is the single place to adapt PSS to the target cluster:
+  #   • cluster with NO Pod Security admission → the label is harmless; keep
+  #     or omit entries freely.
+  #   • cluster enforcing `restricted` by default → still list the namespaces
+  #     that need `privileged` here.
+  #   • per-environment differences → override this whole map from a per-env
+  #     values file via a $values multi-source ref (ADR-0018 Source C),
+  #     without touching the app list.
+  # A namespace not listed here gets no PSS label (the cluster default applies).
+  namespacePodSecurity:
+    observability: privileged
+
 # ────────────────────────────────────────────────────────────────────────
 # ArgoCD destination — the home-remote cluster every generated Application
 # targets. Single source of truth for the cluster identity (was previously
