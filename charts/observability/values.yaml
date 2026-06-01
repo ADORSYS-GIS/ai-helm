@@ -524,19 +524,15 @@ children:
       # and GHCR returned 403. See the envoy-* apps for the same shape.
       repoURL: oci://ghcr.io/grafana/helm-charts/grafana-operator
       # v5.20.0 (latest available tag; v5.23.0 never existed).
-      # ⚠️ The operator CrashLoopBackOffs (exit 2, killed at EXACTLY 30s by its
-      # liveness probe before :8081 opens) — but this is NOT a grafana-operator
-      # problem, and NOT fixable here. ROOT CAUSE: the `metrics.k8s.io`
-      # APIService is broken (MissingEndpoints — the metrics-server Service
-      # selector `app.kubernetes.io/*` from aii-metrics-server doesn't match the
-      # running pod's `k8s-app` labels from the OLD ai-metrics-server; the
-      # Deployment selector is immutable so the cutover is stuck → no
-      # endpoints). controller-runtime's startup API discovery hangs ~30s on
-      # that dead aggregated API, so the operator never reaches its health
-      # server and the probe kills it. It will recover ON ITS OWN once
-      # metrics.k8s.io is Available — fix metrics-server (decommission the old
-      # ai-metrics-server / resolve the old↔new collision). Config tweaks here
-      # (namespaceScope/probes/resources) were tried and do NOT help — reverted.
+      # ⚠️ The operator CrashLoopBackOffs: exits 2 after ~20–30s, logging only
+      # its two setup lines then nothing (no error on stdout/stderr). Ruled out
+      # on-cluster: version (v5.18.0 identical), OOM (exit 2≠137), RBAC, cache
+      # scope/resources (namespaceScope/probes/CPU didn't help — reverted), and
+      # broken API discovery (metrics.k8s.io was fixed + ALL APIServices
+      # Available — still crashes). UNDIAGNOSED; needs --zap-log-level=debug to
+      # capture the real error (the chart's logging value isn't readable here —
+      # ghcr 403). Non-critical: grafana + its file-provider dashboards work
+      # without the operator; only dashboards-as-code CRs don't reconcile.
       # See docs/2026-hetzner-cutover.md.
       # (available tags v5.15.0–v5.20.0; verify before bump:
       #   curl -s "https://ghcr.io/token?scope=repository:grafana/helm-charts/grafana-operator:pull" | jq -r .token
