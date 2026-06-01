@@ -523,12 +523,18 @@ children:
       # — with the chart name left out, it pulled `grafana/helm-charts`
       # and GHCR returned 403. See the envoy-* apps for the same shape.
       repoURL: oci://ghcr.io/grafana/helm-charts/grafana-operator
-      # v5.20.0 — latest published grafana-operator OCI chart tag on ghcr
-      # (v5.23.0 did not exist: ArgoCD ComparisonError "cannot get digest for
-      # revision v5.23.0 … not found"). Verify tags before bumping:
+      # v5.18.0 — pinned DOWN from v5.20.0: the operator pod CrashLoopBackOff'd
+      # (exit 2, ~30s, health port :8081 never opened, 90 restarts) dying right
+      # after the v5.20.0 "label restrictions for cached resources are active"
+      # log (env ENFORCE_CACHE_LABELS=safe) with no error logged — i.e. it
+      # fails in manager construction in that new label-cache code path. v5.18.0
+      # predates that feature. If it still crashes, the cause is deeper (RBAC on
+      # the cluster-wide watch / metrics secure-serving) — raise operator log
+      # verbosity and check the ServiceAccount's ClusterRole.
+      # (v5.23.0 never existed; available tags v5.15.0–v5.20.0. Verify before bump:
       #   curl -s "https://ghcr.io/token?scope=repository:grafana/helm-charts/grafana-operator:pull" | jq -r .token
-      #   then GET https://ghcr.io/v2/grafana/helm-charts/grafana-operator/tags/list
-      targetRevision: v5.20.0
+      #   then GET https://ghcr.io/v2/grafana/helm-charts/grafana-operator/tags/list )
+      targetRevision: v5.18.0
       chart: grafana-operator
       helm:
         releaseName: grafana-operator

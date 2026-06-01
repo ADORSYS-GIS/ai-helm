@@ -88,11 +88,15 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   attached to `HCLOUD_NETWORK`? is `cp-1` in it?). **Open — not a chart fix.**
   Options: add `load-balancer.hetzner.cloud/network: <name>`, fix `cp-1`'s
   network membership, or keep the LB off `cp-1`.
-- **grafana-operator — CrashLoopBackOff.** The version pin fixed the render
-  (Synced @ v5.20.0) but the operator pod crashes at runtime (starts, then
-  exits with no error in the captured log). Blocks `grafana` +
-  `observability-dashboards` (need its CRDs). **Open — needs log/version
-  investigation.**
+- **grafana-operator — CrashLoopBackOff (pinned v5.20.0 → v5.18.0).** The pod
+  exited 2 (~30s, 90 restarts), health port `:8081` never opened, dying right
+  after the v5.20.0 `label restrictions for cached resources are active`
+  (`ENFORCE_CACHE_LABELS=safe`) log with no error — i.e. failing in manager
+  construction in that new label-cache path. Pinned down to **v5.18.0** (pre-
+  feature) as the best-evidence fix. **Verify on reconcile**: if it still
+  crashes, the cause is deeper (RBAC on the cluster-wide watch / metrics
+  secure-serving) — raise operator verbosity + check its ClusterRole. Blocks
+  `grafana` + `observability-dashboards` until healthy.
 
 ### ⏳ Pre-existing / unrelated (not caused by this branch)
 - **lightbridge-backend** — `CreateContainerConfigError` (missing referenced
