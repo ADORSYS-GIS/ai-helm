@@ -15,3 +15,12 @@ patches:
       - op: replace
         path: /spec/secretStoreRef/name
         value: ssegning-aws
+  # internal-CA issuer (same root that signs redis-ha's TLS cert) — its ca.crt
+  # is what the rate-limit pod trusts to reach the TLS-only Redis.
+  - target:
+      kind: Certificate
+      name: ratelimit-redis-ca
+    patch: |-
+      - op: replace
+        path: /spec/issuerRef/name
+        value: self-signed-ca
