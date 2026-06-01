@@ -4,7 +4,12 @@ metadata:
   name: {{ include "core-gateway.fullname" . }}-traces
   namespace: {{ .Release.Namespace }}
 spec:
-  # mode: deployment  # optional; defaults to deployment in most setups
+  # REQUIRED: the otel-operator v1beta1 webhook rejects a collector with an
+  # empty mode ("the OpenTelemetry Collector mode is set to , which does not
+  # support modification"). Set it explicitly. Configurable; default deployment.
+  # NOTE: `mode` is immutable on an existing collector — if one was already
+  # created with empty/other mode, delete it once so ArgoCD recreates it.
+  mode: {{ (.Values.otelCollector | default dict).mode | default "deployment" }}
   config:
     receivers:
       otlp:
