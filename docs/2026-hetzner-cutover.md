@@ -87,14 +87,22 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   and the **whole** LB sync failed → `AddressNotAssigned` → at one point Envoy
   Gateway tore down the infra (a transient "GatewayClass not found" window →
   `DeletedLoadBalancer`), so the Service disappeared entirely.
-  **Fix:** set `use-private-ip: "true"` (matches the working `traefik` LB
-  exactly: private-IP targeting + `Cluster` policy). IP targeting never
-  dereferences cp-1's dead server ID, so the LB provisions. Lands when
-  core-gateway next syncs. **Residual (cluster-admin, out of repo):** cp-1's
-  stale providerID should still be fixed (or cp-1 cordoned/replaced) — it will
-  keep biting any server-reference operation; and control-plane nodes are
-  arguably better excluded from LB target pools
-  (`node.kubernetes.io/exclude-from-external-load-balancers`).
+  **Fix (two parts):**
+  1. (in-repo) `use-private-ip: "true"` — matches the working `traefik` LB
+     (private-IP targeting + `Cluster` policy). Necessary but NOT sufficient: it
+     only changed cp-1's failure from `cloud target was not found` to
+     `resolve_cloud_private_targets_error` — cp-1 is unusable as an LB target in
+     BOTH modes, and the hcloud-ccm fails the WHOLE LB sync if any target fails.
+  2. (cluster-admin, applied live 2026-06-01) labelled all three control-plane
+     nodes `node.kubernetes.io/exclude-from-external-load-balancers=""` so the
+     CCM targets **workers only** (CPs run operators, not ingress traffic — the
+     maintainer's call). The CCM re-reconciled within ~1 min →
+     `EnsuredLoadBalancer`. **✅ Verified: EXTERNAL-IP `46.225.38.138`
+     (+10.0.0.4, IPv6), Gateway `core-gateway` PROGRAMMED=True.**
+  **⚠️ The node labels are LIVE-only — not in any repo.** They must be made
+  durable in the cluster bootstrap (home-os / k3s node config) or they vanish on
+  node re-provision and the LB breaks again. cp-1's stale providerID
+  (`hcloud://127562844`) is still worth fixing/replacing independently.
 - **core-gateway `api-https` listener — still invalid (home-os gap).** The
   HTTPS listener (`api.ai-v2.camer.digital`) refs Secret
   `converse-gateway/core-gateway-api-tls`, issued by ClusterIssuer
@@ -173,10 +181,10 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
 2. **`observability-secrets`** — fill the real `ssegning-aws` remoteRefs and
    flip `enabled: true` (currently disabled to avoid clobbering the live
    externally-provisioned secrets).
-3. **Hetzner LB** — chart fix done (`use-private-ip: true`). Cluster-admin
-   residual: fix cp-1's stale `providerID` (server recreated) or replace/cordon
-   it; optionally label control-plane nodes
-   `node.kubernetes.io/exclude-from-external-load-balancers`. Also define
+3. **Hetzner LB** — ✅ provisioned (chart fix `use-private-ip: true` + CP nodes
+   labelled exclude-from-LB; EXTERNAL-IP `46.225.38.138`, Gateway PROGRAMMED).
+   **Make the node labels durable** (home-os / k3s bootstrap) — they're live-only
+   today. Independently, fix/replace cp-1 (stale providerID). Still define
    `cert-home-cert-envoy` in home-os so the `api-https` listener resolves.
 4. **grafana-operator** — ✅ root-caused + fixed in-repo (egress NetworkPolicy
    via its deps overlay). Remaining: sync the observability orchestrator so the
