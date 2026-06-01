@@ -637,16 +637,19 @@ children:
                     secret_access_key: ${MIMIR_S3_SECRET_ACCESS_KEY}
 
               # Folders within the shared `ssegning-k8s-state` bucket.
+              # ⚠️ mimir storage_prefix may ONLY contain digits + English letters
+              # (no `/`, no `-`), so we namespace as `mimir<component>` rather
+              # than `mimir/<component>`.
               blocks_storage:
-                storage_prefix: mimir/blocks
+                storage_prefix: mimirblocks
                 s3:
                   bucket_name: *s3-bucket
               alertmanager_storage:
-                storage_prefix: mimir/alertmanager
+                storage_prefix: mimiralertmanager
                 s3:
                   bucket_name: *s3-bucket
               ruler_storage:
-                storage_prefix: mimir/ruler
+                storage_prefix: mimirruler
                 s3:
                   bucket_name: *s3-bucket
 
