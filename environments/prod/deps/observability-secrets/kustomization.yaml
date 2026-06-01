@@ -6,6 +6,10 @@ kind: Kustomization
 
 resources:
   - ../../../base/deps/observability-secrets
+  # Cilium egress for the stores to reach Hetzner Object Storage (the deny-egress
+  # baseline blocks external S3 otherwise). Sync-wave -3 (this app) lands it
+  # before the stores start.
+  - ciliumnetworkpolicy.yaml
 
 patches:
   - target:

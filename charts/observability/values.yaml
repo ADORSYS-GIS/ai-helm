@@ -5,9 +5,17 @@
 # charts/apps; the anchor DEFINITIONS must precede the children that use them).
 global:
   s3:
-    endpoint: &s3-endpoint s3.ssegning.me
+    # Hetzner Object Storage (nbg1) — the shared platform bucket
+    # `ssegning-k8s-state`, same bucket Keycloak's CNPG backups use (different
+    # folders: mimir → `mimir/*`, tempo → `tempo/*`, loki at the bucket root with
+    # its own key namespacing; cf. keycloak `keycloak-cnpg-backups/`).
+    # region stays us-east-1: Hetzner (Ceph RGW) accepts it for SigV4 (proven —
+    # Keycloak's barman/boto3 backs up with the default us-east-1). Credentials
+    # come from ssegning-aws `prod/meta/test-app` via the observability-secrets
+    # ExternalSecrets (same remoteRef as Keycloak's S3 creds).
+    endpoint: &s3-endpoint nbg1.your-objectstorage.com
     region: &s3-region us-east-1
-    bucket: &s3-bucket monitoring
+    bucket: &s3-bucket ssegning-k8s-state
   domains:
     grafana: &grafana-domain grafana.ai-v2.camer.digital
 
@@ -51,7 +59,7 @@ children:
   # activate: fill the ssegning-aws keys, ensure the external provisioner
   # (ai-ops-secrets) no longer manages these Secrets, then set enabled: true.
   - name: observability-secrets
-    enabled: false
+    enabled: true
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "-3"
     finalizers:
@@ -628,16 +636,17 @@ children:
                     access_key_id: ${MIMIR_S3_ACCESS_KEY_ID}
                     secret_access_key: ${MIMIR_S3_SECRET_ACCESS_KEY}
 
+              # Folders within the shared `ssegning-k8s-state` bucket.
               blocks_storage:
-                storage_prefix: blocks
+                storage_prefix: mimir/blocks
                 s3:
                   bucket_name: *s3-bucket
               alertmanager_storage:
-                storage_prefix: alertmanager
+                storage_prefix: mimir/alertmanager
                 s3:
                   bucket_name: *s3-bucket
               ruler_storage:
-                storage_prefix: ruler
+                storage_prefix: mimir/ruler
                 s3:
                   bucket_name: *s3-bucket
 
