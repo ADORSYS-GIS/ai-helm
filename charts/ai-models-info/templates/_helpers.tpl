@@ -72,6 +72,9 @@ Output: full JSON string `{"data":[...]}`.
 */}}
 {{- define "ai-models-info.catalog" -}}
 {{- $excluded := default (list) .Values.excludeKinds -}}
+{{- $defaults := default (dict) .Values.catalogDefaults -}}
+{{- $defCtx := default 128000 $defaults.contextLength -}}
+{{- $defMaxTok := default 8192 $defaults.maxCompletionTokens -}}
 {{- $entries := list -}}
 {{- range $name, $cfg := .Values.models -}}
   {{- $kind := default "text" $cfg.kind -}}
@@ -94,15 +97,17 @@ Output: full JSON string `{"data":[...]}`.
         "output_modalities" $mods.outputModalities
     ) -}}
 
-    {{- /* Optional context_length */ -}}
-    {{- if $info.contextLength -}}
-      {{- $_ := set $entry "context_length" $info.contextLength -}}
-    {{- end -}}
-
-    {{- /* Optional top_provider.max_completion_tokens */ -}}
-    {{- if $info.maxOutputTokens -}}
-      {{- $_ := set $entry "top_provider" (dict "max_completion_tokens" $info.maxOutputTokens) -}}
-    {{- end -}}
+    {{- /* context_length + top_provider — always emitted. Per-model
+           `info.contextLength` / `info.maxOutputTokens` override the
+           chart-wide catalogDefaults (128000 / 8192). top_provider mirrors
+           context_length (OpenRouter shape). */ -}}
+    {{- $ctx := default $defCtx $info.contextLength -}}
+    {{- $maxTok := default $defMaxTok $info.maxOutputTokens -}}
+    {{- $_ := set $entry "context_length" $ctx -}}
+    {{- $_ := set $entry "top_provider" (dict
+        "context_length"        $ctx
+        "max_completion_tokens" $maxTok
+    ) -}}
 
     {{- /* Optional supported_parameters */ -}}
     {{- if $info.supportedParameters -}}
