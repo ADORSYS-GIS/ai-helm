@@ -124,6 +124,47 @@ modelDefaults:
       ref: google-ai-studio-02
       priority: 1
 
+# ────────────────────────────────────────────────────────────────────────
+# supported_parameters anchors — flow through to the models-info catalog
+# (each model's `info.supportedParameters` → OpenRouter-shape
+# `supported_parameters[]`). The OpenAI-compatible Fireworks/DeepInfra
+# endpoints accept the standard sampling+tool set; agentic/thinking models
+# additionally expose `reasoning`. Reranker/embedding models are excluded
+# from the catalog (excludeKinds) so they carry no list.
+#
+# Verified 2026-06-02 against the backend model pages (DeepInfra / Fireworks).
+supportedParams:
+  # Agentic chat models with a thinking/reasoning mode (GLM-5/5.1, Kimi,
+  # MiniMax, DeepSeek-V4, Qwen3.6-Plus).
+  reasoning: &spReasoning
+    - tools
+    - tool_choice
+    - temperature
+    - top_p
+    - top_k
+    - max_tokens
+    - stop
+    - frequency_penalty
+    - presence_penalty
+    - seed
+    - response_format
+    - structured_outputs
+    - reasoning
+  # Chat models without an exposed reasoning channel (Gemma-4: tools +
+  # vision but no thinking mode).
+  standard: &spStandard
+    - tools
+    - tool_choice
+    - temperature
+    - top_p
+    - top_k
+    - max_tokens
+    - stop
+    - frequency_penalty
+    - presence_penalty
+    - seed
+    - response_format
+
 # Backends — flow into the `ai-models-backends` child as its `backends:`
 # values, and into each `ai-model` child as `backendsInventory:` for
 # resourceName lookup.
@@ -173,9 +214,13 @@ models:
 
   deepseek-v4-flash:
     kind: text
+    # DeepInfra · deepseek-ai/DeepSeek-V4-Flash — 1,048,576-token context
+    # (clamped to the 400k catalog ceiling), 384k max output (capped to a
+    # sane 131k generation ceiling). Dual Think/Non-Think modes → reasoning.
     info:
-      contextLength: 163840
-      maxOutputTokens: 16384
+      contextLength: 1048576
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -192,9 +237,12 @@ models:
 
   reviewer:
     kind: text
+    # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output,
+    # agentic thinking mode + function calling + vision.
     info:
-      contextLength: 200000
-      maxOutputTokens: 32768
+      contextLength: 202752
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -211,9 +259,11 @@ models:
 
   glm-5:
     kind: text
+    # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output.
     info:
-      contextLength: 200000
-      maxOutputTokens: 32768
+      contextLength: 202752
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -233,9 +283,11 @@ models:
 
   adorsys-planner:
     kind: text
+    # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output.
     info:
-      contextLength: 200000
-      maxOutputTokens: 32768
+      contextLength: 202752
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -255,9 +307,12 @@ models:
 
   adorsys-planner-pro:
     kind: text
+    # DeepInfra · zai-org/GLM-5.1 — 202,752-token context, 131k max output,
+    # long-horizon agentic engineering (thinking + function calling + MCP).
     info:
-      contextLength: 204800
-      maxOutputTokens: 32768
+      contextLength: 202752
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -277,9 +332,12 @@ models:
 
   kimi-k2.5:
     kind: text
+    # DeepInfra · moonshotai/Kimi-K2.5 — 262,144-token context, 131k max
+    # output, agentic tool use + thinking.
     info:
       contextLength: 262144
-      maxOutputTokens: 16384
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -296,9 +354,12 @@ models:
 
   kimi-k2.6:
     kind: text
+    # DeepInfra · moonshotai/Kimi-K2.6 — 262,144-token context, 131k max
+    # output (per-step generation limit), agentic tool use + thinking.
     info:
       contextLength: 262144
-      maxOutputTokens: 16384
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -330,9 +391,12 @@ models:
 
   minimax-m2p5:
     kind: text
+    # DeepInfra · MiniMaxAI/MiniMax-M2.5 — 204,800-token context (NOT 400k:
+    # 196k usable per sequence), 131k max output, reasoning + agentic tools.
     info:
-      contextLength: 400000
-      maxOutputTokens: 40960
+      contextLength: 204800
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -348,10 +412,13 @@ models:
         modelNameOverride: "MiniMaxAI/MiniMax-M2.5"
 
   glm-5p1:
-    kind: multimodal
+    # Fireworks · glm-5p1 (GLM-5.1) — text-only (NOT multimodal), 202,752-token
+    # context, 131k max output, thinking + function calling + structured output.
+    kind: text
     info:
-      contextLength: 204800
-      maxOutputTokens: 32768
+      contextLength: 202752
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -367,10 +434,12 @@ models:
         modelNameOverride: "accounts/fireworks/models/glm-5p1"
 
   qwen3-embedding-8b:
-    kind: multimodal
+    # Fireworks · qwen3-embedding-8b — an EMBEDDING model (32,768-token input,
+    # 32–4096 output dims), so `kind: embedding` → excluded from the chat
+    # catalog via excludeKinds. No chat supported_parameters apply.
+    kind: embedding
     info:
       contextLength: 32768
-      maxOutputTokens: 8192
     pricing:
       strategy: flat
       standard:
@@ -384,10 +453,13 @@ models:
         modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
 
   qwen3p6-plus:
+    # Fireworks · qwen3p6-plus (Qwen3.6-Plus) — Fireworks lists 128k context
+    # + 8k max output; multimodal (image input) + reasoning + tools.
     kind: multimodal
     info:
-      contextLength: 262144
-      maxOutputTokens: 32768
+      contextLength: 128000
+      maxOutputTokens: 8192
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -404,9 +476,12 @@ models:
 
   reviewer-flash:
     kind: text
+    # Fireworks · minimax-m2p7 (MiniMax-M2.7) — 204,800-token context (NOT 400k),
+    # 131k max output, reasoning + agentic tools.
     info:
-      contextLength: 400000
-      maxOutputTokens: 40960
+      contextLength: 204800
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -423,9 +498,12 @@ models:
 
   minimax-m2p7:
     kind: text
+    # Fireworks · minimax-m2p7 (MiniMax-M2.7) — 204,800-token context (NOT 400k),
+    # 131k max output, reasoning + agentic tools.
     info:
-      contextLength: 400000
-      maxOutputTokens: 40960
+      contextLength: 204800
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -442,9 +520,12 @@ models:
 
   gemma-4:
     kind: text
+    # DeepInfra · google/gemma-4-26B-A4B-it — 262,144-token (256K) context,
+    # 8k max output, native function calling (no exposed thinking mode).
     info:
-      contextLength: 131072
+      contextLength: 262144
       maxOutputTokens: 8192
+      supportedParameters: *spStandard
     pricing:
       strategy: weighted
       standard:
