@@ -8,7 +8,7 @@ Helm charts + ArgoCD GitOps for the Camer Digital AI platform. **Not an applicat
 
 > **Maintainer:** @stephane-segning. Use this handle in ADR `Deciders:` lines and any maintainer-attribution context. Don't substitute branch names.
 
-> **Companion repo:** `ai-gitops` (separate) holds per-environment overrides and the ArgoCD root Application. This repo is the **chart source**, `ai-gitops` is the **deployment state**. Don't put image-tag overrides or env-specific values here.
+> **Companion repos:** `home-os` (shared cluster infra ai-helm only *consumes* — cert-manager + ClusterIssuers, redis-ha, CNPG + Barman, Traefik, ESO; local `/Users/selast/dev/personal/home-os`) and `hetzner-k8s` (Terraform nodes/network/CNI/LB + the platform bootstrap; local `/Users/selast/dev/personal/hetzner-k8s`). ⚠️ **`ai-gitops` does NOT exist** — older notes/ADRs reference it as the planned "deployment state" repo, but it was never created. Per-env overrides live **in this repo** under `environments/` (ADR-0018); the root `ai-apps-v2` Application is applied **manually**. Still don't put image-tag overrides in chart logic (ADR-0013).
 
 ## Read these first when changing anything architectural
 
@@ -82,16 +82,16 @@ The umbrella needs **no ApplicationSet** — `applications.yaml` already passes 
 
 > ⚠️ The `applications.yaml` template's custom-`syncPolicy` branch previously omitted the `syncPolicy:` wrapper key (contents leaked into `destination:`), so ~13 apps that declared their own `syncPolicy` rendered with **no** `spec.syncPolicy` (manual sync, declared automation silently dropped). Fixed in the ADR-0018 work — those apps now get their declared `automated: {prune, selfHeal}`. Sanity-check sync behaviour on the live cluster after merge.
 
-## ai-helm ↔ ai-gitops separation
+## ai-helm ↔ ai-gitops separation (PLANNED, not realised)
 
-| | `ai-helm` (this repo) | `ai-gitops` (other repo) |
+⚠️ The `ai-gitops` repo described below was the *intended* design but **was never created**. In reality this one repo holds both the chart logic AND (under `environments/`, ADR-0018) the per-env overrides; the root `ai-apps-v2` Application is applied manually. Treat the table as design intent, not current state.
+
+| | `ai-helm` (this repo) | `ai-gitops` (planned, absent) |
 |---|---|---|
-| Holds | Helm charts (logic, templates, sane defaults in `values.yaml`) | ArgoCD `Application` manifests + per-env overrides |
-| Image tags | Default in `charts/<x>/values.yaml` | (Today: not overridden — see ADR-0013) |
-| You can touch from this repo | All chart logic | Nothing |
-| Cross-references via | `repoURL: https://github.com/ADORSYS-GIS/ai-helm` + `targetRevision` | n/a |
+| Holds | Helm charts + `environments/` overlays + `charts/apps` root chart | (would hold) ArgoCD root Application + per-env overrides |
+| Image tags | Default in `charts/<x>/values.yaml` (not overridden — ADR-0013) | — |
 
-**ADR-0010** proposed automated image-updater write-back between them; **ADR-0013** deferred it. See those for the reasoning.
+**ADR-0010** proposed automated image-updater write-back to `ai-gitops`; **ADR-0013** deferred it (and `ai-gitops` was never stood up). See those for the reasoning.
 
 ## `targetRevision`: deploy branch now → release tag next, **never `main`**
 
@@ -103,9 +103,20 @@ The current deployment runs from the branch **`claude/magical-bohr-390242`**, no
 
 - **Workloads → `home-remote`.** Driven by `argocd.destination` (`name` / `server` / `allowInCluster`) in `charts/{apps,ai-models,librechart}/values.yaml`. Never use ArgoCD's built-in in-cluster handle (`name: in-cluster` / `server: https://kubernetes.default.svc`) for a workload — even if it resolves to the same physical cluster, it's a different ArgoCD destination. The helper `<chart>.argocd.destinationClusterRef` (each chart's `templates/_helpers.tpl`) **hard-fails the render** if a workload destination resolves to the in-cluster handle unless `allowInCluster: true`.
 - **Control objects → local cluster / argocd.** In `charts/apps`, an app whose deployed content is itself a control object (an orchestrator emitting an ApplicationSet — `models`→`charts/ai-models`, `librechat`→`charts/librechart`) sets **`controlPlane: true`** on its entry. The template then targets `argocd.inClusterServer` (**`server: https://kubernetes.default.svc`** — the canonical local-cluster ref, used instead of the `name: in-cluster` handle which depends on that registration existing) / `argocd.controlPlaneNamespace` (`argocd`) and bypasses the guard. The orchestrators' ApplicationSet `template.spec.destination` (the **child** Applications) stays `home-remote`.
-- **The root `ai-apps-v2` Application** (in `ai-gitops`) deploys `charts/apps` and **must itself target in-cluster/argocd** so the generated Application CRs land where the controller watches. (External change — not in this repo.)
+- **The root `ai-apps-v2` Application** (applied manually on the ArgoCD cluster — there is no `ai-gitops`) deploys `charts/apps` and **must itself target in-cluster/argocd** so the generated Application CRs land where the controller watches.
 
-Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone). The render-time guard is complemented (out-of-band, in `ai-gitops`) by the `ai` AppProject's `destinations:` allowlist. See ADR-0017.
+Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone). The render-time guard is complemented out-of-band by the `ai` AppProject's `destinations:` allowlist. See ADR-0017.
+
+## Hetzner cluster realities & recurring gotchas (2026 cutover)
+
+Operational narrative + live verification: **`docs/2026-hetzner-cutover.md`** (read it before debugging the live cluster). The high-impact facts:
+
+- **Two clusters, two kubeconfigs.** ArgoCD itself runs on a **separate** cluster — context **`admin@homeos`** (Talos, in `~/.kube/config`); all `Application`/`ApplicationSet` CRs live there in ns `argocd` (`kubectl --context admin@homeos -n argocd get applications`; trigger syncs via `argocd.argoproj.io/refresh=hard` or patching `.operation`). **Workloads** run on Hetzner k3s = `home-remote` — inspect with `KUBECONFIG=/Users/selast/dev/personal/hetzner-k8s/kubeconfig kubectl …`. The Hetzner kubeconfig has NO argo CRDs.
+- **CNI is Cilium + a default-deny-egress baseline.** Each app namespace (`apps`/`data`/`observability`/`platform`) carries a manual `allow-dns` NetworkPolicy (DNS-to-kube-system only, **not** ArgoCD-managed; defined in `hetzner-k8s`), so every pod is egress-deny-by-default. Any pod reaching the **API server** (operators: grafana-operator, kube-state-metrics) or **external object storage** (mimir/loki/tempo) crashloops until it gets an additive allow. ⚠️ A plain k8s `NetworkPolicy` `ipBlock` does **NOT** match on Cilium (node IPs carry `remote-node`/`host` identity). Use a **`CiliumNetworkPolicy`** with `toEntities: [kube-apiserver]` (API) or `toFQDNs: "*.your-objectstorage.com"` (S3), shipped via the app's deps overlay — see `environments/prod/deps/{grafana-operator,kube-state-metrics,observability-secrets}/`. Classic symptom: pod hangs ~32s then a 0-`initialDelay` liveness probe kills it → looks like a silent exit-2 CrashLoop. (`converse` has no baseline → its pods egress freely.)
+- **Object storage = Hetzner Object Storage**, NOT the old `s3.ssegning.me`. Endpoint `nbg1.your-objectstorage.com`, shared bucket **`ssegning-k8s-state`** (Keycloak CNPG backups + mimir/loki/tempo + LibreChat, each in its own folder/prefix). Creds in `ssegning-aws` at key `prod/meta/test-app`, props `s3_backup_cnpg_client_id` / `s3_backup_cnpg_secret`; region `us-east-1` works (Ceph-RGW). mimir `storage_prefix` is **alphanumeric-only** (no `/`) → folders like `mimirblocks`.
+- **Hetzner LB targets WORKERS ONLY.** The 3 control-plane nodes are labelled `node.kubernetes.io/exclude-from-external-load-balancers` (durable now in `hetzner-k8s` `install-platform.sh`). LB Services need `load-balancer.hetzner.cloud/use-private-ip: "true"` (cp-1 has a stale providerID and is an unusable server-ref target). core-gateway's data-plane LB is at `46.225.38.138`.
+- **nginx static-serve charts** (`librechat-opencode-wellknown`, `ai-models-info`): their custom `default.conf` MUST set `root /usr/share/nginx/html;` or `try_files` 404s. Content is a subPath-mounted ConfigMap → a config change needs the **pods deleted** to remount (a CM edit alone doesn't reload nginx, and `kubectl rollout restart` is reverted by ArgoCD selfHeal).
+- **Restart-ordering trap:** the `ai-gateway-controller` mutating webhook is fail-closed and gates ALL `envoy-gateway-system` pod creation — after a cluster restart, anything stuck on `FailedCreate: no endpoints available for ... ai-gateway-controller` recovers by deleting the stuck ReplicaSet once the controller is up.
 
 ## Pod Security Standards per namespace (cluster-portability knob)
 
@@ -157,8 +168,10 @@ Per ADR-0008:
 Conventional commits with a substantive body that explains **why** (the diff already shows what). Link the ADR when implementing one: `(ADR-NNNN)`. AI-assisted commits get the trailer:
 
 ```
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Opus <version> (1M context) <noreply@anthropic.com>
 ```
+
+(use the running model version, e.g. `Opus 4.8`)
 
 See recent `git log` for the established length and style — bodies of 20–60 lines are common for non-trivial changes.
 
@@ -183,12 +196,12 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 - **Secrets + ESO** — the External Secrets Operator (controller + CRDs) is **installed externally**, not by this repo (it runs in the `external-secrets` namespace, Helm-managed). The `ClusterSecretStore` is `ssegning-aws` (cluster-scoped, external). ExternalSecret CRs are sourced from `ai-ops-secrets.git` (the `secrets` Application) + other external sources; all reference `ssegning-aws`. This repo references Secret names only. Don't re-add an ESO operator or a ClusterSecretStore chart here (the old Vault `bootstrap-secrets` store config was removed — it was never the store actually used).
 - **Keycloak realm clients/scopes/groups** — `charts/keycloak-baseline/values.yaml` defines them; keycloak-config-cli applies. Client secrets come from ESO at sync time.
 - **Backups** — `charts/*-backup/` define the CronJobs; the S3 buckets + retention policies are out-of-band.
-- **ArgoCD root Application** — in `ai-gitops`. The chart `charts/apps/` in this repo is what that root Application points at.
+- **ArgoCD root Application** (`ai-apps-v2`) — applied **manually** on the ArgoCD cluster (no `ai-gitops` repo). The chart `charts/apps/` in this repo is what it points at.
 - **Redis** — deployed by the `home-os` repo (`charts/home-apps/redis-ha`) as `redis-ha-redis` in the `redis-system` namespace. This repo only *consumes* it (LibreChat, LiteLLM proxy, Envoy rate-limit point at `redis-ha-redis.redis-system.svc.cluster.local:6379`). Don't re-add a redis chart here. **Auth:** redis-ha requires a password (remote ref `prod/meta/test-app` / `redis_password` in the `ssegning-aws` ClusterSecretStore). Consumers read it from a local Secret `redis-ha-redis-auth` (key `redis-password`) — LibreChat via `REDIS_PASSWORD`, LiteLLM via `REDIS_PASSWORD` (split `REDIS_HOST`/`REDIS_PORT`), Envoy ratelimit via the `REDIS_AUTH` env injected through the `rateLimitDeployment.patch`. That Secret must exist in **each consumer namespace** (`converse`, `envoy-gateway-system`) via its own ExternalSecret — the repo references it by name only (secrets are provisioned externally; same as every other secret here). **TLS:** redis-ha is **TLS-ONLY** (`redis.conf`: `port 0` / `tls-port 6379`), server cert from the internal `self-signed-ca` ClusterIssuer ("Home SSegning Root CA"), `tls-auth-clients no` (clients need no client cert, only to trust that CA). So every consumer must connect over TLS **and** trust the internal CA — a plaintext client gets `connection reset by peer`. The Envoy ratelimit does this via `REDIS_TLS=true` + `REDIS_TLS_CACERT` pointing at a cert-manager `Certificate` (issued from `self-signed-ca`, `ca.crt` only) mounted from the `eg` umbrella overlay. New consumers need the same.
 - **Traefik** — the ingress controller + the `traefik` IngressClass are deployed externally (runs in the `traefik` namespace). This repo only sets `ingressClassName: traefik` / `className: traefik` on its Ingresses. Don't re-add a traefik chart here.
 - **CloudNativePG** — the `cnpg` Postgres operator **and** the Barman Cloud backup plugin (`cnpg-barman-cloud`) are deployed externally (`cnpg-system`; CRDs `postgresql.cnpg.io` + `barmancloud.cnpg.io`). This repo only defines CNPG `Cluster` CRs (e.g. `charts/coder-db`) that the external operator reconciles. Don't re-add a cnpg or plugin-barman-cloud chart here.
 - **OpenTelemetry Operator** — installed externally (`opentelemetry-system`; CRDs `opentelemetry.io`). This repo only defines `OpenTelemetryCollector` CRs (`charts/core-gateway`: the `-traces` collector → Alloy → Tempo) that the external operator reconciles. Don't re-add an otel-operator chart here. (The `-usage` collector was removed — usage/billing is handled via the Envoy AI Gateway + OAuth2 path; Envoy access logs go straight to Alloy → Loki for ADR-0005 per-user observability.)
-- **cert-manager** — controller, CRDs, **and** the shared cluster-scoped ClusterIssuers (`cert-home-cert-http`, `self-signed-ca`, `cert-cloudflare`) are deployed by `home-os` (`charts/cert`, `cert-remote` Application). This repo only references the issuers via `cert-manager.io/cluster-issuer:` annotations. ⚠️ `cert-home-cert-envoy` (the Gateway-API ACME issuer `core-gateway` uses for `api.ai-v2.camer.digital`) is referenced here but **not yet defined in home-os** — it must be added there. Don't re-add a cert chart here.
+- **cert-manager** — controller (in `kube-system`, `--cluster-resource-namespace=kube-system`), CRDs, **and** the shared cluster-scoped ClusterIssuers (`cert-home-cert-http`, `self-signed-ca`, `cert-cloudflare`) are deployed by `home-os` (`charts/cert`, apps `cert` + `cert-remote`). home-os has **`config.enableGatewayAPI: true`** so cert-manager solves ACME HTTP-01 via `gatewayHTTPRoute` + honours the `cert-manager.io/cluster-issuer` gateway-shim. This repo only references issuers via annotations. ⚠️ The `cert-home-cert-envoy` issuer is **RETIRED** — `api.ai-v2.camer.digital` TLS now comes from an **in-chart ns ACME `Issuer` + HTTP-01 `gatewayHTTPRoute`** solver (`charts/core-gateway`, `gateway.acmeHttp01.enabled`), no DNS token. `cert-cloudflare` DNS-01 needs a `cloudflare-secret` (Cloudflare API token) in kube-system that is currently **missing** — only matters if you want DNS-01/wildcards. Don't re-add a cert chart here.
 
 ## When you finish substantive work
 
