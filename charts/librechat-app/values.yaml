@@ -14,6 +14,45 @@ s3ExternalSecret:
     accessKeyIdProperty: s3_backup_cnpg_client_id
     secretAccessKeyProperty: s3_backup_cnpg_secret
 
+# User-owned secrets LibreChat (+ search) need. Scaffolded as ExternalSecrets
+# with PLACEHOLDER remoteRefs — fill the real ssegning-aws key/property for each,
+# then librechat-app + librechat-search start. (Same pattern as
+# observability-secrets.) Until filled, these ExternalSecrets won't sync and the
+# target Secrets stay absent. Set a secret's block to {} (or remove keys) if you
+# provision it elsewhere; set librechatSecrets.enabled=false to skip all.
+librechatSecrets:
+  enabled: true
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  # secretName -> { secretKey -> {key, property} }  (ssegning-aws remoteRef)
+  secrets:
+    librechat-main-config:
+      converse_openai_api_key: { key: TODO_REPLACE, property: TODO_REPLACE }
+    librechat-config:
+      creds_key: { key: TODO_REPLACE, property: TODO_REPLACE }
+      creds_iv: { key: TODO_REPLACE, property: TODO_REPLACE }
+      jwt_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+      jwt_refresh_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+    librechat-openid-config:
+      client_id: { key: TODO_REPLACE, property: TODO_REPLACE }
+      client_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+      session_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+    librechat-meili-config:
+      MEILI_MASTER_KEY: { key: TODO_REPLACE, property: TODO_REPLACE }
+    librechat-mcp-cd-credentials:
+      client_id: { key: TODO_REPLACE, property: TODO_REPLACE }
+      client_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+    librechat-mcp-github:
+      client_id: { key: TODO_REPLACE, property: TODO_REPLACE }
+      client_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+    librechat-mcp-coder-credentials:
+      client_id: { key: TODO_REPLACE, property: TODO_REPLACE }
+      client_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+    librechat-websearch-config:
+      serper_api_key: { key: TODO_REPLACE, property: TODO_REPLACE }
+      firecrawl_api_key: { key: TODO_REPLACE, property: TODO_REPLACE }
+      jina_api_key: { key: TODO_REPLACE, property: TODO_REPLACE }
+
 global:
   librechat:
     version: "v0.8.5"
