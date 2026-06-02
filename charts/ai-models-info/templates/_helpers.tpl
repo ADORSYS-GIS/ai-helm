@@ -75,6 +75,7 @@ Output: full JSON string `{"data":[...]}`.
 {{- $defaults := default (dict) .Values.catalogDefaults -}}
 {{- $defCtx := default 128000 $defaults.contextLength -}}
 {{- $defMaxTok := default 8192 $defaults.maxCompletionTokens -}}
+{{- $maxCtx := default 400000 $defaults.maxContextLength -}}
 {{- $entries := list -}}
 {{- range $name, $cfg := .Values.models -}}
   {{- $kind := default "text" $cfg.kind -}}
@@ -99,9 +100,10 @@ Output: full JSON string `{"data":[...]}`.
 
     {{- /* context_length + top_provider — always emitted. Per-model
            `info.contextLength` / `info.maxOutputTokens` override the
-           chart-wide catalogDefaults (128000 / 8192). top_provider mirrors
-           context_length (OpenRouter shape). */ -}}
-    {{- $ctx := default $defCtx $info.contextLength -}}
+           chart-wide catalogDefaults (128000 / 8192). context_length is
+           hard-capped at catalogDefaults.maxContextLength (400000). top_provider
+           mirrors context_length (OpenRouter shape). */ -}}
+    {{- $ctx := min (default $defCtx $info.contextLength) $maxCtx -}}
     {{- $maxTok := default $defMaxTok $info.maxOutputTokens -}}
     {{- $_ := set $entry "context_length" $ctx -}}
     {{- $_ := set $entry "top_provider" (dict
