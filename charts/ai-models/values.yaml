@@ -165,6 +165,21 @@ supportedParams:
     - seed
     - response_format
 
+# Per-backend API-key ExternalSecrets — flows through to the
+# `ai-models-backends` child (templates/externalsecret.yaml), which renders
+# one chart-owned ExternalSecret per unique `secretRef.name` (deduped) from
+# the store below. Replaces the out-of-band `aii-secret` provisioning.
+#
+# ⚠️ TODO(maintainer): the per-backend `externalSecret.{key,property}` below
+# are PLACEHOLDERS — set the real ssegning-aws coordinates before relying on
+# these, and remove the same Secret names from `aii-secret` as each goes live
+# (two ExternalSecrets owning one Secret would fight).
+externalSecrets:
+  enabled: true
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  apiKeyDataKey: apiKey
+
 # Backends — flow into the `ai-models-backends` child as its `backends:`
 # values, and into each `ai-model` child as `backendsInventory:` for
 # resourceName lookup.
@@ -174,31 +189,51 @@ backends:
     secretRef:
       name: fireworks-api-key-01
     resourceName: fw-backend-01-svc
+    externalSecret:
+      key: TODO_REPLACE/fireworks # ssegning-aws key
+      property: TODO_REPLACE_fireworks_api_key_01
   fw-02:
     <<: *fireworksBackend
     resourceName: fw-backend-02-svc
     secretRef:
       name: fireworks-api-key-02
+    externalSecret:
+      key: TODO_REPLACE/fireworks
+      property: TODO_REPLACE_fireworks_api_key_02
   deepinfra-01:
     <<: *deepinfraBackend
     resourceName: deepinfra-backend-01-svc
     secretRef:
       name: deepinfra-api-key-only
+    externalSecret:
+      key: TODO_REPLACE/deepinfra
+      property: TODO_REPLACE_deepinfra_api_key
   deepinfra-02:
     <<: *deepinfraBackend
     resourceName: deepinfra-backend-02-svc
     secretRef:
       name: deepinfra-api-key-only
+    # Shares the `deepinfra-api-key-only` Secret with deepinfra-01; the
+    # backends chart dedupes by secret name so only one ExternalSecret renders.
+    externalSecret:
+      key: TODO_REPLACE/deepinfra
+      property: TODO_REPLACE_deepinfra_api_key
   google-ai-studio-01:
     <<: *googleAiStudioBackend
     resourceName: google-ai-studio-backend-01-svc
     secretRef:
       name: google-ai-studio-api-key-01
+    externalSecret:
+      key: TODO_REPLACE/google-ai-studio
+      property: TODO_REPLACE_google_ai_studio_api_key_01
   google-ai-studio-02:
     <<: *googleAiStudioBackend
     resourceName: google-ai-studio-backend-02-svc
     secretRef:
       name: google-ai-studio-api-key-02
+    externalSecret:
+      key: TODO_REPLACE/google-ai-studio
+      property: TODO_REPLACE_google_ai_studio_api_key_02
 
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application

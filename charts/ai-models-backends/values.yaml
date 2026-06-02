@@ -4,6 +4,24 @@
 # Set `enabled: false` to suppress a single backend without removing the
 # entry; consumers (per-model ai-model charts) reference backends by name.
 
+# ────────────────────────────────────────────────────────────────────────
+# Per-backend API-key ExternalSecrets (templates/externalsecret.yaml).
+#
+# When enabled, each APIKey backend that carries an `externalSecret` block
+# gets a chart-owned ExternalSecret that materialises its `secretRef.name`
+# Secret (data key `apiKey`) from the external store — replacing the
+# out-of-band `aii-secret` provisioning. Deduped by secret name (shared
+# keys like `deepinfra-api-key-only` render once).
+# ────────────────────────────────────────────────────────────────────────
+externalSecrets:
+  enabled: true
+  # ClusterSecretStore the keys are pulled from (the only store on-cluster).
+  # Override per-env if a second cluster uses a differently-named store.
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  # Data key the Envoy AI Gateway BackendSecurityPolicy (type APIKey) reads.
+  apiKeyDataKey: apiKey
+
 backends: {}
 #  fw-01:
 #    schema: OpenAI
@@ -16,3 +34,8 @@ backends: {}
 #    secretRef:
 #      name: fireworks-api-key-01
 #    resourceName: fw-backend-01-svc
+#    # ssegning-aws remoteRef → materialises the `fireworks-api-key-01`
+#    # Secret (key `apiKey`). Omit to keep relying on an external secret.
+#    externalSecret:
+#      key: prod/meta/test-app
+#      property: fireworks_api_key_01

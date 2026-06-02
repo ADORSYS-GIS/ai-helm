@@ -18,6 +18,20 @@ For each entry in `.Values.backends` (unless `enabled: false`):
 | `AIServiceBackend` (aigateway.envoyproxy.io/v1alpha1) | Schema declaration (OpenAI / GCP / Bedrock) + prefix path |
 | `BackendSecurityPolicy` (aigateway.envoyproxy.io/v1alpha1) | API-key auth via Secret (or GCPCredentials variant) |
 | `BackendTLSPolicy` (gateway.networking.k8s.io/v1) | TLS validation against system CA, hostname pin |
+| `ExternalSecret` (external-secrets.io/v1) | Materialises the APIKey `secretRef.name` Secret (key `apiKey`) from `ssegning-aws` — one per **unique** secret name, only when the backend carries an `externalSecret` block. See below. |
+
+## API-key ExternalSecrets
+
+Each APIKey backend can OWN its key Secret instead of relying on an
+out-of-band app (the old `aii-secret`). Set `externalSecrets.enabled: true`
+(default) and give the backend an `externalSecret: {key, property}` block
+pointing at the `ssegning-aws` remoteRef; the chart renders one
+`ExternalSecret` per **unique** `secretRef.name` (deduped — shared keys like
+`deepinfra-api-key-only` render once) with the provider key under `apiKey`.
+
+> ⚠️ **Cutover:** while `aii-secret` still provisions these same Secret
+> names, ESO would have two owners. Remove each Secret from `aii-secret` as
+> its chart-owned `ExternalSecret` here goes live.
 
 ## Values
 
@@ -34,6 +48,15 @@ backends:
       name: example-api-key           # for APIKey: the Secret holding `apiKey`
     tlsHostname: api.example.com      # if set, BackendTLSPolicy is rendered
     resourceName: example-backend-01-svc  # the K8s name AIServiceBackend etc. take
+    externalSecret:                   # optional: chart owns the key Secret
+      key: prod/meta/example          # ssegning-aws remoteRef key
+      property: example_api_key       # property holding the API key
+
+externalSecrets:
+  enabled: true                       # render the ExternalSecrets above
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  apiKeyDataKey: apiKey               # data key the BackendSecurityPolicy reads
 ```
 
 The orchestrator (`ai-models`) populates this from its own `backends:`
