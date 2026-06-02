@@ -19,6 +19,13 @@ data:
       listen       8080;
       server_name  _;
 
+      # The catalog file is mounted at /usr/share/nginx/html/v1/models/info.
+      # This custom server block REPLACES the stock default.conf (which set
+      # `root /usr/share/nginx/html`), so we must set root again — otherwise
+      # try_files resolves against nginx's compiled-in default root
+      # (/etc/nginx/html) and the file is never found → 404.
+      root /usr/share/nginx/html;
+
       # The catalog file has no extension; force JSON.
       types { application/json json; }
       default_type application/json;
