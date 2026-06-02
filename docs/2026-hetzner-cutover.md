@@ -307,6 +307,11 @@ mounted file → 404. Added `root /usr/share/nginx/html;` to both server blocks.
   (verified live).
 - `https://api.ai-v2.camer.digital/v1/models/info` → was 404 even with a valid
   JWT (404 came from nginx itself, *after* Authorino); fixed the same way.
+  **Verified:** in-cluster curl now returns 200 + the OpenRouter-shape catalog
+  JSON. ⚠️ Rollout note: a ConfigMap-only change doesn't reload nginx, and
+  `kubectl rollout restart` is reverted by ArgoCD selfHeal (the annotation is
+  git-drift) — so after the CM syncs, the pods must be **deleted** (RS recreates
+  them with the new subPath-mounted config).
 
 ### LibreChat S3 + secrets
 - `librechat-app` uses `fileStrategy: s3` and referenced a missing
