@@ -294,3 +294,46 @@ charts/ai-model, MCPRoute in charts/mcps) — otherwise their header/path matche
 out-rank the `/` redirect on :80 and serve plaintext. **Verified live:** `http`
 listener attachedRoutes 22→1 (redirect only), `api-https` 23; `curl http://…`
 → 308 → https; `https://…` → HTTP/2 401 (Authorino auth-gate, TLS good).
+
+## 2026-06-02 (later still) — LibreChat / opencode / models-info
+
+### nginx static-server `root` bug (two charts) ✅
+Both `librechat-opencode-wellknown` and `ai-models-info` ship a custom nginx
+`default.conf` that REPLACES the stock one but forgot to re-declare
+`root /usr/share/nginx/html`. Without it, `try_files <path> =404` resolves
+against nginx's compiled-in default root (`/etc/nginx/html`) and never finds the
+mounted file → 404. Added `root /usr/share/nginx/html;` to both server blocks.
+- `https://ai-v2.camer.digital/opencode/.well-known/opencode` → now 200 JSON
+  (verified live).
+- `https://api.ai-v2.camer.digital/v1/models/info` → was 404 even with a valid
+  JWT (404 came from nginx itself, *after* Authorino); fixed the same way.
+
+### LibreChat S3 + secrets
+- `librechat-app` uses `fileStrategy: s3` and referenced a missing
+  `librechat-s3-config` secret + a stale `AWS_ENDPOINT_URL: https://s3.camer.digital`.
+  Now: an in-chart ExternalSecret (templates/externalsecret-s3.yaml) materialises
+  `librechat-s3-config` from the SAME Hetzner Object Storage material as
+  Keycloak/observability (ssegning-aws `prod/meta/test-app`), via ESO
+  `target.template` (region + bucket `ssegning-k8s-state` are plain config, only
+  the access/secret keys are fetched); endpoint → `https://nbg1.your-objectstorage.com`.
+- LibreChat also needs 8 user-owned secrets that didn't exist (real API keys,
+  OAuth creds, encryption keys, Meili key). Scaffolded as ExternalSecrets
+  (templates/externalsecret-app.yaml + `librechatSecrets` values) with
+  PLACEHOLDER ssegning-aws remoteRefs — **fill them to bring librechat-app +
+  librechat-search up**: librechat-main-config, librechat-config,
+  librechat-openid-config, librechat-meili-config, librechat-mcp-{cd,coder,github}-
+  credentials, librechat-websearch-config. (converse has no deny-egress baseline,
+  so no egress policy is needed for S3.)
+
+### ai-models-info placement — DECISION: stays under `ai-models` (not librechart)
+`ai-models-info` (the `models-info` app serving `/v1/models/info`) is **not
+missing** — it's a child of the **`ai-models`** orchestrator, Synced/Healthy with
+its HTTPRoute on the core-gateway. It is deliberately NOT a `librechart` child:
+it's rendered with the model catalog (`.Values.models` + `excludeKinds`) that is
+the source of truth in `charts/ai-models/values.yaml`, and Helm can't share that
+across the two separate orchestrator charts. Moving it to librechart would
+require relocating the ~35-model catalog to a shared source (risky core-models
+diff) AND a disruptive live cutover (the ai-models ApplicationSet has no
+`preserveResourcesOnDeletion`, so it would prune the working app → `/v1/models/info`
+briefly 404s). For a healthy, serving component that lives next to the catalog it
+derives from, that cost isn't worth it. **Left under `ai-models` by decision.**
