@@ -30,7 +30,7 @@ model:
       mountPath: "/mnt/models"
 
     downloader:
-      enabled: true
+      enabled: false
       image:
         repository: kserve/storage-initializer
         tag: v0.14.1
@@ -59,11 +59,11 @@ servingRuntime:
   port: 8080
   resources:
     limits:
-      cpu: "2"
-      memory: "4Gi"
+      cpu: "4"
+      memory: "16Gi"
     requests:
-      cpu: "1"
-      memory: "2Gi"
+      cpu: "2"
+      memory: "8Gi"
   hfHome: "/hf-cache"
   protocolVersions:
     - v1
@@ -106,7 +106,7 @@ inferenceService:
 
 adapters:
   metrics:
-    enabled: true
+    enabled: false
     serviceMonitor:
       labels: {}
       portName: "http-userport"
