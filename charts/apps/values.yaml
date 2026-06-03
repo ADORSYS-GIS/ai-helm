@@ -266,9 +266,12 @@ applications:
   # removed: it was never the store actually used. Don't re-add an ESO
   # operator or ClusterSecretStore here.
   #
-  # The actual ExternalSecret CRs are pulled from ai-ops-secrets.git by
-  # the `secrets` Application below (and others provisioned externally);
-  # they all reference the `ssegning-aws` store.
+  # ExternalSecret CRs are now OWNED by the charts that need them
+  # (ai-models-backends, librechat-app, observability-secrets, and the
+  # per-app `environments/<env>/deps/*` overlays), each referencing the
+  # `ssegning-aws` store directly. The old `secrets` Application that
+  # pulled them wholesale from ai-ops-secrets.git has been removed — that
+  # repo is being decommissioned as each secret migrates in-chart.
 
   # --- Core Infrastructure ---
   # NOTE: Redis is NOT deployed by this repo. It's managed externally
@@ -477,16 +480,6 @@ applications:
             minAvailable: 1
     destination:
       namespace: kube-system
-
-  - name: secrets
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-ops-secrets.git
-      targetRevision: HEAD
-      path: manifests
-    destination:
-      namespace: manifests
 
   # --- Gateway ---
   - name: core-gateway
