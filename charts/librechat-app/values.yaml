@@ -14,12 +14,12 @@ s3ExternalSecret:
     accessKeyIdProperty: s3_backup_cnpg_client_id
     secretAccessKeyProperty: s3_backup_cnpg_secret
 
-# User-owned secrets LibreChat (+ search) need. Scaffolded as ExternalSecrets
-# with PLACEHOLDER remoteRefs — fill the real ssegning-aws key/property for each,
-# then librechat-app + librechat-search start. (Same pattern as
-# observability-secrets.) Until filled, these ExternalSecrets won't sync and the
-# target Secrets stay absent. Set a secret's block to {} (or remove keys) if you
-# provision it elsewhere; set librechatSecrets.enabled=false to skip all.
+# User-owned secrets LibreChat (+ search) need, materialised as chart-owned
+# ExternalSecrets. Each property resolves against the consolidated ssegning-aws
+# secret `ai/camer/digital/prod/env` (one property per key); ensure every
+# property below exists there or the ExternalSecret sits in SecretSyncedError
+# and the workload won't start. Set a secret's block to {} (or remove keys) if
+# you provision it elsewhere; set librechatSecrets.enabled=false to skip all.
 librechatSecrets:
   enabled: true
   secretStore: ssegning-aws
@@ -27,31 +27,31 @@ librechatSecrets:
   # secretName -> { secretKey -> {key, property} }  (ssegning-aws remoteRef)
   secrets:
     librechat-main-config:
-      converse_openai_api_key: { key: TODO_REPLACE, property: TODO_REPLACE }
+      converse_openai_api_key: { key: ai/camer/digital/prod/env, property: converse_openai_api_key }
     librechat-config:
-      creds_key: { key: TODO_REPLACE, property: TODO_REPLACE }
-      creds_iv: { key: TODO_REPLACE, property: TODO_REPLACE }
-      jwt_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
-      jwt_refresh_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+      creds_key: { key: ai/camer/digital/prod/env, property: librechat_config_creds_key }
+      creds_iv: { key: ai/camer/digital/prod/env, property: librechat_config_creds_iv }
+      jwt_secret: { key: ai/camer/digital/prod/env, property: librechat_config_jwt_secret }
+      jwt_refresh_secret: { key: ai/camer/digital/prod/env, property: librechat_config_jwt_refresh_secret }
     librechat-openid-config:
-      client_id: { key: TODO_REPLACE, property: TODO_REPLACE }
-      client_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
-      session_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+      client_id: { key: ai/camer/digital/prod/env, property: librechat_openid_config_client_id }
+      client_secret: { key: ai/camer/digital/prod/env, property: librechat_openid_config_client_secret }
+      session_secret: { key: ai/camer/digital/prod/env, property: librechat_openid_config_session_secret }
     librechat-meili-config:
-      MEILI_MASTER_KEY: { key: TODO_REPLACE, property: TODO_REPLACE }
+      MEILI_MASTER_KEY: { key: ai/camer/digital/prod/env, property: librechat_meili_config_meili_master_key }
     librechat-mcp-cd-credentials:
-      client_id: { key: TODO_REPLACE, property: TODO_REPLACE }
-      client_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+      client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_cd_credentials_client_id }
+      client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_cd_credentials_client_secret }
     librechat-mcp-github:
-      client_id: { key: TODO_REPLACE, property: TODO_REPLACE }
-      client_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+      client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_id }
+      client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_secret }
     librechat-mcp-coder-credentials:
-      client_id: { key: TODO_REPLACE, property: TODO_REPLACE }
-      client_secret: { key: TODO_REPLACE, property: TODO_REPLACE }
+      client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_id }
+      client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_secret }
     librechat-websearch-config:
-      serper_api_key: { key: TODO_REPLACE, property: TODO_REPLACE }
-      firecrawl_api_key: { key: TODO_REPLACE, property: TODO_REPLACE }
-      jina_api_key: { key: TODO_REPLACE, property: TODO_REPLACE }
+      serper_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_serper_api_key }
+      firecrawl_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_firecrawl_api_key }
+      jina_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_jina_api_key }
 
 global:
   librechat:
