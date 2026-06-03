@@ -26,8 +26,9 @@ Each APIKey backend can OWN its key Secret instead of relying on an
 out-of-band app (the old `aii-secret`). Set `externalSecrets.enabled: true`
 (default) and give the backend an `externalSecret: {key, property}` block
 pointing at the `ssegning-aws` remoteRef; the chart renders one
-`ExternalSecret` per **unique** `secretRef.name` (deduped — shared keys like
-`deepinfra-api-key-only` render once) with the provider key under `apiKey`.
+`ExternalSecret` per **unique** `secretRef.name` (deduped — backends sharing one
+Secret name render once; distinct keys need distinct names) with the provider
+key under `apiKey`.
 
 > ⚠️ **Cutover:** while `aii-secret` still provisions these same Secret
 > names, ESO would have two owners. Remove each Secret from `aii-secret` as

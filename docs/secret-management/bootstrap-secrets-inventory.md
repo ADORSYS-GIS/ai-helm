@@ -100,7 +100,8 @@ API keys for AI model providers, consumed by the Envoy AI Gateway service backen
 | `fireworks-api-key-01` | converse-proxy | Opaque | `apiKey` | Fireworks API key (converse-proxy) |
 | `fireworks-api-key-01` | converse | Opaque | `apiKey` | Fireworks API key |
 | `fireworks-api-key-02` | converse | Opaque | `apiKey` | Fireworks API key (backup) |
-| `deepinfra-api-key-only` | converse | Opaque | `key` | DeepInfra API key |
+| `deepinfra-api-key-01` | converse | Opaque | `apiKey` | DeepInfra API key (primary) |
+| `deepinfra-api-key-02` | converse | Opaque | `apiKey` | DeepInfra API key (secondary) |
 | `gcp-service-account-key-01` | converse | Opaque | `key` | GCP Service Account key |
 | `gcp-service-account-key-02` | converse | Opaque | `key` | GCP Service Account key (backup) |
 | `google-ai-studio-api-key-01` | converse | Opaque | `key` | Google AI Studio API key |
