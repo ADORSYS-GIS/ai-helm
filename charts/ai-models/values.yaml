@@ -170,10 +170,10 @@ supportedParams:
 # one chart-owned ExternalSecret per unique `secretRef.name` (deduped) from
 # the store below. Replaces the out-of-band `aii-secret` provisioning.
 #
-# ⚠️ TODO(maintainer): the per-backend `externalSecret.{key,property}` below
-# are PLACEHOLDERS — set the real ssegning-aws coordinates before relying on
-# these, and remove the same Secret names from `aii-secret` as each goes live
-# (two ExternalSecrets owning one Secret would fight).
+# Each backend's `externalSecret.{key,property}` resolves against the
+# consolidated ssegning-aws secret `ai/camer/digital/prod/env`, one property
+# per provider key. The old out-of-band provisioner (`aii-secret` / the
+# `secrets` Application) has been retired now these are chart-owned.
 externalSecrets:
   enabled: true
   secretStore: ssegning-aws
@@ -204,17 +204,18 @@ backends:
     <<: *deepinfraBackend
     resourceName: deepinfra-backend-01-svc
     secretRef:
-      name: deepinfra-api-key-only
+      name: deepinfra-api-key-01
     externalSecret:
       key: ai/camer/digital/prod/env
       property: deepinfra_api_key_01
   deepinfra-02:
     <<: *deepinfraBackend
     resourceName: deepinfra-backend-02-svc
+    # Independent key from deepinfra-01 (own Secret name → own ExternalSecret;
+    # the chart dedupes by secret name, so a distinct name is required for the
+    # second key to render). Mirrors the fw/google primary/secondary pattern.
     secretRef:
-      name: deepinfra-api-key-only
-    # Shares the `deepinfra-api-key-only` Secret with deepinfra-01; the
-    # backends chart dedupes by secret name so only one ExternalSecret renders.
+      name: deepinfra-api-key-02
     externalSecret:
       key: ai/camer/digital/prod/env
       property: deepinfra_api_key_02
