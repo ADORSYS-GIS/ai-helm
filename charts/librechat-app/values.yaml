@@ -14,6 +14,23 @@ s3ExternalSecret:
     accessKeyIdProperty: s3_backup_cnpg_client_id
     secretAccessKeyProperty: s3_backup_cnpg_secret
 
+# ExternalSecret materialising `redis-ha-redis-auth` (key `redis-password`) in
+# this namespace — LibreChat reads it as REDIS_PASSWORD. The shared redis-ha
+# (home-os, redis-system) is password-protected AND TLS-only; the password is the
+# platform secret `prod/meta/test-app` / `redis_password` (NOT the consolidated
+# app secret). Each redis consumer namespace needs its own copy (see CLAUDE.md).
+# NOTE: redis-ha is TLS-only — LibreChat must also connect over TLS and trust the
+# internal self-signed-ca (a cert-manager Certificate mounting ca.crt); this
+# ExternalSecret provides only the password.
+redisExternalSecret:
+  enabled: true
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  secretName: redis-ha-redis-auth
+  remoteRef:
+    key: prod/meta/test-app
+    passwordProperty: redis_password
+
 # User-owned secrets LibreChat (+ search) need, materialised as chart-owned
 # ExternalSecrets. Each property resolves against the consolidated ssegning-aws
 # secret `ai/camer/digital/prod/env` (one property per key); ensure every
