@@ -731,23 +731,41 @@ applications:
               response:
                 success:
                   headers:
-                    # Identity shape differs by credential: a TokenReview result
-                    # (SA) exposes `.user.username`; an apiKey match exposes the
-                    # matched Secret object (`.metadata.name`). Pick whichever
-                    # applies so each caller gets its own account/burst bucket.
+                    # Identity resolution (ADR-0021). A trusted service (LibreChat)
+                    # may forward the END-USER's Keycloak sub in `X-LibreChat-User`;
+                    # when present we attribute the request to that USER — so a
+                    # person's LibreChat + opencode usage share ONE account/budget.
+                    # Otherwise (cron-jobs / raw service calls) we fall back to the
+                    # authenticated identity: SA username (TokenReview) or the apiKey
+                    # Secret name. Envoy lowercases request.headers keys.
                     "x-account-id":
                       plain:
-                        expression: 'has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name)'
-                    # static "internal" tier ⇒ uncapped budget, burst-only
+                        expression: '"x-librechat-user" in request.headers && request.headers["x-librechat-user"] != "" ? request.headers["x-librechat-user"] : (has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name))'
+                    # Per-user monthly-budget bucket on the same key as the account
+                    # (no separate org for forwarded users); services hit the
+                    # uncapped internal tier, so this is moot for them.
+                    "x-org-id":
+                      plain:
+                        expression: '"x-librechat-user" in request.headers && request.headers["x-librechat-user"] != "" ? request.headers["x-librechat-user"] : (has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name))'
+                    # Tier: forwarded user → role→tier (X-LibreChat-Role == "pro" →
+                    # pro else free; ADJUST "pro" to match your Keycloak
+                    # librechat_roles value for paid users). No forwarded user → the
+                    # uncapped "internal" service tier (burst-only).
                     "x-billing-plan":
                       plain:
-                        value: "internal"
+                        expression: '"x-librechat-user" in request.headers && request.headers["x-librechat-user"] != "" ? (("x-librechat-role" in request.headers && request.headers["x-librechat-role"] == "pro") ? "pro" : "free") : "internal"'
+                    # Metering (ADR-0011): user-id = the end user (or service); azp =
+                    # ALWAYS the authenticated service/SA that forwarded it; email =
+                    # the forwarded user email when present.
                     "x-oidc-user-id":
                       plain:
-                        expression: 'has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name)'
+                        expression: '"x-librechat-user" in request.headers && request.headers["x-librechat-user"] != "" ? request.headers["x-librechat-user"] : (has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name))'
                     "x-oidc-azp":
                       plain:
                         expression: 'has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name)'
+                    "x-oidc-email":
+                      plain:
+                        expression: '"x-librechat-email" in request.headers ? request.headers["x-librechat-email"] : ""'
 
     destination:
       namespace: converse-gateway
