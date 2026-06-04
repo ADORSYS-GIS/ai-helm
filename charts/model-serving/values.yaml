@@ -3,13 +3,13 @@ global:
   fullnameOverride: ""
 
 model:
-  name: "phi-2"
-  storageUri: "hf://microsoft/phi-2"
+  name: "phi-1-5"
+  storageUri: ""
   format:
     name: huggingface
   args:
-    - --device=cpu
-    - --dtype=float32
+    # - --device=cuda  # Not supported in vllm-openai:latest, GPU is auto-detected
+    - --dtype=auto
     - --host=0.0.0.0
     - --max-model-len=2048
     - --port=8080
@@ -47,23 +47,25 @@ model:
 
 chatTemplate:
   enabled: true
-  configMapName: "phi2-chat-template"
+  configMapName: "phi1-5-chat-template"
 
 servingRuntime:
   enabled: true
   nameOverride: ""
   image:
-    repository: substratusai/vllm
-    tag: main-cpu
+    repository: vllm/vllm-openai
+    tag: latest
     pullPolicy: IfNotPresent
   port: 8080
   resources:
     limits:
       cpu: "4"
       memory: "16Gi"
+      nvidia.com/gpu: "1"
     requests:
       cpu: "2"
       memory: "8Gi"
+      nvidia.com/gpu: "1"
   hfHome: "/hf-cache"
   protocolVersions:
     - v1
@@ -74,7 +76,6 @@ servingRuntime:
       priority: 1
   env:
     HF_HUB_DOWNLOAD_TIMEOUT: "600"
-    VLLM_CPU_KVCACHE_SPACE: "4"
   probes:
     startup:
       initialDelaySeconds: 10
@@ -121,9 +122,9 @@ serving:
   global:
     createDefaultServiceAccount: false
   configMaps:
-    phi2-chat-template:
+    phi1-5-chat-template:
       enabled: true
-      forceRename: phi2-chat-template
+      forceRename: phi1-5-chat-template
       data:
         chat_template.jinja: |
           {% for message in messages %}
