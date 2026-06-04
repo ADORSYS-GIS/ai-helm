@@ -74,7 +74,19 @@ different descriptors that select different rate-limit tiers.
 |---|---|---|---|
 | Human (external) | `auth.identity.sub` | Keycloak org claim | `auth.identity.billing_plan` (default `free`) |
 | Remote SA (external) | `auth.identity.azp` | — | `service` |
-| In-cluster svc (internal) | `auth.identity.user.username` (the SA: `system:serviceaccount:<ns>:<name>`) | — | static `internal` |
+| In-cluster svc (internal) | `auth.identity.user.username` (SA) / apiKey Secret name | — | static `internal` |
+| **Forwarded user** (internal, e.g. LibreChat) | the forwarded `X-LibreChat-User` (Keycloak sub) | same sub | `X-LibreChat-Role` → `pro`/`free` |
+
+**Forwarded-user attribution (internal plane).** A long-running service like
+LibreChat authenticates as *itself* (apiKey) but forwards the END-USER's Keycloak
+sub in `X-LibreChat-User` (+ role/email). The internal AuthConfig's CEL prefers
+that header when present (`request.headers["x-librechat-user"]`), so the user's
+`x-account-id`/`x-org-id` = their sub and `x-billing-plan` = their role→tier —
+identical to what they'd get via opencode on the external plane (one identity,
+one budget across clients). `x-oidc-azp` stays the authenticated service, for
+audit. **Trust:** sound only because the internal plane accepts authenticated
+first-party services only, and Authorino *overwrites* the descriptors (a client
+can't set them directly).
 
 `x-billing-plan` is a CEL expression: `azp ∈ serviceAccountClients ? "service"
 : (auth.identity.billing_plan or "free")` on the external AuthConfig; a static

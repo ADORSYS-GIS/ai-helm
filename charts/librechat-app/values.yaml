@@ -785,13 +785,17 @@ config:
         summaryModel: "gemma-4"
         forcePrompt: true
         modelDisplayLabel: "Converse AI"
+        # Forward the END-USER identity to the gateway so the internal AuthConfig
+        # maps it into PER-USER rate-limit descriptors (ADR-0021), even though the
+        # gateway authenticates LibreChat as one service (apiKey). X-LibreChat-User
+        # = the user's Keycloak sub (so a user's budget is shared with their
+        # opencode usage). TRUST: only safe because the internal plane accepts
+        # authenticated first-party services only, and Authorino OVERWRITES
+        # x-account-id/x-billing-plan from these (a client can't set them directly).
         headers:
-          X-ACCOUNT-ID: 'LIBRECHAT'
-          X-PROJECT-ID: 'sso:{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
-          X-USER-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
-          X-USER-EMAIL: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
-          X-USER-ROLE: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
-          X-USER-NAME: '{{ `{{` }}LIBRECHAT_USER_NAME{{ `}}` }}'
+          X-LibreChat-User: '{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
+          X-LibreChat-Role: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
+          X-LibreChat-Email: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
 
 # ────────────────────────────────────────────────────────────────────────
 # MongoDB subchart values (helmforge/mongodb@1.7.6, aliased as `db`).
