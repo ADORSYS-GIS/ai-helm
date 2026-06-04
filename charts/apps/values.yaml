@@ -568,13 +568,10 @@ applications:
               hosts:
                 - api.ai-v2.camer.digital
               # Keycloak clients whose `azp` claim identifies a service-account
-              # token. Steps marked with `_skipForServiceAccounts: true` are
-              # bypassed when the JWT's azp matches any entry below.
-              # SA tokens still pass authentication (JWT verification); only
-              # the lightbridge-opa metadata + dependent authorization are
-              # skipped — their access is implicitly granted by membership in
-              # this allowlist plus Keycloak role assignment.
-              # See: docs/authorino-service-account-bypass.md
+              # token. `_skipForServiceAccounts: true` on a step bypasses it for
+              # these clients. No such step exists today (OPA validation removed
+              # below), but the allowlist is retained for when OPA burst-control
+              # returns. See: docs/authorino-service-account-bypass.md
               serviceAccountClients:
                 - adorsys-gis-github-ci
                 - lightbridge-api-key
@@ -598,74 +595,35 @@ applications:
                     # home-os / cluster DNS). With ttl caching above, the
                     # JWKS fetch is already off the request hot path, so this
                     # is a resilience nicety, not a latency fix.
-              metadata:
-                "lightbridge-validation":
-                  # Skip for service-account tokens — lightbridge-opa keys an
-                  # external API-key directory that only contains human callers.
-                  _skipForServiceAccounts: true
-                  http:
-                    url: https://lightbridge-opa.converse.svc.cluster.local:3000/v1/authorino/validate
-                    method: POST
-                    sharedSecretRef:
-                      name: lightbridge-opa-auth
-                      key: credentials
-                    credentials:
-                      authorizationHeader:
-                        prefix: Basic
-                    bodyParameters:
-                      api_key:
-                        selector: "context.request.http.headers.authorization.@extract:{\"sep\":\" \",\"pos\":1}"
-                      ip:
-                        selector: "context.request.http.headers.x-forwarded-for"
-                    contentType: "application/json"
-              # The `enforce-valid-key` authorization step was disabled in
-              # commit db36eeb ("chore: authorization"). When re-enabling,
-              # keep `_skipForServiceAccounts: true` so SA tokens bypass the
-              # check — they have no lightbridge API key, so the metadata
-              # call upstream is also skipped (see ADR-0003 and
-              # docs/authorino-service-account-bypass.md).
-              #authorization:
-              #  "enforce-valid-key":
-              #    _skipForServiceAccounts: true
-              #    patternMatching:
-              #      patterns:
-              #        - selector: "auth.metadata.lightbridge-validation.project.id"
-              #          operator: "neq"
-              #          value: ""
+              # NOTE (2026-06-04): the lightbridge-opa `lightbridge-validation`
+              # metadata source AND its `enforce-valid-key` authorization step
+              # were REMOVED. Authorization is now Keycloak's job — a valid
+              # Keycloak JWT (verified above) means the caller is in our system
+              # and may use the gateway. OPA is reserved for future *burst
+              # control* only (not required yet). Dropping it also removes the
+              # hard dependency on the `lightbridge-opa-auth` Secret + the
+              # lightbridge-opa backend, whose absence made the AuthConfig fail
+              # readiness → "Service not found" 404 on every request. The
+              # rate-limit accounting headers are now JWT-derived (see response).
               response:
                 success:
-                  dynamicMetadata:
-                    "llm_project_id":
-                      plain:
-                        selector: "auth.metadata.lightbridge-validation.project.id"
-                    "llm_account_id":
-                      plain:
-                        selector: "auth.metadata.lightbridge-validation.account.id"
-                    "llm_api_key_id":
-                      plain:
-                        selector: "auth.metadata.lightbridge-validation.api_key.id"
-                    "llm_billing_plan":
-                      plain:
-                        selector: "auth.metadata.lightbridge-validation.project.billing_plan"
                   headers:
                     "x-validated-jwt":
                       plain:
                         selector: "auth.identity.jwt"
-                    "x-project-id":
-                      plain:
-                        selector: "auth.metadata.lightbridge-validation.project.id"
+                    # Rate-limit accounting consumed by the per-model
+                    # BackendTrafficPolicy (x-account-id Distinct + x-billing-plan
+                    # selector + x-ai-eg-model). Post-OPA these derive from the
+                    # JWT: account = the Keycloak user (sub); plan = static "free"
+                    # until a Keycloak plan claim/role is wired (or OPA
+                    # burst-control returns). The old project/api-key headers +
+                    # the llm_* dynamicMetadata were OPA-only and were removed.
                     "x-account-id":
                       plain:
-                        selector: "auth.metadata.lightbridge-validation.account.id"
-                    "x-api-key-id":
-                      plain:
-                        selector: "auth.metadata.lightbridge-validation.api_key.id"
+                        selector: "auth.identity.sub"
                     "x-billing-plan":
                       plain:
-                        selector: "auth.metadata.lightbridge-validation.project.billing_plan"
-                    "x-api-key-status":
-                      plain:
-                        selector: "auth.metadata.lightbridge-validation.api_key.status"
+                        value: "free"
                     # ── x-oidc-* downstream header contract (ADR-0011) ────
                     # Set on every successful auth, for both human and SA tokens.
                     # Envoy access-log JSON sink reads these via %REQ(...)%
