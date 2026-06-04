@@ -41,11 +41,13 @@ The split is by **network reachability** (which maps onto trust), not human-vs-m
 - **Internal plane** — a **raw k8s service DNS** name
   (`core-gateway-internal.converse-gateway.svc.cluster.local`) on a ClusterIP
   Service (never on the LB; in-cluster only, fronted by Cilium NetworkPolicy).
-  Serves in-cluster services: LibreChat, cron-jobs, k8s SAs. Still requires a
-  Keycloak **service-account JWT** (a lighter AuthConfig — JWT verification
-  only), so per-service identity survives for metering. TLS from the internal
-  `self-signed-ca` ClusterIssuer (clients already trust the Home Root CA, same
-  pattern as redis-ha).
+  Serves in-cluster services: LibreChat, cron-jobs, k8s SAs. Auth is the caller's
+  **Kubernetes ServiceAccount token**, validated by Authorino via the apiserver
+  **`kubernetesTokenReview`** (no Keycloak — the cluster itself is the issuer);
+  the caller's projected SA token must carry the audience `core-gateway-internal`.
+  This keeps per-service identity for metering without minting Keycloak tokens.
+  TLS from the internal `self-signed-ca` ClusterIssuer (clients already trust the
+  Home Root CA, same pattern as redis-ha).
 
 Authorino indexes AuthConfigs by `Host`, so two AuthConfigs
 (`kuadrant-policies-external`, `kuadrant-policies-internal`) coexist under one
@@ -63,7 +65,7 @@ different descriptors that select different rate-limit tiers.
 |---|---|---|---|
 | Human (external) | `auth.identity.sub` | Keycloak org claim | `auth.identity.billing_plan` (default `free`) |
 | Remote SA (external) | `auth.identity.azp` | — | `service` |
-| In-cluster svc (internal) | `auth.identity.azp` | — | `internal` |
+| In-cluster svc (internal) | `auth.identity.user.username` (the SA: `system:serviceaccount:<ns>:<name>`) | — | static `internal` |
 
 `x-billing-plan` is a CEL expression: `azp ∈ serviceAccountClients ? "service"
 : (auth.identity.billing_plan or "free")` on the external AuthConfig; a static
