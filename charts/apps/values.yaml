@@ -575,7 +575,7 @@ applications:
               serviceAccountClients:
                 - adorsys-gis-github-ci
                 - lightbridge-api-key
-              authentication: &keycloakAuth
+              authentication:
                 keycloak:
                   jwt:
                     issuerUrl: https://auth.verif.fyi/realms/camer-digital
@@ -607,7 +607,7 @@ applications:
               # rate-limit accounting headers are now JWT-derived (see response).
               response:
                 success:
-                  headers: &authHeaders
+                  headers:
                     "x-validated-jwt":
                       plain:
                         selector: "auth.identity.jwt"
@@ -702,28 +702,38 @@ applications:
             # ── Internal plane (ADR-0021) ──────────────────────────────────────
             internal:
               # In-cluster callers reach the gateway via the k8s svc-DNS host
-              # (the api-internal listener); Authorino binds this host to a
-              # LIGHTER config: same Keycloak JWT verification, no metadata/authz.
-              # Descriptors mark the traffic as the "internal" tier (uncapped
-              # budget, burst-only) keyed on the calling service (azp). Per-user
-              # attribution is the internal service's own concern (e.g. LibreChat).
+              # (the api-internal listener). Authorino validates the caller's
+              # KUBERNETES ServiceAccount token via the apiserver TokenReview —
+              # NO Keycloak; the "issuer" is the cluster itself. The caller's
+              # projected SA token must carry the audience below. Descriptors mark
+              # the "internal" tier (uncapped, burst-only) keyed on the SA
+              # identity (system:serviceaccount:<ns>:<name>).
               hosts:
                 - core-gateway-internal.envoy-gateway-system.svc.cluster.local
-              authentication: *keycloakAuth
+              authentication:
+                kubernetes-sa:
+                  kubernetesTokenReview:
+                    audiences:
+                      - core-gateway-internal
               response:
                 success:
                   headers:
-                    # Inherit the full x-validated-jwt + x-oidc-* contract…
-                    <<: *authHeaders
-                    # …then override the plane-specific descriptors:
-                    # account = the calling in-cluster service (its Keycloak client)
+                    # k8s SA identity = system:serviceaccount:<ns>:<name>. The
+                    # Keycloak x-oidc-* claim set doesn't apply here, so we map the
+                    # SA name into the account + the metering identity headers.
                     "x-account-id":
                       plain:
-                        selector: "auth.identity.azp"
+                        selector: "auth.identity.user.username"
                     # static "internal" tier ⇒ uncapped budget, burst-only
                     "x-billing-plan":
                       plain:
                         value: "internal"
+                    "x-oidc-user-id":
+                      plain:
+                        selector: "auth.identity.user.username"
+                    "x-oidc-azp":
+                      plain:
+                        selector: "auth.identity.user.username"
 
     destination:
       namespace: converse-gateway
