@@ -616,22 +616,22 @@ applications:
                     #   x-account-id → per-user burst bucket
                     #   x-org-id     → per-org monthly budget bucket
                     #   x-billing-plan → tier selector (free/pro/service)
-                    # x-billing-plan reads the Keycloak `billing_plan` claim (the
-                    # mapper should default it to "free"; SA clients carry
-                    # "service"); x-org-id reads the Keycloak org claim. Until
-                    # those mappers land both resolve empty, so the matching
-                    # rate-limit rule simply doesn't match — fails OPEN (no limit),
-                    # never a hard AuthConfig error. (The internal-plane AuthConfig
-                    # sets x-billing-plan="internal" statically.)
+                    # x-billing-plan / x-org-id use a CEL default so the Keycloak
+                    # claims are NOT required in the JWT:
+                    #   billing_plan absent → "free"
+                    #   organization absent → the user (sub), so no-org callers get
+                    #   their OWN budget bucket rather than all sharing one.
+                    # SA clients can still carry billing_plan="service". (The
+                    # internal-plane AuthConfig sets x-billing-plan="internal".)
                     "x-account-id":
                       plain:
                         selector: "auth.identity.sub"
                     "x-org-id":
                       plain:
-                        selector: "auth.identity.organization"
+                        expression: 'has(auth.identity.organization) ? string(auth.identity.organization) : string(auth.identity.sub)'
                     "x-billing-plan":
                       plain:
-                        selector: "auth.identity.billing_plan"
+                        expression: 'has(auth.identity.billing_plan) ? string(auth.identity.billing_plan) : "free"'
                     # ── x-oidc-* downstream header contract (ADR-0011) ────
                     # Set on every successful auth, for both human and SA tokens.
                     # Envoy access-log JSON sink reads these via %REQ(...)%
