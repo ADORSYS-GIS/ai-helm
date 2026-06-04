@@ -702,12 +702,17 @@ applications:
             # ── Internal plane (ADR-0021) ──────────────────────────────────────
             internal:
               # In-cluster callers reach the gateway via the k8s svc-DNS host
-              # (the api-internal listener). Authorino validates the caller's
-              # KUBERNETES ServiceAccount token via the apiserver TokenReview —
-              # NO Keycloak; the "issuer" is the cluster itself. The caller's
-              # projected SA token must carry the audience below. Descriptors mark
-              # the "internal" tier (uncapped, burst-only) keyed on the SA
-              # identity (system:serviceaccount:<ns>:<name>).
+              # (the api-internal listener), authenticated by EITHER credential —
+              # chosen by client lifecycle (ADR-0021), NO Keycloak:
+              #   • one-time tasks (cron-jobs / Jobs) → their projected k8s SA
+              #     token, validated via the apiserver TokenReview (the cluster is
+              #     the issuer). A short job finishes before the token expires, so
+              #     there's no rotation to manage. Token audience must be below.
+              #   • long-running services (LibreChat, …) → a static apiKey Secret
+              #     (labeled kuadrant.io/apikey-for=internal-gateway, ESO-provisioned
+              #     in this ns). No rotation, no sidecar — the service just sends it
+              #     as `Authorization: Bearer <key>` (LibreChat's CONVERSE_OPENAI_API_KEY).
+              # Either way the "internal" tier applies (uncapped, burst-only).
               hosts:
                 - core-gateway-internal.envoy-gateway-system.svc.cluster.local
               authentication:
@@ -715,25 +720,34 @@ applications:
                   kubernetesTokenReview:
                     audiences:
                       - core-gateway-internal
+                api-key:
+                  apiKey:
+                    selector:
+                      matchLabels:
+                        kuadrant.io/apikey-for: internal-gateway
+                  credentials:
+                    authorizationHeader:
+                      prefix: Bearer
               response:
                 success:
                   headers:
-                    # k8s SA identity = system:serviceaccount:<ns>:<name>. The
-                    # Keycloak x-oidc-* claim set doesn't apply here, so we map the
-                    # SA name into the account + the metering identity headers.
+                    # Identity shape differs by credential: a TokenReview result
+                    # (SA) exposes `.user.username`; an apiKey match exposes the
+                    # matched Secret object (`.metadata.name`). Pick whichever
+                    # applies so each caller gets its own account/burst bucket.
                     "x-account-id":
                       plain:
-                        selector: "auth.identity.user.username"
+                        expression: 'has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name)'
                     # static "internal" tier ⇒ uncapped budget, burst-only
                     "x-billing-plan":
                       plain:
                         value: "internal"
                     "x-oidc-user-id":
                       plain:
-                        selector: "auth.identity.user.username"
+                        expression: 'has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name)'
                     "x-oidc-azp":
                       plain:
-                        selector: "auth.identity.user.username"
+                        expression: 'has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name)'
 
     destination:
       namespace: converse-gateway
