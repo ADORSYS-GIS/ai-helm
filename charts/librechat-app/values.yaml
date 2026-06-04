@@ -31,6 +31,19 @@ redisExternalSecret:
     key: prod/meta/test-app
     passwordProperty: redis_password
 
+# redis-ha is TLS-only; LibreChat must trust the internal CA that signs its
+# server cert. We issue a throwaway leaf from the `self-signed-ca` ClusterIssuer
+# (same root that signs redis-ha) and mount only its `ca.crt` at
+# redisTls.mountPath — LibreChat reads it via REDIS_CA (set in the container
+# env). Mirrors the Envoy rate-limit redis-CA pattern (environments/.../deps/eg).
+# (No client cert needed — redis-ha uses `tls-auth-clients no`.)
+redisTls:
+  enabled: true
+  caIssuer: self-signed-ca
+  caIssuerKind: ClusterIssuer
+  secretName: librechat-redis-ca
+  mountPath: /etc/redis-tls
+
 # User-owned secrets LibreChat (+ search) need, materialised as chart-owned
 # ExternalSecrets. Each property resolves against the consolidated ssegning-aws
 # secret `ai/camer/digital/prod/env` (one property per key); ensure every
@@ -254,12 +267,17 @@ librechat:
 
             USE_REDIS: "true"
             REDIS_KEY_PREFIX: "librechat-prod-v2"
-            REDIS_URI: "redis://redis-ha-redis.redis-system.svc.cluster.local:6379"
+            # redis-ha is TLS-ONLY (port 0 / tls-port 6379), server cert from the
+            # internal self-signed-ca. Connect with the `rediss://` scheme and
+            # trust that CA via REDIS_CA (ca.crt mounted from the `librechat-redis-ca`
+            # cert-manager Certificate, see redisTls below). Plaintext `redis://`
+            # gets `connection reset by peer`.
+            REDIS_URI: "rediss://redis-ha-redis.redis-system.svc.cluster.local:6379"
+            REDIS_CA: "/etc/redis-tls/ca.crt"
             # redis-ha requires auth. LibreChat applies REDIS_PASSWORD on top
             # of REDIS_URI. Secret `redis-ha-redis-auth` (key `redis-password`)
-            # must exist in this namespace (converse) — provisioned by an
-            # ExternalSecret from the ssegning-aws store (mirror the
-            # redis-system one).
+            # exists in this namespace (converse) via the redisExternalSecret
+            # above (mirrors the redis-system one).
             REDIS_PASSWORD:
               secretKeyRef:
                 name: redis-ha-redis-auth
@@ -454,6 +472,19 @@ librechat:
           librechat:
             - path: /app/librechat.yaml
               subPath: librechat
+              readOnly: true
+    # Internal-CA ca.crt for the TLS-only redis-ha connection (REDIS_CA points
+    # at /etc/redis-tls/ca.crt). Secret created by templates/certificate-redis-ca.yaml
+    # (parent chart). Name hardcoded here because this block is rendered in the
+    # bjw-s subchart context, where the parent-level `.Values.redisTls` is unset.
+    redis-ca:
+      enabled: true
+      type: secret
+      name: librechat-redis-ca
+      advancedMounts:
+        librechat:
+          librechat:
+            - path: /etc/redis-tls
               readOnly: true
 
   networkpolicies:

@@ -1,0 +1,30 @@
+{{- if .Values.redisTls.enabled }}
+# CA-trust helper for LibreChat → redis-ha TLS.
+#
+# redis-ha is TLS-ONLY (redis.conf: `port 0` / `tls-port 6379`), server cert
+# signed by the cluster's INTERNAL CA ("Home SSegning Root CA", the
+# `self-signed-ca` ClusterIssuer), with `tls-auth-clients no` (clients need no
+# client cert, only to TRUST the server). LibreChat connects with `rediss://`
+# and trusts the CA via REDIS_CA → /etc/redis-tls/ca.crt.
+#
+# We issue a throwaway leaf from that SAME internal CA; we don't use its
+# tls.crt/key — only the `ca.crt` it carries (= the Home Root CA), mounted into
+# the pod. Mirrors the Envoy rate-limit redis-CA pattern
+# (environments/<env>/deps/eg/certificate.yaml).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.redisTls.secretName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.redisTls.secretName }}
+  commonName: {{ .Values.redisTls.secretName }}
+  dnsNames:
+    - {{ .Values.redisTls.secretName }}
+  issuerRef:
+    name: {{ .Values.redisTls.caIssuer | default "self-signed-ca" }}
+    kind: {{ .Values.redisTls.caIssuerKind | default "ClusterIssuer" }}
+    group: cert-manager.io
+{{- end }}
