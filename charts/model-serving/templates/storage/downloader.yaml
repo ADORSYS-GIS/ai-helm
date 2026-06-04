@@ -61,6 +61,9 @@ spec:
                   name: {{ .Values.model.huggingFaceToken.secretName }}
                   key: {{ .Values.model.huggingFaceToken.secretKey | default "token" }}
             {{- end }}
+            # Scratch space for huggingface_hub cache within the container.
+            - name: HF_HOME
+              value: "/tmp/hf_home"            
           resources:
             {{- toYaml .Values.model.storage.downloader.resources | nindent 12 }}
           volumeMounts:
