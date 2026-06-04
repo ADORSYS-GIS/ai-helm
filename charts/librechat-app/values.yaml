@@ -31,18 +31,18 @@ redisExternalSecret:
     key: prod/meta/test-app
     passwordProperty: redis_password
 
-# redis-ha is TLS-only; LibreChat must trust the internal CA that signs its
-# server cert. We issue a throwaway leaf from the `self-signed-ca` ClusterIssuer
-# (same root that signs redis-ha) and mount only its `ca.crt` at
-# redisTls.mountPath — LibreChat reads it via REDIS_CA (set in the container
-# env). Mirrors the Envoy rate-limit redis-CA pattern (environments/.../deps/eg).
-# (No client cert needed — redis-ha uses `tls-auth-clients no`.)
-redisTls:
+# Internal-CA trust bundle. Several in-cluster endpoints LibreChat talks to use
+# TLS signed by the internal "Home Root CA" (the `self-signed-ca` ClusterIssuer):
+# redis-ha (rediss://) AND the api-internal gateway listener (ADR-0021). We issue
+# a throwaway leaf from that issuer and mount only its `ca.crt` at mountPath —
+# REDIS_CA + NODE_EXTRA_CA_CERTS both point at it. Mirrors the Envoy rate-limit
+# redis-CA pattern (environments/.../deps/eg). (No client cert needed.)
+internalCaTrust:
   enabled: true
   caIssuer: self-signed-ca
   caIssuerKind: ClusterIssuer
-  secretName: librechat-redis-ca
-  mountPath: /etc/redis-tls
+  secretName: librechat-internal-ca
+  mountPath: /etc/internal-ca
 
 # User-owned secrets LibreChat (+ search) need, materialised as chart-owned
 # ExternalSecrets. Each property resolves against the consolidated ssegning-aws
@@ -185,6 +185,12 @@ librechat:
             PGID: "1000"
             TZ: "Europe/Berlin"
 
+            # Trust the internal CA (Home Root CA, self-signed-ca) for in-cluster
+            # TLS — both the api-internal gateway listener (the Converse / image-gen
+            # baseURLs below) and redis-ha. ca.crt is mounted at /etc/internal-ca
+            # from the librechat-internal-ca cert (templates/certificate-internal-ca.yaml).
+            NODE_EXTRA_CA_CERTS: "/etc/internal-ca/ca.crt"
+
             ALLOW_EMAIL_LOGIN: "false"
             ALLOW_REGISTRATION: "false"
             ALLOW_SOCIAL_LOGIN: "true"
@@ -269,11 +275,10 @@ librechat:
             REDIS_KEY_PREFIX: "librechat-prod-v2"
             # redis-ha is TLS-ONLY (port 0 / tls-port 6379), server cert from the
             # internal self-signed-ca. Connect with the `rediss://` scheme and
-            # trust that CA via REDIS_CA (ca.crt mounted from the `librechat-redis-ca`
-            # cert-manager Certificate, see redisTls below). Plaintext `redis://`
-            # gets `connection reset by peer`.
+            # trust that CA via REDIS_CA (ca.crt mounted from the internalCaTrust
+            # cert at /etc/internal-ca). Plaintext `redis://` gets reset.
             REDIS_URI: "rediss://redis-ha-redis.redis-system.svc.cluster.local:6379"
-            REDIS_CA: "/etc/redis-tls/ca.crt"
+            REDIS_CA: "/etc/internal-ca/ca.crt"
             # redis-ha requires auth. LibreChat applies REDIS_PASSWORD on top
             # of REDIS_URI. Secret `redis-ha-redis-auth` (key `redis-password`)
             # exists in this namespace (converse) via the redisExternalSecret
@@ -345,7 +350,8 @@ librechat:
                 key: converse_openai_api_key
 
             # OpenAI-compatible Converse LLM API base URL
-            IMAGE_GEN_OAI_BASEURL: https://api.ai-v2.camer.digital/v1
+            # Internal plane (ADR-0021): in-cluster, via the api-internal listener.
+            IMAGE_GEN_OAI_BASEURL: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1
             IMAGE_GEN_OAI_MODEL: gemini-2.5-flash-image
 
 
@@ -473,18 +479,20 @@ librechat:
             - path: /app/librechat.yaml
               subPath: librechat
               readOnly: true
-    # Internal-CA ca.crt for the TLS-only redis-ha connection (REDIS_CA points
-    # at /etc/redis-tls/ca.crt). Secret created by templates/certificate-redis-ca.yaml
-    # (parent chart). Name hardcoded here because this block is rendered in the
-    # bjw-s subchart context, where the parent-level `.Values.redisTls` is unset.
-    redis-ca:
+    # Internal-CA ca.crt (Home Root CA) for in-cluster TLS — redis-ha (REDIS_CA)
+    # AND the api-internal gateway listener (NODE_EXTRA_CA_CERTS), both pointing
+    # at /etc/internal-ca/ca.crt. Secret created by
+    # templates/certificate-internal-ca.yaml (parent chart). Name hardcoded here
+    # because this block renders in the bjw-s subchart context, where the
+    # parent-level `.Values.internalCaTrust` is unset.
+    internal-ca:
       enabled: true
       type: secret
-      name: librechat-redis-ca
+      name: librechat-internal-ca
       advancedMounts:
         librechat:
           librechat:
-            - path: /etc/redis-tls
+            - path: /etc/internal-ca
               readOnly: true
 
   networkpolicies:
@@ -757,7 +765,11 @@ config:
     custom:
       - name: "Converse"
         apiKey: "${CONVERSE_OPENAI_API_KEY}"
-        baseURL: "http://envoy-converse-gateway-core-gateway-c480b207.envoy-gateway-system.svc.cluster.local/v1"
+        # Internal plane (ADR-0021): the stable core-gateway-internal ClusterIP on
+        # the api-internal listener (HTTPS, internal-CA), instead of the plaintext
+        # auto-generated EG Service name (which now hits the http→https redirect).
+        # NODE_EXTRA_CA_CERTS (container env) trusts the internal CA for this TLS.
+        baseURL: "https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1"
         models:
           default:
             - "glm-5"
