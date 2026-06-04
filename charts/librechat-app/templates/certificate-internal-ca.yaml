@@ -1,0 +1,30 @@
+{{- if .Values.internalCaTrust.enabled }}
+# Internal-CA trust bundle for LibreChat's in-cluster TLS clients.
+#
+# Several endpoints LibreChat reaches use TLS signed by the cluster's INTERNAL CA
+# ("Home SSegning Root CA", the `self-signed-ca` ClusterIssuer):
+#   - redis-ha (rediss://, tls-port 6379) — trusted via REDIS_CA
+#   - the api-internal gateway listener (ADR-0021) — trusted via NODE_EXTRA_CA_CERTS
+# Both need only to TRUST the CA, not present a client cert.
+#
+# We issue a throwaway leaf from that SAME internal CA; we don't use its
+# tls.crt/key — only the `ca.crt` it carries (= the Home Root CA), mounted at
+# /etc/internal-ca. Mirrors the Envoy rate-limit redis-CA pattern
+# (environments/<env>/deps/eg/certificate.yaml).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.internalCaTrust.secretName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.internalCaTrust.secretName }}
+  commonName: {{ .Values.internalCaTrust.secretName }}
+  dnsNames:
+    - {{ .Values.internalCaTrust.secretName }}
+  issuerRef:
+    name: {{ .Values.internalCaTrust.caIssuer | default "self-signed-ca" }}
+    kind: {{ .Values.internalCaTrust.caIssuerKind | default "ClusterIssuer" }}
+    group: cert-manager.io
+{{- end }}
