@@ -15,3 +15,11 @@ patches:
       - op: replace
         path: /spec/issuerRef/name
         value: self-signed-ca
+  # Point the internal-plane apiKey ExternalSecret(s) at the prod store.
+  - target:
+      kind: ExternalSecret
+      name: ".*"
+    patch: |-
+      - op: replace
+        path: /spec/secretStoreRef/name
+        value: ssegning-aws

@@ -41,13 +41,22 @@ The split is by **network reachability** (which maps onto trust), not human-vs-m
 - **Internal plane** — a **raw k8s service DNS** name
   (`core-gateway-internal.converse-gateway.svc.cluster.local`) on a ClusterIP
   Service (never on the LB; in-cluster only, fronted by Cilium NetworkPolicy).
-  Serves in-cluster services: LibreChat, cron-jobs, k8s SAs. Auth is the caller's
-  **Kubernetes ServiceAccount token**, validated by Authorino via the apiserver
-  **`kubernetesTokenReview`** (no Keycloak — the cluster itself is the issuer);
-  the caller's projected SA token must carry the audience `core-gateway-internal`.
-  This keeps per-service identity for metering without minting Keycloak tokens.
-  TLS from the internal `self-signed-ca` ClusterIssuer (clients already trust the
-  Home Root CA, same pattern as redis-ha).
+  Serves in-cluster services. The internal AuthConfig accepts **two credentials,
+  chosen by client lifecycle** (no Keycloak either way):
+  - **One-time tasks** (cron-jobs / Jobs) → their **Kubernetes ServiceAccount
+    token**, validated via the apiserver **`kubernetesTokenReview`** (the cluster
+    is the issuer); the projected token must carry the audience
+    `core-gateway-internal`. A short job finishes before the token expires, so
+    there's no rotation to manage and no sidecar.
+  - **Long-running services** (LibreChat, …) → a **static apiKey** (Authorino
+    `apiKey` identity matching a labeled Secret in `converse-gateway`,
+    ESO-provisioned). No token rotation, no sidecar, no entrypoint hack. LibreChat
+    keeps sending its existing `CONVERSE_OPENAI_API_KEY` unchanged.
+
+  Both map to per-service identity for metering (`x-account-id` = the SA username
+  or the apiKey Secret name, picked by a CEL `has(auth.identity.user)` check). TLS
+  from the internal `self-signed-ca` ClusterIssuer (clients already trust the Home
+  Root CA, same pattern as redis-ha).
 
 Authorino indexes AuthConfigs by `Host`, so two AuthConfigs
 (`kuadrant-policies-external`, `kuadrant-policies-internal`) coexist under one
