@@ -1,0 +1,19 @@
+{{- if .Values.gateway.internal.enabled }}
+# Server cert for the `api-internal` listener. Issued from the INTERNAL CA
+# (self-signed-ca) — NOT a public ACME issuer — so in-cluster clients that trust
+# the Home Root CA can verify the gateway over its k8s svc-DNS hostname. SAN =
+# the internal hostname. cert-manager writes `<fullname>-internal-tls`, which the
+# Gateway's api-internal listener references (gateway.yaml).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-internal-tls
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "core-gateway.fullname" . }}-internal-tls
+  dnsNames:
+    - {{ .Values.gateway.internal.hostname | quote }}
+  issuerRef:
+    name: {{ .Values.gateway.internal.issuer | default "self-signed-ca" }}
+    kind: {{ .Values.gateway.internal.issuerKind | default "ClusterIssuer" }}
+{{- end }}

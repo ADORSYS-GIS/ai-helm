@@ -575,7 +575,7 @@ applications:
               serviceAccountClients:
                 - adorsys-gis-github-ci
                 - lightbridge-api-key
-              authentication:
+              authentication: &keycloakAuth
                 keycloak:
                   jwt:
                     issuerUrl: https://auth.verif.fyi/realms/camer-digital
@@ -607,7 +607,7 @@ applications:
               # rate-limit accounting headers are now JWT-derived (see response).
               response:
                 success:
-                  headers:
+                  headers: &authHeaders
                     "x-validated-jwt":
                       plain:
                         selector: "auth.identity.jwt"
@@ -698,6 +698,32 @@ applications:
                       plain:
                         # Full display name, e.g. "Stephane Segning".
                         selector: "auth.identity.name"
+
+            # ── Internal plane (ADR-0021) ──────────────────────────────────────
+            internal:
+              # In-cluster callers reach the gateway via the k8s svc-DNS host
+              # (the api-internal listener); Authorino binds this host to a
+              # LIGHTER config: same Keycloak JWT verification, no metadata/authz.
+              # Descriptors mark the traffic as the "internal" tier (uncapped
+              # budget, burst-only) keyed on the calling service (azp). Per-user
+              # attribution is the internal service's own concern (e.g. LibreChat).
+              hosts:
+                - core-gateway-internal.envoy-gateway-system.svc.cluster.local
+              authentication: *keycloakAuth
+              response:
+                success:
+                  headers:
+                    # Inherit the full x-validated-jwt + x-oidc-* contract…
+                    <<: *authHeaders
+                    # …then override the plane-specific descriptors:
+                    # account = the calling in-cluster service (its Keycloak client)
+                    "x-account-id":
+                      plain:
+                        selector: "auth.identity.azp"
+                    # static "internal" tier ⇒ uncapped budget, burst-only
+                    "x-billing-plan":
+                      plain:
+                        value: "internal"
 
     destination:
       namespace: converse-gateway

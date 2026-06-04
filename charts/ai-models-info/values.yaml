@@ -151,14 +151,24 @@ models-info:
     main:
       enabled: true
       annotations: {}
+      # Both the external host and the internal plane's k8s svc-DNS host (ADR-0021)
+      # so the catalog is reachable on either listener. Unlike the AIGatewayRoutes
+      # (no hostnames → match all listeners), this route sets explicit hostnames,
+      # so the internal host MUST be listed to attach to the api-internal listener.
       hostnames:
         - api.ai-v2.camer.digital
+        - core-gateway-internal.envoy-gateway-system.svc.cluster.local
       parentRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway
           name: core-gateway
           namespace: converse-gateway
           sectionName: api-https
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: core-gateway
+          namespace: converse-gateway
+          sectionName: api-internal
       rules:
         - matches:
             - path:

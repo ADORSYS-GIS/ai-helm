@@ -30,6 +30,16 @@ spec:
       # listener is left to the http→https redirect + the ACME solver.
       sectionName: {{ . }}
       {{- end }}
+    {{- with .Values.gatewayRef.internalSectionName }}
+    # Internal plane (ADR-0021): also attach to the api-internal listener so the
+    # same model backends serve in-cluster callers. The per-host AuthConfig sets
+    # the tier; the BackendTrafficPolicy (targeting this route) is shared.
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $.Values.gatewayRef.name }}
+      namespace: {{ $.Values.gatewayRef.namespace }}
+      sectionName: {{ . }}
+    {{- end }}
   llmRequestCosts:
     - metadataKey: llm_input_token
       type: InputToken
