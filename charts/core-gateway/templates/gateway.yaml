@@ -37,3 +37,22 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    {{- if .Values.gateway.internal.enabled }}
+    # Internal plane (ADR-0021): same :443, scoped by the k8s svc-DNS hostname.
+    # Reached only in-cluster via the core-gateway-internal ClusterIP Service;
+    # TLS from the internal CA. The internal AuthConfig (charts/apps) binds this
+    # host and stamps the "internal" tier.
+    - name: api-internal
+      protocol: HTTPS
+      port: 443
+      hostname: {{ .Values.gateway.internal.hostname }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ include "core-gateway.fullname" . }}-internal-tls
+            kind: Secret
+            group: ''
+      allowedRoutes:
+        namespaces:
+          from: All
+    {{- end }}

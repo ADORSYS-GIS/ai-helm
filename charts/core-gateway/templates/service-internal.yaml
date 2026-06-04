@@ -1,0 +1,27 @@
+{{- if .Values.gateway.internal.enabled }}
+# Stable ClusterIP for in-cluster callers to reach the Envoy proxy on the
+# `api-internal` listener via k8s DNS (<serviceName>.<proxyNamespace>.svc). It
+# lives in the proxy namespace (envoy-gateway-system) so its selector can match
+# the Envoy Gateway proxy pods; port 443 → the proxy's HTTPS container port
+# (10443). The public LoadBalancer Service is left untouched (external plane).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.gateway.internal.serviceName }}
+  namespace: {{ .Values.gateway.internal.proxyNamespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: proxy
+    app.kubernetes.io/managed-by: envoy-gateway
+    app.kubernetes.io/name: envoy
+    gateway.envoyproxy.io/owning-gateway-name: {{ include "core-gateway.fullname" . }}
+    gateway.envoyproxy.io/owning-gateway-namespace: {{ .Release.Namespace }}
+  ports:
+    - name: https-443
+      port: 443
+      targetPort: {{ .Values.gateway.internal.httpsTargetPort | default 10443 }}
+      protocol: TCP
+{{- end }}

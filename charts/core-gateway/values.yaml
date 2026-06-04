@@ -18,6 +18,27 @@ gateway:
     listenerName: http
     statusCode: 308
 
+  # Internal plane (ADR-0021): a second HTTPS listener (`api-internal`) bound to a
+  # k8s service-DNS hostname, for IN-CLUSTER callers (LibreChat, cron-jobs, k8s
+  # SAs). A ClusterIP Service in the proxy namespace gives the stable DNS and
+  # routes to the same Envoy proxy pods; TLS terminates with an internal-CA cert
+  # (clients trust the Home Root CA + present a Keycloak SA JWT). The public
+  # LoadBalancer / `api-https` listener is untouched (external plane).
+  internal:
+    enabled: true
+    # The Envoy proxy pods + their Service live here (EG data plane), so the
+    # ClusterIP Service must be in this namespace to select them.
+    proxyNamespace: envoy-gateway-system
+    serviceName: core-gateway-internal
+    # = <serviceName>.<proxyNamespace>.svc.cluster.local — the listener hostname,
+    # the cert SAN, and the host the internal AuthConfig (charts/apps) binds to.
+    hostname: core-gateway-internal.envoy-gateway-system.svc.cluster.local
+    # Envoy Gateway's proxy HTTPS container port (Service 443 → this targetPort).
+    httpsTargetPort: 10443
+    # Internal-CA issuer for the listener server cert (clients trust its ca.crt).
+    issuer: self-signed-ca
+    issuerKind: ClusterIssuer
+
 # ────────────────────────────────────────────────────────────────────────
 # Envoy data plane (the proxy pods that actually serve client traffic).
 # Sized for ≥2000 concurrent HTTP/2 clients — the previous static 2
