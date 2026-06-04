@@ -45,12 +45,39 @@ argocd:
 # the chart converts to micro-USD because `llm_custom_total_cost` is
 # emitted by Envoy AI Gateway as an integer in micro-USD.
 # ────────────────────────────────────────────────────────────────────────
+# Rate-limit tiers (ADR-0021). Each plan drives up to three rule families per
+# model in the BackendTrafficPolicy:
+#   - burst.requestsPerMin  → per-USER req/min cap   (keyed on x-account-id)
+#   - burst.tokensPerMin    → per-USER token/min cap (keyed on x-account-id,
+#                             cost from the llm_total_token AIEG metadata)
+#   - monthlyBudgetUsd      → per-ORG monthly micro-USD budget (keyed on
+#                             x-org-id). OMITTED for a plan ⇒ uncapped budget.
+# x-billing-plan (set by the AuthConfig from the Keycloak `billing_plan` claim,
+# or "internal" on the internal plane) selects which plan's rules apply.
 rateLimitBudgeting:
   plans:
     free:
       monthlyBudgetUsd: 30
+      burst:
+        requestsPerMin: 20
+        tokensPerMin: 50000
     pro:
       monthlyBudgetUsd: 200
+      burst:
+        requestsPerMin: 120
+        tokensPerMin: 400000
+    # Remote service accounts (GitHub runners, …) on the EXTERNAL plane.
+    # Uncapped budget (no monthlyBudgetUsd) — burst-only.
+    service:
+      burst:
+        requestsPerMin: 600
+        tokensPerMin: 2000000
+    # In-cluster services (LibreChat, cron-jobs, k8s SAs) on the INTERNAL plane.
+    # Uncapped budget — burst-only.
+    internal:
+      burst:
+        requestsPerMin: 600
+        tokensPerMin: 2000000
 
 gatewayRef:
   name: core-gateway

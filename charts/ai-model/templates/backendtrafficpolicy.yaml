@@ -1,12 +1,27 @@
 {{- /*
-BackendTrafficPolicy — per-model, per-plan rate limiting via Global Rate Limit.
+BackendTrafficPolicy — per-model rate limiting (ADR-0021).
 
-Weighted/Tiered models: limits expressed in micro-USD (budget * 1e6).
-Flat models: limits in USD (budget used directly).
+Up to THREE rule families per plan, all composed (Envoy denies if ANY matched
+bucket is exhausted):
+
+  1. burst requests/min — keyed on x-account-id (per user / SA), cost = 1/request.
+  2. burst tokens/min   — keyed on x-account-id, cost = the llm_total_token
+                          response metadata (TotalToken) the AIGatewayRoute emits.
+  3. monthly budget     — keyed on x-org-id (per org), micro-USD, cost = the
+                          cost_<model> response metadata (the pricing CEL, which
+                          already yields micro-USD). Emitted ONLY for plans that
+                          carry a budget → service/internal stay uncapped.
+
+x-billing-plan (stamped by the AuthConfig from Keycloak) selects the plan.
+
+Budget per plan = per-model override (.Values.rateLimitBudgeting.<plan>, USD)
+else the global plan default (.Values.plans.<plan>.monthlyBudgetUsd). Burst
+comes from .Values.plans.<plan>.burst.
 */ -}}
 {{- $modelName := .Values.modelName -}}
-{{- $modelBudgets := default dict .Values.rateLimitBudgeting -}}
-{{- $strategy := .Values.pricing.strategy -}}
+{{- $overrides := default dict .Values.rateLimitBudgeting -}}
+{{- $plans := .Values.plans -}}
+{{- $costKey := include "ai-model.metadataKeySafe" $modelName -}}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -21,60 +36,10 @@ spec:
     type: Global
     global:
       rules:
-        {{- if $modelBudgets }}
-        {{- $freeBudget := index $modelBudgets "free" | default (index $.Values.plans "free" "monthlyBudgetUsd" | default 30) }}
-        {{- $proBudget := index $modelBudgets "pro" | default (index $.Values.plans "pro" "monthlyBudgetUsd" | default 200) }}
-
-        {{- $freeLimit := mulf $freeBudget 1000000 | int64 }}
-        {{- $proLimit := mulf $proBudget 1000000 | int64 }}
-        - clientSelectors:
-            - headers:
-                - name: x-account-id
-                  type: Distinct
-                - name: x-billing-plan
-                  type: Exact
-                  value: "free"
-                - name: x-ai-eg-model
-                  type: Exact
-                  value: {{ $modelName | quote }}
-          limit:
-            requests: {{ $freeLimit }} # custom free budget for {{ $modelName | quote }} / ${{ $freeBudget }}
-            unit: Month
-          cost:
-            request:
-              from: Number
-              number: 0
-            response:
-              from: Metadata
-              metadata:
-                namespace: io.envoy.ai_gateway
-                key: {{ include "ai-model.metadataKeySafe" $modelName }}
-        - clientSelectors:
-            - headers:
-                - name: x-account-id
-                  type: Distinct
-                - name: x-billing-plan
-                  type: Exact
-                  value: "pro"
-                - name: x-ai-eg-model
-                  type: Exact
-                  value: {{ $modelName | quote }}
-          limit:
-            requests: {{ $proLimit }} # custom pro budget for {{ $modelName | quote }} / ${{ $proBudget }}
-            unit: Month
-          cost:
-            request:
-              from: Number
-              number: 0
-            response:
-              from: Metadata
-              metadata:
-                namespace: io.envoy.ai_gateway
-                key: {{ include "ai-model.metadataKeySafe" $modelName }}
-        {{- else }}
-        {{- range $planName, $planConfig := $.Values.plans }}
-        {{- $budget := $planConfig.monthlyBudgetUsd | default 30 }}
-        {{- $planLimit := mulf $budget 1000000 | int64 }}
+        {{- range $planName, $planCfg := $plans }}
+        {{- $burst := default dict $planCfg.burst }}
+        {{- /* ── 1. burst: requests/min (per-user) ── */}}
+        {{- with $burst.requestsPerMin }}
         - clientSelectors:
             - headers:
                 - name: x-account-id
@@ -86,7 +51,54 @@ spec:
                   type: Exact
                   value: {{ $modelName | quote }}
           limit:
-            requests: {{ $planLimit }} # {{ $planName | quote }} budget for {{ $modelName | quote }}
+            requests: {{ int64 . }} # {{ $planName }} burst req/min for {{ $modelName | quote }}
+            unit: Minute
+          cost:
+            request:
+              from: Number
+              number: 1
+        {{- end }}
+        {{- /* ── 2. burst: tokens/min (per-user, dynamic from llm_total_token) ── */}}
+        {{- with $burst.tokensPerMin }}
+        - clientSelectors:
+            - headers:
+                - name: x-account-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: {{ $planName | quote }}
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $modelName | quote }}
+          limit:
+            requests: {{ int64 . }} # {{ $planName }} burst tokens/min for {{ $modelName | quote }}
+            unit: Minute
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_total_token
+        {{- end }}
+        {{- /* ── 3. monthly budget (per-org, micro-USD) — skipped ⇒ uncapped ── */}}
+        {{- $budgetUsd := or (index $overrides $planName) $planCfg.monthlyBudgetUsd }}
+        {{- with $budgetUsd }}
+        {{- $limit := mulf . 1000000 | int64 }}
+        - clientSelectors:
+            - headers:
+                - name: x-org-id
+                  type: Distinct
+                - name: x-billing-plan
+                  type: Exact
+                  value: {{ $planName | quote }}
+                - name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $modelName | quote }}
+          limit:
+            requests: {{ $limit }} # {{ $planName }} monthly budget ${{ . }} for {{ $modelName | quote }}
             unit: Month
           cost:
             request:
@@ -96,6 +108,6 @@ spec:
               from: Metadata
               metadata:
                 namespace: io.envoy.ai_gateway
-                key: {{ include "ai-model.metadataKeySafe" $modelName }}
+                key: {{ $costKey }}
         {{- end }}
         {{- end }}
