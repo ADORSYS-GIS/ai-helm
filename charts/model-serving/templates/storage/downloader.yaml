@@ -51,7 +51,7 @@ spec:
                 exit 0
               fi
               echo "Downloading {{ $srcUri }} → $DEST"
-              /ko-app/storage-initializer "{{ $srcUri }}" "$DEST"
+              /storage-initializer/scripts/initializer-entrypoint "{{ $srcUri }}" "$DEST"
               echo "Download complete."
           env:
             {{- if .Values.model.huggingFaceToken.secretName }}
@@ -64,6 +64,27 @@ spec:
             # Scratch space for huggingface_hub cache within the container.
             - name: HF_HOME
               value: "/tmp/hf_home"
+
+            # Scratch space for huggingface_hub cache within the container.
+            - name: HF_HOME
+              value: "/tmp/hf_home"
+            # Disable Xet-based download (causes connection issues with some networks)
+            # Use standard HTTP download instead
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "0"
+            # Increase HTTP timeout settings for slow/unstable connections
+            - name: HF_HUB_DOWNLOAD_TIMEOUT
+              value: "3600"
+            # Request timeout in seconds
+            - name: REQUESTS_CA_BUNDLE
+              value: ""
+            # Disable telemetry to reduce network overhead
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            # Increase connection timeout
+            - name: CURL_TIMEOUT
+              value: "3600"
+                            
           resources:
             {{- toYaml .Values.model.storage.downloader.resources | nindent 12 }}
           volumeMounts:
