@@ -612,18 +612,26 @@ applications:
                       plain:
                         selector: "auth.identity.jwt"
                     # Rate-limit accounting consumed by the per-model
-                    # BackendTrafficPolicy (x-account-id Distinct + x-billing-plan
-                    # selector + x-ai-eg-model). Post-OPA these derive from the
-                    # JWT: account = the Keycloak user (sub); plan = static "free"
-                    # until a Keycloak plan claim/role is wired (or OPA
-                    # burst-control returns). The old project/api-key headers +
-                    # the llm_* dynamicMetadata were OPA-only and were removed.
+                    # BackendTrafficPolicy (ADR-0021), all JWT-derived:
+                    #   x-account-id → per-user burst bucket
+                    #   x-org-id     → per-org monthly budget bucket
+                    #   x-billing-plan → tier selector (free/pro/service)
+                    # x-billing-plan reads the Keycloak `billing_plan` claim (the
+                    # mapper should default it to "free"; SA clients carry
+                    # "service"); x-org-id reads the Keycloak org claim. Until
+                    # those mappers land both resolve empty, so the matching
+                    # rate-limit rule simply doesn't match — fails OPEN (no limit),
+                    # never a hard AuthConfig error. (The internal-plane AuthConfig
+                    # sets x-billing-plan="internal" statically.)
                     "x-account-id":
                       plain:
                         selector: "auth.identity.sub"
+                    "x-org-id":
+                      plain:
+                        selector: "auth.identity.organization"
                     "x-billing-plan":
                       plain:
-                        value: "free"
+                        selector: "auth.identity.billing_plan"
                     # ── x-oidc-* downstream header contract (ADR-0011) ────
                     # Set on every successful auth, for both human and SA tokens.
                     # Envoy access-log JSON sink reads these via %REQ(...)%
