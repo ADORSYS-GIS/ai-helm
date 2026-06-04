@@ -38,6 +38,7 @@ how thinking evolved.
 | [0018](./0018-umbrella-apps-and-env-overlays.md) | Umbrella Applications (workload + app-scoped deps via kustomize) + per-env `environments/` overlays | Proposed | 2026-05-31 | [0006](./0006-multi-source-applicationset.md) |
 | [0019](./0019-coder-app-of-apps-orchestrator.md) | Factor Coder into an App-of-Apps orchestrator (db + app as separate Applications) | Accepted | 2026-06-01 | — |
 | [0020](./0020-observability-app-of-apps-orchestrator.md) | Factor the observability stack into an App-of-Apps orchestrator (+ a secrets app) | Accepted | 2026-06-01 | — |
+| [0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md) | Burst control, budgeting & billing via dual-plane (internal/external) AuthConfigs | Proposed | 2026-06-04 | — |
 
 ## Status legend
 
