@@ -44,13 +44,30 @@ seedJob:
   # Pin to the GPU node so the RWO Longhorn volume binds where the model runs.
   nodeSelector:
     gpu-node: "true"
-  backoffLimit: 4
+  backoffLimit: 6
+  # A stuck/rate-limited download dies + retries instead of hanging forever.
+  activeDeadlineSeconds: 3600
+  # Optional HuggingFace token — lifts the anonymous rate limit that otherwise
+  # stalls the ~8GB download partway through. Qwen3-4B is public so a token is
+  # NOT required for access, only for reliable throughput. Strongly recommended.
+  # To enable: add an `hf_token` property to ssegning-aws ai/camer/digital/prod/env,
+  # then set enabled: true.
+  hfToken:
+    enabled: false
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: true
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
   resources:
     requests:
-      cpu: 500m
+      cpu: "1"
       memory: 1Gi
     limits:
-      cpu: "1"
+      cpu: "2"
       memory: 2Gi
 
 # ─────────────────────────────────────────────────────────────────────────────
