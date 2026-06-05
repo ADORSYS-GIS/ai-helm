@@ -38,9 +38,10 @@ spec:
               MODEL_DIR="/models/{{ .Values.model.storagePath }}"
               mkdir -p "$MODEL_DIR"
               echo "Seeding {{ .Values.model.hfRepo }} -> $MODEL_DIR (skips files already present)"
-              pip install --no-cache-dir -q "huggingface_hub[cli]"
-              huggingface-cli download {{ .Values.model.hfRepo }} \
-                --local-dir "$MODEL_DIR"
+              # huggingface_hub 1.x: the CLI is `hf` (huggingface-cli is removed),
+              # and there is no `[cli]` extra — the `hf` entrypoint ships in the base.
+              pip install --no-cache-dir -q "huggingface_hub>=1.0"
+              hf download {{ .Values.model.hfRepo }} --local-dir "$MODEL_DIR"
               echo "Seed complete."
           volumeMounts:
             - name: models

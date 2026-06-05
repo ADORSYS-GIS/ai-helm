@@ -1,0 +1,58 @@
+{{- /*
+A NAMESPACE-SCOPED ServingRuntime for the huggingfaceserver (vLLM + LMCache).
+
+Why ship our own: this KServe install has NO ClusterServingRuntimes at all
+(`kubectl get clusterservingruntimes` → none), so the InferenceService's
+`runtime: kserve-huggingfaceserver` had nothing to bind to. Rather than depend
+on a cluster-wide install gap, we carry the runtime with the app. Mirrors
+KServe v0.17's kserve-huggingfaceserver ClusterServingRuntime, minus the
+/dev/shm emptyDir (the home KnativeServing doesn't enable the
+podspec-volumes-emptydir feature flag; fine for tensor-parallel-size=1).
+
+The InferenceService appends `--model_name` + the vLLM tuning args + the GPU
+resources onto this base; KServe injects `--model_dir=/mnt/models` from the
+pvc:// storageUri. Wave 0: exists before the InferenceService (wave 1).
+*/ -}}
+{{- if .Values.servingRuntime.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: {{ .Values.servingRuntime.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    prometheus.kserve.io/port: "8080"
+    prometheus.kserve.io/path: "/metrics"
+spec:
+  supportedModelFormats:
+    - name: huggingface
+      version: "1"
+      autoSelect: true
+      priority: 1
+  protocolVersions:
+    - v2
+    - v1
+  containers:
+    - name: kserve-container
+      image: "{{ .Values.servingRuntime.image.repository }}:{{ .Values.servingRuntime.image.tag }}"
+      imagePullPolicy: {{ .Values.servingRuntime.image.pullPolicy | default "IfNotPresent" }}
+      env:
+        # LMCache experimental on by default (KServe v0.17 bakes this in too).
+        # The actual offload config (LMCACHE_LOCAL_CPU, …) is appended by the
+        # InferenceService env.
+        - name: LMCACHE_USE_EXPERIMENTAL
+          value: "True"
+      securityContext:
+        allowPrivilegeEscalation: false
+        privileged: false
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+      {{- with .Values.servingRuntime.resources }}
+      resources:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -54,11 +54,30 @@ seedJob:
       memory: 2Gi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Namespace-scoped ServingRuntime (vLLM + LMCache). Shipped with the app because
+# this KServe install has no ClusterServingRuntimes. Mirrors KServe v0.17's
+# kserve-huggingfaceserver. The InferenceService below binds to it by name.
+servingRuntime:
+  enabled: true
+  name: huggingfaceserver
+  image:
+    repository: kserve/huggingfaceserver
+    # Match the installed KServe (v0.17.0). `-gpu` = the CUDA build. If it won't
+    # pull, v0.17.0 (CPU) and v0.17.1[-gpu] also exist.
+    tag: v0.17.0-gpu
+    pullPolicy: IfNotPresent
+  # Base requests only — the InferenceService overrides with the GPU resources.
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits: { cpu: "1", memory: 2Gi }
+
+# ─────────────────────────────────────────────────────────────────────────────
 inferenceService:
   enabled: true
   modelFormat: huggingface
-  # KServe's bundled ClusterServingRuntime (vLLM backend, LMCache-capable).
-  runtime: kserve-huggingfaceserver
+  # Bind to the namespaced ServingRuntime above (set automatically from
+  # servingRuntime.name when servingRuntime.enabled).
+  runtime: huggingfaceserver
   # GPU pinning — the Knative podspec-runtimeclassname / -nodeselector feature
   # flags are enabled on the home cluster (home-os charts/cd KnativeServing).
   runtimeClassName: nvidia

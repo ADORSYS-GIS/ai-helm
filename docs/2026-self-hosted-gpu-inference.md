@@ -97,7 +97,7 @@ spec:
     maxReplicas: 1
     model:
       modelFormat: { name: huggingface }
-      runtime: kserve-huggingfaceserver      # vLLM backend, LMCache-capable
+      runtime: huggingfaceserver             # the chart's OWN namespaced ServingRuntime (§3b)
       storageUri: "pvc://qwen3-4b-models/Qwen3-4B"   # pre-seeded PVC — NOT hf:// (see §3a)
       args:
         - --model_name=qwen3-4b
@@ -173,7 +173,7 @@ spec:
           command: ["sh","-c"]
           args:
             - pip install -q huggingface_hub &&
-              huggingface-cli download Qwen/Qwen3-4B --local-dir /models/Qwen3-4B
+              hf download Qwen/Qwen3-4B --local-dir /models/Qwen3-4B
           volumeMounts: [{ name: models, mountPath: /models }]
       volumes:
         - name: models
@@ -232,6 +232,29 @@ home GPU cluster) and calls the ADR-0017 destination guard with
 
 Renders as the Application `aii-model-serving` (the `ai-apps-v2` / new-cluster
 generation) with `destination.server: https://kubernetes.default.svc`.
+
+### 3b. The chart ships its OWN ServingRuntime (no cluster runtimes installed)
+
+This KServe install has **zero `ClusterServingRuntime`s**
+(`kubectl --context admin@homeos get clusterservingruntimes` → none), so the
+default `kserve-huggingfaceserver` the InferenceService would normally bind to
+doesn't exist. Rather than depend on that cluster-wide gap, the chart carries a
+**namespace-scoped `ServingRuntime`** (`templates/servingruntime.yaml`, sync-wave
+0) that mirrors KServe v0.17's runtime — image
+**`kserve/huggingfaceserver:v0.17.0-gpu`** (match the installed KServe version),
+`LMCACHE_USE_EXPERIMENTAL=True`, non-root securityContext, `supportedModelFormats:
+huggingface`. The InferenceService binds to it by name (`runtime:
+huggingfaceserver`); KServe appends `--model_name` + the vLLM tuning args + the
+GPU resources and injects `--model_dir=/mnt/models` from the `pvc://` storageUri.
+
+> Dropped the `/dev/shm` `emptyDir` the upstream runtime carries — the home
+> KnativeServing doesn't enable the `kubernetes.podspec-volumes-emptydir` feature
+> flag, so Knative would reject it. Fine for `tensor-parallel-size=1`; if vLLM
+> complains about shared memory, enable that flag in home-os instead.
+
+> Fixing it cluster-wide (so other models work too) is a separate home-os change:
+> the `kserve-resources` install should create its default runtimes. Out of scope
+> here — this chart is self-contained either way.
 
 ---
 
@@ -394,3 +417,6 @@ TTFT (time-to-first-token) should drop sharply as prefill is served from cache.
 | 404 at `/v1/...` | KServe prefixes paths | backend `prefix: /openai/v1` |
 | Cold start minutes long / re-downloads weights | using `hf://` + emptyDir, or PVC deleted | pre-seed the PVC and use `pvc://` (§3a); keep `minScale: 1` |
 | Pod won't schedule | GPU node taint / label | confirm `gpu-node: "true"` + `nvidia.com/gpu` capacity on the A2000 node |
+| `No ServingRuntimes or ClusterServingRuntimes with the name …` | no cluster runtimes installed | the chart now ships a namespaced `ServingRuntime` (§3b); confirm `kubectl -n converse-poc get servingruntime huggingfaceserver` exists and the IS `runtime:` matches |
+| Seed Job: `huggingface-cli is deprecated` / `extra 'cli'` | huggingface_hub 1.x renamed the CLI | use `hf download` + `pip install huggingface_hub` (no `[cli]`) — already fixed in the seed Job |
+| Model pod can't read `/mnt/models` | root-seeded files vs non-root runtime | HF files are world-readable (644) so this is usually fine; if not, seed with the runtime's uid or add an `fsGroup` (needs the Knative securityContext feature flag) |
