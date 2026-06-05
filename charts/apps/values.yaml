@@ -544,6 +544,9 @@ applications:
               # not a single point of failure / throughput bottleneck under
               # thousands of concurrent clients.
               replicas: 2
+              # Let the "*" catch-all AuthConfig (deny-all, below) coexist with
+              # the specific-host configs — most-specific host wins (ADR-0021).
+              supersedingHostSubsets: true
               listener:
                 tls:
                   enabled: false
@@ -766,6 +769,25 @@ applications:
                     "x-oidc-email":
                       plain:
                         expression: '"x-librechat-email" in request.headers ? request.headers["x-librechat-email"] : ""'
+
+            # ── Catch-all deny (security backstop, ADR-0021) ───────────────────
+            catch-all:
+              # ANY host NOT claimed by a more-specific AuthConfig above —
+              # direct-IP calls, an unknown/forged Host, or a future route bound
+              # without auth. `supersedingHostSubsets: true` (on the instance)
+              # lets this "*" coexist; the specific hosts always win. The lone
+              # identity method can NEVER succeed (an apiKey whose selector matches
+              # a label NO Secret carries) → Authorino returns **401**. Closes the
+              # bypass where hitting the Envoy endpoint by IP (no/foreign Host)
+              # skipped the per-host auth entirely.
+              hosts:
+                - "*"
+              authentication:
+                deny-all:
+                  apiKey:
+                    selector:
+                      matchLabels:
+                        kuadrant.io/never-matches: deny-all
 
     destination:
       namespace: converse-gateway

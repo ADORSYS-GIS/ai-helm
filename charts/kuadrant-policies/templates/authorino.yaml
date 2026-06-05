@@ -9,6 +9,12 @@ metadata:
   labels:
     {{ include "common.labels.standard" $ | nindent 4 }}
 spec:
+  {{- with $config.supersedingHostSubsets }}
+  # Allow an AuthConfig whose hosts are a SUPERSET of another's (e.g. a "*"
+  # catch-all alongside specific-host configs) — the MOST-SPECIFIC host wins.
+  # Required for the deny-all catch-all AuthConfig (ADR-0021).
+  supersedingHostSubsets: {{ . }}
+  {{- end }}
   {{- with $config.replicas }}
   # HA: every request to the gateway hits Authorino (JWT verify + metadata
   # + authorization), so run more than one replica — no single point of
