@@ -206,24 +206,32 @@ until the old pod frees it, so rollouts serialize — expected with one GPU.)
 ### Application wiring (ai-helm `charts/apps/values.yaml`)
 
 The one sanctioned ADR-0017 exception — a workload that targets the **home**
-cluster:
+cluster. This needed a small `charts/apps` template affordance: a per-app
+**`homeCluster: true`** flag (the global `argocd.destination` is shared by all
+other workloads, so there was no per-app cluster override). `homeCluster: true`
+points the app at `argocd.inClusterServer` (the cluster ArgoCD runs on = the
+home GPU cluster) and calls the ADR-0017 destination guard with
+`allowInCluster: true`, while keeping the app's own workload namespace (unlike
+`controlPlane`, which forces the `argocd` ns). The entry:
 
 ```yaml
 - name: model-serving
-  project: ai
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  homeCluster: true                 # ADR-0022 exception → in-cluster (home GPU)
   source:
     repoURL: https://github.com/ADORSYS-GIS/ai-helm
     targetRevision: claude/magical-bohr-390242
     path: charts/model-serving
     helm: { releaseName: model-serving, valuesObject: {} }
   destination:
-    server: https://kubernetes.default.svc   # the HOME (in-cluster) GPU cluster
     namespace: converse-poc
-  allowInCluster: true                        # bypass the home-remote render guard
   syncPolicy:
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
     automated: { prune: true, selfHeal: true }
 ```
+
+Renders as the Application `aii-model-serving` (the `ai-apps-v2` / new-cluster
+generation) with `destination.server: https://kubernetes.default.svc`.
 
 ---
 
@@ -264,11 +272,12 @@ qwen3-4b-local:
   pricing:
     strategy: flat
     standard: { inputPer1M: 0.0, outputPer1M: 0.0 }   # self-hosted
+  minBackends: 1                              # single self-hosted backend by design
   backends:
     vllm-local-01:
       ref: vllm-local-01
       priority: 0
-      modelNameOverride: "Qwen/Qwen3-4B"      # what vLLM expects in the body
+      modelNameOverride: "qwen3-4b"           # = the runtime's --model_name (served name)
   # optional resilience — cloud fallback when the home GPU/uplink is down:
   # deepinfra-01: { ref: deepinfra-01, priority: 1, modelNameOverride: "Qwen/Qwen3-4B" }
 ```
@@ -377,7 +386,9 @@ TTFT (time-to-first-token) should drop sharply as prefill is served from cache.
 | Pod OOM-killed shortly after ready | LMCache CPU pool > pod memory request | raise `requests.memory` above `LMCACHE_MAX_LOCAL_CPU_SIZE` + runtime |
 | CUDA OOM on load | weights+graph > budget | `--enforce-eager`, lower `--gpu-memory-utilization`/`--max-model-len`/`--max-num-seqs`, or move to AWQ-INT4 |
 | Route has no cert / 526 | cert-manager issuance pending | check `Certificate` in `converse-poc`; `cert-cloudflare` needs the Cloudflare token secret present |
+| Gateway → backend `no healthy upstream` / DNS fail | backend FQDN ≠ the live route | **confirm on first deploy:** `kubectl -n converse-poc get inferenceservice qwen3-4b -o jsonpath='{.status.url}'` and set the `vllm-local` backend `fqdn.hostname` + `tlsHostname` to match (KServe/Knative may add a `-predictor`/route suffix) |
 | Gateway → backend `no healthy upstream` | Cilium egress missing | add the `toFQDNs` CiliumNetworkPolicy (§4c) |
+| Backend 404 `model not found` | `modelNameOverride` ≠ served name | **confirm on first deploy:** the served name = the runtime's `--model_name` (`qwen3-4b`); if huggingfaceserver advertises the HF path instead, set `modelNameOverride` to that |
 | 404 at `/v1/...` | KServe prefixes paths | backend `prefix: /openai/v1` |
 | Cold start minutes long / re-downloads weights | using `hf://` + emptyDir, or PVC deleted | pre-seed the PVC and use `pvc://` (§3a); keep `minScale: 1` |
 | Pod won't schedule | GPU node taint / label | confirm `gpu-node: "true"` + `nvidia.com/gpu` capacity on the A2000 node |
