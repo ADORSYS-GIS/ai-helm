@@ -133,6 +133,20 @@ backendDefaults:
       port: 443
     securityType: APIKey
     tlsHostname: generativelanguage.googleapis.com
+  # Self-hosted model on the home GPU (ADR-0022). vLLM via KServe's
+  # huggingfaceserver, exposed by Knative→Traefik→cert-manager at a public,
+  # publicly-trusted FQDN — so it's reached exactly like a SaaS backend:
+  # OpenAI schema, :443, System CA. The huggingfaceserver OpenAI routes sit
+  # under /openai/v1. ⚠️ Confirm the hostname against the live InferenceService
+  # `.status.url` after first deploy — KServe/Knative routing can shift it.
+  vllmLocal: &vllmLocalBackend
+    schema: OpenAI
+    prefix: "/openai/v1"
+    fqdn:
+      hostname: qwen3-4b-converse-poc--sls.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: qwen3-4b-converse-poc--sls.ssegning.com
 
 modelDefaults:
   backendRefs:
@@ -154,6 +168,9 @@ modelDefaults:
     googleAiStudioSecondary: &googleAiStudioBackendSecondary
       ref: google-ai-studio-02
       priority: 1
+    vllmLocalPrimary: &vllmLocalBackendPrimary
+      ref: vllm-local-01
+      priority: 0
 
 # ────────────────────────────────────────────────────────────────────────
 # supported_parameters anchors — flow through to the models-info catalog
@@ -267,6 +284,21 @@ backends:
       key: ai/camer/digital/prod/env
       property: google_ai_studio_api_key_02
 
+  # Self-hosted Qwen3-4B on the home GPU (ADR-0022). Same API key value as the
+  # model pod's VLLM_API_KEY (both pull ssegning-aws → vllm_local_api_key); this
+  # Secret lives on Hetzner/ns converse for the BackendSecurityPolicy, the other
+  # on the home cluster/ns converse-poc for the pod — different clusters, no
+  # collision. The ai-models-backends ExternalSecret writes it under the default
+  # `apiKey` data key (what the BSP expects).
+  vllm-local-01:
+    <<: *vllmLocalBackend
+    resourceName: vllm-local-01-svc
+    secretRef:
+      name: vllm-local-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -278,6 +310,32 @@ backends:
 #   flat            — one blended price for total tokens
 
 models:
+
+  # Self-hosted Qwen3-4B on the home RTX A2000 (ADR-0022). Routed exactly like a
+  # SaaS model; pricing flat $0 (owned hardware) so no monthly-budget rule, but
+  # the per-plan burst req/min + tokens/min limits still apply. The backend
+  # serves under the name set by the runtime's --model_name (qwen3-4b), so
+  # modelNameOverride rewrites the route id → that. ⚠️ Confirm `qwen3-4b` matches
+  # the served-model-name on the first test call; adjust if huggingfaceserver
+  # advertises the HF path instead.
+  qwen3-4b-local:
+    kind: text
+    # Single self-hosted backend by design (one GPU, one model). The default
+    # 2-backend HA guard doesn't apply; a cloud fallback at priority 1 is the
+    # documented optional upgrade (ADR-0022), not a requirement.
+    minBackends: 1
+    info:
+      contextLength: 16384          # = --max-model-len on the InferenceService
+      maxOutputTokens: 8192
+      supportedParameters: *spReasoning   # Qwen3 has a thinking mode
+    pricing:
+      strategy: flat
+      standard:
+        effectivePer1M: 0.0         # self-hosted — no per-token cost
+    backends:
+      vllm-local-01:
+        <<: *vllmLocalBackendPrimary
+        modelNameOverride: "qwen3-4b"
 
   deepseek-v4-flash:
     kind: text

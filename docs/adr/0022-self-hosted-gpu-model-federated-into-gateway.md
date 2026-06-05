@@ -54,10 +54,12 @@ a public FQDN.** Concretely:
   the existing Knative→Traefik→cert-manager path at
   `qwen3-4b-<ns>--sls.ssegning.com` with a publicly-trusted cert.
 - **Where it lives:** the `InferenceService` ships from **ai-helm** (new
-  `charts/model-serving`) but the Application **targets the home cluster**
-  (`server: https://kubernetes.default.svc`, `allowInCluster: true`) — a
-  *deliberate, single* exception to ADR-0017's "ai-helm workloads → home-remote".
-  The GPU is on the home cluster; the workload must be too.
+  `charts/model-serving`) but the Application **targets the home cluster** via a
+  new per-app **`homeCluster: true`** flag in `charts/apps` (renders
+  `server: https://kubernetes.default.svc`, calls the ADR-0017 guard with
+  `allowInCluster: true`, keeps the app's own namespace) — a *deliberate, single*
+  exception to ADR-0017's "ai-helm workloads → home-remote". The GPU is on the
+  home cluster; the workload must be too.
 - **Gateway side (Hetzner, unchanged machinery):** add a `vllm-local` backend
   (schema `OpenAI`, `prefix: /openai/v1`, `fqdn: …sls.ssegning.com:443`,
   `securityType: APIKey`, `tlsHostname` = the FQDN, `wellKnownCACertificates:

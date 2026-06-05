@@ -66,6 +66,15 @@ spec:
     # generated child Applications / the ApplicationSet template). ADR-0017.
     server: {{ $.Values.argocd.inClusterServer | default "https://kubernetes.default.svc" | quote }}
     namespace: {{ $.Values.argocd.controlPlaneNamespace | default "argocd" | quote }}
+    {{- else if .homeCluster }}
+    # ADR-0022 exception to ADR-0017: this WORKLOAD targets the cluster ArgoCD
+    # runs on (the home Talos cluster) — NOT home-remote — because the GPU +
+    # KServe + Knative that serve the model live there. Unlike `controlPlane`,
+    # it keeps the app's own workload namespace (it is not a control object).
+    # The destination guard would normally refuse an in-cluster workload, so we
+    # call it with allowInCluster:true to take the single sanctioned exception.
+    {{- include "apps.argocd.destinationClusterRef" (dict "server" ($.Values.argocd.inClusterServer | default "https://kubernetes.default.svc") "allowInCluster" true) | nindent 4 }}
+    namespace: {{ .destination.namespace }}
     {{- else }}
     {{- include "apps.argocd.destinationClusterRef" $.Values.argocd.destination | nindent 4 }}
     namespace: {{ .destination.namespace }}

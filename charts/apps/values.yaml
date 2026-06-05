@@ -1705,6 +1705,37 @@ applications:
     destination:
       namespace: converse
 
+  # --- Self-hosted model on the home GPU (ADR-0022) ---
+  # KServe/Knative + vLLM + LMCache serving Qwen3-4B on the home RTX A2000.
+  # `homeCluster: true` is the SINGLE sanctioned ADR-0017 exception: this
+  # workload targets the cluster ArgoCD runs on (the home Talos cluster) — NOT
+  # home-remote — because the GPU + KServe + Knative live there. The chart
+  # renders the weights PVC + a one-time seed Job + the InferenceService + the
+  # API-key ExternalSecret (sync-waves -2..1). The model is federated into the
+  # Hetzner gateway as the `vllm-local-01` backend / `qwen3-4b-local` model in
+  # charts/ai-models — so it inherits ADR-0021 JWT auth + rate limits there.
+  # See docs/2026-self-hosted-gpu-inference.md.
+  - name: model-serving
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    homeCluster: true
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: claude/magical-bohr-390242
+      path: charts/model-serving
+      helm:
+        releaseName: model-serving
+        valuesObject: { }
+    destination:
+      namespace: converse-poc
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- MCPs ---
   - name: mcps
     finalizers:
