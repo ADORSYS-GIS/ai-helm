@@ -1,0 +1,118 @@
+# charts/model-serving — self-hosted Qwen3-4B on the home GPU.
+# See ADR-0022 + docs/2026-self-hosted-gpu-inference.md.
+#
+# Sync-wave ordering (this Application's resources, on the HOME cluster):
+#   -2  ExternalSecret (vllm-local-api-key)   — key must exist before the model pod
+#   -1  PVC (qwen3-4b-models)                  — weights volume
+#    0  seed Job (download-once into the PVC)  — ArgoCD waits for it to complete
+#    1  InferenceService (vLLM + LMCache)      — mounts pvc://, never downloads
+
+global:
+  # Used only for chart labels; the actual namespace comes from the Application.
+  labels:
+    app: model-serving
+    team: adorsys-gis
+
+model:
+  # Logical model name (used for the InferenceService/Knative service name → FQDN).
+  name: qwen3-4b
+  # HuggingFace repo the seed Job downloads (Qwen3-4B is Apache-2.0 → no token).
+  hfRepo: Qwen/Qwen3-4B
+  # Sub-path inside the PVC where weights are seeded and mounted from.
+  storagePath: Qwen3-4B
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Weights volume — pre-seeded once, then mounted read-mostly. NOT hf:// at runtime.
+pvc:
+  enabled: true
+  name: qwen3-4b-models
+  storageClassName: longhorn
+  accessMode: ReadWriteOnce        # safe: model pins to the single GPU node (§3a)
+  size: 25Gi                       # ~8GB BF16 + headroom for a future AWQ variant
+
+# One-time download Job (sync-wave 0). Idempotent: huggingface-cli skips files
+# already present, so a re-run (e.g. after the Job is deleted) just re-verifies.
+# No ttlSecondsAfterFinished on purpose — a TTL'd Job would vanish and ArgoCD
+# would recreate (and re-download) it. The completed Job lingers; re-seed by
+# deleting it and letting ArgoCD recreate it.
+seedJob:
+  enabled: true
+  image:
+    repository: python
+    tag: "3.12-slim"
+    pullPolicy: IfNotPresent
+  # Pin to the GPU node so the RWO Longhorn volume binds where the model runs.
+  nodeSelector:
+    gpu-node: "true"
+  backoffLimit: 4
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# ─────────────────────────────────────────────────────────────────────────────
+inferenceService:
+  enabled: true
+  modelFormat: huggingface
+  # KServe's bundled ClusterServingRuntime (vLLM backend, LMCache-capable).
+  runtime: kserve-huggingfaceserver
+  # GPU pinning — the Knative podspec-runtimeclassname / -nodeselector feature
+  # flags are enabled on the home cluster (home-os charts/cd KnativeServing).
+  runtimeClassName: nvidia
+  nodeSelector:
+    gpu-node: "true"
+  # Serverless mode, but pinned to one warm pod: a cold start reloads multi-GB
+  # weights, and there is exactly one GPU.
+  minReplicas: 1
+  maxReplicas: 1
+  # vLLM / huggingfaceserver passthrough args, tuned for a 12GB A2000 (Ampere:
+  # no hardware FP8 → BF16/FP16 + AWQ-Marlin only). Exact arg spellings may need
+  # a nudge against the installed runtime version — this is the test-pass knob.
+  args:
+    - --model_name=qwen3-4b
+    - --backend=vllm
+    - --dtype=float16
+    - --max-model-len=16384
+    - --max-num-seqs=4
+    - --gpu-memory-utilization=0.90
+    - --kv-cache-dtype=fp8
+    - --enforce-eager
+    - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+    # AWQ optimization only (community quant): --quantization=awq_marlin
+  extraEnv: []
+  resources:
+    requests:
+      cpu: "2"
+      memory: 12Gi              # MUST exceed lmcache.maxLocalCpuSizeGb + runtime
+    limits:
+      nvidia.com/gpu: "1"
+      cpu: "4"
+      memory: 16Gi
+
+# In-pod LMCache (NOT the standalone lmcache_experimental_server — that's the
+# multi-replica shared-KV tool, irrelevant on one GPU). CPU-DRAM offload +
+# prefix reuse across requests.
+lmcache:
+  enabled: true
+  useExperimental: true
+  localCpu: true
+  maxLocalCpuSizeGb: 5          # GB of host RAM for offloaded KV
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The vLLM API key — the SOLE gate on the public Knative FQDN. The gateway's
+# BackendSecurityPolicy sends it as `Authorization: Bearer`. By-name from
+# ssegning-aws; never embedded.
+apiKey:
+  enabled: true
+  secretName: vllm-local-api-key
+  dataKey: api_key
+  envVar: VLLM_API_KEY
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: vllm_local_api_key

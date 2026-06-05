@@ -1,0 +1,35 @@
+apiVersion: v2
+name: model-serving
+description: |
+  Self-hosted LLM on the home GPU: a KServe InferenceService (Knative
+  Serverless) running vLLM + LMCache, fed weights from a pre-seeded PVC so
+  pod starts are a local mount (no per-start HuggingFace download).
+
+  Deployed by an ai-helm Application that — unusually — targets the HOME
+  cluster (where the GPU + KServe + Knative live), the single sanctioned
+  exception to ADR-0017. The model is then federated into the Hetzner Envoy
+  AI Gateway as an ordinary OpenAI backend at its public Knative FQDN
+  (see charts/ai-models). The *why* is ADR-0022; the *how* (VRAM math,
+  flags, runbook) is docs/2026-self-hosted-gpu-inference.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+keywords:
+  - llm
+  - vllm
+  - lmcache
+  - kserve
+  - knative
+  - inference
+  - gpu
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

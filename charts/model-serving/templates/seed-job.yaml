@@ -1,0 +1,56 @@
+{{- /*
+One-time weight download into the PVC (sync-wave 0). ArgoCD waits for it to
+complete before the InferenceService (wave 1) syncs, so the model never starts
+against an empty volume. Idempotent: huggingface-cli download skips files
+already present, so a re-run just re-verifies. No ttlSecondsAfterFinished — a
+TTL'd Job would vanish and ArgoCD would recreate (re-download) it; instead the
+completed Job lingers and re-seeding is `kubectl delete job` + sync.
+*/ -}}
+{{- if and .Values.pvc.enabled .Values.seedJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-{{ include "model-serving.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  backoffLimit: {{ .Values.seedJob.backoffLimit | default 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.labels.standard" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.seedJob.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: seed
+          image: "{{ .Values.seedJob.image.repository }}:{{ .Values.seedJob.image.tag }}"
+          imagePullPolicy: {{ .Values.seedJob.image.pullPolicy | default "IfNotPresent" }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              MODEL_DIR="/models/{{ .Values.model.storagePath }}"
+              mkdir -p "$MODEL_DIR"
+              echo "Seeding {{ .Values.model.hfRepo }} -> $MODEL_DIR (skips files already present)"
+              pip install --no-cache-dir -q "huggingface_hub[cli]"
+              huggingface-cli download {{ .Values.model.hfRepo }} \
+                --local-dir "$MODEL_DIR"
+              echo "Seed complete."
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          {{- with .Values.seedJob.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ .Values.pvc.name }}
+{{- end }}
