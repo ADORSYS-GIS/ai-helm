@@ -154,14 +154,17 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
 ### ⏳ Pre-existing / unrelated (not caused by this branch)
 - **lightbridge-backend** — `CreateContainerConfigError` (missing referenced
   secrets); predates this work.
-- **metrics-server — ✅ RESOLVED this session.** Was an `ai-metrics-server` ↔
-  `aii-metrics-server` collision (immutable selector: old `k8s-app=*` pod vs new
-  `app.kubernetes.io/*` Service → `Endpoints <none>` → `metrics.k8s.io`
-  unavailable). Fixed by: deleting the old `ai-metrics-server` Application +
-  the stuck `metrics-server` Deployment, then force-syncing `aii-metrics-server`
-  (`apply.force`) to recreate it. Now: pod 2/2, endpoints populated,
-  `metrics.k8s.io` **Available**, `kubectl top` works. (Note: this did NOT fix
-  grafana-operator — see above — so it was a real but separate bug.)
+- **metrics-server — ✅ RESOLVED (2026-06-05).** The real collision was the
+  `aii-metrics-server` chart vs **k3s's bundled metrics-server** (both on Hetzner):
+  k3s ships its own (Addon CRs from on-disk manifests, pods labelled `k8s-app=*`)
+  while the chart's Service selects `app.kubernetes.io/*` → `Endpoints <none>` →
+  `metrics.k8s.io` unavailable. Fixed by force-syncing `aii-metrics-server` so the
+  HA chart owns it (pod 2/2, endpoints populated, `metrics.k8s.io` **Available**,
+  `kubectl top` works) + committing **`--disable metrics-server`** to hetzner-k8s
+  (k3s stops shipping its own; durable on the next reprovision/k3s-restart).
+  ⚠️ NOT a same-cluster `ai-*`↔`aii-*` fight — those generations target **different
+  clusters** (see below). The earlier grafana-operator CrashLoop was Cilium
+  deny-egress, a separate bug.
 - **secrets / mcps** — `OutOfSync` (missing namespaces `monitoring`/
   `converse-monitoring`, old-gen residue) — clears with the old-gen decommission.
 - **apprise-api** — `ContainerCreating`, blocked mounting the `apprise-channels`
@@ -174,10 +177,14 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   volume `optional`, so the secret must exist.
 
 ## Outstanding manual / external steps
-1. **Old `ai-*` generation — decommission.** `ai-metrics-server` already done
-   (see above). Retire the rest of the old `ai-apps` root + remaining `ai-*`
-   children once their `aii-*` counterparts are green, to clear the duplicate
-   management (each old↔new pair can collide the same way metrics-server did).
+1. **Old `ai-*` generation — decommission (on the OTHER cluster).** ⚠️ The
+   `ai-*` apps (root `ai-apps` @ HEAD) and the `aii-*` apps (root `ai-apps-v2`)
+   live on the **same ArgoCD (`admin@homeos`) but target two DIFFERENT clusters**
+   — `ai-*` → the other (pre-Hetzner) cluster; `aii-*` → Hetzner `home-remote`.
+   They do **NOT** collide (different clusters). **Only ever act on `aii-*`;
+   leave `ai-*` alone** (deleting an `ai-*` app hits the other cluster — and the
+   self-healing `ai-apps` root re-creates it anyway). Decommissioning the old gen
+   is the maintainer's separate exercise on that cluster.
 2. **`observability-secrets`** — fill the real `ssegning-aws` remoteRefs and
    flip `enabled: true` (currently disabled to avoid clobbering the live
    externally-provisioned secrets).
