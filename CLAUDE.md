@@ -208,6 +208,7 @@ Default shell on the maintainer's laptop is **zsh** (not bash). For shell comman
 - **`gh` CLI** sometimes needs `zsh -i -c '...'` to pick up `GITHUB_TOKEN` from interactive profile. The harness's Bash tool runs zsh but non-interactively.
 - **`helm template` warnings** about `~/.kube/config` group/world readability are noise — ignore.
 - **`helm lint`** WARNING-level output ≠ failure. Look for `1 chart(s) failed`.
+- **bjw-template-only charts fail `helm lint --strict`** with `[WARNING] templates/: directory not found` → `1 chart(s) failed`. This is expected: charts like `mcpo`/`lmcache` carry no own `templates/` dir — every manifest comes from the `bjw-template` subchart. **It's fine for us** — non-strict `helm lint` passes (`0 chart(s) failed`) and the real gate, `helm template … --dry-run`, renders cleanly. Don't add an empty `templates/` dir to silence it; judge these charts by render + non-strict lint.
 - **The `.opencode/README.md`** is stale (refers to an unrelated "Azamra monorepo"). Ignore it. The canonical agent/CI rules live in `.github/workflows/opencode.yml`.
 
 ## `.well-known/opencode` is NOT OIDC discovery
