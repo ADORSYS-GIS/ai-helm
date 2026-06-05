@@ -98,7 +98,7 @@ spec:
     model:
       modelFormat: { name: huggingface }
       runtime: kserve-huggingfaceserver      # vLLM backend, LMCache-capable
-      storageUri: "hf://Qwen/Qwen3-4B"       # or a PVC-cached path
+      storageUri: "pvc://qwen3-4b-models/Qwen3-4B"   # pre-seeded PVC — NOT hf:// (see §3a)
       args:
         - --model_name=qwen3-4b
         - --backend=vllm
@@ -124,9 +124,8 @@ spec:
 Notes:
 - **Memory request must exceed the LMCache CPU pool** (`12Gi` covers a 5 GB KV
   pool + the runtime). Undersize it and the pod OOM-kills mid-cache.
-- **Model cache:** `hf://` re-downloads on a cold pod; with `minScale: 1` that's
-  once. For resilience, mount a Longhorn PVC for the HF cache (the
-  `podspec-persistent-volume-claim` flag is on).
+- **Weights come from a pre-seeded PVC, not `hf://`** — see §3a (this is the
+  answer to "does it download every time?": no).
 - **Exposure is automatic:** Knative + net-gateway-api create the HTTPRoute on
   the Traefik gateway; cert-manager (`cert-cloudflare`) issues the public cert.
   Resulting FQDN: **`qwen3-4b-converse-poc--sls.ssegning.com`**. OpenAI paths land
@@ -134,6 +133,75 @@ Notes:
 - **Secret:** `vllm-local-api-key` (key `api_key`) via an in-chart ExternalSecret
   → `ssegning-aws` key `ai/camer/digital/prod/env`, property `vllm_local_api_key`
   (maintainer populates it in AWS SM).
+
+### 3a. Model weights: a pre-seeded volume, **not** a per-start download
+
+Left to its default (`storageUri: hf://…` → an `emptyDir`), KServe's
+storage-initializer re-downloads the **~8 GB of weights on every cold start** —
+pod restart, node reboot, OOM-kill, or *any* config change that rolls the Knative
+revision. `minScale: 1` keeps the pod warm so it's not per-request, but it **is
+per-rollout** — slow and HF-rate-limit-prone on a home uplink. So the weights
+live on a **Longhorn PVC**.
+
+**Chosen: pre-seed the PVC once, then mount it read-mostly** (zero download at pod
+start; cold start = a local mount in seconds):
+
+```yaml
+# 1) PVC for the weights (Longhorn). ~8GB BF16 + headroom for a future AWQ variant.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: qwen3-4b-models, namespace: converse-poc }
+spec:
+  accessModes: [ReadWriteOnce]            # safe here — see the gotcha below
+  storageClassName: longhorn
+  resources: { requests: { storage: 25Gi } }
+---
+# 2) One-time seed Job — downloads Qwen3-4B into the PVC. Qwen3 is Apache-2.0,
+#    so NO HF token needed. Runs once; the InferenceService never downloads.
+apiVersion: batch/v1
+kind: Job
+metadata: { name: seed-qwen3-4b, namespace: converse-poc }
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector: { gpu-node: "true" }   # same node the model pins to
+      containers:
+        - name: seed
+          image: python:3.12-slim
+          command: ["sh","-c"]
+          args:
+            - pip install -q huggingface_hub &&
+              huggingface-cli download Qwen/Qwen3-4B --local-dir /models/Qwen3-4B
+          volumeMounts: [{ name: models, mountPath: /models }]
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: qwen3-4b-models }
+```
+
+Then the InferenceService uses `storageUri: pvc://qwen3-4b-models/Qwen3-4B` (as in
+the spec above) — KServe mounts the PVC at `/mnt/models`, no network fetch.
+
+**The Knative + RWO gotcha (and why RWO is fine here):** normally an RWO volume +
+rolling Knative revisions risks a mount deadlock (old + new pod both want it). But
+the model is pinned to the **single GPU node**, and **RWO = one *node*, many pods**
+(the strict per-pod variant is `ReadWriteOncePod`). Both revision pods land on that
+one node → RWO Longhorn mounts cleanly to both. No RWX/NFS share-manager needed.
+(Unrelated single-GPU reality: a rollout's new pod can't claim `nvidia.com/gpu: 1`
+until the old pod frees it, so rollouts serialize — expected with one GPU.)
+
+> **Simpler alternative (Option A):** skip the seed Job, keep `storageUri:
+> hf://Qwen/Qwen3-4B`, and mount the PVC at the HF cache dir (`HF_HOME`) so the
+> *first* boot downloads once and persists. Less elegant (first start still pulls
+> 8 GB, and the storage-initializer's emptyDir must be redirected), but fewer
+> moving parts. The pre-seed Job is preferred for fast, network-independent cold
+> starts.
+
+> **Re-download triggers to keep in mind even with the PVC:** deleting the PVC,
+> switching `modelNameOverride`/quant (seed a new path), or moving to a different
+> node pool. Day-to-day config edits roll the revision but reuse the same PVC →
+> **no re-download.**
 
 ### Application wiring (ai-helm `charts/apps/values.yaml`)
 
@@ -259,9 +327,11 @@ Secrets touched (all by-name from `ssegning-aws`, never embedded):
 
 ## 6. Build order
 
-1. **ai-helm `charts/model-serving`** — author the InferenceService chart
-   (values-driven: model, runtime args, GPU, LMCache env, the API-key
-   ExternalSecret). `helm template` it.
+1. **ai-helm `charts/model-serving`** — author the chart: the **PVC + one-time
+   seed Job** (§3a), the InferenceService (`pvc://` storageUri, runtime args, GPU,
+   LMCache env), and the API-key ExternalSecret. All values-driven. `helm template`
+   it. (The seed Job is `ttlSecondsAfterFinished`-cleaned and idempotent — a
+   `helm.sh/hook: post-install` or a guard so it doesn't re-run on every sync.)
 2. **AWS SM** — maintainer adds `vllm_local_api_key` to `ai/camer/digital/prod/env`.
 3. **ai-helm `charts/apps`** — add the `model-serving` Application (home
    destination, `allowInCluster: true`).
@@ -309,5 +379,5 @@ TTFT (time-to-first-token) should drop sharply as prefill is served from cache.
 | Route has no cert / 526 | cert-manager issuance pending | check `Certificate` in `converse-poc`; `cert-cloudflare` needs the Cloudflare token secret present |
 | Gateway → backend `no healthy upstream` | Cilium egress missing | add the `toFQDNs` CiliumNetworkPolicy (§4c) |
 | 404 at `/v1/...` | KServe prefixes paths | backend `prefix: /openai/v1` |
-| Cold start minutes long | scale-to-zero reloaded weights | keep `minScale: 1`; PVC-cache the HF download |
+| Cold start minutes long / re-downloads weights | using `hf://` + emptyDir, or PVC deleted | pre-seed the PVC and use `pvc://` (§3a); keep `minScale: 1` |
 | Pod won't schedule | GPU node taint / label | confirm `gpu-node: "true"` + `nvidia.com/gpu` capacity on the A2000 node |
