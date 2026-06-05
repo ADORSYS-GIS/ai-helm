@@ -5,11 +5,51 @@ global:
     team: adorsys-gis
 
 mcpo:
+  # Horizontal autoscaling for the (stateless) MCPo proxy. Rendered as a raw
+  # HorizontalPodAutoscaler via bjw-template's rawResources passthrough — the
+  # same house pattern librechat-app uses (charts/librechat-app/values.yaml).
+  # The HPA owns the live replica count once it reconciles; `replicas` below is
+  # just the initial value. CPU is the meaningful signal for an HTTP proxy;
+  # the memory target is a safety ceiling. mcpo is a stateless MCP→OpenAPI
+  # shim (open-webui/mcpo), so scaling out horizontally is safe.
+  rawResources:
+    hpa:
+      enabled: true
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      spec:
+        spec:
+          scaleTargetRef:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: '{{ .Release.Name }}'
+          minReplicas: 1
+          maxReplicas: 3
+          metrics:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: 70
+            - type: Resource
+              resource:
+                name: memory
+                target:
+                  type: Utilization
+                  averageUtilization: 80
+
   controllers:
     main:
       type: deployment
-      strategy: Recreate
+      # RollingUpdate (not Recreate) so scale events + rollouts don't drop the
+      # whole proxy at once now that >1 replica is possible under the HPA.
+      strategy: RollingUpdate
+      # Initial replicas only — the HPA above takes over after first reconcile.
       replicas: 1
+      # Keep at least one MCPo pod serving during voluntary disruptions.
+      podDisruptionBudget:
+        minAvailable: 1
       labels:
         main: main-app
       containers:
