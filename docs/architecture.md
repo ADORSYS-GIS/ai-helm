@@ -151,16 +151,20 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
   api.ai-v2.camer.digital                                    Self-service portal
   (Envoy AI Gateway)                                      (selfServiceMcpApi
   ↓                                                       Keycloak client)
-  Authorino ext_authz                                     ↓
-  ↓                                                       Issues API keys
-  ├── verify JWT (Keycloak JWKS)                          (Lightbridge-managed)
-  ├── if azp ∈ SA allowlist → skip OPA (ADR-0003)
-  ├── else → call lightbridge-opa for project/account/api-key validation
+  Authorino ext_authz  (DUAL-PLANE, AuthConfig-per-host — ADR-0021)
+  ↓
+  ├── EXTERNAL host (api.ai-v2…) → verify Keycloak JWT (JWKS)
+  ├── INTERNAL host (core-gateway-internal.svc) → k8s SA TokenReview OR apiKey
+  ├── (OPA REMOVED 2026-06-04 — a valid JWT/SA/apiKey = access; OPA was the old
+  │    lightbridge-validation step, now gone; reserved for future burst control)
   ├── inject x-oidc-* headers downstream (ADR-0011):
   │    user_id, user_name, azp, iss, roles, scope, jti, email, name
-  └── inject x-project-id, x-account-id, x-api-key-id, x-billing-plan
+  └── inject rate-limit descriptors: x-account-id, x-org-id, x-billing-plan
+       (CEL: Keycloak claims w/ defaults; or a LibreChat-forwarded end-user sub)
   ↓
-  Envoy access log (JSON) → OTLP → Alloy → Loki labels {user_id, azp}
+  per-model BackendTrafficPolicy → burst (x-account-id) + budget (x-org-id) by tier
+  ↓
+  Envoy access log (JSON) → Alloy → Loki labels {user_id, azp}
 ```
 
 **Three identity surfaces** to know:
@@ -172,10 +176,15 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
   Lightbridge self-service portal. Used by `opencode`, third-party
   CLIs, scripts. Backed by Keycloak OAuth flows via the
   `@vymalo/opencode-oauth2` plugin (ADR-0014, [`opencode-well-known.md`](opencode-well-known.md)).
-- **Service accounts (CI)** — Keycloak service-account tokens; `azp`
-  in the SA allowlist skips OPA (ADR-0003). ADR-0009 deferred a
-  Python token-exchange step for GH Actions OIDC → Keycloak; not
-  shipped yet.
+- **Service accounts (CI / remote)** — Keycloak service-account tokens on the
+  external plane. **In-cluster** services use the internal plane instead:
+  a k8s SA token (one-time jobs) or a static apiKey (long-running, e.g.
+  LibreChat) — ADR-0021. (OPA / the `azp`-skip of ADR-0003 are removed.)
+
+> ⚠️ The OPA-era detail above (lightbridge-opa validation, the SA-skip-OPA path,
+> the `x-project-id`/`x-api-key-id` headers) is **historical** — OPA was removed
+> 2026-06-04. See **ADR-0021** + `docs/2026-hetzner-cutover.md` for the current
+> dual-plane / Keycloak-JWT model.
 
 ## Observability
 
@@ -250,9 +259,11 @@ The high-impact ones:
 - **Secrets + the External Secrets Operator.** ESO itself (controller +
   CRDs) is installed externally — *not* by this repo. The
   `ClusterSecretStore` in use is `ssegning-aws` (cluster-scoped,
-  external). ExternalSecret CRs come from `ai-ops-secrets.git` (the
-  `secrets` Application) and other external sources; they all reference
-  `ssegning-aws`. This repo only references the resulting Secret names.
+  external). ExternalSecret CRs are now **chart-owned** (in-chart +
+  `environments/<env>/deps/*` overlays), all referencing `ssegning-aws` —
+  the old wholesale `secrets` Application from `ai-ops-secrets.git` was
+  **removed (2026-06-04)**. App secrets pull from key
+  `ai/camer/digital/prod/env`, platform secrets from `prod/meta/test-app`.
 - **ai-gitops state.** Per-cluster image-tag overrides, environment
   config, the actual ArgoCD `Application` for the root umbrella —
   all in the separate `ai-gitops` repo.

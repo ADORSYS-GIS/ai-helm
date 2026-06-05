@@ -20,7 +20,7 @@ how thinking evolved.
 |---|---|---|---|---|
 | [0001](./0001-record-architecture-decisions.md) | Record architecture decisions in this repo | Accepted | 2026-05-24 | — |
 | [0002](./0002-replace-phoenix-with-tempo.md) | Replace Arize Phoenix with Grafana Tempo for LLM tracing | Accepted | 2026-05-24 | — |
-| [0003](./0003-skip-opa-for-service-accounts.md) | Skip OPA / external metadata for service-account tokens via `azp` allowlist | Accepted | 2026-05-24 | — |
+| [0003](./0003-skip-opa-for-service-accounts.md) | Skip OPA / external metadata for service-account tokens via `azp` allowlist | Superseded by [0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md) | 2026-05-24 | — |
 | [0004](./0004-grafana-operator-external-mode.md) | Adopt grafana-operator in external mode for dashboards-as-code | Accepted | 2026-05-24 | — |
 | [0005](./0005-per-user-attribution-via-authorino-headers.md) | Propagate per-user identity via Authorino response headers → Loki labels | Accepted | 2026-05-24 | — |
 | [0006](./0006-multi-source-applicationset.md) | Migrate charts/apps to a multi-source ApplicationSet (List generator, no-dup) | Superseded by [0018](./0018-umbrella-apps-and-env-overlays.md) | 2026-05-24 | — |
@@ -38,7 +38,7 @@ how thinking evolved.
 | [0018](./0018-umbrella-apps-and-env-overlays.md) | Umbrella Applications (workload + app-scoped deps via kustomize) + per-env `environments/` overlays | Proposed | 2026-05-31 | [0006](./0006-multi-source-applicationset.md) |
 | [0019](./0019-coder-app-of-apps-orchestrator.md) | Factor Coder into an App-of-Apps orchestrator (db + app as separate Applications) | Accepted | 2026-06-01 | — |
 | [0020](./0020-observability-app-of-apps-orchestrator.md) | Factor the observability stack into an App-of-Apps orchestrator (+ a secrets app) | Accepted | 2026-06-01 | — |
-| [0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md) | Burst control, budgeting & billing via dual-plane (internal/external) AuthConfigs | Proposed | 2026-06-04 | — |
+| [0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md) | Burst control, budgeting & billing via dual-plane (internal/external) AuthConfigs | Proposed | 2026-06-04 | supersedes [0003](./0003-skip-opa-for-service-accounts.md) |
 
 ## Status legend
 
