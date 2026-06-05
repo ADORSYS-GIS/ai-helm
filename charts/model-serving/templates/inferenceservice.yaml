@@ -29,7 +29,9 @@ spec:
     model:
       modelFormat:
         name: {{ .Values.inferenceService.modelFormat }}
-      {{- with .Values.inferenceService.runtime }}
+      {{- $runtime := .Values.inferenceService.runtime }}
+      {{- if .Values.servingRuntime.enabled }}{{ $runtime = .Values.servingRuntime.name }}{{ end }}
+      {{- with $runtime }}
       runtime: {{ . }}
       {{- end }}
       storageUri: {{ include "model-serving.storageUri" . | quote }}
