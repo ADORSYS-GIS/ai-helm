@@ -287,24 +287,21 @@ Clients then call the gateway as usual:
 The model inherits ADR-0021 auth, rate limits, and metering; pricing `$0` means
 no monthly-budget rule, but burst req/min + tokens/min still apply per plan.
 
-### 4c. Cilium egress (Hetzner default-deny baseline)
+### 4c. Cilium egress — **not needed** (verified)
 
-The gateway pod must be allowed to egress to the public FQDN:
+No new egress policy is required. The Hetzner deny-egress baseline (the
+`allow-dns` NetworkPolicies that make a namespace egress-deny-by-default) is
+applied **only** to `platform` / `observability` / `data` / `apps`
+(`hetzner-k8s/platform/base/networkpolicy-dns.yaml`). The Envoy **data-plane runs
+in `envoy-gateway-system`**, which is **not** in that list — so the proxy already
+egresses freely to every SaaS backend (deepinfra/fireworks/google), and reaches
+the home FQDN the same way. Nothing to add.
 
-```yaml
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata: { name: allow-vllm-local-egress, namespace: envoy-gateway-system }
-spec:
-  endpointSelector:
-    matchLabels: { app.kubernetes.io/component: proxy }
-  egress:
-    - toFQDNs: [{ matchName: "qwen3-4b-converse-poc--sls.ssegning.com" }]
-      toPorts: [{ ports: [{ port: "443", protocol: TCP }] }]
-```
-
-Ship it via the gateway's deps overlay (`environments/prod/deps/*`), matching the
-pattern used for the S3/object-storage FQDN allows.
+> Only if `envoy-gateway-system` is ever brought under the baseline would you need
+> an additive allow — then a `CiliumNetworkPolicy` (`endpointSelector`
+> `app.kubernetes.io/component: proxy`, `toFQDNs` the model FQDN on 443, plus the
+> DNS L7 visibility rule) shipped via a deps overlay, matching the S3/object-storage
+> pattern.
 
 ---
 
@@ -334,21 +331,26 @@ Secrets touched (all by-name from `ssegning-aws`, never embedded):
 
 ---
 
-## 6. Build order
+## 6. Build order (status)
 
-1. **ai-helm `charts/model-serving`** — author the chart: the **PVC + one-time
-   seed Job** (§3a), the InferenceService (`pvc://` storageUri, runtime args, GPU,
-   LMCache env), and the API-key ExternalSecret. All values-driven. `helm template`
-   it. (The seed Job is `ttlSecondsAfterFinished`-cleaned and idempotent — a
-   `helm.sh/hook: post-install` or a guard so it doesn't re-run on every sync.)
-2. **AWS SM** — maintainer adds `vllm_local_api_key` to `ai/camer/digital/prod/env`.
-3. **ai-helm `charts/apps`** — add the `model-serving` Application (home
-   destination, `allowInCluster: true`).
-4. **ai-helm `charts/ai-models/values.yaml`** — add the `vllm-local-01` backend +
-   the `qwen3-4b-local` model. `helm template` the orchestrator.
-5. **Cilium egress** — add the gateway→FQDN allow via the deps overlay.
-6. Commit on the deploy branch; let ArgoCD reconcile (flag the consequential
-   syncs to the maintainer).
+1. ✅ **`charts/model-serving`** — PVC + idempotent seed Job + InferenceService
+   (`pvc://`) + API-key ExternalSecret, sync-wave ordered (-2…1). The seed Job has
+   **no `ttlSecondsAfterFinished`** (a TTL'd Job would vanish and ArgoCD would
+   re-download); it lingers as a completed, in-sync resource. Commit `f8d9410`.
+2. ✅ **AWS SM** — `vllm_local_api_key` added to `ai/camer/digital/prod/env`.
+3. ✅ **`charts/apps`** — the `model-serving` Application via the new
+   `homeCluster: true` flag (→ `aii-model-serving`, in-cluster/home). Commit `152c60e`.
+4. ✅ **`charts/ai-models/values.yaml`** — `vllm-local-01` backend + `qwen3-4b-local`
+   model (flat $0, `minBackends: 1`). Commit `152c60e`.
+5. ⛔ **Cilium egress** — **not needed** (§4c): `envoy-gateway-system` isn't under
+   the deny-egress baseline.
+6. ⏳ **Reconcile** — committed on the deploy branch; awaiting the next
+   `ai-apps-v2` root sync (consequential — creates the model on the home GPU +
+   routes the gateway to it).
+
+**On first deploy, confirm two things** (both have troubleshooting rows in §8):
+the live `InferenceService` `.status.url` matches the backend `fqdn.hostname`, and
+the served-model-name matches `modelNameOverride` (`qwen3-4b`).
 
 ---
 
@@ -387,7 +389,7 @@ TTFT (time-to-first-token) should drop sharply as prefill is served from cache.
 | CUDA OOM on load | weights+graph > budget | `--enforce-eager`, lower `--gpu-memory-utilization`/`--max-model-len`/`--max-num-seqs`, or move to AWQ-INT4 |
 | Route has no cert / 526 | cert-manager issuance pending | check `Certificate` in `converse-poc`; `cert-cloudflare` needs the Cloudflare token secret present |
 | Gateway → backend `no healthy upstream` / DNS fail | backend FQDN ≠ the live route | **confirm on first deploy:** `kubectl -n converse-poc get inferenceservice qwen3-4b -o jsonpath='{.status.url}'` and set the `vllm-local` backend `fqdn.hostname` + `tlsHostname` to match (KServe/Knative may add a `-predictor`/route suffix) |
-| Gateway → backend `no healthy upstream` | Cilium egress missing | add the `toFQDNs` CiliumNetworkPolicy (§4c) |
+| Gateway → backend `no healthy upstream` | (egress is NOT restricted in envoy-gateway-system — §4c) | check the home route is actually serving (curl the FQDN direct); TLS/cert; the FQDN-vs-`.status.url` row above |
 | Backend 404 `model not found` | `modelNameOverride` ≠ served name | **confirm on first deploy:** the served name = the runtime's `--model_name` (`qwen3-4b`); if huggingfaceserver advertises the HF path instead, set `modelNameOverride` to that |
 | 404 at `/v1/...` | KServe prefixes paths | backend `prefix: /openai/v1` |
 | Cold start minutes long / re-downloads weights | using `hf://` + emptyDir, or PVC deleted | pre-seed the PVC and use `pvc://` (§3a); keep `minScale: 1` |
