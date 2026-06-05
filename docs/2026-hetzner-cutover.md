@@ -342,3 +342,71 @@ diff) AND a disruptive live cutover (the ai-models ApplicationSet has no
 `preserveResourcesOnDeletion`, so it would prune the working app → `/v1/models/info`
 briefly 404s). For a healthy, serving component that lives next to the catalog it
 derives from, that cost isn't worth it. **Left under `ai-models` by decision.**
+
+## 2026-06-04/05 — secrets re-homing, OPA removal, dual-plane gateway (ADR-0021)
+
+### Secrets moved in-chart; the `secrets` app retired ✅ (with one self-inflicted outage)
+The wholesale **`secrets` Application** (synced ExternalSecret/Secret CRs from
+`ai-ops-secrets.git`) was **removed from `charts/apps`**. Secrets are now
+**chart-owned**: in-chart ExternalSecrets (ai-models-backends, librechat-app,
+observability-secrets) + the `environments/<env>/deps/*` overlays. App secrets
+resolve against the consolidated `ssegning-aws` key **`ai/camer/digital/prod/env`**
+(one property each); platform secrets stay on `prod/meta/test-app`. Filled:
+librechat's ~18 refs, the 6 backend keys (deepinfra split into `-01`/`-02`),
+grafana-admin/keycloak, `redis-ha-redis-auth` (converse). Still placeholder:
+`apprise-channels`, `opencode-k8s-agent-secret`.
+- ⚠️ **LESSON / outage:** pruning `secrets` cascade-deleted everything it owned —
+  including `lightbridge-opa-auth` and the lightbridge backend's `opa-secret` /
+  `lightbridge-api-client` / CNPG `*-db-app`. The gateway then returned **404
+  `x-ext-auth-reason: Service not found`** on every request: Authorino's AuthConfig
+  was stuck `Ready: False` ("secret lightbridge-opa-auth not found") so no host was
+  linked. **Re-home a secret in-chart BEFORE retiring its provisioner.** The
+  lightbridge backend is still down on those secrets but is now off the gateway
+  critical path (OPA removed, below).
+
+### OPA removed — Keycloak JWT is the authz boundary ✅
+The fix for the 404 was to **drop OPA from the AuthConfig entirely** (maintainer:
+"responsibility is moving to Keycloak; OPA only for future burst control"). Deleted
+the `lightbridge-validation` HTTP metadata source + the `enforce-valid-key` step +
+the OPA-derived response items (`x-project-id`, `x-api-key-id`, `llm_*`
+dynamicMetadata). A valid Keycloak JWT now = access. The AuthConfig reconciles
+without the OPA Secret/backend. The `x-oidc-*` (ADR-0011) contract is unchanged.
+
+### Dual-plane gateway + burst/budget/billing (ADR-0021) ✅ (charts; activation pending)
+Built per ADR-0021 (read it):
+- **External plane** (`api.ai-v2.camer.digital`, public LB): full Keycloak JWT;
+  descriptors via CEL with defaults so `billing_plan`/`organization` claims are
+  optional (`→ free` / `→ sub`).
+- **Internal plane** (`core-gateway-internal.envoy-gateway-system.svc.cluster.local`):
+  new `api-internal` HTTPS listener (`self-signed-ca` TLS) + a ClusterIP Service in
+  `envoy-gateway-system` (selects the proxy pods, 443→10443). A 2nd AuthConfig binds
+  this host and accepts **either** a k8s SA token (`kubernetesTokenReview`, audience
+  `core-gateway-internal` — one-time jobs) **or** a static `apiKey` (labeled Secret
+  `kuadrant.io/apikey-for=internal-gateway` — long-running services).
+- **Rate limiting**: per-model `BackendTrafficPolicy` with 3 rule families — burst
+  req/min (per-user `x-account-id`), burst tokens/min (from `llm_total_token`
+  metadata), monthly µ$ budget (per-org `x-org-id`, only for plans with
+  `monthlyBudgetUsd` → service/internal uncapped). Tiers in
+  `charts/ai-models/values.yaml` `rateLimitBudgeting.plans` (free/pro/service/internal).
+- **LibreChat** repointed to the internal host; redis over `rediss://` + internal-CA
+  trust (`NODE_EXTRA_CA_CERTS`/`REDIS_CA` → `/etc/internal-ca`); authenticates with
+  its existing `CONVERSE_OPENAI_API_KEY` (now also materialised as the gateway-side
+  `internal-key-librechat` apiKey Secret — one value, both ends). **Per-user
+  attribution**: LibreChat forwards `X-LibreChat-User` = the user's Keycloak sub; the
+  internal AuthConfig's CEL maps it to per-user `x-account-id`/budget (so a person's
+  LibreChat + opencode usage share one account). Trust = internal-plane-only +
+  Authorino overwrites descriptors.
+
+**Activation pending (maintainer's test pass):** Keycloak `billing_plan`/
+`organization` mappers (external plane; optional thanks to CEL defaults), the
+internal listener/cert/Service coming up, role→tier mapping value, Phase-4 metering
+(Alloy→Mimir), and a Cilium NetworkPolicy confining `core-gateway-internal`.
+
+### Catalog enrichment + frontend bump (smaller items)
+- `/v1/models/info` per-model `context_length` (web-verified per backend; capped at
+  400k) + `top_provider` + `supported_parameters[]` (`charts/ai-models/values.yaml`
+  `info:` blocks). GLM-5.1 corrected to text-only; qwen3-embedding-8b → `kind:
+  embedding` (excluded from the chat catalog).
+- converse-frontend image bumped `sha-df5d442 → sha-7b3a945` (ported from `main`'s
+  King-Koufan commit, tag only — `main` is ~2.8k lines behind, pre-`ai-v2` migration;
+  teammates' image bumps on `main` don't reach the cluster).

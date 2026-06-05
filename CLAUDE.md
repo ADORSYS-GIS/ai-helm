@@ -74,7 +74,7 @@ Flat leaf apps in `charts/apps/values.yaml` use a multi-source **umbrella** so a
 
 Per-env knobs (`clusterIssuer`, `secretStore`, `ingressClass`, `storageClass`, `domainBase`) live in `environments/<env>/cluster.yaml` (source of truth) and are patched into the dep CRs by the `environments/<env>/deps/<app>/` kustomize overlay (base under `environments/base/deps/<app>/`). Today only `environments/prod/` exists (Hetzner); a second env is a drop-in sibling directory.
 
-Ownership split: umbrellas own **app-scoped** secrets/certs (referencing `ssegning-aws` by name). **Platform/shared** secrets (S3, Keycloak, redis-auth) stay external in `ai-ops-secrets.git`. The store is never defined here.
+Ownership split: umbrellas own **app-scoped** secrets/certs (referencing `ssegning-aws` by name). The store is never defined here. ⚠️ The wholesale-provisioner `secrets` Application (`ai-ops-secrets.git`) was **removed (2026-06-04)** — secrets are now **chart-owned** (in-chart ExternalSecrets + the `environments/<env>/deps/*` overlays). **App** secrets resolve against the consolidated `ssegning-aws` key **`ai/camer/digital/prod/env`** (one property each); **platform** secrets (S3, redis password) against `prod/meta/test-app`. LESSON: re-home a secret in-chart *before* retiring its provisioner — pruning `secrets` cascade-deleted the lightbridge secrets (incl. `lightbridge-opa-auth`) and caused a gateway outage.
 
 **How to attach deps:** add one field to the app entry — `depsOverlay: environments/<env>/deps/<app>`. `applications.yaml` folds it in as Source B (pointing at this repo via `argocd.selfRepoURL` @ `argocd.selfTargetRevision`), keeping the workload's `source:` + `valuesObject` verbatim (no re-indenting big value blocks). Also drop the `cert-manager.io/cluster-issuer` annotation from that chart's ingress — the overlay `Certificate` now owns the TLS secret. Flat umbrella: `lightbridge-backend`. Dep-less infra/backends stay single-source. (`coder` and `grafana` also consume `environments/<env>/deps/<app>` cert overlays, but as **children of App-of-Apps orchestrators** — `coder` ADR-0019, `grafana` under `observability` ADR-0020 — not as flat umbrellas. The orchestrator templates support `depsOverlay` on children too.)
 
@@ -146,13 +146,29 @@ ADR-0011 defines the canonical header set Authorino injects after JWT verificati
 | `x-oidc-azp` | yes (`azp`) | `auth.identity.azp` |
 | `x-oidc-user-name`, `x-oidc-iss`, `x-oidc-roles-realm`, `x-oidc-resource-access`, `x-oidc-scope`, `x-oidc-jti`, `x-oidc-email`, `x-oidc-name` | no — body only | JWT claims |
 
-Don't reintroduce the placeholder `x-cd-*` prefix or invent new headers without an ADR.
+Don't reintroduce the placeholder `x-cd-*` prefix or invent new headers without an ADR. The `x-oidc-*` set survives the OPA removal; alongside it, Authorino now also stamps the **rate-limit descriptors** `x-account-id` / `x-org-id` / `x-billing-plan` (ADR-0021) — see below. The old OPA-derived headers (`x-project-id`, `x-account-id`-as-`LIBRECHAT`, `x-api-key-id`, `x-api-key-status`) were removed.
 
-## Service-account auth path (ADR-0003)
+## Gateway authz + rate limiting (ADR-0021) — OPA REMOVED, Keycloak JWT is the boundary
 
-SA tokens (CI runners) skip the lightbridge-opa metadata + the dependent `enforce-valid-key` authorization step. The allowlist of SA `azp` values lives in `charts/apps/values.yaml` under `security-policies.authConfigs.main.serviceAccountClients`. The marker on individual steps is `_skipForServiceAccounts: true` — see `charts/kuadrant-policies/templates/_helpers.tpl`.
+⚠️ The old OPA path is **gone** (2026-06-04). The `lightbridge-validation` HTTP
+metadata source + the `enforce-valid-key` authorization step were **deleted** from
+the AuthConfig (`security-policies.authConfigs.main` in `charts/apps/values.yaml`).
+A valid **Keycloak JWT = "you're in our system, you may use the gateway."** OPA is
+reserved for *future burst control* only (not wired). So: ADR-0003 (skip-OPA-for-SA)
+and the OPA-derived response headers (`x-project-id`, `x-api-key-id`, the `llm_*`
+dynamicMetadata) are historical — don't reintroduce them without a new ADR. The
+`serviceAccountClients` allowlist + `_skipForServiceAccounts` markers are now inert
+but kept for if OPA burst-control returns. (The missing `lightbridge-opa-auth`
+Secret — pruned with the `secrets` app — is what caused the 404 outage that
+prompted the removal; see `docs/2026-hetzner-cutover.md`.)
 
-The `enforce-valid-key` step itself is currently **commented out** in `charts/apps/values.yaml` (per a maintainer commit on main). The SA-skip marker is preserved inside the comment so re-enabling is mechanical.
+**Read [ADR-0021](docs/adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md) before touching auth or rate limiting.** The shape now:
+
+- **Dual-plane, AuthConfig-per-host** (one SecurityPolicy + one Authorino, indexed by Host):
+  - **External** — `api.ai-v2.camer.digital` (public LB, ACME TLS): humans (opencode) + remote SAs. Full Keycloak JWT. Descriptors via CEL with defaults so `billing_plan`/`organization` claims are **optional** (`→ free` / `→ sub`).
+  - **Internal** — `core-gateway-internal.envoy-gateway-system.svc.cluster.local` (ClusterIP only, `api-internal` listener, `self-signed-ca` TLS): in-cluster services. Accepts **EITHER** a k8s SA token (`kubernetesTokenReview`, one-time jobs) **OR** a static `apiKey` (labeled Secret `kuadrant.io/apikey-for=internal-gateway`, long-running services like LibreChat).
+- **Per-user attribution:** a long-running service (LibreChat) authenticates as itself but **forwards the end-user's Keycloak sub** (`X-LibreChat-User`); the internal AuthConfig's CEL prefers it → per-user `x-account-id`/budget. Trust = internal plane is first-party-only + Authorino overwrites the descriptors.
+- **Rate limiting** = per-model `BackendTrafficPolicy` (`charts/ai-model`) keyed on `x-account-id` (burst) + `x-org-id` (monthly µ$ budget) + `x-billing-plan` (tier: free/pro/service/internal). Tiers in `charts/ai-models/values.yaml` `rateLimitBudgeting.plans`. Static via Helm (the AIEG CRD), no dynamic OPA.
 
 ## Python tooling (`tools/dashboards/`)
 
@@ -193,7 +209,7 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 
 ## Where the cluster's actual state lives that this repo doesn't track
 
-- **Secrets + ESO** — the External Secrets Operator (controller + CRDs) is **installed externally**, not by this repo (it runs in the `external-secrets` namespace, Helm-managed). The `ClusterSecretStore` is `ssegning-aws` (cluster-scoped, external). ExternalSecret CRs are sourced from `ai-ops-secrets.git` (the `secrets` Application) + other external sources; all reference `ssegning-aws`. This repo references Secret names only. Don't re-add an ESO operator or a ClusterSecretStore chart here (the old Vault `bootstrap-secrets` store config was removed — it was never the store actually used).
+- **Secrets + ESO** — the External Secrets Operator (controller + CRDs) is **installed externally**, not by this repo (it runs in the `external-secrets` namespace, Helm-managed). The `ClusterSecretStore` is `ssegning-aws` (cluster-scoped, external). This repo now **owns the ExternalSecret CRs in-chart** (ai-models-backends, librechat-app, observability-secrets, + `environments/<env>/deps/*` overlays), all referencing `ssegning-aws` — the old wholesale `secrets` Application from `ai-ops-secrets.git` was **removed (2026-06-04)**. App secrets pull from key `ai/camer/digital/prod/env`, platform secrets from `prod/meta/test-app`. Don't re-add an ESO operator or a ClusterSecretStore chart here (the old Vault `bootstrap-secrets` store config was removed — it was never the store actually used).
 - **Keycloak realm clients/scopes/groups** — `charts/keycloak-baseline/values.yaml` defines them; keycloak-config-cli applies. Client secrets come from ESO at sync time.
 - **Backups** — `charts/*-backup/` define the CronJobs; the S3 buckets + retention policies are out-of-band.
 - **ArgoCD root Application** (`ai-apps-v2`) — applied **manually** on the ArgoCD cluster (no `ai-gitops` repo). The chart `charts/apps/` in this repo is what it points at.

@@ -1,8 +1,16 @@
 # ADR-0003: Skip OPA / external metadata for service-account tokens via `azp` allowlist
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0021](0021-burst-budget-billing-and-dual-plane-authconfigs.md)
 **Date:** 2026-05-24
 **Deciders:** @stephane-segning
+
+> **Superseded 2026-06-04.** The `lightbridge-opa` metadata call + `enforce-valid-key`
+> step this ADR optimizes were **removed entirely** — authorization moved to
+> Keycloak (a valid JWT = access), and rate limiting/accounting moved to the
+> per-host AuthConfig descriptors + `BackendTrafficPolicy` (ADR-0021). The `azp`
+> SA-allowlist + `_skipForServiceAccounts` markers remain in the chart but are
+> inert (no step uses them), kept for if OPA returns for *burst control*. The
+> decision body below is historical.
 
 ## Context
 
