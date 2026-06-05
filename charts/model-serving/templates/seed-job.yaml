@@ -17,7 +17,9 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
-  backoffLimit: {{ .Values.seedJob.backoffLimit | default 4 }}
+  backoffLimit: {{ .Values.seedJob.backoffLimit | default 6 }}
+  # A stuck/rate-limited download dies and retries instead of hanging forever.
+  activeDeadlineSeconds: {{ .Values.seedJob.activeDeadlineSeconds | default 3600 }}
   template:
     metadata:
       labels:
@@ -38,11 +40,23 @@ spec:
               MODEL_DIR="/models/{{ .Values.model.storagePath }}"
               mkdir -p "$MODEL_DIR"
               echo "Seeding {{ .Values.model.hfRepo }} -> $MODEL_DIR (skips files already present)"
-              # huggingface_hub 1.x: the CLI is `hf` (huggingface-cli is removed),
-              # and there is no `[cli]` extra — the `hf` entrypoint ships in the base.
-              pip install --no-cache-dir -q "huggingface_hub>=1.0"
+              # huggingface_hub 1.x: the CLI is `hf` (huggingface-cli is removed).
+              # hf_transfer = the Rust accelerator (faster + resilient on the big
+              # safetensors shards). HF_TOKEN (if set) lifts the anonymous
+              # rate limit that otherwise stalls the download partway through.
+              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_transfer]>=1.0"
               hf download {{ .Values.model.hfRepo }} --local-dir "$MODEL_DIR"
               echo "Seed complete."
+          env:
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "1"
+            {{- if .Values.seedJob.hfToken.enabled }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.seedJob.hfToken.secretName }}
+                  key: {{ .Values.seedJob.hfToken.dataKey }}
+            {{- end }}
           volumeMounts:
             - name: models
               mountPath: /models
