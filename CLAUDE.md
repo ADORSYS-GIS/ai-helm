@@ -107,6 +107,8 @@ The current deployment runs from the branch **`claude/magical-bohr-390242`**, no
 
 Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone). The render-time guard is complemented out-of-band by the `ai` AppProject's `destinations:` allowlist. See ADR-0017.
 
+**Project invariant: every Application/ApplicationSet from this repo lives in the `ai` AppProject.** `charts/apps` hardcodes `project: ai` (not a per-app value — so an app entry can't drift); the four orchestrators (`ai-models`, `librechart`, `coder`, `observability`) set their children to `argocd.project` (= `ai`). There is intentionally **no per-app `project` override**. Verified live: all repo-sourced apps (flat + orchestrator children, old `ai-*` + new `aii-*`) are in `ai`. If you add an app, it inherits `ai` automatically — don't introduce a project knob.
+
 ## Hetzner cluster realities & recurring gotchas (2026 cutover)
 
 Operational narrative + live verification: **`docs/2026-hetzner-cutover.md`** (read it before debugging the live cluster). The high-impact facts:

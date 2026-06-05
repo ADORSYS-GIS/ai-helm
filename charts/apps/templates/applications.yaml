@@ -21,6 +21,10 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+  # INVARIANT: every Application from this repo lives in the `ai` AppProject —
+  # hardcoded (NOT a per-app value) so an app entry can't accidentally land
+  # elsewhere. Orchestrators (ai-models/librechart/coder/observability) likewise
+  # set their children to `argocd.project: ai`. Keep it that way.
   project: ai
   {{- /*
     Multi-source "umbrella" assembly (ADR-0018). An app entry may set
