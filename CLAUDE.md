@@ -44,9 +44,13 @@ uv run ruff format . && uv run ruff check .
 
 # After editing the dashboard .py source, you MUST run `dashboards build`
 # and commit the regenerated JSON — CI fails otherwise.
+
+# Match CI before pushing chart changes — CI lints --strict AND renders every
+# chart (.github/workflows/helm-lint.yaml). To check the whole repo at once:
+for c in charts/*/; do helm lint "$c" --strict && helm template x "$c" --dry-run >/dev/null || echo "FAIL: $c"; done
 ```
 
-There is no `npm`, no `pytest`, no `cargo`, no `go build` in this repo. The dashboards Python project at `tools/dashboards/` is the only code that runs; everything else is YAML rendered by Helm.
+There is no `npm`, no `pytest`, no `cargo`, no `go build` in this repo. The dashboards Python project at `tools/dashboards/` is the only code that runs; everything else is YAML rendered by Helm. **CI gates** (`.github/workflows/`): `helm-lint` (`helm lint --strict` + `helm template --dry-run` per chart), `dashboards-drift` (`uv run dashboards check`), `security` (scans), `release-helm-charts` (package on tag), `opencode` (the agent/CI rules — see `.github/workflows/opencode.yml`, the canonical agent rules; the stale `.opencode/README.md` is unrelated).
 
 ## The orchestrator-plus-leaves pattern (used for `ai-models` and `librechart`)
 
