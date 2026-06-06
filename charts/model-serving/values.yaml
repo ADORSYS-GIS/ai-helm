@@ -30,11 +30,11 @@ pvc:
   accessMode: ReadWriteOnce        # safe: model pins to the single GPU node (§3a)
   size: 25Gi                       # ~8GB BF16 + headroom for a future AWQ variant
 
-# One-time download Job (sync-wave 0). Idempotent: huggingface-cli skips files
-# already present, so a re-run (e.g. after the Job is deleted) just re-verifies.
-# No ttlSecondsAfterFinished on purpose — a TTL'd Job would vanish and ArgoCD
-# would recreate (and re-download) it. The completed Job lingers; re-seed by
-# deleting it and letting ArgoCD recreate it.
+# One-time download Job, run as an ArgoCD Sync hook (sync-wave 0) — see
+# templates/seed-job.yaml for why a hook (Jobs can't be plain ArgoCD resources:
+# the controller-uid label drift makes ArgoCD try to patch the immutable
+# template and the sync fails). Idempotent: `hf download` resumes/skips files
+# already on the persistent PVC, so re-running on each sync is cheap.
 seedJob:
   enabled: true
   image:
