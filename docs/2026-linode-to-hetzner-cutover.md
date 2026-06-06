@@ -6,37 +6,36 @@ Goal: make the **Hetzner** cluster (`aii-*`, today on `ai-v2.camer.digital`) the
 production cluster on **`ai.camer.digital`**, migrating production data from the
 **Linode** cluster (`ai-*`), then decommission Linode.
 
-> ⛔ **The single rule that prevents an outage:** the repo-wide domain rename is
-> committed to the deploy branch, but **must not reconcile on Hetzner until DNS for
-> `ai.camer.digital` points at the Hetzner LB.** If it syncs early, the in-chart
-> ACME HTTP-01 cert for `api.ai.camer.digital` can't validate (DNS still → Linode),
-> the gateway loses TLS for the new host, and the old `ai-v2.*` hosts are already
-> gone → hard outage. Gate the sync on DNS (Step 4).
+> ✅ **DNS already points at the Hetzner LB** and the rename is **merged + pushed**
+> to the deploy branch (`f821a1b`). The outage rule (don't reconcile the rename
+> before DNS resolves to Hetzner) is therefore satisfied. The remaining control is
+> **manual sync**: root auto-sync/heal is disabled (Step 1), so nothing applies
+> until you sync deliberately, in order.
 
 ## 0. State of the repo right now
 
 - ✅ Domain renamed `ai-v2.camer.digital` → `ai.camer.digital` across
   `charts/**`, `environments/**`, `CLAUDE.md`, and operational docs (ADRs keep
   `ai-v2` as history). `domainBase: ai.camer.digital`. All charts render.
+  **Merged + pushed** (`f821a1b`) — DNS is ready, so this is safe to sync.
 - ✅ `scripts/migrate-librechat-mongo.sh` — the Mongo data move.
-- ⏸️ **The domain-rename commit is intentionally held from `git push`** (or, if
-  pushed, the Hetzner apps' auto-sync must be suspended) — pushing/syncing it is
-  the cutover trigger (Step 4).
+- ✅ DNS for the cutover hosts points at the Hetzner LB.
+- ⚠️ One straggler: `charts/librechat-app/values.yaml` still has a cosmetic
+  endpoint `iconURL` on `s3.ssegning.me` — it 404s once that S3 is gone; re-host
+  the asset on Hetzner object storage (cosmetic, non-blocking).
 
-## 1. Freeze — stop Hetzner from auto-applying the rename
+## 1. Control — disable root auto-sync, sync manually in order
 
-Pick one (so the rename doesn't reconcile before DNS):
-- **Hold the push** (simplest): leave the domain commit unpushed until Step 4.
-- **Or suspend auto-sync** on the Hetzner apps if the commit is already pushed:
-  ```bash
-  # disable automated sync on every aii-* app until cutover
-  for a in $(kubectl --context admin@homeos -n argocd get applications \
-              -o name | grep '/aii-'); do
-    kubectl --context admin@homeos -n argocd patch "$a" --type merge \
-      -p '{"spec":{"syncPolicy":{"automated":null}}}'
-  done
-  ```
-  (Re-enable `automated: {prune,selfHeal}` after Step 5.)
+Instead of holding the push, take manual control so changes apply only when you
+sync (and in a safe order — DB before the rename can churn certs, data before the
+lightbridge DB recreate, etc.):
+```bash
+# disable automated sync+heal on the root so child-app changes don't auto-apply
+kubectl --context admin@homeos -n argocd patch application ai-apps-v2 --type merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'
+# (and/or per child app, same patch on the aii-* apps you want to gate)
+```
+Re-enable `automated: {prune, selfHeal}` once cutover is verified (Step 5).
 
 ## 2. Migrate data (PRE-cutover — do it while DNS still points at Linode)
 
@@ -78,18 +77,24 @@ The Mongo script does **not** touch Keycloak. Options:
   the Hetzner pod shows the expected collections/counts.
 - Hetzner LB external IP known (the data-plane LB; cf. `docs/2026-hetzner-cutover.md`).
 
-## 4. Cutover — DNS, then sync
+## 4. Cutover — manual sync (DNS already done)
 
-1. **Flip DNS** (Cloudflare) for every host below from the Linode IP to the
-   **Hetzner LB IP**, low TTL first:
-   `ai`, `api`, `api-main`, `api-mcp`, `mcp`, `grafana`, `analytics`, `platform`,
-   `self-service`, `status`, `coder`, `*.coder-ai` — all `.camer.digital`.
-2. **Wait for propagation** (`dig +short api.ai.camer.digital` → Hetzner LB).
-3. **Trigger the rename**: `git push` the held domain commit (or re-enable the
-   Hetzner apps' auto-sync from Step 1). ArgoCD reconciles the `ai.*` hosts.
-4. Watch cert issuance: the core-gateway ACME `Certificate` for
+DNS already resolves to the Hetzner LB and the rename is pushed, so cutover =
+**syncing deliberately**:
+1. Confirm DNS: `dig +short api.ai.camer.digital` → Hetzner LB IP.
+   (Hosts moved: `ai`, `api`, `api-main`, `api-mcp`, `mcp`, `grafana`, `analytics`,
+   `platform`, `self-service`, `status`, `coder`, `*.coder-ai` — all `.camer.digital`.)
+2. **Sync the root** (`ai-apps-v2`) so the regenerated child Application CRs carry
+   the `ai.*` hosts, then **sync the child apps** (gateway/core-gateway first so its
+   ACME cert reissues, then the rest). Trigger via the ArgoCD UI or
+   `kubectl --context admin@homeos -n argocd patch application <app> --type merge -p '{"operation":{"sync":{}}}'`.
+3. Watch cert issuance: the core-gateway ACME `Certificate` for
    `api.ai.camer.digital` should go `Ready` (HTTP-01 via the gatewayHTTPRoute now
    resolves). Grafana/coder certs likewise.
+
+> ⚠️ When you sync the **lightbridge** app, see the lightbridge-split note — the
+> CNPG `lightbridge-main-db` is moving from the flat app to the `lightbridge-db`
+> child, which can prune+recreate it. Back up / migrate the main DB first.
 
 ## 5. Verify (post-cutover)
 
