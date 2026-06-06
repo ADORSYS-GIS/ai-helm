@@ -49,8 +49,10 @@ resources:
   # The old store pointed at the now-decommissioned MinIO (s3.ssegning.me,
   # bucket ai-ops-backups). It now uses Hetzner Object Storage (Ceph-RGW):
   # shared bucket `ssegning-k8s-state`, endpoint nbg1.your-objectstorage.com,
-  # same pattern Keycloak's CNPG backup uses. region us-east-1 is a literal —
-  # Ceph-RGW accepts it (no per-key region lookup like the old MinIO config).
+  # same pattern Keycloak's CNPG backup uses. NO `region` field — it isn't in
+  # the barmancloud ObjectStore schema (a literal there breaks ArgoCD's diff:
+  # ".spec.configuration.region: field not declared in schema"), and the working
+  # Keycloak store omits it (Ceph-RGW doesn't require it).
   # No trailing slash on destinationPath (MinIO/Ceph ListObjectsV2 quirk).
   # ────────────────────────────────────────────────────────────────────
   - |
@@ -67,7 +69,6 @@ resources:
       configuration:
         destinationPath: s3://ssegning-k8s-state/lightbridge-main-db
         endpointURL: https://nbg1.your-objectstorage.com
-        region: us-east-1
         s3Credentials:
           accessKeyId:
             name: lightbridge-cnpg-s3
