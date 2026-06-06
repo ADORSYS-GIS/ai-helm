@@ -50,10 +50,11 @@ seedJob:
   # Optional HuggingFace token — lifts the anonymous rate limit that otherwise
   # stalls the ~8GB download partway through. Qwen3-4B is public so a token is
   # NOT required for access, only for reliable throughput. Strongly recommended.
-  # To enable: add an `hf_token` property to ssegning-aws ai/camer/digital/prod/env,
-  # then set enabled: true.
+  # Enabled: the maintainer populated property `hf_token` under
+  # ssegning-aws `ai/camer/digital/prod/env`. The ExternalSecret below syncs it
+  # into the `hf-token` Secret; the seed Job consumes it as HF_TOKEN.
   hfToken:
-    enabled: false
+    enabled: true
     secretName: hf-token
     dataKey: token
     externalSecret:
