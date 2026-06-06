@@ -1,0 +1,54 @@
+{{- /* selfHosted MCP: Deployment + Service. Skipped entirely in external mode. */ -}}
+{{- if eq .Values.mcp.mode "selfHosted" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.mcp.name }}
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.mcp.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.mcp.name }}
+        {{- include "common.labels.standard" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Values.mcp.name }}
+          image: {{ required "mcp.image is required in selfHosted mode" .Values.mcp.image | quote }}
+          ports:
+            - containerPort: {{ .Values.mcp.port }}
+          {{- with .Values.mcp.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.mcp.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.mcp.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mcp.name }}
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  selector:
+    app: {{ .Values.mcp.name }}
+  ports:
+    - name: http
+      port: {{ .Values.mcp.port }}
+      targetPort: {{ .Values.mcp.port }}
+  type: ClusterIP
+{{- end }}

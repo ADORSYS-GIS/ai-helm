@@ -1,0 +1,65 @@
+{{- /*
+mcps orchestrator — ONE ApplicationSet that fans out to one child Application
+per enabled MCP (chart: charts/mcp). Mirrors the ai-models orchestrator
+(ADR-0012): Helm pre-computes each List element with its per-MCP values as a
+YAML string; the AppSet controller substitutes them via goTemplate. The
+`{{ "{{ .field }}" }}` literal pattern emits `{{ .field }}` for the controller.
+
+Splitting MCPs into one Application each (ADR-0027) gives per-MCP sync,
+rollback, health and an in-chart ExternalSecret scoped to that MCP only.
+*/ -}}
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - list:
+        elements:
+{{- range $mcpName, $mcpConfig := .Values.mcps }}
+{{- if not (eq $mcpConfig.enabled false) }}
+          # ── MCP: {{ $mcpName }} ──────────────────────────────────────────
+          - appName: {{ printf "%s-%s" $.Release.Name $mcpName | quote }}
+            chartPath: charts/mcp
+            valuesYaml: |-
+{{- $childValues := dict
+      "mcp" $mcpConfig.mcp
+      "gatewayRef" $.Values.gatewayRef
+      "externalSecret" (default (dict "enabled" false) $mcpConfig.externalSecret)
+}}
+{{ $childValues | toYaml | indent 14 }}
+{{- end }}
+{{- end }}
+  template:
+    metadata:
+      name: '{{ "{{ .appName }}" }}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: {{ .Values.argocd.project | quote }}
+      source:
+        repoURL: {{ .Values.argocd.repoURL | quote }}
+        targetRevision: {{ .Values.argocd.targetRevision | quote }}
+        path: '{{ "{{ .chartPath }}" }}'
+        helm:
+          releaseName: '{{ "{{ .appName }}" }}'
+          values: |
+            {{ "{{ .valuesYaml | nindent 12 }}" }}
+      destination:
+        {{- include "mcps.argocd.destinationClusterRef" .Values.argocd.destination | nindent 8 }}
+        namespace: {{ .Values.argocd.destination.namespace | quote }}
+      syncPolicy:
+        {{- with .Values.argocd.syncPolicy.syncOptions }}
+        syncOptions:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.argocd.syncPolicy.automated }}
+        automated:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}

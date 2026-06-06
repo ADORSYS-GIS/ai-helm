@@ -1,8 +1,15 @@
 # ADR-0019: Factor Coder into an App-of-Apps orchestrator (db + app as separate Applications)
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0027](./0027-mcps-orchestrator-split-and-coder-removal.md)
 **Date:** 2026-06-01
 **Deciders:** @stephane-segning
+
+> **Superseded 2026-06-06 (ADR-0027):** Coder is no longer in use and was
+> removed — `charts/coder` + `charts/coder-db` + the `environments/*/deps/coder`
+> overlay + the `coder` entry in `charts/apps` were deleted, and the LibreChat
+> `coder_mcp` wiring with it. The orchestrator pattern this ADR established
+> remains valid and is reused by `lightbridge` (ADR-0026) and `mcps` (ADR-0027).
+> The body below is retained as the original decision.
 
 ## Context
 

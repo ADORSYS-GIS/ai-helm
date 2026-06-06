@@ -1,0 +1,58 @@
+# Generic MCP leaf chart — one MCP server behind the Envoy AI Gateway.
+# Driven entirely by the `mcps` orchestrator (one Application per MCP); the
+# defaults here keep `helm template charts/mcp` renderable on its own.
+
+mcp:
+  # Resource-name base — Backend / Deployment / Service / MCPRoute all use it.
+  name: example
+  # Backend mode: "external" (upstream FQDN) or "selfHosted" (in-cluster pod).
+  mode: external
+  # MCPRoute path exposed on the gateway (e.g. /mcp/brave).
+  path: /mcp/example
+  # Path the MCPRoute rewrites to on the upstream backend.
+  backendPath: /mcp
+
+  # ── selfHosted mode ────────────────────────────────────────────────────
+  image: ""
+  port: 8080
+  args: []
+  # Free-form container env (supports valueFrom.secretKeyRef, e.g. an API key).
+  env: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+
+  # ── external mode ──────────────────────────────────────────────────────
+  externalHost: ""
+  externalPort: 443
+  # TLS to the upstream (System CA trust + SNI = externalHost). external only.
+  tls: true
+
+  # ── auth: inject an API key into the MCPRoute (securityPolicy.apiKey) ────
+  # The referenced Secret's key MUST be `apiKey` (AIEG MCPRoute contract). When
+  # `header` is empty the gateway defaults to "Authorization" and prefixes the
+  # value with "Bearer " automatically — so the Secret holds the raw token.
+  auth:
+    enabled: false
+    secretName: ""
+    header: "" # empty → AIEG default "Authorization" (+ "Bearer " prefix)
+
+# Gateway the MCPRoute attaches to (HTTPS listener; ADR-0021 dual-plane).
+gatewayRef:
+  name: core-gateway
+  namespace: converse-gateway
+  sectionName: api-https
+
+# Optional in-chart ExternalSecret (app-scoped). Resolves against the
+# cluster-scoped ssegning-aws store. Each `data` entry maps a target secretKey
+# ← a remoteRef {key, property}. For an MCP API key the secretKey is `apiKey`.
+externalSecret:
+  enabled: false
+  secretName: ""
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  data: []

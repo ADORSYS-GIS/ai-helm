@@ -36,7 +36,7 @@ how thinking evolved.
 | [0016](./0016-fork-bjw-s-app-template-locally.md) | Fork bjw-s app-template + common locally as `bjw-template` / `bjw-common` (rewire 12 consumers) | Accepted | 2026-05-31 | — |
 | [0017](./0017-home-remote-destination-invariant.md) | Workloads target the home-remote cluster, never in-cluster (render-time guard + `allowInCluster` escape hatch) | Accepted | 2026-05-31 | — |
 | [0018](./0018-umbrella-apps-and-env-overlays.md) | Umbrella Applications (workload + app-scoped deps via kustomize) + per-env `environments/` overlays | Proposed | 2026-05-31 | [0006](./0006-multi-source-applicationset.md) |
-| [0019](./0019-coder-app-of-apps-orchestrator.md) | Factor Coder into an App-of-Apps orchestrator (db + app as separate Applications) | Accepted | 2026-06-01 | — |
+| [0019](./0019-coder-app-of-apps-orchestrator.md) | Factor Coder into an App-of-Apps orchestrator (db + app as separate Applications) | Superseded by [0027](./0027-mcps-orchestrator-split-and-coder-removal.md) | 2026-06-01 | — |
 | [0020](./0020-observability-app-of-apps-orchestrator.md) | Factor the observability stack into an App-of-Apps orchestrator (+ a secrets app) | Accepted | 2026-06-01 | — |
 | [0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md) | Burst control, budgeting & billing via dual-plane (internal/external) AuthConfigs | Proposed | 2026-06-04 | supersedes [0003](./0003-skip-opa-for-service-accounts.md) |
 | [0022](./0022-self-hosted-gpu-model-federated-into-gateway.md) | Self-hosted GPU model (Qwen3-4B, KServe/Knative + vLLM + LMCache) federated into the gateway as a public-FQDN backend | Proposed | 2026-06-05 | exception to [0017](./0017-home-remote-destination-invariant.md) |
@@ -44,6 +44,7 @@ how thinking evolved.
 | [0024](./0024-right-size-observability-tiny.md) | Right-size observability to a tiny footprint (cluster + Envoy AI usage, no alerting) — fix Mimir PDB sync bug, drop dead components + Alertmanager | Accepted | 2026-06-06 | builds on [0020](./0020-observability-app-of-apps-orchestrator.md), [0005](./0005-per-user-attribution-via-authorino-headers.md) |
 | [0025](./0025-linode-to-hetzner-cutover-domain-ai.md) | Cut over Linode → Hetzner; rename public domain `ai-v2.camer.digital` → `ai.camer.digital` (DNS-gated; Mongo data via script, Keycloak PG out of scope) | Proposed | 2026-06-06 | builds on [0017](./0017-home-remote-destination-invariant.md), [0018](./0018-umbrella-apps-and-env-overlays.md) |
 | [0026](./0026-lightbridge-orchestrator-split.md) | Split lightbridge into an App-of-Apps orchestrator (secrets/db/app children); drop `opa` + `usage`, keep `api`+`mcp`; backups → Hetzner | Accepted | 2026-06-06 | builds on [0019](./0019-coder-app-of-apps-orchestrator.md); relates to [0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md), [0025](./0025-linode-to-hetzner-cutover-domain-ai.md) |
+| [0027](./0027-mcps-orchestrator-split-and-coder-removal.md) | Split MCPs into per-MCP Applications (generic `charts/mcp` leaf + ApplicationSet, in-chart ExternalSecrets, + Refero); remove Coder | Accepted | 2026-06-06 | supersedes [0019](./0019-coder-app-of-apps-orchestrator.md); builds on [0012](./0012-split-ai-models-applicationset.md), [0017](./0017-home-remote-destination-invariant.md), [0018](./0018-umbrella-apps-and-env-overlays.md) |
 
 ## Status legend
 

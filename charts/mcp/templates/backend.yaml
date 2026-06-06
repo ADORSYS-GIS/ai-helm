@@ -1,0 +1,39 @@
+{{- /*
+Envoy Gateway Backend for this MCP. selfHosted → the in-cluster Service;
+external → the upstream FQDN (with a BackendTLSPolicy when tls is on).
+*/ -}}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: {{ .Values.mcp.name }}
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  endpoints:
+    - fqdn:
+        {{- if eq .Values.mcp.mode "selfHosted" }}
+        hostname: {{ .Values.mcp.name }}.{{ include "common.names.namespace" $ }}.svc.cluster.local
+        port: {{ .Values.mcp.port }}
+        {{- else }}
+        hostname: {{ required "mcp.externalHost is required in external mode" .Values.mcp.externalHost }}
+        port: {{ .Values.mcp.externalPort }}
+        {{- end }}
+{{- if and (eq .Values.mcp.mode "external") .Values.mcp.tls }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ .Values.mcp.name }}
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: {{ .Values.mcp.name }}
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: {{ .Values.mcp.externalHost }}
+{{- end }}
