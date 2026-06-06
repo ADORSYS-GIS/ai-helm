@@ -42,6 +42,7 @@ how thinking evolved.
 | [0022](./0022-self-hosted-gpu-model-federated-into-gateway.md) | Self-hosted GPU model (Qwen3-4B, KServe/Knative + vLLM + LMCache) federated into the gateway as a public-FQDN backend | Proposed | 2026-06-05 | exception to [0017](./0017-home-remote-destination-invariant.md) |
 | [0023](./0023-grafana-stateless-no-pvc.md) | Grafana runs stateless (no PVC) — dashboards-as-code + provisioned datasources; persistence (if ever) goes to an external DB | Accepted | 2026-06-06 | builds on [0020](./0020-observability-app-of-apps-orchestrator.md) |
 | [0024](./0024-right-size-observability-tiny.md) | Right-size observability to a tiny footprint (cluster + Envoy AI usage, no alerting) — fix Mimir PDB sync bug, drop dead components + Alertmanager | Accepted | 2026-06-06 | builds on [0020](./0020-observability-app-of-apps-orchestrator.md), [0005](./0005-per-user-attribution-via-authorino-headers.md) |
+| [0025](./0025-linode-to-hetzner-cutover-domain-ai.md) | Cut over Linode → Hetzner; rename public domain `ai-v2.camer.digital` → `ai.camer.digital` (DNS-gated; Mongo data via script, Keycloak PG out of scope) | Proposed | 2026-06-06 | builds on [0017](./0017-home-remote-destination-invariant.md), [0018](./0018-umbrella-apps-and-env-overlays.md) |
 
 ## Status legend
 
