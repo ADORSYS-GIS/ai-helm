@@ -12,14 +12,25 @@ refreshInterval: 1h
 externalSecrets:
   # API client secret the api component reads as API_KEY_CLIENT_SECRET
   # (env var → secretKeyRef name: lightbridge-api-client, key: secret-id).
-  # ⚠️ CONFIRM/POPULATE this property in AWS Secrets Manager — the property
-  #    `lightbridge_api_client_secret_id` under key `ai/camer/digital/prod/env`
-  #    is currently MISSING on-cluster; the api pod fails to start without it.
+  # = the Keycloak `lightbridge-api-key` client's Client secret, used for the
+  #   token-exchange that mints scoped API-key tokens. Populate the property
+  #   `lightbridge_api_client_secret_id` under key `ai/camer/digital/prod/env`.
   lightbridge-api-client:
     data:
       - secretKey: secret-id
         key: ai/camer/digital/prod/env
         property: lightbridge_api_client_secret_id
+  # OPA basic-auth password the api + mcp containers require as the
+  # OPA_PASSWORD env (secretKeyRef name: opa-secret, key: OPA_PASSWORD). The
+  # upstream chart still exposes lightbridge's internal OPA listener on api/mcp,
+  # so the pods won't start without this secret — even though OPA was removed
+  # from the auth path (ADR-0021), so the value is functionally UNUSED (any
+  # value works). Populate `lightbridge_opa_password` with any string.
+  opa-secret:
+    data:
+      - secretKey: OPA_PASSWORD
+        key: ai/camer/digital/prod/env
+        property: lightbridge_opa_password
   # CNPG barman backup credentials (Hetzner Object Storage). Same creds the
   # Keycloak CNPG backup uses — platform secret under prod/meta/test-app.
   lightbridge-cnpg-s3:
