@@ -80,7 +80,7 @@ Four new ArgoCD Applications were added to `charts/apps/values.yaml`, plus an up
 - **Auth:** Keycloak OAuth2 (`CDigital` brand); basic login form kept as fallback during rollout
 - **Secrets required:** `grafana-admin` (keys: `admin-user`, `admin-password`), `grafana-keycloak` (key: `client-secret`)
 - **Unified alerting:** Enabled, pointing to Mimir's built-in Alertmanager
-- **Ingress:** `grafana.ai-v2.camer.digital` via Traefik, TLS via cert-manager (`cert-home-cert-http` issuer)
+- **Ingress:** `grafana.ai.camer.digital` via Traefik, TLS via cert-manager (`cert-home-cert-http` issuer)
 - **Pre-wired datasources:** Mimir (default), Loki, Tempo, Alertmanager (all with cross-linking: traceID in logs, traces-to-logs, service-map to metrics)
 - **Dashboards:** Kubernetes cluster (7249), pods (6417), ArgoCD (14584), Loki logs (13639)
 - **Persistence:** 2 Gi on `linode-block-storage` for UI-created dashboards and preferences
@@ -205,14 +205,14 @@ client-secret: <keycloak-client-secret>
 Create a client named `grafana` in the `camer-digital` realm with:
 - **Client ID:** `grafana`
 - **Client Authenticator:** Client ID and Secret
-- **Valid Redirect URIs:** `https://grafana.ai-v2.camer.digital/login/generic_oauth`
-- **Web Origins:** `https://grafana.ai-v2.camer.digital`
+- **Valid Redirect URIs:** `https://grafana.ai.camer.digital/login/generic_oauth`
+- **Web Origins:** `https://grafana.ai.camer.digital`
 - **Protocol:** `openid-connect`
 - **Mappers:** Add a "roles" mapper so the `roles` claim appears in the ID token / userinfo response
 
 ### 4. DNS & Ingress
 
-Ensure `grafana.ai-v2.camer.digital` resolves to your cluster's Traefik ingress. The Grafana Application includes a Traefik `Ingress` with cert-manager TLS — no manual certificate creation needed.
+Ensure `grafana.ai.camer.digital` resolves to your cluster's Traefik ingress. The Grafana Application includes a Traefik `Ingress` with cert-manager TLS — no manual certificate creation needed.
 
 ### 5. S3 Endpoint Swap (If Using MinIO)
 
@@ -381,7 +381,7 @@ There is no automatic retention on the Grafana PVC because it is small and state
 3. **Alert rules:** If using Grafana's unified alerting (not Mimir ruler), rules are stored in the SQLite DB. Use the Grafana Alerting API to export them:
    ```bash
    curl -H "Authorization: Bearer $API_KEY" \
-     http://grafana.ai-v2.camer.digital/api/v1/provisioning/alert-rules
+     http://grafana.ai.camer.digital/api/v1/provisioning/alert-rules
    ```
 
 ---

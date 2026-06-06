@@ -1,6 +1,6 @@
-# opencode `.well-known/opencode` at `ai-v2.camer.digital`
+# opencode `.well-known/opencode` at `ai.camer.digital`
 
-How `opencode auth login https://ai-v2.camer.digital/opencode` works in
+How `opencode auth login https://ai.camer.digital/opencode` works in
 our stack, and what's required end-to-end to make it land.
 
 **ADR:** [`docs/adr/0014-split-librechart-and-opencode-wellknown.md`](./adr/0014-split-librechart-and-opencode-wellknown.md)
@@ -13,7 +13,7 @@ our stack, and what's required end-to-end to make it land.
 User on laptop                       Cluster                            Keycloak
 ─────────────                       ────────                            ────────
 $ opencode auth login \
-  https://ai-v2.camer.digital/opencode
+  https://ai.camer.digital/opencode
     │
     │  GET /opencode/.well-known/opencode
     ├──────────────────────────────────►   nginx (librechat-opencode-
@@ -42,7 +42,7 @@ $ opencode auth login \
     │  Polls /token until user approves              ◄──────────────  { access_token, refresh_token }
     │  Caches token at ~/Library/Caches/opencode-oauth2/...
     │
-    │  GET https://api.ai-v2.camer.digital/v1/models    ───────────────►  Envoy AI Gateway
+    │  GET https://api.ai.camer.digital/v1/models    ───────────────►  Envoy AI Gateway
     │  Authorization: Bearer <access_token>           (passes Authorino,
     │  ◄────────────────────────────────────────────  forwarded to upstream)
     │  { data: [{id: "glm-5", ...}, ...] }
@@ -58,7 +58,7 @@ The `librechat-opencode-wellknown` chart deploys:
 - A `Deployment` (2 replicas of `nginxinc/nginx-unprivileged:1.27-alpine`,
   10m/16Mi requests, runAsNonRoot, readOnlyRootFilesystem)
 - A `Service` (ClusterIP, port 80)
-- An `Ingress` (Traefik, host `ai-v2.camer.digital`, path
+- An `Ingress` (Traefik, host `ai.camer.digital`, path
   `/opencode/.well-known/opencode`, exact-match)
 - Two `ConfigMap`s — the nginx config and the well-known JSON content
 
@@ -68,7 +68,7 @@ Effectively free.
 ## Verifying the endpoint after deploy
 
 ```bash
-curl -fsSL https://ai-v2.camer.digital/opencode/.well-known/opencode | jq
+curl -fsSL https://ai.camer.digital/opencode/.well-known/opencode | jq
 ```
 
 Expected:
@@ -86,7 +86,7 @@ Expected:
       "camer-digital": {
         "name": "Camer Digital",
         "options": {
-          "baseURL": "https://api.ai-v2.camer.digital/v1",
+          "baseURL": "https://api.ai.camer.digital/v1",
           "oauth2": {
             "issuer": "https://auth.verif.fyi/realms/camer-digital",
             "clientId": "opencode-cli",
@@ -129,7 +129,7 @@ Add to `charts/keycloak-baseline/values.yaml` once this lands.
 
 The `@vymalo/opencode-oauth2` plugin has no `audience` config knob for
 non-federated flows. To get `lightbridge-api-key` into the JWT `aud`
-claim (so Authorino accepts it on `api.ai-v2.camer.digital`), add a
+claim (so Authorino accepts it on `api.ai.camer.digital`), add a
 **client-scope audience mapper**:
 
 - Realm-level client scope: `lightbridge-api-key`
@@ -146,12 +146,12 @@ approach proves insufficient.
 ## End-user workflow
 
 ```bash
-opencode auth login https://ai-v2.camer.digital/opencode
+opencode auth login https://ai.camer.digital/opencode
 ```
 
 That's it. opencode:
 
-1. Fetches `https://ai-v2.camer.digital/opencode/.well-known/opencode`.
+1. Fetches `https://ai.camer.digital/opencode/.well-known/opencode`.
 2. Reads the `config.plugin` list (currently `["@vymalo/opencode-oauth2", "@vymalo/opencode-models-info"]`)
    and runs `bun install` automatically — the packages are cached under
    `~/.cache/opencode/node_modules/` so this only happens once per
@@ -161,7 +161,7 @@ That's it. opencode:
    URL print to the terminal; user opens the URL in any browser (laptop,
    phone), enters the code, approves.
 4. Loads the models-info plugin, which fetches the OpenRouter-shape
-   catalog at `https://api.ai-v2.camer.digital/v1/models/info` (ADR-0015,
+   catalog at `https://api.ai.camer.digital/v1/models/info` (ADR-0015,
    served by [`charts/ai-models-info`](../charts/ai-models-info/)) and
    enriches every model with context length, pricing, modalities, and
    capability flags. Cached locally for 24h.
@@ -218,7 +218,7 @@ client config above).
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `opencode auth login` errors "fetch failed" | Endpoint not reachable | `curl -v https://ai-v2.camer.digital/opencode/.well-known/opencode` from the user's machine. Check DNS / cert / Traefik route. |
+| `opencode auth login` errors "fetch failed" | Endpoint not reachable | `curl -v https://ai.camer.digital/opencode/.well-known/opencode` from the user's machine. Check DNS / cert / Traefik route. |
 | `bun install` fails (no network, registry unreachable) | Auto-install of `@vymalo/opencode-oauth2` blocked | Confirm npm registry reachable. Worst case, pre-seed `~/.cache/opencode/node_modules/@vymalo/opencode-oauth2/` from a known-good machine. |
 | `opencode auth login` succeeds but `opencode chat` 401s | Token has wrong audience | Keycloak audience mapper missing (see prereq 2). Decode the JWT (`jwt-cli` or `jwt.io`), check `aud` claim. |
 | Plugin says "discovery failed" | Keycloak issuer URL wrong or realm down | Try `curl https://auth.verif.fyi/realms/camer-digital/.well-known/openid-configuration`. |

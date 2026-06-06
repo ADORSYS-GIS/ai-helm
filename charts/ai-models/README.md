@@ -65,7 +65,7 @@ per-model sync isolation, per-model ArgoCD UI surface. See ADR-0012.
 Beyond the per-model children and the shared backends element, the
 orchestrator also emits one child for [`ai-models-info`](../ai-models-info/)
 when `modelsInfo.enabled` (default `true`). This serves an
-OpenRouter-shape JSON catalog at `api.ai-v2.camer.digital/v1/models/info`
+OpenRouter-shape JSON catalog at `api.ai.camer.digital/v1/models/info`
 so opencode's models-info plugin can enrich each model with context
 length, pricing, modalities, and capability flags. See ADR-0015.
 

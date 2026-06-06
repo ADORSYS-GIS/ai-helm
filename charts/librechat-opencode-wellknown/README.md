@@ -1,8 +1,8 @@
 # `librechat-opencode-wellknown` — leaf
 
 Tiny nginx serving a static JSON at
-`https://ai-v2.camer.digital/opencode/.well-known/opencode` so users can
-`opencode auth login https://ai-v2.camer.digital/opencode`.
+`https://ai.camer.digital/opencode/.well-known/opencode` so users can
+`opencode auth login https://ai.camer.digital/opencode`.
 
 **ADR:** [`0014`](../../docs/adr/0014-split-librechart-and-opencode-wellknown.md)
 **User-facing doc:** [`docs/opencode-well-known.md`](../../docs/opencode-well-known.md)
@@ -24,7 +24,7 @@ app-template's `configMaps:` block expects static string data.
   + scratch dirs come in via the `persistence:` block.
 - `Service` (app-template) — ClusterIP, port 80 → 8080
 - `Ingress` (app-template) — Traefik, exact-match
-  `/opencode/.well-known/opencode` on `ai-v2.camer.digital`, same TLS cert
+  `/opencode/.well-known/opencode` on `ai.camer.digital`, same TLS cert
   as LibreChat (longest-path-wins routing means this doesn't conflict
   with the `/` ingress)
 - Two `ConfigMap`s (this chart's `templates/configmap.yaml`):
@@ -93,7 +93,7 @@ helm template librechat-opencode-wellknown . -n converse | grep -E "^kind:"
 Once deployed:
 
 ```bash
-curl -fsSL https://ai-v2.camer.digital/opencode/.well-known/opencode | jq
+curl -fsSL https://ai.camer.digital/opencode/.well-known/opencode | jq
 # → {"auth":{...},"config":{...}}
 # Content-Type: application/json
 ```

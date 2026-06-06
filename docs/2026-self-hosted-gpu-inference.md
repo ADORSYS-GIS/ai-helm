@@ -391,7 +391,7 @@ curl -sk -H "Authorization: Bearer $VLLM_API_KEY" \
      https://qwen3-4b-converse-poc--sls.ssegning.com/openai/v1/models                # expect the model
 
 # Through the gateway (the real path) — JWT + model header:
-curl -s https://api.ai-v2.camer.digital/v1/chat/completions \
+curl -s https://api.ai.camer.digital/v1/chat/completions \
   -H "Authorization: Bearer $KEYCLOAK_JWT" -H "x-ai-eg-model: qwen3-4b-local" \
   -d '{"messages":[{"role":"user","content":"hi"}]}'
 

@@ -13,7 +13,7 @@ Via the bjw-s `app-template@4.6.2` subchart (alias `librechat`):
 
 - `Deployment` (LibreChat, 2 replicas, HPA 1-4, PodDisruptionBudget minAvailable 1)
 - `Service` (ClusterIP, port 3080 → 3080)
-- `Ingress` (Traefik, `ai-v2.camer.digital`, `/`)
+- `Ingress` (Traefik, `ai.camer.digital`, `/`)
 - `ConfigMap` (`librechat-config`) carrying the `librechat.yaml` config
   (mounted at `/app/librechat.yaml`)
 - `LimitRange` + `ResourceQuota` for the `converse` namespace
