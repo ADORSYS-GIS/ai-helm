@@ -28,7 +28,13 @@ resources:
       storage:
         size: "5Gi"
       plugins:
+        # `enabled: true` is set explicitly: the CNPG operator defaults it on,
+        # and ArgoCD compares `plugins` as an atomic LIST — so without it here
+        # the live list item (which has enabled:true) never matches the chart's
+        # → permanent OutOfSync. (managedFieldsManagers can't ignore a field
+        # inside a list item, hence matching it directly.)
         - name: barman-cloud.cloudnative-pg.io
+          enabled: true
           isWALArchiver: true
           parameters:
             barmanObjectName: lightbridge-main-db
