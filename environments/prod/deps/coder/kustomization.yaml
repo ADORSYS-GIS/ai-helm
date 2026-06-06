@@ -7,14 +7,28 @@ resources:
   - ../../../base/deps/coder
 
 patches:
-  # clusterIssuer: cert-home-cert-http
+  # Patch secretStore=ssegning-aws onto the app-scoped ExternalSecrets.
+  - target:
+      kind: ExternalSecret
+      name: ".*"
+    patch: |-
+      - op: replace
+        path: /spec/secretStoreRef/name
+        value: ssegning-aws
+  # clusterIssuer: cert-route53 (DNS-01) — NOT cert-home-cert-http (HTTP-01).
+  # Coder's SANs include the workspace wildcard *.coder-ai.camer.digital, which
+  # ACME HTTP-01 cannot issue (wildcards require DNS-01); HTTP-01 is also broken
+  # on this cluster's Traefik (unconditional :80→:443 redirect kills the
+  # acme-challenge self-check). ai.camer.digital is hosted on Route53, so the
+  # DNS-01 solver is Route53 (cert-route53, defined in home-os charts/cert).
+  # Needs the `route53-secret` IAM creds in kube-system on Hetzner.
   - target:
       kind: Certificate
       name: coder-tls
     patch: |-
       - op: replace
         path: /spec/issuerRef/name
-        value: cert-home-cert-http
+        value: cert-route53
       - op: replace
         path: /spec/dnsNames/0
         value: coder.ai.camer.digital
