@@ -1,10 +1,15 @@
 {{- /*
-One-time weight download into the PVC (sync-wave 0). ArgoCD waits for it to
-complete before the InferenceService (wave 1) syncs, so the model never starts
-against an empty volume. Idempotent: huggingface-cli download skips files
-already present, so a re-run just re-verifies. No ttlSecondsAfterFinished — a
-TTL'd Job would vanish and ArgoCD would recreate (re-download) it; instead the
-completed Job lingers and re-seeding is `kubectl delete job` + sync.
+One-time weight download into the PVC, as an ArgoCD **Sync hook**.
+
+Why a hook, not a plain resource: the Job controller stamps `controller-uid`
+into spec.template.labels after creation, so an ArgoCD-tracked Job is perpetually
+OutOfSync and ArgoCD tries to PATCH the (immutable) template →
+"field is immutable (retried 5 times)" and the whole app sync fails. As a hook
+with `BeforeHookCreation`, ArgoCD deletes the prior Job and recreates it (no
+patch) and does NOT drift-track it. sync-wave 0 keeps ordering within the Sync
+phase: PVC (-1, normal) → seed hook (0, ArgoCD waits for it to complete) →
+InferenceService (1, normal). Idempotent: `hf download` skips files already
+present, so each run resumes/re-verifies against the persistent PVC.
 */ -}}
 {{- if and .Values.pvc.enabled .Values.seedJob.enabled }}
 apiVersion: batch/v1
@@ -15,6 +20,8 @@ metadata:
   labels:
     {{- include "common.labels.standard" . | nindent 4 }}
   annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     argocd.argoproj.io/sync-wave: "0"
 spec:
   backoffLimit: {{ .Values.seedJob.backoffLimit | default 6 }}
