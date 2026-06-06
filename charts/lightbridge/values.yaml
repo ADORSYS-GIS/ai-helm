@@ -289,6 +289,16 @@ app:
             - secretName: api-mcp.ai.camer.digital-tls
               hosts:
                 - api-mcp.ai.camer.digital
+
+    # opa + usage DROPPED (ADR-0026). The upstream lightbridge chart DEFAULTS
+    # both components ON, so omitting their value blocks isn't enough — they
+    # must be disabled EXPLICITLY or they keep rendering (and ArgoCD keeps them
+    # deployed). Setting enabled:false makes lightbridge-app prune them.
+    opa:
+      enabled: false
+    usage:
+      enabled: false
+
     # Lightbridge PDB Strategy: Handled via rawRessources because the upstream chart
     # doesn't support controller PDBs natively. Ensure at least 1 instance is always available.
     # (opa + usage PDBs dropped; all DB resources moved to the lightbridge-db leaf.)
