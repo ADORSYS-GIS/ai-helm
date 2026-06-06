@@ -690,8 +690,12 @@ children:
             replicas: 1
             zoneAwareReplication:
               enabled: false
-            podDisruptionBudget:
-              enabled: false
+            # Disable the PDB with `null`, NOT `{ enabled: false }`: the
+            # mimir-distributed 5.8.0 PDB block has no `enabled` field, so
+            # `enabled: false` renders into the PDB `.spec` and fails SSA with
+            # `.spec.enabled: field not declared in schema`. The template guards
+            # `{{- with .podDisruptionBudget }}`, so `null` emits no PDB at all.
+            podDisruptionBudget: null
             persistence:
               enabled: true
               size: 10Gi
@@ -701,24 +705,21 @@ children:
 
           distributor:
             replicas: 1
-            podDisruptionBudget:
-              enabled: false
+            podDisruptionBudget: null
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           querier:
             replicas: 1
-            podDisruptionBudget:
-              enabled: false
+            podDisruptionBudget: null
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           query_frontend:
             replicas: 1
-            podDisruptionBudget:
-              enabled: false
+            podDisruptionBudget: null
             resources:
               requests: { cpu: 200m, memory: 256Mi }
               limits:   { cpu: 1,    memory: 1Gi   }
@@ -730,16 +731,14 @@ children:
             replicas: 1
             zoneAwareReplication:
               enabled: false
-            podDisruptionBudget:
-              enabled: false
+            podDisruptionBudget: null
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 1Gi   }
 
           compactor:
             replicas: 1
-            podDisruptionBudget:
-              enabled: false
+            podDisruptionBudget: null
             resources:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 2Gi   }
@@ -761,11 +760,21 @@ children:
           ruler:
             enabled: false
 
+          # Dead chart-default components at replicas:1 — no functional value.
+          # rollout-operator only coordinates zone-aware rolling restarts of
+          # multi-replica StatefulSets (we run single replicas, zone-awareness
+          # off) and was crashlooping against the Cilium default-deny-egress
+          # baseline. overrides-exporter exports per-tenant override metrics for
+          # a multi-tenant fleet we don't run (multitenancy_enabled: false).
+          rollout_operator:
+            enabled: false
+          overrides_exporter:
+            enabled: false
+
           nginx:
             enabled: true
             replicas: 1
-            podDisruptionBudget:
-              enabled: false
+            podDisruptionBudget: null
             resources:
               requests: { cpu: 50m,  memory: 64Mi  }
               limits:   { cpu: 200m, memory: 128Mi }
