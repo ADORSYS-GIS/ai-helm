@@ -111,7 +111,7 @@ Two curl calls against the gateway prove the behaviour end-to-end.
 ```bash
 # 1. Human token — must trigger lightbridge-validation and enforce-valid-key
 HUMAN_TOKEN=$(kc-token --client-id converse-frontend ...)   # see kc-token CLI
-curl -sv -H "Authorization: Bearer $HUMAN_TOKEN" https://api.ai-v2.camer.digital/...
+curl -sv -H "Authorization: Bearer $HUMAN_TOKEN" https://api.ai.camer.digital/...
 # Expect: 200 if the human's API key is valid in lightbridge,
 #         403 / "missing project.id" otherwise.
 
@@ -119,7 +119,7 @@ curl -sv -H "Authorization: Bearer $HUMAN_TOKEN" https://api.ai-v2.camer.digital
 SA_TOKEN=$(kc-token --client-id adorsys-gis-github-ci \
                     --client-secret "$KC_CLIENT_SECRET" \
                     --grant client_credentials)
-curl -sv -H "Authorization: Bearer $SA_TOKEN" https://api.ai-v2.camer.digital/...
+curl -sv -H "Authorization: Bearer $SA_TOKEN" https://api.ai.camer.digital/...
 # Expect: 200, regardless of lightbridge state.
 ```
 

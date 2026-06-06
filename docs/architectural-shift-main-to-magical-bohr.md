@@ -38,7 +38,7 @@ became an "AI workloads" repo that consumes a platform owned elsewhere.**
 | 5 | **GitOps structure** | Flat ArgoCD apps, vendored bjw chart | Two-tier destinations, umbrella apps + `environments/` overlays, App-of-Apps orchestrators, forked bjw library | ADR-0016/0017/0018/0019/0020 |
 | 6 | **Secrets** | `ai-ops-secrets` "secrets" app pushes everything | Chart-owned `ExternalSecret`s via `ssegning-aws`; secrets app retired | commits `0b98066`/`aea3842`/`02bd855` |
 | 7 | **Scale & resilience** | Envoy pinned at 2 replicas, placeholder resources | Data-plane HPA 3→20, HTTP/2 multiplexing tuned for 2000+ clients, circuit-breaking, outlier detection | commits `ab39aed`/`d3257b6`, ADR-0021 |
-| 8 | **Identity & domain** | `ai.camer.digital`, OPA-issued keys | `ai-v2.camer.digital`, dual-plane gateway (external + internal), Keycloak-claim billing plans | commit `bbbe3ec`, ADR-0021 |
+| 8 | **Identity & domain** | `ai.camer.digital`, OPA-issued keys | `ai.camer.digital`, dual-plane gateway (external + internal), Keycloak-claim billing plans | commit `bbbe3ec`, ADR-0021 |
 
 The rest of this doc takes each shift in turn.
 
@@ -243,9 +243,9 @@ The Envoy AI Gateway itself was bumped 0.5.0 → 0.6.0 (`b3e9b89`).
 
 **After (ADR-0021, Proposed → partially shipped):**
 
-- Domain switched to `ai-v2.camer.digital` (`bbbe3ec`).
+- Domain switched to `ai.camer.digital` (`bbbe3ec`).
 - **Two planes, one gateway, AuthConfig-per-host:**
-  - **External plane** — `api.ai-v2.camer.digital` on the public LB (ACME TLS),
+  - **External plane** — `api.ai.camer.digital` on the public LB (ACME TLS),
     full Keycloak JWT, per-user/per-org accounting (opencode forwards each user's
     JWT).
   - **Internal plane** — `core-gateway-internal.…svc.cluster.local` on a

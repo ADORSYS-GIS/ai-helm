@@ -10,7 +10,7 @@ Arize Phoenix is **removed**. LLM call tracing is now served by the existing
 Grafana Tempo deployment via the core-gateway OpenTelemetryCollector (renamed
 `*-phoenix` → `*-traces`) → Alloy → Tempo path.
 
-Phoenix's UI at `analytics.ai-v2.camer.digital` no longer exists. Use Grafana at
+Phoenix's UI at `analytics.ai.camer.digital` no longer exists. Use Grafana at
 the standard observability hostname and the Tempo datasource.
 
 ## Why
@@ -47,14 +47,14 @@ the standard observability hostname and the Tempo datasource.
 
 - The Phoenix `Application` block (chart
   `oci://registry-1.docker.io/arizephoenix/phoenix-helm`, release `phoenix`,
-  ingress `analytics.ai-v2.camer.digital`, destination namespace
+  ingress `analytics.ai.camer.digital`, destination namespace
   `converse-monitoring`) was deleted in its entirety. Replaced with a comment
   explaining the migration.
 
 ### `charts/keycloak-baseline/values.yaml`
 
 - `clientScopes.phoenix` — removed (including its `phoenix_role` protocol mapper)
-- `clients.phoenix` — removed (rootUrl `https://analytics.ai-v2.camer.digital`, with
+- `clients.phoenix` — removed (rootUrl `https://analytics.ai.camer.digital`, with
   its three client roles `admin`/`user`/`viewer`)
 - `groups.phoenixAdmin`, `phoenixUser`, `phoenixViewer` — removed
 - `- phoenix` references in **every other** client's `defaultClientScopes` and
@@ -81,7 +81,7 @@ merges. They cannot be removed by ArgoCD reconciliation alone.
 | `PVC` for `phoenix-postgresql` | `converse-monitoring` | Phoenix's Postgres data. |
 | `Namespace/converse-monitoring` | (cluster-scoped) | Whole namespace was Phoenix-only; safe to delete after the above. |
 | Phoenix client + secret entry | `ai-ops-secrets.git` repo | The `converse-phoenix-keycloak` entry there is now dead config. |
-| DNS record `analytics.ai-v2.camer.digital` | DNS provider | No longer routes anywhere. |
+| DNS record `analytics.ai.camer.digital` | DNS provider | No longer routes anywhere. |
 
 ### Cleanup sequence
 
@@ -102,7 +102,7 @@ kubectl delete pvc -n converse-monitoring -l app.kubernetes.io/instance=phoenix
 kubectl get all,pvc,secret -n converse-monitoring  # should be near-empty
 kubectl delete namespace converse-monitoring
 
-# 6. Remove the analytics.ai-v2.camer.digital DNS record at your DNS provider
+# 6. Remove the analytics.ai.camer.digital DNS record at your DNS provider
 ```
 
 ## Where LLM observability lives now

@@ -36,7 +36,7 @@ this doc is the operational narrative + the "did it actually work" check.
   via ArgoCD `managedNamespaceMetadata`. k3s enforces `baseline` cluster-wide,
   which forbids the hostPath/host-net the observability collectors need.
 - **Platform domain** — `environments/prod/cluster.yaml: domainBase` is the
-  source of truth; switched `ai.camer.digital` → **`ai-v2.camer.digital`**
+  source of truth; switched `ai.camer.digital` → **`ai.camer.digital`**
   everywhere (hostnames live inside upstream-chart valuesObjects with
   Go-template syntax, so it's a documented-knob + guided-sweep, not `tpl`).
 - **Hetzner LB annotations** — `envoyProxy.service.annotations` on the
@@ -73,7 +73,7 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   **alloy** (2/2) and **node-exporter** Running.
 - **Orchestrators** — `aii-observability`, `aii-coder` Synced/Healthy; children
   `coder-db`, `alloy`, `node-exporter`, `prometheus-operator-crds` Healthy.
-- **Domain** — certs/SANs render `ai-v2.camer.digital`.
+- **Domain** — certs/SANs render `ai.camer.digital`.
 
 ### ❌ / ⚠️ Not resolved — needs follow-up
 - **core-gateway Hetzner LB — ✅ ROOT-CAUSED & FIXED in-repo this session.**
@@ -104,7 +104,7 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   node re-provision and the LB breaks again. cp-1's stale providerID
   (`hcloud://127562844`) is still worth fixing/replacing independently.
 - **core-gateway `api-https` listener — still invalid (home-os gap).** The
-  HTTPS listener (`api.ai-v2.camer.digital`) refs Secret
+  HTTPS listener (`api.ai.camer.digital`) refs Secret
   `converse-gateway/core-gateway-api-tls`, issued by ClusterIssuer
   `cert-home-cert-envoy` (Gateway annotation) which **isn't defined in home-os
   yet** → no secret → listener `InvalidCertificateRef`, controller logs the
@@ -196,7 +196,7 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
 4. **grafana-operator** — ✅ root-caused + fixed in-repo (egress NetworkPolicy
    via its deps overlay). Remaining: sync the observability orchestrator so the
    policy lands, then confirm the operator goes 1/1 Ready.
-5. **DNS + Keycloak** — `*.ai-v2.camer.digital` records must resolve to the
+5. **DNS + Keycloak** — `*.ai.camer.digital` records must resolve to the
    cluster; confirm Keycloak OIDC clients accept the new redirect URIs.
 6. **`lightbridge-opa-auth`** — confirm the basic-auth secret exists in
    `converse-gateway` (Authorino's OPA metadata call needs it).
@@ -263,7 +263,7 @@ Hetzner Object Storage (same pattern as Keycloak's CNPG backups):
 - **Verified live:** tempo 1/1 (`blocklist poll complete`), loki-0 2/2, mimir
   converging (7/11→), all reaching Hetzner — no more `i/o timeout`.
 
-### api-https TLS (api.ai-v2.camer.digital) — ✅ ISSUED (HTTP-01 through the Gateway)
+### api-https TLS (api.ai.camer.digital) — ✅ ISSUED (HTTP-01 through the Gateway)
 Final approach (no DNS token needed): a **namespace-scoped ACME `Issuer`** in
 `converse-gateway` (`core-gateway-acme`, charts/core-gateway/templates/acme-issuer.yaml)
 with an **HTTP-01 `gatewayHTTPRoute` solver** whose parentRef is the core-gateway.
@@ -271,7 +271,7 @@ cert-manager attaches a temporary solver HTTPRoute to the Gateway; Let's Encrypt
 validates over the LB's `:80` listener (up even while api-https was certless).
 The Certificate references this ns Issuer when `gateway.acmeHttp01.enabled` (set
 in charts/apps), else falls back to an external issuer (`gateway.issuer` /
-`issuerKind`). DNS A record `api.ai-v2.camer.digital` → the LB (46.225.38.138).
+`issuerKind`). DNS A record `api.ai.camer.digital` → the LB (46.225.38.138).
 
 Two-repo change:
 - **ai-helm:** acme-issuer.yaml + certificate.yaml issuerRef switch + values
@@ -283,7 +283,7 @@ Two-repo change:
   `--config`.
 
 **Verified live:** ns Issuer READY, Certificate READY (real Let's Encrypt cert,
-`CN=api.ai-v2.camer.digital`, valid 2026-06-01→08-30), Gateway listeners
+`CN=api.ai.camer.digital`, valid 2026-06-01→08-30), Gateway listeners
 `http` + `api-https` both Programmed, LB now serves `80` + `443`. The orphaned
 DNS-01 challenge from the cert-cloudflare attempt was cleaned up. (Providing
 `cloudflare-secret` in kube-system is no longer required for this endpoint;
@@ -310,9 +310,9 @@ Both `librechat-opencode-wellknown` and `ai-models-info` ship a custom nginx
 `root /usr/share/nginx/html`. Without it, `try_files <path> =404` resolves
 against nginx's compiled-in default root (`/etc/nginx/html`) and never finds the
 mounted file → 404. Added `root /usr/share/nginx/html;` to both server blocks.
-- `https://ai-v2.camer.digital/opencode/.well-known/opencode` → now 200 JSON
+- `https://ai.camer.digital/opencode/.well-known/opencode` → now 200 JSON
   (verified live).
-- `https://api.ai-v2.camer.digital/v1/models/info` → was 404 even with a valid
+- `https://api.ai.camer.digital/v1/models/info` → was 404 even with a valid
   JWT (404 came from nginx itself, *after* Authorino); fixed the same way.
   **Verified:** in-cluster curl now returns 200 + the OpenRouter-shape catalog
   JSON. ⚠️ Rollout note: a ConfigMap-only change doesn't reload nginx, and
@@ -381,7 +381,7 @@ without the OPA Secret/backend. The `x-oidc-*` (ADR-0011) contract is unchanged.
 
 ### Dual-plane gateway + burst/budget/billing (ADR-0021) ✅ (charts; activation pending)
 Built per ADR-0021 (read it):
-- **External plane** (`api.ai-v2.camer.digital`, public LB): full Keycloak JWT;
+- **External plane** (`api.ai.camer.digital`, public LB): full Keycloak JWT;
   descriptors via CEL with defaults so `billing_plan`/`organization` claims are
   optional (`→ free` / `→ sub`).
 - **Internal plane** (`core-gateway-internal.envoy-gateway-system.svc.cluster.local`):

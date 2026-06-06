@@ -191,7 +191,7 @@ client ──HTTP/2──▶ EnvoyProxy (HPA 3–20, LeastRequest LB)
 
 1. `opencode auth login` → Keycloak code+PKCE → JWT (carries `sub`, `azp`,
    `billing_plan`, org).
-2. Request to `api.ai-v2.camer.digital` with the user's JWT.
+2. Request to `api.ai.camer.digital` with the user's JWT.
 3. Authorino verifies (JWKS cached), stamps `x-oidc-*` + `x-account-id` (=`sub`)
    + `x-org-id` + `x-billing-plan`.
 4. `BackendTrafficPolicy` checks burst (per user) and monthly budget (per org);

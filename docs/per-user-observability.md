@@ -119,7 +119,7 @@ allowlist from `docs/authorino-service-account-bypass.md`:
 HUMAN_TOKEN=$(kc-token --client-id converse-frontend ...)
 curl -sv -H "Authorization: Bearer $HUMAN_TOKEN" \
   -H "X-AI-EG-Model: glm-5" \
-  https://api.ai-v2.camer.digital/v1/chat/completions \
+  https://api.ai.camer.digital/v1/chat/completions \
   -d '{"model":"glm-5","messages":[{"role":"user","content":"hi"}]}'
 
 # 2. In Grafana → Explore → Loki, query

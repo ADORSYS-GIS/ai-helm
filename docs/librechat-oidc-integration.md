@@ -138,7 +138,7 @@ All tokens use standard JWT claims defined by the OpenID Connect and OAuth 2.0 s
 | `azp` | Authorized Party | Client ID that requested the token. Validates token is for your application. | `librechat` |
 | `acr` | Authentication Context Class Reference | Level of authentication performed. `0`=none, `1`=password, `2+=MFA`. | `1` |
 | `scope` | Scope | Space-separated list of granted scopes. | `openid email profile` |
-| `allowed-origins` | Allowed Origins | Keycloak-specific claim listing CORS origins for browser-based requests. | `["https://ai-v2.camer.digital"]` |
+| `allowed-origins` | Allowed Origins | Keycloak-specific claim listing CORS origins for browser-based requests. | `["https://ai.camer.digital"]` |
 
 > **Note**: Token lifetime is typically 5 minutes (`exp - iat = 300s`). Refresh tokens are used to obtain new access tokens without re-authentication.
 
@@ -166,7 +166,7 @@ The access token contains authorization information:
 | `azp` | string | Authorized party (client ID) | `librechat` |
 | `scope` | string | Granted scopes | `openid email profile` |
 | `acr` | string | Authentication context class reference | `1` |
-| `allowed-origins` | string[] | CORS allowed origins | `["https://ai-v2.camer.digital"]` |
+| `allowed-origins` | string[] | CORS allowed origins | `["https://ai.camer.digital"]` |
 
 ### Custom Claims (LibreChat-Specific)
 
@@ -213,7 +213,7 @@ The `librechat` custom scope provides application-specific claims for role-based
   "azp": "librechat",
   "acr": "1",
   "allowed-origins": [
-    "https://ai-v2.camer.digital"
+    "https://ai.camer.digital"
   ],
   "scope": "openid email profile",
   "email_verified": true,
@@ -335,7 +335,7 @@ sequenceDiagram
 
 ### Flow Steps
 
-1. **Initial Access**: User navigates to `https://ai-v2.camer.digital`
+1. **Initial Access**: User navigates to `https://ai.camer.digital`
 2. **Auto-Redirect**: LibreChat redirects to Keycloak (enabled by `OPENID_AUTO_REDIRECT=true`)
 3. **Authentication**: User authenticates at Keycloak login page
 4. **Authorization Code**: Keycloak redirects back with auth code
@@ -458,7 +458,7 @@ For each new application:
 
 ### Login Validation
 
-- [ ] User can access LibreChat at `https://ai-v2.camer.digital`
+- [ ] User can access LibreChat at `https://ai.camer.digital`
 - [ ] User is automatically redirected to Keycloak login
 - [ ] User can authenticate with Keycloak credentials
 - [ ] User is redirected back to LibreChat after authentication
@@ -489,7 +489,7 @@ For each new application:
 #### 1. "Invalid redirect URI"
 
 **Cause**: Callback URL not configured in Keycloak client
-**Solution**: Add `https://ai-v2.camer.digital/oauth/openid/callback` to Valid Redirect URIs
+**Solution**: Add `https://ai.camer.digital/oauth/openid/callback` to Valid Redirect URIs
 
 #### 2. "Invalid client credentials"
 

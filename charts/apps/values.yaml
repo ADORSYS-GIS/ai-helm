@@ -208,7 +208,7 @@ applications:
                   main:
                     env:
                       OPENCODE_MODEL: "minimax-m2p7"
-                      OPENCODE_BASE_URL: "https://api.ai-v2.camer.digital/v1"
+                      OPENCODE_BASE_URL: "https://api.ai.camer.digital/v1"
                       APPRISE_API_URL: "http://apprise-api.monitoring.svc.cluster.local:8000"
                       KEYCLOAK_URL: "https://auth.verif.fyi"
                       KEYCLOAK_REALM: "camer-digital"
@@ -251,7 +251,7 @@ applications:
   #
   # GAP: home-os's cert chart does NOT yet define `cert-home-cert-envoy`
   # (the Gateway-API / gatewayHTTPRoute ACME issuer that core-gateway
-  # uses for api.ai-v2.camer.digital — see the `gateway.issuer` value
+  # uses for api.ai.camer.digital — see the `gateway.issuer` value
   # below). That issuer must be added to home-os, otherwise the Envoy
   # gateway's ACME cert won't be issued. Tracked out-of-band.
   # Do not re-add a cert Application here.
@@ -492,7 +492,7 @@ applications:
         releaseName: core-gateway
         valuesObject:
           gateway:
-            apiHostname: api.ai-v2.camer.digital
+            apiHostname: api.ai.camer.digital
             # api-https TLS via an in-chart ns-scoped ACME Issuer that solves
             # HTTP-01 THROUGH this Gateway (no DNS token, fully self-contained).
             # The challenge is reachable because api.<domain> resolves to the
@@ -568,7 +568,7 @@ applications:
           authConfigs:
             main:
               hosts:
-                - api.ai-v2.camer.digital
+                - api.ai.camer.digital
               # Keycloak clients whose `azp` claim identifies a service-account
               # token. `_skipForServiceAccounts: true` on a step bypasses it for
               # these clients. No such step exists today (OPA validation removed
@@ -915,7 +915,7 @@ applications:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
                 className: traefik
                 hosts:
-                  - host: api-main.ai-v2.camer.digital
+                  - host: api-main.ai.camer.digital
                     paths:
                       - path: /
                         pathType: Prefix
@@ -923,9 +923,9 @@ applications:
                           identifier: authz
                           port: http
                 tls:
-                  - secretName: api-main.ai-v2.camer.digital-tls
+                  - secretName: api-main.ai.camer.digital-tls
                     hosts:
-                      - api-main.ai-v2.camer.digital
+                      - api-main.ai.camer.digital
           mcp:
             enabled: true
             configMaps:
@@ -998,7 +998,7 @@ applications:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
                 className: traefik
                 hosts:
-                  - host: api-mcp.ai-v2.camer.digital
+                  - host: api-mcp.ai.camer.digital
                     paths:
                       - path: /
                         pathType: Prefix
@@ -1006,9 +1006,9 @@ applications:
                           identifier: authz
                           port: http
                 tls:
-                  - secretName: api-mcp.ai-v2.camer.digital-tls
+                  - secretName: api-mcp.ai.camer.digital-tls
                     hosts:
-                      - api-mcp.ai-v2.camer.digital
+                      - api-mcp.ai.camer.digital
           opa:
             enabled: true
             configMaps:
@@ -1146,7 +1146,7 @@ applications:
                   cert-manager.io/cluster-issuer: cert-home-cert-http
                 className: traefik
                 hosts:
-                  - host: api-usage.ai-v2.camer.digital
+                  - host: api-usage.ai.camer.digital
                     paths:
                       - path: /
                         pathType: Prefix
@@ -1154,9 +1154,9 @@ applications:
                           identifier: authz
                           port: http
                 tls:
-                  - secretName: api-usage.ai-v2.camer.digital-tls
+                  - secretName: api-usage.ai.camer.digital-tls
                     hosts:
-                      - api-usage.ai-v2.camer.digital
+                      - api-usage.ai.camer.digital
             persistence:
               tls:
                 name: authz-tls
@@ -1221,10 +1221,10 @@ applications:
                 ingressClassName: traefik
                 tls:
                 - hosts:
-                    - self-service.ai-v2.camer.digital
-                  secretName: self-service.ai-v2.camer.digital-tls
+                    - self-service.ai.camer.digital
+                  secretName: self-service.ai.camer.digital-tls
                 rules:
-                - host: self-service.ai-v2.camer.digital
+                - host: self-service.ai.camer.digital
                   http:
                     paths:
                     - path: /api/v1
@@ -1259,10 +1259,10 @@ applications:
                 ingressClassName: traefik
                 tls:
                 - hosts:
-                    - mcp.ai-v2.camer.digital
-                  secretName: mcp.ai-v2.camer.digital-tls
+                    - mcp.ai.camer.digital
+                  secretName: mcp.ai.camer.digital-tls
                 rules:
-                - host: mcp.ai-v2.camer.digital
+                - host: mcp.ai.camer.digital
                   http:
                     paths:
                     - path: /mcp
@@ -1623,9 +1623,9 @@ applications:
                       tag: sha-7b3a945
                       pullPolicy: IfNotPresent
                     env:
-                      EXPO_PUBLIC_BACKEND_URL: "https://self-service.ai-v2.camer.digital"
-                      EXPO_PUBLIC_USAGE_URL: "https://self-service.ai-v2.camer.digital"
-                      EXPO_PUBLIC_ANALYTICS_URL: "https://analytics.ai-v2.camer.digital"
+                      EXPO_PUBLIC_BACKEND_URL: "https://self-service.ai.camer.digital"
+                      EXPO_PUBLIC_USAGE_URL: "https://self-service.ai.camer.digital"
+                      EXPO_PUBLIC_ANALYTICS_URL: "https://analytics.ai.camer.digital"
                       EXPO_PUBLIC_KEYCLOAK_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
                       EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: "converse-frontend"
                       EXPO_PUBLIC_KEYCLOAK_SCHEME: "self-service"

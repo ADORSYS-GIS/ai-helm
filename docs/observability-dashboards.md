@@ -167,7 +167,7 @@ OpenTelemetryCollector, forwarded via Alloy into Tempo, queried in Grafana
 (datasource `tempo`, `http://tempo.observability.svc.cluster.local:3100`).
 
 **Previous state:** Until 2026-Q2 this role was served by Arize Phoenix at
-`analytics.ai-v2.camer.digital`. Phoenix has been removed; all LLM observability
+`analytics.ai.camer.digital`. Phoenix has been removed; all LLM observability
 now lives in Grafana on top of Tempo.
 
 **Instrumentation plan:**
