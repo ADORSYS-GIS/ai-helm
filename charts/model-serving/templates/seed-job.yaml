@@ -47,15 +47,16 @@ spec:
               MODEL_DIR="/models/{{ .Values.model.storagePath }}"
               mkdir -p "$MODEL_DIR"
               echo "Seeding {{ .Values.model.hfRepo }} -> $MODEL_DIR (skips files already present)"
-              # huggingface_hub 1.x: the CLI is `hf` (huggingface-cli is removed).
-              # hf_transfer = the Rust accelerator (faster + resilient on the big
-              # safetensors shards). HF_TOKEN (if set) lifts the anonymous
-              # rate limit that otherwise stalls the download partway through.
-              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_transfer]>=1.0"
+              # huggingface_hub 1.x: the CLI is `hf` (huggingface-cli is removed)
+              # and the accelerator is Xet (hf_transfer is gone — the `[hf_transfer]`
+              # extra doesn't exist and HF_HUB_ENABLE_HF_TRANSFER is a no-op now).
+              # HF_XET_HIGH_PERFORMANCE enables Xet's fast path; HF_TOKEN (if set)
+              # lifts the anonymous rate limit that otherwise throttles the pull.
+              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
               hf download {{ .Values.model.hfRepo }} --local-dir "$MODEL_DIR"
               echo "Seed complete."
           env:
-            - name: HF_HUB_ENABLE_HF_TRANSFER
+            - name: HF_XET_HIGH_PERFORMANCE
               value: "1"
             {{- if .Values.seedJob.hfToken.enabled }}
             - name: HF_TOKEN
