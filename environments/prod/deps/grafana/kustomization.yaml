@@ -7,19 +7,19 @@ resources:
   - ../../../base/deps/grafana
 
 patches:
-  # clusterIssuer: cert-route53 (DNS-01) — NOT cert-home-cert-http (HTTP-01).
-  # This cluster's Traefik does an unconditional :80→:443 redirect, which 301s
-  # the ACME HTTP-01 /.well-known/acme-challenge/ self-check to HTTPS (no cert
-  # yet) and it times out → the cert never issues → no grafana pod. ai.camer.digital
-  # is hosted on Route53, so DNS-01 via cert-route53 (home-os charts/cert) is the
-  # fix. Needs the `route53-secret` IAM creds in kube-system on Hetzner.
+  # clusterIssuer: cert-home-cert-http (ACME HTTP-01 via Traefik) — same issuer
+  # LibreChat (ai.camer.digital) uses successfully. NOTE: a brand-new host hits
+  # a one-time bootstrap deadlock under Traefik's :80→:443 redirect — the cert
+  # can't issue until the host serves HTTPS, which needs the cert. Break it once
+  # by seeding a self-signed `grafana.ai.camer.digital-tls` secret; cert-manager
+  # then completes HTTP-01 and overwrites it, and renewals self-sustain.
   - target:
       kind: Certificate
       name: grafana-tls
     patch: |-
       - op: replace
         path: /spec/issuerRef/name
-        value: cert-route53
+        value: cert-home-cert-http
       - op: replace
         path: /spec/dnsNames/0
         value: grafana.ai.camer.digital
