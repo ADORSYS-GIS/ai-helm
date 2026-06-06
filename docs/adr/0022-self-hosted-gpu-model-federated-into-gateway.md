@@ -126,9 +126,31 @@ a public FQDN.** Concretely:
   `charts/lmcache`. Chosen for the batteries-included LMCache path. (Trade-off:
   its OpenAI routes are prefixed `/openai/v1` — handled by the backend `prefix`.)
 
+## Implementation notes (as-built)
+
+Deltas discovered while implementing — kept here so a future reader doesn't
+re-litigate them (the *how* is in the design doc):
+
+- **The chart bundles its own namespaced `ServingRuntime`.** The home KServe
+  install ships **zero `ClusterServingRuntime`s**, so `kserve-huggingfaceserver`
+  didn't exist to bind to. `charts/model-serving` carries a namespaced
+  `ServingRuntime` (image `kserve/huggingfaceserver:v0.17.0-gpu`) instead of
+  depending on the cluster default. (Separate home-os fix: have `kserve-resources`
+  install its default runtimes.)
+- **The weight seed Job is an ArgoCD Sync hook.** A plain ArgoCD-tracked Job goes
+  perpetually OutOfSync (the Job controller stamps `controller-uid` into the
+  immutable `spec.template`), failing the app sync. `hook: Sync` +
+  `BeforeHookCreation` makes ArgoCD delete+recreate instead of patch. Ordering
+  (PVC → seed → InferenceService) is preserved by sync-waves.
+- **Weights via a pre-seeded PVC, not `hf://`** (no per-start download), with
+  `hf_transfer` + an optional `HF_TOKEN` (anonymous HF rate limits otherwise stall
+  the ~8 GB pull). `hf download` (huggingface_hub 1.x; `huggingface-cli` is gone).
+- **`minBackends: 1`** for this model — a single self-hosted backend is by design
+  (the 2-backend HA guard is for SaaS; cloud fallback at `priority: 1` is optional).
+
 ## Related
 
 - Docs: [`docs/2026-self-hosted-gpu-inference.md`](../2026-self-hosted-gpu-inference.md) (the *how*: VRAM math, flags, runbook, verification)
-- Charts/files (planned): `charts/model-serving/` (new), `charts/ai-models/values.yaml` (backend + model entry), `charts/apps/values.yaml` (home-destination Application)
+- Charts/files: `charts/model-serving/` (PVC + seed-hook + ServingRuntime + InferenceService + API-key ESO), `charts/ai-models/values.yaml` (`vllm-local-01` backend + `qwen3-4b-local` model), `charts/apps/` (`homeCluster: true` affordance + the `model-serving` app)
 - Prior art: home-os commit `5dafc759` (the commented-out `ai-poc-model-deployment`)
 - Builds on: ADR-0017 (destination invariant — this is its sanctioned exception), ADR-0021 (the gateway policy the model inherits)

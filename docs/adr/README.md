@@ -40,6 +40,7 @@ how thinking evolved.
 | [0020](./0020-observability-app-of-apps-orchestrator.md) | Factor the observability stack into an App-of-Apps orchestrator (+ a secrets app) | Accepted | 2026-06-01 | — |
 | [0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md) | Burst control, budgeting & billing via dual-plane (internal/external) AuthConfigs | Proposed | 2026-06-04 | supersedes [0003](./0003-skip-opa-for-service-accounts.md) |
 | [0022](./0022-self-hosted-gpu-model-federated-into-gateway.md) | Self-hosted GPU model (Qwen3-4B, KServe/Knative + vLLM + LMCache) federated into the gateway as a public-FQDN backend | Proposed | 2026-06-05 | exception to [0017](./0017-home-remote-destination-invariant.md) |
+| [0023](./0023-grafana-stateless-no-pvc.md) | Grafana runs stateless (no PVC) — dashboards-as-code + provisioned datasources; persistence (if ever) goes to an external DB | Accepted | 2026-06-06 | builds on [0020](./0020-observability-app-of-apps-orchestrator.md) |
 
 ## Status legend
 
