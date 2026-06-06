@@ -1,0 +1,119 @@
+# lightbridge-db — CNPG Cluster (lightbridge-main-db) + barman ObjectStore +
+# ScheduledBackup + PodMonitor. Leaf chart of the lightbridge orchestrator
+# (ADR-0019). Moved verbatim from the old flat app's rawRessources EXCEPT the
+# ObjectStore, which is modernised to Hetzner Object Storage (the old MinIO
+# s3.ssegning.me / ai-ops-backups is decommissioned). The usage DB is dropped.
+#
+# Namespace is `converse` (the orchestrator targets that namespace; these CRs
+# pin it explicitly to match the old flat-app behaviour).
+
+resources:
+  # ────────────────────────────────────────────────────────────────────
+  # The primary CNPG cluster. Spec verbatim from the old flat app's
+  # rawRessources (instances 2, postgresql:18.4-system-trixie, 5Gi storage,
+  # archive_timeout 30min, the barman WAL-archiver plugin, the resources
+  # block). Backs up via the barman ObjectStore below.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: lightbridge-main-db
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      instances: 2
+      imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+      storage:
+        size: "5Gi"
+      plugins:
+        - name: barman-cloud.cloudnative-pg.io
+          isWALArchiver: true
+          parameters:
+            barmanObjectName: lightbridge-main-db
+            serverName: lightbridge-main-db
+      postgresql:
+        parameters:
+          archive_timeout: "30min"
+      resources:
+        limits:
+          cpu: 300m
+          memory: 1Gi
+        requests:
+          cpu: 200m
+          memory: 500Mi
+  # ────────────────────────────────────────────────────────────────────
+  # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
+  #
+  # The old store pointed at the now-decommissioned MinIO (s3.ssegning.me,
+  # bucket ai-ops-backups). It now uses Hetzner Object Storage (Ceph-RGW):
+  # shared bucket `ssegning-k8s-state`, endpoint nbg1.your-objectstorage.com,
+  # same pattern Keycloak's CNPG backup uses. region us-east-1 is a literal —
+  # Ceph-RGW accepts it (no per-key region lookup like the old MinIO config).
+  # No trailing slash on destinationPath (MinIO/Ceph ListObjectsV2 quirk).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: barmancloud.cnpg.io/v1
+    kind: ObjectStore
+    metadata:
+      name: lightbridge-main-db
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      retentionPolicy: "180d"
+      configuration:
+        destinationPath: s3://ssegning-k8s-state/lightbridge-main-db
+        endpointURL: https://nbg1.your-objectstorage.com
+        region: us-east-1
+        s3Credentials:
+          accessKeyId:
+            name: lightbridge-cnpg-s3
+            key: s3_access_key_id
+          secretAccessKey:
+            name: lightbridge-cnpg-s3
+            key: s3_secret_access_key
+  # ────────────────────────────────────────────────────────────────────
+  # Daily scheduled backup (verbatim from the old flat app).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: ScheduledBackup
+    metadata:
+      name: lightbridge-main-db-daily
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      immediate: true
+      schedule: "0 0 2 * * *"
+      backupOwnerReference: self
+      cluster:
+        name: lightbridge-main-db
+      method: plugin
+      pluginConfiguration:
+        name: barman-cloud.cloudnative-pg.io
+  # ────────────────────────────────────────────────────────────────────
+  # PodMonitor so Grafana Alloy scrapes the CloudNativePG per-instance
+  # metrics exporter (port 9187, name "metrics"). Verbatim from the old
+  # flat app. Manual PodMonitors are the recommended approach now that
+  # .spec.monitoring.enablePodMonitor is deprecated.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: lightbridge-main-db
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+    spec:
+      selector:
+        matchLabels:
+          cnpg.io/cluster: lightbridge-main-db
+      podMetricsEndpoints:
+        - port: metrics
+          interval: 30s

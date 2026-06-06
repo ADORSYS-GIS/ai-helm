@@ -1,0 +1,32 @@
+# lightbridge-secrets — ExternalSecrets for the Lightbridge authz stack.
+# Leaf chart of the lightbridge orchestrator (ADR-0019). All ExternalSecrets
+# resolve against the cluster-scoped `ssegning-aws` ClusterSecretStore.
+
+# ClusterSecretStore the keys are pulled from (the only store on-cluster).
+# Override per-env if a second cluster uses a differently-named store.
+secretStore: ssegning-aws
+refreshInterval: 1h
+
+# Values-driven ExternalSecrets. Key = target Secret name. Each `data` entry
+# maps a target secretKey ← a remoteRef {key, property} in the store.
+externalSecrets:
+  # API client secret the api component reads as API_KEY_CLIENT_SECRET
+  # (env var → secretKeyRef name: lightbridge-api-client, key: secret-id).
+  # ⚠️ CONFIRM/POPULATE this property in AWS Secrets Manager — the property
+  #    `lightbridge_api_client_secret_id` under key `ai/camer/digital/prod/env`
+  #    is currently MISSING on-cluster; the api pod fails to start without it.
+  lightbridge-api-client:
+    data:
+      - secretKey: secret-id
+        key: ai/camer/digital/prod/env
+        property: lightbridge_api_client_secret_id
+  # CNPG barman backup credentials (Hetzner Object Storage). Same creds the
+  # Keycloak CNPG backup uses — platform secret under prod/meta/test-app.
+  lightbridge-cnpg-s3:
+    data:
+      - secretKey: s3_access_key_id
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_client_id
+      - secretKey: s3_secret_access_key
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_secret

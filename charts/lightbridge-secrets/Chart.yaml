@@ -1,0 +1,25 @@
+apiVersion: v2
+name: lightbridge-secrets
+description: |
+  ExternalSecrets for the Lightbridge authz stack — the api component's
+  API_KEY_CLIENT_SECRET and the CNPG barman S3 backup credentials. Leaf chart
+  of the lightbridge App-of-Apps orchestrator (ADR-0019), lowest sync-wave so
+  the Secrets exist before the DB (barman) and the app start. All reference the
+  `ssegning-aws` ClusterSecretStore (ADR-0018 in-chart ownership).
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - lightbridge
+  - secrets
+  - external-secrets
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
