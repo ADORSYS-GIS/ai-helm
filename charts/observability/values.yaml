@@ -644,18 +644,10 @@ children:
                 storage_prefix: mimirblocks
                 s3:
                   bucket_name: *s3-bucket
-              alertmanager_storage:
-                storage_prefix: mimiralertmanager
-                s3:
-                  bucket_name: *s3-bucket
               ruler_storage:
                 storage_prefix: mimirruler
                 s3:
                   bucket_name: *s3-bucket
-
-              alertmanager:
-                enable_api: true
-                external_url: https://grafana.ai-v2.camer.digital/alerting
 
               limits:
                 # ── Retention ──────────────────────────────────────────────
@@ -743,19 +735,15 @@ children:
               requests: { cpu: 100m, memory: 256Mi }
               limits:   { cpu: 500m, memory: 2Gi   }
 
+          # Alertmanager REMOVED (2026-06-06) for a tiny footprint: nothing
+          # produces or consumes alerts (ruler off, Grafana `alerting.enabled:
+          # false`), so the Mimir Alertmanager — its STS + 10Gi PVC, its
+          # `alertmanager_storage` S3 prefix, the `structuredConfig.alertmanager`
+          # block, and the Grafana "Alertmanager" datasource — were all dropped.
+          # To bring it back if recording/alerting rules are introduced, re-enable
+          # here and restore those four pieces together.
           alertmanager:
-            enabled: true
-            replicas: 1
-            podDisruptionBudget:
-              enabled: false
-            resources:
-              requests: { cpu: 50m,  memory: 64Mi  }
-              limits:   { cpu: 200m, memory: 256Mi }
-            # fallbackConfig: |
-            #   route:
-            #     receiver: blackhole
-            #   receivers:
-            #     - name: blackhole
+            enabled: false
 
           ruler:
             enabled: false
@@ -1292,16 +1280,6 @@ children:
                       enabled: true
                     search:
                       hide: false
-
-                - name: Alertmanager
-                  type: alertmanager
-                  uid:  alertmanager
-                  url:  http://mimir-nginx.observability.svc.cluster.local/alertmanager
-                  jsonData:
-                    implementation: mimir
-                    httpHeaderName1: "X-Scope-OrgID"
-                  secureJsonData:
-                    httpHeaderValue1: "anonymous"
 
           dashboardProviders:
             dashboardproviders.yaml:
