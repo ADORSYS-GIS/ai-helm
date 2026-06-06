@@ -63,6 +63,16 @@ spec:
   destination:
     {{- include "lightbridge.argocd.destinationClusterRef" $a.destination | nindent 4 }}
     namespace: {{ $a.destination.namespace | quote }}
+  {{- /*
+    The CNPG operator (field manager `manager`) stamps dozens of default fields
+    onto the Cluster (affinity, bootstrap, probes, primaryUpdateStrategy, …) that
+    the chart doesn't declare → permanent cosmetic OutOfSync (and selfHeal churn).
+    Ignore fields owned by the operator's field manager so the Cluster reads
+    Synced. */}}
+  {{- with .Values.db.ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   syncPolicy:
     {{- toYaml $a.syncPolicy | nindent 4 }}
 {{- end }}

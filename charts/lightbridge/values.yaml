@@ -57,6 +57,14 @@ db:
   chartPath: charts/lightbridge-db
   releaseName: lightbridge-db
   syncWave: "1"
+  # Ignore the CNPG operator's defaulted fields on the Cluster so it doesn't sit
+  # permanently OutOfSync (the operator, field manager `manager`, adds affinity/
+  # bootstrap/probes/primaryUpdateStrategy/… that the chart never declares).
+  ignoreDifferences:
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      managedFieldsManagers:
+        - manager
 
 # ────────────────────────────────────────────────────────────────────────
 # lightbridge-app child — the upstream Lightbridge workload (Helm chart,
