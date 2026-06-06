@@ -1,8 +1,14 @@
 # ADR-0025: Cut over from Linode to Hetzner; rename the public domain `ai-v2.camer.digital` → `ai.camer.digital`
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-06-06
 **Deciders:** @stephane-segning
+
+> **Accepted 2026-06-07:** the cutover is done — DNS for `ai.camer.digital` (+
+> subdomains) points at the Hetzner LBs, the rename is merged/synced, LibreChat
+> Mongo migrated, and the old Linode cluster (`ai-*`) was deleted (2026-06-06).
+> See the new "ingress cert re-issuance" consequence below for the one rough
+> edge the rename surfaced.
 
 ## Context
 
@@ -60,6 +66,18 @@ record (not retro-edited).
   unrecoverable and would need rebuilding first).
 - Brief auth disruption at cutover: Keycloak redirect-URIs/audiences flip to
   `ai.*`, so any session mid-flight on `ai-v2.*` must re-auth.
+- **Per-host ingress TLS certs re-issue for the new hostname.** Every Traefik
+  ingress `Certificate` (issuer `cert-home-cert-http`, ACME HTTP-01) must obtain
+  a new cert for its `*.ai.camer.digital` SAN. Most complete cleanly (e.g.
+  LibreChat `ai.camer.digital-tls`, issued 2026-06-06, valid through Sept — proof
+  HTTP-01 via Hetzner's Traefik works). **But a host whose ArgoCD app gates its
+  workload on the cert's health (grafana) can deadlock:** the re-issue wedges on a
+  stale ACME order left from the `-v2` host, the cert never goes Ready, so the
+  Deployment is never applied and the pod stays down (and `grafana-external` can't
+  authenticate). Remediation is **not** an issuer change — clear grafana's stale
+  `order`/`challenge` (+ any temp secret) so cert-manager re-issues fresh, exactly
+  as LibreChat did. Lesson: after a domain rename, watch for cert re-issues wedged
+  on stale `-v2` ACME state, especially for cert-health-gated apps.
 
 **Neutral / follow-ups**
 - DNS records to move to the Hetzner LB: `ai`, `api`, `api-main`, `api-mcp`,
@@ -79,6 +97,12 @@ record (not retro-edited).
   config; more moving parts than a DNS-gated flip.
 - **Migrate Keycloak Postgres in the same script** — descoped by the maintainer
   for this pass (Mongo only); Postgres migration is tracked as a follow-up.
+- **Switch ingress certs to DNS-01 to dodge HTTP-01 during the rename** — a
+  `cert-route53` ClusterIssuer was prototyped (the zone is on Route53, so
+  `cert-cloudflare` was N/A) and then **reverted as unnecessary**: HTTP-01 via
+  Traefik issues fine on Hetzner (LibreChat proves it), and the grafana failure
+  was stale-state wedge, not a redirect-level block. Ingress certs stay on
+  `cert-home-cert-http`.
 
 ## Related
 

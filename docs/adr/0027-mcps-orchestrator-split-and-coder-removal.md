@@ -26,9 +26,10 @@ namespace `converse-mcp`). One Application for N heterogeneous servers means:
 ### 2. Coder is no longer in use
 
 The Coder workload (ADR-0019: a `coder` App-of-Apps orchestrator → `coder-db` +
-`coder-app`) is not needed for now. Its ingress cert was also stuck (wildcard
-SAN can't issue via HTTP-01; Traefik redirect breaks HTTP-01 — see the
-Route53 DNS-01 work) and its Keycloak/admin secrets were unprovisioned.
+`coder-app`) is not needed for now. Its ingress cert was also stuck (its
+`*.coder-ai.camer.digital` workspace-wildcard SAN can't issue via ACME HTTP-01
+at all), its Keycloak/admin secrets were unprovisioned, and the Hetzner
+`coder-cnpg` database was unrecoverable.
 
 ## Decision
 
