@@ -1570,9 +1570,13 @@ children:
                 revision: 3
                 datasource: Mimir
 
+          # Stateless by design: no PVC. Dashboards are managed as code
+          # (grafana-operator + grafana-foundation-sdk JSON) and datasources are
+          # provisioned (see `datasources` above), so Grafana needs no durable
+          # disk. With persistence disabled the chart mounts an emptyDir at
+          # /var/lib/grafana — state is intentionally ephemeral per pod.
           persistence:
-            enabled:      true
-            size:         2Gi
+            enabled:      false
 
           resources:
             requests: { cpu: 100m, memory: 256Mi }
