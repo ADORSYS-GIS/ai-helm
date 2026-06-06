@@ -75,9 +75,6 @@ librechatSecrets:
     librechat-mcp-github:
       client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_id }
       client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_secret }
-    librechat-mcp-coder-credentials:
-      client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_id }
-      client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_secret }
     librechat-websearch-config:
       serper_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_serper_api_key }
       firecrawl_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_firecrawl_api_key }
@@ -235,15 +232,6 @@ librechat:
             GITHUB_MCP_SECRET_ID:
               secretKeyRef:
                 name: librechat-mcp-github
-                key: client_secret
-
-            CODERS_MCP_CLIENT_ID:
-              secretKeyRef:
-                name: librechat-mcp-coder-credentials
-                key: client_id
-            CODERS_MCP_SECRET:
-              secretKeyRef:
-                name: librechat-mcp-coder-credentials
                 key: client_secret
 
             OPENID_CLIENT_ID:
@@ -666,30 +654,7 @@ config:
         redirect_uri: https://ai.camer.digital/api/mcp/lightbridge_self_service/oauth/callback
         scope: "email openid offline_access"
 
-    coder_mcp:
-      title: "Coder"
-      description: "Coder - Development environments in your cloud"
-      type: "streamable-http"
-      initTimeout: 150000
-      url: "https://coder.ai.camer.digital/api/experimental/mcp/http"
-      headers:
-        X-ACCOUNT-ID: 'LIBRECHAT'
-        X-PROJECT-ID: 'sso:{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
-        X-USER-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
-        X-USER-EMAIL: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
-        X-USER-ROLE: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
-        X-USER-NAME: '{{ `{{` }}LIBRECHAT_USER_NAME{{ `}}` }}'
-      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
-      requiresOAuth: true
-      serverInstructions: |
-        Provides development environment management capabilities.
-      oauth:
-        authorization_url: https://coder.ai.camer.digital/oauth2/authorize
-        token_url: https://coder.ai.camer.digital/oauth2/tokens
-        client_id: ${CODERS_MCP_CLIENT_ID}
-        client_secret: ${CODERS_MCP_SECRET}
-        redirect_uri: https://ai.camer.digital/api/mcp/coder_mcp/oauth/callback
-        scope: "openid profile email"
+    # coder_mcp REMOVED 2026-06-06 with the Coder workload (ADR-0027).
 
   fileConfig:
     endpoints:

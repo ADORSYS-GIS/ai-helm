@@ -951,10 +951,17 @@ applications:
         prune: true
         selfHeal: true
 
-  # --- MCPs ---
+  # --- MCPs (App-of-Apps orchestrator, ADR-0027) ---
+  # charts/mcps now emits an ApplicationSet (a control object) that generates
+  # one child Application per MCP (mcps-brave, mcps-terraform, mcps-firecrawl,
+  # mcps-context7, mcps-refero), each with its own in-chart ExternalSecret.
+  # controlPlane: true — the ApplicationSet must land in-cluster/argocd where
+  # the controller watches it; the children it generates deploy workloads to
+  # home-remote (converse-mcp). See ADR-0017 + ADR-0027.
   - name: mcps
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: claude/magical-bohr-390242
@@ -965,26 +972,11 @@ applications:
     destination:
       namespace: converse-mcp
 
-  # --- Coder (App-of-Apps orchestrator) ---
-  # Factored from the old flat `coder-db` + `coder` entries into one
-  # orchestrator that renders two child Applications: `coder-db` (CNPG leaf,
-  # wave 1) and `coder-app` (the Coder OCI workload + its cert overlay,
-  # wave 2). controlPlane: true — it emits Application CRs (control objects),
-  # so it targets in-cluster/argocd; the children it renders target
-  # home-remote. See ADR-0019.
-  - name: coder
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    controlPlane: true
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: claude/magical-bohr-390242
-      path: charts/coder
-      helm:
-        releaseName: coder
-        valuesObject: {}
-    destination:
-      namespace: coder
+  # Coder was REMOVED 2026-06-06 (ADR-0027 supersedes ADR-0019) — not in use
+  # for now. The charts/coder + charts/coder-db leaf charts and the
+  # environments/*/deps/coder overlay were deleted; the coder orchestrator and
+  # its children (coder-app, coder-db) are pruned by ArgoCD. Re-introduce via a
+  # new ADR if Coder comes back.
 
 extraObjects:
   # ==========================================

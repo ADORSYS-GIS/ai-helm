@@ -1,9 +1,15 @@
----
+{{- /*
+The MCPRoute attaching this MCP to the gateway. Optional apiKey securityPolicy
+injects the upstream credential (Secret key `apiKey`; "Authorization" header
+auto-prefixes "Bearer ").
+*/ -}}
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: MCPRoute
 metadata:
-  name: firecrawl
+  name: {{ .Values.mcp.name }}
   namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
 spec:
   parentRefs:
     - name: {{ include "common.tplvalues.render" ( dict "value" .Values.gatewayRef.name "context" $ ) }}
@@ -14,15 +20,19 @@ spec:
       sectionName: {{ include "common.tplvalues.render" ( dict "value" . "context" $ ) }}
       {{- end }}
 
-  path: "/mcp/firecrawl"
+  path: {{ .Values.mcp.path | quote }}
 
   backendRefs:
-    - name: firecrawl
+    - name: {{ .Values.mcp.name }}
       kind: Backend
       group: gateway.envoyproxy.io
-      path: "/v2/mcp"
+      path: {{ .Values.mcp.backendPath | quote }}
+      {{- if .Values.mcp.auth.enabled }}
       securityPolicy:
         apiKey:
           secretRef:
-            name: firecrawl-token
-          header: Authorization
+            name: {{ required "mcp.auth.secretName is required when auth.enabled" .Values.mcp.auth.secretName }}
+          {{- with .Values.mcp.auth.header }}
+          header: {{ . | quote }}
+          {{- end }}
+      {{- end }}

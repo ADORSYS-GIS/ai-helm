@@ -1,6 +1,172 @@
+# mcps orchestrator — renders ONE ApplicationSet that generates a child
+# Application per enabled MCP (chart: charts/mcp). See ADR-0027.
+#
+# Pre-split this chart deployed every MCP's resources directly in one
+# Application. Post-split each MCP is its own Application (mcps-<name>), with
+# its own sync/rollback/health and an in-chart ExternalSecret scoped to it.
+
+# ────────────────────────────────────────────────────────────────────────
+# ArgoCD wiring — where the generated child Applications live + sync from.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  namespace: argocd
+  project: ai
+  # Source repo + branch for the leaf chart (charts/mcp). Deploys run from
+  # `claude/magical-bohr-390242` (NOT main) until the deployment settles, then
+  # pin to a release tag — tag-based deploys only; main is never a deploy target.
+  repoURL: https://github.com/ADORSYS-GIS/ai-helm
+  targetRevision: claude/magical-bohr-390242
+  destination:
+    # Every child Application targets home-remote (ADR-0017). The destination
+    # helper hard-fails the render if this resolves to in-cluster unless
+    # allowInCluster: true.
+    name: home-remote
+    allowInCluster: false
+    namespace: converse-mcp
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# Gateway every MCPRoute attaches to (HTTPS listener; ADR-0021 dual-plane).
 gatewayRef:
   name: core-gateway
   namespace: converse-gateway
-  # Pin MCP routes to the Gateway's HTTPS listener (HTTPS-only); :80 is left to
-  # the http→https redirect + the ACME solver.
   sectionName: api-https
+
+# ────────────────────────────────────────────────────────────────────────
+# The MCP servers. Each entry → one Application (mcps-<key>). `mcp` is passed
+# verbatim to the leaf chart's `.Values.mcp`; `externalSecret` to its
+# `.Values.externalSecret`. Set `enabled: false` to drop an MCP.
+#
+# API keys: the leaf's apiKey securityPolicy + brave's env both read Secret key
+# `apiKey` (AIEG MCPRoute contract); the "Authorization" header auto-prefixes
+# "Bearer ", so SM holds the raw token. The maintainer must populate these
+# properties under ssegning-aws `ai/camer/digital/prod/env`:
+#   brave_api_key, firecrawl_api_key, context7_api_key, refero_api_key
+# (terraform needs no key). Until populated the ExternalSecret sits
+# SecretSyncedError and the MCP that needs it won't authenticate.
+# ────────────────────────────────────────────────────────────────────────
+mcps:
+  # Self-hosted Brave Search MCP. API key via container env (BRAVE_API_KEY).
+  brave:
+    enabled: true
+    mcp:
+      name: brave-search
+      mode: selfHosted
+      path: /mcp/brave
+      backendPath: /mcp
+      image: docker.io/mcp/brave-search:latest
+      port: 8080
+      args:
+        - --transport
+        - http
+      env:
+        - name: BRAVE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: brave-token
+              key: apiKey
+        - name: BRAVE_MCP_TRANSPORT
+          value: "http"
+    externalSecret:
+      enabled: true
+      secretName: brave-token
+      data:
+        - secretKey: apiKey
+          key: ai/camer/digital/prod/env
+          property: brave_api_key
+
+  # Self-hosted HashiCorp Terraform MCP. No credential.
+  terraform:
+    enabled: true
+    mcp:
+      name: terraform
+      mode: selfHosted
+      path: /mcp/terraform
+      backendPath: /mcp
+      image: hashicorp/terraform-mcp-server:latest
+      port: 8080
+      args:
+        - streamable-http
+        - --transport-host
+        - 0.0.0.0
+      env:
+        - name: MODE
+          value: "streamable-http"
+        - name: PORT
+          value: "8080"
+        - name: HOST
+          value: "0.0.0.0"
+
+  # External Firecrawl MCP (mcp.firecrawl.dev). Bearer apiKey.
+  firecrawl:
+    enabled: true
+    mcp:
+      name: firecrawl
+      mode: external
+      path: /mcp/firecrawl
+      backendPath: /v2/mcp
+      externalHost: mcp.firecrawl.dev
+      externalPort: 443
+      tls: true
+      auth:
+        enabled: true
+        secretName: firecrawl-token
+        header: Authorization
+    externalSecret:
+      enabled: true
+      secretName: firecrawl-token
+      data:
+        - secretKey: apiKey
+          key: ai/camer/digital/prod/env
+          property: firecrawl_api_key
+
+  # External Context7 MCP (mcp.context7.com). apiKey (default header).
+  context7:
+    enabled: true
+    mcp:
+      name: context7
+      mode: external
+      path: /mcp/context7
+      backendPath: /mcp
+      externalHost: mcp.context7.com
+      externalPort: 443
+      tls: true
+      auth:
+        enabled: true
+        secretName: context7-token
+    externalSecret:
+      enabled: true
+      secretName: context7-token
+      data:
+        - secretKey: apiKey
+          key: ai/camer/digital/prod/env
+          property: context7_api_key
+
+  # External Refero design-reference MCP (api.refero.design). Bearer apiKey.
+  # Requires a Refero Pro subscription (8k tool calls/mo). See ADR-0027.
+  refero:
+    enabled: true
+    mcp:
+      name: refero
+      mode: external
+      path: /mcp/refero
+      backendPath: /mcp
+      externalHost: api.refero.design
+      externalPort: 443
+      tls: true
+      auth:
+        enabled: true
+        secretName: refero-token
+        header: Authorization
+    externalSecret:
+      enabled: true
+      secretName: refero-token
+      data:
+        - secretKey: apiKey
+          key: ai/camer/digital/prod/env
+          property: refero_api_key

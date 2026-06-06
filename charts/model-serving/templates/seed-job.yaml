@@ -50,14 +50,14 @@ spec:
               # huggingface_hub 1.x: the CLI is `hf` (huggingface-cli is removed)
               # and the accelerator is Xet (hf_transfer is gone — the `[hf_transfer]`
               # extra doesn't exist and HF_HUB_ENABLE_HF_TRANSFER is a no-op now).
-              # HF_XET_HIGH_PERFORMANCE enables Xet's fast path; HF_TOKEN (if set)
-              # lifts the anonymous rate limit that otherwise throttles the pull.
+              # NOTE: HF_XET_HIGH_PERFORMANCE is deliberately NOT set — its parallel
+              # in-memory chunk buffering OOM-killed the seed at 2Gi (exit 137).
+              # Plain Xet still downloads fine within a bounded memory footprint;
+              # HF_TOKEN (below) lifts the anonymous rate limit for throughput.
               pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
               hf download {{ .Values.model.hfRepo }} --local-dir "$MODEL_DIR"
               echo "Seed complete."
           env:
-            - name: HF_XET_HIGH_PERFORMANCE
-              value: "1"
             {{- if .Values.seedJob.hfToken.enabled }}
             - name: HF_TOKEN
               valueFrom:

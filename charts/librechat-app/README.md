@@ -43,7 +43,6 @@ Plus this chart's own templates:
 | `librechat-main-config` | `converse_openai_api_key` |
 | `librechat-mcp-cd-credentials` | `client_id`, `client_secret` |
 | `librechat-mcp-github` | `client_id`, `client_secret` |
-| `librechat-mcp-coder-credentials` | `client_id`, `client_secret` |
 | `librechat-s3-config` | `s3_region_name`, `s3_access_key_id`, `s3_secret_access_key`, `s3_bucket_name` |
 | `librechat-websearch-config` | `serper_api_key`, `firecrawl_api_key`, `jina_api_key` |
 

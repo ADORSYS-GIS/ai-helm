@@ -69,7 +69,10 @@ seedJob:
       memory: 1Gi
     limits:
       cpu: "2"
-      memory: 2Gi
+      # 6Gi: the ~8GB pull streams to the PVC, but Xet keeps several chunk
+      # buffers + the safetensors verify in RAM. 2Gi OOM-killed it (exit 137);
+      # 6Gi gives comfortable headroom without HF_XET_HIGH_PERFORMANCE.
+      memory: 6Gi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Namespace-scoped ServingRuntime (vLLM + LMCache). Shipped with the app because
