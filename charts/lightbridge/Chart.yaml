@@ -1,0 +1,44 @@
+apiVersion: v2
+name: lightbridge
+description: |
+  App-of-Apps orchestrator for the Lightbridge authz stack. Renders THREE
+  ArgoCD Application CRs:
+
+    1. lightbridge-secrets — the ExternalSecrets (api client secret + CNPG S3
+                             backup creds) the DB + app depend on (leaf chart,
+                             sync-wave 0)
+    2. lightbridge-db      — CloudNativePG Cluster (lightbridge-main-db) +
+                             barman ObjectStore + ScheduledBackup + PodMonitor
+                             (leaf chart, sync-wave 1)
+    3. lightbridge-app     — the Lightbridge workload (upstream Helm chart,
+                             deployed as an ArgoCD source) with the api (main)
+                             + mcp components + its ingress TLS Certificates via
+                             the per-env kustomize overlay (sync-wave 2)
+
+  Same orchestrator-plus-leaves intent as coder (ADR-0019) — rendered as direct
+  Application CRs rather than an ApplicationSet because the children are fixed +
+  heterogeneous (two local Helm charts, one upstream chart + cert overlay),
+  which an ApplicationSet List generator handles poorly. The chart owns NO
+  workload resources directly — it owns the three child Applications that own
+  everything.
+
+  Replaces the old flat `lightbridge-backend` app. The opa + usage components
+  and the lightbridge-usage-db are DROPPED (OPA removed per ADR-0021; usage
+  unused). Namespace stays `converse`.
+type: application
+version: 1.0.0
+appVersion: "0.8.1"
+keywords:
+  - lightbridge
+  - authz
+  - api-keys
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

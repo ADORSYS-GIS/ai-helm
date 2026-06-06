@@ -1,0 +1,105 @@
+{{- /*
+lightbridge App-of-Apps orchestrator — renders three child Application CRs:
+  • lightbridge-secrets — local ExternalSecrets leaf chart (single source).
+  • lightbridge-db      — local CNPG leaf chart (single source).
+  • lightbridge-app     — upstream Lightbridge chart (deployed as an ArgoCD
+                          source, like the old flat app) + the ingress
+                          Certificates via the per-env kustomize overlay
+                          (second source).
+All target home-remote (ADR-0017 guard via
+lightbridge.argocd.destinationClusterRef). Rendered as direct Application CRs
+rather than an ApplicationSet because the children are fixed + heterogeneous —
+see ADR-0019 (coder is the canonical example).
+*/ -}}
+{{- $a := .Values.argocd -}}
+{{- if .Values.secrets.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.secrets.appName }}
+  namespace: {{ $a.namespace | default "argocd" }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.secrets.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    repoURL: {{ $a.repoURL | quote }}
+    targetRevision: {{ $a.targetRevision | quote }}
+    path: {{ .Values.secrets.chartPath | quote }}
+    helm:
+      releaseName: {{ .Values.secrets.releaseName | quote }}
+  destination:
+    {{- include "lightbridge.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.db.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.db.appName }}
+  namespace: {{ $a.namespace | default "argocd" }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.db.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    repoURL: {{ $a.repoURL | quote }}
+    targetRevision: {{ $a.targetRevision | quote }}
+    path: {{ .Values.db.chartPath | quote }}
+    helm:
+      releaseName: {{ .Values.db.releaseName | quote }}
+  destination:
+    {{- include "lightbridge.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.app.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.app.appName }}
+  namespace: {{ $a.namespace | default "argocd" }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.app.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  sources:
+    # Source A — the upstream Lightbridge workload (Helm chart as an ArgoCD
+    # source). releaseName stays `lightbridge` so workload resource names
+    # don't churn vs the old flat app.
+    - repoURL: {{ .Values.app.chart.repoURL | quote }}
+      chart: {{ .Values.app.chart.name | quote }}
+      targetRevision: {{ .Values.app.chart.targetRevision | quote }}
+      helm:
+        releaseName: {{ .Values.app.releaseName | quote }}
+        valuesObject:
+          {{- toYaml .Values.app.values | nindent 10 }}
+    # Source B — app-scoped deps (ingress Certificates) via the per-env
+    # kustomize overlay in this repo; issuer patched per environment.
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      path: {{ .Values.app.depsOverlay | quote }}
+  destination:
+    {{- include "lightbridge.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
