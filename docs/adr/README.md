@@ -41,6 +41,7 @@ how thinking evolved.
 | [0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md) | Burst control, budgeting & billing via dual-plane (internal/external) AuthConfigs | Proposed | 2026-06-04 | supersedes [0003](./0003-skip-opa-for-service-accounts.md) |
 | [0022](./0022-self-hosted-gpu-model-federated-into-gateway.md) | Self-hosted GPU model (Qwen3-4B, KServe/Knative + vLLM + LMCache) federated into the gateway as a public-FQDN backend | Proposed | 2026-06-05 | exception to [0017](./0017-home-remote-destination-invariant.md) |
 | [0023](./0023-grafana-stateless-no-pvc.md) | Grafana runs stateless (no PVC) — dashboards-as-code + provisioned datasources; persistence (if ever) goes to an external DB | Accepted | 2026-06-06 | builds on [0020](./0020-observability-app-of-apps-orchestrator.md) |
+| [0024](./0024-right-size-observability-tiny.md) | Right-size observability to a tiny footprint (cluster + Envoy AI usage, no alerting) — fix Mimir PDB sync bug, drop dead components + Alertmanager | Accepted | 2026-06-06 | builds on [0020](./0020-observability-app-of-apps-orchestrator.md), [0005](./0005-per-user-attribution-via-authorino-headers.md) |
 
 ## Status legend
 
