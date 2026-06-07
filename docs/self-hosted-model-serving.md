@@ -676,9 +676,60 @@ force them):
 | **Thinking** (`enable_thinking=True`) | 0.6 | 0.95 | 20 | 0 | **Do NOT use greedy decoding** (repetition loops) |
 | **Non-thinking** (`enable_thinking=False`) | 0.7 | 0.8 | 20 | 0 | — |
 
-`presence_penalty` 0–2 is the lever for repetition. Card-recommended output budget
-is ~32,768 tokens (≤38,912 for hard problems); our catalog advertises
-`maxOutputTokens: 8192` (a 16k-context, single-GPU PoC ceiling, not a model limit).
+`presence_penalty` 0–2 is the lever for repetition.
+
+### 12.1 Context window & output length — operating limits (read this)
+
+This is the **owned / cheap / private / low-stakes** tier. It is **not** a drop-in
+for the frontier SaaS models we federate — route quality-critical, high-concurrency,
+or large-context/long-output work to those. Good fits here: routing/classification,
+structured extraction, summarization, simple RAG Q&A, straightforward code
+completion, well-scoped agent steps, drafting.
+
+**The window is 16,384 tokens (prompt + completion, combined), and it's a HARD cap
+— a deliberate VRAM choice, not a model limit.** Qwen3-4B is natively 32,768
+(→131,072 with YaRN), but the KV cache is what doesn't fit on a 12 GB A2000:
+
+| Context | KV cache for ONE full-length request (fp16, ~0.1–0.15 MB/token) | On a 12 GB A2000? |
+|---|---|---|
+| **16k (current)** | ~2–2.4 GB | fits — and *only* because LMCache spills overflow KV to the CPU pool |
+| 32k (native) | ~4–4.7 GB | no on-GPU; needs heavy LMCache CPU offload (latency cost) |
+| 131k (YaRN) | **~12–19 GB for one request** | **no** — exceeds the whole card |
+
+Budget: 12 GB × 0.90 util ≈ 10.8 GB − ~8 GB weights − ~1–1.5 GB overhead ≈ only
+**1.5–2 GB on-GPU for KV** (~10–14k tokens). That's why `--max-model-len=16384`
+(and why LMCache is load-bearing here, not just for prefix reuse).
+
+**What this means for callers (developers):**
+- A client that front-loads a big prompt (e.g. **50k tokens) gets a hard `400`**
+  ("maximum context length is 16384… you requested N"). A client that sends ~2k is
+  fine. Well-behaved clients (opencode) read `/v1/models/info` (`contextLength:
+  16384`) and self-limit; **route big-context work to the SaaS models** (e.g.
+  `deepseek-v4-flash` advertises ~1M).
+- **⚠️ Output length is the binding constraint for hard dev work.** Qwen's card:
+  *"use an output length of 32,768 tokens for most queries… 38,912 for highly
+  complex problems such as math and programming competitions… this provides the
+  model space to generate detailed responses, enhancing performance."* We can't
+  give that — the **whole window is 16k** (and the catalog caps output at 8k). The
+  **thinking mode also spends output tokens on `<think>`**, so a hard
+  coding/reasoning task can exhaust the budget and get a **truncated / degraded**
+  answer. For long-output coding/math, **route to a SaaS model**, or disable the
+  thinking mode (`enable_thinking=false`) to save tokens, or accept shorter answers.
+
+**Can we get more context here? Not to 130k.**
+- **YaRN/131k is not viable on this card** — the KV alone (~12–19 GB/request)
+  exceeds the GPU, and Qwen warns static YaRN *"may impact performance on shorter
+  texts… we do not recommend enabling YaRN if the average context ≤ 32,768"* — it
+  would hurt the common short-prompt case to buy a capability the hardware can't
+  serve. (A bigger GPU is the only honest route to 128k.)
+- Realistic levers (neither reaches 130k): **AWQ-INT4 weights** (~2.5 GB vs ~8 GB)
+  free ~5.5 GB → ~32–48k context + more concurrency (cost: small quality drop, a
+  vetted quant); or **raise `LMCACHE_MAX_LOCAL_CPU_SIZE`** (host has RAM) → ~32k at
+  BF16, at a long-context latency cost.
+
+**Decision (2026-06-07): keep 16k / 8k output for the PoC** — it fits, it's
+advertised, and it matches this tier's role. The upgrade path if needed is
+AWQ-INT4 → ~32k; YaRN/130k is out of scope on a single 12 GB card.
 
 ---
 
