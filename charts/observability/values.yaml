@@ -527,6 +527,16 @@ children:
             monitor:
               enabled: true
               interval: 60s
+              # ⚠️ MANDATORY for kube-state-metrics. ksm emits object metrics
+              # ABOUT other namespaces, carrying the observed object's own
+              # `namespace`/`pod`/`node` labels. Without honorLabels the scrape
+              # overwrites `namespace` with ksm's OWN namespace (observability)
+              # and shoves the real value into `exported_namespace` — so every
+              # kube_pod_info/kube_deployment_*/… shows namespace=observability
+              # and the Kubernetes dashboards' namespace/pod pickers list only
+              # `observability`. honorLabels keeps the metric's own labels.
+              # (Diagnosed 2026-06-07; see datasource-audit doc.)
+              honorLabels: true
           resources:
             requests: { cpu: 50m,  memory: 128Mi }
             limits:   { cpu: 250m, memory: 256Mi }
@@ -710,6 +720,20 @@ children:
                 max_join_retries: 20
                 min_join_backoff: 1s
                 max_join_backoff: 1m
+
+              # ── Query queue depth ──────────────────────────────────────────
+              # Fixes "429 too many outstanding requests" seen on dense dashboards
+              # (CloudNativePG, etc.): a single dashboard load fires dozens of
+              # concurrent range queries. With the query-scheduler disabled the
+              # query-frontend queues them, and its default cap is only 100
+              # per-tenant → bursts get 429'd. Raise it. (Mimir moved this knob out
+              # of `limits` in 5.x — its home with the scheduler off is `frontend`.)
+              frontend:
+                max_outstanding_per_tenant: 2048
+              # Let the single querier run more concurrent queries so the queue
+              # actually drains instead of just buffering deeper (default 16).
+              querier:
+                max_concurrent: 32
 
               ingester:
                 ring:
@@ -1425,12 +1449,8 @@ children:
                   type: file
                   options:
                     path: /var/lib/grafana/dashboards/infrastructure
-                - name: gitops
-                  orgId: 1
-                  folder: "GitOps"
-                  type: file
-                  options:
-                    path: /var/lib/grafana/dashboards/gitops
+                # GitOps/ArgoCD provider removed — ArgoCD runs on the homeos
+                # control-plane cluster, not here; no argocd_* metrics to show.
 
           # alerting:
           #   contactpoints.yaml:
@@ -1617,44 +1637,73 @@ children:
                 gnetId: 13639
                 revision: 2
                 datasource: Loki
-              # Tempo operations via service graph metrics in Mimir
+              # Tempo operations via service graph metrics in Mimir.
+              # Nested datasource form → list-form substitution (see cnpg note).
               tempo-operations:
                 gnetId: 18030
                 revision: 1
-                datasource: Mimir
-              # OpenTelemetry + Tempo traces
+                datasource:
+                  - name: DS_PROMETHEUS
+                    value: mimir
+              # OpenTelemetry + Tempo traces. Nested form; its DS_PROMETHEUS input
+              # is the Tempo datasource here (trace queries). Empty until gateway
+              # traffic generates spans.
               otel-tempo:
                 gnetId: 23242
                 revision: 1
-                datasource: Tempo
+                datasource:
+                  - name: DS_PROMETHEUS
+                    value: tempo
 
             # ── Infrastructure ────────────────────────────────────────────
             infrastructure:
-              # Traefik v2/v3 — modern dashboard with request rates, errors, latency
+              # ⚠️ Traefik 17931 is an INFLUXDB dashboard (__inputs:
+              # DS_INFLUXDB-TRAEFIK + DS_LOKI) — its metric panels speak InfluxQL,
+              # not PromQL, so it cannot render against Mimir regardless of
+              # datasource mapping. TODO: replace with a Prometheus-native Traefik
+              # dashboard (Traefik exposes prometheus metrics) before relying on
+              # this panel. Left mapped to Mimir so the chart still imports it.
               traefik:
                 gnetId: 17931
                 revision: 12
                 datasource: Mimir
-              # CloudNativePG — official CNPG dashboard
+              # CloudNativePG — official CNPG dashboard.
+              # Uses the NESTED datasource form ("uid": "${DS_PROMETHEUS}"), which
+              # the grafana chart's string-form `datasource:` sed can't rewrite
+              # (it only matches single-line "datasource": "...",). Use the list
+              # form to substitute the input tokens directly → the real datasource
+              # UIDs. (DS_EXPRESSION is Grafana's built-in expression DS.)
               cnpg:
                 gnetId: 20417
                 revision: 3
-                datasource: Mimir
-              # Redis — monitors the externally-managed redis-ha (home-os)
+                datasource:
+                  - name: DS_PROMETHEUS
+                    value: mimir
+                  - name: DS_EXPRESSION
+                    value: __expr__
+              # Redis — monitors the externally-managed redis-ha (home-os).
+              # Nested datasource form → list-form substitution (see cnpg note).
               redis:
                 gnetId: 19157
                 revision: 3
-                datasource: Mimir
-              # cert-manager — certificate expiry and renewal tracking
+                datasource:
+                  - name: DS_PROMETHEUS
+                    value: mimir
+              # cert-manager — certificate expiry and renewal tracking.
+              # Nested datasource form → list-form substitution (see cnpg note).
               cert-manager:
                 gnetId: 20340
                 revision: 1
-                datasource: Mimir
-              # External Secrets Operator
+                datasource:
+                  - name: DS_PROMETHEUS
+                    value: mimir
+              # External Secrets Operator. Nested form; its input is DS_METRICS.
               external-secrets:
                 gnetId: 21640
                 revision: 1
-                datasource: Mimir
+                datasource:
+                  - name: DS_METRICS
+                    value: mimir
               # Envoy Gateway overview
               envoy-gateway:
                 gnetId: 24460
@@ -1667,17 +1716,12 @@ children:
                 datasource: Mimir
 
             # ── GitOps ────────────────────────────────────────────────────
-            gitops:
-              # ArgoCD operational overview — replaces gnetId 14584
-              argocd-operational:
-                gnetId: 19993
-                revision: 3
-                datasource: Mimir
-              # ArgoCD application-level detail
-              argocd-applications:
-                gnetId: 19974
-                revision: 3
-                datasource: Mimir
+            # REMOVED (2026-06-07): ArgoCD runs on the SEPARATE control-plane
+            # cluster (admin@homeos), not here on home-remote where the workloads
+            # live. There are no argocd_* metrics on this cluster to scrape, so
+            # these dashboards were permanently empty (no namespace/job to select).
+            # If ArgoCD self-monitoring is ever wanted, it belongs in an
+            # observability stack ON the homeos cluster, not this one.
 
           # Stateless by design: no PVC. Dashboards are managed as code
           # (grafana-operator + grafana-foundation-sdk JSON) and datasources are
