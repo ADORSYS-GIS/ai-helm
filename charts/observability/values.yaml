@@ -680,6 +680,29 @@ children:
             structuredConfig:
               multitenancy_enabled: false
 
+              # ── Memberlist ring self-heal ──────────────────────────────────
+              # Defense-in-depth against the ring-wedge failure (audit
+              # 2026-06-07): the ring needs intra-namespace gossip (:7946), which
+              # the Cilium deny-egress baseline blocks until the
+              # `allow-same-namespace` NetworkPolicy is applied. That policy IS
+              # durable + ArgoCD-managed (observability-secrets child, wave -3 →
+              # environments/base/deps/observability-secrets/allow-same-namespace.yaml),
+              # so a cold rebuild lands it before the stores. But if a pod starts
+              # before the policy is in effect (as happened when that app was
+              # enabled late, 9h after Mimir), the default config exhausts its
+              # join retries and the ring never re-forms → distributor logs
+              # `InstancesCount <= 0` and all metrics are silently dropped until a
+              # manual restart.
+              #   rejoin_interval: periodically re-resolve the gossip-ring DNS
+              #     and rejoin, so a transient startup partition heals on its own
+              #     within a minute once egress is permitted — no restart needed.
+              #   max_join_retries: more startup attempts before giving up.
+              memberlist:
+                rejoin_interval: 1m
+                max_join_retries: 20
+                min_join_backoff: 1s
+                max_join_backoff: 1m
+
               ingester:
                 ring:
                   replication_factor: 1
