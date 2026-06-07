@@ -83,9 +83,15 @@ servingRuntime:
   name: huggingfaceserver
   image:
     repository: kserve/huggingfaceserver
-    # Match the installed KServe (v0.17.0). `-gpu` = the CUDA build. If it won't
-    # pull, v0.17.0 (CPU) and v0.17.1[-gpu] also exist.
-    tag: v0.17.0-gpu
+    # v0.18.0-gpu bundles vLLM 0.19.0 (v0.17.x = vLLM 0.15.1). LMCache isn't
+    # separately pinned in the huggingfaceserver lockfile (it rides in via the
+    # vLLM extra), and on v0.17.0 the pair is skewed — vLLM's lmcache_connector
+    # calls `_lmcache_engine.get_kv_events()` which the bundled LMCache lacks
+    # ("AttributeError: 'LMCacheConnectorV1Impl' object has no attribute
+    # get_kv_events"), crashing every prefill. A newer image should ship an
+    # aligned LMCache. If v0.18.0 still skews, try v0.19.0-rc0-gpu (vLLM 0.20.0)
+    # or disable LMCache (lmcache.enabled:false) for vanilla vLLM. See ADR-0022.
+    tag: v0.18.0-gpu
     pullPolicy: IfNotPresent
   # Base requests only — the InferenceService overrides with the GPU resources.
   resources:
