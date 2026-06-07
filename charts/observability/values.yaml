@@ -124,6 +124,19 @@ children:
               enabled: true
             mounts:
               varlog: true
+            # Each Alloy pod must know which node it runs on, so the pod-log
+            # discovery field selector (spec.nodeName=$NODE_NAME) tails only this
+            # node's pods — matching the node-local /var/log/pods hostPath.
+            extraEnv:
+              - name: NODE_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: spec.nodeName
+            # Silence the "failed to send usage report" noise — the Cilium
+            # deny-egress baseline blocks Alloy's phone-home to stats.grafana.org,
+            # so every report attempt times out and logs an error. We don't need
+            # anonymous usage reporting on a private cluster.
+            enableReporting: false
             # Expose the OTLP receiver ports on the Alloy Service so in-cluster
             # OpenTelemetry collectors and SDKs can push traces / logs / metrics.
             extraPorts:
@@ -297,11 +310,66 @@ children:
                 }
 
                 // ── Logs: tail this node's pod logs ────────────────────────────
+                // Labels (namespace/pod/container) come from Kubernetes service
+                // discovery, NOT from parsing the file path out of the log line.
+                //
+                // ⚠️ The previous pipeline used a static `/var/log/pods/*/*/*.log`
+                // glob and a `stage.regex` WITHOUT a `source`, so the regex ran
+                // against the LOG LINE. Loki/Alloy/anything that logs a
+                // `/var/log/pods/<ns>_<pod>_.../<container>/` path (Loki's own
+                // flush/query logs do this constantly) poisoned the labels: a
+                // loki-0 stream got stamped namespace="redis-system",
+                // pod="redis-ha-redisinsight" etc. Result: logs WERE ingested but
+                // mislabeled, so filtering by namespace/pod in Grafana returned
+                // garbage — the "Loki only shows useless logs" symptom. (Verified
+                // live 2026-06-07.) Discovery-derived labels are authoritative and
+                // per-target, so they can't cross-contaminate.
+                discovery.kubernetes "pod_logs" {
+                  role = "pod"
+                  // Only this node's pods (matches the node-local /var/log/pods
+                  // hostPath the DaemonSet mounts). Needs the NODE_NAME env
+                  // (added via controller.extraEnv below).
+                  selectors {
+                    role  = "pod"
+                    field = "spec.nodeName=" + sys.env("NODE_NAME")
+                  }
+                }
+
+                discovery.relabel "pod_logs" {
+                  targets = discovery.kubernetes.pod_logs.targets
+                  rule {
+                    source_labels = ["__meta_kubernetes_namespace"]
+                    target_label  = "namespace"
+                  }
+                  rule {
+                    source_labels = ["__meta_kubernetes_pod_name"]
+                    target_label  = "pod"
+                  }
+                  rule {
+                    source_labels = ["__meta_kubernetes_pod_container_name"]
+                    target_label  = "container"
+                  }
+                  rule {
+                    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+                    target_label  = "service_name"
+                  }
+                  // Build the on-disk log path for loki.source.file to tail.
+                  rule {
+                    source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+                    separator     = "/"
+                    action        = "replace"
+                    replacement   = "/var/log/pods/*$1/*.log"
+                    target_label  = "__path__"
+                  }
+                  rule {
+                    action       = "replace"
+                    target_label = "job"
+                    replacement  = "kubernetes-pods"
+                  }
+                }
+
                 local.file_match "pod_logs" {
-                  path_targets = [{
-                    __path__ = "/var/log/pods/*/*/*.log",
-                    job       = "kubernetes-pods",
-                  }]
+                  path_targets = discovery.relabel.pod_logs.output
                 }
 
                 loki.source.file "pod_logs" {
@@ -310,16 +378,10 @@ children:
                 }
 
                 loki.process "kubernetes_labels" {
-                  stage.regex {
-                    expression = "/var/log/pods/(?P<namespace>[^/]+?)_(?P<pod>[^/]+)_[a-fA-F0-9-]+/(?P<container>[^/]+)/"
-                  }
-                  stage.labels {
-                    values = {
-                      namespace = "namespace",
-                      pod       = "pod",
-                      container = "container",
-                    }
-                  }
+                  // Labels already set by discovery.relabel; here we only enrich
+                  // from structured log bodies (level for filtering, trace_id for
+                  // the Loki→Tempo derived field). These parse the LOG LINE on
+                  // purpose and no-op on plain-text lines.
                   stage.json {
                     expressions = { level = "level", trace_id = "trace_id" }
                   }
@@ -988,12 +1050,15 @@ children:
           resultsCache:
             enabled: false
 
-          # Loki canary - synthetic observability
-          # Using Deployment kind (supported in chart 7.x) to avoid DaemonSet spawning 1 pod per node.
+          # Loki canary — DISABLED. It is a synthetic SLA probe that writes a
+          # timestamped line every second and immediately queries it back to
+          # measure ingest/read latency. On this small single-binary deployment
+          # its stdout is the dominant stream in Loki and its self-queries spam
+          # loki-0's logs — it was the bulk of the "Loki only shows useless logs"
+          # noise, while providing no signal we act on (no alerting wired). Drops
+          # one pod too. Re-enable only if we start tracking a Loki read/write SLO.
           lokiCanary:
-            enabled: true
-            kind: Deployment
-            replicas: 1
+            enabled: false
 
           singleBinary:
             replicas: 1
@@ -1276,7 +1341,13 @@ children:
                 - name: Tempo
                   type: tempo
                   uid:  tempo
-                  url:  http://tempo.observability.svc.cluster.local:3100
+                  # Tempo's HTTP query API (and the Grafana datasource) listens on
+                  # 3200 in the grafana/tempo single-binary chart — server.http_listen_port:
+                  # 3200, exposed as the `tempo-prom-metrics` Service port. There is NO
+                  # :3100 listener (that is Loki's default), so the old :3100 URL made
+                  # every Tempo query fail with "failed to reach". Verified live
+                  # 2026-06-07: `kubectl get svc tempo` exposes 3200, not 3100.
+                  url:  http://tempo.observability.svc.cluster.local:3200
                   jsonData:
                     tracesToLogsV2:
                       datasourceUid:    loki
