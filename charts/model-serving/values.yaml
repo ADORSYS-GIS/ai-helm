@@ -233,17 +233,18 @@ apiKey:
 # (Knative auto-TLS via cert-cloudflare issues the cert).
 edgeAuth:
   enabled: true
-  # ⚠️ SET THE REAL DOMAIN (+ add the DNS record) — must match ai-models
-  # vllmLocal.hostname. Pattern: <model>--poc.ssegning.com.
+  # ⚠️ SET THE REAL DOMAIN (+ ensure a DNS record → the home cluster) — must
+  # match ai-models vllmLocal.hostname. Pattern: <model>--poc.ssegning.com.
   host: qwen3-4b--poc.ssegning.com
+  entryPoint: websecure
   # cluster-local model the proxy forwards to (https + Host header for Knative).
   internalHost: qwen3-4b-predictor.converse-poc.svc.cluster.local
-  domainMapping:
-    enabled: true
+  tls:
+    issuer: cert-cloudflare        # ClusterIssuer (DNS-01) — works on the home cluster
+    secretName: qwen3-model-edge-tls
   proxy:
     image: caddy:2-alpine          # stock; default CMD runs /etc/caddy/Caddyfile
-    minScale: 1                     # tiny + always warm (the MODEL behind it scales from 0)
-    maxScale: 2
+    replicas: 1                     # tiny + always warm (the MODEL behind it scales from 0)
     responseTimeout: 300s          # allow the model's cold start (scale-from-zero)
     resources:
       requests: { cpu: 10m, memory: 32Mi }
