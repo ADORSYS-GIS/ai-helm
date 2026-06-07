@@ -1,23 +1,39 @@
-# prod (Cilium) — egress to grafana.com for Grafana's dashboard-download init.
+# prod (Cilium) — network policy for Grafana under the observability namespace's
+# default-deny baseline (BOTH `allow-dns` egress-deny AND `default-deny-ingress`).
 #
-# The grafana chart's `dashboards:` (gnetId) entries spawn a `download-dashboards`
-# init container that curls https://grafana.com/api/dashboards/<id>/.../download
-# at pod startup. Under the observability namespace's default-deny-egress baseline
-# (`allow-dns`) that external HTTPS is blocked, so the init container hangs on
-# each curl (--max-time 60) and the pod never leaves Init — which (with the pod
-# down) also stalls the ingress cert's HTTP-01 self-check. This grants the
-# grafana pod egress to grafana.com so the init completes.
-#
-# toFQDNs needs the DNS L7 rule so Cilium's DNS proxy learns grafana.com→IP.
+# The grafana chart's own NetworkPolicy is disabled, so without these allows:
+#   - EGRESS: the `download-dashboards` init can't reach grafana.com → pod hangs
+#     in Init; grafana can't reach its datasources.
+#   - INGRESS: nothing can reach the grafana pod (Traefik UI, grafana-operator
+#     external-instance management) — requests hang after TLS even though the pod
+#     is Ready (kubelet probes use host identity and bypass the policy).
+# (converse/librechat works because that namespace isn't default-deny-ingress.)
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: grafana-allow-grafanacom-egress
+  name: grafana-allow
   namespace: observability
 spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: grafana
+  ingress:
+    # Traefik (ingress controller) → the Grafana web UI.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: traefik
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+    # grafana-operator (same ns) → manages the external Grafana instance.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
   egress:
     # DNS (with L7 visibility so toFQDNs can resolve grafana.com).
     - toEndpoints:
@@ -32,11 +48,38 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
-    # grafana.com dashboard catalog over HTTPS.
+    # grafana.com dashboard catalog over HTTPS (download-dashboards init).
     - toFQDNs:
         - matchName: "grafana.com"
         - matchPattern: "*.grafana.com"
       toPorts:
         - ports:
             - port: "443"
+              protocol: TCP
+    # Datasources + Alertmanager adapter live in the observability namespace
+    # (Mimir / Loki / Tempo / grafana-apprise-adapter).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+---
+# The cert-manager HTTP-01 solver pods (ephemeral, one per challenge) must be
+# reachable by Traefik so the ACME challenge served on :8089 can be validated.
+# Without this they're caught by default-deny-ingress and every Traefik HTTP-01
+# cert in this namespace (e.g. grafana-tls) fails validation.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: acme-http01-solver-allow-ingress
+  namespace: observability
+spec:
+  endpointSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: traefik
+      toPorts:
+        - ports:
+            - port: "8089"
               protocol: TCP

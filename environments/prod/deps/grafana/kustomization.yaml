@@ -5,8 +5,9 @@ kind: Kustomization
 
 resources:
   - ../../../base/deps/grafana
-  # Cilium egress allow so Grafana's dashboard-download init can reach grafana.com
-  # under the observability deny-egress baseline.
+  # Cilium policy for Grafana under the observability default-deny baseline:
+  # egress (grafana.com download-init + datasources) AND ingress (Traefik UI,
+  # grafana-operator) + the ACME HTTP-01 solver ingress.
   - ciliumnetworkpolicy.yaml
 
 patches:
