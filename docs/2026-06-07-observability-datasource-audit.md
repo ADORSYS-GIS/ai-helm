@@ -318,10 +318,41 @@ With data flowing, the dashboards themselves had six distinct problems:
    by gateway access-logs; with no user traffic through `api.ai.camer.digital`
    yet, there is nothing to show. Populates once requests flow.
 
-**Known follow-up:** the **Traefik** dashboard (gnetId 17931) is an *InfluxDB*
-dashboard (InfluxQL panels) — it cannot render against Mimir regardless of
-datasource mapping. Flagged in-values; needs replacing with a Prometheus-native
-Traefik dashboard.
+**Round 2 (2026-06-08) — live verification against the running Grafana** (admin
+API: fetch every dashboard, grep for unresolved `${DS_*}`; resolve each gnetId's
+real title). Found the datasource-token fix worked for cnpg/cert-manager/redis/
+otel-tempo, but three gnetIds were the *wrong dashboard or a partial mapping*:
+
+- **External Secrets (21640)** uses BOTH `DS_METRICS` *and* `DS_PROMETHEUS` — only
+  the first was mapped, so `${DS_PROMETHEUS}` survived. Mapped both → mimir.
+- **gnetId 18030** ("tempo-operations") @ revision 1 is **not** a Tempo dashboard
+  — it resolves to an **InfluxDB k6 board** (the mystery "PHB-CD3 CLOUD" panel).
+  **Removed.**
+- **gnetId 21048** ("alloy-metrics") returns **404** on grafana.com → never
+  imported. **Removed** (the Alloy mixin isn't a single gnetId).
+- **Traefik (17931)** is an InfluxDB dashboard (InfluxQL, not PromQL) — cannot
+  render against Mimir. **Removed.** TODO: re-add Prometheus-native equivalents
+  for Alloy / Tempo-ops / Traefik via GrafanaDashboard CRs when verified.
+
+**AI Gateway / per-user (still empty) — pipeline is WIRED, just no gateway
+traffic.** Confirmed end-to-end: `charts/core-gateway` EnvoyProxy `accessLog` →
+`alloy.observability:4317` (OTLP), and OTLP logs DO now arrive in Loki
+(`exporter="OTLP"` stream present after the ingress fix §6). But the dashboard
+queries `{azp=~…} sum by (user_id)` and those labels only exist on **authenticated
+requests through the gateway** (`api.ai.camer.digital`, Keycloak JWT → `x-oidc-*`
+→ Alloy's `ai_gateway_user_attribution` extracts `user_id`/`azp`). The model was
+tested via the **direct Caddy endpoint** (`qwen3-4b--poc.ssegning.com`), which
+**bypasses the gateway**, so no per-user logs were produced. Send one authenticated
+request through the gateway and the dashboard populates. Not a bug.
+
+**CloudNativePG — "Database Namespace: converse" is CORRECT** (the only CNPG
+`Cluster` is `lightbridge` in `converse`, and it IS scraped). The wrong
+**"Operator Namespace: envoy-gateway-system"** is because the CNPG **operator**
+(external, `cnpg-system`) is not scraped — it ships no ServiceMonitor in our
+discovery, so the dashboard's operator-namespace variable matches the
+controller-runtime metrics that *do* exist (Envoy Gateway's). Database panels
+work; operator panels need a PodMonitor for the cnpg operator in `cnpg-system`
+(optional — it's an externally-managed namespace).
 
 ### 8. Follow-ups (not blocking)
 
