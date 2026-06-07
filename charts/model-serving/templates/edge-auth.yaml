@@ -29,7 +29,9 @@ data:
       handle @authorized {
         respond 200
       }
-      respond 401
+      handle {
+        respond 401
+      }
     }
 ---
 apiVersion: apps/v1
@@ -53,7 +55,10 @@ spec:
       containers:
         - name: authcheck
           image: {{ $ea.authCheck.image | quote }}
-          args: ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+          # No command/args override: the caddy image's default CMD is already
+          # `caddy run --config /etc/caddy/Caddyfile --adapter caddyfile`. (The
+          # image has no separate ENTRYPOINT, so setting args dropped the `caddy`
+          # binary → exec "run": not found.)
           ports:
             - containerPort: 8080
           env:
