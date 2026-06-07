@@ -118,6 +118,42 @@ inferenceService:
   # ADR-0022 (single-revision-at-a-time rationale).
   minReplicas: 0
   maxReplicas: 1
+
+  # Knative autoscaler tuning (KServe propagates these onto the revision). Short
+  # window + immediate scale-down so an IDLE old revision releases the GPU fast,
+  # minimising two-revisions-on-one-GPU during a rollout. (minReplicas:0 is what
+  # lets it reach zero; this just makes it quick.) NOTE: Knative is blue-green by
+  # design, so this is best-effort — a HARD "never two revisions" guarantee needs
+  # KServe RawDeployment + a Recreate strategy, which changes the public FQDN
+  # mechanism (see ADR-0022). Acceptable for a single-GPU home-lab PoC.
+  knativeAnnotations:
+    autoscaling.knative.dev/window: "30s"
+    autoscaling.knative.dev/scale-down-delay: "0s"
+    autoscaling.knative.dev/scale-to-zero-pod-retention-period: "0s"
+
+  # Probe tuning. On a cold start (minReplicas:0) the pod reloads multi-GB
+  # weights from the PVC, which exceeds the default probe timeouts → Knative's
+  # queue-proxy (:8012) reports "context deadline exceeded" and the pod is
+  # killed/restarted before it finishes loading. A long startupProbe holds off
+  # readiness/liveness until the model server is up; tcpSocket avoids guessing a
+  # health path. ~10 min startup budget (40 × 15s).
+  probes:
+    startup:
+      tcpSocket: { port: 8080 }
+      periodSeconds: 15
+      failureThreshold: 40
+      timeoutSeconds: 5
+    readiness:
+      tcpSocket: { port: 8080 }
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 3
+    liveness:
+      tcpSocket: { port: 8080 }
+      periodSeconds: 30
+      timeoutSeconds: 10
+      failureThreshold: 6
+
   # vLLM / huggingfaceserver passthrough args, tuned for a 12GB A2000 (Ampere:
   # no hardware FP8 → BF16/FP16 + AWQ-Marlin only). Exact arg spellings may need
   # a nudge against the installed runtime version — this is the test-pass knob.

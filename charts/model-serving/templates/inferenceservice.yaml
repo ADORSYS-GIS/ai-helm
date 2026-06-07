@@ -15,10 +15,16 @@ metadata:
     {{- include "common.labels.standard" . | nindent 4 }}
   annotations:
     argocd.argoproj.io/sync-wave: "1"
+    {{- range $k, $v := .Values.inferenceService.knativeAnnotations }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
 spec:
   predictor:
-    minReplicas: {{ .Values.inferenceService.minReplicas | default 1 }}
-    maxReplicas: {{ .Values.inferenceService.maxReplicas | default 1 }}
+    {{- /* NOT `| default 1`: that turns minReplicas:0 into 1 (0 is "empty" in
+           Go templates), which would keep the revision warm and never free the
+           single GPU. values.yaml always sets these, so reference them directly. */}}
+    minReplicas: {{ .Values.inferenceService.minReplicas }}
+    maxReplicas: {{ .Values.inferenceService.maxReplicas }}
     {{- with .Values.inferenceService.runtimeClassName }}
     runtimeClassName: {{ . }}
     {{- end }}
@@ -44,5 +50,19 @@ spec:
       {{- with .Values.inferenceService.resources }}
       resources:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.inferenceService.probes }}
+      {{- with .startup }}
+      startupProbe:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .readiness }}
+      readinessProbe:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .liveness }}
+      livenessProbe:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
 {{- end }}
