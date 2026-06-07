@@ -341,7 +341,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Deploy branch is not `main`** | Drift risk; manual root Application | Intentional (tag-based deploys are the next step) |
 | **LibreChat per-user gateway attribution impossible** | Coarse billing for chat users | By design (ADR-0021); handled inside LibreChat |
 | **Mimir 6.0 deferred (breaking)** | Pinned on 5.x | Currency audit tracks it |
-| **Mimir ring wedges if memberlist blocked at startup** | Distributor sees 0 ingesters (`InstancesCount <= 0`) → metrics silently dropped | `allow-same-namespace` in baseline; cold-start forms ring on first try; operational restart if wedged (audit 2026-06-07) |
+| **Mimir ring wedges if memberlist blocked at startup** | Distributor sees 0 ingesters (`InstancesCount <= 0`) → metrics silently dropped | **Guarded:** durable `allow-same-namespace` (observability-secrets child, wave -3) lands before stores + Mimir `memberlist.rejoin_interval: 1m` self-heals the residual ordering race (audit 2026-06-07) |
 
 ---
 

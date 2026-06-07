@@ -154,10 +154,34 @@ kubectl -n observability rollout restart deploy/mimir-distributor deploy/mimir-q
 
 This is a workload-cluster write — run it deliberately, not via the agent.
 
-### 3. Follow-ups (not blocking)
+### 3. Startup guard against a future ring wedge — DONE
 
-- Consider a startup guard so a future cold start can't wedge the ring again
-  (e.g. confirm `allow-same-namespace` is part of the durable hetzner-k8s
-  baseline — it should be, so a fresh deploy forms the ring on the first try).
+Investigated and closed. Key finding: **`allow-same-namespace` is already
+durable** — it is NOT a manual object as first suspected. It ships from *this*
+repo via the `observability-secrets` child Application (sync-wave **-3**, so it
+lands before the stores at wave -2):
+`environments/base/deps/observability-secrets/allow-same-namespace.yaml`
+(ingress **and** egress, `podSelector {}` ↔ same-ns). The
+`networkpolicy-*.yaml` baseline in **hetzner-k8s** intentionally does *not* carry
+it — putting a second copy there would mean two ArgoCD apps owning the same
+NetworkPolicy (sync ping-pong), so that was explicitly **not** done.
+
+So why did the ring still wedge? Ordering, not durability: the
+`observability-secrets` app was **enabled ~9h ago, long after** the Mimir pods
+(27h old) had started — so when those pods came up there was no
+`allow-same-namespace`, they exhausted their join retries, and never re-formed.
+On a genuine cold rebuild the wave ordering (-3 before -2) prevents this.
+
+The residual risk is the wave-ordering *race* (wave -3 starting before -2 ≠ the
+policy being fully in effect before -2 pods gossip). Closed with
+**defense-in-depth in this repo**: Mimir `memberlist.rejoin_interval: 1m`
+(+ `max_join_retries: 20`) in the `structuredConfig`. If the policy ever lands a
+beat late, components periodically re-resolve the gossip-ring DNS and rejoin, so
+a transient startup partition heals on its own within a minute — no manual
+restart. (This guard would have auto-fixed the current incident a minute after
+the secrets app was enabled.)
+
+### 4. Follow-ups (not blocking)
+
 - Mimir pod count is inherent to `mimir-distributed`; revisit monolithic Mimir
   only if the footprint becomes a problem.
