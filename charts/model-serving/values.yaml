@@ -221,31 +221,30 @@ apiKey:
     property: vllm_local_api_key
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Edge auth (the public entrypoint). The ksvc is cluster-local (above), so this
-# Traefik IngressRoute is the ONLY way in. It validates the gateway's Bearer key
-# via a forwardAuth middleware (a tiny stock Caddy check — KServe won't enforce
-# the key itself), then proxies to the cluster-local Knative service with the
-# Host rewritten so Knative routing + scale-from-zero still work. See ADR-0022.
+# Edge auth (the public entrypoint). The model ksvc is cluster-local (above), so
+# this tiny Caddy reverse-proxy — a PUBLIC Knative Service — is the only way in.
+# It validates the gateway's `Authorization: Bearer <vllm-local-api-key>` inline
+# (KServe won't enforce it) → 401 if wrong, else reverse-proxies over HTTPS to
+# the cluster-local model (in-cluster HTTP gets 301'd by Traefik's redirect, so
+# https + skip-verify), preserving Knative scale-from-zero. A DomainMapping gives
+# it a clean stable domain. No Traefik IngressRoute/middleware. See ADR-0022.
 #
-# Manual prerequisites: a Cloudflare DNS record for `host` → the home cluster's
-# public entry (proxied), and cert-cloudflare must be able to DNS-01 the zone.
+# Manual prerequisite: a DNS record for `host` → the home cluster's public entry
+# (Knative auto-TLS via cert-cloudflare issues the cert).
 edgeAuth:
   enabled: true
-  # ⚠️ SET THE REAL DOMAIN (+ add the Cloudflare record). Pattern: <model>--poc.ssegning.com.
+  # ⚠️ SET THE REAL DOMAIN (+ add the DNS record) — must match ai-models
+  # vllmLocal.hostname. Pattern: <model>--poc.ssegning.com.
   host: qwen3-4b--poc.ssegning.com
-  entryPoint: websecure
-  # cluster-local Knative target — Host is rewritten to this so Knative routes it.
+  # cluster-local model the proxy forwards to (https + Host header for Knative).
   internalHost: qwen3-4b-predictor.converse-poc.svc.cluster.local
-  service: qwen3-4b-predictor      # the cluster-local ksvc Service
-  servicePort: 80
-  tls:
-    issuer: cert-cloudflare        # ClusterIssuer (DNS-01) — works on the home cluster
-    secretName: qwen3-model-edge-tls
-  # forwardAuth check: a stock Caddy that returns 200 iff Authorization matches
-  # `Bearer <vllm-local-api-key>` (reuses the apiKey Secret above), else 401.
-  authCheck:
-    image: caddy:2-alpine          # latest 2.x (alpine); default CMD runs the Caddyfile
-    replicas: 1
+  domainMapping:
+    enabled: true
+  proxy:
+    image: caddy:2-alpine          # stock; default CMD runs /etc/caddy/Caddyfile
+    minScale: 1                     # tiny + always warm (the MODEL behind it scales from 0)
+    maxScale: 2
+    responseTimeout: 300s          # allow the model's cold start (scale-from-zero)
     resources:
       requests: { cpu: 10m, memory: 32Mi }
-      limits:   { cpu: 100m, memory: 64Mi }
+      limits:   { cpu: 200m, memory: 128Mi }
