@@ -4,7 +4,8 @@ fully controlled) and mounted into the `proxy` container at /etc/caddy via the
 bjw persistence entry `caddyfile` (which references this name). Same pattern as
 charts/librechat-app's own configmap.yaml.
 
-The proxy listens on :8081, validates the Bearer the model image ignores, and
+The proxy listens on :8090 (NOT :8081 — the model server's KServe gRPC port owns
+8081 in the shared pod netns), validates the Bearer the model image ignores, and
 reverse-proxies to the model over localhost:8080 (same pod). `{env.MODEL_API_KEY}`
 is a Caddy env placeholder (NOT a Helm action) — the value comes from the
 container env (the vllm-local-api-key Secret).
@@ -23,7 +24,7 @@ data:
       admin off
       auto_https off
     }
-    :8081 {
+    :8090 {
       @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
       respond @unauthorized 401
       reverse_proxy http://localhost:8080 {

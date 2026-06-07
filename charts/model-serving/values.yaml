@@ -138,7 +138,13 @@ modelServing:
                 key: api_key
           ports:
             - name: http
-              containerPort: 8080            # huggingfaceserver REST port
+              containerPort: 8080            # KServe REST port (--http_port)
+            - name: grpc
+              containerPort: 8081            # KServe gRPC port (--grpc_port, default 8081)
+              # ⚠️ The model server ALSO binds gRPC on 8081. In a single pod
+              # (shared netns) the sidecar must NOT use 8081 (it did → the gRPC
+              # server crashed with "Failed to bind to address [::]:8081"). The
+              # proxy is on 8090 below.
           # ── Probes for a SLOW-LOADING model server ──────────────────────────
           # `custom: true` so bjw uses our spec verbatim (without it bjw derives
           # the probe from the SERVICE port 8081 = the proxy, not the model).
@@ -222,13 +228,13 @@ modelServing:
                 key: api_key
           ports:
             - name: edge
-              containerPort: 8081
+              containerPort: 8090            # NOT 8081 — the model's gRPC owns 8081
           probes:
             readiness:
               enabled: true
               custom: true
               spec:
-                tcpSocket: { port: 8081 }
+                tcpSocket: { port: 8090 }
                 periodSeconds: 10
           resources:
             requests: { cpu: 10m, memory: 32Mi }
@@ -285,8 +291,8 @@ modelServing:
       type: ClusterIP
       ports:
         edge:
-          port: 8081
-          targetPort: 8081          # → the Caddy sidecar
+          port: 8090
+          targetPort: 8090          # → the Caddy sidecar (8081 is the model's gRPC)
 
   # Public entrypoint — a plain k8s Ingress (className traefik), no Traefik
   # IngressRoute CRD / DomainMapping. cert-manager's ingress-shim issues the TLS
