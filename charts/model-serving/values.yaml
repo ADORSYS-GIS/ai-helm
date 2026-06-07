@@ -126,17 +126,28 @@ inferenceService:
   minReplicas: 0
   maxReplicas: 1
 
-  # Knative autoscaler tuning (KServe propagates these onto the revision). Short
-  # window + immediate scale-down so an IDLE old revision releases the GPU fast,
-  # minimising two-revisions-on-one-GPU during a rollout. (minReplicas:0 is what
-  # lets it reach zero; this just makes it quick.) NOTE: Knative is blue-green by
-  # design, so this is best-effort — a HARD "never two revisions" guarantee needs
-  # KServe RawDeployment + a Recreate strategy, which changes the public FQDN
-  # mechanism (see ADR-0022). Acceptable for a single-GPU home-lab PoC.
+  # Knative autoscaler tuning (KServe propagates these onto the revision).
+  #
+  # ── Stay warm to avoid cold-start 504s ──────────────────────────────────────
+  # scale-to-zero-pod-retention-period: keep the LAST pod alive this long after
+  # it goes idle before actually scaling to zero. 5m means a burst of requests
+  # within 5min of the previous one hits a WARM pod (no ~30-60s weight reload).
+  # window 60s = the no-traffic averaging window before the idle clock starts, so
+  # effective warm time after the last request ≈ ~6min, then it sleeps (frees the
+  # GPU). This is the "last N minutes before sleep" knob the maintainer asked for.
+  #
+  # ⚠️ ROLLOUT TRADE-OFF: retention also makes an *old* revision linger ~5m
+  # holding the GPU during a deploy, so the new revision can't claim the single
+  # 12Gi A2000 until the old one's retention expires — a deploy can stall up to
+  # ~5min (it self-heals; minReplicas:0 still lets the old one go). Previously
+  # this was 0s for instant handoff. We accept the slower deploy to kill routine
+  # cold starts. To force a fast deploy: `kubectl delete pod` the old revision.
+  # The HARD fix (no overlap, no cold start) is RawDeployment + Recreate — bigger
+  # change, drops Knative (see ADR-0022 / doc §11.9). Acceptable for the PoC.
   knativeAnnotations:
-    autoscaling.knative.dev/window: "30s"
+    autoscaling.knative.dev/window: "60s"
     autoscaling.knative.dev/scale-down-delay: "0s"
-    autoscaling.knative.dev/scale-to-zero-pod-retention-period: "0s"
+    autoscaling.knative.dev/scale-to-zero-pod-retention-period: "5m"
 
   # Probe tuning. On a cold start (minReplicas:0) the pod reloads multi-GB
   # weights from the PVC, which exceeds the default probe timeouts → Knative's
@@ -257,7 +268,10 @@ edgeAuth:
   proxy:
     image: caddy:2-alpine          # stock; default CMD runs /etc/caddy/Caddyfile
     replicas: 1                     # tiny + always warm (the MODEL behind it scales from 0)
-    responseTimeout: 300s          # allow the model's cold start (scale-from-zero)
+    # Must exceed the model's cold start + a long generation, else THIS hop 504s
+    # before the request reaches the model. Keep ≥ ai-models qwen3-4b-local
+    # timeout.requestTimeout (both currently 600s). Path: Envoy(Hetzner)→Caddy→model.
+    responseTimeout: 600s          # allow cold start (scale-from-zero) + generation
     resources:
       requests: { cpu: 10m, memory: 32Mi }
       limits:   { cpu: 200m, memory: 128Mi }
