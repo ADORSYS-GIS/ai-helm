@@ -21,17 +21,27 @@ grafana:
 # Initial folder set. Each folder becomes a GrafanaFolder CR; dashboards
 # placed in a folder reference it by `spec.folderRef`.
 # Add new folders here as new dashboard areas appear.
+# resyncPeriod makes the operator periodically re-assert each folder into
+# Grafana. REQUIRED here because Grafana is stateless (emptyDir, ADR-0023): every
+# Grafana pod roll wipes operator-pushed folders, and the operator's cached
+# "ApplySuccessful" status otherwise leaves them un-recreated until a manual
+# operator restart — which then makes folderRef dashboards fail "folder not
+# found". With a resyncPeriod the folder self-heals within the period, before the
+# dashboards (which already carry their own resyncPeriod) retry.
 folders:
   - name: ai-gateway
     title: "AI Gateway"
+    resyncPeriod: 5m
   - name: applications
     title: "Applications"
+    resyncPeriod: 5m
   # Collector + tracing health (Alloy, Tempo) — purpose-built dashboards-as-code
   # for our single-binary/DaemonSet deployment, since the upstream Alloy (jsonnet
   # only) and Tempo (distributed-oriented) mixins don't fit. (GitOps/ArgoCD folder
   # removed — ArgoCD runs on the homeos cluster, not here.)
   - name: collectors
     title: "Collectors & Tracing"
+    resyncPeriod: 5m
 
 # Dashboards. Each entry becomes one GrafanaDashboard CR. Supply the JSON via
 # `file:` (preferred — keeps the source diffable in git), `json:` (inline) or
