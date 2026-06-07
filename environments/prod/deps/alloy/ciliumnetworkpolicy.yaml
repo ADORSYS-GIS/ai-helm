@@ -1,0 +1,54 @@
+# prod (Cilium) — egress AND ingress allows that unblock the Alloy collector.
+# Cilium gives node IPs the `remote-node`/`host` identity, so a plain ipBlock
+# can't match the API server; the reserved `kube-apiserver` entity is the
+# supported way. Alloy additionally needs to scrape every pod in the cluster
+# (CoreDNS pod IPs + all ServiceMonitor/PodMonitor targets across namespaces),
+# which the `cluster` entity grants.
+#
+# INGRESS: Alloy's OTLP receiver (:4317 gRPC / :4318 HTTP) accepts traces/logs/
+# metrics pushed by in-cluster OpenTelemetry collectors and SDKs (e.g.
+# core-gateway-traces in converse-gateway, keycloak-ha-otel). The observability
+# `default-deny-ingress` baseline + same-namespace-only allow would otherwise
+# drop those cross-namespace spans (Alloy `receiver_accepted_spans_total` stays
+# 0 → Tempo empty). `fromEntities: cluster` lets any in-cluster sender reach the
+# OTLP ports; same-namespace traffic (clustering, self-scrape) is already covered
+# by allow-same-namespace.
+#
+# Without the egress half, prometheus.operator.servicemonitors/podmonitors fail
+# to build their informers (`Get "https://10.43.0.1:443/api": i/o timeout`),
+# node discovery returns nothing, and Grafana metric panels stay empty.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: alloy-allow
+  namespace: observability
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: alloy
+  egress:
+    # API server (discovery informers + kubelet/cAdvisor/apiserver scrapes,
+    # all via the API server proxy) and every in-cluster scrape target.
+    - toEntities:
+        - kube-apiserver
+        - cluster
+    # DNS.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+  ingress:
+    # OTLP push from in-cluster collectors / SDKs (traces, logs, metrics).
+    - fromEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+            - port: "4318"
+              protocol: TCP
