@@ -1,8 +1,22 @@
 # ADR-0022: Self-hosted GPU model on KServe/Knative, federated into the gateway as a public-FQDN backend
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-06-05
 **Deciders:** @stephane-segning
+
+> **Accepted 2026-06-07 — serving end-to-end, with one design correction.** The
+> original "expose via a public Knative FQDN; the vLLM API key is the sole gate"
+> is **WRONG**: KServe's huggingfaceserver serves the OpenAI API itself and
+> **ignores `VLLM_API_KEY`** (verified — unauth + wrong-key both returned 200),
+> so a public route was an open GPU. Corrected design: the model ksvc is
+> **cluster-local**, and a tiny **Caddy auth-proxy** (plain Deployment + a Traefik
+> IngressRoute, cert-manager TLS) is the only public entrypoint — it enforces the
+> Bearer the gateway sends, then reverse-proxies over HTTPS to the cluster-local
+> model (scale-from-zero preserved). Other shipped realities: image
+> **`huggingfaceserver:v0.18.0-gpu`** (vLLM 0.19 — v0.17/vLLM 0.15.1 had an
+> LMCache `get_kv_events` skew); **no `--kv-cache-dtype=fp8`** (Ampere/dlpack);
+> **`minReplicas:0`** (single 12GB GPU, one revision at a time); 8Gi-host sizing.
+> Full as-built writeup: **`docs/2026-self-hosted-gpu-inference.md` §11**.
 
 ## Context
 
