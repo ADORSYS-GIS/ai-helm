@@ -1,12 +1,14 @@
 {{- /*
-Edge auth — the model's public entrypoint (the ksvc is cluster-local).
+Edge auth — a tiny Caddy reverse-proxy that IS the public entrypoint.
 
-A Traefik IngressRoute terminates the public domain and applies a forwardAuth
-middleware that validates the gateway's `Authorization: Bearer <vllm api key>`
-(KServe's huggingfaceserver won't enforce it), then proxies to the cluster-local
-Knative service with the Host rewritten so Knative routing + scale-from-zero
-still work. The forwardAuth target is a tiny stock Caddy that returns 200 iff
-the bearer matches, else 401. See ADR-0022.
+The model ksvc is cluster-local. This proxy is a PUBLIC Knative Service (so it
+gets Knative's working public domain + auto-TLS, no Traefik IngressRoute), which:
+  1. validates `Authorization: Bearer <vllm api key>` inline (KServe won't), 401 else;
+  2. reverse-proxies over HTTPS to the cluster-local model (in-cluster HTTP is
+     301'd by Traefik's redirect, so we go https + skip-verify), preserving
+     Knative scale-from-zero.
+A DomainMapping gives it a clean stable domain. The Hetzner gateway points at
+that domain and sends the Bearer (securityType: APIKey). See ADR-0022.
 */ -}}
 {{- if .Values.edgeAuth.enabled }}
 {{- $ea := .Values.edgeAuth }}
@@ -14,7 +16,7 @@ the bearer matches, else 401. See ADR-0022.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ $name }}-authcheck
+  name: {{ $name }}-proxy
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "common.labels.standard" . | nindent 4 }}
@@ -25,40 +27,36 @@ data:
       auto_https off
     }
     :8080 {
-      @authorized header Authorization "Bearer {env.MODEL_API_KEY}"
-      handle @authorized {
-        respond 200
-      }
-      handle {
-        respond 401
+      @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
+      respond @unauthorized 401
+
+      reverse_proxy https://{{ $ea.internalHost }} {
+        header_up Host {{ $ea.internalHost }}
+        transport http {
+          tls_insecure_skip_verify
+          dial_timeout 10s
+          response_header_timeout {{ $ea.proxy.responseTimeout | default "300s" }}
+        }
       }
     }
 ---
-apiVersion: apps/v1
-kind: Deployment
+# The public, authenticated entrypoint — a tiny Caddy Knative Service.
+apiVersion: serving.knative.dev/v1
+kind: Service
 metadata:
-  name: {{ $name }}-authcheck
+  name: {{ $name }}-proxy
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "common.labels.standard" . | nindent 4 }}
 spec:
-  replicas: {{ $ea.authCheck.replicas | default 1 }}
-  selector:
-    matchLabels:
-      app: {{ $name }}-authcheck
   template:
     metadata:
-      labels:
-        app: {{ $name }}-authcheck
-        {{- include "common.labels.standard" . | nindent 8 }}
+      annotations:
+        autoscaling.knative.dev/min-scale: {{ $ea.proxy.minScale | default 1 | quote }}
+        autoscaling.knative.dev/max-scale: {{ $ea.proxy.maxScale | default 2 | quote }}
     spec:
       containers:
-        - name: authcheck
-          image: {{ $ea.authCheck.image | quote }}
-          # No command/args override: the caddy image's default CMD is already
-          # `caddy run --config /etc/caddy/Caddyfile --adapter caddyfile`. (The
-          # image has no separate ENTRYPOINT, so setting args dropped the `caddy`
-          # binary → exec "run": not found.)
+        - image: {{ $ea.proxy.image | quote }}
           ports:
             - containerPort: 8080
           env:
@@ -70,90 +68,28 @@ spec:
           volumeMounts:
             - name: caddyfile
               mountPath: /etc/caddy
-          {{- with $ea.authCheck.resources }}
+          {{- with $ea.proxy.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
         - name: caddyfile
           configMap:
-            name: {{ $name }}-authcheck
+            name: {{ $name }}-proxy
+{{- if $ea.domainMapping.enabled }}
 ---
-apiVersion: v1
-kind: Service
+# Clean stable domain → the proxy ksvc (Knative auto-TLS issues the cert).
+apiVersion: serving.knative.dev/v1beta1
+kind: DomainMapping
 metadata:
-  name: {{ $name }}-authcheck
+  name: {{ $ea.host }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "common.labels.standard" . | nindent 4 }}
 spec:
-  selector:
-    app: {{ $name }}-authcheck
-  ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
----
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: {{ $name }}-edge-auth
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-spec:
-  forwardAuth:
-    address: http://{{ $name }}-authcheck.{{ .Release.Namespace }}.svc.cluster.local:8080/
----
-# Rewrite Host to the cluster-local Knative hostname so Knative's networking
-# (route match + activator scale-from-zero) accepts the proxied request.
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: {{ $name }}-edge-host
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-spec:
-  headers:
-    customRequestHeaders:
-      Host: {{ $ea.internalHost | quote }}
----
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: {{ $name }}-edge
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-spec:
-  entryPoints:
-    - {{ $ea.entryPoint | default "websecure" }}
-  routes:
-    - kind: Rule
-      match: Host(`{{ $ea.host }}`)
-      middlewares:
-        - name: {{ $name }}-edge-auth
-        - name: {{ $name }}-edge-host
-      services:
-        - name: {{ $ea.service }}
-          port: {{ $ea.servicePort | default 80 }}
-          passHostHeader: false
-  tls:
-    secretName: {{ $ea.tls.secretName }}
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: {{ $ea.tls.secretName }}
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-spec:
-  secretName: {{ $ea.tls.secretName }}
-  issuerRef:
-    name: {{ $ea.tls.issuer }}
-    kind: ClusterIssuer
-  dnsNames:
-    - {{ $ea.host }}
+  ref:
+    name: {{ $name }}-proxy
+    kind: Service
+    apiVersion: serving.knative.dev/v1
+{{- end }}
 {{- end }}
