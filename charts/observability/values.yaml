@@ -1655,12 +1655,16 @@ children:
 
             # ── Infrastructure ────────────────────────────────────────────
             infrastructure:
-              # traefik REMOVED (2026-06-08): gnetId 17931 is an INFLUXDB dashboard
-              # (__inputs: DS_INFLUXDB-TRAEFIK + DS_LOKI) — its panels speak
-              # InfluxQL, not PromQL, so it cannot render against Mimir. TODO:
-              # re-add a Prometheus-native Traefik dashboard (Traefik exposes
-              # prometheus metrics) once one is verified.
-              #
+              # Traefik — Official Kubernetes dashboard (Prometheus). Replaces the
+              # old gnetId 17931, which was an InfluxDB board (InfluxQL panels) that
+              # could not render against Mimir. 17347 is Prometheus-native; nested
+              # datasource form → list-form DS_PROMETHEUS substitution.
+              traefik:
+                gnetId: 17347
+                revision: 9
+                datasource:
+                  - name: DS_PROMETHEUS
+                    value: mimir
               # CloudNativePG — official CNPG dashboard.
               # Uses the NESTED datasource form ("uid": "${DS_PROMETHEUS}"), which
               # the grafana chart's string-form `datasource:` sed can't rewrite
