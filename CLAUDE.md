@@ -228,6 +228,32 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 - **OpenTelemetry Operator** — installed externally (`opentelemetry-system`; CRDs `opentelemetry.io`). This repo only defines `OpenTelemetryCollector` CRs (`charts/core-gateway`: the `-traces` collector → Alloy → Tempo) that the external operator reconciles. Don't re-add an otel-operator chart here. (The `-usage` collector was removed — usage/billing is handled via the Envoy AI Gateway + OAuth2 path; Envoy access logs go straight to Alloy → Loki for ADR-0005 per-user observability.)
 - **cert-manager** — controller (in `kube-system`, `--cluster-resource-namespace=kube-system`), CRDs, **and** the shared cluster-scoped ClusterIssuers (`cert-home-cert-http`, `self-signed-ca`, `cert-cloudflare`) are deployed by `home-os` (`charts/cert`, apps `cert` + `cert-remote`). home-os has **`config.enableGatewayAPI: true`** so cert-manager solves ACME HTTP-01 via `gatewayHTTPRoute` + honours the `cert-manager.io/cluster-issuer` gateway-shim. This repo only references issuers via annotations. ⚠️ The `cert-home-cert-envoy` issuer is **RETIRED** — `api.ai.camer.digital` TLS now comes from an **in-chart ns ACME `Issuer` + HTTP-01 `gatewayHTTPRoute`** solver (`charts/core-gateway`, `gateway.acmeHttp01.enabled`), no DNS token. `cert-cloudflare` DNS-01 needs a `cloudflare-secret` (Cloudflare API token) in kube-system that is currently **missing** — only matters if you want DNS-01/wildcards. Don't re-add a cert chart here.
 
+## Documentation conventions — "update the docs" means ALL of them
+
+> **Maintainer's rule:** when the maintainer says **"update documentation"** or
+> **"upgrade the doc"**, they mean **every** affected surface, not just the one
+> nearest doc. For any substantive change, sweep this whole set and update what's
+> relevant:
+> 1. **The design/subsystem doc** under `docs/` (or a new one). Long-lived
+>    subsystem guides drop the date prefix (`self-hosted-model-serving.md`, not
+>    `2026-…`); dated files are for point-in-time change-logs/audits.
+> 2. **ADRs** — write a new ADR for any decision with non-obvious consequences or
+>    a locked-in contract; amend a prior decision with a *new* ADR (the old body
+>    is immutable). Update `docs/adr/README.md`.
+> 3. **`docs/arc42.md`** — the formal architecture description. New chart → §5
+>    building-block table; new ADR → §9 decisions; new risk → §11.
+> 4. **`docs/architecture.md`** — the system map (topology, sync waves, "where
+>    every choice is documented").
+> 5. **`docs/README.md`** — the docs index.
+> 6. **`CLAUDE.md`** (this file) — if a convention/contract/gotcha changed.
+> 7. **User memory** — if it's a durable preference or hard-won lesson.
+
+**Self-hosted models/agents:** the reusable pattern + the "deploy the next one"
+checklist live in [`docs/self-hosted-model-serving.md`](docs/self-hosted-model-serving.md)
+§14 (chart `charts/model-serving`; pricing per ADR-0028; reference model Qwen3-4B).
+Follow it when adding a model — don't reinvent the cluster-local + Caddy auth-proxy
+exposure (KServe ignores `VLLM_API_KEY`) or the €/hour-TCO → cost-recovery pricing.
+
 ## When you finish substantive work
 
 - Update `docs/README.md` index if you added a doc.

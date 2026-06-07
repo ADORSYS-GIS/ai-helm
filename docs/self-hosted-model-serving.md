@@ -1,19 +1,29 @@
-# Self-hosted GPU inference: Qwen3-4B on KServe + vLLM + LMCache
+# Self-hosted model serving on the home GPU (KServe + vLLM + LMCache)
 
-**The *why* is [ADR-0022](./adr/0022-self-hosted-gpu-model-federated-into-gateway.md). This is the *how*** —
-the build plan, the VRAM math, the exact manifests/flags, the security model, and
-how to verify it end-to-end.
+**This is the platform pattern for serving *any* self-hosted model or agent on the
+home GPU**, plus the reference build for the first one. `charts/model-serving` is
+the reusable chart; **Qwen3-4B is the reference deployment** documented in detail
+throughout (§1–§13). The *why* of the pattern is
+[ADR-0022](./adr/0022-self-hosted-gpu-model-federated-into-gateway.md) (federation
++ exposure) and [ADR-0028](./adr/0028-owned-hardware-model-pricing.md) (how we
+price owned-hardware models). The *how* of adding the **next** model is the
+checklist in **§14**.
+
+> **Reading order.** New here / want the as-built truth → **§11 "What actually
+> shipped"** (real architecture, full tool+argument inventory,
+> goods/averages/bads/caveats, backlog). Adding another model/agent → **§14
+> checklist**. Model facts → **§12 model card**. Cost → **§13 cost model**.
+> Everything in §1–§10 is the build narrative; the VRAM math, seed-PVC mechanics,
+> and vLLM/LMCache flags there are all current.
 
 > Status: **SHIPPED & serving (2026-06-07)** — Qwen3-4B answers completions
-> end-to-end. ⚠️ **The exposure/security design described in the older sections
-> ("public FQDN + the vLLM API key is the sole gate") was REPLACED in
-> production.** KServe's huggingfaceserver ignores `VLLM_API_KEY`, so that "sole
-> gate" never actually existed — the model is now **cluster-local behind a Caddy
-> auth-proxy**. Read **§11 "What actually shipped (2026-06-07)"** at the bottom
-> for the real architecture, the full tool/argument inventory, the
-> goods/averages/bads/caveats, and the improvement backlog. The sections above
-> remain accurate for the VRAM math, seed-PVC mechanics, and KServe/vLLM/LMCache
-> flags.
+> end-to-end, including agentic **tool calling** (`--enable-auto-tool-choice
+> --tool-call-parser hermes`, see §11.3/§14). ⚠️ **The exposure/security design in
+> the older sections ("public FQDN + the vLLM API key is the sole gate") was
+> REPLACED in production.** KServe's huggingfaceserver ignores `VLLM_API_KEY`, so
+> that "sole gate" never existed — the model is now **cluster-local behind a Caddy
+> auth-proxy** (§11.1). The model is no longer billed at $0: it carries
+> **cost-recovery pricing** (ADR-0028, §13).
 
 ---
 
@@ -627,12 +637,13 @@ is ~32,768 tokens (≤38,912 for hard problems); our catalog advertises
 
 ---
 
-## 13. Cost model — €/hour TCO (Erlangen, 2026)
+## 13. Cost model — €/hour TCO → catalog pricing (Erlangen, 2026)
 
-The catalog bills users **$0** for this model (it runs on owned hardware; a
-per-token charge would double-count a sunk cost). The number below is the **real
-operating cost** — for internal *make-vs-buy* accounting (is self-hosting Qwen3-4B
-actually cheaper than DeepInfra/Fireworks for our traffic?), **not** a user price.
+This model is **not** billed at $0. Per [ADR-0028](./adr/0028-owned-hardware-model-pricing.md)
+we charge **cost-recovery** pricing derived from the hourly TCO below, so budgets,
+metering, and make-vs-buy comparisons all reflect reality. §13.1–13.4 derive the
+**€/hour operating cost**; §13.5 maps it to the **per-token catalog price** that
+ships in `charts/ai-models` (`qwen3-4b-local`).
 
 ### 13.1 Inputs & choices (all documented)
 
@@ -689,16 +700,90 @@ Energy = **0.095 kWh/h × €0.34/kWh = €0.0323 / h**.
 idle hour ≈ capex-only (€0.018/h) plus the always-on host baseline; the €0.05
 figure is the cost of an hour spent actually serving.
 
-### 13.5 Indicative per-token (context only — not billed)
+### 13.5 €/hour → per-token catalog price (cost-recovery, ADR-0028)
 
-If saturated at a sustained **~50 output tok/s** aggregate (`--max-num-seqs 4`,
-BF16, no FP8, `--enforce-eager` on Ampere) → 180,000 tok/h:
+**The fork is throughput × utilization, not the hourly number.** Two reference
+points bound it:
 
-> €0.050 / 180,000 ≈ **€0.28 per 1M output tokens** *at full utilization*.
+| Basis | Assumed sustained output | €/1M output | Note |
+|---|---|---|---|
+| **Marginal** (GPU saturated) | ~50 tok/s = 180k tok/h | €0.050 / 180k ≈ **€0.28** | best case; treats capex as sunk |
+| **Cost-recovery** (realistic util) | the GPU is **idle most of the time** (scale-to-zero, bursty PoC) — say ~10 % duty → effective ~5k–18k tok/h averaged against a continuously-accruing capex | **≈ €0.8–1.4** | what actually recovers the €155/yr capex + power |
 
-Real-world utilization is far below 100 % (scale-to-zero, bursty PoC traffic), so
-the effective €/token is higher — capex amortizes whether or not tokens flow. As a
-make-vs-buy yardstick: DeepInfra-class 4B output is ~$0.02–0.05/1M, so **at this
-scale self-hosting is a control/learning play, not a cost win** — it only pencils
-out if the box runs other workloads too (it does) and the GPU would otherwise be
-idle. Every assumption above is a knob; re-run with your own utilization.
+We chose **cost-recovery** (ADR-0028): a per-token price that recovers the real
+cost at the low/bursty utilization a PoC actually sees, rather than the
+saturated-marginal floor. Converted to USD (×1.087) and split across the
+**weighted** strategy (decode is the throughput bottleneck → the cost driver;
+prefill is cheap; an LMCache prefix-cache hit is near-free):
+
+| `pricing.standard` (USD / 1M tokens) | Value | Rationale |
+|---|---|---|
+| `outputPer1M` | **$1.00** | the decode cost driver, at cost-recovery utilization |
+| `inputPer1M` | **$0.15** | prefill is ~5–7× cheaper per token than decode |
+| `cachedInputPer1M` | **$0.03** | LMCache prefix reuse → near-free |
+
+> **This buys parity-of-accounting, not a price win.** DeepInfra-class hosted 4B
+> output is ~$0.02–0.05/1M, so on raw €/token self-hosting is *more* expensive at
+> PoC scale — it's a **control/learning/privacy** play. The price only drops below
+> SaaS if utilization rises (the GPU also serves other workloads) — at which point
+> re-tune these three numbers (every one is a knob; ADR-0028 §Pricing). The
+> rate-limit *budgets* (ADR-0021) now apply to this model too, since the cost CEL
+> emits real micro-USD instead of 0.
+
+---
+
+## 14. Deploying another self-hosted model / agent (checklist)
+
+The Qwen3-4B build above is the **reference**; this is the repeatable path for the
+next one. Today `charts/model-serving` is **single-model** (Qwen3-4B hardcoded in
+its values). For model #2, the cheapest correct move is to **copy the chart** to
+`charts/model-serving-<name>` and adjust its values — the orchestrator-plus-leaves
+generalization (one chart, a `models:` list) is only worth it at ~3+ models (see
+"When to generalize the chart" below). Either way, the wiring is the same:
+
+**A. Pick the model & prove the VRAM budget (§2).** A2000 = 12 GB, Ampere → **no
+FP8**. Weights + ~1 GB overhead + KV must fit at your `--max-model-len`. Bigger
+than ~7B BF16 won't fit; use AWQ-INT4 (`--quantization awq_marlin`) for headroom.
+One model per GPU (§11.4) — a 2nd concurrent model needs a 2nd GPU.
+
+**B. Serve it (`charts/model-serving` values, §3 + §11.3).**
+- `model.{name,hfRepo,storagePath}`, PVC `size` for the weights.
+- `inferenceService.args`: `--model_name`, `--dtype`, `--max-model-len`,
+  `--gpu-memory-utilization`, `--enforce-eager`, LMCache `--kv-transfer-config`.
+  For **agentic/tool-calling** models add `--enable-auto-tool-choice
+  --tool-call-parser <parser>` (Qwen→`hermes`; check vLLM's parser list per
+  family). **No `--kv-cache-dtype=fp8`** on Ampere.
+- Keep it **`clusterLocal: true`** + the Caddy **edge-auth** proxy (§11.1) — the
+  KServe-ignores-`VLLM_API_KEY` trap applies to every huggingfaceserver model.
+- Match the **image** to a vLLM+LMCache combo that isn't skewed (§11.8).
+
+**C. Wire it into the gateway (`charts/ai-models`, §4).**
+- One `backends:` entry (`<name>-local`, OpenAI schema, `/openai/v1`, the edge
+  host, `securityType: APIKey`) + a `modelDefaults.backendRefs` anchor.
+- One `models:` entry: `info` (displayName, contextLength, maxOutputTokens,
+  `supportedParameters`), `minBackends: 1`, and **pricing per ADR-0028** (derive
+  €/h TCO → cost-recovery weighted price; §13).
+- `edgeAuth.host` (model-serving) **must equal** the backend `hostname` — set both
+  together + add the DNS record.
+
+**D. Document it — and "document" means *all* of these (per CLAUDE.md):**
+1. **This doc** — add the model card (§12-style) + its cost row (§13).
+2. **An ADR** *only if it introduces a new pattern* (new runtime, new exposure,
+   new pricing basis). A same-pattern model is a release note, not an ADR.
+3. **arc42** (`docs/arc42.md`) — building-block table (§5) if the chart is new;
+   decisions list (§9) if there's a new ADR.
+4. **`docs/README.md`** + **`docs/adr/README.md`** indexes.
+5. **Memory** (`self-hosted-gpu-model.md`).
+
+**E. Verify (§7 / §11.10):** edge 401 without key / 200 with; model is
+cluster-local (no public route); a completion **with `tools`** if it's agentic
+(catches the tool-parser flags); the gateway path (JWT + model header) returns
+tokens; cost CEL emits non-zero micro-USD.
+
+### When to generalize the chart (model #3+)
+
+Convert `charts/model-serving` to the **orchestrator-plus-leaves** pattern
+(ADR-0012/0014 style): an ApplicationSet List generator with one element per model
+→ a `model-serving-<name>` leaf each. Worth the indirection only once 3+ models
+share the lifecycle; until then, copy-the-chart is less machinery. When that day
+comes, write the ADR and update §5/§9 of arc42.

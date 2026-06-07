@@ -154,6 +154,7 @@ servers, the observability stack, dashboards, and all the GitOps glue.
 | `kuadrant-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy | Direct |
 | `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget policy) | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
+| `model-serving` | Self-hosted model on the home GPU: KServe/Knative `InferenceService` (vLLM + in-pod LMCache) + seed Job + cluster-local exposure + Caddy edge-auth proxy. Federated into the gateway as a backend; reference model Qwen3-4B | Direct, `homeCluster: true` (ADR-0022/0028) |
 | `ai-models-info` | OpenRouter-shape `/v1/models/info` catalog (nginx static) | Direct (ADR-0015) |
 | `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI + Meili + opencode discovery | Orchestrator + leaves (ADR-0014) |
 | `observability` | LGTM + Alloy + grafana-operator + dashboards | App-of-Apps (ADR-0020) |
@@ -301,6 +302,8 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0019 | Coder App-of-Apps orchestrator |
 | 0020 | Observability App-of-Apps orchestrator |
 | 0021 | Burst/budget/billing via dual-plane AuthConfigs |
+| 0022 | Self-hosted GPU model federated into the gateway (cluster-local + Caddy auth-proxy; `homeCluster: true` exception to 0017) |
+| 0028 | Cost-recovery pricing for owned-hardware models (€/hour TCO → weighted per-token; replaces 0022's flat $0) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
