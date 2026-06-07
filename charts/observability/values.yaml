@@ -1622,11 +1622,11 @@ children:
                 gnetId: 17607
                 revision: 2
                 datasource: Mimir
-              # Alloy metrics pipeline
-              alloy-metrics:
-                gnetId: 21048
-                revision: 1
-                datasource: Mimir
+              # alloy-metrics REMOVED (2026-06-08): gnetId 21048 returns 404 on
+              # grafana.com (no such dashboard/revision) → never imported. The
+              # Alloy mixin dashboards aren't published under a single gnetId;
+              # re-add via a GrafanaDashboard CR (observability-dashboards) if an
+              # Alloy health board is wanted.
               # Loki operational — stack health, errors, resource usage
               loki-operational:
                 gnetId: 14055
@@ -1637,14 +1637,12 @@ children:
                 gnetId: 13639
                 revision: 2
                 datasource: Loki
-              # Tempo operations via service graph metrics in Mimir.
-              # Nested datasource form → list-form substitution (see cnpg note).
-              tempo-operations:
-                gnetId: 18030
-                revision: 1
-                datasource:
-                  - name: DS_PROMETHEUS
-                    value: mimir
+              # tempo-operations REMOVED (2026-06-08): gnetId 18030 @ revision 1
+              # is NOT a Tempo dashboard — it resolves to an InfluxDB k6 board
+              # ("PHB-CD3 CLOUD"/"k6 Prometheus"), which can't render against our
+              # stack. Tempo operational views come from otel-tempo (below) +
+              # mimir service-graph metrics. Re-add only with a verified gnetId.
+              #
               # OpenTelemetry + Tempo traces. Nested form; its DS_PROMETHEUS input
               # is the Tempo datasource here (trace queries). Empty until gateway
               # traffic generates spans.
@@ -1657,16 +1655,12 @@ children:
 
             # ── Infrastructure ────────────────────────────────────────────
             infrastructure:
-              # ⚠️ Traefik 17931 is an INFLUXDB dashboard (__inputs:
-              # DS_INFLUXDB-TRAEFIK + DS_LOKI) — its metric panels speak InfluxQL,
-              # not PromQL, so it cannot render against Mimir regardless of
-              # datasource mapping. TODO: replace with a Prometheus-native Traefik
-              # dashboard (Traefik exposes prometheus metrics) before relying on
-              # this panel. Left mapped to Mimir so the chart still imports it.
-              traefik:
-                gnetId: 17931
-                revision: 12
-                datasource: Mimir
+              # traefik REMOVED (2026-06-08): gnetId 17931 is an INFLUXDB dashboard
+              # (__inputs: DS_INFLUXDB-TRAEFIK + DS_LOKI) — its panels speak
+              # InfluxQL, not PromQL, so it cannot render against Mimir. TODO:
+              # re-add a Prometheus-native Traefik dashboard (Traefik exposes
+              # prometheus metrics) once one is verified.
+              #
               # CloudNativePG — official CNPG dashboard.
               # Uses the NESTED datasource form ("uid": "${DS_PROMETHEUS}"), which
               # the grafana chart's string-form `datasource:` sed can't rewrite
@@ -1697,12 +1691,15 @@ children:
                 datasource:
                   - name: DS_PROMETHEUS
                     value: mimir
-              # External Secrets Operator. Nested form; its input is DS_METRICS.
+              # External Secrets Operator. Nested form; uses BOTH DS_METRICS and
+              # DS_PROMETHEUS input tokens — map both to the Mimir UID.
               external-secrets:
                 gnetId: 21640
                 revision: 1
                 datasource:
                   - name: DS_METRICS
+                    value: mimir
+                  - name: DS_PROMETHEUS
                     value: mimir
               # Envoy Gateway overview
               envoy-gateway:
