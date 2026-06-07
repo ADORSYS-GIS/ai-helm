@@ -1,20 +1,20 @@
 # charts/model-serving — self-hosted Qwen3-4B on the home GPU.
-# See ADR-0022 (federation) + ADR-0028 (pricing) + ADR-0029 (serving mode:
-# plain workload, not KServe/Knative) + docs/self-hosted-model-serving.md.
+# See ADR-0022 (federation) + ADR-0028 (pricing) + ADR-0029 (serving mode) +
+# ADR-0030 (one StatefulSet via bjw-template) + docs/self-hosted-model-serving.md.
 #
 # Shape: a hybrid bjw-template chart (like charts/librechat-app).
-#   - The WORKLOAD is a single StatefulSet rendered by the `bjw-template`
-#     subchart (values under `modelServing:`): TWO containers in ONE pod — the
-#     model server + the Caddy auth-proxy sidecar (proxy → model over localhost).
-#   - The chart's own templates/ render the resources bjw doesn't do natively:
-#     the weights PVC, the ExternalSecrets, the seed Job (an ArgoCD hook), and
-#     the edge Certificate + Traefik IngressRoute.
+#   - The bjw-template subchart (values under `modelServing:`) renders the WHOLE
+#     workload: the model StatefulSet (model + Caddy proxy sidecar), the seed
+#     Job (a bjw `job` controller, ArgoCD Sync hook), the Service, and the
+#     Ingress.
+#   - The chart's own templates/ render only the resources bjw doesn't do
+#     natively: the weights PVC, the ExternalSecrets, and the Caddyfile ConfigMap.
 #
 # Sync-wave ordering (this Application's resources, on the HOME cluster):
-#   -2  ExternalSecret (vllm-local-api-key)   — key must exist before the pod
-#   -1  PVC (qwen3-4b-models)                  — weights volume
-#    0  seed Job (download-once into the PVC)  — ArgoCD waits for it to complete
-#    1  StatefulSet (model + proxy) + Service  — mounts the PVC, never downloads
+#   -2  ExternalSecret (vllm-local-api-key + hf-token)  — before any pod
+#   -1  PVC (qwen3-4b-models, RWX)                        — weights volume
+#    0  seed Job (download-once into the PVC)             — ArgoCD Sync hook
+#    1  StatefulSet (model + proxy) + Service + Ingress   — mounts the PVC
 
 global:
   # Used by the chart's OWN templates' labels (common.labels.standard).
@@ -25,36 +25,28 @@ global:
 model:
   # Logical model name — the served model id + the StatefulSet/Service name.
   name: qwen3-4b
-  # HuggingFace repo the seed Job downloads (Qwen3-4B is Apache-2.0 → no token).
+  # HuggingFace repo (Qwen3-4B is Apache-2.0 → no token needed for access).
   hfRepo: Qwen/Qwen3-4B
   # Sub-path inside the PVC where weights are seeded and mounted from.
   storagePath: Qwen3-4B
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Weights volume — pre-seeded once (own templates/pvc.yaml), then mounted
-# read-only by the model container. NOT hf:// at runtime.
+# Weights volume (own templates/pvc.yaml). RWX so the seed Job + the model STS
+# can mount it concurrently.
 pvc:
   enabled: true
   name: qwen3-4b-models
   storageClassName: longhorn
-  accessMode: ReadWriteOnce        # safe: the STS pins to the single GPU node
+  accessMode: ReadWriteMany        # RWX — Longhorn supports it (was RWO)
   size: 25Gi                       # ~8GB BF16 + headroom for a future AWQ variant
 
-# One-time download Job (own templates/seed-job.yaml), an ArgoCD Sync hook
-# (sync-wave 0). Idempotent: `hf download` resumes/skips files already on the PVC.
+# Seed Job — the bulk of its config now lives in the bjw `seed` controller
+# below. These top-level values only drive the chart's own templates: the
+# `enabled` gate + the optional HF-token ExternalSecret (templates/
+# externalsecret-hf-token.yaml). The HF token lifts the anonymous HF Hub rate
+# limit on the ~8GB pull.
 seedJob:
   enabled: true
-  image:
-    repository: python
-    tag: "3.12-slim"
-    pullPolicy: IfNotPresent
-  nodeSelector:
-    gpu-node: "true"
-  backoffLimit: 6
-  activeDeadlineSeconds: 3600
-  # Optional HF token (lifts the anonymous rate limit on the ~8GB pull). The
-  # ExternalSecret syncs property `hf_token` (ssegning-aws ai/camer/digital/prod/env)
-  # into the `hf-token` Secret; the seed Job consumes it as HF_TOKEN.
   hfToken:
     enabled: true
     secretName: hf-token
@@ -65,13 +57,6 @@ seedJob:
       refreshInterval: 1h
       key: ai/camer/digital/prod/env
       property: hf_token
-  resources:
-    requests:
-      cpu: "1"
-      memory: 1Gi
-    limits:
-      cpu: "2"
-      memory: 4Gi              # ≤4Gi: 2Gi OOM-killed the pull (exit 137)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # The vLLM API key Secret (own templates/externalsecret.yaml). NOTE: the
@@ -89,66 +74,45 @@ apiKey:
     key: ai/camer/digital/prod/env
     property: vllm_local_api_key
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Edge (own templates/edge-auth.yaml): the cert-manager Certificate + Traefik
-# IngressRoute for the public domain. The IngressRoute targets the bjw Service
-# (`qwen3-4b:8081` = the Caddy sidecar). Routing only — the sidecar does auth.
+# Caddy sidecar config (own templates/configmap-caddy.yaml). Only the upstream
+# timeout is tunable; the public host/TLS now live in `modelServing.ingress`.
 edgeAuth:
   enabled: true
-  # ⚠️ SET THE REAL DOMAIN (+ DNS → the home cluster) — must match ai-models
-  # vllmLocal.hostname. Pattern: <model>--poc.ssegning.com.
-  host: qwen3-4b--poc.ssegning.com
-  entryPoint: websecure
-  # The bjw Service + port the IngressRoute forwards to (the Caddy sidecar).
-  serviceName: qwen3-4b
-  servicePort: 8081
-  tls:
-    issuer: cert-cloudflare        # ClusterIssuer (DNS-01) — works on the home cluster
-    secretName: qwen3-model-edge-tls
-  # Caddy upstream timeout (templates/configmap-caddy.yaml). Must exceed a
-  # deploy-time restart (STS reloads multi-GB weights) + a long generation, so
-  # the proxy doesn't 504 before the model responds. Keep ≥ the ai-models
-  # qwen3-4b-local timeout.requestTimeout (both 600s). Path: Envoy → Caddy → model.
+  # Caddy upstream timeout — must exceed a deploy-time restart (STS reloads
+  # multi-GB weights) + a long generation. Keep ≥ the ai-models qwen3-4b-local
+  # timeout.requestTimeout (both 600s). Path: Envoy → Ingress → Caddy → model.
   proxyResponseTimeout: 600s
 
 # ═════════════════════════════════════════════════════════════════════════════
-# bjw-template subchart (alias `modelServing`) — the merged StatefulSet.
+# bjw-template subchart (alias `modelServing`) — the whole workload.
 # ═════════════════════════════════════════════════════════════════════════════
 modelServing:
   global:
-    # Pin resource names so the own-template IngressRoute can reference the
-    # Service deterministically (edgeAuth.serviceName above must match).
+    # Pin resource names (StatefulSet/Service/Ingress = qwen3-4b).
     fullnameOverride: qwen3-4b
 
-  # GPU pinning for the (single) pod. No nvidia.com/gpu resource — the PoC node
-  # has no device plugin; runtimeClassName + nodeSelector are how the pod gets
-  # the GPU.
+  # GPU pinning for the pods. No nvidia.com/gpu resource — the PoC node has no
+  # device plugin; runtimeClassName + nodeSelector are how a pod gets the GPU.
+  # (The seed Job inherits these too; harmless — it just doesn't use the GPU.)
   defaultPodOptions:
     runtimeClassName: nvidia
     nodeSelector:
       gpu-node: "true"
 
   controllers:
+    # ── The model server (StatefulSet) — model + Caddy proxy sidecar ──────────
     main:
-      # StatefulSet: on a single replica, RollingUpdate deletes pod-0 and
-      # recreates it — STS never runs two pods of the same ordinal, so there's
-      # never two model containers fighting for the single 12Gi GPU (the
-      # single-instance guarantee; ADR-0029). Trade-off: ~1-2min deploy gap.
       type: statefulset
       replicas: 1                            # always-on, single instance (one GPU)
       annotations:
-        argocd.argoproj.io/sync-wave: "1"   # after the seed Job (wave 0)
-
+        argocd.argoproj.io/sync-wave: "1"
       containers:
-        # ── 1) the model server (vLLM + in-pod LMCache) ──────────────────────
+        # 1) the model server (vLLM + in-pod LMCache)
         model:
           image:
             repository: kserve/huggingfaceserver
-            # v0.18.0-gpu = vLLM 0.19.0 + an aligned LMCache. NOT v0.17.x
-            # (vLLM 0.15.1) — the LMCache `get_kv_events` skew. See ADR-0022.
-            tag: v0.18.0-gpu
+            tag: v0.18.0-gpu                 # vLLM 0.19.0 + aligned LMCache (see ADR-0022)
             pullPolicy: IfNotPresent
-          # The image ENTRYPOINT is the hf model server; these are flags.
           args:
             - --model_name=qwen3-4b
             - --model_dir=/mnt/models        # the PVC mount (replaces KServe storageUri)
@@ -159,38 +123,34 @@ modelServing:
             - --gpu-memory-utilization=0.90
             - --swap-space=1
             - --enforce-eager
-            # Agentic tool calling: tool_choice:"auto" 400s without these.
-            # Qwen3 → hermes parser. (NOT --reasoning-parser qwen3 — conflicts
-            # with the hermes tool parser; vllm#19513/#19051.)
-            - --enable-auto-tool-choice
+            - --enable-auto-tool-choice      # agentic tool calling (Qwen3 → hermes)
             - --tool-call-parser=hermes
             - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
             # NO --kv-cache-dtype=fp8 (Ampere/dlpack BufferError every prefill).
+            # NOT --reasoning-parser qwen3 (conflicts w/ hermes; vllm#19513/#19051).
           env:
             LMCACHE_USE_EXPERIMENTAL: "True"
             LMCACHE_LOCAL_CPU: "True"
             LMCACHE_MAX_LOCAL_CPU_SIZE: "1"  # GB host RAM for offloaded KV
-            # Ignored by the image, but kept so a future vLLM-native server works.
-            VLLM_API_KEY:
+            VLLM_API_KEY:                    # ignored by the image; kept for a future vLLM-native server
               secretKeyRef:
                 name: vllm-local-api-key
                 key: api_key
           ports:
             - name: http
               containerPort: 8080            # huggingfaceserver REST port
-          # `custom: true` so bjw uses our spec VERBATIM. Without it, bjw
-          # auto-derives the probe from the SERVICE port (8081 = the proxy) — but
-          # the model listens on 8080, and a probe against 8081 (the always-up
-          # Caddy) would mark the model Ready before its weights finish loading.
+          # `custom: true` so bjw uses our spec VERBATIM. Without it bjw derives
+          # the probe from the SERVICE port (8081 = the proxy) — but the model
+          # listens on 8080, and a probe against the always-up proxy would mark
+          # the model Ready before its weights finish loading.
           probes:
-            # Long startup so the multi-GB weight load isn't killed mid-load.
             startup:
               enabled: true
               custom: true
               spec:
                 tcpSocket: { port: 8080 }
                 periodSeconds: 15
-                failureThreshold: 40          # ~10 min
+                failureThreshold: 40          # ~10 min weight load
                 timeoutSeconds: 5
             readiness:
               enabled: true
@@ -219,20 +179,17 @@ modelServing:
               cpu: "1"
               memory: 2Gi
             limits:
-              # nvidia.com/gpu: "1"   # the PoC node has no device-plugin for this
+              # nvidia.com/gpu: "1"   # PoC node has no device-plugin for this
               cpu: "3"
               memory: 6Gi
 
-        # ── 2) the Caddy auth-proxy sidecar ──────────────────────────────────
-        # Validates `Authorization: Bearer <vllm key>` (the image won't), 401 else,
-        # then reverse-proxies to the model over localhost:8080 (same pod). It is
-        # the only exposed port; the model's :8080 is pod-local only.
+        # 2) the Caddy auth-proxy sidecar — validates the Bearer the model image
+        # ignores, then reverse-proxies to the model over localhost:8080.
         proxy:
           image:
             repository: caddy
             tag: 2-alpine
             pullPolicy: IfNotPresent
-          # caddy image default CMD runs /etc/caddy/Caddyfile (mounted below).
           env:
             MODEL_API_KEY:
               secretKeyRef:
@@ -252,6 +209,51 @@ modelServing:
             requests: { cpu: 10m, memory: 32Mi }
             limits:   { cpu: 200m, memory: 128Mi }
 
+    # ── The weight seed Job (bjw `job` controller, ArgoCD Sync hook) ──────────
+    # A Job (not a tracked resource) via the hook annotations: a plain tracked
+    # Job goes perpetually OutOfSync (the controller stamps controller-uid into
+    # the immutable template); BeforeHookCreation makes ArgoCD delete+recreate.
+    seed:
+      type: job
+      annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+        argocd.argoproj.io/sync-wave: "0"
+      pod:
+        restartPolicy: OnFailure             # a Job must NOT be Always (bjw's default)
+      job:
+        backoffLimit: 6
+        activeDeadlineSeconds: 3600           # a stuck download dies + retries
+      containers:
+        seed:
+          image:
+            repository: python
+            tag: "3.12-slim"
+            pullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          # NOTE: repo + sub-path are hardcoded (this runs in the bjw subchart
+          # scope, which can't read the parent's .Values.model.*). Keep in sync
+          # with model.hfRepo / model.storagePath above.
+          args:
+            - |
+              MODEL_DIR="/models/Qwen3-4B"
+              mkdir -p "$MODEL_DIR"
+              echo "Seeding Qwen/Qwen3-4B -> $MODEL_DIR (skips files already present)"
+              # huggingface_hub 1.x: CLI is `hf`; accelerator is Xet ([hf_xet]).
+              # Do NOT set HF_XET_HIGH_PERFORMANCE — its parallel chunk buffering
+              # OOM-killed the seed at 2Gi (exit 137). HF_TOKEN lifts the rate limit.
+              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
+              hf download Qwen/Qwen3-4B --local-dir "$MODEL_DIR"
+              echo "Seed complete."
+          env:
+            HF_TOKEN:
+              secretKeyRef:
+                name: hf-token
+                key: token
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits:   { cpu: "2", memory: 4Gi }   # ≤4Gi: 2Gi OOM-killed the pull
+
   service:
     main:
       controller: main
@@ -261,9 +263,34 @@ modelServing:
           port: 8081
           targetPort: 8081          # → the Caddy sidecar
 
+  # Public entrypoint — a plain k8s Ingress (className traefik), no Traefik
+  # IngressRoute CRD / DomainMapping. cert-manager's ingress-shim issues the TLS
+  # cert from the `cert-cloudflare` ClusterIssuer (DNS-01) into the tls secret.
+  # ⚠️ the host MUST match charts/ai-models vllmLocal.hostname; ensure a DNS
+  # record → the home cluster.
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-cloudflare
+      hosts:
+        - host: qwen3-4b--poc.ssegning.com
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: edge
+      tls:
+        - secretName: qwen3-model-edge-tls
+          hosts:
+            - qwen3-4b--poc.ssegning.com
+
   persistence:
-    # Pre-seeded weights PVC (created by templates/pvc.yaml), mounted read-only
-    # into the model container at /mnt/models (subPath = model.storagePath).
+    # The pre-seeded RWX weights PVC (own templates/pvc.yaml), mounted into BOTH
+    # the seed Job (rw, full volume at /models) and the model container (ro,
+    # subPath at /mnt/models). RWX makes the concurrent mount safe.
     model-store:
       enabled: true
       existingClaim: qwen3-4b-models
@@ -273,8 +300,10 @@ modelServing:
             - path: /mnt/models
               subPath: Qwen3-4B
               readOnly: true
-    # The Caddyfile ConfigMap (own templates/configmap-caddy.yaml) mounted into
-    # the proxy container at /etc/caddy. Name matches model.name + "-caddy".
+        seed:
+          seed:
+            - path: /models
+    # The Caddyfile ConfigMap (own templates/configmap-caddy.yaml) → the proxy.
     caddyfile:
       enabled: true
       type: configMap

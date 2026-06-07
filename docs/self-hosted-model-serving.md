@@ -19,10 +19,13 @@ owned-hardware models), and [ADR-0029](./adr/0029-self-hosted-model-plain-deploy
 > vLLM + LMCache are unchanged) **+ the Caddy auth-proxy as a sidecar**, which
 > reaches the model over **`localhost`**. `replicas: 1` always-on; the StatefulSet
 > rolling-update recreates the single pod (never two model containers on the GPU).
-> Only the proxy's `:8081` is exposed (Service → IngressRoute); the model's
-> `:8080` is pod-local. Mentions of "Knative", "InferenceService",
-> "ServingRuntime", "scale-to-zero", "scale-from-zero", or a *separate proxy
-> Deployment* in §1–§11 are **historical** unless in §11.4 — see ADR-0029/0030.
+> Only the proxy's `:8081` is exposed (Service → a plain k8s **Ingress**,
+> className `traefik`); the model's `:8080` is pod-local. The whole workload —
+> StatefulSet, the **seed Job (a bjw `job` controller)**, Service, Ingress — is
+> rendered by bjw; the weights PVC is **RWX** (Longhorn). Mentions of "Knative",
+> "InferenceService", "ServingRuntime", "scale-to-zero", "IngressRoute",
+> "DomainMapping", "RWO", or a *separate proxy Deployment* in §1–§11 are
+> **historical** unless in §11.4 — see ADR-0029/0030.
 
 > **Reading order.** New here / want the as-built truth → **§11 "What actually
 > shipped"** (real architecture, full tool+argument inventory,
@@ -479,7 +482,7 @@ flowchart TB
   bsp -->|"https /openai/v1<br/>model=qwen3-4b-local"| cf
 
   subgraph home["Home cluster (admin@homeos, Talos) — the GPU"]
-    tr["Traefik v3.7.1<br/>IngressRoute Host(qwen3-4b--poc.ssegning.com)<br/>cert-manager TLS (cert-cloudflare)"]
+    tr["Traefik v3.7.1<br/>Ingress (className traefik) Host(qwen3-4b--poc.ssegning.com)<br/>cert-manager TLS via ingress-shim (cert-cloudflare)"]
     svc["Service qwen3-4b :8081"]
     subgraph sts["StatefulSet 'qwen3-4b' — ONE pod (bjw-template, ADR-0030)"]
       proxy["container: proxy (caddy :8081)<br/>Bearer == vllm key ? pass : 401"]
@@ -497,7 +500,7 @@ flowchart TB
 
 **Request path:** client → Envoy gateway (`api.ai.camer.digital`, Keycloak JWT +
 per-model budget/limits) → backend `vllm-local-01` injects the Bearer →
-Cloudflare → home Traefik IngressRoute (TLS) → Service `qwen3-4b:8081` → the
+Cloudflare → home Traefik Ingress (TLS) → Service `qwen3-4b:8081` → the
 **Caddy sidecar** (enforces the Bearer the model image ignores; `401` otherwise)
 → reverse-proxies to the **model container over `localhost:8080`** (same pod).
 The model's `:8080` is never exposed outside the pod.
@@ -516,8 +519,9 @@ domain can't bypass the gateway). The model itself enforces nothing.
 | KV cache | **LMCache** (in-pod, CPU offload + prefix reuse) | via `--kv-transfer-config`, NOT the standalone server. |
 | Weights | Longhorn **PVC**, pre-seeded by a one-time Job | `hf` CLI + **Xet** (`huggingface_hub[hf_xet]`) + `HF_TOKEN`. |
 | Auth-proxy | **`caddy:2-alpine`** (plain Deployment) | validates `Authorization: Bearer`, reverse-proxies to the model. |
-| Public route | **Traefik v3.7.1** `IngressRoute` (routing only, no middleware) | the proxy does auth. |
-| TLS | **cert-manager** `Certificate` via the `cert-cloudflare` ClusterIssuer (DNS-01) | for `qwen3-4b--poc.ssegning.com`. |
+| Public route | a plain k8s **`Ingress`** (`className: traefik`), bjw-rendered (`modelServing.ingress`) | no Traefik `IngressRoute` CRD / DomainMapping — "a simple ingress will do". The proxy does auth. |
+| TLS | **cert-manager** via the **ingress-shim** annotation `cert-manager.io/cluster-issuer: cert-cloudflare` (DNS-01) | the shim issues the cert into the Ingress `tls` secret — no separate `Certificate` CR. |
+| Weight seed | **bjw `job` controller** (`controllers.seed`, ArgoCD Sync hook) | `hf download` into the RWX PVC; `restartPolicy: OnFailure`, `backoffLimit: 6`, `activeDeadlineSeconds: 3600`. |
 | DNS | **Cloudflare** (proxied), wildcard `*.ssegning.com` → home Traefik | see §11.5. |
 | Federation | Envoy AI Gateway `Backend` + `BackendSecurityPolicy: APIKey` (`charts/ai-models`) | model `qwen3-4b-local`, prefix `/openai/v1`. |
 
@@ -562,7 +566,9 @@ Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by the image** —
 
 **This section is current; it supersedes the Knative/serverless description elsewhere.** The model is a `bjw-template`-rendered `StatefulSet` with **two containers in one pod**, not a KServe InferenceService (and no longer a separate Deployment + proxy):
 
-- **Chart shape (hybrid bjw, like `charts/librechat-app`):** `Chart.yaml` depends on `bjw-template` (alias `modelServing`); the workload (StatefulSet + Service) is values under `modelServing:`. The chart's **own `templates/`** render the rest — PVC, ExternalSecrets, seed Job (ArgoCD hook), the Caddyfile ConfigMap, and the edge Certificate + IngressRoute.
+- **Chart shape (hybrid bjw, like `charts/librechat-app`):** `Chart.yaml` depends on `bjw-template` (alias `modelServing`); bjw renders the **whole workload** — the model StatefulSet, the **seed `Job`** (a bjw `job` controller, ArgoCD Sync hook), the Service, and the **Ingress**. The chart's **own `templates/`** render only what bjw doesn't do natively: the weights PVC, the ExternalSecrets, and the Caddyfile ConfigMap.
+- **Weights PVC is RWX** (`ReadWriteMany`, Longhorn) so the seed Job and the model can mount it concurrently. ⚠️ accessModes are immutable — switching the old RWO PVC to RWX means **delete + recreate** (the weights re-seed on the next sync).
+- **Public route = a plain `Ingress`** (`className: traefik`) with `cert-manager.io/cluster-issuer: cert-cloudflare` — ingress-shim issues the TLS cert. No Traefik `IngressRoute` CRD / DomainMapping.
 - **Two containers, one pod (ADR-0030):** `model` (huggingfaceserver, `:8080`) + `proxy` (caddy, `:8081`). The proxy reverse-proxies to **`localhost:8080`** — no Service hop, and the model port is never exposed even in-cluster. Only the proxy's `:8081` is on the Service.
 - **Always-on** (`replicas: 1`) — the pod stays warm, so **no routine cold starts**. On a single *dedicated* owned GPU, scale-to-zero saved only ~€3/mo (idle *loaded* A2000 ≈ 10–15 W) while causing cold-start 504s + a rollout deadlock (ADR-0029). It holds VRAM continuously; fine because nothing else wants this GPU.
 - **StatefulSet single-instance guarantee:** with `replicas: 1`, the rolling update deletes the pod and recreates it — a StatefulSet never runs two pods of the same ordinal, so there's never two model containers fighting the 12 GB GPU (what ADR-0029 got from `Deployment` + `Recreate`). Trade-off: a deploy has **~1–2 min downtime** while the single pod restarts (single GPU = no HA anyway).
