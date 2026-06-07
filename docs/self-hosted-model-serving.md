@@ -535,10 +535,14 @@ Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by KServe** — ke
 
 **Seed Job** — `hf download <repo> --local-dir …`; `huggingface_hub[hf_xet]` + `HF_TOKEN`; **no** `HF_XET_HIGH_PERFORMANCE` (its parallel buffering OOM-killed the 2Gi pod → use ≤4Gi, plain Xet).
 
-### 11.4 Knative / single-GPU behavior
+### 11.4 Knative / single-GPU behavior + cold-start timeouts
 
 - **`minReplicas: 0`** — the model scales to zero when idle, freeing the GPU. ⚠️ The template must reference it directly, NOT `{{ .minReplicas | default 1 }}` (Go-template `0 | default 1` → `1`).
-- **One model per GPU.** Knative is blue-green (new revision before old); a 12GB GPU can't hold two Qwen3-4B → a rollout deadlocks until the idle old revision scales to 0. Autoscaler tuned (`window 30s`, `scale-down-delay 0s`, `scale-to-zero-pod-retention 0s`) to free it fast. **Best-effort, not a hard guarantee** (see Improvements).
+- **Stay-warm window (avoid routine cold starts).** `scale-to-zero-pod-retention-period: 5m` + `window: 60s` keep the last pod alive ~6 min after the final request, so bursty traffic hits a **warm** pod instead of paying the ~30–60s weight reload every time. This is the "last N minutes before sleep" knob.
+- **Cold-start 504s — raise the timeout at BOTH hops.** First call after sleep can take tens of seconds to minutes (reschedule + reload multi-GB weights). The path is **Envoy (Hetzner) → Caddy edge-proxy (home) → model**, and *either* hop will return `504 "upstream request timeout"` if its budget is too short:
+  - **Envoy:** a route-scoped `BackendTrafficPolicy` *replaces* the gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so a model route otherwise falls back to Envoy's **default ~15s**. Set `timeout.requestTimeout` per model (`ai-models` model entry → `timeout: {requestTimeout, connectionIdleTimeout}`; `charts/ai-model` plumbs it onto the BTP). `qwen3-4b-local` = **600s** (rides cold start + an 8k-token generation).
+  - **Caddy:** `edgeAuth.proxy.responseTimeout` (the proxy's `response_header_timeout`) must also exceed the cold start — kept at **600s**, in sync with the Envoy value.
+- **One model per GPU + rollout trade-off.** Knative is blue-green (new revision before old); a 12GB GPU can't hold two Qwen3-4B. The 5-min retention now makes an **old** revision linger ~5 min holding the GPU during a deploy → the new revision can't claim it until retention expires → a deploy can stall up to ~5 min (self-heals; `minReplicas:0` still lets the old one go). Earlier `0s` gave instant handoff but cold-started on every idle period — we traded deploy speed for fewer cold starts. Force a fast deploy with `kubectl delete pod` on the old revision. **Best-effort, not a hard guarantee** — the hard fix (no overlap, no cold start) is RawDeployment + Recreate (§11.9).
 - **Lenient probes** — a long `startupProbe` (tcpSocket :8080, ~10min) so the multi-GB cold load isn't killed by the default probe timeout.
 
 ### 11.5 DNS & domain choices

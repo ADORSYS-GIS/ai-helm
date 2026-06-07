@@ -52,6 +52,15 @@ pricing: {}
 # Optional minimum-backends invariant (HA safety). Default 2.
 minBackends: 2
 
+# Optional: per-model upstream timeout (Envoy Gateway BackendTrafficPolicy
+# spec.timeout.http). Without it the route uses Envoy's DEFAULT ~15s timeout →
+# a slow/cold backend 504s ("upstream request timeout"). Raise it for backends
+# that can be slow to first byte, e.g. a self-hosted model scaling from zero.
+#   timeout:
+#     requestTimeout: 600s          # whole-request budget (cold start + generation)
+#     connectionIdleTimeout: 1h     # idle upstream connection (keeps streams open)
+timeout: {}
+
 # Optional: per-model rate-limit overrides. When absent, the model inherits
 # from `plans` below.
 rateLimitBudgeting: {}

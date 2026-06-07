@@ -347,6 +347,17 @@ models:
     # 2-backend HA guard doesn't apply; a cloud fallback at priority 1 is the
     # documented optional upgrade (ADR-0022), not a requirement.
     minBackends: 1
+    # Cold start (scale-from-zero): the pod reschedules + reloads multi-GB weights
+    # from the PVC, so first-byte can take tens of seconds to minutes. Without an
+    # explicit timeout the route uses Envoy's ~15s default → 504 "upstream request
+    # timeout". 600s rides a cold start AND a long generation (8k tokens @ ~30-50
+    # tok/s). Keep in sync with charts/model-serving edgeAuth.proxy.responseTimeout
+    # (the Caddy hop) — both must exceed the cold start. (Warm requests are fast;
+    # this only matters on the first call after the model has scaled to zero —
+    # which model-serving's scale-to-zero-pod-retention-period:5m makes rarer.)
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
     info:
       displayName: "Qwen3-4B (self-hosted)"
       contextLength: 16384          # = --max-model-len (native 32k, clamped for 12GB VRAM)
