@@ -104,9 +104,13 @@ inferenceService:
   runtimeClassName: nvidia
   nodeSelector:
     gpu-node: "true"
-  # Serverless mode, but pinned to one warm pod: a cold start reloads multi-GB
-  # weights, and there is exactly one GPU.
-  minReplicas: 1
+  # Scale-to-zero on a single GPU (home-lab). minReplicas:0 means an idle
+  # revision releases the GPU, so deploying a new revision doesn't deadlock on
+  # the old one holding VRAM (only ONE Qwen3-4B fits in the 12Gi A2000) — the
+  # old revision scales to 0 and the new one starts. Trade-off: a cold start
+  # (~30-60s reloading the PVC weights) on the first request after idle. See
+  # ADR-0022 (single-revision-at-a-time rationale).
+  minReplicas: 0
   maxReplicas: 1
   # vLLM / huggingfaceserver passthrough args, tuned for a 12GB A2000 (Ampere:
   # no hardware FP8 → BF16/FP16 + AWQ-Marlin only). Exact arg spellings may need
