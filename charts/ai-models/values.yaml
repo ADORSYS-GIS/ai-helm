@@ -322,6 +322,23 @@ models:
   # modelNameOverride rewrites the route id → that. ⚠️ Confirm `qwen3-4b` matches
   # the served-model-name on the first test call; adjust if huggingfaceserver
   # advertises the HF path instead.
+  #
+  # ── Model card (Qwen/Qwen3-4B · Apache-2.0) ────────────────────────────────
+  #   Causal LM, 4.0B params (3.6B non-embedding), 36 layers, GQA 32 Q / 8 KV.
+  #   Native context 32,768 (→131,072 with YaRN); we CLAMP to 16,384 to fit KV
+  #   in the 12GB A2000. Hybrid thinking / non-thinking mode (→ *spReasoning),
+  #   tool calling, 100+ languages. Recommended sampling (think mode): temp 0.6 /
+  #   top_p 0.95 / top_k 20 / min_p 0 — "do NOT use greedy decoding". Non-think:
+  #   temp 0.7 / top_p 0.8 / top_k 20. Full card + cost model in
+  #   docs/2026-self-hosted-gpu-inference.md §12-§13.
+  #
+  # ── Cost ───────────────────────────────────────────────────────────────────
+  #   Billed to users at $0 (owned hardware — a per-token charge would double-
+  #   count a sunk cost). The REAL operating cost is ~€0.05/hour while serving
+  #   (≈ €0.018/h amortized A2000+CPU-share+RAM-share over 3yr + ≈ €0.032/h power
+  #   at €0.34/kWh in Erlangen). That figure is for internal make-vs-buy
+  #   accounting only; see docs §13 for every assumption. Do NOT turn it into a
+  #   user-facing per-token price without a policy decision.
   qwen3-4b-local:
     kind: text
     # Single self-hosted backend by design (one GPU, one model). The default
@@ -329,13 +346,14 @@ models:
     # documented optional upgrade (ADR-0022), not a requirement.
     minBackends: 1
     info:
-      contextLength: 16384          # = --max-model-len on the InferenceService
+      displayName: "Qwen3-4B (self-hosted)"
+      contextLength: 16384          # = --max-model-len (native 32k, clamped for 12GB VRAM)
       maxOutputTokens: 8192
       supportedParameters: *spReasoning   # Qwen3 has a thinking mode
     pricing:
       strategy: flat
       standard:
-        effectivePer1M: 0.0         # self-hosted — no per-token cost
+        effectivePer1M: 0.0         # self-hosted — no per-token user charge (real TCO ≈ €0.05/h, see docs §13)
     backends:
       vllm-local-01:
         <<: *vllmLocalBackendPrimary

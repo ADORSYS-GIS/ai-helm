@@ -591,3 +591,114 @@ curl -s https://$H/openai/v1/chat/completions -H "Authorization: Bearer $KEY" \
 kubectl --context=admin@homeos -n converse-poc get ksvc qwen3-4b-predictor \
   -o jsonpath='visibility={.metadata.labels.networking\.knative\.dev/visibility}{"\n"}'  # → cluster-local
 ```
+
+---
+
+## 12. Model card — `Qwen/Qwen3-4B`
+
+Source: the official [Qwen/Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B) card
+(Apache-2.0). This is what's seeded into the PVC and served; the catalog entry
+(`charts/ai-models` → `qwen3-4b-local`, `info.displayName: "Qwen3-4B
+(self-hosted)"`) reflects it.
+
+| Property | Value | How we use it |
+|---|---|---|
+| Type | Causal language model | — |
+| Parameters | **4.0 B** total / **3.6 B** non-embedding | ~8 GB BF16 weights → fits the 12 GB A2000 |
+| Layers | 36 | — |
+| Attention (GQA) | **32 query / 8 key-value heads** | GQA keeps the KV cache small — important on a thin-VRAM card |
+| Native context | **32,768** tokens | We **clamp to 16,384** (`--max-model-len`) so KV fits in ~1.5–2 GB on-GPU + LMCache offload |
+| Extended context | **131,072** with YaRN | Not enabled — YaRN scaling costs accuracy + KV we don't have |
+| Modes | **Thinking / non-thinking** (hybrid reasoning) | → `supportedParameters: *spReasoning` (exposes `reasoning`) |
+| Capabilities | Tool calling (agentic), **100+ languages** | Routed through the gateway like any tool-capable chat model |
+| License | **Apache-2.0** | No HF gate — seed Job needs no token for *access* (one is used only to lift the anonymous rate limit) |
+
+**Recommended sampling** (from the card — surface these to clients; vLLM does not
+force them):
+
+| | temperature | top_p | top_k | min_p | notes |
+|---|---|---|---|---|---|
+| **Thinking** (`enable_thinking=True`) | 0.6 | 0.95 | 20 | 0 | **Do NOT use greedy decoding** (repetition loops) |
+| **Non-thinking** (`enable_thinking=False`) | 0.7 | 0.8 | 20 | 0 | — |
+
+`presence_penalty` 0–2 is the lever for repetition. Card-recommended output budget
+is ~32,768 tokens (≤38,912 for hard problems); our catalog advertises
+`maxOutputTokens: 8192` (a 16k-context, single-GPU PoC ceiling, not a model limit).
+
+---
+
+## 13. Cost model — €/hour TCO (Erlangen, 2026)
+
+The catalog bills users **$0** for this model (it runs on owned hardware; a
+per-token charge would double-count a sunk cost). The number below is the **real
+operating cost** — for internal *make-vs-buy* accounting (is self-hosting Qwen3-4B
+actually cheaper than DeepInfra/Fireworks for our traffic?), **not** a user price.
+
+### 13.1 Inputs & choices (all documented)
+
+| Input | Value | Source / choice |
+|---|---|---|
+| GPU | RTX A2000 12GB, **launch MSRP $449** | NVIDIA list price at launch (2021-11-23); the card is **100% dedicated** to this workload |
+| CPU | i7-14700KF, **MSRP $384**, 28 threads, 125 W base / 253 W turbo | Intel ARK; allocate by the pod's cap, not the whole chip |
+| RAM | Corsair DDR4-3200, **≈ €2.50/GB** | typical 32 GB Vengeance-LPX kit ≈ €80; allocate by the pod's cap |
+| **Pod cap (the "at most")** | **3 vCPU** (`InferenceService` `limits.cpu`) + **6 GiB** (`limits.memory`) | "count the vCPU the pod is using at most" → CPU share = **3/28 = 10.7 %**, RAM = 6 GB |
+| Electricity | **€0.34 / kWh** | German household avg, early 2026 (range 0.325–0.349; new contracts ≈ 0.349); Erlangen = Bavaria, on the household tariff |
+| FX | **1 USD = €0.92** | 2026 approx., to put USD MSRPs in € |
+| Depreciation | **3 years continuous = 26,280 h** | prosumer-hardware horizon; a 5-yr sensitivity is shown below |
+
+> Why these allocations: the **GPU is dedicated**, so 100% of it is charged. The
+> **CPU and RAM are shared** with the rest of the home box, so only the pod's
+> *maximum* reserved slice is charged (the user's "vCPU the pod is using at most")
+> — 3 of 28 threads, 6 of however-many GB. The host is the maintainer's 14700KF
+> workstation, **not** the "8 GiB host" the chart comments assume for *pod sizing*
+> — those two numbers measure different things (pod RAM cap vs. machine RAM).
+
+### 13.2 Capex — amortized over 3 years (26,280 h)
+
+| Component | Price (€) | Allocated | Allocated € | € / hour |
+|---|---|---|---|---|
+| GPU A2000 12GB | $449 → €413 | 100 % | €413.00 | €0.01572 |
+| CPU 14700KF | $384 → €353 | 3/28 = 10.7 % | €37.83 | €0.00144 |
+| RAM (6 GB @ €2.50) | — | 6 GB | €15.00 | €0.00057 |
+| **Capex subtotal** | | | **€465.83** | **€0.01773 / h** |
+
+Capex accrues **continuously** (you own the card whether it serves or scales to
+zero): ≈ **€155 / year** at the 3-yr horizon.
+
+### 13.3 Opex — power at the wall
+
+| Component | Attributed draw | Basis |
+|---|---|---|
+| GPU | **70 W** | A2000 TDP; runs near TDP during inference, dedicated |
+| CPU | **13 W** | 3/28 × 125 W base power |
+| RAM | **2 W** | ~6 GB DDR4 under load |
+| Subtotal | 85 W | |
+| + PSU loss (90 % eff.) + board/NVMe/fans share | **≈ 95 W** | ~12 % overhead to wall power |
+
+Energy = **0.095 kWh/h × €0.34/kWh = €0.0323 / h**.
+
+### 13.4 Total
+
+| Horizon | Capex/h | Power/h | **Total /h** | per day | per month (730 h) |
+|---|---|---|---|---|---|
+| **3-year** | €0.0177 | €0.0323 | **≈ €0.050 / h** | €1.20 | €36.5 |
+| 5-year (sensitivity) | €0.0106 | €0.0323 | ≈ €0.043 / h | €1.03 | €31.4 |
+
+**Headline: ≈ €0.05/hour (~$0.054) while serving.** With `minReplicas: 0` the GPU
+**power** stops when idle (the pod scales to zero), so the *marginal* cost of an
+idle hour ≈ capex-only (€0.018/h) plus the always-on host baseline; the €0.05
+figure is the cost of an hour spent actually serving.
+
+### 13.5 Indicative per-token (context only — not billed)
+
+If saturated at a sustained **~50 output tok/s** aggregate (`--max-num-seqs 4`,
+BF16, no FP8, `--enforce-eager` on Ampere) → 180,000 tok/h:
+
+> €0.050 / 180,000 ≈ **€0.28 per 1M output tokens** *at full utilization*.
+
+Real-world utilization is far below 100 % (scale-to-zero, bursty PoC traffic), so
+the effective €/token is higher — capex amortizes whether or not tokens flow. As a
+make-vs-buy yardstick: DeepInfra-class 4B output is ~$0.02–0.05/1M, so **at this
+scale self-hosting is a control/learning play, not a cost win** — it only pencils
+out if the box runs other workloads too (it does) and the GPU would otherwise be
+idle. Every assumption above is a knob; re-run with your own utilization.
