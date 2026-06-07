@@ -1083,6 +1083,15 @@ children:
           lokiCanary:
             enabled: false
 
+          # The loki chart's helm test exercises the canary, and templates/validate.yaml
+          # HARD-FAILS the render ("Helm test requires the Loki Canary to be enabled")
+          # if `test.enabled` is true while the canary is off. Disabling the canary
+          # (above) therefore REQUIRES disabling the test too, else the loki Application
+          # goes ComparisonError/Unknown and never syncs. We run no `helm test`, so this
+          # is a no-op loss. (Regression fixed 2026-06-07.)
+          test:
+            enabled: false
+
           singleBinary:
             replicas: 1
             podDisruptionBudget:
