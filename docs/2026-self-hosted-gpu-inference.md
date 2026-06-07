@@ -4,8 +4,16 @@
 the build plan, the VRAM math, the exact manifests/flags, the security model, and
 how to verify it end-to-end.
 
-> Status: **planned**. Nothing here is deployed yet. The home platform it relies
-> on (KServe, Knative, Traefik, cert-manager, the GPU node) is already live.
+> Status: **SHIPPED & serving (2026-06-07)** — Qwen3-4B answers completions
+> end-to-end. ⚠️ **The exposure/security design described in the older sections
+> ("public FQDN + the vLLM API key is the sole gate") was REPLACED in
+> production.** KServe's huggingfaceserver ignores `VLLM_API_KEY`, so that "sole
+> gate" never actually existed — the model is now **cluster-local behind a Caddy
+> auth-proxy**. Read **§11 "What actually shipped (2026-06-07)"** at the bottom
+> for the real architecture, the full tool/argument inventory, the
+> goods/averages/bads/caveats, and the improvement backlog. The sections above
+> remain accurate for the VRAM math, seed-PVC mechanics, and KServe/vLLM/LMCache
+> flags.
 
 ---
 
@@ -421,3 +429,165 @@ TTFT (time-to-first-token) should drop sharply as prefill is served from cache.
 | Seed Job: `huggingface-cli is deprecated` / `extra 'cli'` | huggingface_hub 1.x renamed the CLI | use `hf download` + `pip install huggingface_hub` (no `[cli]`) — already fixed in the seed Job |
 | Seed Job stalls partway (`unauthenticated requests to the HF Hub` / hangs at N%) | anonymous HF Hub rate limit throttles the big shards | set an **HF token**: add `hf_token` to `ssegning-aws ai/camer/digital/prod/env`, then `seedJob.hfToken.enabled: true`. The Job already enables `hf_transfer` + a 1h `activeDeadlineSeconds` (so a stuck attempt dies + retries) |
 | Model pod can't read `/mnt/models` | root-seeded files vs non-root runtime | HF files are world-readable (644) so this is usually fine; if not, seed with the runtime's uid or add an `fsGroup` (needs the Knative securityContext feature flag) |
+
+---
+
+## 11. What actually shipped (2026-06-07)
+
+The model serves. Getting from "planned" to "serving" surfaced a chain of
+single-GPU / home-lab / KServe realities that changed the design — most
+importantly the **security model**. This section is the source of truth for the
+running system.
+
+### 11.1 Architecture (as deployed)
+
+```mermaid
+flowchart TB
+  subgraph hetzner["Hetzner cluster (home-remote) — workloads"]
+    client["client / opencode / LibreChat"]
+    eg["Envoy AI Gateway<br/>api.ai.camer.digital<br/>(Keycloak JWT + budgets/limits)"]
+    bsp["BackendSecurityPolicy: APIKey<br/>injects Authorization: Bearer &lt;vllm key&gt;"]
+    client -->|"JWT"| eg --> bsp
+  end
+
+  cf["Cloudflare (proxied)<br/>*.ssegning.com"]
+  bsp -->|"https /openai/v1<br/>model=qwen3-4b-local"| cf
+
+  subgraph home["Home cluster (admin@homeos, Talos) — the GPU"]
+    tr["Traefik v3.7.1<br/>IngressRoute Host(qwen3-4b--poc.ssegning.com)<br/>cert-manager TLS (cert-cloudflare)"]
+    proxy["Caddy auth-proxy (plain Deployment, replicas:1)<br/>Bearer == vllm key ? pass : 401"]
+    model["KServe InferenceService 'qwen3-4b' (cluster-local)<br/>Knative + vLLM 0.19 + in-pod LMCache<br/>minReplicas:0 → scale-from-zero on the RTX A2000 (12GB)"]
+    pvc[("Longhorn PVC<br/>pre-seeded weights")]
+    cf --> tr --> proxy
+    proxy -->|"reverse_proxy https (skip-verify)<br/>Host-rewrite → cluster-local FQDN"| model
+    model --- pvc
+  end
+
+  classDef gpu fill:#e8f5e9,stroke:#2e7d32;
+  class model,pvc gpu;
+```
+
+**Request path:** client → Envoy gateway (`api.ai.camer.digital`, Keycloak JWT +
+per-model budget/limits) → backend `vllm-local-01` injects the Bearer →
+Cloudflare → home Traefik IngressRoute (TLS) → **Caddy auth-proxy** (enforces the
+Bearer KServe ignores; `401` otherwise) → reverse-proxies HTTPS to the
+**cluster-local** KServe/Knative model → vLLM wakes from zero on the GPU.
+
+Two enforcement points: **Keycloak JWT** at the Envoy gateway (identity, budgets,
+rate limits) and the **static key** at the home edge (so direct hits to the home
+domain can't bypass the gateway). The model itself enforces nothing.
+
+### 11.2 Tools & components
+
+| Layer | Tool / image | Notes |
+|---|---|---|
+| Model server | `kserve/huggingfaceserver:v0.18.0-gpu` | vLLM **0.19.0** + a compatible **LMCache**. v0.17.x (vLLM 0.15.1) had the LMCache skew (below). |
+| Serving | KServe v0.17 controller + **Knative Serving** (net-gateway-api → Traefik) | InferenceService `qwen3-4b`, predictor ksvc `qwen3-4b-predictor`. |
+| KV cache | **LMCache** (in-pod, CPU offload + prefix reuse) | via `--kv-transfer-config`, NOT the standalone server. |
+| Weights | Longhorn **PVC**, pre-seeded by a one-time Job | `hf` CLI + **Xet** (`huggingface_hub[hf_xet]`) + `HF_TOKEN`. |
+| Auth-proxy | **`caddy:2-alpine`** (plain Deployment) | validates `Authorization: Bearer`, reverse-proxies to the model. |
+| Public route | **Traefik v3.7.1** `IngressRoute` (routing only, no middleware) | the proxy does auth. |
+| TLS | **cert-manager** `Certificate` via the `cert-cloudflare` ClusterIssuer (DNS-01) | for `qwen3-4b--poc.ssegning.com`. |
+| DNS | **Cloudflare** (proxied), wildcard `*.ssegning.com` → home Traefik | see §11.5. |
+| Federation | Envoy AI Gateway `Backend` + `BackendSecurityPolicy: APIKey` (`charts/ai-models`) | model `qwen3-4b-local`, prefix `/openai/v1`. |
+
+### 11.3 Container arguments
+
+**huggingfaceserver (vLLM) — `charts/model-serving` `inferenceService.args`:**
+
+| Arg | Why |
+|---|---|
+| `--model_name=qwen3-4b` | served name (clients send `model: qwen3-4b` direct; `qwen3-4b-local` is the gateway alias) |
+| `--backend=vllm` | vLLM engine |
+| `--dtype=float16` | A2000 is Ampere (FP16/BF16; no hardware FP8) |
+| `--max-model-len=16384` | context cap (VRAM-bound) |
+| `--max-num-seqs=4` | concurrent sequences (12GB VRAM) |
+| `--gpu-memory-utilization=0.90` | leave ~10% VRAM headroom |
+| `--swap-space=1` | cap vLLM CPU swap (default 4Gi) — host has only **8Gi** RAM |
+| `--enforce-eager` | skip CUDA-graph capture (memory + stability on the small GPU) |
+| `--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}` | enable in-pod LMCache |
+| ~~`--kv-cache-dtype=fp8`~~ | **REMOVED** — flashinfer can't pass fp8 KV via dlpack on Ampere → crash every prefill |
+
+Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by KServe** — kept only for documentation/future). Resources: `requests 2Gi / limits 6Gi`, `lmcache.maxLocalCpuSizeGb: 1` (8Gi host). The `nvidia.com/gpu` limit is **commented out** (the PoC host has no device-plugin resource; GPU comes via `runtimeClassName: nvidia` + the `gpu-node` selector).
+
+**Caddy auth-proxy** — no command/args override (the image CMD already runs `caddy run --config /etc/caddy/Caddyfile`). Env `MODEL_API_KEY` ← secret `vllm-local-api-key`. Caddyfile:
+
+```caddyfile
+:8080 {
+  @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
+  respond @unauthorized 401
+  reverse_proxy https://qwen3-4b-predictor.converse-poc.svc.cluster.local {
+    header_up Host qwen3-4b-predictor.converse-poc.svc.cluster.local
+    transport http { tls_insecure_skip_verify; response_header_timeout 300s }
+  }
+}
+```
+
+**Seed Job** — `hf download <repo> --local-dir …`; `huggingface_hub[hf_xet]` + `HF_TOKEN`; **no** `HF_XET_HIGH_PERFORMANCE` (its parallel buffering OOM-killed the 2Gi pod → use ≤4Gi, plain Xet).
+
+### 11.4 Knative / single-GPU behavior
+
+- **`minReplicas: 0`** — the model scales to zero when idle, freeing the GPU. ⚠️ The template must reference it directly, NOT `{{ .minReplicas | default 1 }}` (Go-template `0 | default 1` → `1`).
+- **One model per GPU.** Knative is blue-green (new revision before old); a 12GB GPU can't hold two Qwen3-4B → a rollout deadlocks until the idle old revision scales to 0. Autoscaler tuned (`window 30s`, `scale-down-delay 0s`, `scale-to-zero-pod-retention 0s`) to free it fast. **Best-effort, not a hard guarantee** (see Improvements).
+- **Lenient probes** — a long `startupProbe` (tcpSocket :8080, ~10min) so the multi-GB cold load isn't killed by the default probe timeout.
+
+### 11.5 DNS & domain choices
+
+- Public host: **`qwen3-4b--poc.ssegning.com`** (pattern `<model>--poc.ssegning.com`). Configurable via `edgeAuth.host` — **must match** `ai-models` `vllmLocal.hostname`/`tlsHostname`.
+- `*.ssegning.com` is **Cloudflare-proxied** → home Traefik, so the host resolved with no per-record setup; Cloudflare terminates edge TLS, origin TLS is the cert-manager cert.
+- The model's *own* Knative auto-domain (`…--sls.ssegning.com`) is **not** used externally — the model is cluster-local; the proxy's domain is the only public one.
+- TLS issued by **`cert-cloudflare`** (DNS-01) — works on the home cluster (the `cloudflare-secret` token exists there; it does **not** on Hetzner).
+
+### 11.6 The good
+
+- **Real public-trusted TLS**, federated into the gateway like any SaaS model (`qwen3-4b-local`) — inherits Keycloak JWT + budgets/rate-limits centrally.
+- **Scale-from-zero**: the GPU is free when idle (precious on a shared home-lab box).
+- **LMCache works** (v0.18 image) — KV offload + prefix reuse.
+- **Two-layer auth**: gateway JWT + edge key; the model is never directly reachable.
+- **All GitOps in one chart** (`charts/model-serving`, `homeCluster: true`) — model + seed + proxy + route + cert + secret.
+- **Stock images only** (no custom builds): huggingfaceserver, caddy.
+
+### 11.7 The average (acceptable trade-offs)
+
+- **Cold start ~30–60s** on the first request after idle (reload weights from PVC). Mitigated by the proxy staying warm + a generous client timeout.
+- **`tls_insecure_skip_verify`** on the proxy→model hop (in-cluster, internal CA) — acceptable; it's a same-cluster call.
+- **An extra hop** (tiny Caddy) in front of the model.
+- **Static API key**, not per-user identity, at the home edge (the per-user identity lives at the gateway).
+
+### 11.8 The bad / caveats
+
+- ⚠️ **KServe huggingfaceserver IGNORES `VLLM_API_KEY`.** It serves the OpenAI API itself; the env only gates vLLM's *own* api-server. A public route = an open GPU. This is the whole reason for the cluster-local + auth-proxy design. Verified: pre-fix, `no-auth` and `wrong-key` both returned `200`.
+- **vLLM ↔ LMCache version skew is image-pinned.** v0.17.0 → `AttributeError: 'LMCacheConnectorV1Impl' object has no attribute get_kv_events`. LMCache isn't separately pinned (rides via the vLLM extra), so **bumping the image can re-break it** — test before bumping.
+- **Ampere = no FP8** → never `--kv-cache-dtype=fp8` (dlpack BufferError on every prefill).
+- **8Gi host RAM** is tight; `12Gi/16Gi` requests wouldn't even schedule.
+- **In-cluster HTTP to the model is 301'd** by Traefik's `:80→:443` redirect — the proxy must use **https** (+ skip-verify) to reach it.
+- **Server-Side Apply is strict** — a malformed field (e.g. a bare `livenessProbe.path` instead of `httpGet.path`) fails the *whole* Deployment apply; the pod never starts (this stalled the model once, and grafana hard).
+- **Single GPU** = no real HA; rollout overlap is only mitigated, not eliminated.
+- **Domain/DNS finalization is manual** — `edgeAuth.host` + the `ai-models` hostname must be set together, and the DNS record must point at the home cluster.
+
+### 11.9 Improvements (backlog)
+
+1. **Hard single-revision guarantee** → KServe **RawDeployment + `Recreate`** strategy (old pod dies before new). Cost: drops Knative → the public route mechanism changes. The current `minReplicas:0` is best-effort.
+2. **Proper token auth at the edge** → replace the static-key Caddy check with a **JWT-validating resource-server proxy** (validate the Keycloak token, matching the gateway's identity) — oauth2-proxy in resource-server mode or a small JWT-verifying proxy.
+3. **Pin/track a known-good vLLM+LMCache combo**; add a smoke test that does one completion post-deploy so a bad image bump is caught.
+4. **AWQ-Marlin quant** for more VRAM headroom / a bigger model on the 12GB card.
+5. **Observability** for the proxy + model (latency, cold-start frequency, GPU mem) via the existing Alloy→Mimir/Loki path.
+6. **Drop the unused `VLLM_API_KEY` env** (or wire it to a vLLM-native server if ever switching off KServe's OpenAI endpoint).
+
+### 11.10 Verify (runbook)
+
+```bash
+KCFG=~/.kube/config   # admin@homeos
+KEY=$(kubectl --context=admin@homeos -n converse-poc get secret vllm-local-api-key -o jsonpath='{.data.api_key}' | base64 -d)
+H=qwen3-4b--poc.ssegning.com
+
+# public edge: must be 401 without the key, 200 (completion) with it
+curl -s -o /dev/null -w "no-auth: %{http_code}\n" https://$H/openai/v1/models
+curl -s https://$H/openai/v1/chat/completions -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3-4b","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
+
+# the model itself must be cluster-local only (no public route)
+kubectl --context=admin@homeos -n converse-poc get ksvc qwen3-4b-predictor \
+  -o jsonpath='visibility={.metadata.labels.networking\.knative\.dev/visibility}{"\n"}'  # → cluster-local
+```
