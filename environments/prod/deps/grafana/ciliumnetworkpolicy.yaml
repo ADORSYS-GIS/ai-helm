@@ -1,0 +1,42 @@
+# prod (Cilium) — egress to grafana.com for Grafana's dashboard-download init.
+#
+# The grafana chart's `dashboards:` (gnetId) entries spawn a `download-dashboards`
+# init container that curls https://grafana.com/api/dashboards/<id>/.../download
+# at pod startup. Under the observability namespace's default-deny-egress baseline
+# (`allow-dns`) that external HTTPS is blocked, so the init container hangs on
+# each curl (--max-time 60) and the pod never leaves Init — which (with the pod
+# down) also stalls the ingress cert's HTTP-01 self-check. This grants the
+# grafana pod egress to grafana.com so the init completes.
+#
+# toFQDNs needs the DNS L7 rule so Cilium's DNS proxy learns grafana.com→IP.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: grafana-allow-grafanacom-egress
+  namespace: observability
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  egress:
+    # DNS (with L7 visibility so toFQDNs can resolve grafana.com).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    # grafana.com dashboard catalog over HTTPS.
+    - toFQDNs:
+        - matchName: "grafana.com"
+        - matchPattern: "*.grafana.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

@@ -5,14 +5,16 @@ kind: Kustomization
 
 resources:
   - ../../../base/deps/grafana
+  # Cilium egress allow so Grafana's dashboard-download init can reach grafana.com
+  # under the observability deny-egress baseline.
+  - ciliumnetworkpolicy.yaml
 
 patches:
-  # clusterIssuer: cert-home-cert-http (ACME HTTP-01 via Traefik) — same issuer
-  # LibreChat (ai.camer.digital) uses successfully. NOTE: a brand-new host hits
-  # a one-time bootstrap deadlock under Traefik's :80→:443 redirect — the cert
-  # can't issue until the host serves HTTPS, which needs the cert. Break it once
-  # by seeding a self-signed `grafana.ai.camer.digital-tls` secret; cert-manager
-  # then completes HTTP-01 and overwrites it, and renewals self-sustain.
+  # clusterIssuer: cert-home-cert-http (ACME HTTP-01 via Traefik) — the same
+  # issuer LibreChat (ai.camer.digital) + lightbridge use successfully on this
+  # Traefik. (The cert only ever looked stuck because grafana's pod was down —
+  # a malformed probe rejected by Server-Side Apply, since fixed — so HTTP-01
+  # had no backend host to validate against; it was never an issuer problem.)
   - target:
       kind: Certificate
       name: grafana-tls
