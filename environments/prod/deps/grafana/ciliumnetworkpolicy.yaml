@@ -48,10 +48,13 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
-    # grafana.com dashboard catalog over HTTPS (download-dashboards init).
+    # grafana.com dashboard catalog (download-dashboards init) + the plugin
+    # catalog; storage.googleapis.com is where the plugin .zip archives are
+    # actually served from (grafana-pyroscope-app, -exploretraces-app, etc.).
     - toFQDNs:
         - matchName: "grafana.com"
         - matchPattern: "*.grafana.com"
+        - matchName: "storage.googleapis.com"
       toPorts:
         - ports:
             - port: "443"
