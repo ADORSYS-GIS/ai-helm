@@ -139,24 +139,49 @@ modelServing:
           ports:
             - name: http
               containerPort: 8080            # huggingfaceserver REST port
-          # `custom: true` so bjw uses our spec VERBATIM. Without it bjw derives
-          # the probe from the SERVICE port (8081 = the proxy) — but the model
-          # listens on 8080, and a probe against the always-up proxy would mark
-          # the model Ready before its weights finish loading.
+          # ── Probes for a SLOW-LOADING model server ──────────────────────────
+          # `custom: true` so bjw uses our spec verbatim (without it bjw derives
+          # the probe from the SERVICE port 8081 = the proxy, not the model).
+          #
+          # ⚠️ Do NOT use tcpSocket here. KServe's huggingfaceserver binds :8080
+          # EARLY (the HTTP server comes up before the multi-GB weights finish
+          # loading), so a tcpSocket probe passes within seconds → the
+          # startupProbe stops gating almost immediately → readiness/liveness run
+          # against a still-loading model → the pod gets killed/SIGTERM'd mid-load
+          # and loops. Instead probe the model-readiness HTTP endpoint, which only
+          # returns 200 once the model is actually loaded (KServe Open-Inference
+          # `/v2/health/ready`; this is the endpoint KServe's own probes use).
+          #
+          #   startup   = the GATE. httpGet /v2/health/ready, with a budget that
+          #               covers the worst-case weight load (failureThreshold ×
+          #               periodSeconds = 120 × 15s = 30 min). Until it passes,
+          #               readiness + liveness are disabled, so nothing kills the
+          #               pod while it loads. "Started" now means "loaded".
+          #   readiness = same endpoint → the Service only routes once truly ready
+          #               (the pod is Ready only when BOTH containers are; the
+          #               always-up proxy can't make it Ready early).
+          #   liveness  = tcpSocket :8080 — kernel-level, so it does NOT false-fail
+          #               when the loaded model is busy generating (an httpGet
+          #               liveness would restart a healthy-but-busy server). Gated
+          #               by startup, it never runs during the load.
+          #
+          # ⚠️ Confirm /v2/health/ready against the running image on first deploy.
+          # If it 404s / returns 200-while-loading, switch startup+readiness to
+          # `/v2/models/qwen3-4b/ready` (model-scoped) or vLLM's `/health`.
           probes:
             startup:
               enabled: true
               custom: true
               spec:
-                tcpSocket: { port: 8080 }
+                httpGet: { path: /v2/health/ready, port: 8080 }
                 periodSeconds: 15
-                failureThreshold: 40          # ~10 min weight load
+                failureThreshold: 120         # ~30 min worst-case weight load
                 timeoutSeconds: 5
             readiness:
               enabled: true
               custom: true
               spec:
-                tcpSocket: { port: 8080 }
+                httpGet: { path: /v2/health/ready, port: 8080 }
                 periodSeconds: 15
                 timeoutSeconds: 10
                 failureThreshold: 3
