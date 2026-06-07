@@ -69,10 +69,10 @@ seedJob:
       memory: 1Gi
     limits:
       cpu: "2"
-      # 6Gi: the ~8GB pull streams to the PVC, but Xet keeps several chunk
-      # buffers + the safetensors verify in RAM. 2Gi OOM-killed it (exit 137);
-      # 6Gi gives comfortable headroom without HF_XET_HIGH_PERFORMANCE.
-      memory: 6Gi
+      # 4Gi: the ~8GB pull streams to the PVC; Xet keeps a few chunk buffers +
+      # the safetensors verify in RAM. 2Gi OOM-killed it (exit 137); 4Gi is
+      # enough without HF_XET_HIGH_PERFORMANCE and fits the 8Gi home-lab host.
+      memory: 4Gi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Namespace-scoped ServingRuntime (vLLM + LMCache). Shipped with the app because
@@ -118,19 +118,27 @@ inferenceService:
     - --max-model-len=16384
     - --max-num-seqs=4
     - --gpu-memory-utilization=0.90
-    - --kv-cache-dtype=fp8
+    # NO --kv-cache-dtype=fp8: the A2000 is Ampere (no hardware FP8); flashinfer
+    # can't pass fp8 KV tensors through dlpack → "BufferError: float8 types are
+    # not supported by dlpack" on every prefill. KV cache stays fp16.
+    # Cap vLLM's CPU swap (default 4Gi) — the home-lab host has only 8Gi total.
+    - --swap-space=1
     - --enforce-eager
     - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
     # AWQ optimization only (community quant): --quantization=awq_marlin
   extraEnv: []
+  # Sized for an 8Gi home-lab host (weights live in the 12Gi A2000 VRAM, not
+  # host RAM). Host RAM = vLLM runtime (~2-3Gi) + LMCache CPU offload
+  # (lmcache.maxLocalCpuSizeGb) + vLLM --swap-space. Keep the limit well under
+  # 8Gi so the OS/kubelet/other pods fit. 12Gi/16Gi could not even schedule.
   resources:
     requests:
-      cpu: "2"
-      memory: 12Gi              # MUST exceed lmcache.maxLocalCpuSizeGb + runtime
+      cpu: "1"
+      memory: 2Gi
     limits:
       #nvidia.com/gpu: "1" # <-- the PoC server do not support this
-      cpu: "4"
-      memory: 16Gi
+      cpu: "3"
+      memory: 6Gi
 
 # In-pod LMCache (NOT the standalone lmcache_experimental_server — that's the
 # multi-replica shared-KV tool, irrelevant on one GPU). CPU-DRAM offload +
@@ -139,7 +147,7 @@ lmcache:
   enabled: true
   useExperimental: true
   localCpu: true
-  maxLocalCpuSizeGb: 5          # GB of host RAM for offloaded KV
+  maxLocalCpuSizeGb: 1          # GB of host RAM for offloaded KV (8Gi home-lab host)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # The vLLM API key — the SOLE gate on the public Knative FQDN. The gateway's
