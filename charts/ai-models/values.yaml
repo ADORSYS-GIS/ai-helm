@@ -143,10 +143,14 @@ backendDefaults:
     schema: OpenAI
     prefix: "/openai/v1"
     fqdn:
-      hostname: qwen3-4b-converse-poc--sls.ssegning.com
+      # The model is cluster-local on the home cluster; this is the Traefik
+      # edge-auth IngressRoute domain (charts/model-serving edgeAuth.host), which
+      # validates the Bearer below before proxying to the cluster-local ksvc.
+      # ⚠️ Must match charts/model-serving edgeAuth.host exactly.
+      hostname: qwen3-4b--poc.ssegning.com
       port: 443
     securityType: APIKey
-    tlsHostname: qwen3-4b-converse-poc--sls.ssegning.com
+    tlsHostname: qwen3-4b--poc.ssegning.com
 
 modelDefaults:
   backendRefs:
