@@ -1569,13 +1569,22 @@ children:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 500m, memory: 512Mi }
 
+          # NOTE: these are rendered verbatim into the container probes by the
+          # grafana chart, so the path MUST sit under httpGet (a bare
+          # `path:` is "field not declared in schema" → Server-Side Apply
+          # rejects the whole Deployment, so the pod never starts). Grafana
+          # serves /api/health on container port 3000.
           livenessProbe:
-            path: /api/health
+            httpGet:
+              path: /api/health
+              port: 3000
             initialDelaySeconds: 30
             timeoutSeconds: 30
             failureThreshold: 10
           readinessProbe:
-            path: /api/health
+            httpGet:
+              path: /api/health
+              port: 3000
             initialDelaySeconds: 15
             timeoutSeconds: 10
             periodSeconds: 10
