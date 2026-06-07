@@ -1,21 +1,29 @@
 # charts/model-serving — self-hosted Qwen3-4B on the home GPU.
-# See ADR-0022 (federation) + ADR-0029 (plain Deployment, no KServe/Knative) +
-# docs/self-hosted-model-serving.md.
+# See ADR-0022 (federation) + ADR-0028 (pricing) + ADR-0029 (serving mode:
+# plain workload, not KServe/Knative) + docs/self-hosted-model-serving.md.
+#
+# Shape: a hybrid bjw-template chart (like charts/librechat-app).
+#   - The WORKLOAD is a single StatefulSet rendered by the `bjw-template`
+#     subchart (values under `modelServing:`): TWO containers in ONE pod — the
+#     model server + the Caddy auth-proxy sidecar (proxy → model over localhost).
+#   - The chart's own templates/ render the resources bjw doesn't do natively:
+#     the weights PVC, the ExternalSecrets, the seed Job (an ArgoCD hook), and
+#     the edge Certificate + Traefik IngressRoute.
 #
 # Sync-wave ordering (this Application's resources, on the HOME cluster):
-#   -2  ExternalSecret (vllm-local-api-key)   — key must exist before the model pod
+#   -2  ExternalSecret (vllm-local-api-key)   — key must exist before the pod
 #   -1  PVC (qwen3-4b-models)                  — weights volume
 #    0  seed Job (download-once into the PVC)  — ArgoCD waits for it to complete
-#    1  Deployment + Service (vLLM + LMCache)  — mounts the PVC, never downloads
+#    1  StatefulSet (model + proxy) + Service  — mounts the PVC, never downloads
 
 global:
-  # Used only for chart labels; the actual namespace comes from the Application.
+  # Used by the chart's OWN templates' labels (common.labels.standard).
   labels:
     app: model-serving
     team: adorsys-gis
 
 model:
-  # Logical model name — the Deployment/Service name + the served model id.
+  # Logical model name — the served model id + the StatefulSet/Service name.
   name: qwen3-4b
   # HuggingFace repo the seed Job downloads (Qwen3-4B is Apache-2.0 → no token).
   hfRepo: Qwen/Qwen3-4B
@@ -23,36 +31,29 @@ model:
   storagePath: Qwen3-4B
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Weights volume — pre-seeded once, then mounted read-mostly. NOT hf:// at runtime.
+# Weights volume — pre-seeded once (own templates/pvc.yaml), then mounted
+# read-only by the model container. NOT hf:// at runtime.
 pvc:
   enabled: true
   name: qwen3-4b-models
   storageClassName: longhorn
-  accessMode: ReadWriteOnce        # safe: model pins to the single GPU node (§3a)
+  accessMode: ReadWriteOnce        # safe: the STS pins to the single GPU node
   size: 25Gi                       # ~8GB BF16 + headroom for a future AWQ variant
 
-# One-time download Job, run as an ArgoCD Sync hook (sync-wave 0) — see
-# templates/seed-job.yaml for why a hook (Jobs can't be plain ArgoCD resources:
-# the controller-uid label drift makes ArgoCD try to patch the immutable
-# template and the sync fails). Idempotent: `hf download` resumes/skips files
-# already on the persistent PVC, so re-running on each sync is cheap.
+# One-time download Job (own templates/seed-job.yaml), an ArgoCD Sync hook
+# (sync-wave 0). Idempotent: `hf download` resumes/skips files already on the PVC.
 seedJob:
   enabled: true
   image:
     repository: python
     tag: "3.12-slim"
     pullPolicy: IfNotPresent
-  # Pin to the GPU node so the RWO Longhorn volume binds where the model runs.
   nodeSelector:
     gpu-node: "true"
   backoffLimit: 6
-  # A stuck/rate-limited download dies + retries instead of hanging forever.
   activeDeadlineSeconds: 3600
-  # Optional HuggingFace token — lifts the anonymous rate limit that otherwise
-  # stalls the ~8GB download partway through. Qwen3-4B is public so a token is
-  # NOT required for access, only for reliable throughput. Strongly recommended.
-  # Enabled: the maintainer populated property `hf_token` under
-  # ssegning-aws `ai/camer/digital/prod/env`. The ExternalSecret below syncs it
+  # Optional HF token (lifts the anonymous rate limit on the ~8GB pull). The
+  # ExternalSecret syncs property `hf_token` (ssegning-aws ai/camer/digital/prod/env)
   # into the `hf-token` Secret; the seed Job consumes it as HF_TOKEN.
   hfToken:
     enabled: true
@@ -70,136 +71,17 @@ seedJob:
       memory: 1Gi
     limits:
       cpu: "2"
-      # 4Gi: the ~8GB pull streams to the PVC; Xet keeps a few chunk buffers +
-      # the safetensors verify in RAM. 2Gi OOM-killed it (exit 137); 4Gi is
-      # enough without HF_XET_HIGH_PERFORMANCE and fits the home-lab host.
-      memory: 4Gi
+      memory: 4Gi              # ≤4Gi: 2Gi OOM-killed the pull (exit 137)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# The model server — a PLAIN Deployment (NOT KServe/Knative). See ADR-0029.
-#
-# Why not KServe/Knative serverless? The GPU is OWNED and DEDICATED to this one
-# model. Serverless exists to elastically release SHARED/rented capacity; on a
-# single dedicated card scale-to-zero saves only ~€3/mo of idle power while
-# costing (a) cold-start 504s and (b) a blue-green rollout that DEADLOCKS on a
-# 12Gi GPU (two Qwen3-4B can't coexist). Always-on (replicas:1) + Recreate (old
-# pod frees the GPU before the new starts) removes both. We still run the stock
-# kserve/huggingfaceserver IMAGE — kept for its batteries-included vLLM+LMCache;
-# only the KServe/Knative ORCHESTRATION is dropped.
-server:
-  enabled: true
-  image:
-    repository: kserve/huggingfaceserver
-    # v0.18.0-gpu bundles vLLM 0.19.0 (v0.17.x = vLLM 0.15.1). LMCache isn't
-    # separately pinned in the huggingfaceserver lockfile (it rides in via the
-    # vLLM extra); on v0.17.0 the pair is skewed — vLLM's lmcache_connector calls
-    # `_lmcache_engine.get_kv_events()` which the bundled LMCache lacks
-    # ("AttributeError: ... no attribute get_kv_events"), crashing every prefill.
-    # If v0.18.0 still skews, try v0.19.0-rc0-gpu or disable LMCache. See ADR-0022.
-    tag: v0.18.0-gpu
-    pullPolicy: IfNotPresent
-  # Always-on, single replica on the single dedicated GPU.
-  replicas: 1
-  # GPU pinning. The home GPU node is labelled gpu-node:true; runtimeClassName
-  # nvidia gives the container GPU visibility. NOTE: no `nvidia.com/gpu` resource
-  # request — this PoC node has no device-plugin advertising that resource, so we
-  # rely on the runtime class + nodeSelector (see resources.limits below).
-  runtimeClassName: nvidia
-  nodeSelector:
-    gpu-node: "true"
-  # Where the PVC (subPath model.storagePath) mounts; --model_dir points here.
-  modelDir: /mnt/models
-  # Probes (tcpSocket :8080 — the huggingfaceserver REST port). A long startupProbe
-  # (~10 min = 40×15s) covers the multi-GB weight load from the PVC on (re)start so
-  # readiness/liveness don't kill the pod mid-load.
-  probes:
-    startup:
-      tcpSocket: { port: 8080 }
-      periodSeconds: 15
-      failureThreshold: 40
-      timeoutSeconds: 5
-    readiness:
-      tcpSocket: { port: 8080 }
-      periodSeconds: 15
-      timeoutSeconds: 10
-      failureThreshold: 3
-    liveness:
-      tcpSocket: { port: 8080 }
-      periodSeconds: 30
-      timeoutSeconds: 10
-      failureThreshold: 6
-  # huggingfaceserver / vLLM args (the image ENTRYPOINT is the hf model server;
-  # these are flags). Tuned for a 12GB A2000 (Ampere: no hardware FP8 → BF16/FP16
-  # + AWQ-Marlin only). `--model_dir` is the local weights path (the PVC mount) —
-  # it replaces KServe's pvc:// storageUri (which KServe used to inject).
-  args:
-    - --model_name=qwen3-4b
-    - --model_dir=/mnt/models
-    - --backend=vllm
-    - --dtype=float16
-    - --max-model-len=16384
-    - --max-num-seqs=4
-    - --gpu-memory-utilization=0.90
-    # NO --kv-cache-dtype=fp8: the A2000 is Ampere (no hardware FP8); flashinfer
-    # can't pass fp8 KV tensors through dlpack → "BufferError: float8 types are
-    # not supported by dlpack" on every prefill. KV cache stays fp16.
-    - --swap-space=1
-    - --enforce-eager
-    # Agentic tool calling. An agent client (opencode/LibreChat) sends a `tools`
-    # array with `tool_choice: "auto"`; vLLM then REQUIRES both flags below or it
-    # 400s with: '"auto" tool choice requires --enable-auto-tool-choice and
-    # --tool-call-parser to be set'. Direct curl calls work only because they
-    # omit `tools`. Qwen3 emits Hermes-style tool calls → parser `hermes`.
-    - --enable-auto-tool-choice
-    - --tool-call-parser=hermes
-    # NOTE: deliberately NOT setting `--reasoning-parser qwen3`. Qwen3's thinking
-    # mode + the hermes tool parser conflict in vLLM (tool-call parsing breaks
-    # when reasoning is parsed out — vllm#19513 / #19051). Tool calling is the
-    # priority for agentic use; <think> content stays inline in the message.
-    - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
-    # AWQ optimization only (community quant): --quantization=awq_marlin
-  extraEnv: []
-  # Pod/container securityContext mirrors KServe v0.17's huggingfaceserver runtime
-  # (non-root, no caps) — the image runs fine as non-root.
-  securityContext:
-    allowPrivilegeEscalation: false
-    runAsNonRoot: true
-    capabilities:
-      drop:
-        - ALL
-  # Host RAM = vLLM runtime (~2-3Gi) + LMCache CPU offload (lmcache.maxLocalCpuSizeGb)
-  # + vLLM --swap-space. The weights live in the 12Gi A2000 VRAM, not host RAM.
-  # No `nvidia.com/gpu` request (no device plugin) — GPU comes from runtimeClassName
-  # + nodeSelector. 12Gi/16Gi mem requests could not even schedule on the host.
-  resources:
-    requests:
-      cpu: "1"
-      memory: 2Gi
-    limits:
-      #nvidia.com/gpu: "1" # <-- the PoC node has no device-plugin for this
-      cpu: "3"
-      memory: 6Gi
-
-# In-pod LMCache (NOT the standalone lmcache_experimental_server — that's the
-# multi-replica shared-KV tool, irrelevant on one GPU). CPU-DRAM offload +
-# prefix reuse across requests.
-lmcache:
-  enabled: true
-  useExperimental: true
-  localCpu: true
-  maxLocalCpuSizeGb: 1          # GB of host RAM for offloaded KV
-
-# ─────────────────────────────────────────────────────────────────────────────
-# The vLLM API key Secret. NOTE: the huggingfaceserver image IGNORES VLLM_API_KEY
-# (it serves the OpenAI API itself, not via vLLM's own api-server), so this env
-# does NOT gate the model — the real gate is the edge Caddy proxy below, which
-# validates this same key. The Hetzner gateway's BackendSecurityPolicy sends it
-# as `Authorization: Bearer`. By-name from ssegning-aws; never embedded.
+# The vLLM API key Secret (own templates/externalsecret.yaml). NOTE: the
+# huggingfaceserver image IGNORES VLLM_API_KEY (serves OpenAI itself), so it does
+# NOT gate the model — the Caddy sidecar does, validating this same key. By-name
+# from ssegning-aws; never embedded.
 apiKey:
   enabled: true
   secretName: vllm-local-api-key
   dataKey: api_key
-  envVar: VLLM_API_KEY
   externalSecret:
     enabled: true
     secretStore: ssegning-aws
@@ -208,36 +90,196 @@ apiKey:
     property: vllm_local_api_key
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Edge auth (the public entrypoint). The model is a plain ClusterIP Service —
-# cluster-local BY CONSTRUCTION (no Ingress points at it). This tiny Caddy
-# reverse-proxy is the only public way in. It validates the gateway's
-# `Authorization: Bearer <vllm-local-api-key>` inline (the model image won't) →
-# 401 if wrong, else reverse-proxies over PLAIN in-cluster HTTP to the model
-# Service (no Knative/Traefik in the pod→pod path now, so no :80→:443 redirect,
-# no https/skip-verify needed). A Traefik IngressRoute (routing only) + a
-# cert-manager Certificate give it the clean public domain. See ADR-0029.
-#
-# Manual prerequisite: a DNS record for `host` → the home cluster's public entry.
+# Edge (own templates/edge-auth.yaml): the cert-manager Certificate + Traefik
+# IngressRoute for the public domain. The IngressRoute targets the bjw Service
+# (`qwen3-4b:8081` = the Caddy sidecar). Routing only — the sidecar does auth.
 edgeAuth:
   enabled: true
-  # ⚠️ SET THE REAL DOMAIN (+ ensure a DNS record → the home cluster) — must
-  # match ai-models vllmLocal.hostname. Pattern: <model>--poc.ssegning.com.
+  # ⚠️ SET THE REAL DOMAIN (+ DNS → the home cluster) — must match ai-models
+  # vllmLocal.hostname. Pattern: <model>--poc.ssegning.com.
   host: qwen3-4b--poc.ssegning.com
   entryPoint: websecure
-  # The in-cluster model Service the proxy forwards to (plain http now).
-  internalHost: qwen3-4b.converse-poc.svc.cluster.local
-  internalPort: 8080
+  # The bjw Service + port the IngressRoute forwards to (the Caddy sidecar).
+  serviceName: qwen3-4b
+  servicePort: 8081
   tls:
     issuer: cert-cloudflare        # ClusterIssuer (DNS-01) — works on the home cluster
     secretName: qwen3-model-edge-tls
-  proxy:
-    image: caddy:2-alpine          # stock; default CMD runs /etc/caddy/Caddyfile
-    replicas: 1
-    # Must exceed a deploy-time restart (Recreate reloads multi-GB weights ~30-60s)
-    # + a long generation, else THIS hop 504s before the model responds. Keep ≥
-    # ai-models qwen3-4b-local timeout.requestTimeout (both 600s).
-    # Path: Envoy(Hetzner) → Caddy → model.
-    responseTimeout: 600s
-    resources:
-      requests: { cpu: 10m, memory: 32Mi }
-      limits:   { cpu: 200m, memory: 128Mi }
+  # Caddy upstream timeout (templates/configmap-caddy.yaml). Must exceed a
+  # deploy-time restart (STS reloads multi-GB weights) + a long generation, so
+  # the proxy doesn't 504 before the model responds. Keep ≥ the ai-models
+  # qwen3-4b-local timeout.requestTimeout (both 600s). Path: Envoy → Caddy → model.
+  proxyResponseTimeout: 600s
+
+# ═════════════════════════════════════════════════════════════════════════════
+# bjw-template subchart (alias `modelServing`) — the merged StatefulSet.
+# ═════════════════════════════════════════════════════════════════════════════
+modelServing:
+  global:
+    # Pin resource names so the own-template IngressRoute can reference the
+    # Service deterministically (edgeAuth.serviceName above must match).
+    fullnameOverride: qwen3-4b
+
+  # GPU pinning for the (single) pod. No nvidia.com/gpu resource — the PoC node
+  # has no device plugin; runtimeClassName + nodeSelector are how the pod gets
+  # the GPU.
+  defaultPodOptions:
+    runtimeClassName: nvidia
+    nodeSelector:
+      gpu-node: "true"
+
+  controllers:
+    main:
+      # StatefulSet: on a single replica, RollingUpdate deletes pod-0 and
+      # recreates it — STS never runs two pods of the same ordinal, so there's
+      # never two model containers fighting for the single 12Gi GPU (the
+      # single-instance guarantee; ADR-0029). Trade-off: ~1-2min deploy gap.
+      type: statefulset
+      replicas: 1                            # always-on, single instance (one GPU)
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"   # after the seed Job (wave 0)
+
+      containers:
+        # ── 1) the model server (vLLM + in-pod LMCache) ──────────────────────
+        model:
+          image:
+            repository: kserve/huggingfaceserver
+            # v0.18.0-gpu = vLLM 0.19.0 + an aligned LMCache. NOT v0.17.x
+            # (vLLM 0.15.1) — the LMCache `get_kv_events` skew. See ADR-0022.
+            tag: v0.18.0-gpu
+            pullPolicy: IfNotPresent
+          # The image ENTRYPOINT is the hf model server; these are flags.
+          args:
+            - --model_name=qwen3-4b
+            - --model_dir=/mnt/models        # the PVC mount (replaces KServe storageUri)
+            - --backend=vllm
+            - --dtype=float16                # Ampere: no hardware FP8
+            - --max-model-len=16384
+            - --max-num-seqs=4
+            - --gpu-memory-utilization=0.90
+            - --swap-space=1
+            - --enforce-eager
+            # Agentic tool calling: tool_choice:"auto" 400s without these.
+            # Qwen3 → hermes parser. (NOT --reasoning-parser qwen3 — conflicts
+            # with the hermes tool parser; vllm#19513/#19051.)
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+            # NO --kv-cache-dtype=fp8 (Ampere/dlpack BufferError every prefill).
+          env:
+            LMCACHE_USE_EXPERIMENTAL: "True"
+            LMCACHE_LOCAL_CPU: "True"
+            LMCACHE_MAX_LOCAL_CPU_SIZE: "1"  # GB host RAM for offloaded KV
+            # Ignored by the image, but kept so a future vLLM-native server works.
+            VLLM_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: http
+              containerPort: 8080            # huggingfaceserver REST port
+          # `custom: true` so bjw uses our spec VERBATIM. Without it, bjw
+          # auto-derives the probe from the SERVICE port (8081 = the proxy) — but
+          # the model listens on 8080, and a probe against 8081 (the always-up
+          # Caddy) would mark the model Ready before its weights finish loading.
+          probes:
+            # Long startup so the multi-GB weight load isn't killed mid-load.
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }
+                periodSeconds: 15
+                failureThreshold: 40          # ~10 min
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              # nvidia.com/gpu: "1"   # the PoC node has no device-plugin for this
+              cpu: "3"
+              memory: 6Gi
+
+        # ── 2) the Caddy auth-proxy sidecar ──────────────────────────────────
+        # Validates `Authorization: Bearer <vllm key>` (the image won't), 401 else,
+        # then reverse-proxies to the model over localhost:8080 (same pod). It is
+        # the only exposed port; the model's :8080 is pod-local only.
+        proxy:
+          image:
+            repository: caddy
+            tag: 2-alpine
+            pullPolicy: IfNotPresent
+          # caddy image default CMD runs /etc/caddy/Caddyfile (mounted below).
+          env:
+            MODEL_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: edge
+              containerPort: 8081
+          probes:
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8081 }
+                periodSeconds: 10
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        edge:
+          port: 8081
+          targetPort: 8081          # → the Caddy sidecar
+
+  persistence:
+    # Pre-seeded weights PVC (created by templates/pvc.yaml), mounted read-only
+    # into the model container at /mnt/models (subPath = model.storagePath).
+    model-store:
+      enabled: true
+      existingClaim: qwen3-4b-models
+      advancedMounts:
+        main:
+          model:
+            - path: /mnt/models
+              subPath: Qwen3-4B
+              readOnly: true
+    # The Caddyfile ConfigMap (own templates/configmap-caddy.yaml) mounted into
+    # the proxy container at /etc/caddy. Name matches model.name + "-caddy".
+    caddyfile:
+      enabled: true
+      type: configMap
+      name: qwen3-4b-caddy
+      advancedMounts:
+        main:
+          proxy:
+            - path: /etc/caddy

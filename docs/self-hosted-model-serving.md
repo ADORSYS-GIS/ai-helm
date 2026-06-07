@@ -10,15 +10,19 @@ owned-hardware models), and [ADR-0029](./adr/0029-self-hosted-model-plain-deploy
 (**serving mode: a plain Deployment, not KServe/Knative**). The *how* of adding the
 **next** model is the checklist in **§14**.
 
-> ⚠️ **Serving mode changed (ADR-0029, 2026-06-07).** Originally this used a
-> **KServe `InferenceService` in Knative Serverless mode**; on a single *owned,
-> dedicated* GPU that bought ~€3/mo of idle power while causing cold-start 504s
-> and a blue-green rollout deadlock (two models can't share 12 GB). It's now a
-> **plain `Deployment`** (same huggingfaceserver image, so vLLM + LMCache are
-> unchanged): **`replicas: 1` always-on** + **`strategy: Recreate`** (old pod
-> frees the GPU before the new starts) + a plain ClusterIP Service. Mentions of
-> "Knative", "InferenceService", "ServingRuntime", "scale-to-zero", or
-> "scale-from-zero" in §1–§11 are **historical** unless in §11.4 — see ADR-0029.
+> ⚠️ **Serving mode changed (ADR-0029 → ADR-0030, 2026-06-07).** Originally this
+> used a **KServe `InferenceService` in Knative Serverless mode**; on a single
+> *owned, dedicated* GPU that bought ~€3/mo of idle power while causing cold-start
+> 504s and a blue-green rollout deadlock (two models can't share 12 GB). It's now
+> a **single `StatefulSet` rendered via `bjw-template`** (ADR-0016) with **two
+> containers in one pod** — the model server (huggingfaceserver, same image, so
+> vLLM + LMCache are unchanged) **+ the Caddy auth-proxy as a sidecar**, which
+> reaches the model over **`localhost`**. `replicas: 1` always-on; the StatefulSet
+> rolling-update recreates the single pod (never two model containers on the GPU).
+> Only the proxy's `:8081` is exposed (Service → IngressRoute); the model's
+> `:8080` is pod-local. Mentions of "Knative", "InferenceService",
+> "ServingRuntime", "scale-to-zero", "scale-from-zero", or a *separate proxy
+> Deployment* in §1–§11 are **historical** unless in §11.4 — see ADR-0029/0030.
 
 > **Reading order.** New here / want the as-built truth → **§11 "What actually
 > shipped"** (real architecture, full tool+argument inventory,
@@ -476,11 +480,14 @@ flowchart TB
 
   subgraph home["Home cluster (admin@homeos, Talos) — the GPU"]
     tr["Traefik v3.7.1<br/>IngressRoute Host(qwen3-4b--poc.ssegning.com)<br/>cert-manager TLS (cert-cloudflare)"]
-    proxy["Caddy auth-proxy (plain Deployment, replicas:1)<br/>Bearer == vllm key ? pass : 401"]
-    model["Deployment 'qwen3-4b' (ClusterIP, cluster-local)<br/>huggingfaceserver: vLLM 0.19 + in-pod LMCache<br/>replicas:1 always-on + Recreate · RTX A2000 (12GB)<br/>(plain Deployment — no KServe/Knative, ADR-0029)"]
+    svc["Service qwen3-4b :8081"]
+    subgraph sts["StatefulSet 'qwen3-4b' — ONE pod (bjw-template, ADR-0030)"]
+      proxy["container: proxy (caddy :8081)<br/>Bearer == vllm key ? pass : 401"]
+      model["container: model (huggingfaceserver :8080)<br/>vLLM 0.19 + in-pod LMCache · RTX A2000 (12GB)<br/>always-on, replicas:1"]
+      proxy -->|"reverse_proxy http://localhost:8080"| model
+    end
     pvc[("Longhorn PVC<br/>pre-seeded weights (read-only)")]
-    cf --> tr --> proxy
-    proxy -->|"reverse_proxy http://qwen3-4b:8080<br/>(plain in-cluster HTTP)"| model
+    cf --> tr --> svc --> proxy
     model --- pvc
   end
 
@@ -490,9 +497,10 @@ flowchart TB
 
 **Request path:** client → Envoy gateway (`api.ai.camer.digital`, Keycloak JWT +
 per-model budget/limits) → backend `vllm-local-01` injects the Bearer →
-Cloudflare → home Traefik IngressRoute (TLS) → **Caddy auth-proxy** (enforces the
-Bearer the model image ignores; `401` otherwise) → reverse-proxies **plain HTTP**
-to the **cluster-local** model Deployment (always-on) on the GPU.
+Cloudflare → home Traefik IngressRoute (TLS) → Service `qwen3-4b:8081` → the
+**Caddy sidecar** (enforces the Bearer the model image ignores; `401` otherwise)
+→ reverse-proxies to the **model container over `localhost:8080`** (same pod).
+The model's `:8080` is never exposed outside the pod.
 
 Two enforcement points: **Keycloak JWT** at the Envoy gateway (identity, budgets,
 rate limits) and the **static key** at the home edge (so direct hits to the home
@@ -503,7 +511,8 @@ domain can't bypass the gateway). The model itself enforces nothing.
 | Layer | Tool / image | Notes |
 |---|---|---|
 | Model server | `kserve/huggingfaceserver:v0.18.0-gpu` (stock image; **no KServe runtime**) | vLLM **0.19.0** + a compatible **LMCache**. v0.17.x (vLLM 0.15.1) had the LMCache skew (below). |
-| Serving | **plain k8s `Deployment`** (`replicas:1`, `strategy: Recreate`) + ClusterIP `Service` | always-on; no KServe/Knative (ADR-0029). GPU via `runtimeClassName: nvidia` + `gpu-node` selector. |
+| Serving | **`bjw-template` `StatefulSet`** (`replicas:1`), **two containers** (model `:8080` + Caddy sidecar `:8081`) + ClusterIP `Service` | always-on; no KServe/Knative (ADR-0029/0030). GPU via `runtimeClassName: nvidia` + `gpu-node`. Chart shape = hybrid bjw (own templates/ for the CRDs). |
+| Auth-proxy | **`caddy:2-alpine`** — a **sidecar in the model pod** | validates the Bearer, reverse-proxies to `localhost:8080`. ⚠️ model probes need bjw `custom: true` (else they target the Service port `:8081`, not `:8080`). |
 | KV cache | **LMCache** (in-pod, CPU offload + prefix reuse) | via `--kv-transfer-config`, NOT the standalone server. |
 | Weights | Longhorn **PVC**, pre-seeded by a one-time Job | `hf` CLI + **Xet** (`huggingface_hub[hf_xet]`) + `HF_TOKEN`. |
 | Auth-proxy | **`caddy:2-alpine`** (plain Deployment) | validates `Authorization: Bearer`, reverse-proxies to the model. |
@@ -514,7 +523,7 @@ domain can't bypass the gateway). The model itself enforces nothing.
 
 ### 11.3 Container arguments
 
-**huggingfaceserver (vLLM) — `charts/model-serving` `server.args`:**
+**huggingfaceserver (vLLM) — `charts/model-serving` `modelServing.controllers.main.containers.model.args`:**
 
 | Arg | Why |
 |---|---|
@@ -534,33 +543,34 @@ domain can't bypass the gateway). The model itself enforces nothing.
 
 Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by the image** — the Caddy proxy is the real gate). Resources: `requests 2Gi / limits 6Gi`, `lmcache.maxLocalCpuSizeGb: 1`. The `nvidia.com/gpu` limit is **commented out** (the PoC node has no device-plugin resource; GPU comes via `runtimeClassName: nvidia` + the `gpu-node` selector).
 
-**Caddy auth-proxy** — no command/args override (the image CMD already runs `caddy run --config /etc/caddy/Caddyfile`). Env `MODEL_API_KEY` ← secret `vllm-local-api-key`. Caddyfile:
+**Caddy auth-proxy** — a **sidecar in the model pod** (ADR-0030). No command/args override (the image CMD runs `caddy run --config /etc/caddy/Caddyfile`). Env `MODEL_API_KEY` ← secret `vllm-local-api-key`. Listens on `:8081` (the model owns `:8080`); reverse-proxies to its pod-mate over `localhost`. Caddyfile (`templates/configmap-caddy.yaml`):
 
 ```caddyfile
-:8080 {
+:8081 {
   @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
   respond @unauthorized 401
-  reverse_proxy http://qwen3-4b.converse-poc.svc.cluster.local:8080 {
+  reverse_proxy http://localhost:8080 {
     transport http { dial_timeout 10s; response_header_timeout 600s }
   }
 }
 ```
-(Plain in-cluster HTTP to the model Service — ADR-0029 dropped the Knative ksvc, so no Traefik `:80→:443` redirect to dodge, no `https`/`tls_insecure_skip_verify`/Host-rewrite.)
+(`localhost` — the proxy and model share one pod's network namespace, ADR-0030. No Knative/Traefik in this hop, so no `:80→:443` redirect, no `https`/`skip-verify`.)
 
 **Seed Job** — `hf download <repo> --local-dir …`; `huggingface_hub[hf_xet]` + `HF_TOKEN`; **no** `HF_XET_HIGH_PERFORMANCE` (its parallel buffering OOM-killed the 2Gi pod → use ≤4Gi, plain Xet).
 
-### 11.4 Serving mode: plain Deployment, always-on + Recreate (ADR-0029)
+### 11.4 Serving mode: one bjw-template StatefulSet, model + proxy sidecar (ADR-0029/0030)
 
-**This section is current; it supersedes the Knative/serverless description elsewhere.** The model is a plain `Deployment`, not a KServe InferenceService:
+**This section is current; it supersedes the Knative/serverless description elsewhere.** The model is a `bjw-template`-rendered `StatefulSet` with **two containers in one pod**, not a KServe InferenceService (and no longer a separate Deployment + proxy):
 
-- **Always-on** (`replicas: 1`) — the pod stays warm, so there are **no routine cold starts**. On a single *dedicated* owned GPU, scale-to-zero saved only ~€3/mo (idle *loaded* A2000 ≈ 10–15 W) while causing the cold-start 504s and the rollout deadlock below — not worth it (ADR-0029). It still holds VRAM continuously; fine because nothing else wants this GPU.
-- **`strategy: Recreate`** — the old pod terminates (freeing the 12 GB) **before** the new one starts. This is the **hard single-revision guarantee** Knative's blue-green couldn't give (two Qwen3-4B can't coexist in 12 GB). Trade-off: a deploy has **~1–2 min of downtime** (no pod while the new one reloads weights). Acceptable — a single GPU is single-instance anyway (no HA), and deploys are rare.
-- **Plain ClusterIP Service** → the model is **cluster-local by construction** (nothing routes to it publicly); the Caddy edge-proxy is the only way in, and it now reaches the model over **plain in-cluster HTTP** (no Knative/Traefik in the pod→pod path, so no `:80→:443` redirect, no `skip-verify`).
-- **Deploy-time 504s — raise the timeout at BOTH hops.** The only slow path left is a request landing *during* a `Recreate` restart (reload multi-GB weights). The path is **Envoy (Hetzner) → Caddy edge-proxy (home) → model**, and *either* hop returns `504 "upstream request timeout"` if too short:
-  - **Envoy:** a route-scoped `BackendTrafficPolicy` *replaces* the gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so a model route otherwise falls back to Envoy's **default ~15s**. Set `timeout.requestTimeout` per model (`ai-models` model entry → `timeout: {requestTimeout, connectionIdleTimeout}`; `charts/ai-model` plumbs it onto the BTP). `qwen3-4b-local` = **600s** (rides a restart + an 8k-token generation).
-  - **Caddy:** `edgeAuth.proxy.responseTimeout` (the proxy's `response_header_timeout`) must also exceed it — kept at **600s**, in sync with the Envoy value.
-- **Lenient probes** — a long `startupProbe` (tcpSocket :8080, ~10 min) so the multi-GB weight load on (re)start isn't killed by the default probe timeout.
-- GPU access: `runtimeClassName: nvidia` + `nodeSelector: gpu-node` — **no `nvidia.com/gpu` resource** (the PoC node has no device plugin advertising it).
+- **Chart shape (hybrid bjw, like `charts/librechat-app`):** `Chart.yaml` depends on `bjw-template` (alias `modelServing`); the workload (StatefulSet + Service) is values under `modelServing:`. The chart's **own `templates/`** render the rest — PVC, ExternalSecrets, seed Job (ArgoCD hook), the Caddyfile ConfigMap, and the edge Certificate + IngressRoute.
+- **Two containers, one pod (ADR-0030):** `model` (huggingfaceserver, `:8080`) + `proxy` (caddy, `:8081`). The proxy reverse-proxies to **`localhost:8080`** — no Service hop, and the model port is never exposed even in-cluster. Only the proxy's `:8081` is on the Service.
+- **Always-on** (`replicas: 1`) — the pod stays warm, so **no routine cold starts**. On a single *dedicated* owned GPU, scale-to-zero saved only ~€3/mo (idle *loaded* A2000 ≈ 10–15 W) while causing cold-start 504s + a rollout deadlock (ADR-0029). It holds VRAM continuously; fine because nothing else wants this GPU.
+- **StatefulSet single-instance guarantee:** with `replicas: 1`, the rolling update deletes the pod and recreates it — a StatefulSet never runs two pods of the same ordinal, so there's never two model containers fighting the 12 GB GPU (what ADR-0029 got from `Deployment` + `Recreate`). Trade-off: a deploy has **~1–2 min downtime** while the single pod restarts (single GPU = no HA anyway).
+- **⚠️ bjw probe gotcha:** the model's probes set **`custom: true`** so bjw uses the given `spec` (port `:8080`) verbatim. Without it bjw auto-derives the probe from the *Service* port (`:8081` = the always-up proxy) → the model would be marked Ready *before* its weights load. A long `startupProbe` (tcpSocket `:8080`, ~10 min) covers the multi-GB load.
+- **Deploy-time 504s — raise the timeout at BOTH hops.** The only slow path is a request landing *during* a restart (reload weights). Path: **Envoy (Hetzner) → Caddy sidecar → model (localhost)**; *either* of the first two returns `504` if too short:
+  - **Envoy:** a route-scoped `BackendTrafficPolicy` *replaces* the gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so a model route otherwise falls back to Envoy's **default ~15s**. Set `timeout.requestTimeout` per model (`ai-models` entry → `timeout: {requestTimeout, connectionIdleTimeout}`; `charts/ai-model` plumbs it onto the BTP). `qwen3-4b-local` = **600s**.
+  - **Caddy:** `edgeAuth.proxyResponseTimeout` (the proxy's `response_header_timeout`) must also exceed it — **600s**, in sync with the Envoy value.
+- GPU access: `runtimeClassName: nvidia` + `nodeSelector: gpu-node` (bjw `defaultPodOptions`) — **no `nvidia.com/gpu` resource** (the PoC node has no device plugin advertising it).
 
 ### 11.5 DNS & domain choices
 
@@ -575,13 +585,13 @@ Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by the image** —
 - **Scale-from-zero**: the GPU is free when idle (precious on a shared home-lab box).
 - **LMCache works** (v0.18 image) — KV offload + prefix reuse.
 - **Two-layer auth**: gateway JWT + edge key; the model is never directly reachable.
-- **All GitOps in one chart** (`charts/model-serving`, `homeCluster: true`) — model + seed + proxy + route + cert + secret.
+- **All GitOps in one chart** (`charts/model-serving`, `homeCluster: true`) — model + proxy (one StatefulSet) + seed + route + cert + secret.
 - **Stock images only** (no custom builds): huggingfaceserver, caddy.
 
 ### 11.7 The average (acceptable trade-offs)
 
-- **Deploy-time downtime ~1–2 min** — `Recreate` (ADR-0029) tears the old pod down before the new one reloads weights, so there's no model pod briefly during a deploy. Acceptable on a single-GPU (single-instance) box. (No *routine* cold starts anymore — the pod is always-on.)
-- **An extra hop** (tiny Caddy) in front of the model — now plain in-cluster HTTP (no TLS/skip-verify since dropping Knative, ADR-0029).
+- **Deploy-time downtime ~1–2 min** — the single-replica StatefulSet recreates its one pod on update (ADR-0030), so there's no model pod briefly during a deploy. Acceptable on a single-GPU (single-instance) box. (No *routine* cold starts — the pod is always-on.)
+- **A sidecar hop** (tiny Caddy in the model pod) over `localhost` — sub-millisecond, in-pod (ADR-0030); cheaper than the earlier cross-pod Service hop.
 - **Static API key**, not per-user identity, at the home edge (the per-user identity lives at the gateway).
 - **GPU held continuously** — always-on means VRAM is occupied even when idle. Fine on a dedicated card; revisit if the GPU becomes shared (ADR-0029).
 
@@ -618,12 +628,12 @@ curl -s https://$H/openai/v1/chat/completions -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3-4b","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
 
-# the model is a plain Deployment (always-on) + ClusterIP Service — cluster-local
-# by construction (no Ingress/IngressRoute points at it; only the proxy does).
-kubectl --context=admin@homeos -n converse-poc get deploy,svc qwen3-4b
-kubectl --context=admin@homeos -n converse-poc get deploy qwen3-4b \
-  -o jsonpath='strategy={.spec.strategy.type} replicas={.spec.replicas}{"\n"}'  # → Recreate 1
-# (there should be NO ksvc/InferenceService named qwen3-4b anymore — ADR-0029)
+# the model is a bjw StatefulSet (always-on) with 2 containers + a ClusterIP
+# Service that targets ONLY the proxy (:8081). The model :8080 is pod-local.
+kubectl --context=admin@homeos -n converse-poc get sts,svc qwen3-4b
+kubectl --context=admin@homeos -n converse-poc get sts qwen3-4b \
+  -o jsonpath='replicas={.spec.replicas} containers={range .spec.template.spec.containers[*]}{.name},{end}{"\n"}'  # → 1 model,proxy,
+# (no ksvc/InferenceService/Deployment named qwen3-4b — ADR-0029/0030)
 ```
 
 ---
