@@ -97,9 +97,11 @@ The umbrella needs **no ApplicationSet** — `applications.yaml` already passes 
 
 **ADR-0010** proposed automated image-updater write-back to `ai-gitops`; **ADR-0013** deferred it (and `ai-gitops` was never stood up). See those for the reasoning.
 
-## `targetRevision`: deploy branch now → release tag next, **never `main`**
+## `targetRevision`: TAG-BASED deploys, **never `main`**
 
-The current deployment runs from the branch **`claude/magical-bohr-390242`**, not `main`. The earlier "flip back to `main` on PR merge" plan is **retired** — `main` is never a deploy target. After this deployment settles, every self-referencing `targetRevision` (in `charts/apps/values.yaml` — `argocd.selfTargetRevision` + the per-app self-Source revisions — and the orchestrator children in `charts/ai-models/values.yaml` + `charts/librechart/values.yaml`) moves to a **release tag** (tag-based deploys only). The canonical note lives at `argocd.selfTargetRevision` in `charts/apps/values.yaml`. (`HEAD` revisions that point at *other* repos are unaffected.)
+Deploys are pinned to an **immutable release tag** — currently **`release-2026.06.08`** (cut over from the branch `claude/magical-bohr-390242` on 2026-06-08). `main` is **never** a deploy target. Every self-referencing `targetRevision` pins the tag: `argocd.selfTargetRevision` + the per-app self-Source revisions in `charts/apps/values.yaml`, and the orchestrator children in `charts/ai-models/values.yaml`, `charts/librechart/values.yaml`, and `charts/observability/values.yaml`. The canonical note lives at `argocd.selfTargetRevision` in `charts/apps/values.yaml`. (`HEAD` revisions that point at *other* repos are unaffected.)
+
+**To ship a new release:** (1) make the desired changes on a working branch; (2) bump every self-referencing `targetRevision` to the new tag name `release-YYYY.MM.DD` **in the same commit the tag will point at** (so the tag is self-consistent — children resolve to a tag that contains their own ref); (3) tag that commit `release-YYYY.MM.DD` and push the tag **before** anything live points at it; (4) repoint the root `ai-apps-v2` Application's `targetRevision` to the new tag (manually, on the `admin@homeos` ArgoCD cluster); (5) optionally fast-forward `main` to the tagged commit as a record. ArgoCD then renders `charts/apps` from the tag → all children pin the tag. Tags are immutable, so a known-good deploy can't drift.
 
 ## ArgoCD destinations: two-tier — control objects in-cluster, workloads home-remote (ADR-0017)
 

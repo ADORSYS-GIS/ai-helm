@@ -11,11 +11,11 @@
 argocd:
   namespace: argocd
   project: ai
-  # Source repo + branch for the leaf chart (charts/mcp). Deploys run from
-  # `claude/magical-bohr-390242` (NOT main) until the deployment settles, then
-  # pin to a release tag — tag-based deploys only; main is never a deploy target.
+  # Source repo for the leaf chart (charts/mcp). Deploys are tag-based: pinned to
+  # the immutable release tag below (main is never a deploy target). See the
+  # canonical note in charts/apps/values.yaml.
   repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: claude/magical-bohr-390242
+  targetRevision: release-2026.06.08
   destination:
     # Every child Application targets home-remote (ADR-0017). The destination
     # helper hard-fails the render if this resolves to in-cluster unless
