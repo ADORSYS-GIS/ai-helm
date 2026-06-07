@@ -19,7 +19,7 @@ owned-hardware models), and [ADR-0029](./adr/0029-self-hosted-model-plain-deploy
 > vLLM + LMCache are unchanged) **+ the Caddy auth-proxy as a sidecar**, which
 > reaches the model over **`localhost`**. `replicas: 1` always-on; the StatefulSet
 > rolling-update recreates the single pod (never two model containers on the GPU).
-> Only the proxy's `:8081` is exposed (Service → a plain k8s **Ingress**,
+> Only the proxy's `:8090` is exposed (Service → a plain k8s **Ingress**,
 > className `traefik`); the model's `:8080` is pod-local. The whole workload —
 > StatefulSet, the **seed Job (a bjw `job` controller)**, Service, Ingress — is
 > rendered by bjw; the weights PVC is **RWX** (Longhorn). Mentions of "Knative",
@@ -483,10 +483,10 @@ flowchart TB
 
   subgraph home["Home cluster (admin@homeos, Talos) — the GPU"]
     tr["Traefik v3.7.1<br/>Ingress (className traefik) Host(qwen3-4b--poc.ssegning.com)<br/>cert-manager TLS via ingress-shim (cert-cloudflare)"]
-    svc["Service qwen3-4b :8081"]
+    svc["Service qwen3-4b :8090"]
     subgraph sts["StatefulSet 'qwen3-4b' — ONE pod (bjw-template, ADR-0030)"]
-      proxy["container: proxy (caddy :8081)<br/>Bearer == vllm key ? pass : 401"]
-      model["container: model (huggingfaceserver :8080)<br/>vLLM 0.19 + in-pod LMCache · RTX A2000 (12GB)<br/>always-on, replicas:1"]
+      proxy["container: proxy (caddy :8090)<br/>Bearer == vllm key ? pass : 401"]
+      model["container: model (huggingfaceserver :8080 HTTP + :8081 gRPC)<br/>vLLM 0.19 + in-pod LMCache · RTX A2000 (12GB)<br/>always-on, replicas:1 · proxy on :8090 (8081 = model gRPC)"]
       proxy -->|"reverse_proxy http://localhost:8080"| model
     end
     pvc[("Longhorn PVC<br/>pre-seeded weights (read-only)")]
@@ -500,7 +500,7 @@ flowchart TB
 
 **Request path:** client → Envoy gateway (`api.ai.camer.digital`, Keycloak JWT +
 per-model budget/limits) → backend `vllm-local-01` injects the Bearer →
-Cloudflare → home Traefik Ingress (TLS) → Service `qwen3-4b:8081` → the
+Cloudflare → home Traefik Ingress (TLS) → Service `qwen3-4b:8090` → the
 **Caddy sidecar** (enforces the Bearer the model image ignores; `401` otherwise)
 → reverse-proxies to the **model container over `localhost:8080`** (same pod).
 The model's `:8080` is never exposed outside the pod.
@@ -514,8 +514,8 @@ domain can't bypass the gateway). The model itself enforces nothing.
 | Layer | Tool / image | Notes |
 |---|---|---|
 | Model server | `kserve/huggingfaceserver:v0.18.0-gpu` (stock image; **no KServe runtime**) | vLLM **0.19.0** + a compatible **LMCache**. v0.17.x (vLLM 0.15.1) had the LMCache skew (below). |
-| Serving | **`bjw-template` `StatefulSet`** (`replicas:1`), **two containers** (model `:8080` + Caddy sidecar `:8081`) + ClusterIP `Service` | always-on; no KServe/Knative (ADR-0029/0030). GPU via `runtimeClassName: nvidia` + `gpu-node`. Chart shape = hybrid bjw (own templates/ for the CRDs). |
-| Auth-proxy | **`caddy:2-alpine`** — a **sidecar in the model pod** | validates the Bearer, reverse-proxies to `localhost:8080`. ⚠️ model probes need bjw `custom: true` (else they target the Service port `:8081`, not `:8080`). |
+| Serving | **`bjw-template` `StatefulSet`** (`replicas:1`), **two containers** (model `:8080` + Caddy sidecar `:8090`) + ClusterIP `Service` | always-on; no KServe/Knative (ADR-0029/0030). GPU via `runtimeClassName: nvidia` + `gpu-node`. Chart shape = hybrid bjw (own templates/ for the CRDs). |
+| Auth-proxy | **`caddy:2-alpine`** — a **sidecar in the model pod** | validates the Bearer, reverse-proxies to `localhost:8080`. ⚠️ model probes need bjw `custom: true` (else they target the Service port `:8090`, not `:8080`). |
 | KV cache | **LMCache** (in-pod, CPU offload + prefix reuse) | via `--kv-transfer-config`, NOT the standalone server. |
 | Weights | Longhorn **PVC**, pre-seeded by a one-time Job | `hf` CLI + **Xet** (`huggingface_hub[hf_xet]`) + `HF_TOKEN`. |
 | Auth-proxy | **`caddy:2-alpine`** (plain Deployment) | validates `Authorization: Bearer`, reverse-proxies to the model. |
@@ -547,10 +547,10 @@ domain can't bypass the gateway). The model itself enforces nothing.
 
 Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by the image** — the Caddy proxy is the real gate). Resources: `requests 2Gi / limits 6Gi`, `lmcache.maxLocalCpuSizeGb: 1`. The `nvidia.com/gpu` limit is **commented out** (the PoC node has no device-plugin resource; GPU comes via `runtimeClassName: nvidia` + the `gpu-node` selector).
 
-**Caddy auth-proxy** — a **sidecar in the model pod** (ADR-0030). No command/args override (the image CMD runs `caddy run --config /etc/caddy/Caddyfile`). Env `MODEL_API_KEY` ← secret `vllm-local-api-key`. Listens on `:8081` (the model owns `:8080`); reverse-proxies to its pod-mate over `localhost`. Caddyfile (`templates/configmap-caddy.yaml`):
+**Caddy auth-proxy** — a **sidecar in the model pod** (ADR-0030). No command/args override (the image CMD runs `caddy run --config /etc/caddy/Caddyfile`). Env `MODEL_API_KEY` ← secret `vllm-local-api-key`. Listens on `:8090` (the model owns `:8080`); reverse-proxies to its pod-mate over `localhost`. Caddyfile (`templates/configmap-caddy.yaml`):
 
 ```caddyfile
-:8081 {
+:8090 {
   @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
   respond @unauthorized 401
   reverse_proxy http://localhost:8080 {
@@ -569,14 +569,14 @@ Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by the image** —
 - **Chart shape (hybrid bjw, like `charts/librechat-app`):** `Chart.yaml` depends on `bjw-template` (alias `modelServing`); bjw renders the **whole workload** — the model StatefulSet, the **seed `Job`** (a bjw `job` controller, ArgoCD Sync hook), the Service, and the **Ingress**. The chart's **own `templates/`** render only what bjw doesn't do natively: the weights PVC, the ExternalSecrets, and the Caddyfile ConfigMap.
 - **Weights PVC is RWX** (`ReadWriteMany`, Longhorn) so the seed Job and the model can mount it concurrently. ⚠️ accessModes are immutable — switching the old RWO PVC to RWX means **delete + recreate** (the weights re-seed on the next sync).
 - **Public route = a plain `Ingress`** (`className: traefik`) with `cert-manager.io/cluster-issuer: cert-cloudflare` — ingress-shim issues the TLS cert. No Traefik `IngressRoute` CRD / DomainMapping.
-- **Two containers, one pod (ADR-0030):** `model` (huggingfaceserver, `:8080`) + `proxy` (caddy, `:8081`). The proxy reverse-proxies to **`localhost:8080`** — no Service hop, and the model port is never exposed even in-cluster. Only the proxy's `:8081` is on the Service.
+- **Two containers, one pod (ADR-0030):** `model` (huggingfaceserver, `:8080`) + `proxy` (caddy, `:8090`). The proxy reverse-proxies to **`localhost:8080`** — no Service hop, and the model port is never exposed even in-cluster. Only the proxy's `:8090` is on the Service.
 - **Always-on** (`replicas: 1`) — the pod stays warm, so **no routine cold starts**. On a single *dedicated* owned GPU, scale-to-zero saved only ~€3/mo (idle *loaded* A2000 ≈ 10–15 W) while causing cold-start 504s + a rollout deadlock (ADR-0029). It holds VRAM continuously; fine because nothing else wants this GPU.
 - **StatefulSet single-instance guarantee:** with `replicas: 1`, the rolling update deletes the pod and recreates it — a StatefulSet never runs two pods of the same ordinal, so there's never two model containers fighting the 12 GB GPU (what ADR-0029 got from `Deployment` + `Recreate`). Trade-off: a deploy has **~1–2 min downtime** while the single pod restarts (single GPU = no HA anyway).
 - **⚠️ Probes for a slow loader — `httpGet /v2/health/ready`, NOT `tcpSocket`.** The huggingfaceserver binds `:8080` *early* (the HTTP server is up before the multi-GB weights finish loading), so a `tcpSocket :8080` probe passes within seconds → the startupProbe stops gating almost immediately → readiness/liveness run against a still-loading model → the pod is killed/`SIGTERM`'d mid-load and loops. Fix: probe the **model-readiness endpoint** `/v2/health/ready`, which returns 200 only once the model is loaded (the endpoint KServe's own probes use):
   - **startup** = the gate: `httpGet /v2/health/ready`, `failureThreshold 120 × periodSeconds 15 ≈ 30 min` budget. Until it passes, readiness + liveness are disabled → nothing kills the pod during the load. "Started" now means "loaded".
   - **readiness** = same endpoint → the Service routes only when truly ready (the pod is Ready only when *both* containers are; the always-up proxy can't make it Ready early).
   - **liveness** = `tcpSocket :8080` — kernel-level, so it does **not** false-fail when the loaded model is busy generating (an httpGet liveness would restart a healthy-but-busy server). Gated by startup, it never runs during the load.
-  - Also still `custom: true` (else bjw derives the probe from the Service port `:8081` = the proxy, not `:8080`). ⚠️ Confirm `/v2/health/ready` on first deploy; fallbacks: `/v2/models/qwen3-4b/ready` or vLLM `/health`.
+  - Also still `custom: true` (else bjw derives the probe from the Service port `:8090` = the proxy, not `:8080`). ⚠️ Confirm `/v2/health/ready` on first deploy; fallbacks: `/v2/models/qwen3-4b/ready` or vLLM `/health`.
 - **Deploy-time 504s — raise the timeout at BOTH hops.** The only slow path is a request landing *during* a restart (reload weights). Path: **Envoy (Hetzner) → Caddy sidecar → model (localhost)**; *either* of the first two returns `504` if too short:
   - **Envoy:** a route-scoped `BackendTrafficPolicy` *replaces* the gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so a model route otherwise falls back to Envoy's **default ~15s**. Set `timeout.requestTimeout` per model (`ai-models` entry → `timeout: {requestTimeout, connectionIdleTimeout}`; `charts/ai-model` plumbs it onto the BTP). `qwen3-4b-local` = **600s**.
   - **Caddy:** `edgeAuth.proxyResponseTimeout` (the proxy's `response_header_timeout`) must also exceed it — **600s**, in sync with the Envoy value.
@@ -611,7 +611,8 @@ Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by the image** —
 - **vLLM ↔ LMCache version skew is image-pinned.** v0.17.0 → `AttributeError: 'LMCacheConnectorV1Impl' object has no attribute get_kv_events`. LMCache isn't separately pinned (rides via the vLLM extra), so **bumping the image can re-break it** — test before bumping.
 - **Ampere = no FP8** → never `--kv-cache-dtype=fp8` (dlpack BufferError on every prefill).
 - **8Gi host RAM** is tight; `12Gi/16Gi` requests wouldn't even schedule.
-- **Server-Side Apply is strict** — a malformed field (e.g. a bare `livenessProbe.path` instead of `httpGet.path`) fails the *whole* Deployment apply; the pod never starts (this stalled the model once, and grafana hard).
+- ⚠️ **The model server binds TWO ports: HTTP `:8080` AND gRPC `:8081`** (KServe `--http_port` / `--grpc_port` defaults). In one pod (shared netns) the **Caddy sidecar must not use 8081** — it did, and the model's gRPC server crashed at startup with `Failed to bind to address [::]:8081` (`grpc/_common.py validate_port_binding_result`). The sidecar is on **`:8090`**; the model keeps KServe's 8080+8081.
+- **Server-Side Apply is strict** — a malformed field (e.g. a bare `livenessProbe.path` instead of `httpGet.path`) fails the *whole* apply; the pod never starts (this stalled the model once, and grafana hard).
 - **Single GPU** = no real HA; a deploy has a brief gap (now a clean `Recreate`, no overlap — ADR-0029).
 - **Domain/DNS finalization is manual** — `edgeAuth.host` + the `ai-models` hostname must be set together, and the DNS record must point at the home cluster.
 - *(historical)* Under Knative, in-cluster HTTP to the model was 301'd by Traefik's `:80→:443` redirect, forcing the proxy to use https + skip-verify. Gone with the plain ClusterIP Service (ADR-0029).
@@ -639,7 +640,7 @@ curl -s https://$H/openai/v1/chat/completions -H "Authorization: Bearer $KEY" \
   -d '{"model":"qwen3-4b","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
 
 # the model is a bjw StatefulSet (always-on) with 2 containers + a ClusterIP
-# Service that targets ONLY the proxy (:8081). The model :8080 is pod-local.
+# Service that targets ONLY the proxy (:8090). The model :8080 is pod-local.
 kubectl --context=admin@homeos -n converse-poc get sts,svc qwen3-4b
 kubectl --context=admin@homeos -n converse-poc get sts qwen3-4b \
   -o jsonpath='replicas={.spec.replicas} containers={range .spec.template.spec.containers[*]}{.name},{end}{"\n"}'  # → 1 model,proxy,
