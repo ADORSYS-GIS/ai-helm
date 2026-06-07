@@ -272,9 +272,61 @@ curl -s localhost:12345/api/v0/web/components | \
   python3 -c 'import sys,json;[print(c["localID"],c["health"]["state"]) for c in json.load(sys.stdin) if c["health"]["state"]!="healthy"]'
 ```
 
-### 7. Follow-ups (not blocking)
+### 7. Dashboard fixes — "looks good but it's not" (2026-06-07)
+
+With data flowing, the dashboards themselves had six distinct problems:
+
+1. **Kubernetes views show only `observability/kube-state-metrics`.** The ksm
+   ServiceMonitor scrape **overwrote the `namespace` label** with ksm's own
+   namespace (the real value survived as `exported_namespace`), so every
+   `kube_pod_info`/`kube_deployment_*` looked like it lived in `observability`.
+   Root cause: `honorLabels` unset on the ksm ServiceMonitor. **Fix:**
+   `prometheus.monitor.honorLabels: true` on the kube-state-metrics child —
+   mandatory for ksm, which reports labels *about other* objects.
+
+2. **"429 too many outstanding requests"** on dense dashboards (CloudNativePG):
+   one dashboard load fires dozens of concurrent range queries; with the
+   query-scheduler disabled, Mimir's query-frontend queues them and its default
+   cap is only 100/tenant. **Fix:** `frontend.max_outstanding_per_tenant: 2048`
+   + `querier.max_concurrent: 32` in the Mimir structuredConfig.
+
+3. **"Datasource ${DS_PROMETHEUS} was not found"** across the Infrastructure
+   folder (cert-manager, External Secrets, CNPG, …). These dashboards use the
+   **nested** datasource form (`"datasource": {"type":…,"uid":"${DS_PROMETHEUS}"}`),
+   but the grafana chart's string-form `datasource: Mimir` only rewrites the old
+   single-line `"datasource": "...",` shape — so the `${DS_*}` input tokens
+   survived. **Fix:** switch those dashboards to the chart's **list form**
+   (`datasource: [{name: DS_PROMETHEUS, value: mimir}]`), which substitutes the
+   token directly. Verified: list form → 0 unresolved tokens, 225 `uid:"mimir"`.
+   Per-dashboard input names vary (cnpg also has `DS_EXPRESSION`→`__expr__`;
+   external-secrets uses `DS_METRICS`). Dashboards backed by a datasource
+   *template variable* (k8s-views, mimir-overview, envoy) were already fine and
+   were left on the string form.
+
+4. **CloudNativePG dashboard** = #2 (429) + #3 (DS_PROMETHEUS) compounded; both
+   fixed above. (Its odd namespace pickers were the same `exported_namespace`
+   relabel issue as #1, also fixed.)
+
+5. **GitOps / ArgoCD dashboards empty — removed.** ArgoCD runs on the *separate*
+   `admin@homeos` control-plane cluster, not on `home-remote` where the workloads
+   (and this Grafana) live, so there are no `argocd_*` metrics here to show. The
+   two ArgoCD dashboards + the GitOps file-provider folder were removed. (If
+   ArgoCD self-monitoring is ever wanted, it belongs in an observability stack on
+   the homeos cluster.)
+
+6. **AI Gateway / per-user activity empty — expected, not a bug.** It is driven
+   by gateway access-logs; with no user traffic through `api.ai.camer.digital`
+   yet, there is nothing to show. Populates once requests flow.
+
+**Known follow-up:** the **Traefik** dashboard (gnetId 17931) is an *InfluxDB*
+dashboard (InfluxQL panels) — it cannot render against Mimir regardless of
+datasource mapping. Flagged in-values; needs replacing with a Prometheus-native
+Traefik dashboard.
+
+### 8. Follow-ups (not blocking)
 
 - Mimir pod count is inherent to `mimir-distributed`; revisit monolithic Mimir
   only if the footprint becomes a problem.
 - Traces only appear once requests actually flow through the AI gateway (the
   trace source). An idle gateway → empty Tempo is expected, not a bug.
+- Replace the InfluxDB Traefik dashboard (17931) with a Prometheus-native one.
