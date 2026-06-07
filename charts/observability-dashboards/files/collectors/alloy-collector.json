@@ -1,0 +1,104 @@
+{
+  "title": "Alloy / Collector Health",
+  "uid": "alloy-collector",
+  "schemaVersion": 39,
+  "editable": true,
+  "tags": ["observability", "alloy", "collector"],
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Running components",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(alloy_component_controller_running_components)", "legendFormat": "components" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Cluster peers",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "max(cluster_node_peers{state=\"participant\"})", "legendFormat": "peers" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Remote-write samples/s (to Mimir)",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "wps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(prometheus_remote_storage_samples_total[5m]))", "legendFormat": "samples/s" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Log entries/s (to Loki)",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "wps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(loki_write_sent_entries_total[5m]))", "legendFormat": "entries/s" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Metrics pipeline — samples to Mimir",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "wps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(prometheus_remote_storage_samples_total[5m]))", "legendFormat": "sent" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(prometheus_remote_storage_samples_failed_total[5m]))", "legendFormat": "failed" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(prometheus_remote_storage_samples_retried_total[5m]))", "legendFormat": "retried" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Logs pipeline — entries to Loki",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "wps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(loki_write_sent_entries_total[5m]))", "legendFormat": "sent" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(loki_write_dropped_entries_total[5m]))", "legendFormat": "dropped" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "OTLP receiver — accepted spans & logs/s",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(otelcol_receiver_accepted_spans_total[5m]))", "legendFormat": "spans/s" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(otelcol_receiver_accepted_log_records_total[5m]))", "legendFormat": "logs/s" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Component evaluation p95 (s)",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "histogram_quantile(0.95, sum by (le) (rate(alloy_component_evaluation_seconds_bucket[5m])))", "legendFormat": "p95" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "title": "Tempo / Single-Binary Health",
+  "uid": "tempo-single-binary",
+  "schemaVersion": 39,
+  "editable": true,
+  "tags": ["observability", "tempo", "tracing"],
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Live traces",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(tempo_ingester_live_traces)", "legendFormat": "live" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Accepted spans/s",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(tempo_distributor_spans_received_total[5m]))", "legendFormat": "spans/s" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Blocklist length",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "max(tempodb_blocklist_length)", "legendFormat": "blocks" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Queries/s",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "qps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(tempo_query_frontend_queries_total[5m]))", "legendFormat": "queries/s" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Ingest — spans received vs refused/s",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(tempo_distributor_spans_received_total[5m]))", "legendFormat": "received" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(tempo_discarded_spans_total[5m]))", "legendFormat": "discarded" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Request latency p95 by route (s)",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "histogram_quantile(0.95, sum by (le, route) (rate(tempo_request_duration_seconds_bucket[5m])))", "legendFormat": "{{route}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Block flushes & failures/s",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(tempo_ingester_blocks_flushed_total[5m]))", "legendFormat": "flushed" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum(rate(tempo_ingester_failed_flushes_total[5m]))", "legendFormat": "failed" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "S3 backend request rate by operation/s",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "mimir" }, "expr": "sum by (operation) (rate(tempodb_backend_request_duration_seconds_count[5m]))", "legendFormat": "{{operation}}" }
+      ]
+    }
+  ]
+}

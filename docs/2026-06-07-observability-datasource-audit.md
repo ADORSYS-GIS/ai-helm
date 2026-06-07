@@ -354,10 +354,41 @@ controller-runtime metrics that *do* exist (Envoy Gateway's). Database panels
 work; operator panels need a PodMonitor for the cnpg operator in `cnpg-system`
 (optional — it's an externally-managed namespace).
 
-### 8. Follow-ups (not blocking)
+### 8. Dashboard replacements for the removed boards (2026-06-08)
+
+- **Traefik** → swapped to gnetId **17347** ("Traefik Official Kubernetes
+  Dashboard", Prometheus-native, list-form `DS_PROMETHEUS`→mimir). Real value —
+  the Traefik ingress is actively scraped.
+- **Alloy & Tempo** → the upstream dashboards don't fit (Alloy ships *jsonnet
+  only*; the Tempo mixins are distributed-oriented and assume per-component `job`
+  labels our single-binary doesn't have). Importing them would just recreate
+  empty boards. Instead, authored **purpose-built dashboards-as-code** as
+  GrafanaDashboard CRs in `observability-dashboards` (folder "Collectors &
+  Tracing"), targeting the **confirmed-present** series:
+  - `alloy-collector` — running components, cluster peers, remote-write
+    samples/s (+ failed/retried), Loki entries/s (+ dropped), OTLP accepted
+    spans/logs, component-eval p95.
+  - `tempo-single-binary` — live traces, spans received/discarded, blocklist
+    length, query rate, request p95 by route, block flushes, S3 backend rate.
+
+### 9. CNPG operator namespace — Alloy is already scraping; the operator lacks a PodMonitor
+
+Re #4's "Operator Namespace: envoy-gateway-system": this is **not** an Alloy gap.
+Alloy's `prometheus.operator.{servicemonitors,podmonitors}` discovers CRs
+**cluster-wide**, proven by the CNPG *database* working — the CNPG `Cluster` CR
+auto-creates `podmonitor/lightbridge-main-db` in `converse`, which Alloy scrapes.
+The CNPG **operator** (`cnpg-system`, external) exposes `metrics:8080` but ships
+**no** PodMonitor, so there's nothing to discover → the dashboard's
+operator-namespace variable latches onto the controller-runtime metrics that *do*
+exist (Envoy Gateway's). Fix belongs in **home-os** (the cnpg operator's owner):
+enable its `podMonitorEnabled`. Not an ai-helm change — adding a PodMonitor into
+the externally-managed `cnpg-system` from here would be cross-repo ownership.
+
+### 10. Follow-ups (not blocking)
 
 - Mimir pod count is inherent to `mimir-distributed`; revisit monolithic Mimir
   only if the footprint becomes a problem.
 - Traces only appear once requests actually flow through the AI gateway (the
   trace source). An idle gateway → empty Tempo is expected, not a bug.
-- Replace the InfluxDB Traefik dashboard (17931) with a Prometheus-native one.
+- Per-user AI-gateway dashboard: send an authenticated request through
+  `api.ai.camer.digital` to populate (the direct Caddy endpoint bypasses it).
