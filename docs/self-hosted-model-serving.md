@@ -1,13 +1,24 @@
-# Self-hosted model serving on the home GPU (KServe + vLLM + LMCache)
+# Self-hosted model serving on the home GPU (vLLM + LMCache)
 
 **This is the platform pattern for serving *any* self-hosted model or agent on the
 home GPU**, plus the reference build for the first one. `charts/model-serving` is
 the reusable chart; **Qwen3-4B is the reference deployment** documented in detail
 throughout (§1–§13). The *why* of the pattern is
 [ADR-0022](./adr/0022-self-hosted-gpu-model-federated-into-gateway.md) (federation
-+ exposure) and [ADR-0028](./adr/0028-owned-hardware-model-pricing.md) (how we
-price owned-hardware models). The *how* of adding the **next** model is the
-checklist in **§14**.
++ exposure), [ADR-0028](./adr/0028-owned-hardware-model-pricing.md) (how we price
+owned-hardware models), and [ADR-0029](./adr/0029-self-hosted-model-plain-deployment.md)
+(**serving mode: a plain Deployment, not KServe/Knative**). The *how* of adding the
+**next** model is the checklist in **§14**.
+
+> ⚠️ **Serving mode changed (ADR-0029, 2026-06-07).** Originally this used a
+> **KServe `InferenceService` in Knative Serverless mode**; on a single *owned,
+> dedicated* GPU that bought ~€3/mo of idle power while causing cold-start 504s
+> and a blue-green rollout deadlock (two models can't share 12 GB). It's now a
+> **plain `Deployment`** (same huggingfaceserver image, so vLLM + LMCache are
+> unchanged): **`replicas: 1` always-on** + **`strategy: Recreate`** (old pod
+> frees the GPU before the new starts) + a plain ClusterIP Service. Mentions of
+> "Knative", "InferenceService", "ServingRuntime", "scale-to-zero", or
+> "scale-from-zero" in §1–§11 are **historical** unless in §11.4 — see ADR-0029.
 
 > **Reading order.** New here / want the as-built truth → **§11 "What actually
 > shipped"** (real architecture, full tool+argument inventory,
@@ -466,10 +477,10 @@ flowchart TB
   subgraph home["Home cluster (admin@homeos, Talos) — the GPU"]
     tr["Traefik v3.7.1<br/>IngressRoute Host(qwen3-4b--poc.ssegning.com)<br/>cert-manager TLS (cert-cloudflare)"]
     proxy["Caddy auth-proxy (plain Deployment, replicas:1)<br/>Bearer == vllm key ? pass : 401"]
-    model["KServe InferenceService 'qwen3-4b' (cluster-local)<br/>Knative + vLLM 0.19 + in-pod LMCache<br/>minReplicas:0 → scale-from-zero on the RTX A2000 (12GB)"]
-    pvc[("Longhorn PVC<br/>pre-seeded weights")]
+    model["Deployment 'qwen3-4b' (ClusterIP, cluster-local)<br/>huggingfaceserver: vLLM 0.19 + in-pod LMCache<br/>replicas:1 always-on + Recreate · RTX A2000 (12GB)<br/>(plain Deployment — no KServe/Knative, ADR-0029)"]
+    pvc[("Longhorn PVC<br/>pre-seeded weights (read-only)")]
     cf --> tr --> proxy
-    proxy -->|"reverse_proxy https (skip-verify)<br/>Host-rewrite → cluster-local FQDN"| model
+    proxy -->|"reverse_proxy http://qwen3-4b:8080<br/>(plain in-cluster HTTP)"| model
     model --- pvc
   end
 
@@ -480,8 +491,8 @@ flowchart TB
 **Request path:** client → Envoy gateway (`api.ai.camer.digital`, Keycloak JWT +
 per-model budget/limits) → backend `vllm-local-01` injects the Bearer →
 Cloudflare → home Traefik IngressRoute (TLS) → **Caddy auth-proxy** (enforces the
-Bearer KServe ignores; `401` otherwise) → reverse-proxies HTTPS to the
-**cluster-local** KServe/Knative model → vLLM wakes from zero on the GPU.
+Bearer the model image ignores; `401` otherwise) → reverse-proxies **plain HTTP**
+to the **cluster-local** model Deployment (always-on) on the GPU.
 
 Two enforcement points: **Keycloak JWT** at the Envoy gateway (identity, budgets,
 rate limits) and the **static key** at the home edge (so direct hits to the home
@@ -491,8 +502,8 @@ domain can't bypass the gateway). The model itself enforces nothing.
 
 | Layer | Tool / image | Notes |
 |---|---|---|
-| Model server | `kserve/huggingfaceserver:v0.18.0-gpu` | vLLM **0.19.0** + a compatible **LMCache**. v0.17.x (vLLM 0.15.1) had the LMCache skew (below). |
-| Serving | KServe v0.17 controller + **Knative Serving** (net-gateway-api → Traefik) | InferenceService `qwen3-4b`, predictor ksvc `qwen3-4b-predictor`. |
+| Model server | `kserve/huggingfaceserver:v0.18.0-gpu` (stock image; **no KServe runtime**) | vLLM **0.19.0** + a compatible **LMCache**. v0.17.x (vLLM 0.15.1) had the LMCache skew (below). |
+| Serving | **plain k8s `Deployment`** (`replicas:1`, `strategy: Recreate`) + ClusterIP `Service` | always-on; no KServe/Knative (ADR-0029). GPU via `runtimeClassName: nvidia` + `gpu-node` selector. |
 | KV cache | **LMCache** (in-pod, CPU offload + prefix reuse) | via `--kv-transfer-config`, NOT the standalone server. |
 | Weights | Longhorn **PVC**, pre-seeded by a one-time Job | `hf` CLI + **Xet** (`huggingface_hub[hf_xet]`) + `HF_TOKEN`. |
 | Auth-proxy | **`caddy:2-alpine`** (plain Deployment) | validates `Authorization: Bearer`, reverse-proxies to the model. |
@@ -503,22 +514,25 @@ domain can't bypass the gateway). The model itself enforces nothing.
 
 ### 11.3 Container arguments
 
-**huggingfaceserver (vLLM) — `charts/model-serving` `inferenceService.args`:**
+**huggingfaceserver (vLLM) — `charts/model-serving` `server.args`:**
 
 | Arg | Why |
 |---|---|
 | `--model_name=qwen3-4b` | served name (clients send `model: qwen3-4b` direct; `qwen3-4b-local` is the gateway alias) |
+| `--model_dir=/mnt/models` | local weights path (the PVC mount). Replaces KServe's injected `pvc://` storageUri (ADR-0029) |
 | `--backend=vllm` | vLLM engine |
 | `--dtype=float16` | A2000 is Ampere (FP16/BF16; no hardware FP8) |
 | `--max-model-len=16384` | context cap (VRAM-bound) |
 | `--max-num-seqs=4` | concurrent sequences (12GB VRAM) |
 | `--gpu-memory-utilization=0.90` | leave ~10% VRAM headroom |
-| `--swap-space=1` | cap vLLM CPU swap (default 4Gi) — host has only **8Gi** RAM |
+| `--swap-space=1` | cap vLLM CPU swap (default 4Gi) |
 | `--enforce-eager` | skip CUDA-graph capture (memory + stability on the small GPU) |
+| `--enable-auto-tool-choice` + `--tool-call-parser=hermes` | agentic tool calling: `tool_choice:"auto"` 400s without these; Qwen3 → hermes parser |
 | `--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}` | enable in-pod LMCache |
 | ~~`--kv-cache-dtype=fp8`~~ | **REMOVED** — flashinfer can't pass fp8 KV via dlpack on Ampere → crash every prefill |
+| ~~`--reasoning-parser=qwen3`~~ | **NOT set** — conflicts with the hermes tool parser (vllm#19513/#19051); `<think>` stays inline |
 
-Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by KServe** — kept only for documentation/future). Resources: `requests 2Gi / limits 6Gi`, `lmcache.maxLocalCpuSizeGb: 1` (8Gi host). The `nvidia.com/gpu` limit is **commented out** (the PoC host has no device-plugin resource; GPU comes via `runtimeClassName: nvidia` + the `gpu-node` selector).
+Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by the image** — the Caddy proxy is the real gate). Resources: `requests 2Gi / limits 6Gi`, `lmcache.maxLocalCpuSizeGb: 1`. The `nvidia.com/gpu` limit is **commented out** (the PoC node has no device-plugin resource; GPU comes via `runtimeClassName: nvidia` + the `gpu-node` selector).
 
 **Caddy auth-proxy** — no command/args override (the image CMD already runs `caddy run --config /etc/caddy/Caddyfile`). Env `MODEL_API_KEY` ← secret `vllm-local-api-key`. Caddyfile:
 
@@ -526,24 +540,27 @@ Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by KServe** — ke
 :8080 {
   @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
   respond @unauthorized 401
-  reverse_proxy https://qwen3-4b-predictor.converse-poc.svc.cluster.local {
-    header_up Host qwen3-4b-predictor.converse-poc.svc.cluster.local
-    transport http { tls_insecure_skip_verify; response_header_timeout 300s }
+  reverse_proxy http://qwen3-4b.converse-poc.svc.cluster.local:8080 {
+    transport http { dial_timeout 10s; response_header_timeout 600s }
   }
 }
 ```
+(Plain in-cluster HTTP to the model Service — ADR-0029 dropped the Knative ksvc, so no Traefik `:80→:443` redirect to dodge, no `https`/`tls_insecure_skip_verify`/Host-rewrite.)
 
 **Seed Job** — `hf download <repo> --local-dir …`; `huggingface_hub[hf_xet]` + `HF_TOKEN`; **no** `HF_XET_HIGH_PERFORMANCE` (its parallel buffering OOM-killed the 2Gi pod → use ≤4Gi, plain Xet).
 
-### 11.4 Knative / single-GPU behavior + cold-start timeouts
+### 11.4 Serving mode: plain Deployment, always-on + Recreate (ADR-0029)
 
-- **`minReplicas: 0`** — the model scales to zero when idle, freeing the GPU. ⚠️ The template must reference it directly, NOT `{{ .minReplicas | default 1 }}` (Go-template `0 | default 1` → `1`).
-- **Stay-warm window (avoid routine cold starts).** `scale-to-zero-pod-retention-period: 5m` + `window: 60s` keep the last pod alive ~6 min after the final request, so bursty traffic hits a **warm** pod instead of paying the ~30–60s weight reload every time. This is the "last N minutes before sleep" knob.
-- **Cold-start 504s — raise the timeout at BOTH hops.** First call after sleep can take tens of seconds to minutes (reschedule + reload multi-GB weights). The path is **Envoy (Hetzner) → Caddy edge-proxy (home) → model**, and *either* hop will return `504 "upstream request timeout"` if its budget is too short:
-  - **Envoy:** a route-scoped `BackendTrafficPolicy` *replaces* the gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so a model route otherwise falls back to Envoy's **default ~15s**. Set `timeout.requestTimeout` per model (`ai-models` model entry → `timeout: {requestTimeout, connectionIdleTimeout}`; `charts/ai-model` plumbs it onto the BTP). `qwen3-4b-local` = **600s** (rides cold start + an 8k-token generation).
-  - **Caddy:** `edgeAuth.proxy.responseTimeout` (the proxy's `response_header_timeout`) must also exceed the cold start — kept at **600s**, in sync with the Envoy value.
-- **One model per GPU + rollout trade-off.** Knative is blue-green (new revision before old); a 12GB GPU can't hold two Qwen3-4B. The 5-min retention now makes an **old** revision linger ~5 min holding the GPU during a deploy → the new revision can't claim it until retention expires → a deploy can stall up to ~5 min (self-heals; `minReplicas:0` still lets the old one go). Earlier `0s` gave instant handoff but cold-started on every idle period — we traded deploy speed for fewer cold starts. Force a fast deploy with `kubectl delete pod` on the old revision. **Best-effort, not a hard guarantee** — the hard fix (no overlap, no cold start) is RawDeployment + Recreate (§11.9).
-- **Lenient probes** — a long `startupProbe` (tcpSocket :8080, ~10min) so the multi-GB cold load isn't killed by the default probe timeout.
+**This section is current; it supersedes the Knative/serverless description elsewhere.** The model is a plain `Deployment`, not a KServe InferenceService:
+
+- **Always-on** (`replicas: 1`) — the pod stays warm, so there are **no routine cold starts**. On a single *dedicated* owned GPU, scale-to-zero saved only ~€3/mo (idle *loaded* A2000 ≈ 10–15 W) while causing the cold-start 504s and the rollout deadlock below — not worth it (ADR-0029). It still holds VRAM continuously; fine because nothing else wants this GPU.
+- **`strategy: Recreate`** — the old pod terminates (freeing the 12 GB) **before** the new one starts. This is the **hard single-revision guarantee** Knative's blue-green couldn't give (two Qwen3-4B can't coexist in 12 GB). Trade-off: a deploy has **~1–2 min of downtime** (no pod while the new one reloads weights). Acceptable — a single GPU is single-instance anyway (no HA), and deploys are rare.
+- **Plain ClusterIP Service** → the model is **cluster-local by construction** (nothing routes to it publicly); the Caddy edge-proxy is the only way in, and it now reaches the model over **plain in-cluster HTTP** (no Knative/Traefik in the pod→pod path, so no `:80→:443` redirect, no `skip-verify`).
+- **Deploy-time 504s — raise the timeout at BOTH hops.** The only slow path left is a request landing *during* a `Recreate` restart (reload multi-GB weights). The path is **Envoy (Hetzner) → Caddy edge-proxy (home) → model**, and *either* hop returns `504 "upstream request timeout"` if too short:
+  - **Envoy:** a route-scoped `BackendTrafficPolicy` *replaces* the gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so a model route otherwise falls back to Envoy's **default ~15s**. Set `timeout.requestTimeout` per model (`ai-models` model entry → `timeout: {requestTimeout, connectionIdleTimeout}`; `charts/ai-model` plumbs it onto the BTP). `qwen3-4b-local` = **600s** (rides a restart + an 8k-token generation).
+  - **Caddy:** `edgeAuth.proxy.responseTimeout` (the proxy's `response_header_timeout`) must also exceed it — kept at **600s**, in sync with the Envoy value.
+- **Lenient probes** — a long `startupProbe` (tcpSocket :8080, ~10 min) so the multi-GB weight load on (re)start isn't killed by the default probe timeout.
+- GPU access: `runtimeClassName: nvidia` + `nodeSelector: gpu-node` — **no `nvidia.com/gpu` resource** (the PoC node has no device plugin advertising it).
 
 ### 11.5 DNS & domain choices
 
@@ -563,25 +580,25 @@ Env: `LMCACHE_*` (offload), `VLLM_API_KEY` (set but **ignored by KServe** — ke
 
 ### 11.7 The average (acceptable trade-offs)
 
-- **Cold start ~30–60s** on the first request after idle (reload weights from PVC). Mitigated by the proxy staying warm + a generous client timeout.
-- **`tls_insecure_skip_verify`** on the proxy→model hop (in-cluster, internal CA) — acceptable; it's a same-cluster call.
-- **An extra hop** (tiny Caddy) in front of the model.
+- **Deploy-time downtime ~1–2 min** — `Recreate` (ADR-0029) tears the old pod down before the new one reloads weights, so there's no model pod briefly during a deploy. Acceptable on a single-GPU (single-instance) box. (No *routine* cold starts anymore — the pod is always-on.)
+- **An extra hop** (tiny Caddy) in front of the model — now plain in-cluster HTTP (no TLS/skip-verify since dropping Knative, ADR-0029).
 - **Static API key**, not per-user identity, at the home edge (the per-user identity lives at the gateway).
+- **GPU held continuously** — always-on means VRAM is occupied even when idle. Fine on a dedicated card; revisit if the GPU becomes shared (ADR-0029).
 
 ### 11.8 The bad / caveats
 
-- ⚠️ **KServe huggingfaceserver IGNORES `VLLM_API_KEY`.** It serves the OpenAI API itself; the env only gates vLLM's *own* api-server. A public route = an open GPU. This is the whole reason for the cluster-local + auth-proxy design. Verified: pre-fix, `no-auth` and `wrong-key` both returned `200`.
+- ⚠️ **The huggingfaceserver image IGNORES `VLLM_API_KEY`.** It serves the OpenAI API itself; the env only gates vLLM's *own* api-server. A public route = an open GPU. This is the whole reason for the cluster-local + Caddy auth-proxy design — and it's a property of the **image**, so it survives the move off KServe (ADR-0029). Verified: pre-fix, `no-auth` and `wrong-key` both returned `200`.
 - **vLLM ↔ LMCache version skew is image-pinned.** v0.17.0 → `AttributeError: 'LMCacheConnectorV1Impl' object has no attribute get_kv_events`. LMCache isn't separately pinned (rides via the vLLM extra), so **bumping the image can re-break it** — test before bumping.
 - **Ampere = no FP8** → never `--kv-cache-dtype=fp8` (dlpack BufferError on every prefill).
 - **8Gi host RAM** is tight; `12Gi/16Gi` requests wouldn't even schedule.
-- **In-cluster HTTP to the model is 301'd** by Traefik's `:80→:443` redirect — the proxy must use **https** (+ skip-verify) to reach it.
 - **Server-Side Apply is strict** — a malformed field (e.g. a bare `livenessProbe.path` instead of `httpGet.path`) fails the *whole* Deployment apply; the pod never starts (this stalled the model once, and grafana hard).
-- **Single GPU** = no real HA; rollout overlap is only mitigated, not eliminated.
+- **Single GPU** = no real HA; a deploy has a brief gap (now a clean `Recreate`, no overlap — ADR-0029).
 - **Domain/DNS finalization is manual** — `edgeAuth.host` + the `ai-models` hostname must be set together, and the DNS record must point at the home cluster.
+- *(historical)* Under Knative, in-cluster HTTP to the model was 301'd by Traefik's `:80→:443` redirect, forcing the proxy to use https + skip-verify. Gone with the plain ClusterIP Service (ADR-0029).
 
 ### 11.9 Improvements (backlog)
 
-1. **Hard single-revision guarantee** → KServe **RawDeployment + `Recreate`** strategy (old pod dies before new). Cost: drops Knative → the public route mechanism changes. The current `minReplicas:0` is best-effort.
+1. ✅ **Done (ADR-0029): hard single-revision guarantee** — moved from Knative to a plain `Deployment` with `strategy: Recreate` (old pod dies before new). Cold starts + rollout deadlock eliminated; the public route is now a plain ClusterIP Service + the Caddy proxy.
 2. **Proper token auth at the edge** → replace the static-key Caddy check with a **JWT-validating resource-server proxy** (validate the Keycloak token, matching the gateway's identity) — oauth2-proxy in resource-server mode or a small JWT-verifying proxy.
 3. **Pin/track a known-good vLLM+LMCache combo**; add a smoke test that does one completion post-deploy so a bad image bump is caught.
 4. **AWQ-Marlin quant** for more VRAM headroom / a bigger model on the 12GB card.
@@ -601,9 +618,12 @@ curl -s https://$H/openai/v1/chat/completions -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3-4b","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
 
-# the model itself must be cluster-local only (no public route)
-kubectl --context=admin@homeos -n converse-poc get ksvc qwen3-4b-predictor \
-  -o jsonpath='visibility={.metadata.labels.networking\.knative\.dev/visibility}{"\n"}'  # → cluster-local
+# the model is a plain Deployment (always-on) + ClusterIP Service — cluster-local
+# by construction (no Ingress/IngressRoute points at it; only the proxy does).
+kubectl --context=admin@homeos -n converse-poc get deploy,svc qwen3-4b
+kubectl --context=admin@homeos -n converse-poc get deploy qwen3-4b \
+  -o jsonpath='strategy={.spec.strategy.type} replicas={.spec.replicas}{"\n"}'  # → Recreate 1
+# (there should be NO ksvc/InferenceService named qwen3-4b anymore — ADR-0029)
 ```
 
 ---

@@ -244,6 +244,7 @@ The high-impact ones:
 - [ADR-0021](adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md) — burst/budget/billing via dual-plane AuthConfigs (OPA removed; Keycloak JWT is the boundary)
 - [ADR-0022](adr/0022-self-hosted-gpu-model-federated-into-gateway.md) — self-hosted GPU model federated into the gateway (cluster-local + Caddy auth-proxy; `homeCluster: true`); the *how* is [`self-hosted-model-serving.md`](self-hosted-model-serving.md)
 - [ADR-0028](adr/0028-owned-hardware-model-pricing.md) — cost-recovery pricing for owned-hardware models (€/hour TCO → weighted per-token)
+- [ADR-0029](adr/0029-self-hosted-model-plain-deployment.md) — self-hosted model as a plain Deployment (drop KServe/Knative); always-on + Recreate on the dedicated GPU
 
 ## What is *not* in this repo
 

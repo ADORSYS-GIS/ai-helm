@@ -1,17 +1,17 @@
 {{- /*
 Edge auth — a tiny Caddy reverse-proxy (plain pod) that IS the public entrypoint.
 
-The model ksvc is cluster-local. This proxy:
-  1. validates `Authorization: Bearer <vllm api key>` inline (KServe won't), 401 else;
-  2. reverse-proxies over HTTPS to the cluster-local model (in-cluster HTTP is
-     301'd by Traefik's redirect → https + skip-verify), preserving scale-from-zero.
+The model is a plain ClusterIP Service (cluster-local by construction). This proxy:
+  1. validates `Authorization: Bearer <vllm api key>` inline (the huggingfaceserver
+     image won't — it ignores VLLM_API_KEY), 401 else;
+  2. reverse-proxies over PLAIN in-cluster HTTP to the model Service. (Pre-ADR-0029
+     the model was a Knative ksvc reached via Traefik, whose :80→:443 redirect 301'd
+     in-cluster HTTP → we needed https + skip-verify. With a plain Service the
+     pod→pod hop is direct HTTP — no redirect, no TLS to skip.)
 
-It's a plain Deployment+Service (not a Knative Service — simpler, no
-"Uninitialized" ksvc/DomainMapping failure mode), exposed by a Traefik
-IngressRoute for the clean domain. The IngressRoute is ROUTING ONLY — no auth
-middleware, the proxy does auth. Traefik accepts the proxy's normal ClusterIP
-Service (the earlier "externalName services not allowed" was the Knative *model*
-service, not this). cert-manager (cert-cloudflare DNS-01) issues the TLS. See ADR-0022.
+It's a plain Deployment+Service, exposed by a Traefik IngressRoute for the clean
+domain. The IngressRoute is ROUTING ONLY — no auth middleware, the proxy does
+auth. cert-manager (cert-cloudflare DNS-01) issues the TLS. See ADR-0029.
 */ -}}
 {{- if .Values.edgeAuth.enabled }}
 {{- $ea := .Values.edgeAuth }}
@@ -33,10 +33,8 @@ data:
       @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
       respond @unauthorized 401
 
-      reverse_proxy https://{{ $ea.internalHost }} {
-        header_up Host {{ $ea.internalHost }}
+      reverse_proxy http://{{ $ea.internalHost }}:{{ $ea.internalPort | default 8080 }} {
         transport http {
-          tls_insecure_skip_verify
           dial_timeout 10s
           response_header_timeout {{ $ea.proxy.responseTimeout | default "300s" }}
         }

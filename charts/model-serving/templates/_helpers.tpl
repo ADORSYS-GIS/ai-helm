@@ -2,14 +2,9 @@
 model-serving helpers.
 */}}
 
-{{/* The logical model / InferenceService name (drives the Knative FQDN). */}}
+{{/* The logical model name — the Deployment/Service name + served model id. */}}
 {{- define "model-serving.name" -}}
 {{- .Values.model.name | required "model.name is required" -}}
-{{- end -}}
-
-{{/* The pvc:// storageUri KServe mounts (no runtime download). */}}
-{{- define "model-serving.storageUri" -}}
-{{- printf "pvc://%s/%s" .Values.pvc.name .Values.model.storagePath -}}
 {{- end -}}
 
 {{/*
@@ -32,7 +27,7 @@ The env list for the model container: LMCache (when enabled) + the API key
       name: {{ .Values.apiKey.secretName }}
       key: {{ .Values.apiKey.dataKey }}
 {{- end }}
-{{- with .Values.inferenceService.extraEnv }}
+{{- with .Values.server.extraEnv }}
 {{ toYaml . }}
 {{- end }}
 {{- end -}}
