@@ -338,7 +338,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Cilium deny-egress fragility** | New egress needs a CiliumNetworkPolicy or silent crashloop | Documented in cutover doc; overlay pattern established |
 | **`ai-gitops` referenced but never created** | Stale ADRs (0010/0013) mislead | CLAUDE.md flags it; env overrides in-repo |
 | **Single env (`prod`) only** | No staging to validate before deploy branch | Second env is a drop-in `environments/<env>/` |
-| **Deploy branch is not `main`** | Drift risk; manual root Application | Intentional (tag-based deploys are the next step) |
+| **Tag-based deploys** | Manual root Application repoint per release | **Resolved 2026-06-08:** deploys pin the immutable tag `release-2026.06.08` (cut over from the branch); `main` is never a deploy target. Release runbook in CLAUDE.md. |
 | **LibreChat per-user gateway attribution impossible** | Coarse billing for chat users | By design (ADR-0021); handled inside LibreChat |
 | **Mimir 6.0 deferred (breaking)** | Pinned on 5.x | Currency audit tracks it |
 | **Mimir ring wedges if memberlist blocked at startup** | Distributor sees 0 ingesters (`InstancesCount <= 0`) → metrics silently dropped | **Guarded:** durable `allow-same-namespace` (observability-secrets child, wave -3) lands before stores + Mimir `memberlist.rejoin_interval: 1m` self-heals the residual ordering race (audit 2026-06-07) |
