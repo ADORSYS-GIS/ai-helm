@@ -29,31 +29,35 @@ KServe/Knative — serverless is the wrong fit for a single owned, dedicated GPU
 
 ## What it renders (in sync-wave order)
 
-| Wave | Resource | Purpose |
-|---|---|---|
-| -2 | `ExternalSecret vllm-local-api-key` | the vLLM API key (the Bearer the Caddy sidecar enforces) |
-| -1 | `PVC qwen3-4b-models` | the weights volume (Longhorn, RWO) |
-| 0 | `Job seed-qwen3-4b` | downloads weights into the PVC **once**; ArgoCD waits for it |
-| 1 | `StatefulSet qwen3-4b` (containers `model` + `proxy`) + `Service qwen3-4b:8081` | vLLM + LMCache (weights via `--model_dir`) + the Caddy sidecar; rendered by bjw-template |
-| — | `ConfigMap qwen3-4b-caddy` + `Certificate` + `IngressRoute qwen3-4b-edge` | the Caddyfile + the public, authenticated entrypoint (own templates) |
+| Wave | Resource | Rendered by | Purpose |
+|---|---|---|---|
+| -2 | `ExternalSecret vllm-local-api-key` + `hf-token` | own templates | the API key (Bearer the sidecar enforces) + the HF download token |
+| -1 | `PVC qwen3-4b-models` | own template | the weights volume (Longhorn, **RWX**) |
+| 0 | `Job qwen3-4b-seed` (ArgoCD Sync hook) | **bjw** (`controllers.seed`, `type: job`) | downloads weights into the PVC **once**; ArgoCD waits for it |
+| 1 | `StatefulSet qwen3-4b` (containers `model` + `proxy`) + `Service qwen3-4b:8081` + `Ingress qwen3-4b` | **bjw** | the model + Caddy sidecar; the Service → the Ingress (className traefik, cert-manager annotation) |
+| — | `ConfigMap qwen3-4b-caddy` | own template | the Caddyfile mounted into the proxy sidecar |
 
 ## Re-seeding the weights
 
-The seed Job is idempotent and has **no TTL** (a TTL'd Job would vanish and
-ArgoCD would re-download). To re-seed (e.g. after wiping the PVC or switching
-quant): `kubectl -n <ns> delete job seed-qwen3-4b` and re-sync — ArgoCD recreates
-it. Day-to-day config changes reuse the PVC and do **not** re-download.
+The seed Job is an ArgoCD Sync hook (delete+recreate each sync) and `hf download`
+is idempotent (skips files already on the PVC). To force a clean re-seed (e.g.
+after wiping the PVC or switching quant): delete the PVC's contents (or the PVC,
+which re-seeds) and re-sync. Day-to-day config changes reuse the PVC.
 
 ## Key knobs (`values.yaml`)
 
-- `model.{name,hfRepo,storagePath}` — which model + where it lives in the PVC.
+- `model.{name,hfRepo,storagePath}` — drives the own templates (PVC subPath etc.).
+  ⚠️ the bjw seed Job hardcodes the repo/path (it can't read parent values from the
+  subchart scope) — keep `modelServing.controllers.seed` in sync with these.
+- `pvc.accessMode` — `ReadWriteMany` (RWX, Longhorn); lets the seed Job + model
+  mount concurrently.
 - `modelServing.controllers.main.containers.model.args` — vLLM/huggingfaceserver
   passthrough (tune for the card); includes `--model_dir=/mnt/models` + the agentic
   tool-calling flags. ⚠️ model probes use bjw `custom: true` so they hit `:8080`
   (not the Service port `:8081`).
-- `modelServing.controllers.main.containers.{model,proxy}.resources` — the model
-  (GPU) + the Caddy sidecar.
+- `modelServing.ingress.main` — the public Ingress: `host`, `className: traefik`,
+  the `cert-manager.io/cluster-issuer` annotation, and `tls`. The host MUST match
+  `charts/ai-models` `vllmLocal.hostname`.
 - `apiKey.externalSecret.{key,property}` — the `ssegning-aws` coordinates of the
   API key (maintainer populates the property in AWS SM).
-- `edgeAuth.{host,serviceName,servicePort,proxyResponseTimeout}` — the public
-  domain + the IngressRoute → bjw Service wiring + the Caddy upstream timeout.
+- `edgeAuth.proxyResponseTimeout` — the Caddy sidecar's upstream timeout (600s).

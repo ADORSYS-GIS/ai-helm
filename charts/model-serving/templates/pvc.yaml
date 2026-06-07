@@ -1,10 +1,11 @@
 {{- /*
-The weights volume. Pre-seeded once by the seed Job, then mounted by the
-InferenceService via storageUri pvc:// — so pod starts never download.
-RWO is safe here: the model pins to the single GPU node, and RWO = one node /
-many pods (ReadWriteOncePod is the strict variant), so rolling Knative
-revisions mount cleanly. Wave -1: before the seed Job. NOT pruned on its own
-(it holds the weights) — guard deletions.
+The weights volume. Pre-seeded once by the seed Job (the bjw `seed` controller),
+then mounted read-only by the model container — so pod starts never download.
+**RWX** (ReadWriteMany; Longhorn supports it): the seed Job and the model STS
+mount the same volume concurrently (no RWO single-attach constraint), with room
+for a future multi-pod reader. ⚠️ accessModes are immutable — switching an
+existing RWO PVC to RWX means DELETE + recreate (weights re-seed on next sync).
+Wave -1: before the seed Job. NOT pruned on its own (it holds the weights).
 */ -}}
 {{- if .Values.pvc.enabled }}
 apiVersion: v1
