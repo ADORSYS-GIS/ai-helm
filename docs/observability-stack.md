@@ -31,6 +31,42 @@
 
 ---
 
+> ⚠️ **Parts of "What Was Done" below are historical** (Linode Object Storage,
+> namespace `monitoring`, chart versions 5.3.0/6.6.0). The stack now lives in
+> namespace `observability` on Hetzner Object Storage via the App-of-Apps
+> orchestrator (`charts/observability`, ADR-0020); current chart versions are
+> mimir-distributed 5.8.0 / loki 7.0.0 / tempo 1.24.4. For the *current* topology
+> and the answers to "why N pods?", read the next section.
+
+## Topology & component rationale (current)
+
+The full collector → store → visualise pipeline, one collector (**Alloy**),
+three stores (**Loki/Mimir/Tempo**), Grafana on top:
+
+| Component | Pods | Role | Notes |
+|---|---|---|---|
+| **Alloy** | DaemonSet (1/node) | **The only collector** — metrics + logs + traces | Scrapes ServiceMonitor/PodMonitor + kubelet/cAdvisor/apiserver/CoreDNS → remote-write to Mimir; tails `/var/log/pods` → Loki; OTLP `:4317/:4318` → Tempo. No storage, no querying. |
+| **Loki** | `loki-0` + `loki-gateway` | Log store (SingleBinary) + nginx entry point | `loki-canary` (synthetic SLA probe) is **disabled** — it was pure noise. All microservice roles at `replicas: 0`. |
+| **Mimir** | 7 (distributor, ingester, querier, query-frontend, store-gateway, compactor, nginx) | Metric TSDB (Prometheus-compatible, S3) | `mimir-distributed` is microservices-only — **no monolithic mode**. Dead components/Alertmanager/caches already disabled (ADR-0024). |
+| **Tempo** | `tempo-0` | Trace store (single binary) | HTTP API on **`:3200`**, not `:3100`. |
+| **Grafana** | 1 | Visualisation | Stateless (ADR-0023); datasources provisioned in-chart. |
+| Exporters/CRDs | `kube-state-metrics`, `node-exporter` (DaemonSet), `prometheus-operator-crds` | Metric sources + scrape-target CRDs | **There is no Prometheus server** — these are just sources; Alloy scrapes them and Mimir stores. |
+
+**Why no Prometheus?** Mimir *is* the metrics database. `prometheus-operator-crds`
+is CRDs only (ServiceMonitor/PodMonitor); kube-state-metrics and node-exporter are
+exporters. Alloy scrapes; Mimir stores. No second TSDB.
+
+**Datasource URLs (in-cluster):** Mimir `http://mimir-nginx.observability…/prometheus`,
+Loki `http://loki-gateway.observability…`, Tempo
+`http://tempo.observability…:3200`.
+
+> A full point-in-time diagnosis of the 2026-06-07 datasource breakages (Tempo
+> `:3100`→`:3200`, Loki mislabeling via line-regex, Mimir empty due to a wedged
+> memberlist ring) lives in
+> [`2026-06-07-observability-datasource-audit.md`](./2026-06-07-observability-datasource-audit.md).
+
+---
+
 ## What Was Done
 
 Four new ArgoCD Applications were added to `charts/apps/values.yaml`, plus an update to the existing Alloy collector:
