@@ -222,7 +222,59 @@ two more issues surfaced:
   so it starts with the flag (ADR-0015), since `ignore_changes=[user_data]` keeps
   an existing CP on its old start args.
 
-### 5. Follow-ups (not blocking)
+### 6. "Is Grafana showing real data?" — the network-policy gaps (2026-06-07)
+
+With the stores healthy, an end-to-end check (querying Mimir/Loki directly + Alloy's
+own `/metrics` + component health) showed:
+
+- **Logs (Loki): ✅ working.** `namespace` label values are now real and correct
+  (`converse`, `keycloak`, `envoy-gateway-system`, `kube-system`, …) — the
+  discovery-based labeling fix landed.
+- **Metrics (Mimir): ✗ near-empty** — only `up{job="apiserver"}` existed;
+  `kube_pod_info`, `node_cpu_*`, `container_*`, every ServiceMonitor target = 0.
+  Root cause (Alloy component health): `prometheus.operator.servicemonitors` /
+  `podmonitors` **unhealthy** — `failed to configure informers: ... Get
+  "https://10.43.0.1:443/api": i/o timeout`. **Alloy could not reach the
+  Kubernetes API server.** The `default-deny-egress` baseline (allow-dns only)
+  blocked it, and Alloy — unlike kube-state-metrics / grafana-operator — had **no
+  `CiliumNetworkPolicy` granting API-server egress**. So discovery (nodes,
+  ServiceMonitors, PodMonitors) and the kubelet/cAdvisor/apiserver-proxy scrapes
+  all returned nothing; only the static apiserver target trickled.
+- **Traces (Tempo): ✗ empty** — Alloy's OTLP receiver had `accepted_spans = 0`.
+  `core-gateway-traces` (converse-gateway) and `keycloak-ha-otel` *are* pointed at
+  `alloy.observability:4317`, but `observability`'s `default-deny-ingress` (+
+  same-namespace-only allow) **dropped the cross-namespace OTLP** at Alloy's door.
+
+**Fix — an Alloy deps overlay** (`environments/{base,prod}/deps/alloy/`, wired via
+`depsOverlay` on the alloy child, same pattern as kube-state-metrics/grafana-operator):
+
+- **Egress** `CiliumNetworkPolicy`: `toEntities: [kube-apiserver, cluster]` — API
+  server for discovery + proxy scrapes, `cluster` for every in-cluster scrape
+  target (CoreDNS pod IPs, cross-namespace app ServiceMonitors). + DNS.
+- **Ingress**: OTLP `:4317`/`:4318` `fromEntities: [cluster]` so in-cluster
+  collectors/SDKs can push traces/logs/metrics.
+- Portable base k8s `NetworkPolicy` mirrors it (apiserver CIDRs patched per env +
+  all-namespace pod egress + OTLP ingress) for non-Cilium clusters.
+
+After this syncs: Alloy's operator informers go healthy → ServiceMonitor/PodMonitor
++ node discovery populate → kubelet/cAdvisor/ksm/node-exporter/apiserver metrics
+flow to Mimir; OTLP spans reach Alloy → Tempo fills (once gateway traffic exists).
+
+**Verify after sync:**
+```bash
+KUBECONFIG=…/hetzner-k8s/kubeconfig kubectl -n observability port-forward svc/mimir-nginx 3102:80 &
+curl -s -H 'X-Scope-OrgID: anonymous' \
+  'http://localhost:3102/prometheus/api/v1/query?query=count(up)'   # expect dozens, not 1
+# Alloy component health should be all healthy:
+POD=$(kubectl -n observability get po -l app.kubernetes.io/name=alloy -o name | head -1)
+kubectl -n observability port-forward $POD 12345:12345 &
+curl -s localhost:12345/api/v0/web/components | \
+  python3 -c 'import sys,json;[print(c["localID"],c["health"]["state"]) for c in json.load(sys.stdin) if c["health"]["state"]!="healthy"]'
+```
+
+### 7. Follow-ups (not blocking)
 
 - Mimir pod count is inherent to `mimir-distributed`; revisit monolithic Mimir
   only if the footprint becomes a problem.
+- Traces only appear once requests actually flow through the AI gateway (the
+  trace source). An idle gateway → empty Tempo is expected, not a bug.

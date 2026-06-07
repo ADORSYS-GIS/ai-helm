@@ -109,6 +109,14 @@ children:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "-1"
+    # Alloy watches the API server (discovery + ServiceMonitor/PodMonitor
+    # informers) and scrapes targets across every namespace. Under the
+    # default-deny-egress baseline (allow-dns only) those informers time out
+    # (`Get "https://10.43.0.1:443/api": i/o timeout`) and metrics stay empty.
+    # This overlay ships the additive egress allow (CiliumNetworkPolicy
+    # kube-apiserver + cluster entities + DNS), same pattern as kube-state-metrics
+    # / grafana-operator. See docs/2026-06-07-observability-datasource-audit.md §6.
+    depsOverlay: environments/prod/deps/alloy
     source:
       repoURL: https://grafana.github.io/helm-charts
       targetRevision: 1.8.2
