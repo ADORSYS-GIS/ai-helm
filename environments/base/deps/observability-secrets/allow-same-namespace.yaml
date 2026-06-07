@@ -1,16 +1,20 @@
-# Companion to the cluster's manual default-deny-ingress baseline.
+# Companion to the cluster's manual default-deny baseline (BOTH `allow-dns`
+# deny-egress AND `default-deny-ingress`).
 #
-# The observability namespace carries a `default-deny-ingress` NetworkPolicy
-# (podSelector {}, no allow rules — a hetzner-k8s baseline, NOT ArgoCD-managed),
-# but nothing restores intra-namespace ingress. The observability stack is a
-# multi-component mesh — Mimir querier↔query-frontend↔ingester↔store-gateway over
-# gRPC, Alloy→Loki/Mimir/Tempo writes, and Grafana→stores reads — all
-# same-namespace pod-to-pod. Under the bare deny-ingress those connections time
-# out (e.g. "number of queriers connected to query-frontend is 0" → no data in
-# Grafana). This allows ingress to any observability pod from any other pod in
-# the same namespace, which is what the stores' charts assume (they ship no
-# NetworkPolicies of their own). Cross-namespace ingress (Traefik→grafana, the
-# ACME solver) stays governed by the per-app allows.
+# The observability stack is a multi-component mesh — Mimir
+# querier↔query-frontend↔ingester↔store-gateway over gRPC, Alloy→Loki/Mimir/Tempo
+# writes, Grafana→stores reads — all same-namespace pod-to-pod. The baseline
+# blocks that traffic on BOTH sides: the bare default-deny-ingress blocks the
+# receiver, and `allow-dns` (egress-deny, DNS only) blocks the sender. So
+# querier→query-frontend:9095 times out → "number of queriers connected to
+# query-frontend is 0" → no data in Grafana. The stores' charts ship no
+# NetworkPolicies of their own.
+#
+# Restore intra-namespace traffic in BOTH directions (any obs pod ↔ any obs pod).
+# Additive with the baseline: DNS egress (allow-dns), the S3 egress allows
+# (mimir/loki/tempo), Grafana's grafana.com/googleapis egress, and the
+# cross-namespace per-app ingress allows (Traefik→grafana, the ACME solver) all
+# still apply.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -20,6 +24,10 @@ spec:
   podSelector: {}
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
+        - podSelector: {}
+  egress:
+    - to:
         - podSelector: {}
