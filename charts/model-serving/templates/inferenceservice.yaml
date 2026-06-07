@@ -13,6 +13,14 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "common.labels.standard" . | nindent 4 }}
+    {{- if .Values.inferenceService.clusterLocal }}
+    {{- /* Make the Knative service cluster-local: Knative stops publishing the
+           open public FQDN (KServe's huggingfaceserver ignores VLLM_API_KEY, so a
+           public route = an UNAUTHENTICATED GPU on the internet). The public,
+           AUTHENTICATED entrypoint is a Traefik HTTPRoute + forwardAuth in
+           home-os; the Hetzner gateway reaches the model through that. ADR-0022. */}}
+    networking.knative.dev/visibility: cluster-local
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "1"
     {{- range $k, $v := .Values.inferenceService.knativeAnnotations }}

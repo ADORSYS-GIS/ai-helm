@@ -101,6 +101,13 @@ servingRuntime:
 # ─────────────────────────────────────────────────────────────────────────────
 inferenceService:
   enabled: true
+  # Cluster-local: do NOT publish a public Knative FQDN. KServe's huggingfaceserver
+  # serves the OpenAI API itself and IGNORES VLLM_API_KEY, so a public route is an
+  # UNAUTHENTICATED GPU on the internet (confirmed: no-auth + wrong-key both 200).
+  # The public, authenticated entrypoint is a Traefik HTTPRoute + forwardAuth on
+  # the home cluster (home-os) that validates the gateway's Bearer key and proxies
+  # to this cluster-local service. See ADR-0022.
+  clusterLocal: true
   modelFormat: huggingface
   # Bind to the namespaced ServingRuntime above (set automatically from
   # servingRuntime.name when servingRuntime.enabled).
