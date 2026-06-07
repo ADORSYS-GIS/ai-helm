@@ -6,7 +6,7 @@ weights fed from a **pre-seeded PVC** so pod starts are a local mount — no
 per-start HuggingFace download.
 
 - **Why:** [ADR-0022](../../docs/adr/0022-self-hosted-gpu-model-federated-into-gateway.md)
-- **How (VRAM math, flags, runbook, verification):** [`docs/2026-self-hosted-gpu-inference.md`](../../docs/2026-self-hosted-gpu-inference.md)
+- **How (VRAM math, flags, runbook, verification):** [`docs/self-hosted-model-serving.md`](../../docs/self-hosted-model-serving.md)
 
 ## Unusual things about this chart
 

@@ -37,7 +37,7 @@ How the system is wired and how to integrate against it.
 | [`architectural-shift-main-to-magical-bohr.md`](./architectural-shift-main-to-magical-bohr.md) | The full `main → claude/magical-bohr-390242` shift: 8 shifts (two-cluster Hetzner topology, LiteLLM removal, JWT authz, LGTM observability, GitOps structure, secrets, scale, dual-plane gateway) |
 | [`2026-currency-audit.md`](./2026-currency-audit.md) | Helm chart + Kubernetes API + tooling currency audit, mid-2026 |
 | [`2026-hetzner-cutover.md`](./2026-hetzner-cutover.md) | Hetzner cutover change-log (ADR-0018/19/20, domain switch, per-cluster knobs) + live fix-verification status + open items |
-| [`2026-self-hosted-gpu-inference.md`](./2026-self-hosted-gpu-inference.md) | Qwen3-4B on the home GPU via KServe + vLLM + LMCache, federated into the gateway as a public-FQDN backend (ADR-0022): VRAM math, manifests, security, runbook |
+| [`self-hosted-model-serving.md`](./self-hosted-model-serving.md) | **The pattern** for serving any self-hosted model/agent on the home GPU (KServe + vLLM + LMCache) + Qwen3-4B as the reference build (ADR-0022/0028): VRAM math, manifests, cluster-local + Caddy auth-proxy security, model card, €/hour→per-token cost model, tool-calling flags, "deploy the next model" checklist (§14) |
 | [`python-dashboard-generation.md`](./python-dashboard-generation.md) | How dashboards are generated from Python (grafana-foundation-sdk), the drift check, layouts |
 
 ## Architecture Decision Records

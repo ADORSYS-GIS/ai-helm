@@ -330,15 +330,17 @@ models:
   #   tool calling, 100+ languages. Recommended sampling (think mode): temp 0.6 /
   #   top_p 0.95 / top_k 20 / min_p 0 — "do NOT use greedy decoding". Non-think:
   #   temp 0.7 / top_p 0.8 / top_k 20. Full card + cost model in
-  #   docs/2026-self-hosted-gpu-inference.md §12-§13.
+  #   docs/self-hosted-model-serving.md §12-§13.
   #
-  # ── Cost ───────────────────────────────────────────────────────────────────
-  #   Billed to users at $0 (owned hardware — a per-token charge would double-
-  #   count a sunk cost). The REAL operating cost is ~€0.05/hour while serving
-  #   (≈ €0.018/h amortized A2000+CPU-share+RAM-share over 3yr + ≈ €0.032/h power
-  #   at €0.34/kWh in Erlangen). That figure is for internal make-vs-buy
-  #   accounting only; see docs §13 for every assumption. Do NOT turn it into a
-  #   user-facing per-token price without a policy decision.
+  # ── Cost (ADR-0028: cost-recovery pricing for owned-hardware models) ────────
+  #   NOT $0. Real operating cost ≈ €0.05/hour while serving (≈ €0.018/h amortized
+  #   A2000-$449-launch + 3/28-vCPU CPU-share + 6GB RAM-share over 3yr + ≈€0.032/h
+  #   power @ €0.34/kWh in Erlangen — full derivation in the self-hosted-model
+  #   doc §13). Capex accrues even when idle, and PoC utilization is low/bursty,
+  #   so we price for **cost recovery at realistic utilization**, not the
+  #   best-case saturated marginal cost. Weighted so LMCache prefix-cache hits
+  #   bill at the near-free cached rate. Every number is a documented knob
+  #   (ADR-0028 §Pricing); re-tune as utilization data arrives.
   qwen3-4b-local:
     kind: text
     # Single self-hosted backend by design (one GPU, one model). The default
@@ -351,9 +353,11 @@ models:
       maxOutputTokens: 8192
       supportedParameters: *spReasoning   # Qwen3 has a thinking mode
     pricing:
-      strategy: flat
+      strategy: weighted
       standard:
-        effectivePer1M: 0.0         # self-hosted — no per-token user charge (real TCO ≈ €0.05/h, see docs §13)
+        inputPer1M: 0.15            # prefill share of GPU-time (cost-recovery, ADR-0028)
+        cachedInputPer1M: 0.03      # LMCache prefix-reuse hit ≈ near-free
+        outputPer1M: 1.00           # decode is the throughput bottleneck → the cost driver
     backends:
       vllm-local-01:
         <<: *vllmLocalBackendPrimary
