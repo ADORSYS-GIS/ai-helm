@@ -899,6 +899,17 @@ children:
         valuesObject:
           deploymentMode: SingleBinary
 
+          # Disable the rules sidecar (loki-sc-rules). It watches the kube-API
+          # for ConfigMaps/Secrets labeled `loki_rule` to load into the ruler —
+          # we define no Loki rules and don't use Loki alerting, and it
+          # crashloops anyway (the kube-API is blocked by the deny-egress
+          # baseline). The datasources sidecar isn't used here either.
+          sidecar:
+            rules:
+              enabled: false
+            datasources:
+              enabled: false
+
           loki:
             auth_enabled: false
 
