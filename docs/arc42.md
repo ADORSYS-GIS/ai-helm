@@ -154,7 +154,7 @@ servers, the observability stack, dashboards, and all the GitOps glue.
 | `kuadrant-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy | Direct |
 | `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget policy) | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
-| `model-serving` | Self-hosted model on the home GPU: a **plain Deployment** (always-on, `Recreate`) running the huggingfaceserver image (vLLM + in-pod LMCache) + seed Job + ClusterIP Service (cluster-local) + Caddy edge-auth proxy. Federated into the gateway as a backend; reference model Qwen3-4B | Direct, `homeCluster: true` (ADR-0022/0028/0029) |
+| `model-serving` | Self-hosted model on the home GPU: a **bjw-template StatefulSet** (always-on) with TWO containers — the huggingfaceserver model (vLLM + in-pod LMCache) + a Caddy auth-proxy sidecar (proxy → model over localhost) — + seed Job + Certificate/IngressRoute. Federated into the gateway as a backend; reference model Qwen3-4B | Hybrid bjw, `homeCluster: true` (ADR-0022/0028/0029/0030) |
 | `ai-models-info` | OpenRouter-shape `/v1/models/info` catalog (nginx static) | Direct (ADR-0015) |
 | `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI + Meili + opencode discovery | Orchestrator + leaves (ADR-0014) |
 | `observability` | LGTM + Alloy + grafana-operator + dashboards | App-of-Apps (ADR-0020) |
@@ -305,6 +305,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0022 | Self-hosted GPU model federated into the gateway (cluster-local + Caddy auth-proxy; `homeCluster: true` exception to 0017) |
 | 0028 | Cost-recovery pricing for owned-hardware models (€/hour TCO → weighted per-token; replaces 0022's flat $0) |
 | 0029 | Self-hosted model as a plain Deployment (drop KServe/Knative) — always-on + Recreate on the dedicated GPU (supersedes 0022 serving mode) |
+| 0030 | Model + Caddy auth-proxy co-located in ONE StatefulSet (proxy → model over localhost), via bjw-template (refines 0029) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 

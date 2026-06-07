@@ -1,0 +1,36 @@
+{{- /*
+The Caddyfile for the auth-proxy sidecar. Rendered as an own template (name
+fully controlled) and mounted into the `proxy` container at /etc/caddy via the
+bjw persistence entry `caddyfile` (which references this name). Same pattern as
+charts/librechat-app's own configmap.yaml.
+
+The proxy listens on :8081, validates the Bearer the model image ignores, and
+reverse-proxies to the model over localhost:8080 (same pod). `{env.MODEL_API_KEY}`
+is a Caddy env placeholder (NOT a Helm action) — the value comes from the
+container env (the vllm-local-api-key Secret).
+*/ -}}
+{{- if .Values.edgeAuth.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "model-serving.name" . }}-caddy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+data:
+  Caddyfile: |
+    {
+      admin off
+      auto_https off
+    }
+    :8081 {
+      @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
+      respond @unauthorized 401
+      reverse_proxy http://localhost:8080 {
+        transport http {
+          dial_timeout 10s
+          response_header_timeout {{ .Values.edgeAuth.proxyResponseTimeout | default "600s" }}
+        }
+      }
+    }
+{{- end }}

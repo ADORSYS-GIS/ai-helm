@@ -245,6 +245,7 @@ The high-impact ones:
 - [ADR-0022](adr/0022-self-hosted-gpu-model-federated-into-gateway.md) — self-hosted GPU model federated into the gateway (cluster-local + Caddy auth-proxy; `homeCluster: true`); the *how* is [`self-hosted-model-serving.md`](self-hosted-model-serving.md)
 - [ADR-0028](adr/0028-owned-hardware-model-pricing.md) — cost-recovery pricing for owned-hardware models (€/hour TCO → weighted per-token)
 - [ADR-0029](adr/0029-self-hosted-model-plain-deployment.md) — self-hosted model as a plain Deployment (drop KServe/Knative); always-on + Recreate on the dedicated GPU
+- [ADR-0030](adr/0030-merge-model-and-proxy-into-one-statefulset-bjw.md) — model + Caddy auth-proxy co-located in one StatefulSet (proxy → model over localhost), via bjw-template
 
 ## What is *not* in this repo
 

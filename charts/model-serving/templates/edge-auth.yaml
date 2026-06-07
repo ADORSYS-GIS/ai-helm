@@ -1,104 +1,20 @@
 {{- /*
-Edge auth — a tiny Caddy reverse-proxy (plain pod) that IS the public entrypoint.
+Edge — the cert-manager Certificate + Traefik IngressRoute that expose the model
+publicly. The WORKLOAD (the model + the Caddy auth-proxy sidecar) is a single
+StatefulSet rendered by the bjw-template subchart (values under `modelServing:`);
+this file only renders the two CRDs bjw doesn't do natively.
 
-The model is a plain ClusterIP Service (cluster-local by construction). This proxy:
-  1. validates `Authorization: Bearer <vllm api key>` inline (the huggingfaceserver
-     image won't — it ignores VLLM_API_KEY), 401 else;
-  2. reverse-proxies over PLAIN in-cluster HTTP to the model Service. (Pre-ADR-0029
-     the model was a Knative ksvc reached via Traefik, whose :80→:443 redirect 301'd
-     in-cluster HTTP → we needed https + skip-verify. With a plain Service the
-     pod→pod hop is direct HTTP — no redirect, no TLS to skip.)
+The IngressRoute forwards to the bjw Service (`edgeAuth.serviceName:servicePort` =
+the Caddy sidecar on :8081). Routing only — no auth middleware; the sidecar
+validates the Bearer (the model image ignores VLLM_API_KEY) and reverse-proxies
+to the model over localhost in the same pod. cert-manager (cert-cloudflare DNS-01)
+issues the TLS. See ADR-0029.
 
-It's a plain Deployment+Service, exposed by a Traefik IngressRoute for the clean
-domain. The IngressRoute is ROUTING ONLY — no auth middleware, the proxy does
-auth. cert-manager (cert-cloudflare DNS-01) issues the TLS. See ADR-0029.
+Manual prerequisite: a DNS record for `host` → the home cluster's public entry.
 */ -}}
 {{- if .Values.edgeAuth.enabled }}
 {{- $ea := .Values.edgeAuth }}
 {{- $name := include "model-serving.name" . }}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ $name }}-proxy
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-data:
-  Caddyfile: |
-    {
-      admin off
-      auto_https off
-    }
-    :8080 {
-      @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
-      respond @unauthorized 401
-
-      reverse_proxy http://{{ $ea.internalHost }}:{{ $ea.internalPort | default 8080 }} {
-        transport http {
-          dial_timeout 10s
-          response_header_timeout {{ $ea.proxy.responseTimeout | default "300s" }}
-        }
-      }
-    }
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ $name }}-proxy
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-spec:
-  replicas: {{ $ea.proxy.replicas | default 1 }}
-  selector:
-    matchLabels:
-      app: {{ $name }}-proxy
-  template:
-    metadata:
-      labels:
-        app: {{ $name }}-proxy
-        {{- include "common.labels.standard" . | nindent 8 }}
-    spec:
-      containers:
-        - name: proxy
-          image: {{ $ea.proxy.image | quote }}
-          # caddy image default CMD runs /etc/caddy/Caddyfile (no args override).
-          ports:
-            - containerPort: 8080
-          env:
-            - name: MODEL_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.apiKey.secretName }}
-                  key: {{ .Values.apiKey.dataKey }}
-          volumeMounts:
-            - name: caddyfile
-              mountPath: /etc/caddy
-          {{- with $ea.proxy.resources }}
-          resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-      volumes:
-        - name: caddyfile
-          configMap:
-            name: {{ $name }}-proxy
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ $name }}-proxy
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-spec:
-  selector:
-    app: {{ $name }}-proxy
-  ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
-  type: ClusterIP
----
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -128,8 +44,8 @@ spec:
     - kind: Rule
       match: Host(`{{ $ea.host }}`)
       services:
-        - name: {{ $name }}-proxy
-          port: 8080
+        - name: {{ $ea.serviceName }}
+          port: {{ $ea.servicePort }}
   tls:
     secretName: {{ $ea.tls.secretName }}
 {{- end }}
