@@ -181,7 +181,48 @@ a transient startup partition heals on its own within a minute — no manual
 restart. (This guard would have auto-fixed the current incident a minute after
 the secrets app was enabled.)
 
-### 4. Follow-ups (not blocking)
+### 4. Post-rollout fallout (2026-06-07, same day)
+
+After the first rollout, Mimir came up clean (ring re-formed, pods healthy), but
+two more issues surfaced:
+
+- **Loki Application went `Unknown` (ComparisonError).** Disabling `loki-canary`
+  alone is invalid: the loki chart's `templates/validate.yaml` does
+  `{{- if and (not .Values.lokiCanary.enabled) .Values.test.enabled }}{{- fail
+  "Helm test requires the Loki Canary to be enabled" }}`, and `test.enabled`
+  defaults to **true**. So the render failed and the app couldn't sync (the
+  running `loki-0` was fine — it was a manifest-generation error, not a pod
+  crash). Fixed by also setting **`test.enabled: false`** (we run no `helm
+  test`). Verified against grafana/loki 7.0.0.
+
+- **Metrics API `MissingEndpoints` — the ADR-0015 collision recurred.** The
+  `v1beta1.metrics.k8s.io` APIService is `Available=False` because the running
+  `metrics-server` pod is the **k3s-bundled** one (owner `k3s.cattle.io` addon,
+  labels `k8s-app=metrics-server`), while the GitOps chart's Service selects
+  `app.kubernetes.io/{name,instance}` → **zero endpoints**. The ai-helm
+  `aii-metrics-server` app (kubernetes-sigs chart, 2 replicas) is stuck
+  `Progressing` because the bundled Deployment squats the `metrics-server` name.
+  This is **not an ai-helm bug** — it's hetzner-k8s ADR-0015's documented trap:
+  `--disable metrics-server` is in cloud-init but only takes effect on
+  (re)provision, so a CP node that restarted/restored without it re-enabled the
+  bundled addon. Remediation (one-time, shared cluster — run deliberately):
+
+  ```bash
+  export KUBECONFIG=/Users/selast/dev/personal/hetzner-k8s/kubeconfig
+  kubectl -n kube-system delete deployment metrics-server
+  kubectl -n kube-system delete service    metrics-server
+  # then hard-refresh the aii-metrics-server app so the chart re-owns both:
+  kubectl --context admin@homeos -n argocd annotate application aii-metrics-server \
+    argocd.argoproj.io/refresh=hard --overwrite
+  ```
+
+  ⚠️ If the bundled Deployment reappears within seconds, the k3s addon manager is
+  still active on the live node → `--disable metrics-server` is NOT in effect
+  there. The durable fix is to reprovision / `terraform … -replace` that CP node
+  so it starts with the flag (ADR-0015), since `ignore_changes=[user_data]` keeps
+  an existing CP on its old start args.
+
+### 5. Follow-ups (not blocking)
 
 - Mimir pod count is inherent to `mimir-distributed`; revisit monolithic Mimir
   only if the footprint becomes a problem.
