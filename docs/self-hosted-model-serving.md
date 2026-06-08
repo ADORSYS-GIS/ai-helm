@@ -886,29 +886,36 @@ comes, write the ADR and update §5/§9 of arc42.
 
 ---
 
-## 15. Candidate study — Qwen3.5-4B (vLLM path) — *studied 2026-06-08, NOT yet built*
+## 15. Candidate study — Qwen3.5-4B (llama.cpp / Q4_K_M) — *studied 2026-06-08, NOT yet built*
 
-This is the worked-through evaluation of the **next** self-hosted model, kept here
-because it's the live example of the §14 checklist applied to a real candidate.
-**Status: direction set, gated on an empirical engine-support test (see §15.4) — no
-chart edits made yet.** A capable huggingfaceserver image exists; whether it loads
-*this* (multimodal, MoE, GDN) model cleanly must be proven on the A2000 first. When
-it ships, this section folds into the model card (§12) + cost row (§13) and the
-as-built (§11), and an ADR records the cutover.
+The worked-through evaluation of the **next** self-hosted model — the live example of
+the §14 checklist on a real candidate. **Status: engine chosen (llama.cpp), gated on a
+smoke-test that a recent `llama.cpp:server-cuda` build loads the Qwen3.5-4B GGUF on the
+A2000 — no chart edits made yet.** When it ships, this folds into the model card (§12)
++ cost row (§13) + as-built (§11), and **an ADR records the engine change** (llama.cpp
+is a new runtime vs. the huggingfaceserver/vLLM of ADR-0029/0030).
+
+> **Decision history (2026-06-08).** The first pass chose to *keep vLLM* with llama.cpp
+> as a "future" fallback. Phase-0 research then showed vLLM's Qwen3.5 support is
+> turbulent and has **no text-only class** (§15.4), while llama.cpp **already runs this
+> model** via reputable community GGUFs — so the maintainer **pivoted to the llama.cpp /
+> Q4_K_M path now**. §15.4 keeps the vLLM analysis as the rejected alternative.
 
 ### 15.1 The candidate & the decisions taken
 
 [`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B) (released **Feb 2026**,
-Apache-2.0). On a single GPU we run **one model at a time** (§11.4), so this is a
-**swap** of `qwen3-4b-local`, not a second model.
+Apache-2.0). One GPU = **one model at a time** (§11.4) → this is a **swap** of
+`qwen3-4b-local`, not a second model.
 
 Maintainer decisions (2026-06-08):
-- **Keep the vLLM stack** — `kserve/huggingfaceserver` + the existing bjw
-  StatefulSet + Caddy sidecar (ADR-0029/0030). *llama.cpp/GGUF is a deferred
-  future alternative*, not this cutover.
-- **Text-only for now** — don't wire image input at the gateway (the model is a VLM;
-  see §15.2).
-- **BF16 launch quant** (see §15.3 — "Q4_K_M or similar" doesn't apply on vLLM).
+- **Engine: llama.cpp** (`llama-server`, OpenAI-compatible) — replaces
+  huggingfaceserver/vLLM + LMCache for this model. The bjw StatefulSet + seed-Job +
+  Ingress + cert shape (ADR-0030) **stays**; only the model container/engine changes.
+- **Quant: Q4_K_M** (≈2.7 GB for 4B) from a reputable quanter — proposed default
+  `bartowski/Qwen_Qwen3.5-4B-GGUF` `Q4_K_M`; unsloth's imatrix **UD-Q4_K_XL** is the
+  higher-accuracy upgrade (§15.3, §15.7).
+- **Text-only for now** — don't load an `--mmproj` / don't wire image input at the
+  gateway (§15.2).
 
 ### 15.2 What changed vs. Qwen3-4B — and why it suits a 12 GB card
 
@@ -924,101 +931,105 @@ linear-attention (DeltaNet)**, so the KV cache barely grows with context. The
 131k-context wall that made Qwen3-4B's KV (~12–19 GB/request) impossible past 16k
 on the 12 GB A2000 largely disappears — **64k+ context is realistic even at BF16**.
 
-- **"Text-only" is operational, not a different checkpoint.** We serve the VLM and
-  simply don't advertise/accept image input at the gateway. The vision tower still
-  loads into VRAM (small for a 4B model).
-- **MoE costs no extra VRAM headroom** — all experts stay resident (~8 GB BF16 for a
-  4B-total model, same class as today). `--enable-expert-parallel` is a *multi-GPU*
-  throughput knob → irrelevant on one card.
+- **"Text-only" is operational, not a different checkpoint.** We serve the LM and
+  don't load the vision projector (`--mmproj`) / don't advertise image input at the
+  gateway. (No separate text-only 4B checkpoint exists.)
+- **MoE costs no extra VRAM headroom** — all experts stay resident (~2.7 GB at Q4_K_M
+  for a 4B-total model). Expert/tensor parallelism is a *multi-GPU* knob → irrelevant
+  on one card.
 
-### 15.3 "Q4_K_M" is an engine decision — and on vLLM the answer is BF16
+### 15.3 Why Q4_K_M + llama.cpp fits (and the quant choice)
 
-`Q4_K_M` is a **GGUF k-quant (~4.8 bpw), native to llama.cpp** — *not* a vLLM
-format. vLLM can load GGUF (`--quantization gguf`) but throughput is poor (~93 tok/s
-vs ~741 for Marlin-AWQ in the [JarvisLabs benchmark](https://jarvislabs.ai/blog/vllm-quantization-complete-guide-benchmarks)),
-and [vLLM's own docs](https://docs.vllm.ai/en/latest/features/quantization/) say to
-prefer llama.cpp for GGUF. So on the **vLLM** path Q4_K_M is the wrong artifact. The
-4-bit options that *are* vLLM-native don't pan out here either:
+`Q4_K_M` is a **GGUF k-quant (~4.8 bpw)** — native to **llama.cpp**, *not* vLLM
+(vLLM's GGUF loader is slow — ~93 vs ~741 tok/s vs Marlin-AWQ in the
+[JarvisLabs benchmark](https://jarvislabs.ai/blog/vllm-quantization-complete-guide-benchmarks)
+— and [vLLM's docs](https://docs.vllm.ai/en/latest/features/quantization/) say to use
+llama.cpp for GGUF). On llama.cpp it's the sweet spot: **~2.7 GB weights** for the 4B,
+retaining ~92–98 % of BF16 quality. With the GDN linear-attention KV (§15.2), the 12 GB
+A2000 has huge headroom → **large context (64k; test toward 128k+) is comfortable**.
 
-- **FP8** — the [vLLM Qwen3.5 recipe](https://docs.vllm.ai/projects/recipes/en/latest/Qwen/Qwen3.5.html)
-  recommends the official FP8 checkpoint for efficiency, but **A2000 is Ampere → no
-  hardware FP8** (the same wall as today's `--kv-cache-dtype=fp8` ban).
-- **AWQ / GPTQ** — **no official AWQ/GPTQ** exists for Qwen3.5-4B; the ~223 community
-  quants are overwhelmingly **GGUF (llama.cpp)**, not vLLM-loadable, and the
-  platform posture is "no random third-party artifacts" (vet before trusting).
+Reputable GGUFs already exist (meets the "no random artifacts" bar — these are the
+canonical quanters):
+- **[`bartowski/Qwen_Qwen3.5-4B-GGUF`](https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF)**
+  → `Qwen_Qwen3.5-4B-Q4_K_M.gguf` (proposed default).
+- **[`unsloth/Qwen3.5-4B-GGUF`](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF)** →
+  Q4_K_M plus their **imatrix UD-Q4_K_XL** (higher accuracy, tool-calling fixes) — the
+  upgrade if we want max quality-per-byte.
 
-→ **Trustworthy vLLM launch = plain BF16 (~8 GB, fits).** It also sidesteps any quant
-quality loss. Q4_K_M only becomes the right call **if/when we switch the engine to
-llama.cpp** (the deferred alternative) — at which point the 223 GGUF quants and the
-~92–98% quality retention of Q4_K_M are exactly the ecosystem we'd want.
+### 15.4 Why not vLLM (the rejected alternative)
 
-### 15.4 ⚠️ The real risk: vLLM's Qwen3.5 support is new & turbulent — prove it empirically
+The first pass intended to keep vLLM; Phase-0 research killed it for *this* model:
+- A capable huggingfaceserver image exists (Docker Hub: `v0.18.0-gpu` 2026-04-29 =
+  vLLM 0.19.0; `v0.19.0-rc0-gpu`; `latest-gpu`) — so it's **not** an "image too old"
+  problem.
+- But vLLM's Qwen3.5 support is **turbulent**: it broke on the 0.18.0 bump
+  ([#37749](https://github.com/vllm-project/vllm/issues/37749)); the multimodal classes
+  drew "not supported for now" reports
+  ([#35344](https://github.com/vllm-project/vllm/issues/35344),
+  [#35391](https://github.com/vllm-project/vllm/issues/35391)); **there is no text-only
+  `Qwen3_5ForCausalLM` class**; and it needs a bleeding-edge `transformers`
+  (~5.3.0.dev0).
+- On Ampere there's **no FP8** and **no official AWQ/GPTQ**, so a vLLM 4-bit path would
+  mean a non-vetted community AWQ or the slow GGUF loader.
+- Plus the recurring **LMCache↔vLLM skew** (§11.8) and LMCache's assumption of
+  standard-attention KV (DeltaNet's recurrent state may not offload).
 
-*(Corrects an earlier draft that called this an "image too old" blocker — that was
-wrong: the image **postdates** the model.)* Docker Hub shows huggingfaceserver GPU
-tags newer than ours — `v0.18.0-gpu` (**2026-04-29**, what we run = vLLM 0.19.0),
-`v0.19.0-rc0-gpu` (2026-05-27), `latest-gpu` (2026-06-03) — and vLLM 0.19.0
-reportedly *introduced* Qwen3.5 support (hybrid/Mamba prefix caching). So a capable
-image exists; the question is whether it loads **this** model cleanly.
+llama.cpp avoids all of it: the GGUFs already run the model, auth is native, the KV
+math is friendly, and there's no LMCache to skew. The trade-off is **lower peak
+throughput/concurrency** than vLLM — acceptable for this low-concurrency owned/cheap
+tier (`llama-server --parallel N` + continuous batching give modest concurrency).
 
-The actual risk is **support maturity**, and it's real:
-- vLLM's Qwen3.5 support **churned**: it **broke on the 0.18.0 upgrade**
-  ([vLLM #37749](https://github.com/vllm-project/vllm/issues/37749)) and was
-  (re)stabilised around 0.19.0.
-- The **multimodal** arch classes (`Qwen3_5MoeForConditionalGeneration` /
-  `Qwen3_5ForConditionalGeneration`) drew **"are not supported for now"** reports on
-  some versions ([#35344](https://github.com/vllm-project/vllm/issues/35344),
-  [#35391](https://github.com/vllm-project/vllm/issues/35391)).
-- ⚠️ **There is no text-only `Qwen3_5ForCausalLM` class registered in vLLM** — and no
-  text-only 4B checkpoint. So "text-only" here means loading the **full multimodal
-  ConditionalGeneration model** and simply not sending images — *contingent on that
-  multimodal class actually loading on the chosen image*.
-- **transformers coupling** — Qwen3.5 needs a very new `transformers`
-  (~5.3.0.dev0); the image's `transformers` pin matters too.
+### 15.5 Planned change-set — llama.cpp redesign of `charts/model-serving`
 
-**Conclusion: this can't be settled by reading — it must be proven by launching a
-candidate image** (`latest-gpu` or `v0.19.0-rc0-gpu`; fallback our `v0.18.0-gpu`)
-against `Qwen/Qwen3.5-4B` on the A2000 (Phase 1). **If none load it cleanly, the
-llama.cpp path — which already runs this model today via the 223 community GGUF
-quants — becomes the pragmatic choice sooner than "future,"** and is worth
-revisiting with the maintainer at that point.
+The ADR-0030 shape (bjw StatefulSet, RWX seed PVC, Ingress + cert-cloudflare,
+`homeCluster: true`, federation via `charts/ai-models`) **stays**. What changes:
 
-Two further risks regardless of image:
-- **⚠️ Plan to DISABLE LMCache for this model.** (a) The newer vLLM re-opens the
-  `get_kv_events` version-skew that bit us at v0.17→v0.18 (§11.8). (b) LMCache's KV
-  offload assumes *standard attention* KV — **DeltaNet's recurrent state may not be
-  offloadable the same way** (unproven). Launch with `--kv-transfer-config` and the
-  `LMCACHE_*` env **removed**; re-introduce only if verified.
-- **Tool-call parser** may differ for the 3.5 family — re-confirm `hermes` vs. a
-  Qwen3.5-specific parser before relying on agentic tool calls.
+**Model container → `llama-server`:**
+- Image **`ghcr.io/ggml-org/llama.cpp:server-cuda`** (CUDA 12; **not** `server-cuda13`
+  — it [fails on some GPUs](https://github.com/ggml-org/llama.cpp/issues/22561)). Pin a
+  **recent** digest — the GDN operators need a current build (§15.6 gate).
+- Args: `--model /models/<file>.gguf`, `--host 0.0.0.0 --port 8080`, `-ngl 99` (all
+  layers on GPU), `--ctx-size 65536` (test higher), `--jinja` (tool calling via the
+  chat template — replaces vLLM's `--tool-call-parser`), `--alias qwen3-5-4b` (served
+  model id), optional `-fa` (flash-attn) + `--metrics` (Prometheus → Alloy).
+- **Probes simplify** → `httpGet /health` (503 while loading, 200 when ready) for
+  startup + readiness. The vLLM `/v2/health/ready` dance and the **8081-gRPC / probe
+  port collision both disappear** (llama-server binds only 8080).
+- **Drop all vLLM cruft**: `--kv-transfer-config`, `LMCACHE_*` env, `--enforce-eager`,
+  `--dtype`, the fp8-ban note, `--tool-call-parser=hermes`.
 
-### 15.5 Planned change-set (when unblocked — small, follows §14)
+**Auth — two options (proposed: keep Caddy for the first cut):**
+- *Keep the Caddy sidecar* (lowest churn): still validates the Bearer + reverse-proxies
+  `localhost:8080` and owns the 600s timeout. Change one thing (the engine) at a time.
+- *Drop Caddy later*: `llama-server` has **native `--api-key`/`--api-key-file`** — the
+  original reason for Caddy (huggingfaceserver ignoring the key) is **gone**. Then the
+  long-generation timeout moves to Traefik Ingress annotations + the Envoy BTP. A clean
+  fast-follow simplification, not the first cut.
 
-`charts/model-serving/values.yaml`:
-- `model.hfRepo: Qwen/Qwen3.5-4B`, `model.name`/`storagePath` → `qwen3-5-4b`,
-  re-seed the RWX PVC (new weights), bump PVC `size` if needed.
-- **Bump the model image tag** to the confirmed Qwen3.5-capable `huggingfaceserver`.
-- Args: raise `--max-model-len` (target 64k+; KV is cheap now), keep
-  `--dtype=float16` / `--enforce-eager` / `--gpu-memory-utilization`, **drop**
-  `--kv-transfer-config` and the `LMCACHE_*` env (§15.4), re-confirm
-  `--tool-call-parser`, **no `--kv-cache-dtype=fp8`** (Ampere).
-- Re-verify `/v2/health/ready` against the new image (probe gate, §11.4).
-- `model.hfRepo`/`storagePath` are **hardcoded in the bjw seed args too** (subchart
-  scope can't read parent `.Values.model.*`) — update both.
+**Seed Job:** download a **single GGUF file** instead of the whole repo —
+`hf download bartowski/Qwen_Qwen3.5-4B-GGUF --include "Qwen_Qwen3.5-4B-Q4_K_M.gguf"
+--local-dir /models` (~2.7 GB vs ~8 GB). Still RWX PVC + ArgoCD Sync hook; HF_TOKEN
+still lifts the rate limit. PVC can shrink (10–15 Gi).
 
-`charts/ai-models/values.yaml`:
-- Swap `qwen3-4b-local` → `qwen3-5-4b-local` (backend host, `modelNameOverride`,
-  `info.displayName`/`contextLength`/`maxOutputTokens`), **no image-input advertised**
-  (text-only), keep `minBackends: 1`, re-derive **cost-recovery pricing** per ADR-0028
-  (same €/h TCO, different throughput → re-check the per-token numbers).
-- `edgeAuth.host` (model-serving) **must equal** the backend `hostname`; update the
-  DNS record if the host string changes.
+**`charts/ai-models/values.yaml`:** backend **`prefix: /v1`** (llama-server) **not**
+`/openai/v1`; `modelNameOverride` = the `--alias` (`qwen3-5-4b`); `info` contextLength
+to the new cap, **no image input**; `minBackends: 1`; re-derive **cost-recovery
+pricing** per ADR-0028 (same €/h TCO, lighter Q4_K_M → re-check the per-token numbers).
+`edgeAuth.host` ↔ backend `hostname` (decide reuse `qwen3-4b--poc…` vs rename, §15.7).
 
-### 15.6 Verification before committing (the §14.A "prove the budget" step)
-1. **Prove the model loads** on a candidate image — try `latest-gpu`, then
-   `v0.19.0-rc0-gpu`, fallback `v0.18.0-gpu` — against `Qwen/Qwen3.5-4B` on the
-   A2000. *This is the gate (§15.4): the multimodal/GDN class must load cleanly.*
-2. **Prove the VRAM/context budget** at BF16 (weights + vision tower + KV at the
-   target `--max-model-len`).
-3. **Smoke test**: a completion (no `tools`), then with `tools` (parser check), then
-   the gateway path (JWT + model header) — per §11.10 / §14.E.
+### 15.6 Verification before committing (the §14.A "prove it" step)
+1. **GATE — prove it loads**: run a **recent** `ghcr.io/ggml-org/llama.cpp:server-cuda`
+   against the Q4_K_M GGUF on the A2000 and confirm the **GDN operators are present**
+   (older builds error on the new ops). Cheapest first: a throwaway pod; the model load
+   + `/health` going 200 clears the gate.
+2. **Prove the budget**: weights (~2.7 GB) + KV at the target `--ctx-size` fit; settle
+   the context number.
+3. **Smoke test** (§11.10 / §14.E): a completion, then **with `tools`** (`--jinja`
+   path), then the gateway path (JWT + `x-ai-eg-model`), then cost CEL non-zero.
+
+### 15.7 Open decisions (confirm before Phase 2)
+- **Quant** — bartowski `Q4_K_M` (default) vs unsloth `UD-Q4_K_XL` (higher accuracy).
+- **Caddy** — keep for the first cut (default) vs drop now for `llama-server --api-key`.
+- **Gateway model-id** — reuse `qwen3-4b-local` (zero client reconfig) vs new
+  `qwen3-5-4b-local`; and the edge **host** (reuse `qwen3-4b--poc…` vs rename → DNS).
+- **Cutover downtime** — single GPU = the swap displaces the live model (a window).
