@@ -33,23 +33,22 @@ spec:
       kind: HTTPRoute
       name: {{ $modelName }}
   {{- /*
-  Per-model upstream timeout (optional). A route-scoped BackendTrafficPolicy
-  REPLACES the gateway-wide one for its route (Envoy Gateway = closest-wins, no
-  merge), so without this a model route falls back to Envoy's DEFAULT ~15s route
-  timeout → a slow/cold backend returns 504 "upstream request timeout". Set
-  `timeout.requestTimeout` high enough to ride a cold start + a long generation
-  (e.g. the self-hosted model scaling from zero). Unset ⇒ Envoy default.
+  Per-model upstream timeout. A route-scoped BackendTrafficPolicy REPLACES the
+  gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so
+  without this a model route falls back to Envoy's DEFAULT ~15s route timeout →
+  a slow/cold backend returns 504 "upstream request timeout". We therefore ALWAYS
+  emit requestTimeout, defaulting to 600s (ADR-0034) so cloud models get a real
+  budget too — not just the self-hosted ones that set it explicitly. Override per
+  model via .Values.timeout.requestTimeout (e.g. shorter for rerankers/embeddings,
+  longer to ride a cold start). connectionIdleTimeout is opt-in.
   */ -}}
-  {{- with .Values.timeout }}
+  {{- $t := .Values.timeout | default dict }}
   timeout:
     http:
-      {{- with .requestTimeout }}
-      requestTimeout: {{ . | quote }}
-      {{- end }}
-      {{- with .connectionIdleTimeout }}
+      requestTimeout: {{ $t.requestTimeout | default "600s" | quote }}
+      {{- with $t.connectionIdleTimeout }}
       connectionIdleTimeout: {{ . | quote }}
       {{- end }}
-  {{- end }}
   rateLimit:
     type: Global
     global:

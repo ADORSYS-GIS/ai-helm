@@ -188,6 +188,18 @@ clientTrafficPolicy:
 backendTrafficPolicy:
   bufferLimit: 100Mi
 
+  # Whole-request ceiling for routes this gateway-wide policy governs (the
+  # non-model routes — model routes are governed by their own per-model BTP in
+  # charts/ai-model, which replaces this one). ADR-0034.
+  requestTimeout: 600s
+
+  # Upstream retry budget. perRetryTimeout must outlast a long generation
+  # (the shipped 30s cut them — ADR-0034). numRetries kept at 1 (retrying LLM
+  # calls amplifies load on already-stressed backends).
+  retry:
+    numRetries: 1
+    perRetryTimeout: 300s
+
   # Spread load across a backend's endpoints by in-flight request count —
   # better tail latency than round-robin when request durations vary wildly
   # (streaming LLM responses do).
@@ -233,3 +245,23 @@ backendTrafficPolicy:
 # ────────────────────────────────────────────────────────────────────────
 otelCollector:
   mode: deployment
+
+# ────────────────────────────────────────────────────────────────────────
+# ExtProc sidecar (the Envoy AI Gateway's per-request processor: token
+# counting, cost CEL, model routing, dynamic-metadata population). It runs
+# inline on EVERY request and response body and holds state for the whole
+# stream, so an undersized CPU limit throttles the data path under concurrent /
+# streaming load (ADR-0034 — the shipped 512m limit was the inline bottleneck
+# the pre-cutover perf work had already raised to 2000m). Rendered into the
+# GatewayConfig's spec.extProc.kubernetes.resources. Limit is a burst ceiling,
+# not a reservation; the modest request keeps scheduling cheap on the shared
+# worker pool. Right-size in lockstep with worker capacity.
+# ────────────────────────────────────────────────────────────────────────
+extProc:
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "2000m"
+      memory: "512Mi"

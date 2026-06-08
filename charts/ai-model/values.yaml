@@ -52,10 +52,12 @@ pricing: {}
 # Optional minimum-backends invariant (HA safety). Default 2.
 minBackends: 2
 
-# Optional: per-model upstream timeout (Envoy Gateway BackendTrafficPolicy
-# spec.timeout.http). Without it the route uses Envoy's DEFAULT ~15s timeout →
-# a slow/cold backend 504s ("upstream request timeout"). Raise it for backends
-# that can be slow to first byte, e.g. a self-hosted model scaling from zero.
+# Per-model timeouts (ADR-0034). `requestTimeout` feeds BOTH the AIGatewayRoute
+# route timeout (rules[].timeouts.request — else the CRD's 60s default cuts long
+# streams) AND the per-model BackendTrafficPolicy upstream timeout
+# (spec.timeout.http — else Envoy's ~15s default 504s a slow/cold backend).
+# DEFAULTS to 600s in both templates when unset, so every model (cloud included)
+# gets a real budget; override here per model.
 #   timeout:
 #     requestTimeout: 600s          # whole-request budget (cold start + generation)
 #     connectionIdleTimeout: 1h     # idle upstream connection (keeps streams open)

@@ -20,7 +20,17 @@ spec:
             endpoint: 0.0.0.0:4318
 
     processors:
-      batch: { }
+      # memory_limiter MUST be first — it sheds load before the collector OOMs
+      # (an OOM loses data entirely). Tuned batch cuts export frequency. Both
+      # were dropped in the rewrite (and a per-request `debug` stdout flood
+      # re-added); restored per ADR-0034.
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      batch:
+        send_batch_size: 512
+        timeout: 5s
 
     exporters:
       # Forward traces to Grafana Alloy, which fans out to Tempo.
@@ -29,18 +39,16 @@ spec:
         tls:
           insecure: true
 
-      debug: { }
-
     service:
       pipelines:
         traces:
           receivers:
             - otlp
           processors:
+            - memory_limiter
             - batch
           exporters:
             - otlp/alloy
-            - debug
 # NOTE: the `-usage` OpenTelemetryCollector was removed. Usage/billing
 # metering now goes through the Envoy AI Gateway + OAuth2 path, not a
 # dedicated OTel access-log pipeline to lightbridge-usage. The Envoy

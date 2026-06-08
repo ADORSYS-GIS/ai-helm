@@ -1,3 +1,4 @@
+{{- $extProc := .Values.extProc | default dict -}}
 ---
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: GatewayConfigList
@@ -20,10 +21,10 @@ items:
               value: "none"
             - name: OTEL_SERVICE_NAME
               value: "{{ include "core-gateway.fullname" $ }}"
+          # ExtProc is the AI Gateway's per-request brain (token counting, cost
+          # CEL, routing, metadata) and holds state for the whole stream — it
+          # must not be the data-path bottleneck (ADR-0034). Values-driven; the
+          # default restores generous headroom (limit = burst ceiling, not a
+          # reservation) without inflating the scheduled request.
           resources:
-            requests:
-              cpu: "100m"
-              memory: "100Mi"
-            limits:
-              cpu: "512m"
-              memory: "512Mi"
+            {{- toYaml ($extProc.resources | default (dict "requests" (dict "cpu" "250m" "memory" "256Mi") "limits" (dict "cpu" "2000m" "memory" "512Mi"))) | nindent 12 }}
