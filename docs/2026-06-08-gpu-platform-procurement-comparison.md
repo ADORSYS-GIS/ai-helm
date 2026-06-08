@@ -67,7 +67,7 @@ possible, to the live system.
 | Model-fit (§3) | VRAM budgeting | **Medium-High** | Weights are firm; KV headroom is approximate. |
 | RoI / payback (§9) | Cost-avoidance model on stated personas | **Low-Medium** | Swings hard on per-dev token volume (§9.4) — the dominant unknown. |
 | SaaS comparator prices | Public budget-provider pricing (DeepInfra/Together class) | **Medium** | Move with the market; re-check before deciding. |
-| Current model landscape (§3.1) | Web-verified **June 2026** (Qwen3.5, Gemma 4, DeepSeek-V4, Llama 4 releases) | **Medium-High** | Names/sizes from vendor + roundup sources; the field moves monthly. |
+| Current model landscape (§3.1) | Web-verified **June 2026** (Qwen3.5, Gemma 4, GLM-4.7-Flash, DeepSeek-V4, Llama 4 releases) | **Medium-High** | Names/sizes from vendor + roundup sources; the field moves monthly. |
 
 **Key assumptions** (the knobs that move conclusions): electricity is
 **location-specific** (DE €0.34 vs CM €0.16/kWh — §1); FX **$1 ≈ €0.92**;
@@ -197,16 +197,21 @@ was first sketched against. The standouts (all Apache-2.0 unless noted):
 | Tier | Model (June 2026) | Params (active) | Fits best on | Why it matters |
 |---|---|---|---|---|
 | Edge / small | **Qwen3.5-4B** *(live)*, **Qwen3.5-9B**, **Gemma 4 E4B/12B** | 4–12B dense | **A2000 · 2×4070 · GEX44** | Qwen3.5-9B **matches GPT-OSS-120B** on several benches; Gemma 4 is natively multimodal (incl. audio). Last-gen "70B quality" now fits 12 GB. |
-| Mid | **Qwen3.5-27B** (dense), **Gemma 4 31B** (dense), **Qwen3.5-35B-A3B** (MoE) | 27–35B (3B act.) | **2×4070 (Q4) · GEX131 · V100** | The 35B-A3B MoE **decodes like a 3B** but needs 35B of VRAM resident — fast + capable if it fits. |
+| Mid | **GLM-4.7-Flash** (30B-A3B MoE) ⭐, **Qwen3.5-35B-A3B** (MoE), **Qwen3.5-27B** / **Gemma 4 31B** (dense) | 27–35B (**~3B act.**) | **2×4070 (Q4) · GEX131 · V100** | The ~30B-A3B MoEs **decode like a 3B** but need ~30B VRAM resident. **GLM-4.7-Flash (Zhipu, Jan 2026, 200K ctx) is built for local coding/agents and runs in 24 GB** → a near-perfect fit for the owned 2×4070 dev box. |
 | **Large MoE (the new sweet spot)** | **Qwen3.5-122B-A10B**, **Gemma 4 26B-A4B**, **GLM-5.1**, **Kimi K2.6** | 122B (**10B act.**) | **GEX131 (96 GB)** · **5×V100 (80 GB, Q3/Q4)** | ⭐ Holds 122B in VRAM but computes only 10B/token → **frontier quality at near-small-model decode speed.** This is exactly what 80–96 GB boxes are *for*. |
 | Frontier (out of reach here) | **Qwen3.5-397B-A17B**, **DeepSeek-V4**, **Llama 4 Maverick** | 397B–1.6T | none of these (→ SaaS) | Beats GPT-5.2 on IFBench; needs multi-GPU-server VRAM. Route to SaaS. |
 
 > **The reframing:** the most interesting 2026 models aren't dense 70B — they're
-> **~100–120B MoE with ~10B active**. They want **VRAM capacity to stay resident
-> (60–96 GB)** but **decode cheaply**. That plays *directly* to the **GEX131's
-> 96 GB** and the **5×V100's 80 GB aggregate** — and makes the **A2000/2×4070
-> excellent for the new small models** (Qwen3.5-9B, Gemma 4 12B) that now rival
-> last year's 70B. It does **not** help GEX44 (20 GB can't hold a big MoE).
+> **sparse MoE that decode far cheaper than their size.** Two bands matter here:
+> **(a) ~30B-A3B MoE** (GLM-4.7-Flash, Qwen3.5-35B-A3B) — fit **24 GB at Q4**,
+> decode like a 3B, and GLM-4.7-Flash is explicitly a **coding/agent** model → the
+> **owned 2×4070 in Cameroon becomes a genuinely strong dev box for ~free**; and
+> **(b) ~100–120B-A10B MoE** (Qwen3.5-122B, GLM-5.1, Kimi K2.6) — want **60–96 GB
+> resident** but still decode cheaply, which plays *directly* to the **GEX131
+> (96 GB)** and **5×V100 (80 GB)**. Meanwhile the new small dense models
+> (Qwen3.5-9B, Gemma 4 12B) already rival last year's 70B on the A2000/2×4070. It
+> does **not** help **GEX44** — 20 GB can't hold a 30B-A3B MoE with KV, so it's
+> stuck at dense ≤14B while a €0 owned box runs the better 30B-A3B coding MoE.
 
 ### 3.2 Quantization — the lever behind every cell
 
@@ -584,7 +589,7 @@ SaaS comparators, mid-2026 (per-1M, output, approximate):
 | Modern kernels (FP8/FP4) | ✗ | **FP8** | ✗ | FP8 | **FP4+FP8** |
 | Managed / warranty | self | self | none | yes | yes |
 | Power burden | trivial (70 W) | low (~0.55 kW, **cheap CM**) | **heavy (~1.5 kW, cheap CM**) | trivial | moderate (300 W) |
-| Best for | current 4–8B PoC | **≤14B you already own** | owned 70B (cheapest cash) | managed 7–14B scale-up | managed 70B / multi-tenant |
+| Best for | current 4–8B PoC | **≤14B + 30B-A3B coding MoE, owned** | owned 70B (cheapest cash) | managed 7–14B scale-up | managed 70B / multi-tenant |
 
 *CM = Cameroon (ENEO €0.16/kWh); DE = Germany (€0.34). 2×4070 / V100 36-mo TCO is electricity-only (capex sunk / parametric — see §6).*
 
