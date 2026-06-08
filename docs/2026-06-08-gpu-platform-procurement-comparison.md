@@ -67,6 +67,7 @@ possible, to the live system.
 | Model-fit (§3) | VRAM budgeting | **Medium-High** | Weights are firm; KV headroom is approximate. |
 | RoI / payback (§9) | Cost-avoidance model on stated personas | **Low-Medium** | Swings hard on per-dev token volume (§9.4) — the dominant unknown. |
 | SaaS comparator prices | Public budget-provider pricing (DeepInfra/Together class) | **Medium** | Move with the market; re-check before deciding. |
+| Current model landscape (§3.1) | Web-verified **June 2026** (Qwen3.5, Gemma 4, DeepSeek-V4, Llama 4 releases) | **Medium-High** | Names/sizes from vendor + roundup sources; the field moves monthly. |
 
 **Key assumptions** (the knobs that move conclusions): electricity is
 **location-specific** (DE €0.34 vs CM €0.16/kWh — §1); FX **$1 ≈ €0.92**;
@@ -185,6 +186,66 @@ parentheses. Weight estimates are for the listed quant; add KV cache per request
 - **GEX44** is the **7–14B-with-FP8** sweet spot; 20 GB caps you below 32B.
 - **GEX131** runs **everything up to 70B-Q8 / MoE-FP4** on a *single* GPU with
   huge bandwidth — no parallelism headaches.
+
+### 3.1 The models that actually matter today (June 2026)
+
+The generic "8B/70B dense" rows above are the *shape* of the problem; the
+**current** open models are mostly **sparse MoE**, which changes the hardware
+calculus — and they're genuinely better than the 2025 dense models this comparison
+was first sketched against. The standouts (all Apache-2.0 unless noted):
+
+| Tier | Model (June 2026) | Params (active) | Fits best on | Why it matters |
+|---|---|---|---|---|
+| Edge / small | **Qwen3.5-4B** *(live)*, **Qwen3.5-9B**, **Gemma 4 E4B/12B** | 4–12B dense | **A2000 · 2×4070 · GEX44** | Qwen3.5-9B **matches GPT-OSS-120B** on several benches; Gemma 4 is natively multimodal (incl. audio). Last-gen "70B quality" now fits 12 GB. |
+| Mid | **Qwen3.5-27B** (dense), **Gemma 4 31B** (dense), **Qwen3.5-35B-A3B** (MoE) | 27–35B (3B act.) | **2×4070 (Q4) · GEX131 · V100** | The 35B-A3B MoE **decodes like a 3B** but needs 35B of VRAM resident — fast + capable if it fits. |
+| **Large MoE (the new sweet spot)** | **Qwen3.5-122B-A10B**, **Gemma 4 26B-A4B**, **GLM-5.1**, **Kimi K2.6** | 122B (**10B act.**) | **GEX131 (96 GB)** · **5×V100 (80 GB, Q3/Q4)** | ⭐ Holds 122B in VRAM but computes only 10B/token → **frontier quality at near-small-model decode speed.** This is exactly what 80–96 GB boxes are *for*. |
+| Frontier (out of reach here) | **Qwen3.5-397B-A17B**, **DeepSeek-V4**, **Llama 4 Maverick** | 397B–1.6T | none of these (→ SaaS) | Beats GPT-5.2 on IFBench; needs multi-GPU-server VRAM. Route to SaaS. |
+
+> **The reframing:** the most interesting 2026 models aren't dense 70B — they're
+> **~100–120B MoE with ~10B active**. They want **VRAM capacity to stay resident
+> (60–96 GB)** but **decode cheaply**. That plays *directly* to the **GEX131's
+> 96 GB** and the **5×V100's 80 GB aggregate** — and makes the **A2000/2×4070
+> excellent for the new small models** (Qwen3.5-9B, Gemma 4 12B) that now rival
+> last year's 70B. It does **not** help GEX44 (20 GB can't hold a big MoE).
+
+### 3.2 Quantization — the lever behind every cell
+
+Every "fits / doesn't" above is really a **quantization** decision: it sets both
+the VRAM (so *what fits*) and which hardware can run it *fast*. The doc has used
+Q4/Q8/FP8/FP4 throughout; here's the explicit map.
+
+**Bits → size → quality (rule of thumb):**
+
+| Format | ~bits/wt | 70B weights | 122B-MoE weights | Quality vs FP16 | Notes |
+|---|---|---|---|---|---|
+| FP16/BF16 | 16 | ~140 GB | ~244 GB | 100 % (baseline) | Training precision; rarely served at scale. |
+| FP8 / INT8 | 8 | ~70 GB | ~122 GB | ~99–100 % | **Ada+/Blackwell native**; near-lossless. |
+| Q8_0 (GGUF) | ~8.5 | ~75 GB | ~130 GB | ~99 % | llama.cpp; CPU/any-GPU. |
+| **Q4 / AWQ / GPTQ (INT4)** | ~4–4.8 | **~40 GB** | **~61 GB** | **~97–99 %** (large) / ~93–97 % (small) | **The workhorse.** Marlin/AWQ kernels need Ampere+. |
+| **FP4 / MXFP4** | ~4 | ~35 GB | ~55 GB | ~97–99 % | **Blackwell-native** (GEX131) — fast *and* small. |
+| Q3/Q2 (GGUF) | 2–3 | ~28 GB | ~45 GB | noticeable loss | Only when you *must* squeeze (e.g. 122B-MoE on 80 GB V100). |
+
+**The two rules that decide everything:**
+1. **Lower bits ≈ proportionally less VRAM, with only small quality loss on big
+   models** (a 70B at Q4 ≈ 97–99 % of FP16) — but **small models degrade more**
+   under aggressive quant, so keep 4–9B at Q4_K_M/Q5+ or FP8, not Q3.
+2. **Quant format is gated by GPU architecture** — this is *why* the same model is
+   ✅ on one box and ⚠️ on another:
+
+| GPU (box) | FP4 | FP8 | INT4 (AWQ/GPTQ, Marlin) | GGUF k-quant | Best quant path |
+|---|---|---|---|---|---|
+| **Volta — 5×V100** | ❌ | ❌ | ⚠️ slow (no Marlin) | ✅ | **GGUF Q4** (llama.cpp) or AWQ-INT4 on old vLLM kernels |
+| **Ampere — A2000** | ❌ | ❌ | ✅ | ✅ | **GGUF Q4_K_XL** (live) / AWQ-INT4 |
+| **Ada — 2×4070, GEX44** | ❌ | ✅ | ✅ | ✅ | **FP8** (native, near-lossless) or AWQ-INT4 |
+| **Blackwell — GEX131** | ✅ | ✅ | ✅ | ✅ | **FP4** — fast *and* the smallest footprint |
+
+> **Why this matters for the buy:** the **V100's lack of FP8/FP4 + no Marlin
+> kernels** is its real software tax — it must lean on **GGUF/AWQ-INT4** and slower
+> paths, so it serves 70B/122B-MoE but **slowly** (the "20–30 tok/s" figure). The
+> **GEX131's FP4** is the opposite: it makes a 122B-MoE both **fit (~55 GB)** *and*
+> run fast. The **Ada boxes' FP8** is what lets a 20–24 GB card punch above its
+> VRAM. **Match the quant to the silicon** — a model's row in §3 flips ✅/⚠️ purely
+> on whether the box has the kernel for the quant you need.
 
 ---
 
@@ -333,6 +394,46 @@ the §6 TCO at the Cameroon **typical (€70/mo)** rate (P = €3,000):
 > fast/FP4/managed), not euros. The Cameroon break-even purchase price vs 36-mo
 > GEX131 rises to `P = 32,004 − 2,520 = ~€29,500` — i.e. it is *never* realistically
 > more expensive than GEX131.
+
+#### Would German electricity annihilate the V100's benefit? — yes, and here's by how much
+
+The V100's whole case is "cheapest 70B." That case is **made by cheap Cameroon
+power and unmade by German retail power.** Same box, same P = €3,000, **electricity
+is the only variable:**
+
+| | Power €/mo | **36-mo electricity** | **36-mo TCO** | RoI vs budget-70B SaaS¹ |
+|---|---|---|---|---|
+| **V100 — Cameroon, typical** | €70 | €2,520 | **€5,520** | **+$255/mo → ~13-mo payback** ✅ |
+| V100 — Cameroon, sustained | €175 | €6,300 | €9,300 | +~$180/mo → ~18-mo ✅ |
+| V100 — Germany, typical | €149 | €5,364 | €8,364 | +~$143/mo → ~23-mo ⚠️ |
+| **V100 — Germany, sustained** | €372 | €13,392 | **€16,392** | **−~$90/mo → NEVER** ❌ |
+
+¹ *Net monthly saving = ~$305 avoided 70B SaaS (at the box's ~263 M out/mo capacity) − power-in-USD. §9 basis.*
+
+**By how much.** Over 3 years, Cameroon saves **€2,844 (typical) to €7,092
+(sustained)** in electricity alone vs Germany — ~**€79–197/mo**. The sustained
+saving (€7,092) is **more than 2× the V100's purchase price.** Put differently:
+in Germany at sustained load the V100's **power bill alone (~$404/mo) exceeds the
+~$305/mo of SaaS it would replace** → it is **RoI-negative**: you'd lose money vs
+just calling budget SaaS, and you'd be better off renting GEX131 or using the API.
+**Cameroon's half-price power is the entire reason the owned-V100 plan works.**
+
+**Compared to the others** (36-mo TCO, capability in brackets):
+
+| Box (siting) | 36-mo TCO | Class |
+|---|---|---|
+| 2×4070 — Cameroon, owned | **~€1,700** | ≤14B (power-only) |
+| **V100 — Cameroon, typical** | **€5,520** | **70B (cheapest 70B)** |
+| GEX44 — Germany, rent | €6,703 | ≤14B |
+| V100 — Germany, typical | €8,364 | 70B |
+| **V100 — Germany, sustained** | **€16,392** | 70B (power-wrecked) |
+| GEX131 — Germany, rent | €32,004 | 70B (fast/managed) |
+
+So: in **Cameroon the V100 is the cheapest 70B by far** (below even the ≤14B
+GEX44); in **Germany it costs 1.5–3× more** and at sustained load lands between
+GEX44 and GEX131 with none of GEX131's speed/warranty — the worst of both worlds.
+**The €0.34-vs-€0.16 tariff gap is decisive**, because Hetzner's boxes hide their
+(cheap, datacenter-scale) power inside the rent while an owned box pays retail.
 
 ### 6.4 The box you already have — 2× RTX 4070 12GB (Cameroon, live now)
 
