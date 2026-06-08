@@ -2,24 +2,23 @@
 
 > One of three self-hosted-model papers. Shared mechanics: the
 > **[pattern guide](../self-hosted-model-serving.md)**. Siblings:
-> [Qwen3-4B (shipped)](./qwen3-4b.md) · [Qwen3.5-4B vLLM/BF16](./qwen3.5-4b.md).
+> [Qwen3-4B (vLLM, standby)](./qwen3-4b.md) · [Qwen3.5-4B vLLM/BF16](./qwen3.5-4b.md).
 
 | | |
 |---|---|
-| **Status** | 🟢 **BUILT & STAGED** (2026-06-08) — chart `charts/model-serving-qwen3-5` + gateway/app wiring are committed but **disabled** (`enabled: false`) behind the load-gate (§5); engine recorded in **[ADR-0032](../adr/0032-llama-cpp-engine-for-self-hosted-models.md)**. Cutover = flip the `enabled` flags (new on / qwen3-4b off) + release + repoint root. |
-| **Engine** | **llama.cpp** (`llama-server`, OpenAI-compatible) — `ghcr.io/ggml-org/llama.cpp:server-cuda` |
-| **Quant** | unsloth **`UD-Q4_K_XL`** GGUF (imatrix; ~2.7 GB) |
-| **Chart** | NEW `charts/model-serving-qwen3-5` (copy of `charts/model-serving-qwen3-4b`) |
+| **Status** | 🟢 **LIVE & serving (2026-06-08)** — the active self-hosted model. Engine recorded in **[ADR-0032](../adr/0032-llama-cpp-engine-for-self-hosted-models.md)**; released in `release-2026.06.08-v04`. Qwen3-4B is now disabled/standby (rollback). |
+| **Engine** | **llama.cpp** (`llama-server`, OpenAI-compatible) — `ghcr.io/ggml-org/llama.cpp:server-cuda` (CUDA 12) |
+| **Quant** | unsloth **`UD-Q4_K_XL`** GGUF (imatrix; `Qwen3.5-4B-UD-Q4_K_XL.gguf`, ~2.7 GB) |
+| **Chart** | `charts/model-serving-qwen3-5` |
 | **Gateway model-id** | `qwen3-5-4b-local` · backend `llama-local-01` (`prefix: /v1`) |
 | **Edge host** | `qwen3-5-4b--poc.ssegning.com` |
-| **Strategy** | **keep the old Qwen3-4B deployment disabled** (rollback) + stand up this **new parallel** one. One GPU ⇒ only one runs at a time. |
+| **Measured** | **~52 tok/s decode** single-stream · **~1.3k tok/s prefill** · **4 concurrent slots** · **64k context** (real 35k-token prompts served) — see §6 |
 
 > **Why llama.cpp, not vLLM.** Qwen3.5's Gated-DeltaNet-MoE-VLM is new and vLLM's
-> support is turbulent (no text-only class, multimodal-class "not supported"
-> reports, transformers churn — see [the vLLM paper §3](./qwen3.5-4b.md#3-️-why-this-is-not-the-chosen-path--vllms-qwen35-support-is-turbulent)).
+> support is turbulent (no text-only class, multimodal-class "not supported" reports,
+> transformers churn — see [the vLLM paper §3](./qwen3.5-4b.md#3-️-why-this-is-not-the-chosen-path--vllms-qwen35-support-is-turbulent)).
 > llama.cpp **already runs this model** via reputable community GGUFs, with native
-> API-key auth, friendly KV math, and no LMCache to skew. Trade-off: lower peak
-> throughput/concurrency than vLLM — fine for this low-concurrency owned/cheap tier.
+> API-key auth, friendly KV math, and no LMCache to skew.
 
 ---
 
@@ -29,20 +28,17 @@ See the [vLLM paper §1](./qwen3.5-4b.md#1-model-card-delta-vs-qwen3-4b) for the
 delta. The short version: [`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B)
 (Feb 2026, Apache-2.0) is a **Gated DeltaNet + sparse-MoE** hybrid, natively
 multimodal, 262k native context. **3-of-4 blocks are linear-attention** → KV barely
-grows → long context (64k; test toward 128k+) is comfortable on the A2000. We run it
-**text-only** (no `--mmproj`).
+grows → long context is cheap on the A2000 (we run **64k**; the model trains to 262k).
+We serve it **text-only** (no `--mmproj`).
 
-## 2. Why Q4_K_M + llama.cpp
+## 2. Why Q4_K_M-class + llama.cpp
 
-`Q4_K_M` is a **GGUF k-quant (~4.8 bpw)** native to **llama.cpp**, *not* vLLM
-(vLLM's GGUF loader is slow — ~93 vs ~741 tok/s vs Marlin-AWQ). On llama.cpp it's
-the sweet spot: **~2.7 GB weights**, ~92–98 % of BF16 quality. Reputable GGUFs
-already exist (meets the "no random artifacts" bar):
-
-- **[`unsloth/Qwen3.5-4B-GGUF`](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF)** —
-  **`UD-Q4_K_XL`** (imatrix dynamic; higher accuracy + tool-calling fixes) — **chosen**.
-- [`bartowski/Qwen_Qwen3.5-4B-GGUF`](https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF)
-  — plain `Q4_K_M` — alternative.
+`Q4_K_M` is a **GGUF k-quant (~4.8 bpw)** native to **llama.cpp**, *not* vLLM (vLLM's
+GGUF loader is slow — ~93 vs ~741 tok/s vs Marlin-AWQ). On llama.cpp it's the sweet
+spot: **~2.7 GB weights**, ~92–98 % of BF16 quality. We use unsloth's imatrix
+**`UD-Q4_K_XL`** (higher accuracy + tool-calling fixes than plain Q4_K_M);
+[`bartowski/Qwen_Qwen3.5-4B-GGUF`](https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF)
+plain `Q4_K_M` is the alternative.
 
 ---
 
@@ -50,74 +46,94 @@ already exist (meets the "no random artifacts" bar):
 
 - **Engine:** llama.cpp (`llama-server`). The [ADR-0030](../adr/0030-merge-model-and-proxy-into-one-statefulset-bjw.md)
   chart shape (bjw StatefulSet, RWX seed PVC, Ingress + cert-cloudflare,
-  `homeCluster: true`, federation via `charts/ai-models`) **stays**; only the model
-  engine changes.
-- **Quant:** unsloth `UD-Q4_K_XL`.
-- **No Caddy sidecar** — `llama-server` enforces the Bearer natively via
-  `--api-key-file`; the 600 s long-generation timeout moves to the **Traefik Ingress
-  + the Envoy BTP**.
-- **Text-only** — no `--mmproj`, no image input at the gateway.
-- **Keep + disable the old, stand up a new one** — not an in-place swap. Disable the
-  `model-serving-qwen3-4b` app + `qwen3-4b-local` model (kept for rollback); create
-  the new parallel deployment. Single GPU ⇒ enabling the new requires disabling the
-  old (the cutover window).
+  `homeCluster: true`, federation via `charts/ai-models`) **stays**; only the engine changes.
+- **Quant:** unsloth `UD-Q4_K_XL`. **Text-only** (no `--mmproj`).
+- **No Caddy sidecar** — `llama-server` enforces the Bearer natively via `--api-key-file`;
+  the long-generation timeout moves to the **Traefik Ingress + the Envoy BTP**.
+- **Swap, not parallel** — one GPU ⇒ one model. Qwen3-4B kept disabled for instant rollback.
 
 ---
 
-## 4. Planned change-set
+## 4. As built (`charts/model-serving-qwen3-5`)
 
-**NEW chart `charts/model-serving-qwen3-5`** — copy `charts/model-serving-qwen3-4b`
-(the §14 "model #2" move), redesign the model container for llama.cpp:
+A copy of `charts/model-serving-qwen3-4b` with the model container redesigned for llama.cpp:
 
-- **Image** `ghcr.io/ggml-org/llama.cpp:server-cuda` (CUDA 12; **not**
-  `server-cuda13` — it [fails on some GPUs](https://github.com/ggml-org/llama.cpp/issues/22561)).
-  Pin a **recent** digest (GDN operators need a current build — §5 gate).
-- **Args:** `--model /models/<file>.gguf`, `--host 0.0.0.0 --port 8080`, `-ngl 99`
-  (all layers on GPU), `--ctx-size 65536` (test higher), `--jinja` (tool calling via
-  the chat template — replaces vLLM's `--tool-call-parser`), `--alias qwen3-5-4b`,
-  **`--api-key-file /etc/llama/api-key`**, optional `-fa` + `--metrics`.
-- **Probes simplify** → `httpGet /health` (503 loading → 200 ready) for startup +
-  readiness. The vLLM `/v2/health/ready` dance and the **8081-gRPC probe-port
-  collision both disappear** (llama-server binds only 8080).
-- **Drop all vLLM cruft:** `--kv-transfer-config`, `LMCACHE_*`, `--enforce-eager`,
-  `--dtype`, the fp8-ban note, `--tool-call-parser=hermes`.
-- **Single container** (no Caddy). Service targets the model `:8080` directly. ⚠️
-  Verify Traefik doesn't cut long streams now that the Caddy `response_header_timeout`
-  is gone (set Traefik timeout annotations / a `ServersTransport`; the Envoy BTP
-  `timeout.requestTimeout` stays 600 s).
+- **Image** `ghcr.io/ggml-org/llama.cpp:server-cuda` (CUDA 12; **not** `server-cuda13`
+  — [fails on some GPUs](https://github.com/ggml-org/llama.cpp/issues/22561)).
+- **Args:** `--model /models/Qwen3.5-4B-GGUF/model.gguf`, `--alias qwen3-5-4b`,
+  `--host 0.0.0.0 --port 8080`, `-ngl 99` (all layers on GPU), `--ctx-size 65536`,
+  `--jinja` (tool calling via the chat template), `--api-key-file /etc/llama/api_key`
+  (native Bearer auth), `--metrics`. `n_parallel` auto-resolves to **4** (`kv_unified`).
+- **Single container, no Caddy.** Service → model `:8080` directly. Probes `httpGet /health`
+  (503 loading → 200 ready) — no `/v2/health/ready` dance, no `:8081` gRPC collision.
+- **securityContext:** `runAsNonRoot` + `runAsUser: 1000` + `seccompProfile: RuntimeDefault`
+  (converse-poc warns at restricted PSS) + drop ALL caps. Verified the image runs as 1000.
+- **Seed Job:** `hf download unsloth/Qwen3.5-4B-GGUF --include "*UD-Q4_K_XL*.gguf"` into the
+  RWX PVC, then symlinks the file → a stable `model.gguf` (decoupled from the exact filename).
+- **Gateway** (`charts/ai-models`): backend `llama-local-01` (`prefix: /v1`, host
+  `qwen3-5-4b--poc.ssegning.com`, APIKey) + model `qwen3-5-4b-local` (`modelNameOverride:
+  qwen3-5-4b`, `contextLength: 65536`, text-only, `minBackends: 1`, ADR-0028 pricing).
+- **App** (`charts/apps`): `model-serving-qwen3-5` (`homeCluster: true`). The Qwen3-4B app +
+  `qwen3-4b-local` model are `enabled: false` (kept for rollback).
 
-**Seed Job:** one GGUF file —
-`hf download unsloth/Qwen3.5-4B-GGUF --include "*UD-Q4_K_XL*.gguf" --local-dir /models`
-(~2.7 GB vs ~8 GB; confirm the exact filename). RWX PVC + ArgoCD Sync hook +
-HF_TOKEN unchanged; PVC can shrink (10–15 Gi).
-
-**`charts/ai-models/values.yaml`:** disable `vllm-local-01` + `qwen3-4b-local`
-(keep YAML for rollback); add `llama-local-01` backend (**`prefix: /v1`**, host
-`qwen3-5-4b--poc.ssegning.com`, APIKey) + `qwen3-5-4b-local` model
-(`modelNameOverride: qwen3-5-4b` = the `--alias`; new `contextLength`; no image
-input; `minBackends: 1`; ADR-0028 cost-recovery pricing re-checked — same €/h TCO,
-lighter Q4_K_M).
-
-**`charts/apps/values.yaml`:** disable the `model-serving-qwen3-4b` app (rollback);
-add `model-serving-qwen3-5` (`homeCluster: true`, `path: charts/model-serving-qwen3-5`).
-New DNS record `qwen3-5-4b--poc.ssegning.com` → home.
+> **Go-live note:** the live root `ai-apps-v2` tracks the branch `claude/magical-bohr-390242`
+> (not yet a tag), so the cutover deployed by pushing `main`→that branch. Durable tag-repoint
+> to `release-2026.06.08-v04` is the maintainer's pending step (same commit).
 
 ---
 
-## 5. Gate & verification (before committing)
+## 5. Verification (done — cutover 2026-06-08)
 
-1. **GATE — prove it loads:** run a **recent** `server-cuda` against the GGUF on the
-   A2000; confirm the **GDN operators are present** (older builds error on the new
-   ops) and `/health` → 200. Cheapest: a throwaway pod. ⚠️ contends with the live
-   Qwen3-4B on the 12 GB card → a short maintenance window.
-2. **Prove the budget:** ~2.7 GB weights + KV at the target `--ctx-size` fit; settle
-   the context number.
-3. **Smoke test:** a completion, then **with `tools`** (`--jinja`), then the gateway
-   path (JWT + `x-ai-eg-model`), then cost CEL non-zero.
+1. **Arch load-gate (non-disruptive):** a CPU `ghcr.io/ggml-org/llama.cpp:server` pod
+   (`-hf unsloth/Qwen3.5-4B-GGUF --hf-file Qwen3.5-4B-UD-Q4_K_XL.gguf`) loaded the model
+   cleanly (`model loaded`, `server is listening`, `n_ctx_train=262144`) — proving the build
+   recognises Qwen3.5's Gated-DeltaNet arch *without* touching the live GPU. ✅
+2. **GPU rollout:** `qwen3-5-4b-main-0` `1/1 Running`; `RTX A2000 12GB, 11811 MiB free` at
+   boot; **text-only loads without mmproj**; `runAsUser:1000` works; `/health` → Ready. ✅
+3. **End-to-end:** home Ingress + Certificate `READY`; Hetzner gateway `backend` +
+   `aigatewayroute/qwen3-5-4b-local` `Accepted`; `/v1/models/info` catalog now lists
+   `qwen3-5-4b-local` (qwen3-4b-local dropped); real traffic serving (§6). ✅
 
-## 6. Cost
+---
 
-Same hardware → same €/h TCO as Qwen3-4B (~€0.05/h serving; see
+## 6. Capacity & performance (measured on the live A2000, 2026-06-08)
+
+Numbers observed directly from `llama-server` slot timings under real production traffic
+(not a synthetic benchmark):
+
+| Metric | Measured | Notes |
+|---|---|---|
+| **Decode (generation)** | **~50–53 tok/s** single-stream | UD-Q4_K_XL on the A2000; steady out to 6k+ generated tokens |
+| **Decode under load** | **~37 tok/s per slot** when ≥2 slots active | continuous batching shares the GPU — aggregate across slots is higher than single-stream |
+| **Prefill (prompt eval)** | **~1.3–1.4k tok/s** | sustained even on a **35,728-token prompt** (processed in ~22 s) |
+| **Concurrency** | **4 slots** (`n_parallel=4` auto, `kv_unified=true`) | up to 4 concurrent requests batched on one GPU |
+| **Context** | **65,536** per sequence | real 35k-token prompts served live — 4× the Qwen3-4B 16k wall |
+| **Prompt cache** | per-slot KV reuse (`context checkpoints`, ~50 MiB each) | idle-slot prompts saved/restored → multi-turn skips re-prefill |
+| **VRAM** | ~2.7 GB weights + unified KV on 12 GB | ~9 GB headroom for the 4-slot 64k KV |
+| **Quality** | UD-Q4_K_XL imatrix (~92–98 % of BF16) | — |
+
+**What the PoC comfortably handles:** up to **4 concurrent interactive-dev streams**
+(opencode / LibreChat — bursty, streaming, low duty cycle) at ~37–52 tok/s each, with
+**long context now in-tier** (up to 64k — the old "route big context to SaaS" caveat is
+largely lifted; 35k-token prompts prefill in ~22 s). **Still route to SaaS:** quality-critical
+work, high-QPS / batch fan-out (>4 concurrent saturates the single GPU → per-stream tok/s
+drops and the 5th request queues), and anything needing >64k context.
+
+**vs Qwen3-4B (the prior vLLM build):** 4× the usable context (64k vs 16k), comparable
+decode throughput (~52 vs ~30–50 tok/s), native 4-way batching, and a simpler stack (no
+LMCache, no Caddy). The capacity win is **context + concurrency**, not raw single-stream speed.
+
+**Headroom / next levers (none yet needed):** raise `--ctx-size` toward 128k (KV is cheap
+with GDN; VRAM allows); raise `--parallel` past 4 for more concurrency (trades per-slot ctx
+/ speed); a Prometheus benchmark via `--metrics` would turn these spot readings into tracked
+SLOs (the model-side analogue of the gateway's `plans/artillery/` load test).
+
+---
+
+## 7. Cost (ADR-0028)
+
+Same hardware → same €/h TCO as Qwen3-4B (~€0.05/h while serving; see
 [that paper §6](./qwen3-4b.md#6-cost--hour-tco--catalog-price-erlangen-2026-adr-0028)).
-Re-derive the per-token catalog price per ADR-0028 — lighter Q4_K_M may shift
-throughput, so re-check `output/input/cachedInput Per1M` at cutover.
+The measured ~52 tok/s decode confirms the cost-recovery pricing basis, so the catalog
+keeps the weighted **`$1.00 out / $0.15 in / $0.03 cached`** per 1M (re-tune if utilization
+rises or `--parallel` changes the effective throughput).

@@ -3,11 +3,11 @@
 > One of three self-hosted-model papers. The reusable mechanics live in the
 > **[pattern guide](../self-hosted-model-serving.md)**; this paper is the
 > **as-deployed truth** for Qwen3-4B. Siblings:
-> [Qwen3.5-4B (vLLM/BF16)](./qwen3.5-4b.md) · [Qwen3.5-4B Q4 (llama.cpp)](./qwen3.5-4b-q4.md).
+> [Qwen3.5-4B (vLLM/BF16)](./qwen3.5-4b.md) · [Qwen3.5-4B Q4 (llama.cpp) — **LIVE**](./qwen3.5-4b-q4.md).
 
 | | |
 |---|---|
-| **Status** | ✅ **SHIPPED & serving** (2026-06-07) — completions + agentic tool calling end-to-end |
+| **Status** | 🟦 **STANDBY** — was the live self-hosted model (shipped 2026-06-07); **disabled 2026-06-08** when [Qwen3.5-4B Q4 (llama.cpp)](./qwen3.5-4b-q4.md) took the GPU. Kept wired (`enabled: false` on the app + `qwen3-4b-local` model) for instant rollback. Everything below is the as-built truth of this build. |
 | **Chart** | `charts/model-serving-qwen3-4b` (renamed from `model-serving` 2026-06-08) |
 | **Engine** | vLLM via `kserve/huggingfaceserver:v0.18.0-gpu` + in-pod **LMCache** |
 | **Quant** | BF16 (official weights, `Qwen/Qwen3-4B`) |

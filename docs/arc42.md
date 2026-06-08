@@ -154,8 +154,8 @@ servers, the observability stack, dashboards, and all the GitOps glue.
 | `kuadrant-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy | Direct |
 | `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget policy) | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
-| `model-serving-qwen3-4b` | Self-hosted model on the home GPU: a **bjw-template StatefulSet** (always-on) with TWO containers — the huggingfaceserver model (vLLM + in-pod LMCache) + a Caddy auth-proxy sidecar (proxy → model over localhost) — + seed Job + Certificate/IngressRoute. Federated into the gateway as a backend; reference model Qwen3-4B (renamed from `model-serving` 2026-06-08) | Hybrid bjw, `homeCluster: true` (ADR-0022/0028/0029/0030) |
-| `model-serving-qwen3-5` | Self-hosted model on the home GPU via **llama.cpp** (`llama-server`): a **bjw-template StatefulSet** with ONE container (no Caddy — native `--api-key`), GGUF (unsloth UD-Q4_K_XL) from a pre-seeded RWX PVC + seed Job + Ingress. Federated as `qwen3-5-4b-local` (prefix `/v1`). **Staged** (`enabled: false`) behind a load-gate; swaps qwen3-4b at cutover | Hybrid bjw, `homeCluster: true` (ADR-0022/0028/0030/0032) |
+| `model-serving-qwen3-5` | **🟢 LIVE (active model, 2026-06-08)** — self-hosted Qwen3.5-4B Q4 on the home GPU via **llama.cpp** (`llama-server`): a **bjw-template StatefulSet** with ONE container (no Caddy — native `--api-key`), unsloth UD-Q4_K_XL GGUF from a pre-seeded RWX PVC + seed Job + Ingress. Federated as `qwen3-5-4b-local` (prefix `/v1`). Measured: ~52 tok/s decode, ~1.3k prefill, 4 slots, 64k ctx | Hybrid bjw, `homeCluster: true` (ADR-0022/0028/0030/0032) |
+| `model-serving-qwen3-4b` | Self-hosted Qwen3-4B on the home GPU (the reference build): **bjw-template StatefulSet** with TWO containers — huggingfaceserver (vLLM + in-pod LMCache) + a Caddy auth-proxy sidecar — + seed Job + Ingress. **Now disabled/standby (rollback)**, superseded as active by `model-serving-qwen3-5` 2026-06-08 (renamed from `model-serving`) | Hybrid bjw, `homeCluster: true` (ADR-0022/0028/0029/0030) |
 | `ai-models-info` | OpenRouter-shape `/v1/models/info` catalog (nginx static) | Direct (ADR-0015) |
 | `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI + Meili + opencode discovery | Orchestrator + leaves (ADR-0014) |
 | `observability` | LGTM + Alloy + grafana-operator + dashboards | App-of-Apps (ADR-0020) |
@@ -308,7 +308,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0029 | Self-hosted model as a plain Deployment (drop KServe/Knative) — always-on + Recreate on the dedicated GPU (supersedes 0022 serving mode) |
 | 0030 | Model + Caddy auth-proxy co-located in ONE StatefulSet (proxy → model over localhost), via bjw-template (refines 0029) |
 | 0031 | Tag-based deploys (`release-YYYY.MM.DD`), never `main` — immutable/reproducible/rollback-able; self-ref `targetRevision`s + root pin the tag; external sources pinned to SHAs; `tools/release.sh` |
-| 0032 | llama.cpp (`llama-server`) as a 2nd self-hosted engine alongside vLLM — GGUF/Q4_K_M, native `--api-key` (no Caddy), `/v1`, `/health`; chosen for Qwen3.5-4B Q4 (vLLM Qwen3.5 support turbulent). Chart `model-serving-qwen3-5`, staged behind a load-gate |
+| 0032 | llama.cpp (`llama-server`) as a 2nd self-hosted engine alongside vLLM — GGUF/Q4_K_M, native `--api-key` (no Caddy), `/v1`, `/health`; chosen for Qwen3.5-4B Q4 (vLLM Qwen3.5 support turbulent). Chart `model-serving-qwen3-5` — **LIVE 2026-06-08** (swapped in for qwen3-4b) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 

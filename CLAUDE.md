@@ -262,9 +262,10 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 **Self-hosted models/agents:** the model-agnostic pattern + the "deploy the next one"
 checklist live in [`docs/self-hosted-model-serving.md`](docs/self-hosted-model-serving.md)
 §8 (vLLM-vs-llama.cpp engine choice; pricing per ADR-0028). **Per-model papers** are
-under [`docs/models/`](docs/self-hosted-model-serving.md) — `qwen3-4b.md` (shipped,
-vLLM, chart `charts/model-serving-qwen3-4b`), `qwen3.5-4b.md` (vLLM/BF16, studied),
-`qwen3.5-4b-q4.md` (llama.cpp/Q4, chosen). Follow the guide when adding a model —
+under [`docs/models/`](docs/self-hosted-model-serving.md) — `qwen3.5-4b-q4.md`
+(llama.cpp/Q4, **LIVE** = the active model, ADR-0032, chart `charts/model-serving-qwen3-5`;
+§6 = measured capacity/perf), `qwen3-4b.md` (vLLM, chart `charts/model-serving-qwen3-4b`,
+now standby/rollback), `qwen3.5-4b.md` (vLLM/BF16, studied-not-chosen). Follow the guide when adding a model —
 don't reinvent the cluster-local + edge-auth exposure (huggingfaceserver ignores
 `VLLM_API_KEY`; llama-server has native `--api-key`) or the €/hour-TCO → cost-recovery
 pricing.
