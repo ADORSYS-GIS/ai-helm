@@ -9,7 +9,7 @@ target. See the canonical note in `charts/apps/values.yaml` and the
 ## TL;DR
 
 ```bash
-# from a clean tree on the deploy/dev branch:
+# from a clean tree on main:
 tools/release.sh                      # cuts release-YYYY.MM.DD (today)
 tools/release.sh release-2026.07.01   # or an explicit tag
 ```
@@ -32,7 +32,7 @@ that manifest is the durable source of truth).
    the rendered child Applications.
 4. Commits, then **tags that commit** and **pushes the tag first** (so nothing
    live ever references a revision that isn't published yet).
-5. Pushes the dev branch + `main`.
+5. Pushes `main`.
 6. Prints the root-app repoint commands (or runs the live patch with `--repoint`).
 
 **Why bump-and-tag in one commit:** the root renders `charts/apps` *from the tag*,
