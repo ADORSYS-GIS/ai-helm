@@ -38,6 +38,7 @@ How the system is wired and how to integrate against it.
 | [`2026-currency-audit.md`](./2026-currency-audit.md) | Helm chart + Kubernetes API + tooling currency audit, mid-2026 |
 | [`2026-hetzner-cutover.md`](./2026-hetzner-cutover.md) | Hetzner cutover change-log (ADR-0018/19/20, domain switch, per-cluster knobs) + live fix-verification status + open items |
 | [`2026-06-07-observability-datasource-audit.md`](./2026-06-07-observability-datasource-audit.md) | Live diagnosis + fixes for the Grafana datasource breakages: Tempo `:3100`→`:3200`, Loki label mislabeling (line-regex → K8s service discovery), Mimir empty (wedged memberlist ring) + LGTM topology rationale ("why N pods?", "why no Prometheus?") |
+| [`releasing.md`](./releasing.md) | **How to cut a release** — tag-based deploys via `tools/release.sh` (bump self-ref `targetRevision`s → tag the commit → push tag first → repoint root `ai-apps-v2`); flags, safety, the manual root-repoint, rollback |
 | [`self-hosted-model-serving.md`](./self-hosted-model-serving.md) | **The pattern** for serving any self-hosted model/agent on the home GPU (KServe + vLLM + LMCache) + Qwen3-4B as the reference build (ADR-0022/0028): VRAM math, manifests, cluster-local + Caddy auth-proxy security, model card, €/hour→per-token cost model, tool-calling flags, "deploy the next model" checklist (§14) |
 | [`python-dashboard-generation.md`](./python-dashboard-generation.md) | How dashboards are generated from Python (grafana-foundation-sdk), the drift check, layouts |
 
