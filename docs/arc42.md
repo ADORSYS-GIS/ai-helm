@@ -333,7 +333,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 
 | Risk / debt | Impact | Mitigation / status |
 |---|---|---|
-| **Load test for 2000/5000 not yet re-run on Hetzner** | Capacity claims unvalidated | Plan §load — artillery suites exist (`plans/artillery/`) |
+| **Load test for 2000/5000 not yet re-run on Hetzner** | Capacity claims unvalidated; gateway is config-ready but not capacity-proven | Assessment + "average user" envelope in `docs/gateway-capacity.md`; Envoy HPA right-sized `[3;20]→[3;5]` to the 32-CPU worker pool; run `plans/artillery/` to get a real number, add workers before raising the ceiling |
 | **Keycloak `billing_plan` / org mappers not landed** | Plan falls back to `free`; org budget can't bucket | ADR-0021 external dependency |
 | **`enforce-valid-key` commented out** | No API-key revocation enforcement at gateway | SA-skip marker preserved for mechanical re-enable |
 | **Cilium deny-egress fragility** | New egress needs a CiliumNetworkPolicy or silent crashloop | Documented in cutover doc; overlay pattern established |

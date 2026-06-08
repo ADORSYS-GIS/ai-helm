@@ -41,8 +41,11 @@ gateway:
 
 # ────────────────────────────────────────────────────────────────────────
 # Envoy data plane (the proxy pods that actually serve client traffic).
-# Sized for ≥2000 concurrent HTTP/2 clients — the previous static 2
-# replicas + placeholder resources were the real capacity ceiling.
+# Tuned for high HTTP/2 concurrency; the HPA ceiling is RIGHT-SIZED to the
+# current 4×8-CPU worker pool (see docs/gateway-capacity.md), not to a
+# theoretical client count. Envoy proxying is cheap, so a few pods serve a lot
+# of streaming connections; the real ceiling for volume is the cluster + the
+# model backends, not this proxy.
 # ────────────────────────────────────────────────────────────────────────
 envoyProxy:
   # Horizontal autoscaling for the proxy pods. When set, this supersedes a
@@ -51,7 +54,14 @@ envoyProxy:
   # requests, which is the one that matters for client capacity.
   hpa:
     minReplicas: 3
-    maxReplicas: 20
+    # maxReplicas RIGHT-SIZED 20 → 5 (2026-06-08). The 4×8=32-CPU worker pool
+    # (shared with Mimir, the model apps, LibreChat, MCPs, the GPU model) cannot
+    # feed 20 pods × 1 CPU request (let alone the 4 CPU limit) without starving
+    # the rest of the platform — the old ceiling was a cheque the cluster
+    # couldn't cash. 5 pods (req 5 CPU / burst ≤20) fits the headroom and is
+    # ample: Envoy proxies thousands of HTTP/2 streams per pod at low CPU. Raise
+    # this in lockstep with adding worker capacity. See docs/gateway-capacity.md.
+    maxReplicas: 5
     cpuUtilization: 60
   # Real production resources (the chart shipped placeholder values tagged
   # "cleared for local tests").
