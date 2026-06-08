@@ -1,0 +1,29 @@
+{{- /*
+The weights volume. Pre-seeded once by the seed Job (the bjw `seed` controller),
+then mounted read-only by the model container — so pod starts never download.
+**RWX** (ReadWriteMany; Longhorn supports it): the seed Job and the model STS
+mount the same volume concurrently (no RWO single-attach constraint), with room
+for a future multi-pod reader. ⚠️ accessModes are immutable — switching an
+existing RWO PVC to RWX means DELETE + recreate (weights re-seed on next sync).
+Wave -1: before the seed Job. NOT pruned on its own (it holds the weights).
+*/ -}}
+{{- if .Values.pvc.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.pvc.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  accessModes:
+    - {{ .Values.pvc.accessMode | default "ReadWriteOnce" }}
+  {{- with .Values.pvc.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.pvc.size | default "25Gi" }}
+{{- end }}

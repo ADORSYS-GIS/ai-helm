@@ -6,7 +6,7 @@
 
 | | |
 |---|---|
-| **Status** | 🟡 **CHOSEN, not yet built** — engine + decisions locked (2026-06-08); gated on a load smoke-test (§5). An **ADR** records the new runtime before/at cutover. |
+| **Status** | 🟢 **BUILT & STAGED** (2026-06-08) — chart `charts/model-serving-qwen3-5` + gateway/app wiring are committed but **disabled** (`enabled: false`) behind the load-gate (§5); engine recorded in **[ADR-0032](../adr/0032-llama-cpp-engine-for-self-hosted-models.md)**. Cutover = flip the `enabled` flags (new on / qwen3-4b off) + release + repoint root. |
 | **Engine** | **llama.cpp** (`llama-server`, OpenAI-compatible) — `ghcr.io/ggml-org/llama.cpp:server-cuda` |
 | **Quant** | unsloth **`UD-Q4_K_XL`** GGUF (imatrix; ~2.7 GB) |
 | **Chart** | NEW `charts/model-serving-qwen3-5` (copy of `charts/model-serving-qwen3-4b`) |

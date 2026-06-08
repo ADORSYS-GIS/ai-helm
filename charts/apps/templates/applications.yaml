@@ -1,4 +1,5 @@
 {{- range .Values.applications }}
+{{- if not (eq .enabled false) }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -131,4 +132,5 @@ spec:
   info:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+{{- end }}{{/* enabled gate — set `enabled: false` on an app entry to stage it without rendering its Application */}}
 {{- end }}

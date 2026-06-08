@@ -302,6 +302,27 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # Self-hosted Qwen3.5-4B (Q4_K_M GGUF) via llama.cpp llama-server. Like
+  # vllm-local-01 but `prefix: /v1` (llama-server, NOT KServe's /openai/v1) and a
+  # distinct edge host. STAGED — only referenced by the (disabled) qwen3-5-4b-local
+  # model, so these CRs render but route nothing until cutover. ⚠️ host MUST match
+  # charts/model-serving-qwen3-5 ingress host. Engine: ADR-0032; paper:
+  # docs/models/qwen3.5-4b-q4.md. Reuses the vllm_local_api_key SM property for now.
+  llama-local-01:
+    schema: OpenAI
+    prefix: "/v1"
+    fqdn:
+      hostname: qwen3-5-4b--poc.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: qwen3-5-4b--poc.ssegning.com
+    resourceName: llama-local-01-svc
+    secretRef:
+      name: llama-local-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -377,6 +398,42 @@ models:
       vllm-local-01:
         <<: *vllmLocalBackendPrimary
         modelNameOverride: "qwen3-4b"
+
+  # Self-hosted Qwen3.5-4B (Q4_K_M GGUF) via llama.cpp — the upgrade candidate for
+  # the home GPU (one GPU → one model, so it SWAPS qwen3-4b-local at cutover).
+  # STAGED: enabled:false until a recent server-cuda build is proven to load the
+  # GGUF on the A2000 (docs/models/qwen3.5-4b-q4.md §5). CUTOVER = set this
+  # enabled:true + qwen3-4b-local enabled:false + the model-serving apps likewise,
+  # then cut a release + repoint root. Engine/decisions: ADR-0032.
+  #
+  # Model card (Qwen/Qwen3.5-4B · Apache-2.0): Gated DeltaNet + sparse-MoE hybrid,
+  # natively multimodal (served TEXT-ONLY here — no image input), 262k native ctx.
+  # 3-of-4 blocks are linear-attention → KV barely grows → 64k ctx is cheap on the
+  # 12GB A2000 (vs the 16k wall on qwen3-4b). Served by llama-server (prefix /v1),
+  # served-model-name = --alias `qwen3-5-4b`.
+  qwen3-5-4b-local:
+    enabled: false                   # STAGED behind the load-gate (see comment above)
+    kind: text
+    minBackends: 1                   # single self-hosted backend by design (one GPU)
+    timeout:
+      requestTimeout: 600s           # rides a deploy restart + a long generation
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen3.5-4B (self-hosted)"
+      contextLength: 65536           # = llama-server --ctx-size (GDN linear-attn KV → big ctx cheap)
+      maxOutputTokens: 16384
+      supportedParameters: *spReasoning   # Qwen3.5 has a thinking mode
+    pricing:
+      strategy: weighted             # same cost-recovery basis as qwen3-4b-local (ADR-0028)
+      standard:
+        inputPer1M: 0.15             # re-check per-token at cutover (lighter Q4_K_M)
+        cachedInputPer1M: 0.03
+        outputPer1M: 1.00
+    backends:
+      llama-local-01:
+        ref: llama-local-01
+        priority: 0
+        modelNameOverride: "qwen3-5-4b"   # = llama-server --alias
 
   deepseek-v4-flash:
     kind: text

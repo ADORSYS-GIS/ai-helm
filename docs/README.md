@@ -43,7 +43,7 @@ How the system is wired and how to integrate against it.
 | [`self-hosted-model-serving.md`](./self-hosted-model-serving.md) | **The model-agnostic pattern** for serving any self-hosted model/agent on the home GPU (bjw StatefulSet, pre-seeded RWX PVC, cluster-local + edge auth, gateway federation): VRAM budgeting, vLLM-vs-llama.cpp engine choice, cross-cutting gotchas, "deploy the next model" checklist + cost basis (ADR-0022/0028/0029/0030). Per-model specifics live in `docs/models/` ↓ |
 | [`models/qwen3-4b.md`](./models/qwen3-4b.md) | **Qwen3-4B** deployment paper (✅ shipped) — vLLM/huggingfaceserver + LMCache, BF16, 16k ctx; as-built architecture, container args, model-specific gotchas, €/hour→per-token cost |
 | [`models/qwen3.5-4b.md`](./models/qwen3.5-4b.md) | **Qwen3.5-4B (vLLM/BF16)** paper (📋 studied, not chosen) — the full-precision alternative + why vLLM's Qwen3.5 support is too turbulent to pick now |
-| [`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) | **Qwen3.5-4B Q4 (llama.cpp)** paper (🟡 chosen, not built) — `llama-server` + unsloth UD-Q4_K_XL GGUF, native `--api-key` (no Caddy), `/v1`, keep-old-disabled + new parallel deploy; decisions + gate |
+| [`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) | **Qwen3.5-4B Q4 (llama.cpp)** paper (🟢 built & staged, ADR-0032) — `charts/model-serving-qwen3-5`: `llama-server` + unsloth UD-Q4_K_XL GGUF, native `--api-key` (no Caddy), `/v1`; staged `enabled:false` behind the load-gate, cutover flips it |
 | [`python-dashboard-generation.md`](./python-dashboard-generation.md) | How dashboards are generated from Python (grafana-foundation-sdk), the drift check, layouts |
 
 ## Architecture Decision Records
