@@ -124,11 +124,13 @@ users, at what cost — and when does each pay for itself?*
     non-residential tiers: 84 XAF ≤110 kWh, 92 XAF to 400, 99 XAF to 1000; a
     proposed **+15 %** targets pros over 220 kWh/mo. A 24/7 server lands in the
     top tier, so €0.16 is a fair-to-slightly-low planning rate; range €0.13–0.19.)
-- **Scope for the Cameroon boxes: the grid electrical bill only.** Per the
-  maintainer, cooling, **UPS / generator for load-shedding** (diesel ≈ 3–5× grid),
-  bandwidth, staff time and hardware risk are real but **out of scope** here
-  ("operation is still on us"). Reliability, not the meter, is the usual Cameroon
-  catch — flagged, not costed.
+- **Electricity scope (the §6/§6.3 tables only): the grid bill.** The §6 *hardware*
+  TCO and §6.3 power comparison are deliberately electricity-only. **Maintenance/ops
+  — cooling, UPS / generator for load-shedding (diesel ≈ 3–5× grid), staff time,
+  hardware risk — is NOT ignored**: it's estimated in **§6.5** and folded into the
+  fully-loaded TCO (§8) and RoI (§9.5), where it flips the V100 verdict. (The
+  maintainer's "operation is still on us" set the *electricity-only* scope for the
+  power tables; §6.5 then prices the rest.)
 - FX **$1 ≈ €0.92** (so €/h × 1.087 = $/h).
 - **730 h/month**; 3-year amortization horizon = **26,280 h**.
 - Interactive chat needs **≥ ~15 tok/s** per stream to feel live.
@@ -572,7 +574,7 @@ confidence — they hinge on your labour rate and the office's power reliability
 
 | Box | Hardware-only 36-mo (§6) | + Maintenance | **Fully-loaded 36-mo** | What maintenance does |
 |---|---|---|---|---|
-| A2000 (DE) | €1,332 | +€1,440 | **~€2,772** | doubles it (but labour is largely shared/sunk) |
+| A2000 (DE) | €864 | +€1,440 | **~€2,304** | maint > power (but labour is largely shared/sunk) |
 | 2×4070 (CM) | €1,692 | +€3,600 | **~€5,292** | maintenance becomes the dominant cost |
 | **5×V100 (CM)** | €5,520 | **+€10,800** | **~€16,320** | **~3× — erases the "cheap 70B" lead** |
 | GEX44 (DE, rent) | €6,703 | +€1,440 | **~€8,143** | barely moves (no hardware ops) |
@@ -613,28 +615,31 @@ price** — that's ADR-0028's whole point.
 
 ### 7.2 The inputs
 
-| Platform | Monthly TCO (USD) | 8B aggregate decode | 8B capacity | 70B aggregate decode | 70B capacity |
+| Platform | Monthly TCO (USD) | 8B/30B-MoE aggregate decode | capacity | 70B aggregate decode | 70B capacity |
 |---|---|---|---|---|---|
 | **A2000** | ~$40 (€37) | ~150 tok/s (4B live) | ~394 M/mo | — | — |
+| **2×4070** *(recommended — GLM-4.7-Flash)* | ~$84 (€77, 36-mo amort) | ~500 tok/s | ~1,314 M/mo | — | — |
 | **GEX44** | ~$202 (€186) | ~400 tok/s | ~1,051 M/mo | — | — |
 | **GEX131** | ~$966 (€889) | ~2,000 tok/s | ~5,256 M/mo | ~350 tok/s | ~920 M/mo |
 | **5× V100** | ~$166 (€153, 36-mo amort) | ~450 tok/s | ~1,183 M/mo | ~100 tok/s | ~263 M/mo |
 
-> V100 monthly TCO uses **amortized capex** (€3,000 / 36 mo = €83/mo) + the **Cameroon
-> typical power €70/mo** (€0.16/kWh — *not* the German €250 reference) = **€153/mo**,
-> per ADR-0028's local-power rule, since the box actually runs in Cameroon. (This is
-> capex+power only — §6.5 maintenance is *not* in ADR-0028 cost-recovery; it lands in
-> the §9 RoI instead.)
+> **2×4070** TCO uses amortized capex (~€1,100 / 36 mo ≈ €31/mo) + Cameroon power
+> €47/mo ≈ **€77/mo**; throughput is for **GLM-4.7-Flash 30B-A3B** (decodes ~like a
+> 6B) or an 8B. Capex is cash-sunk but amortized here for ADR-0028 consistency (same
+> as the A2000). **V100** TCO = amortized capex (€3,000 / 36 ≈ €83) + **Cameroon**
+> power €70/mo = **€153/mo** (ADR-0028 local-power rule — *not* the German €250
+> reference). Both are **capex+power only** — §6.5 maintenance is not in ADR-0028
+> cost-recovery; it lands in §9.5 RoI.
 
 ### 7.3 Cost-recovery `$/1M out` vs utilization
 
 **8B model:**
 
-| Utilization | A2000 | GEX44 | GEX131 | 5× V100 |
-|---|---|---|---|---|
-| 10 % (PoC / bursty) | **$1.02** ✅*anchor* | $1.92 | $1.84 | $1.40 |
-| 30 % (steady team) | $0.34 | $0.64 | $0.61 | $0.47 |
-| 100 % (saturated) | $0.10 | $0.19 | $0.18 | $0.14 |
+| Utilization | A2000 | 2×4070 | GEX44 | GEX131 | 5× V100 |
+|---|---|---|---|---|---|
+| 10 % (PoC / bursty) | **$1.02** ✅*anchor* | $0.64 | $1.92 | $1.84 | $1.40 |
+| 30 % (steady team) | $0.34 | $0.21 | $0.64 | $0.61 | $0.47 |
+| 100 % (saturated) | $0.10 | $0.06 | $0.19 | $0.18 | $0.14 |
 
 > ✅ **Method check:** the A2000 at **~10 % utilization → $1.02/1M**, which is
 > exactly the live catalog **$1.00**. So ADR-0028's shipped price implies the live
@@ -661,6 +666,7 @@ at a **30 % steady-team utilization** assumption (re-tune as real data lands):
 | Platform / model | `outputPer1M` | `inputPer1M` | `cachedInputPer1M` |
 |---|---|---|---|
 | A2000 / 4B *(live, 10 % util)* | **$1.00** | $0.15 | $0.03 |
+| **2×4070 / GLM-4.7-Flash** *(recommended)* | **$0.21** | $0.03 | $0.01 |
 | GEX44 / 8B | $0.64 | $0.10 | $0.02 |
 | GEX131 / 8B | $0.61 | $0.09 | $0.02 |
 | GEX131 / 70B | $3.50 | $0.53 | $0.11 |
@@ -701,8 +707,8 @@ SaaS comparators, mid-2026 (per-1M, output, approximate):
 | Servable context | 128 K | ~64–128 K | ~128 K | ~128 K | **256 K (native)** |
 | Key capabilities | text·tools | **coding·agent**·tools | reasoning·MoE | text·**vision·audio** (Gemma 4) | **all + frontier-ish reasoning** |
 | Named users (top model, 10 %) | ~30–60 | ~100–200 | ~60–120 | ~150–300 | ~300–600 |
-| **Hardware-only 36-mo TCO** | ~€1,332 | **~€1,692** (CM) | ~€5.5 k (CM) / ~€16 k (DE-sust) | €6,703 | €32,004 |
-| **Fully-loaded 36-mo (+maint, §6.5)** | ~€2,772 | **~€5,292** | **~€16,320** | ~€8,143 | ~€34,164 |
+| **Hardware-only 36-mo TCO** | ~€864 | **~€1,692** (CM) | ~€5.5 k (CM) / ~€16 k (DE-sust) | €6,703 | €32,004 |
+| **Fully-loaded 36-mo (+maint, §6.5)** | ~€2,304 | **~€5,292** | **~€16,320** | ~€8,143 | ~€34,164 |
 | Maintenance burden | low (home, GitOps) | medium (CM office) | **high** (5 old cards, genset, EOL) | **near-zero** | **near-zero** |
 | Modern kernels (FP8/FP4) | ✗ | **FP8** | ✗ | FP8 | **FP4+FP8** |
 | Managed / warranty | self | self | none | yes | yes |
