@@ -112,73 +112,11 @@ applications:
     destination:
       namespace: observability
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Notifications: Apprise API — multi-channel notification gateway
-  # Receives webhook calls from grafana-apprise-adapter and fans out to
-  # configured channels (Discord, Slack, email, etc.).
-  # Secrets required:
-  #   apprise-api-config (optional): pre-configured notification URLs
-  # Source: https://github.com/ADORSYS-GIS/opencode-k8s-agent
-  # ─────────────────────────────────────────────────────────────────────────────
-  - name: apprise-api
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    # Umbrella (ADR-0018): app-scoped dep — the `apprise-channels` ExternalSecret
-    # (notification-channel URLs) the Deployment mounts at /apprise-config.
-    # Folded in as a second (kustomize) source. Fill the ssegning-aws remoteRef.
-    depsOverlay: environments/prod/deps/apprise-api
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
-      # Pinned to a commit for a reproducible release (was HEAD). This is an
-      # EXTERNAL repo, so it doesn't ride the ai-helm release tag — bump this SHA
-      # deliberately when you want a newer opencode-k8s-agent (then re-release).
-      targetRevision: 5c8ca29c68922678a50b664074d2ecd0bafae7e4
-      path: helm/apprise-api
-      helm:
-        releaseName: apprise-api
-        valuesObject:
-          apprise-api:
-            controllers:
-              main:
-                replicas: 1
-                containers:
-                  main:
-                    env:
-                      APPRISE_STATEFUL_MODE: simple
-                      APPRISE_CONFIG_DIR: /apprise-config
-                    envFrom:
-                      - secretRef:
-                          name: apprise-api-config
-                          optional: true
-                    resources:
-                      requests: { cpu: 100m, memory: 128Mi }
-                      limits:   { cpu: 500m, memory: 512Mi }
-            # Secret 'apprise-channels' must exist in the monitoring namespace.
-            # Each key becomes a file — key 'alerts.cfg' is read when
-            # POST /notify/alerts is called (one Apprise URL per line):
-            #   kubectl create secret generic apprise-channels -n monitoring \
-            #     --from-literal=alerts.cfg='discord://WEBHOOK_ID/WEBHOOK_TOKEN'
-            persistence:
-              config:
-                type: secret
-                name: apprise-channels
-                globalMounts:
-                  - path: /apprise-config
-            service:
-              main:
-                controller: main
-                ports:
-                  http:
-                    port: 8000
-    destination:
-      namespace: monitoring
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
+  # apprise-api REMOVED (ADR-0036): the Grafana→grafana-apprise-adapter→apprise-api
+  # notification path was redundant — Grafana/Alertmanager notify natively. The
+  # grafana-apprise-adapter + the Grafana external-alertmanager override were
+  # dropped too; opencode-k8s-agent (below) keeps notifying via direct
+  # APPRISE_URLS (its APPRISE_API_URL override was removed).
 
   # ─────────────────────────────────────────────────────────────────────────────
   # AI Monitoring: OpenCode K8s Agent — AI-powered cluster health monitor
@@ -219,7 +157,9 @@ applications:
                     env:
                       OPENCODE_MODEL: "minimax-m2p7"
                       OPENCODE_BASE_URL: "https://api.ai.camer.digital/v1"
-                      APPRISE_API_URL: "http://apprise-api.monitoring.svc.cluster.local:8000"
+                      # APPRISE_API_URL removed with apprise-api (ADR-0036): the
+                      # agent now sends reports DIRECTLY via APPRISE_URLS (from its
+                      # opencode-k8s-agent-secret), not through the apprise-api svc.
                       KEYCLOAK_URL: "https://auth.verif.fyi"
                       KEYCLOAK_REALM: "camer-digital"
                       KEYCLOAK_CLIENT_ID: "opencode-k8s"
