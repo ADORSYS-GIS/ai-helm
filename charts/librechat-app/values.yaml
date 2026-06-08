@@ -266,21 +266,16 @@ librechat:
             # trust that CA via REDIS_CA (ca.crt mounted from the internalCaTrust
             # cert at /etc/internal-ca). Plaintext `redis://` gets reset.
             #
-            # ⚠️ STOPGAP (2026-06-08): pinned to the MASTER POD's headless FQDN, NOT
-            # the `redis-ha-redis` Service. That Service round-robins master+replica
-            # (2 endpoints), so LibreChat's write connection lands on the read-only
-            # replica ~50% of the time → "READONLY You can't write against a read
-            # only replica" (FLOWS/TOOL_CACHE + leader election). LibreChat can't
-            # speak Sentinel (single/cluster only) and home-os's redis-ha exposes no
-            # master-only/haproxy endpoint. Current master = redis-ha-redis-0
-            # (sentinel master `redis-ha`); the cert wildcard SAN
-            # `*.redis-ha-redis-headless...` covers this host so TLS still verifies.
-            # ⚠️ FRAGILE: a Sentinel FAILOVER (one already happened 2026-06-06,
-            # -1→-0) makes the OTHER pod the master → READONLY returns. DURABLE FIX =
-            # a master-tracking write endpoint in home-os redis-ha (haproxy or a
-            # sentinel→label master Service), then point all write-consumers (this +
-            # the Envoy rate-limiter, charts/apps redis url) at it.
-            REDIS_URI: "rediss://redis-ha-redis-0.redis-ha-redis-headless.redis-system.svc.cluster.local:6379"
+            # Point at the redis-ha HAProxy master-router (home-os redis-ha) — the
+            # DURABLE fix for the READONLY trap. The round-robin `redis-ha-redis`
+            # Service load-balances master+replica, so a write connection lands on the
+            # read-only replica ~50% of the time → "READONLY You can't write against a
+            # read only replica". HAProxy health-checks both pods over TLS and routes
+            # ALL traffic to whichever is `role:master`, auto-following Sentinel
+            # failover — so LibreChat (which can't speak Sentinel) always writes to the
+            # master. Replaces the earlier fragile master-POD pin. TLS verifies via the
+            # same self-signed-ca (cert SAN `redis-ha-haproxy.redis-system...`).
+            REDIS_URI: "rediss://redis-ha-haproxy.redis-system.svc.cluster.local:6379"
             REDIS_CA: "/etc/internal-ca/ca.crt"
             # redis-ha requires auth. LibreChat applies REDIS_PASSWORD on top
             # of REDIS_URI. Secret `redis-ha-redis-auth` (key `redis-password`)
