@@ -890,9 +890,11 @@ comes, write the ADR and update §5/§9 of arc42.
 
 This is the worked-through evaluation of the **next** self-hosted model, kept here
 because it's the live example of the §14 checklist applied to a real candidate.
-**Status: direction set, blocked on an external dependency (see §15.4) — no chart
-edits made yet.** When it ships, this section folds into the model card (§12) + cost
-row (§13) and the as-built (§11), and an ADR records the cutover.
+**Status: direction set, gated on an empirical engine-support test (see §15.4) — no
+chart edits made yet.** A capable huggingfaceserver image exists; whether it loads
+*this* (multimodal, MoE, GDN) model cleanly must be proven on the A2000 first. When
+it ships, this section folds into the model card (§12) + cost row (§13) and the
+as-built (§11), and an ADR records the cutover.
 
 ### 15.1 The candidate & the decisions taken
 
@@ -950,18 +952,39 @@ quality loss. Q4_K_M only becomes the right call **if/when we switch the engine 
 llama.cpp** (the deferred alternative) — at which point the 223 GGUF quants and the
 ~92–98% quality retention of Q4_K_M are exactly the ecosystem we'd want.
 
-### 15.4 ⚠️ The hard blocker (external — clear before any chart edit)
+### 15.4 ⚠️ The real risk: vLLM's Qwen3.5 support is new & turbulent — prove it empirically
 
-Our image is pinned to **`kserve/huggingfaceserver:v0.18.0-gpu` (vLLM 0.19.0)**,
-which **predates Qwen3.5** → it will fail with `model class not found`. The vLLM path
-**requires a newer `huggingfaceserver` tag that bundles a Qwen3.5-capable vLLM**
-(one with the Gated-DeltaNet model class + kernels). **KServe's image releases lag
-vLLM** — so this tag **may not exist yet**, and if it doesn't, the vLLM path is
-blocked until KServe ships one. (This is precisely why the llama.cpp hedge is sound:
-llama.cpp + the existing GGUF quants already run this model today.)
+*(Corrects an earlier draft that called this an "image too old" blocker — that was
+wrong: the image **postdates** the model.)* Docker Hub shows huggingfaceserver GPU
+tags newer than ours — `v0.18.0-gpu` (**2026-04-29**, what we run = vLLM 0.19.0),
+`v0.19.0-rc0-gpu` (2026-05-27), `latest-gpu` (2026-06-03) — and vLLM 0.19.0
+reportedly *introduced* Qwen3.5 support (hybrid/Mamba prefix caching). So a capable
+image exists; the question is whether it loads **this** model cleanly.
 
-Two secondary risks that ride along with the required image bump:
-- **⚠️ Plan to DISABLE LMCache for this model.** (a) Bumping vLLM re-opens the
+The actual risk is **support maturity**, and it's real:
+- vLLM's Qwen3.5 support **churned**: it **broke on the 0.18.0 upgrade**
+  ([vLLM #37749](https://github.com/vllm-project/vllm/issues/37749)) and was
+  (re)stabilised around 0.19.0.
+- The **multimodal** arch classes (`Qwen3_5MoeForConditionalGeneration` /
+  `Qwen3_5ForConditionalGeneration`) drew **"are not supported for now"** reports on
+  some versions ([#35344](https://github.com/vllm-project/vllm/issues/35344),
+  [#35391](https://github.com/vllm-project/vllm/issues/35391)).
+- ⚠️ **There is no text-only `Qwen3_5ForCausalLM` class registered in vLLM** — and no
+  text-only 4B checkpoint. So "text-only" here means loading the **full multimodal
+  ConditionalGeneration model** and simply not sending images — *contingent on that
+  multimodal class actually loading on the chosen image*.
+- **transformers coupling** — Qwen3.5 needs a very new `transformers`
+  (~5.3.0.dev0); the image's `transformers` pin matters too.
+
+**Conclusion: this can't be settled by reading — it must be proven by launching a
+candidate image** (`latest-gpu` or `v0.19.0-rc0-gpu`; fallback our `v0.18.0-gpu`)
+against `Qwen/Qwen3.5-4B` on the A2000 (Phase 1). **If none load it cleanly, the
+llama.cpp path — which already runs this model today via the 223 community GGUF
+quants — becomes the pragmatic choice sooner than "future,"** and is worth
+revisiting with the maintainer at that point.
+
+Two further risks regardless of image:
+- **⚠️ Plan to DISABLE LMCache for this model.** (a) The newer vLLM re-opens the
   `get_kv_events` version-skew that bit us at v0.17→v0.18 (§11.8). (b) LMCache's KV
   offload assumes *standard attention* KV — **DeltaNet's recurrent state may not be
   offloadable the same way** (unproven). Launch with `--kv-transfer-config` and the
@@ -992,9 +1015,10 @@ Two secondary risks that ride along with the required image bump:
   DNS record if the host string changes.
 
 ### 15.6 Verification before committing (the §14.A "prove the budget" step)
-1. **Confirm a `huggingfaceserver` image tag** whose vLLM knows the Qwen3.5 model
-   class (and note its LMCache version). *This is the gate.*
-2. **Prove the VRAM/context budget** on the A2000 at BF16 (weights + vision tower +
-   KV at the target `--max-model-len`).
+1. **Prove the model loads** on a candidate image — try `latest-gpu`, then
+   `v0.19.0-rc0-gpu`, fallback `v0.18.0-gpu` — against `Qwen/Qwen3.5-4B` on the
+   A2000. *This is the gate (§15.4): the multimodal/GDN class must load cleanly.*
+2. **Prove the VRAM/context budget** at BF16 (weights + vision tower + KV at the
+   target `--max-model-len`).
 3. **Smoke test**: a completion (no `tools`), then with `tools` (parser check), then
    the gateway path (JWT + model header) — per §11.10 / §14.E.
