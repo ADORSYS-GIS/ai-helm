@@ -15,10 +15,11 @@ tools/release.sh release-2026.07.01   # or an explicit tag
 ```
 
 Then do the **one manual step the script can't do for you** — repoint the root:
-update your manually-applied `ai-apps-v2` manifest to
-`spec.source.targetRevision: <new tag>` and `kubectl apply` it (the script prints
-the exact commands; a live `kubectl patch` alone reverts within minutes because
-that manifest is the durable source of truth).
+bump the `ai-apps-v2` entry's `targetRevision` to `<new tag>` in **home-os**
+`charts/cd/values.yaml` and push home-os `main`. ArgoCD's `cd` app (selfHeal)
+reconciles it and the root rolls forward. ⚠️ Skip this and the root self-heals
+back to the previous tag — an effective rollback. (A live `kubectl patch` alone
+reverts within minutes because home-os `charts/cd` is the durable source.)
 
 ## What the script does
 
@@ -47,7 +48,7 @@ release. The script guarantees this by tagging the bump commit.
 | `--dry-run` | show the diff that would be committed, then revert; no commit/tag/push. **Always run this first.** |
 | `--yes` / `-y` | skip the interactive confirmation. |
 | `--no-push` | commit + tag locally only (inspect before pushing). |
-| `--repoint` | also `kubectl patch` the live `ai-apps-v2` to the new tag (best-effort — still update the external manifest, see below). |
+| `--repoint` | also `kubectl patch` the live `ai-apps-v2` to the new tag (immediate stop-gap — still bump home-os `charts/cd`, see below). |
 
 ### Safety
 
@@ -56,16 +57,20 @@ release. The script guarantees this by tagging the bump commit.
 - An `EXIT` trap reverts the bump if anything fails before the commit, so a failed
   run never leaves the tree half-changed.
 
-## The root-app repoint (manual, durable)
+## The root-app repoint (durable, in home-os)
 
-The root `ai-apps-v2` is **applied manually** from a manifest the maintainer holds
-outside this repo (field-manager `argocd-controller`). A live `kubectl patch`
-reverts within minutes when that manifest re-applies. So the durable repoint is:
+The root `ai-apps-v2` Application is **GitOps-managed in `home-os`** — its
+`targetRevision` lives in `home-os` `charts/cd/values.yaml` (the `ai-apps-v2`
+entry), reconciled by ArgoCD's `cd` app (`selfHeal: true`). It is NOT applied by
+hand, so a live `kubectl patch` reverts within minutes when `cd` re-syncs. The
+durable repoint is therefore a home-os commit:
 
 ```bash
-# 1. edit your ai-apps-v2 manifest:  spec.source.targetRevision: <new tag>
-kubectl --context admin@homeos -n argocd apply -f <your ai-apps-v2.yaml>
-# 2. (optional, immediate) nudge ArgoCD:
+# 1. in home-os charts/cd/values.yaml, bump the ai-apps-v2 entry:
+#       targetRevision: <new tag>
+git -C <home-os> commit -am 'chore(cd): repoint ai-apps-v2 → <new tag>'
+git -C <home-os> push           # ArgoCD's cd app rolls the root forward
+# 2. (optional, immediate) nudge ArgoCD so it doesn't wait for the next poll:
 kubectl --context admin@homeos -n argocd annotate application ai-apps-v2 \
   argocd.argoproj.io/refresh=hard --overwrite
 ```
@@ -76,11 +81,12 @@ is being updated.
 ## Rollback
 
 Repoint the root back to a previous tag — it's immutable, so the exact prior state
-redeploys:
+redeploys. Set `targetRevision` back in home-os `charts/cd/values.yaml` and push
+(that's the durable revert); for immediate effect, also live-patch:
 
 ```bash
 kubectl --context admin@homeos -n argocd patch application ai-apps-v2 --type merge \
-  -p '{"spec":{"source":{"targetRevision":"release-2026.06.08"}}}'   # and the manifest
+  -p '{"spec":{"source":{"targetRevision":"release-2026.06.08-v09"}}}'   # then revert it in home-os charts/cd too
 ```
 
 ## External (first-party) app sources are pinned to commits, not HEAD
