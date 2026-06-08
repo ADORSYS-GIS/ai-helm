@@ -367,6 +367,7 @@ models:
   #   bill at the near-free cached rate. Every number is a documented knob
   #   (ADR-0028 §Pricing); re-tune as utilization data arrives.
   qwen3-4b-local:
+    enabled: false                  # DISABLED at cutover 2026-06-08 — swapped by qwen3-5-4b-local (one GPU → one model). Re-enable to roll back.
     kind: text
     # Single self-hosted backend by design (one GPU, one model). The default
     # 2-backend HA guard doesn't apply; a cloud fallback at priority 1 is the
@@ -412,7 +413,7 @@ models:
   # 12GB A2000 (vs the 16k wall on qwen3-4b). Served by llama-server (prefix /v1),
   # served-model-name = --alias `qwen3-5-4b`.
   qwen3-5-4b-local:
-    enabled: false                   # STAGED behind the load-gate (see comment above)
+    enabled: true                    # CUTOVER 2026-06-08: arch load-gate PASSED (llama.cpp loads the Qwen3.5 GGUF) — live
     kind: text
     minBackends: 1                   # single self-hosted backend by design (one GPU)
     timeout:

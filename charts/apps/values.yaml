@@ -943,6 +943,7 @@ applications:
   # charts/ai-models — so it inherits ADR-0021 JWT auth + rate limits there.
   # See docs/self-hosted-model-serving.md.
   - name: model-serving-qwen3-4b
+    enabled: false                   # DISABLED at cutover 2026-06-08 — swapped by model-serving-qwen3-5 (one GPU). Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -976,7 +977,7 @@ applications:
   # ai-models qwen3-5-4b-local/qwen3-4b-local enabled flags, then cut a release +
   # repoint root. Rollback = the inverse.
   - name: model-serving-qwen3-5
-    enabled: false
+    enabled: true                    # CUTOVER 2026-06-08: arch load-gate passed — live
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
