@@ -83,6 +83,23 @@ kubectl --context admin@homeos -n argocd patch application ai-apps-v2 --type mer
   -p '{"spec":{"source":{"targetRevision":"release-2026.06.08"}}}'   # and the manifest
 ```
 
+## External (first-party) app sources are pinned to commits, not HEAD
+
+A reproducible release also requires that apps sourced from **other** ADORSYS-GIS
+repos don't track HEAD. These are pinned to commit SHAs in `charts/apps/values.yaml`
+(they do NOT ride the ai-helm release tag — they're different repos):
+
+| app(s) | repo | how to bump |
+|---|---|---|
+| `opencode-k8s-agent`, `apprise-api` | `opencode-k8s-agent.git` | edit the SHA |
+| `converse-ui` | `converse-frontends` | edit the SHA |
+
+To take a newer version: `git ls-remote https://github.com/ADORSYS-GIS/<repo> HEAD`,
+put the SHA in `charts/apps/values.yaml`, then cut a release. **`tools/release.sh`
+does NOT touch these** — it only bumps the ai-helm self-ref tag; external SHAs are
+a deliberate manual bump. (Upstream Helm charts — `aieg`, `eg`, `external-secrets`,
+… — are already version-pinned and need no action.)
+
 ## Notes
 
 - Tags don't trigger CI (`release-helm-charts` fires on branch push + manual
