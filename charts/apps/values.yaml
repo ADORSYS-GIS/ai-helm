@@ -942,16 +942,16 @@ applications:
   # Hetzner gateway as the `vllm-local-01` backend / `qwen3-4b-local` model in
   # charts/ai-models — so it inherits ADR-0021 JWT auth + rate limits there.
   # See docs/self-hosted-model-serving.md.
-  - name: model-serving
+  - name: model-serving-qwen3-4b
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
       targetRevision: release-2026.06.08-v03
-      path: charts/model-serving
+      path: charts/model-serving-qwen3-4b
       helm:
-        releaseName: model-serving
+        releaseName: model-serving-qwen3-4b
         valuesObject: { }
     destination:
       namespace: converse-poc

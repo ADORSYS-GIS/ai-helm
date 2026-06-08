@@ -1,4 +1,4 @@
-# model-serving
+# model-serving-qwen3-4b
 
 Self-hosted LLM on the **home GPU** (RTX A2000, 12 GB): a single **`bjw-template`
 `StatefulSet`** (always-on, `replicas: 1`) with **two containers in one pod** — the
