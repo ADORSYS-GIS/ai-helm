@@ -6,7 +6,7 @@ federated into the Hetzner Envoy AI Gateway like a SaaS backend. This guide is
 
 | Paper | Engine | Status |
 |---|---|---|
-| [**Qwen3.5-4B Q4 (llama.cpp)**](./models/qwen3.5-4b-q4.md) | llama.cpp (`llama-server`), UD-Q4_K_XL GGUF | 🟢 **LIVE** — the active model; ~52 tok/s decode, 4 slots, 64k ctx |
+| [**Qwen3.5-4B Q4 (llama.cpp)**](./models/qwen3.5-4b-q4.md) | llama.cpp (`llama-server`), UD-Q4_K_XL GGUF | 🟢 **LIVE** — the active model; ~52 tok/s decode, 4 slots, 128k ctx |
 | [**Qwen3-4B**](./models/qwen3-4b.md) | vLLM (`huggingfaceserver`) + LMCache, BF16 | 🟦 standby (disabled 2026-06-08; rollback; the reference build) |
 | [**Qwen3.5-4B (vLLM/BF16)**](./models/qwen3.5-4b.md) | vLLM, BF16 | 📋 studied, not chosen (documented alternative) |
 
