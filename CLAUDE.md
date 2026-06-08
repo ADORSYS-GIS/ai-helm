@@ -110,7 +110,7 @@ Deploys are pinned to an **immutable release tag** — currently **`release-2026
 - **Workloads → `home-remote`.** Driven by `argocd.destination` (`name` / `server` / `allowInCluster`) in `charts/{apps,ai-models,librechart}/values.yaml`. Never use ArgoCD's built-in in-cluster handle (`name: in-cluster` / `server: https://kubernetes.default.svc`) for a workload — even if it resolves to the same physical cluster, it's a different ArgoCD destination. The helper `<chart>.argocd.destinationClusterRef` (each chart's `templates/_helpers.tpl`) **hard-fails the render** if a workload destination resolves to the in-cluster handle unless `allowInCluster: true`.
 - **Control objects → local cluster / argocd.** In `charts/apps`, an app whose deployed content is itself a control object (an orchestrator emitting an ApplicationSet — `models`→`charts/ai-models`, `librechat`→`charts/librechart`) sets **`controlPlane: true`** on its entry. The template then targets `argocd.inClusterServer` (**`server: https://kubernetes.default.svc`** — the canonical local-cluster ref, used instead of the `name: in-cluster` handle which depends on that registration existing) / `argocd.controlPlaneNamespace` (`argocd`) and bypasses the guard. The orchestrators' ApplicationSet `template.spec.destination` (the **child** Applications) stays `home-remote`.
 - **The root `ai-apps-v2` Application** (applied manually on the ArgoCD cluster — there is no `ai-gitops`) deploys `charts/apps` and **must itself target in-cluster/argocd** so the generated Application CRs land where the controller watches.
-- **`homeCluster: true` — the ONE sanctioned ADR-0017 exception (ADR-0022).** A *workload* (not a control object) that must run on the cluster ArgoCD itself runs on — today only `model-serving` (the self-hosted GPU model: KServe/vLLM/LMCache needs the home GPU). It targets `argocd.inClusterServer` but keeps its own workload namespace (unlike `controlPlane`, which forces `argocd`), and the destination guard is called with `allowInCluster: true`. Don't add more `homeCluster` apps without an ADR — the default for every workload is still `home-remote`.
+- **`homeCluster: true` — the ONE sanctioned ADR-0017 exception (ADR-0022).** A *workload* (not a control object) that must run on the cluster ArgoCD itself runs on — today only `model-serving-qwen3-4b` (the self-hosted GPU model: KServe/vLLM/LMCache needs the home GPU). It targets `argocd.inClusterServer` but keeps its own workload namespace (unlike `controlPlane`, which forces `argocd`), and the destination guard is called with `allowInCluster: true`. Don't add more `homeCluster` apps without an ADR — the default for every workload is still `home-remote`.
 
 Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone). The render-time guard is complemented out-of-band by the `ai` AppProject's `destinations:` allowlist. See ADR-0017.
 
@@ -261,7 +261,7 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 
 **Self-hosted models/agents:** the reusable pattern + the "deploy the next one"
 checklist live in [`docs/self-hosted-model-serving.md`](docs/self-hosted-model-serving.md)
-§14 (chart `charts/model-serving`; pricing per ADR-0028; reference model Qwen3-4B).
+§14 (chart `charts/model-serving-qwen3-4b`; pricing per ADR-0028; reference model Qwen3-4B).
 Follow it when adding a model — don't reinvent the cluster-local + Caddy auth-proxy
 exposure (KServe ignores `VLLM_API_KEY`) or the €/hour-TCO → cost-recovery pricing.
 

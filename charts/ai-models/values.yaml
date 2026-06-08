@@ -143,9 +143,9 @@ backendDefaults:
     prefix: "/openai/v1"
     fqdn:
       # The model is cluster-local on the home cluster; this is the Traefik
-      # edge-auth IngressRoute domain (charts/model-serving edgeAuth.host), which
+      # edge-auth IngressRoute domain (charts/model-serving-qwen3-4b edgeAuth.host), which
       # validates the Bearer below before proxying to the cluster-local ksvc.
-      # ⚠️ Must match charts/model-serving edgeAuth.host exactly.
+      # ⚠️ Must match charts/model-serving-qwen3-4b edgeAuth.host exactly.
       hostname: qwen3-4b--poc.ssegning.com
       port: 443
     securityType: APIKey
@@ -357,7 +357,7 @@ models:
     # request landing then can take tens of seconds. Without an explicit timeout
     # the route uses Envoy's ~15s default → 504 "upstream request timeout". 600s
     # rides a restart AND a long generation (8k tokens @ ~30-50 tok/s). Keep in
-    # sync with charts/model-serving edgeAuth.proxy.responseTimeout (the Caddy hop)
+    # sync with charts/model-serving-qwen3-4b edgeAuth.proxy.responseTimeout (Caddy hop)
     # — both must exceed it. Path: Envoy(Hetzner) → Caddy → model.
     timeout:
       requestTimeout: 600s

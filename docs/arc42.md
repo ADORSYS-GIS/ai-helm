@@ -154,7 +154,7 @@ servers, the observability stack, dashboards, and all the GitOps glue.
 | `kuadrant-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy | Direct |
 | `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget policy) | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
-| `model-serving` | Self-hosted model on the home GPU: a **bjw-template StatefulSet** (always-on) with TWO containers — the huggingfaceserver model (vLLM + in-pod LMCache) + a Caddy auth-proxy sidecar (proxy → model over localhost) — + seed Job + Certificate/IngressRoute. Federated into the gateway as a backend; reference model Qwen3-4B | Hybrid bjw, `homeCluster: true` (ADR-0022/0028/0029/0030) |
+| `model-serving-qwen3-4b` | Self-hosted model on the home GPU: a **bjw-template StatefulSet** (always-on) with TWO containers — the huggingfaceserver model (vLLM + in-pod LMCache) + a Caddy auth-proxy sidecar (proxy → model over localhost) — + seed Job + Certificate/IngressRoute. Federated into the gateway as a backend; reference model Qwen3-4B (renamed from `model-serving` 2026-06-08) | Hybrid bjw, `homeCluster: true` (ADR-0022/0028/0029/0030) |
 | `ai-models-info` | OpenRouter-shape `/v1/models/info` catalog (nginx static) | Direct (ADR-0015) |
 | `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI + Meili + opencode discovery | Orchestrator + leaves (ADR-0014) |
 | `observability` | LGTM + Alloy + grafana-operator + dashboards | App-of-Apps (ADR-0020) |
