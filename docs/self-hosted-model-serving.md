@@ -883,3 +883,118 @@ Convert `charts/model-serving` to the **orchestrator-plus-leaves** pattern
 → a `model-serving-<name>` leaf each. Worth the indirection only once 3+ models
 share the lifecycle; until then, copy-the-chart is less machinery. When that day
 comes, write the ADR and update §5/§9 of arc42.
+
+---
+
+## 15. Candidate study — Qwen3.5-4B (vLLM path) — *studied 2026-06-08, NOT yet built*
+
+This is the worked-through evaluation of the **next** self-hosted model, kept here
+because it's the live example of the §14 checklist applied to a real candidate.
+**Status: direction set, blocked on an external dependency (see §15.4) — no chart
+edits made yet.** When it ships, this section folds into the model card (§12) + cost
+row (§13) and the as-built (§11), and an ADR records the cutover.
+
+### 15.1 The candidate & the decisions taken
+
+[`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B) (released **Feb 2026**,
+Apache-2.0). On a single GPU we run **one model at a time** (§11.4), so this is a
+**swap** of `qwen3-4b-local`, not a second model.
+
+Maintainer decisions (2026-06-08):
+- **Keep the vLLM stack** — `kserve/huggingfaceserver` + the existing bjw
+  StatefulSet + Caddy sidecar (ADR-0029/0030). *llama.cpp/GGUF is a deferred
+  future alternative*, not this cutover.
+- **Text-only for now** — don't wire image input at the gateway (the model is a VLM;
+  see §15.2).
+- **BF16 launch quant** (see §15.3 — "Q4_K_M or similar" doesn't apply on vLLM).
+
+### 15.2 What changed vs. Qwen3-4B — and why it suits a 12 GB card
+
+| | Qwen3-4B (current) | **Qwen3.5-4B (candidate)** |
+|---|---|---|
+| Attention | full softmax, GQA 32Q/8KV | **Gated DeltaNet + Gated Attention hybrid**, layout `8 × (3 × DeltaNet→FFN → 1 × Attn→FFN)` |
+| Dense / MoE | dense | **sparse MoE** |
+| Modality | text-only | **multimodal VLM** (early-fusion; Image-Text-to-Text). No separate text-only 4B checkpoint — only `Qwen3.5-4B` + `Qwen3.5-4B-Base`. |
+| Native context | 32k (clamped to 16k) | **262,144** (→ ~1.01M with YaRN) |
+
+The architecture is the reason to care on our hardware: **3 of every 4 blocks are
+linear-attention (DeltaNet)**, so the KV cache barely grows with context. The
+131k-context wall that made Qwen3-4B's KV (~12–19 GB/request) impossible past 16k
+on the 12 GB A2000 largely disappears — **64k+ context is realistic even at BF16**.
+
+- **"Text-only" is operational, not a different checkpoint.** We serve the VLM and
+  simply don't advertise/accept image input at the gateway. The vision tower still
+  loads into VRAM (small for a 4B model).
+- **MoE costs no extra VRAM headroom** — all experts stay resident (~8 GB BF16 for a
+  4B-total model, same class as today). `--enable-expert-parallel` is a *multi-GPU*
+  throughput knob → irrelevant on one card.
+
+### 15.3 "Q4_K_M" is an engine decision — and on vLLM the answer is BF16
+
+`Q4_K_M` is a **GGUF k-quant (~4.8 bpw), native to llama.cpp** — *not* a vLLM
+format. vLLM can load GGUF (`--quantization gguf`) but throughput is poor (~93 tok/s
+vs ~741 for Marlin-AWQ in the [JarvisLabs benchmark](https://jarvislabs.ai/blog/vllm-quantization-complete-guide-benchmarks)),
+and [vLLM's own docs](https://docs.vllm.ai/en/latest/features/quantization/) say to
+prefer llama.cpp for GGUF. So on the **vLLM** path Q4_K_M is the wrong artifact. The
+4-bit options that *are* vLLM-native don't pan out here either:
+
+- **FP8** — the [vLLM Qwen3.5 recipe](https://docs.vllm.ai/projects/recipes/en/latest/Qwen/Qwen3.5.html)
+  recommends the official FP8 checkpoint for efficiency, but **A2000 is Ampere → no
+  hardware FP8** (the same wall as today's `--kv-cache-dtype=fp8` ban).
+- **AWQ / GPTQ** — **no official AWQ/GPTQ** exists for Qwen3.5-4B; the ~223 community
+  quants are overwhelmingly **GGUF (llama.cpp)**, not vLLM-loadable, and the
+  platform posture is "no random third-party artifacts" (vet before trusting).
+
+→ **Trustworthy vLLM launch = plain BF16 (~8 GB, fits).** It also sidesteps any quant
+quality loss. Q4_K_M only becomes the right call **if/when we switch the engine to
+llama.cpp** (the deferred alternative) — at which point the 223 GGUF quants and the
+~92–98% quality retention of Q4_K_M are exactly the ecosystem we'd want.
+
+### 15.4 ⚠️ The hard blocker (external — clear before any chart edit)
+
+Our image is pinned to **`kserve/huggingfaceserver:v0.18.0-gpu` (vLLM 0.19.0)**,
+which **predates Qwen3.5** → it will fail with `model class not found`. The vLLM path
+**requires a newer `huggingfaceserver` tag that bundles a Qwen3.5-capable vLLM**
+(one with the Gated-DeltaNet model class + kernels). **KServe's image releases lag
+vLLM** — so this tag **may not exist yet**, and if it doesn't, the vLLM path is
+blocked until KServe ships one. (This is precisely why the llama.cpp hedge is sound:
+llama.cpp + the existing GGUF quants already run this model today.)
+
+Two secondary risks that ride along with the required image bump:
+- **⚠️ Plan to DISABLE LMCache for this model.** (a) Bumping vLLM re-opens the
+  `get_kv_events` version-skew that bit us at v0.17→v0.18 (§11.8). (b) LMCache's KV
+  offload assumes *standard attention* KV — **DeltaNet's recurrent state may not be
+  offloadable the same way** (unproven). Launch with `--kv-transfer-config` and the
+  `LMCACHE_*` env **removed**; re-introduce only if verified.
+- **Tool-call parser** may differ for the 3.5 family — re-confirm `hermes` vs. a
+  Qwen3.5-specific parser before relying on agentic tool calls.
+
+### 15.5 Planned change-set (when unblocked — small, follows §14)
+
+`charts/model-serving/values.yaml`:
+- `model.hfRepo: Qwen/Qwen3.5-4B`, `model.name`/`storagePath` → `qwen3-5-4b`,
+  re-seed the RWX PVC (new weights), bump PVC `size` if needed.
+- **Bump the model image tag** to the confirmed Qwen3.5-capable `huggingfaceserver`.
+- Args: raise `--max-model-len` (target 64k+; KV is cheap now), keep
+  `--dtype=float16` / `--enforce-eager` / `--gpu-memory-utilization`, **drop**
+  `--kv-transfer-config` and the `LMCACHE_*` env (§15.4), re-confirm
+  `--tool-call-parser`, **no `--kv-cache-dtype=fp8`** (Ampere).
+- Re-verify `/v2/health/ready` against the new image (probe gate, §11.4).
+- `model.hfRepo`/`storagePath` are **hardcoded in the bjw seed args too** (subchart
+  scope can't read parent `.Values.model.*`) — update both.
+
+`charts/ai-models/values.yaml`:
+- Swap `qwen3-4b-local` → `qwen3-5-4b-local` (backend host, `modelNameOverride`,
+  `info.displayName`/`contextLength`/`maxOutputTokens`), **no image-input advertised**
+  (text-only), keep `minBackends: 1`, re-derive **cost-recovery pricing** per ADR-0028
+  (same €/h TCO, different throughput → re-check the per-token numbers).
+- `edgeAuth.host` (model-serving) **must equal** the backend `hostname`; update the
+  DNS record if the host string changes.
+
+### 15.6 Verification before committing (the §14.A "prove the budget" step)
+1. **Confirm a `huggingfaceserver` image tag** whose vLLM knows the Qwen3.5 model
+   class (and note its LMCache version). *This is the gate.*
+2. **Prove the VRAM/context budget** on the A2000 at BF16 (weights + vision tower +
+   KV at the target `--max-model-len`).
+3. **Smoke test**: a completion (no `tools`), then with `tools` (parser check), then
+   the gateway path (JWT + model header) — per §11.10 / §14.E.
