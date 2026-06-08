@@ -155,7 +155,9 @@ modelServing:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            runAsUser: 1000                   # ⚠️ confirm the image runs as 1000 at the gate
+            runAsUser: 1000                   # ⚠️ confirm the image runs as 1000 at the GPU rollout
+            seccompProfile:
+              type: RuntimeDefault            # converse-poc warns at restricted PSS; satisfy it
             capabilities:
               drop:
                 - ALL
