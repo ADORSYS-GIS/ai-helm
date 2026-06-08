@@ -259,11 +259,15 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 > 6. **`CLAUDE.md`** (this file) — if a convention/contract/gotcha changed.
 > 7. **User memory** — if it's a durable preference or hard-won lesson.
 
-**Self-hosted models/agents:** the reusable pattern + the "deploy the next one"
+**Self-hosted models/agents:** the model-agnostic pattern + the "deploy the next one"
 checklist live in [`docs/self-hosted-model-serving.md`](docs/self-hosted-model-serving.md)
-§14 (chart `charts/model-serving-qwen3-4b`; pricing per ADR-0028; reference model Qwen3-4B).
-Follow it when adding a model — don't reinvent the cluster-local + Caddy auth-proxy
-exposure (KServe ignores `VLLM_API_KEY`) or the €/hour-TCO → cost-recovery pricing.
+§8 (vLLM-vs-llama.cpp engine choice; pricing per ADR-0028). **Per-model papers** are
+under [`docs/models/`](docs/self-hosted-model-serving.md) — `qwen3-4b.md` (shipped,
+vLLM, chart `charts/model-serving-qwen3-4b`), `qwen3.5-4b.md` (vLLM/BF16, studied),
+`qwen3.5-4b-q4.md` (llama.cpp/Q4, chosen). Follow the guide when adding a model —
+don't reinvent the cluster-local + edge-auth exposure (huggingfaceserver ignores
+`VLLM_API_KEY`; llama-server has native `--api-key`) or the €/hour-TCO → cost-recovery
+pricing.
 
 ## When you finish substantive work
 
