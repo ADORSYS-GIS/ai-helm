@@ -681,16 +681,20 @@ SaaS comparators, mid-2026 (per-1M, output, approximate):
 | 4–8B | **~$0.02–0.10** |
 | 70B (Llama-3.3-70B class) | **~$0.40–0.90** |
 
-- **Small models (4–8B):** self-hosting recovers cost at **$0.10–0.31/1M** even
-  *saturated* (A2000…V100), vs SaaS **$0.02–0.10**. At realistic PoC utilization
-  it's **$1–3/1M** — 10–100× SaaS. Self-hosting small models is a
-  **control / privacy / data-sovereignty / learning** play, **never** a price win.
-  This is precisely ADR-0028's stated conclusion.
-- **70B:** GEX131 only reaches SaaS-parity (**~$1.05/1M**) at **near-saturation**;
-  at steady-team 30 % it's **$3.50/1M**, ~4–9× SaaS. The V100 is worse per-token
-  (older/slower) but cheaper in absolute cash (§6). So for 70B, the case for
-  *either* owned option is **data never leaves your infra** + **predictable flat
-  cost** — not beating SaaS on the meter.
+- **Small models (4–8B / 30B-MoE):** self-hosting recovers cost at **$0.06–0.19/1M**
+  *saturated* (§7.3) vs SaaS **$0.02–0.10** — *close*, and the recommended
+  **2×4070 reaches $0.21/1M at a realistic 30 % util** (vs $0.64 at PoC-10 %). So at
+  steady-team utilization it's roughly SaaS-parity, not 10× off; at low PoC duty it's
+  ~3–10× SaaS. Net: small self-hosting is **near-parity once busy**, and the real
+  return is **control / privacy / data-sovereignty / learning** — still not a clear
+  price *win*, consistent with ADR-0028.
+- **70B:** GEX131 reaches SaaS-parity (**~$1.05/1M**) only at near-saturation; at
+  30 % it's **$3.50/1M**. The Cameroon **V100 actually prices *below* GEX131 per-token**
+  on the ADR-0028 basis ($2.10 vs $3.50 at 30 %, §7.3) thanks to cheap power — so its
+  drawback is **not** per-token cost; it's **speed/quality (no FP8/FP4, slow), the
+  ~27-user throughput cap, Volta EOL, and the §6.5 maintenance** that §7.3 omits and
+  §9.5 shows flips the real RoI. For 70B the owned case is **data-residency + flat
+  cost**, with V100 cheap-on-paper but operationally heavy.
 - **The crossover:** self-hosting wins on €/token only as utilization climbs.
   GEX131 needs **multi-billion output tokens/month** (≈ saturated) to undercut
   Together's 70B price. Until then, every box here is a sovereignty/latency
@@ -712,7 +716,7 @@ SaaS comparators, mid-2026 (per-1M, output, approximate):
 | Maintenance burden | low (home, GitOps) | medium (CM office) | **high** (5 old cards, genset, EOL) | **near-zero** | **near-zero** |
 | Modern kernels (FP8/FP4) | ✗ | **FP8** | ✗ | FP8 | **FP4+FP8** |
 | Managed / warranty | self | self | none | yes | yes |
-| RoI vs budget SaaS (§9.5) | ~breakeven | **+$250/mo** (w/ 30B MoE) | **maint-dependent → mostly negative** | +ve only >~90 u | +ve only >~78–85 u |
+| RoI vs budget SaaS (§9.5) | +$20/mo (small) | **+$250/mo** (w/ 30B MoE) | **maint-dependent → mostly negative** | +ve only >~90 u | +ve only >~78–85 u |
 | Best for | current PoC | **≤30B-MoE coding, owned** | owned 70B *if* DIY-cheap ops | managed multimodal small | managed frontier-ish at scale |
 
 *CM = Cameroon (ENEO €0.16/kWh); DE = Germany (€0.34). Hardware-only = capex+electricity (§6); fully-loaded adds §6.5 maintenance. V100 capex parametric (P=€3k).*
@@ -778,14 +782,15 @@ served*: **$135/mo at 8B**, **$739/mo at 70B**.
 
 | Box (class, siting) | Capex | Run $/mo | Serves | Avoided SaaS $/mo | **Net $/mo** | **Payback** |
 |---|---|---|---|---|---|---|
-| **A2000** (8B, DE, owned) | $0 | $26 | 54 %¹ | $72 | **+$46** | **instant** (sunk) |
+| **A2000** (8B, DE, owned) | $0 | $26 | 67 %¹ | $90 | **+$64** | **instant** (sunk) |
 | **2× 4070** (8B, CM, owned) | $0 | $51 | 100 % | $135 | **+$84** | **instant** (sunk) |
 | **GEX44** (8B, DE, rent) | — | $202 | 100 % | $135 | **−$67** | **never** (< ~90 users) |
 | **5× V100** (70B, CM, owned) | ~$3,261² | $76 | 45 %¹ | $331 | **+$255** | **~13 mo** |
 | **GEX131** (70B, DE, rent) | — | $966 | 100 % | $739 | **−$227** | **never** (< ~78 users) |
 
-¹ *Capacity-capped* — the box saturates (A2000 ~315 M out/mo; V100-70B ~263 M
-out/mo) and the overflow spills to SaaS anyway, so its avoided-SaaS plateaus.
+¹ *Capacity-capped* — the box saturates (A2000 ~394 M out/mo, the §7.2 basis;
+V100-70B ~263 M out/mo) and the overflow spills to SaaS anyway, so its
+avoided-SaaS plateaus.
 ² P = €3,000 example; the V100 asking price is still open (§6).
 
 > ⚠️ **These rows use power-only running cost.** They are the *maintenance-blind*
@@ -799,7 +804,7 @@ out/mo) and the overflow spills to SaaS anyway, so its avoided-SaaS plateaus.
 
 | Box | 30 users | 60 users | 100 users | RoI verdict |
 |---|---|---|---|---|
-| A2000 (8B, owned) | +$41 | +$46 | +$46 (capped) | ✅ instant, but tiny + capacity-bound |
+| A2000 (8B, owned) | +$41 | +$64 | +$62 (capped) | ✅ instant, but tiny + capacity-bound |
 | 2× 4070 (8B, owned) | +$16 | +$84 | +$169 | ✅ **instant, scales — best small-model RoI** |
 | GEX44 (8B, rent) | −$135 | −$67 | +$18 | ⚠️ break-even **~90 users** vs budget-8B SaaS |
 | V100 (70B, owned) | +$255 → **13 mo** | +$255 → 13 mo | +$255 → 13 mo | ⚠️ *maintenance-blind* — **§9.5 flips this** (9–17 mo only if ops near-DIY) |
@@ -852,7 +857,7 @@ Re-run with **fully-loaded** running cost (power **+ maintenance**, §6.5) and t
 |---|---|---|---|---|---|
 | **2×4070 / GLM-4.7-Flash 30B-A3B** ⭐ | $160 | $410 (≈30B SaaS) | **+$250** | **instant** (sunk) | ✅ *better* — the right model lifts it |
 | 2×4070 / only 8B | $160 | $135 | −$25 | never | ⚠️ wasting the box on 8B |
-| A2000 / Qwen3.5-4B | $84 | $72 (capped) | −$12 | ~breakeven | maint ≈ erases the tiny 8B saving (labour mostly sunk) |
+| A2000 / Qwen3.5-4B | $70 | $90 (67 % capped) | **+$20** | instant (sunk) | small but positive; labour mostly sunk |
 | **5×V100 / 70B** | **$402** | $331 (capped) | **−$71** | **NEVER** | ❌ **flipped** from +$255/~13 mo |
 | GEX131 / 70B | $1,032 | $739 | −$293 | never (< ~85 u) | ~unchanged |
 
