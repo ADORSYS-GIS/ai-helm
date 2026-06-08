@@ -85,10 +85,11 @@ price** (locks §6 TCO); (2) the **real per-developer token rate** or current Sa
 spend (locks §9 payback dates). Both are flagged inline where they bite.
 
 **Limitations.** Throughput/concurrency/RoI are **models, not measurements** for
-every box except the A2000. The RoI scope is **electricity-only** for the Cameroon
-boxes (cooling, UPS/generator, bandwidth, staff, hardware risk excluded per the
-maintainer — "operation is still on us") and **deliberately prices no
-control/privacy/data-residency value**, which is often the real reason to
+every box except the A2000. Maintenance/ops (cooling, UPS/generator, staff, hardware
+risk) is **now estimated and decisive — §6.5**, having moved from "out of scope" once
+it proved to flip the 70B verdict; treat those figures as a frame and plug in your
+own. The model still **deliberately prices no control/privacy/data-residency value**,
+which is often the real reason to
 self-host. Treat conclusions as **directional**, and benchmark the shortlisted box
 before purchase.
 
@@ -149,13 +150,13 @@ users, at what cost — and when does each pay for itself?*
 | CPU | host (i7-14700KF, 28 thr) | server (dual-socket) | i5-13500 (6P+8E) | Xeon Gold 5412U (24c) |
 | System RAM | host | **16 GB only** ⚠️ | 64 GB DDR4 | 256 GB DDR5 ECC reg |
 | Storage | host disk | NVMe (256 GB–1 TB) | 2× 1.92 TB NVMe | 2× 960 GB NVMe |
-| Price | **owned** (~€37/mo power @ 24/7) | **purchase price unknown** + power | **€184/mo** + €79 setup | **€889/mo**, no setup, IPv4 incl. |
+| Price | **owned** (~€24/mo power @ 24/7) | **purchase price unknown** + power | **€184/mo** + €79 setup | **€889/mo**, no setup, IPv4 incl. |
 | Warranty / lifecycle | yours | **none; Volta is EOL-track** | Hetzner-managed | Hetzner-managed |
 
 **Reading the table:**
 - The V100's **900 GB/s per card** is the headline — bandwidth drives decode
-  speed, and per-card it beats *both* Hetzner single-GPU options. But it's split
-  across 5 cards, the tensor cores are **first-gen FP16-only**, the **16 GB host
+  speed, and per-card it **beats GEX44 (280 GB/s) but not GEX131 (1.79 TB/s)**. And
+  it's split across 5 cards, the tensor cores are **first-gen FP16-only**, the **16 GB host
   RAM** will choke model loading / KV offload, and the **5-GPU count is awkward**
   for tensor parallelism (you want 2/4/8 → you effectively run TP=4 + 1 spare).
 - **GEX131** trades raw per-card bandwidth peak for **96 GB on one die at
@@ -180,8 +181,8 @@ context** and **capabilities** alongside fit. ✅ comfortable · ⚠️ tight / 
 | **GLM-4.7-Flash 30B-A3B** Q4 (~17 GB) ⭐ | 200 K | **coding·agent**·tools·reason | ❌ | ✅ TP=2 | ✅ | ⚠️ no KV room | ✅ |
 | **Qwen3.5-35B-A3B** Q4 (~19 GB) | 256 K | text·tools·reason·agent | ❌ | ⚠️ TP=2 tight | ✅ | ⚠️ no KV room | ✅ |
 | **Gemma 4 31B** (dense) Q4 (~18 GB) | ~128 K | vision·audio·tools·reason | ❌ | ⚠️ TP=2 tight | ✅ | ⚠️ no KV room | ✅ |
-| Dense **70B** Q4 (~40 GB) | 128 K | text·tools·reason | ❌ | ❌ | ✅ **TP=4** | ❌ | ✅ |
-| **Qwen3.5-122B-A10B** Q4 (~61 GB) ⭐ | 256 K | text·tools·reason·agent·multiling | ❌ | ❌ | ⚠️ Q3/Q4 TP, slow | ❌ | ✅ **FP4 (~55 GB)** |
+| Dense **70B** Q4 (~40 GB) | 128 K | text·tools·reason | ❌ | ❌ | ✅ **llama.cpp 5-way** | ❌ | ✅ |
+| **Qwen3.5-122B-A10B** Q4 (~61 GB) ⭐ | 256 K | text·tools·reason·agent·multiling | ❌ | ❌ | ⚠️ Q3/Q4 **llama.cpp 5-way**, slow | ❌ | ✅ **FP4 (~55 GB)** |
 | **Qwen3.5-122B-A10B** FP8 (~122 GB) | 256 K | — | ❌ | ❌ | ❌ | ❌ | ⚠️ FP4 only |
 | Frontier (397B-A17B, DeepSeek-V4, Llama 4) | 256 K–10 M | full | ❌ | ❌ | ❌ | ❌ | ❌ → SaaS |
 
@@ -205,8 +206,8 @@ was first sketched against. The standouts (all Apache-2.0 unless noted):
 | Tier | Model (June 2026) | Params (active) | Fits best on | Why it matters |
 |---|---|---|---|---|
 | Edge / small | **Qwen3.5-4B** *(live)*, **Qwen3.5-9B**, **Gemma 4 E4B/12B** | 4–12B dense | **A2000 · 2×4070 · GEX44** | Qwen3.5-9B **matches GPT-OSS-120B** on several benches; Gemma 4 is natively multimodal (incl. audio). Last-gen "70B quality" now fits 12 GB. |
-| Mid | **GLM-4.7-Flash** (30B-A3B MoE) ⭐, **Qwen3.5-35B-A3B** (MoE), **Qwen3.5-27B** / **Gemma 4 31B** (dense) | 27–35B (**~3B act.**) | **2×4070 (Q4) · GEX131 · V100** | The ~30B-A3B MoEs **decode like a 3B** but need ~30B VRAM resident. **GLM-4.7-Flash (Zhipu, Jan 2026, 200K ctx) is built for local coding/agents and runs in 24 GB** → a near-perfect fit for the owned 2×4070 dev box. |
-| **Large MoE (the new sweet spot)** | **Qwen3.5-122B-A10B**, **Gemma 4 26B-A4B**, **GLM-5.1**, **Kimi K2.6** | 122B (**10B act.**) | **GEX131 (96 GB)** · **5×V100 (80 GB, Q3/Q4)** | ⭐ Holds 122B in VRAM but computes only 10B/token → **frontier quality at near-small-model decode speed.** This is exactly what 80–96 GB boxes are *for*. |
+| Mid | **GLM-4.7-Flash** (30B-A3B MoE) ⭐, **Qwen3.5-35B-A3B** (MoE), **Gemma 4 26B-A4B** (MoE, ~14–16 GB Q4), **Qwen3.5-27B** / **Gemma 4 31B** (dense) | 26–35B (**~3–4B act.**) | **2×4070 (Q4) · GEX131 · V100** | The ~26–35B MoEs **decode like a 3–4B** but need their full size resident. **GLM-4.7-Flash (Zhipu, Jan 2026, 200K ctx) is built for local coding/agents and runs in 24 GB** → a near-perfect fit for the owned 2×4070 dev box. **Gemma 4 26B-A4B** is consumer-GPU-sized (Q4 ~14–16 GB) — also fits 2×4070/GEX44. |
+| **Large MoE (the new sweet spot)** | **Qwen3.5-122B-A10B**, **GLM-5.1**, **Kimi K2.6** | 122B+ (**~10B act.**) | **GEX131 (96 GB)** · **5×V100 (80 GB, Q3/Q4)** | ⭐ Holds 122B in VRAM but computes only ~10B/token → **frontier quality at near-small-model decode speed.** This is exactly what 80–96 GB boxes are *for*. |
 | Frontier (out of reach here) | **Qwen3.5-397B-A17B**, **DeepSeek-V4**, **Llama 4 Maverick** | 397B–1.6T | none of these (→ SaaS) | Beats GPT-5.2 on IFBench; needs multi-GPU-server VRAM. Route to SaaS. |
 
 > **The reframing:** the most interesting 2026 models aren't dense 70B — they're
@@ -293,7 +294,7 @@ after weights, and it's why a model's full native window is rarely servable:
 |---|---|---|---|
 | **A2000 12 GB** | ~9 GB after Qwen3.5-4B Q4 | **128 K** *(measured; GDN linear-attn KV is cheap)* | `--cache-type-k/v q8_0` → 256 K |
 | **2×4070 24 GB** | ~7 GB after GLM-4.7-Flash Q4 | **~64–128 K** | Q8 KV-cache, FP8 |
-| **5×V100 80 GB** | ~19 GB after 122B-MoE Q4 | **~128 K** | plenty VRAM; bandwidth-bound not KV-bound |
+| **5×V100 80 GB** | ~19 GB after 122B-MoE Q4 — **only via llama.cpp layer-split across all 5 cards** (vLLM TP=4 = 64 GB → ~61 GB Q4 leaves ~no KV → not deployable that way) | **~128 K** (llama.cpp) | use llama.cpp, not TP=4; bandwidth-bound not KV-bound |
 | **GEX44 20 GB** | ~9 GB after 14B Q4 | **~64–128 K** | FP8 KV (Ada) |
 | **GEX131 96 GB** | ~35–40 GB after 122B-MoE FP4 | **~256 K (native)** | abundant — the only box that serves full native ctx of a big MoE |
 
@@ -312,7 +313,7 @@ Pinning a concrete target to each box turns the abstract tiers into a plan:
 |---|---|---|---|---|
 | **A2000** (live) | Qwen3.5-4B | GGUF Q4_K_XL | 128 K, 4 slots, ~52 tok/s | the live PoC / light dev + marketing |
 | **2×4070** (owned, CM) | **GLM-4.7-Flash 30B-A3B** | GGUF/AWQ Q4 | ~64 K, ~40–60 tok/s | **developers' coding/agent model — €0 capex** |
-| **5×V100** (owned, CM) | Qwen3.5-122B-A10B | GGUF Q4 (TP) | ~128 K, ~30–50 tok/s | owned frontier-ish reasoning, budget |
+| **5×V100** (owned, CM) | Qwen3.5-122B-A10B | GGUF Q4, **llama.cpp 5-way split** | ~128 K, ~30–50 tok/s | owned frontier-ish reasoning, budget |
 | **GEX44** (rent) | Qwen3.5-9B / Gemma 4 12B | FP8 | ~128 K | managed small + multimodal |
 | **GEX131** (rent) | Qwen3.5-122B-A10B | **FP4** | 256 K, fast | managed frontier-ish + multimodal, at scale |
 
@@ -326,7 +327,7 @@ backend choice is per-platform and per-architecture.
 | Platform | Primary backend | FP8/FP4? | Notes |
 |---|---|---|---|
 | **A2000** (Ampere) | **llama.cpp** (`llama-server`, live) | no FP8 | GGUF Q4 + native `--api-key`; 128k ctx via cheap GDN-MoE KV. vLLM works but no FP8, KV-hungry. ([ADR-0032](./adr/0032-llama-cpp-engine-for-self-hosted-models.md)) |
-| **5× V100** (Volta cc 7.0) | **vLLM** `--tensor-parallel-size 4` · **llama.cpp** · Ollama | **no** | No FlashAttn-2 / Marlin-AWQ / FP8 kernels → slower fallback paths. llama.cpp splits multi-GPU cleanly for 70B GGUF. Ollama is what the seller demos. ⚠️ **vLLM is deprecating Volta** — pin an older release. |
+| **5× V100** (Volta **cc 7.0**) | **llama.cpp** (primary) · Ollama · *(vLLM only if pinned to an old Volta build)* | **no** | ⚠️ **Current vLLM needs cc 7.5+ — it will not install/run on cc 7.0 V100.** So the dependable path is **llama.cpp**, which splits layers across **all 5 cards** (uses the full 80 GB; not vLLM TP=4's 64 GB) and runs GGUF Q4 well. No FlashAttn-2 / Marlin / FP8. vLLM/TP only on a pinned legacy release — don't assume current vLLM works here. |
 | **GEX44** (Ada) | **vLLM / SGLang with FP8** | **FP8** | FP8 weights + FP8 KV cache stretches 20 GB a long way — the real value of this card. TGI/llama.cpp fine too. |
 | **GEX131** (Blackwell) | **vLLM / SGLang with FP4 + FP8** | **FP4 + FP8** | Biggest models, highest throughput, single GPU (no TP). The natural serious-multi-tenant backend. |
 
@@ -352,14 +353,14 @@ a 122B-A10B ~like a 15–20B dense — *fast for their size*, which is the whole
 
 | | 2×4070 ⭐ | 5×V100 | GEX44 | GEX131 |
 |---|---|---|---|---|
-| Backend | vLLM/llama.cpp TP=2 | vLLM | ❌ (no KV room) | vLLM FP8 |
+| Backend | vLLM-FP8/llama.cpp TP=2 | **llama.cpp 5-way** (not vLLM — cc7.0) | ❌ (no KV room) | vLLM FP8 |
 | Single-stream | ~40–60 tok/s | ~50–70 tok/s | ❌ | ~120–180 tok/s |
 | Concurrent active | ~10–20 | ~20–30 | ❌ | ~60–100 |
 | ~Named users (10 %) | ~100–200 | ~200–300 | ❌ | ~600–1000 |
 
 **Qwen3.5-122B-A10B — frontier-ish MoE (decodes like a ~15–20B):**
 
-| | 5×V100 (TP=4, Q4) | GEX44 | GEX131 (FP4) |
+| | 5×V100 (llama.cpp 5-way, Q4) | GEX44 | GEX131 (FP4) |
 |---|---|---|---|
 | Single-stream | ~30–50 tok/s | ❌ | ~60–100 tok/s |
 | Concurrent active | ~6–12 | ❌ | ~30–60 |
@@ -384,7 +385,7 @@ Rented platforms: `setup + monthly × N`. Owned platforms: `purchase + power × 
 
 | Platform | Capex (one-time) | Monthly run-rate | Notes |
 |---|---|---|---|
-| **A2000** | €0 (sunk) | **~€37/mo** @ 24/7 (95 W wall × €0.34) | Already owned; capex is gone. ([ADR-0028](./adr/0028-owned-hardware-model-pricing.md)) |
+| **A2000** | €0 (sunk) | **~€24/mo** @ 24/7 (95 W wall × €0.34, power-only) | Already owned; capex is gone. (§7 cost-recovery uses ADR-0028's amortized ~€37/mo, which *adds back* capex — a different, non-cash basis.) |
 | **GEX44** | €79 setup | **€184/mo** | Power + IPv4 included. |
 | **GEX131** | €0 | **€889/mo** | Power + IPv4 included. (Hetzner also quotes €1.4247/h on-demand.) |
 | **5× V100** | **€P (unknown)** | **power only** — see bracket below | ⚠️ The box is in **Cameroon** (€0.16/kWh), **not** Germany — the tables just below use €0.34 for reference; the **real, Cameroon-rate numbers are in §6.3**, and they're roughly **half**. |
@@ -406,7 +407,7 @@ Rented platforms: `setup + monthly × N`. Owned platforms: `purchase + power × 
 | **36 mo** | €6,703 | €32,004 | €11,000 | €12,000 | €13,000 |
 
 > Formulas: GEX44 `= 79 + 184·N` · GEX131 `= 889·N` · V100 `= P + 250·N` (N in
-> months). **A2000 baseline** for reference: ~€37·N → €444 / €888 / €1,332 — by
+> months). **A2000 baseline** for reference: ~€24·N → €288 / €576 / €864 — by
 > far the cheapest, but ≤8–14B only.
 
 ### Same V100 (P = €3,000), power sensitivity
@@ -617,10 +618,13 @@ price** — that's ADR-0028's whole point.
 | **A2000** | ~$40 (€37) | ~150 tok/s (4B live) | ~394 M/mo | — | — |
 | **GEX44** | ~$202 (€186) | ~400 tok/s | ~1,051 M/mo | — | — |
 | **GEX131** | ~$966 (€889) | ~2,000 tok/s | ~5,256 M/mo | ~350 tok/s | ~920 M/mo |
-| **5× V100** | ~$362 (€333, P=3k+€250 pwr, 36-mo amort) | ~450 tok/s | ~1,183 M/mo | ~100 tok/s | ~263 M/mo |
+| **5× V100** | ~$166 (€153, 36-mo amort) | ~450 tok/s | ~1,183 M/mo | ~100 tok/s | ~263 M/mo |
 
-> V100 monthly TCO here uses the **amortized** capex (€3,000 / 36 mo = €83/mo) +
-> €250/mo power = €333/mo, to put it on the same €/month footing as the rentals.
+> V100 monthly TCO uses **amortized capex** (€3,000 / 36 mo = €83/mo) + the **Cameroon
+> typical power €70/mo** (€0.16/kWh — *not* the German €250 reference) = **€153/mo**,
+> per ADR-0028's local-power rule, since the box actually runs in Cameroon. (This is
+> capex+power only — §6.5 maintenance is *not* in ADR-0028 cost-recovery; it lands in
+> the §9 RoI instead.)
 
 ### 7.3 Cost-recovery `$/1M out` vs utilization
 
@@ -628,9 +632,9 @@ price** — that's ADR-0028's whole point.
 
 | Utilization | A2000 | GEX44 | GEX131 | 5× V100 |
 |---|---|---|---|---|
-| 10 % (PoC / bursty) | **$1.02** ✅*anchor* | $1.92 | $1.84 | $3.06 |
-| 30 % (steady team) | $0.34 | $0.64 | $0.61 | $1.02 |
-| 100 % (saturated) | $0.10 | $0.19 | $0.18 | $0.31 |
+| 10 % (PoC / bursty) | **$1.02** ✅*anchor* | $1.92 | $1.84 | $1.40 |
+| 30 % (steady team) | $0.34 | $0.64 | $0.61 | $0.47 |
+| 100 % (saturated) | $0.10 | $0.19 | $0.18 | $0.14 |
 
 > ✅ **Method check:** the A2000 at **~10 % utilization → $1.02/1M**, which is
 > exactly the live catalog **$1.00**. So ADR-0028's shipped price implies the live
@@ -639,11 +643,15 @@ price** — that's ADR-0028's whole point.
 
 **70B model** (only GEX131 + V100 qualify):
 
-| Utilization | GEX131 | 5× V100 |
+| Utilization | GEX131 | 5× V100 (Cameroon) |
 |---|---|---|
-| 10 % | $10.50 | $13.77 |
-| 30 % | $3.50 | $4.59 |
-| 100 % | $1.05 | $1.38 |
+| 10 % | $10.50 | $6.31 |
+| 30 % | $3.50 | $2.10 |
+| 100 % | $1.05 | $0.63 |
+
+> The V100 now prices **below GEX131** per-token (cheap Cameroon power + amortized
+> capex) — but remember §9.5: this is the **maintenance-blind** cost-recovery basis.
+> Add §6.5 ops and the V100's real per-token recovery rises again.
 
 ### 7.4 Suggested `pricing.standard` blocks (if federated)
 
@@ -656,7 +664,7 @@ at a **30 % steady-team utilization** assumption (re-tune as real data lands):
 | GEX44 / 8B | $0.64 | $0.10 | $0.02 |
 | GEX131 / 8B | $0.61 | $0.09 | $0.02 |
 | GEX131 / 70B | $3.50 | $0.53 | $0.11 |
-| 5× V100 / 70B | $4.59 | $0.69 | $0.14 |
+| 5× V100 / 70B (Cameroon) | $2.10 | $0.32 | $0.06 |
 
 ### 7.5 Make-vs-buy (the honest signal)
 
@@ -764,7 +772,7 @@ served*: **$135/mo at 8B**, **$739/mo at 70B**.
 
 | Box (class, siting) | Capex | Run $/mo | Serves | Avoided SaaS $/mo | **Net $/mo** | **Payback** |
 |---|---|---|---|---|---|---|
-| **A2000** (8B, DE, owned) | $0 | $40 | 54 %¹ | $72 | **+$32** | **instant** (sunk) |
+| **A2000** (8B, DE, owned) | $0 | $26 | 54 %¹ | $72 | **+$46** | **instant** (sunk) |
 | **2× 4070** (8B, CM, owned) | $0 | $51 | 100 % | $135 | **+$84** | **instant** (sunk) |
 | **GEX44** (8B, DE, rent) | — | $202 | 100 % | $135 | **−$67** | **never** (< ~90 users) |
 | **5× V100** (70B, CM, owned) | ~$3,261² | $76 | 45 %¹ | $331 | **+$255** | **~13 mo** |
@@ -785,10 +793,10 @@ out/mo) and the overflow spills to SaaS anyway, so its avoided-SaaS plateaus.
 
 | Box | 30 users | 60 users | 100 users | RoI verdict |
 |---|---|---|---|---|
-| A2000 (8B, owned) | +$27 | +$32 | +$32 (capped) | ✅ instant, but tiny + capacity-bound |
+| A2000 (8B, owned) | +$41 | +$46 | +$46 (capped) | ✅ instant, but tiny + capacity-bound |
 | 2× 4070 (8B, owned) | +$16 | +$84 | +$169 | ✅ **instant, scales — best small-model RoI** |
 | GEX44 (8B, rent) | −$135 | −$67 | +$18 | ⚠️ break-even **~90 users** vs budget-8B SaaS |
-| V100 (70B, owned) | +$255 → **13 mo** | +$255 → 13 mo | +$255 → 13 mo | ✅ **fast payback** (9 mo @ €2k · 17 mo @ €4k) |
+| V100 (70B, owned) | +$255 → **13 mo** | +$255 → 13 mo | +$255 → 13 mo | ⚠️ *maintenance-blind* — **§9.5 flips this** (9–17 mo only if ops near-DIY) |
 | GEX131 (70B, rent) | −$596 | −$227 | +$187 | ⚠️ break-even **~78 users** vs budget-70B SaaS |
 
 So, against *budget* SaaS at moderate dev volume:
@@ -806,8 +814,10 @@ So, against *budget* SaaS at moderate dev volume:
   savings and the rest spills to SaaS — buy it for 70B *quality on a budget*, not
   to absorb unlimited volume.
 - **GEX131 only pays back above ~78 users** of genuine 70B demand — but it's the
-  **only box that serves the full 70B volume of a 100-person team** without
-  spillover. Below ~78 users it's a capability/SLA buy; above it, it wins outright.
+  box that serves **nearly all** of a 100-person team's 70B load: its ~920 M out/mo
+  cap covers ~96 % of the ~963 M/mo a 100-user team generates (the last ~4 % spills
+  to SaaS), vs the V100's ~27 % — so GEX131 is the only one that scales to that band
+  without large spillover. Below ~78 users it's a capability/SLA buy; above it, it wins outright.
 
 ### 9.4 The knob that moves everything: per-developer volume
 
