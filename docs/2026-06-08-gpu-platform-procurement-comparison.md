@@ -15,14 +15,23 @@
 | Managed 7–14B FP8 for more concurrency, pure OpEx | **GEX44 — €184/mo** | Modern Ada FP8, no hardware risk, ~150–300 named users on 8B. Capped below 32B. |
 | Owned, on-prem **70B** on a budget, you control the box | **eBay 5×V100** *(if the price is right)* | Only sub-€900/mo route to 70B. **But** power-dominated, no warranty, Volta EOL-track, 16 GB host RAM bottleneck. Plug the asking price into §6. |
 | Serious multi-tenant 70B / 100B-MoE, single managed GPU, FP4 | **GEX131 — €889/mo** | Runs everything up to 70B-Q8 / MoE-FP4 on one card, highest throughput, FP4/FP8 native, fully managed. Best €/capability at the top end. |
+| ≤14B / 32B-Q4 **you already own**, in Cameroon now | **Existing 2× RTX 4070 12GB** | Sunk capex; FP8-capable Ada, **24 GB** total, faster VRAM than GEX44. Marginal cost ≈ **only Cameroon electricity (~€47–64/mo)**. Covers most of the GEX44 envelope without renting or buying. |
 
-**Bottom line:** for the current 4–8B workload the **A2000 stays cheapest**; the
-honest make-vs-buy signal (per ADR-0028) is that self-hosting small models is a
-control/privacy/learning play, **not** a price win until utilization is high.
-70B changes the calculus — only the V100 box and GEX131 can serve it, and there
-the choice is **owned-but-power-heavy (V100)** vs **managed-fast-warrantied
-(GEX131)** at roughly a **2–3× lifetime-cost gap** in the V100's favour, paid back
-in hardware risk and electricity.
+> **Siting matters (new).** The **5×V100** *and* the **existing 2×4070** live in a
+> **Cameroon office**, billed by **ENEO at ~€0.16/kWh** — **less than half** the
+> German €0.34/kWh. Per the maintainer we score the **grid electrical bill only**
+> here ("operation is still on us"). See §6 for the full Cameroon-rate redo.
+
+**Bottom line:** for the current 4–8B workload the **A2000 stays cheapest**, and
+for **≤14B** the **2×4070 you already own in Cameroon** likely makes renting/buying
+moot — its only marginal cost is ~€50/mo of (cheap) Cameroon power. The honest
+make-vs-buy signal (per ADR-0028) is that self-hosting small models is a
+control/privacy/learning play, **not** a per-token price win until utilization is
+high. **70B** changes the calculus — only the V100 box and GEX131 can serve it, and
+there the choice is **owned-but-old (V100)** vs **managed-fast-warrantied (GEX131)**.
+At the **Cameroon power rate the V100's lifetime-cost lead widens sharply** (§6):
+its 36-mo TCO drops below even GEX44, so the V100 vs GEX131 call becomes
+almost purely capability/risk, not €.
 
 ---
 
@@ -33,10 +42,11 @@ users, at what cost?*
 
 | # | Candidate | Kind | Source |
 |---|---|---|---|
-| 1 | **Local RTX A2000 12GB** | Owned (Erlangen home GPU) | Live in-cluster; [`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) §6 (measured) |
-| 2 | **eBay 5× Tesla V100 16GB** | Owned (refurb "Llama3 KI-Server", seller *biercologne*) | [ebay.de/itm/306748779023](https://www.ebay.de/itm/306748779023) — listing text only; **asking price not captured** |
-| 3 | **Hetzner GEX44** | Rented (dedicated) | [hetzner.com/dedicated-rootserver/gex44](https://www.hetzner.com/dedicated-rootserver/gex44/) |
-| 4 | **Hetzner GEX131** | Rented (dedicated) | [hetzner.com/pressroom/new-gex131](https://www.hetzner.com/pressroom/new-gex131/) |
+| 1 | **Local RTX A2000 12GB** | Owned (Erlangen, Germany — home GPU) | Live in-cluster; [`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) §6 (measured) |
+| 2 | **eBay 5× Tesla V100 16GB** | Owned — **installed in a Cameroon office** (refurb "Llama3 KI-Server", seller *biercologne*) | [ebay.de/itm/306748779023](https://www.ebay.de/itm/306748779023) — listing text only; **asking price not captured** |
+| 3 | **Hetzner GEX44** | Rented (dedicated, Germany — power incl.) | [hetzner.com/dedicated-rootserver/gex44](https://www.hetzner.com/dedicated-rootserver/gex44/) |
+| 4 | **Hetzner GEX131** | Rented (dedicated, Germany — power incl.) | [hetzner.com/pressroom/new-gex131](https://www.hetzner.com/pressroom/new-gex131/) |
+| 5 | **Existing 2× RTX 4070 12GB** | Owned — **running in Cameroon now** (sunk capex) | Maintainer's current Cameroon box; specs from NVIDIA RTX 4070 card data |
 
 > ⚠️ **Two open inputs.** (a) The eBay **asking price** was not retrievable (eBay
 > blocks automated fetch); §6 is therefore parametric over €2,000 / €3,000 /
@@ -45,7 +55,20 @@ users, at what cost?*
 > which is **measured** on the live box. Treat them as planning figures, not SLOs.
 
 **Global assumptions** (used throughout, all from [ADR-0028](./adr/0028-owned-hardware-model-pricing.md) where applicable):
-- Electricity **€0.34/kWh** (German household, Erlangen 2026).
+- **Electricity is location-specific** — this is the key siting input:
+  - **Germany / Erlangen** — **€0.34/kWh** (the A2000, and ADR-0028's basis).
+    GEX44 / GEX131 are Hetzner-rented with **power included** in the monthly fee.
+  - **Cameroon / office (ENEO)** — **~€0.16/kWh** (~106 XAF; XAF pegged at
+    **655.957/€**). This is where the **5×V100** and the **existing 2×4070** run →
+    their electricity is billed here, at **~47 % of the German rate**. (ENEO LV
+    non-residential tiers: 84 XAF ≤110 kWh, 92 XAF to 400, 99 XAF to 1000; a
+    proposed **+15 %** targets pros over 220 kWh/mo. A 24/7 server lands in the
+    top tier, so €0.16 is a fair-to-slightly-low planning rate; range €0.13–0.19.)
+- **Scope for the Cameroon boxes: the grid electrical bill only.** Per the
+  maintainer, cooling, **UPS / generator for load-shedding** (diesel ≈ 3–5× grid),
+  bandwidth, staff time and hardware risk are real but **out of scope** here
+  ("operation is still on us"). Reliability, not the meter, is the usual Cameroon
+  catch — flagged, not costed.
 - FX **$1 ≈ €0.92** (so €/h × 1.087 = $/h).
 - **730 h/month**; 3-year amortization horizon = **26,280 h**.
 - Interactive chat needs **≥ ~15 tok/s** per stream to feel live.
@@ -176,7 +199,7 @@ Rented platforms: `setup + monthly × N`. Owned platforms: `purchase + power × 
 | **A2000** | €0 (sunk) | **~€37/mo** @ 24/7 (95 W wall × €0.34) | Already owned; capex is gone. ([ADR-0028](./adr/0028-owned-hardware-model-pricing.md)) |
 | **GEX44** | €79 setup | **€184/mo** | Power + IPv4 included. |
 | **GEX131** | €0 | **€889/mo** | Power + IPv4 included. (Hetzner also quotes €1.4247/h on-demand.) |
-| **5× V100** | **€P (unknown)** | **power only** — see bracket below | German €0.34/kWh dominates. |
+| **5× V100** | **€P (unknown)** | **power only** — see bracket below | ⚠️ The box is in **Cameroon** (€0.16/kWh), **not** Germany — the tables just below use €0.34 for reference; the **real, Cameroon-rate numbers are in §6.3**, and they're roughly **half**. |
 
 **V100 power is the swing factor**, not the purchase price:
 
@@ -224,6 +247,79 @@ Rented platforms: `setup + monthly × N`. Owned platforms: `purchase + power × 
   €250/mo power: `P = 32,004 − 9,000 = €23,004`. I.e. unless the V100 box costs
   **more than ~€23k** (it won't), it's always cheaper than GEX131 over 3 years on
   pure cash — the decision is **capability/risk, not price**.
+
+> The tables above use the **German €0.34/kWh** to stay consistent with the rest of
+> the doc. But the V100 actually sits in **Cameroon** — §6.3 redoes the bill at the
+> real ENEO rate, and §6.4 introduces the 2×4070 you already run there.
+
+### 6.3 Reality check — the V100 is in Cameroon (electricity-only)
+
+The 5×V100 is billed by **ENEO at ~€0.16/kWh** — **less than half** the German rate
+assumed above. Per scope we compare the **grid electrical bill only** (generator/
+cooling/reliability excluded — "operation is still on us"). Same hardware, same
+load, two countries:
+
+| Load profile | Wall draw | Germany €0.34/kWh | **Cameroon €0.16/kWh** | Δ |
+|---|---|---|---|---|
+| Idle-heavy (bursty) | ~0.35 kW | €87/mo | **€41/mo** | −53 % |
+| Typical always-on | ~0.60 kW | €149/mo | **€70/mo** | −53 % |
+| Sustained 24/7 | ~1.50 kW | €372/mo | **€175/mo** | −53 % |
+
+Siting in Cameroon **roughly halves the V100's only real running cost.** Re-running
+the §6 TCO at the Cameroon **typical (€70/mo)** rate (P = €3,000):
+
+| Horizon | **V100 @ Cameroon €70/mo** | V100 @ Cameroon €175/mo (sustained) | (recall) GEX44 | (recall) GEX131 |
+|---|---|---|---|---|
+| 12 mo | **€3,840** | €5,100 | €2,287 | €10,668 |
+| 24 mo | **€4,680** | €7,200 | €4,495 | €21,336 |
+| 36 mo | **€5,520** | €9,300 | €6,703 | €32,004 |
+
+> Formula `= 3,000 + cameroon_power·N`. At the typical rate the **36-mo V100
+> (~€5,520) now undercuts even GEX44 (€6,703)** and is **~⅙ of GEX131**. Cheap power
+> flips the V100 from "budget 70B" to "by far the lowest-cash 70B"; the V100-vs-GEX131
+> call becomes almost purely **capability/risk** (old/slow/no-warranty vs
+> fast/FP4/managed), not euros. The Cameroon break-even purchase price vs 36-mo
+> GEX131 rises to `P = 32,004 − 2,520 = ~€29,500` — i.e. it is *never* realistically
+> more expensive than GEX131.
+
+### 6.4 The box you already have — 2× RTX 4070 12GB (Cameroon, live now)
+
+A **2× RTX 4070 12GB** server is **already running in Cameroon**, so for a large
+slice of this comparison the answer may simply be **"use what's on the floor."**
+It's a consumer-Ada pair — **FP8-capable like the GEX44**, with **more aggregate
+VRAM (24 GB)** and **faster per-card bandwidth (504 GB/s vs GEX44's 280)** — split
+across two PCIe cards (no NVLink), capex already sunk.
+
+| | 2× RTX 4070 12GB |
+|---|---|
+| Architecture | Ada Lovelace (AD104) — **FP8** + INT8 |
+| Total VRAM | **24 GB GDDR6X** (2×12, not unified) |
+| Bandwidth | ~504 GB/s **per card** |
+| Power | ~200 W ea → ~0.55 kW serving at the wall |
+| Cameroon power bill | **~€47/mo** typical (0.40 kW) · ~€64/mo sustained (€0.16/kWh) |
+| Capex | **owned (sunk)** |
+
+**What it deploys** (backends: vLLM FP8 / SGLang / llama.cpp):
+
+| Model (quant) | 2× 4070 24GB |
+|---|---|
+| 7–8B FP8 | ✅ 1 card → **2 replicas**, or TP=2 for headroom |
+| 7–8B FP16 | ✅ TP=2 |
+| 14B Q4/FP8 | ✅ (TP=2) |
+| 32B Q4 | ⚠️ TP=2, tight (little KV room) |
+| 70B | ❌ (24 GB can't hold Q4's ~40 GB) |
+
+**Concurrency (8B FP8, estimate):** ~50–70 tok/s single-stream per card, ~400–600
+tok/s aggregate → **~20–40 concurrent active**, **~200–400 named users** at 10 %
+duty — **GEX44-class or a touch better** (faster VRAM, two cards), for a box whose
+marginal cost is **~€50/mo of Cameroon electricity.**
+
+> **Implication:** for everything **≤14B (and 32B-Q4 at a push)** you likely
+> **don't need to rent or buy anything** — the 2×4070 already covers the GEX44
+> envelope at a fraction of the cost. GEX44 wins only on *managed/warrantied* +
+> German-grid reliability; the 2×4070 wins on cash (sunk capex + half-price power)
+> and on 24 GB vs 20. Reserve the **V100 / GEX131** spend for **70B**, which neither
+> the 2×4070 nor GEX44 can serve.
 
 ---
 
@@ -327,29 +423,36 @@ SaaS comparators, mid-2026 (per-1M, output, approximate):
 
 ## 8. Decision summary
 
-| Axis | A2000 | 5× V100 | GEX44 | GEX131 |
-|---|---|---|---|---|
-| Max model | 14B Q4 (tight) | **70B Q8** | 14B (32B-Q4 tight) | **70B Q8 / MoE-FP4** |
-| 8B named users (~10 %) | ~30–60 | ~400–600 | ~150–300 | ~1000+ |
-| 36-mo TCO | ~€1,332 | ~€11–13k | €6,703 | €32,004 |
-| Modern kernels (FP8/FP4) | ✗ | ✗ | FP8 | **FP4+FP8** |
-| Managed / warranty | self | none | yes | yes |
-| Power burden | trivial (70 W) | **heavy (~1.5 kW)** | trivial | moderate (300 W) |
-| Best for | current 4–8B PoC | owned 70B on a budget | managed 7–14B scale-up | managed 70B / multi-tenant |
+| Axis | A2000 | 2× 4070 *(own, CM)* | 5× V100 *(own, CM)* | GEX44 | GEX131 |
+|---|---|---|---|---|---|
+| Max model | 14B Q4 (tight) | 14B (32B-Q4 tight) | **70B Q8** | 14B (32B-Q4 tight) | **70B Q8 / MoE-FP4** |
+| 8B named users (~10 %) | ~30–60 | ~200–400 | ~400–600 | ~150–300 | ~1000+ |
+| 36-mo TCO | ~€1,332 | **~€1,700** (power only, CM) | **~€5.5k** (CM) / ~€12k (DE) | €6,703 | €32,004 |
+| Modern kernels (FP8/FP4) | ✗ | **FP8** | ✗ | FP8 | **FP4+FP8** |
+| Managed / warranty | self | self | none | yes | yes |
+| Power burden | trivial (70 W) | low (~0.55 kW, **cheap CM**) | **heavy (~1.5 kW, cheap CM**) | trivial | moderate (300 W) |
+| Best for | current 4–8B PoC | **≤14B you already own** | owned 70B (cheapest cash) | managed 7–14B scale-up | managed 70B / multi-tenant |
+
+*CM = Cameroon (ENEO €0.16/kWh); DE = Germany (€0.34). 2×4070 / V100 36-mo TCO is electricity-only (capex sunk / parametric — see §6).*
 
 **Recommendation for this platform's trajectory:** keep the **A2000** as the live
-4–8B tier (it's free and measured-good). If/when you need **managed headroom for
-7–14B** with real concurrency, **GEX44 (€184/mo)** is the low-risk OpEx step. Only
-reach for **70B** when a workload demands it — then decide on **cash-vs-capability**:
-**5×V100** if you want owned + lowest lifetime cash and can power-manage it;
-**GEX131** if you want it fast, warrantied, FP4-capable, and hands-off. **Do not
-buy the V100 box for small models** — it's strictly worse than the A2000 you
-already own on every axis except headroom you won't use, and its electricity bill
-alone exceeds two GEX44s.
+Erlangen 4–8B tier (free, measured-good). For **≤14B** workloads, **use the
+2×4070 you already run in Cameroon before renting anything** — it's GEX44-class
+with 24 GB, and its only marginal cost is ~€50/mo of (half-price) Cameroon power;
+GEX44 (€184/mo) is then only worth it for *managed/warrantied* headroom on the
+German grid. Only reach for **70B** when a workload demands it — then it's
+**cash-vs-capability**: the **5×V100 in Cameroon** is now the **cheapest 70B by a
+wide margin** (cheap power drops its 36-mo TCO below GEX44), so pick it if you want
+owned + lowest cash and can live with old/slow/no-warranty + Cameroon
+reliability; pick **GEX131** if you want it fast, FP4-capable, warrantied and
+hands-off. **Don't run small models on the V100** — it's strictly worse than the
+A2000/2×4070 you already own except for headroom you won't use, and even at the
+cheap Cameroon rate its idle draw is wasted on a 4–8B model.
 
-> **Next action:** drop the eBay **asking price** into §6 (`P`) to lock the V100
-> TCO column, and confirm the **load profile** (idle-heavy vs sustained) to pick
-> the right power row. Everything else holds.
+> **Next action:** (1) drop the eBay **asking price** into §6 (`P`) to lock the V100
+> TCO; (2) confirm the V100 **load profile** (idle-heavy vs sustained) for the power
+> row; (3) confirm the **4070 variant** (plain 4070 / Super / Ti — TDP 200/220/285 W
+> shifts the Cameroon bill). Everything else holds.
 
 ---
 
@@ -357,5 +460,7 @@ alone exceeds two GEX44s.
 [GEX44](https://www.hetzner.com/dedicated-rootserver/gex44/) ·
 [GEX131 press release](https://www.hetzner.com/pressroom/new-gex131/) ·
 eBay listing 306748779023 (5× Tesla V100 16GB, seller *biercologne*; specs from listing text, price not captured) ·
+[ENEO Cameroon tariffs](https://www.eneocameroon.cm/index.php/en/clients-professionnels-vos-factures-et-paiement-en/clients-professionnels-vos-factures-et-paiement-tarifs-delectricite-en) ·
+[Cameroon electricity prices — GlobalPetrolPrices (Jun 2025, ~XAF 106/kWh business)](https://www.globalpetrolprices.com/Cameroon/electricity_prices/) ·
 [ADR-0028](./adr/0028-owned-hardware-model-pricing.md) ·
 [`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) §6 (measured A2000 capacity).

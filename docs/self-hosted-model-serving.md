@@ -229,4 +229,5 @@ When the next model outgrows the home A2000, the platform comparison —
 12/24/36-mo TCO, and the [ADR-0028](./adr/0028-owned-hardware-model-pricing.md)
 cost-recovery price of each) — is worked through in
 [`2026-06-08-gpu-platform-procurement-comparison.md`](./2026-06-08-gpu-platform-procurement-comparison.md).
-Short version: A2000 for ≤8B, GEX44 for managed 7–14B, GEX131 or a 5×V100 box for 70B.
+Short version: A2000 (or the already-owned Cameroon 2×4070, ~€0.16/kWh) for ≤14B,
+GEX44 for managed 7–14B, GEX131 or the Cameroon 5×V100 box for 70B.
