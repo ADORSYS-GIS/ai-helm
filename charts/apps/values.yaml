@@ -112,11 +112,56 @@ applications:
     destination:
       namespace: observability
 
-  # apprise-api REMOVED (ADR-0036): the Grafana→grafana-apprise-adapter→apprise-api
-  # notification path was redundant — Grafana/Alertmanager notify natively. The
-  # grafana-apprise-adapter + the Grafana external-alertmanager override were
-  # dropped too; opencode-k8s-agent (below) keeps notifying via direct
-  # APPRISE_URLS (its APPRISE_API_URL override was removed).
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Notifications: Apprise API — STATELESS notify gateway for opencode-k8s-agent.
+  # The agent (below) POSTs its report to this service's /notify with the channel
+  # URLs in the request body (APPRISE_URLS), so this needs NO stored channel
+  # config — hence no apprise-channels secret / persistence mount (that missing
+  # mount was why the old pod hung 0/1). ADR-0036: the Grafana apprise path
+  # (grafana-apprise-adapter + the external-alertmanager override) was removed —
+  # Grafana notifies natively now; this lean apprise-api stays ONLY for the agent.
+  # Source: https://github.com/ADORSYS-GIS/opencode-k8s-agent
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: apprise-api
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
+      # EXTERNAL repo — doesn't ride the ai-helm release tag; bump the SHA
+      # deliberately (then re-release). Keep in sync with opencode-k8s-agent below.
+      targetRevision: 5c8ca29c68922678a50b664074d2ecd0bafae7e4
+      path: helm/apprise-api
+      helm:
+        releaseName: apprise-api
+        valuesObject:
+          apprise-api:
+            controllers:
+              main:
+                replicas: 1
+                containers:
+                  main:
+                    env:
+                      # Stateless: only the /notify endpoint (urls supplied per
+                      # request by the agent). No persistent stored configs.
+                      APPRISE_STATEFUL_MODE: disabled
+                    resources:
+                      requests: { cpu: 100m, memory: 128Mi }
+                      limits:   { cpu: 500m, memory: 512Mi }
+            service:
+              main:
+                controller: main
+                ports:
+                  http:
+                    port: 8000
+    destination:
+      namespace: monitoring
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
 
   # ─────────────────────────────────────────────────────────────────────────────
   # AI Monitoring: OpenCode K8s Agent — AI-powered cluster health monitor
@@ -157,9 +202,11 @@ applications:
                     env:
                       OPENCODE_MODEL: "minimax-m2p7"
                       OPENCODE_BASE_URL: "https://api.ai.camer.digital/v1"
-                      # APPRISE_API_URL removed with apprise-api (ADR-0036): the
-                      # agent now sends reports DIRECTLY via APPRISE_URLS (from its
-                      # opencode-k8s-agent-secret), not through the apprise-api svc.
+                      # The agent POSTs its report to apprise-api's /notify with the
+                      # channel URLs (APPRISE_URLS, from opencode-k8s-agent-secret)
+                      # in the body — it has no built-in notifier, so this service
+                      # is required (kept lean per ADR-0036).
+                      APPRISE_API_URL: "http://apprise-api.monitoring.svc.cluster.local:8000"
                       KEYCLOAK_URL: "https://auth.verif.fyi"
                       KEYCLOAK_REALM: "camer-digital"
                       KEYCLOAK_CLIENT_ID: "opencode-k8s"

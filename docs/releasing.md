@@ -97,7 +97,7 @@ repos don't track HEAD. These are pinned to commit SHAs in `charts/apps/values.y
 
 | app(s) | repo | how to bump |
 |---|---|---|
-| `opencode-k8s-agent` | `opencode-k8s-agent.git` | edit the SHA |
+| `opencode-k8s-agent`, `apprise-api` | `opencode-k8s-agent.git` | edit the SHA |
 | `converse-ui` | `converse-frontends` | edit the SHA |
 
 To take a newer version: `git ls-remote https://github.com/ADORSYS-GIS/<repo> HEAD`,
