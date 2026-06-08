@@ -7,7 +7,8 @@ bucket is exhausted):
   1. burst requests/min — keyed on x-account-id (per user / SA), cost = 1/request.
   2. burst tokens/min   — keyed on x-account-id, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
-  3. monthly budget     — keyed on x-org-id (per org), micro-USD, cost = the
+  3. monthly budget     — keyed on x-account-id (per person, ADR-0035 — NOT a
+                          shared x-org-id bucket), micro-USD, cost = the
                           cost_<model> response metadata (the pricing CEL, which
                           already yields micro-USD). Emitted ONLY for plans that
                           carry a budget → service/internal stay uncapped.
@@ -100,13 +101,13 @@ spec:
                 namespace: io.envoy.ai_gateway
                 key: llm_total_token
         {{- end }}
-        {{- /* ── 3. monthly budget (per-org, micro-USD) — skipped ⇒ uncapped ── */}}
+        {{- /* ── 3. monthly budget (per-person, micro-USD) — skipped ⇒ uncapped ── */}}
         {{- $budgetUsd := or (index $overrides $planName) $planCfg.monthlyBudgetUsd }}
         {{- with $budgetUsd }}
         {{- $limit := mulf . 1000000 | int64 }}
         - clientSelectors:
             - headers:
-                - name: x-org-id
+                - name: x-account-id
                   type: Distinct
                 - name: x-billing-plan
                   type: Exact
