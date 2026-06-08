@@ -129,7 +129,10 @@ applications:
     depsOverlay: environments/prod/deps/apprise-api
     source:
       repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
-      targetRevision: HEAD
+      # Pinned to a commit for a reproducible release (was HEAD). This is an
+      # EXTERNAL repo, so it doesn't ride the ai-helm release tag — bump this SHA
+      # deliberately when you want a newer opencode-k8s-agent (then re-release).
+      targetRevision: 5c8ca29c68922678a50b664074d2ecd0bafae7e4
       path: helm/apprise-api
       helm:
         releaseName: apprise-api
@@ -193,7 +196,10 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
-      targetRevision: HEAD
+      # Pinned to a commit for a reproducible release (was HEAD). This is an
+      # EXTERNAL repo, so it doesn't ride the ai-helm release tag — bump this SHA
+      # deliberately when you want a newer opencode-k8s-agent (then re-release).
+      targetRevision: 5c8ca29c68922678a50b664074d2ecd0bafae7e4
       path: helm/opencode-k8s-agent
       helm:
         releaseName: opencode-k8s-agent
@@ -824,7 +830,9 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/converse-frontends
-      targetRevision: HEAD
+      # Pinned to a commit for a reproducible release (was HEAD). External repo —
+      # bump this SHA deliberately when you want a newer converse-ui, then re-release.
+      targetRevision: 500dba11e91d1385135802db5898c961debfe6e2
       path: charts/converse-frontend
       helm:
         releaseName: converse-ui
