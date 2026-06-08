@@ -35,7 +35,8 @@ set -euo pipefail
 
 # ── config ────────────────────────────────────────────────────────────────────
 CHARTS=(apps ai-models librechart observability mcps lightbridge)
-DEV_BRANCH="claude/magical-bohr-390242"
+# Canonical line. The old deploy branch claude/magical-bohr-390242 was retired
+# 2026-06-08 — deploys are tag-based (ADR-0031), main is the dev line.
 MAIN_BRANCH="main"
 ROOT_APP="ai-apps-v2"
 ARGO_CTX="admin@homeos"
@@ -66,7 +67,7 @@ command -v helm >/dev/null || die "helm not found on PATH"
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repo"
 
 CUR_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-[ "$CUR_BRANCH" = "$DEV_BRANCH" ] || warn "on branch '$CUR_BRANCH', expected '$DEV_BRANCH' (continuing)"
+[ "$CUR_BRANCH" = "$MAIN_BRANCH" ] || warn "on branch '$CUR_BRANCH', expected '$MAIN_BRANCH' (continuing)"
 
 # OLD = the tag currently pinned (the YAML key line, not the prose comment)
 OLD="$(grep -Em1 '^[[:space:]]*selfTargetRevision:' charts/apps/values.yaml | awk '{print $2}')"
@@ -143,16 +144,15 @@ COMMITTED=1   # past this point the bump is committed — the EXIT trap must NOT
 git tag -a "$NEW" -m "Platform release ${NEW} (from ${OLD})"
 say "committed $(git rev-parse --short HEAD) and tagged $NEW"
 
-# ── 4. push: TAG FIRST, then branches ─────────────────────────────────────────
+# ── 4. push: TAG FIRST, then main ─────────────────────────────────────────────
 if [ "$PUSH" -eq 1 ]; then
   say "pushing tag $NEW (first, so nothing live references a missing revision)…"
   git push origin "refs/tags/$NEW"
-  say "pushing $DEV_BRANCH + $MAIN_BRANCH…"
-  git push origin "HEAD:$DEV_BRANCH"
+  say "pushing $MAIN_BRANCH…"
   git push origin "HEAD:$MAIN_BRANCH"
 else
   warn "--no-push: tag + commit are LOCAL only. Push the TAG before repointing:"
-  echo "    git push origin refs/tags/$NEW && git push origin HEAD:$DEV_BRANCH HEAD:$MAIN_BRANCH"
+  echo "    git push origin refs/tags/$NEW && git push origin HEAD:$MAIN_BRANCH"
 fi
 
 # ── 5. repoint the root app ───────────────────────────────────────────────────
