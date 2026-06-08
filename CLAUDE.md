@@ -187,7 +187,7 @@ prompted the removal; see `docs/2026-hetzner-cutover.md`.)
   - **External** — `api.ai.camer.digital` (public LB, ACME TLS): humans (opencode) + remote SAs. Full Keycloak JWT. Descriptors via CEL with defaults so `billing_plan`/`organization` claims are **optional** (`→ free` / `→ sub`).
   - **Internal** — `core-gateway-internal.envoy-gateway-system.svc.cluster.local` (ClusterIP only, `api-internal` listener, `self-signed-ca` TLS): in-cluster services. Accepts **EITHER** a k8s SA token (`kubernetesTokenReview`, one-time jobs) **OR** a static `apiKey` (labeled Secret `kuadrant.io/apikey-for=internal-gateway`, long-running services like LibreChat).
 - **Per-user attribution:** a long-running service (LibreChat) authenticates as itself but **forwards the end-user's Keycloak sub** (`X-LibreChat-User`); the internal AuthConfig's CEL prefers it → per-user `x-account-id`/budget. Trust = internal plane is first-party-only + Authorino overwrites the descriptors.
-- **Rate limiting** = per-model `BackendTrafficPolicy` (`charts/ai-model`) keyed on `x-account-id` (burst) + `x-org-id` (monthly µ$ budget) + `x-billing-plan` (tier: free/pro/service/internal). Tiers in `charts/ai-models/values.yaml` `rateLimitBudgeting.plans`. Static via Helm (the AIEG CRD), no dynamic OPA.
+- **Rate limiting** = per-model `BackendTrafficPolicy` (`charts/ai-model`) keyed on `x-account-id` (burst **and** monthly µ$ budget — both **per-person** since ADR-0035, which dropped the shared `x-org-id` budget bucket) + `x-billing-plan` (tier: free/pro/service/internal). Tiers in `charts/ai-models/values.yaml` `rateLimitBudgeting.plans` (free $50/mo, pro $200/mo). Static via Helm (the AIEG CRD), no dynamic OPA.
 
 ## Python tooling (`tools/dashboards/`)
 
