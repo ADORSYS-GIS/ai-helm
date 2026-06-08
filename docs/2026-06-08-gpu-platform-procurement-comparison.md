@@ -456,6 +456,125 @@ cheap Cameroon rate its idle draw is wasted on a 4–8B model.
 
 ---
 
+## 9. RoI / payback — when does each box pay for itself?
+
+This is an **internal platform** (developers + marketing), so the "return" isn't
+revenue — it's **SaaS spend avoided**. RoI here = *"does running the box cost less
+than the API calls it replaces, and if there's capex, how long until the savings
+repay it?"*
+
+```
+avoided_SaaS = min(demand, box_capacity) × SaaS_price     (a box can't avoid more than it can serve)
+net_saving   = avoided_SaaS − running_cost
+payback (mo) = capex ÷ net_saving        (∞ if net_saving ≤ 0; rentals have no capex → it's just monthly P&L)
+```
+
+Baseline (your pick): **budget open-model SaaS** — 8B-class ≈ **$0.04 in / $0.08
+out** per 1M; 70B-class ≈ **$0.23 in / $0.40 out** (DeepInfra Llama-3.3-70B). The
+comparison is **like-for-like capability**: an 8B box is scored against 8B SaaS, a
+70B box against 70B SaaS.
+
+### 9.1 Workload model — developers vs marketing
+
+Your users are **mostly developers + marketing**, and they consume *very*
+differently. Stated per-user monthly volumes (the dominant knobs — see §9.4):
+
+| Persona | Tokens/mo | in : out | Why |
+|---|---|---|---|
+| **Developer** (opencode / LibreChat, code context) | **~66 M** (≈3 M/day) | 80 / 20 | Large code context in, moderate generation. *Heavy agentic users run 3–5× this.* |
+| **Marketing** (chat content/copy) | **~7 M** | ~55 / 45 | Short prompts, generation-heavy, lower frequency. Cheap to serve. |
+
+**Worked team (the 30–100 band you chose):** a **2 : 1 dev : marketing** mix.
+The whole marketing cohort is a rounding error on cost; **developers — especially
+agentic ones — are where both the spend and the RoI live.**
+
+### 9.2 Payback per scenario — worked at 60 users (40 dev + 20 mkt)
+
+Team demand ≈ **2,192 M in / 588 M out per month**. Budget-SaaS bill *if fully
+served*: **$135/mo at 8B**, **$739/mo at 70B**.
+
+| Box (class, siting) | Capex | Run $/mo | Serves | Avoided SaaS $/mo | **Net $/mo** | **Payback** |
+|---|---|---|---|---|---|---|
+| **A2000** (8B, DE, owned) | $0 | $40 | 54 %¹ | $72 | **+$32** | **instant** (sunk) |
+| **2× 4070** (8B, CM, owned) | $0 | $51 | 100 % | $135 | **+$84** | **instant** (sunk) |
+| **GEX44** (8B, DE, rent) | — | $202 | 100 % | $135 | **−$67** | **never** (< ~90 users) |
+| **5× V100** (70B, CM, owned) | ~$3,261² | $76 | 45 %¹ | $331 | **+$255** | **~13 mo** |
+| **GEX131** (70B, DE, rent) | — | $966 | 100 % | $739 | **−$227** | **never** (< ~78 users) |
+
+¹ *Capacity-capped* — the box saturates (A2000 ~315 M out/mo; V100-70B ~263 M
+out/mo) and the overflow spills to SaaS anyway, so its avoided-SaaS plateaus.
+² P = €3,000 example; the V100 asking price is still open (§6).
+
+### 9.3 How it scales with team size, and the break-evens
+
+**Net saving $/mo by team size** (negative = SaaS would be cheaper):
+
+| Box | 30 users | 60 users | 100 users | RoI verdict |
+|---|---|---|---|---|
+| A2000 (8B, owned) | +$27 | +$32 | +$32 (capped) | ✅ instant, but tiny + capacity-bound |
+| 2× 4070 (8B, owned) | +$16 | +$84 | +$169 | ✅ **instant, scales — best small-model RoI** |
+| GEX44 (8B, rent) | −$135 | −$67 | +$18 | ⚠️ break-even **~90 users** vs budget-8B SaaS |
+| V100 (70B, owned) | +$255 → **13 mo** | +$255 → 13 mo | +$255 → 13 mo | ✅ **fast payback** (9 mo @ €2k · 17 mo @ €4k) |
+| GEX131 (70B, rent) | −$596 | −$227 | +$187 | ⚠️ break-even **~78 users** vs budget-70B SaaS |
+
+So, against *budget* SaaS at moderate dev volume:
+
+- **Already-owned boxes (A2000, 2×4070) pay back instantly** — capex is gone, and
+  their power bill (~$40–51/mo) is below the SaaS they replace. The **2×4070 in
+  Cameroon is the standout**: ample 24 GB capacity for the whole ≤14B team and the
+  net saving *grows* with headcount. For ≤14B, **you're already done — keep using it.**
+- **GEX44 doesn't pay back below ~90 users** — at 30–60 users its €184/mo rental
+  *exceeds* the cheap 8B SaaS bill. It's a **control/SLA/German-grid purchase, not a
+  cost saving**, until you're near the top of your band.
+- **The V100 is the one investment with a clean payback (~9–17 mo)** — *only*
+  because cheap Cameroon power (~$76/mo) is trivial against 70B SaaS. But it
+  **saturates at ~27 users of 70B** (~263 M out/mo), so beyond that it caps the
+  savings and the rest spills to SaaS — buy it for 70B *quality on a budget*, not
+  to absorb unlimited volume.
+- **GEX131 only pays back above ~78 users** of genuine 70B demand — but it's the
+  **only box that serves the full 70B volume of a 100-person team** without
+  spillover. Below ~78 users it's a capability/SLA buy; above it, it wins outright.
+
+### 9.4 The knob that moves everything: per-developer volume
+
+Every break-even above assumes a **moderate ~66 M tok/mo/dev**. RoI scales almost
+linearly with it, and **break-even team size ∝ 1 ⁄ volume**:
+
+| If devs are… | ~tok/mo | GEX44 break-even | GEX131 break-even | V100 payback |
+|---|---|---|---|---|
+| Light (chat only) | ~20 M | ~300 users | ~260 users | slower (volume-starved) |
+| **Moderate (assumed)** | **~66 M** | **~90 users** | **~78 users** | **~13 mo** |
+| Heavy agentic (Claude-Code-style) | ~250 M | **~24 users** | **~21 users** | **→ ~9 mo floor** |
+
+> **Translation:** if your developers are heavy agentic coders, the rentals
+> (GEX44/GEX131) flip to **positive RoI inside your 30–100 band**, and the V100
+> hits its ~9-month payback floor fast. If they're light, *budget SaaS just wins* —
+> don't buy hardware. **Measure your real per-dev token rate before committing** —
+> it's worth more than the V100 price quote.
+
+### 9.5 RoI verdict
+
+- **≤14B (most dev assistance + all marketing):** the **2×4070 you already own** is
+  RoI-positive today; **don't rent GEX44** for this unless you specifically need
+  managed/German-grid SLA or you're past ~90 users. Marketing especially is so
+  cheap to serve it never justifies new spend.
+- **70B (quality-critical dev work):** the **Cameroon V100 pays back in ~9–17
+  months** and is the cheapest 70B by far — provided you actually need 70B (else
+  compare to 8B SaaS and the case evaporates) and accept its ~27-user throughput
+  ceiling. **GEX131** is the answer only when 70B demand exceeds ~78 users or you
+  need its speed/FP4/SLA — then it's the sole box that scales.
+- **Overarching (ADR-0028's point, in € terms):** versus *budget* SaaS, self-hosting
+  is **rarely a price win for small models** — its real return is
+  control/privacy/data-residency/no-rate-limits, which this RoI model deliberately
+  does **not** price. The two genuine €-RoI plays here are **(1) exploit sunk capex
+  (A2000/2×4070) for ≤14B** and **(2) the cheap-power Cameroon V100 for 70B.**
+
+> **To turn these into hard dates:** give me (a) your real **per-developer token
+> rate** (or current monthly SaaS spend) and (b) the **V100 asking price**, and I'll
+> collapse §9 to single payback dates instead of a band.
+
+---
+
 *Sources:* [Hetzner GPU matrix](https://www.hetzner.com/de/dedicated-rootserver/matrix-gpu/) ·
 [GEX44](https://www.hetzner.com/dedicated-rootserver/gex44/) ·
 [GEX131 press release](https://www.hetzner.com/pressroom/new-gex131/) ·
