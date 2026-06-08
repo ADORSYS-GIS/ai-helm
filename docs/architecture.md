@@ -59,20 +59,22 @@ into any specific subsystem.
 
 Everything is GitOps:
 
-The **entrypoint** is a single root Application that lives in the
-`ai-gitops` repo (not here) and points at `charts/apps` in this repo:
+The **entrypoint** is a single root Application, `ai-apps-v2`, that points at
+`charts/apps` in this repo. There is **no `ai-gitops` repo** — the root is
+**applied manually** (from a maintainer-held manifest) onto the ArgoCD cluster.
+Deploys are **tag-based** (immutable `release-YYYY.MM.DD`, never `main` — ADR-0031):
 
 ```yaml
-# ai-gitops — the GitOps entrypoint
+# applied manually on the ArgoCD cluster (admin@homeos) — no ai-gitops repo
 - name: ai-apps-v2
   project: ai
   source:
     repoURL: https://github.com/ADORSYS-GIS/ai-helm
-    targetRevision: <branch>      # deploy branch now, release tag next — never main
+    targetRevision: release-2026.06.08-v02   # immutable release tag — never main (ADR-0031)
     path: charts/apps
   destination:
-    name: home-remote             # registered cluster name (see ADR-0017)
-    namespace: argocd
+    server: https://kubernetes.default.svc   # in-cluster/argocd: the root is a
+    namespace: argocd                         # control object (ADR-0017); children → home-remote
   syncPolicy:
     automated: { prune: true, selfHeal: true }
 ```
@@ -269,9 +271,13 @@ The high-impact ones:
   the old wholesale `secrets` Application from `ai-ops-secrets.git` was
   **removed (2026-06-04)**. App secrets pull from key
   `ai/camer/digital/prod/env`, platform secrets from `prod/meta/test-app`.
-- **ai-gitops state.** Per-cluster image-tag overrides, environment
-  config, the actual ArgoCD `Application` for the root umbrella —
-  all in the separate `ai-gitops` repo.
+- **Deploy state (no `ai-gitops` repo).** It was planned (ADR-0010/0013) but
+  never built. Instead: per-env config lives **in this repo** under
+  `environments/<env>/` (ADR-0018); the root `ai-apps-v2` `Application` is
+  **applied manually** on the ArgoCD cluster; and the deployed version is an
+  **immutable release tag** `release-YYYY.MM.DD` that every self-reference pins
+  (ADR-0031 — see `docs/releasing.md` + `tools/release.sh`). Image-tag defaults
+  stay in `charts/<x>/values.yaml`, not chart logic (ADR-0013).
 - **Realm config secrets** — Keycloak client secrets are ESO-injected
   at sync time; the realm structure is in
   `charts/keycloak-baseline/values.yaml`.

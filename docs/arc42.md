@@ -306,6 +306,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0028 | Cost-recovery pricing for owned-hardware models (€/hour TCO → weighted per-token; replaces 0022's flat $0) |
 | 0029 | Self-hosted model as a plain Deployment (drop KServe/Knative) — always-on + Recreate on the dedicated GPU (supersedes 0022 serving mode) |
 | 0030 | Model + Caddy auth-proxy co-located in ONE StatefulSet (proxy → model over localhost), via bjw-template (refines 0029) |
+| 0031 | Tag-based deploys (`release-YYYY.MM.DD`), never `main` — immutable/reproducible/rollback-able; self-ref `targetRevision`s + root pin the tag; external sources pinned to SHAs; `tools/release.sh` |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
