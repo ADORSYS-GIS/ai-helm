@@ -907,15 +907,25 @@ is a new runtime vs. the huggingfaceserver/vLLM of ADR-0029/0030).
 Apache-2.0). One GPU = **one model at a time** (§11.4) → this is a **swap** of
 `qwen3-4b-local`, not a second model.
 
-Maintainer decisions (2026-06-08):
+Maintainer decisions (2026-06-08 — all **locked**):
 - **Engine: llama.cpp** (`llama-server`, OpenAI-compatible) — replaces
   huggingfaceserver/vLLM + LMCache for this model. The bjw StatefulSet + seed-Job +
   Ingress + cert shape (ADR-0030) **stays**; only the model container/engine changes.
-- **Quant: Q4_K_M** (≈2.7 GB for 4B) from a reputable quanter — proposed default
-  `bartowski/Qwen_Qwen3.5-4B-GGUF` `Q4_K_M`; unsloth's imatrix **UD-Q4_K_XL** is the
-  higher-accuracy upgrade (§15.3, §15.7).
-- **Text-only for now** — don't load an `--mmproj` / don't wire image input at the
-  gateway (§15.2).
+- **Quant: unsloth `UD-Q4_K_XL`** — imatrix dynamic quant (~Q4_K_M size, higher
+  accuracy + tool-calling fixes) from
+  [`unsloth/Qwen3.5-4B-GGUF`](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) (§15.3).
+- **No Caddy sidecar** — use `llama-server`'s **native `--api-key`** (the reason Caddy
+  existed — huggingfaceserver ignoring the key — is gone). The 600 s long-generation
+  timeout moves to the **Traefik Ingress annotations + the Envoy BTP** (§15.5).
+- **Text-only** — don't load an `--mmproj` / don't wire image input at the gateway
+  (§15.2).
+- **Deployment strategy: keep + disable the old, stand up a NEW one** (not an
+  in-place swap). **Disable** the existing `model-serving` app + `qwen3-4b-local`
+  backend/model (kept in YAML for instant rollback) and create a **new parallel
+  deployment**: chart `charts/model-serving-qwen3-5` (copy per §14), new app, new
+  model-id **`qwen3-5-4b-local`**, new host **`qwen3-5-4b--poc.ssegning.com`**. One
+  GPU ⇒ only one runs at a time, so enabling the new **requires** disabling the old
+  (the cutover window).
 
 ### 15.2 What changed vs. Qwen3-4B — and why it suits a 12 GB card
 
@@ -979,43 +989,54 @@ math is friendly, and there's no LMCache to skew. The trade-off is **lower peak
 throughput/concurrency** than vLLM — acceptable for this low-concurrency owned/cheap
 tier (`llama-server --parallel N` + continuous batching give modest concurrency).
 
-### 15.5 Planned change-set — llama.cpp redesign of `charts/model-serving`
+### 15.5 Planned change-set — a NEW llama.cpp chart `charts/model-serving-qwen3-5`
 
+Per the locked deployment strategy (§15.1) this is **not** an in-place edit: **copy**
+`charts/model-serving` → `charts/model-serving-qwen3-5` (the §14 "model #2" move),
+redesign the copy for llama.cpp, and **disable the old `model-serving` app** at cutover.
 The ADR-0030 shape (bjw StatefulSet, RWX seed PVC, Ingress + cert-cloudflare,
-`homeCluster: true`, federation via `charts/ai-models`) **stays**. What changes:
+`homeCluster: true`, federation via `charts/ai-models`) **carries over**. What's new in
+the copy:
 
-**Model container → `llama-server`:**
+**Model container → `llama-server` (no sidecar — single container now):**
 - Image **`ghcr.io/ggml-org/llama.cpp:server-cuda`** (CUDA 12; **not** `server-cuda13`
   — it [fails on some GPUs](https://github.com/ggml-org/llama.cpp/issues/22561)). Pin a
   **recent** digest — the GDN operators need a current build (§15.6 gate).
 - Args: `--model /models/<file>.gguf`, `--host 0.0.0.0 --port 8080`, `-ngl 99` (all
   layers on GPU), `--ctx-size 65536` (test higher), `--jinja` (tool calling via the
   chat template — replaces vLLM's `--tool-call-parser`), `--alias qwen3-5-4b` (served
-  model id), optional `-fa` (flash-attn) + `--metrics` (Prometheus → Alloy).
+  model id), **`--api-key-file /etc/llama/api-key`** (native Bearer auth), optional
+  `-fa` (flash-attn) + `--metrics` (Prometheus → Alloy).
 - **Probes simplify** → `httpGet /health` (503 while loading, 200 when ready) for
   startup + readiness. The vLLM `/v2/health/ready` dance and the **8081-gRPC / probe
   port collision both disappear** (llama-server binds only 8080).
 - **Drop all vLLM cruft**: `--kv-transfer-config`, `LMCACHE_*` env, `--enforce-eager`,
   `--dtype`, the fp8-ban note, `--tool-call-parser=hermes`.
 
-**Auth — two options (proposed: keep Caddy for the first cut):**
-- *Keep the Caddy sidecar* (lowest churn): still validates the Bearer + reverse-proxies
-  `localhost:8080` and owns the 600s timeout. Change one thing (the engine) at a time.
-- *Drop Caddy later*: `llama-server` has **native `--api-key`/`--api-key-file`** — the
-  original reason for Caddy (huggingfaceserver ignoring the key) is **gone**. Then the
-  long-generation timeout moves to Traefik Ingress annotations + the Envoy BTP. A clean
-  fast-follow simplification, not the first cut.
+**Auth — Caddy is removed (locked).** `llama-server` enforces the Bearer itself via
+`--api-key-file` (mount the `vllm-local-api-key`/`api_key` secret — rename later). The
+Service now targets the model's `:8080` directly. The **600 s long-generation timeout**
+that Caddy used to own moves to: the **Traefik Ingress** (`traefik.ingress.kubernetes.io`
+timeout annotations / a `ServersTransport`) **+ the Envoy `BackendTrafficPolicy`** (the
+`ai-models` model `timeout.requestTimeout`, already 600 s). ⚠️ Verify Traefik doesn't
+cut long streams now that the Caddy `response_header_timeout` is gone.
 
-**Seed Job:** download a **single GGUF file** instead of the whole repo —
-`hf download bartowski/Qwen_Qwen3.5-4B-GGUF --include "Qwen_Qwen3.5-4B-Q4_K_M.gguf"
---local-dir /models` (~2.7 GB vs ~8 GB). Still RWX PVC + ArgoCD Sync hook; HF_TOKEN
-still lifts the rate limit. PVC can shrink (10–15 Gi).
+**Seed Job:** download a **single GGUF file** — e.g.
+`hf download unsloth/Qwen3.5-4B-GGUF --include "*UD-Q4_K_XL*.gguf" --local-dir /models`
+(~2.7 GB vs ~8 GB; confirm the exact UD-Q4_K_XL filename). Still RWX PVC + ArgoCD Sync
+hook; HF_TOKEN still lifts the rate limit. PVC can shrink (10–15 Gi).
 
-**`charts/ai-models/values.yaml`:** backend **`prefix: /v1`** (llama-server) **not**
-`/openai/v1`; `modelNameOverride` = the `--alias` (`qwen3-5-4b`); `info` contextLength
-to the new cap, **no image input**; `minBackends: 1`; re-derive **cost-recovery
-pricing** per ADR-0028 (same €/h TCO, lighter Q4_K_M → re-check the per-token numbers).
-`edgeAuth.host` ↔ backend `hostname` (decide reuse `qwen3-4b--poc…` vs rename, §15.7).
+**`charts/ai-models/values.yaml`:** **disable** the old `vllm-local-01` backend +
+`qwen3-4b-local` model (keep the YAML, `enabled:false`/commented for rollback); **add**
+a new `llama-local-01` backend (**`prefix: /v1`**, host `qwen3-5-4b--poc.ssegning.com`,
+`securityType: APIKey`) + a new **`qwen3-5-4b-local`** model (`modelNameOverride:
+qwen3-5-4b` = the `--alias`; `info.contextLength` to the new cap; **no image input**;
+`minBackends: 1`; **cost-recovery pricing** per ADR-0028 — same €/h TCO, lighter
+Q4_K_M → re-check per-token).
+
+**`charts/apps/values.yaml`:** **disable** the old `model-serving` app (keep for
+rollback); **add** `model-serving-qwen3-5` (`homeCluster: true`, `path:
+charts/model-serving-qwen3-5`). New DNS record `qwen3-5-4b--poc.ssegning.com` → home.
 
 ### 15.6 Verification before committing (the §14.A "prove it" step)
 1. **GATE — prove it loads**: run a **recent** `ghcr.io/ggml-org/llama.cpp:server-cuda`
@@ -1027,9 +1048,12 @@ pricing** per ADR-0028 (same €/h TCO, lighter Q4_K_M → re-check the per-toke
 3. **Smoke test** (§11.10 / §14.E): a completion, then **with `tools`** (`--jinja`
    path), then the gateway path (JWT + `x-ai-eg-model`), then cost CEL non-zero.
 
-### 15.7 Open decisions (confirm before Phase 2)
-- **Quant** — bartowski `Q4_K_M` (default) vs unsloth `UD-Q4_K_XL` (higher accuracy).
-- **Caddy** — keep for the first cut (default) vs drop now for `llama-server --api-key`.
-- **Gateway model-id** — reuse `qwen3-4b-local` (zero client reconfig) vs new
-  `qwen3-5-4b-local`; and the edge **host** (reuse `qwen3-4b--poc…` vs rename → DNS).
-- **Cutover downtime** — single GPU = the swap displaces the live model (a window).
+### 15.7 Decisions (RESOLVED 2026-06-08)
+- **Quant** — ✅ unsloth **`UD-Q4_K_XL`** (imatrix; higher accuracy than plain Q4_K_M).
+- **Caddy** — ✅ **drop now**; `llama-server --api-key-file` enforces auth; timeout →
+  Traefik Ingress + Envoy BTP.
+- **Naming / strategy** — ✅ **keep the old `qwen3-4b` deployment disabled** (rollback)
+  and create a **new** parallel one: model-id `qwen3-5-4b-local`, host
+  `qwen3-5-4b--poc.ssegning.com`, chart `charts/model-serving-qwen3-5`.
+- **Cutover downtime** — ✅ accepted (single GPU = only one model runs; enabling the
+  new requires disabling the old).
