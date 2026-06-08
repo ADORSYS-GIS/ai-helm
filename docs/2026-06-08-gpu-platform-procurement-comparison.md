@@ -1,11 +1,18 @@
-# GPU platform comparison — local A2000 vs eBay 5×V100 vs Hetzner GEX44 / GEX131
+# GPU platform comparison — A2000 · 2×4070 · 5×V100 · Hetzner GEX44 / GEX131
 
-> **Point-in-time procurement analysis (2026-06-08).** A make-vs-buy comparison
-> for the *next* self-hosted-model platform, against four candidates. This is a
-> dated audit, not a long-lived subsystem guide — the pattern for *how* we serve
-> models lives in [`self-hosted-model-serving.md`](./self-hosted-model-serving.md);
-> the pricing *method* is **[ADR-0028](./adr/0028-owned-hardware-model-pricing.md)**.
-> Re-price if the Hetzner matrix, the eBay listing, or the €/kWh tariff move.
+|  |  |
+|---|---|
+| **Document type** | 🔬 **Research document** — investigative make-vs-buy analysis. **Advisory, not normative**: it informs a decision, it does not *make* one. A choice that acts on this should be recorded in an ADR (the pricing method already is — [ADR-0028](./adr/0028-owned-hardware-model-pricing.md)). |
+| **Status** | Living draft — **two inputs still open** (V100 asking price; real per-developer token rate). Refresh when the Hetzner matrix, the eBay listing, the ENEO/German tariff, or the user base move. |
+| **Date** | 2026-06-08 |
+| **Author** | @stephane-segning, with Claude (Opus 4.8) |
+| **Scope** | Hardware for the *next* self-hosted-model platform. The pattern for *how* we serve models lives in [`self-hosted-model-serving.md`](./self-hosted-model-serving.md); per-model papers in [`docs/models/`](./models/). |
+| **Confidence** | Mixed — **measured** (live A2000), **vendor-published** (Hetzner/NVIDIA/ENEO specs & prices), and **first-principles estimates** (throughput, concurrency, RoI). Each table flags which. See [§0 Methodology](#0-methodology-sources--confidence). |
+
+> **Read §0 first** for how the numbers were derived and how far to trust each one.
+> This is a *research* document: the estimates are defensible and sourced, but the
+> throughput/concurrency/RoI figures are models, not benchmarks — treat them as
+> planning ranges and re-run with real data before committing budget.
 
 ## TL;DR verdict
 
@@ -35,10 +42,55 @@ almost purely capability/risk, not €.
 
 ---
 
+## 0. Methodology, sources & confidence
+
+This is a **research document**, so it states *how* every number was obtained and
+*how far to trust it* — that provenance is the point, not just the conclusion.
+
+**Approach.** Five candidate platforms were profiled along four axes — *what models
+fit* (§3), *who serves them* (§4 backends), *how many users* (§5), and *what it
+costs* (§6 TCO, §7 cost-recovery, §9 RoI). Specs and prices were gathered from
+vendor primary sources; capability was derived from VRAM/bandwidth/precision math;
+throughput and economics were modelled from first principles and anchored, where
+possible, to the live system.
+
+**Data provenance & confidence — by claim type:**
+
+| Claim type | Source | Confidence | Notes |
+|---|---|---|---|
+| A2000 throughput / concurrency / ctx | **Measured** on the live box ([`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) §6) | **High** | Real `llama-server` slot timings under production traffic. |
+| Hetzner specs & prices (GEX44/GEX131) | Vendor pages (linked §1) | **High** | €184/€889/mo, hardware as published 2026-06. |
+| GPU architecture / VRAM / bandwidth / FP8-FP4 | NVIDIA card data | **High** | A2000, RTX 4000 SFF Ada, RTX PRO 6000 Blackwell, V100, 4070. |
+| eBay V100 server specs | Listing text (price **not** captured) | **Medium** | 5×V100 16GB confirmed; **asking price open** → §6 is parametric. |
+| Cameroon ENEO tariff (~€0.16/kWh) | ENEO + GlobalPetrolPrices (linked §9/footer) | **Medium-High** | XAF pegged 655.957/€; tiered, frozen since 2012, +15% proposed for >220 kWh pros. |
+| Throughput / concurrency for non-A2000 boxes | First-principles estimate (bandwidth + batching) | **Medium** | Order-of-magnitude planning figures, **not** benchmarks. |
+| Model-fit (§3) | VRAM budgeting | **Medium-High** | Weights are firm; KV headroom is approximate. |
+| RoI / payback (§9) | Cost-avoidance model on stated personas | **Low-Medium** | Swings hard on per-dev token volume (§9.4) — the dominant unknown. |
+| SaaS comparator prices | Public budget-provider pricing (DeepInfra/Together class) | **Medium** | Move with the market; re-check before deciding. |
+
+**Key assumptions** (the knobs that move conclusions): electricity is
+**location-specific** (DE €0.34 vs CM €0.16/kWh — §1); FX **$1 ≈ €0.92**;
+**730 h/mo**; 3-yr (26,280 h) amortization; chat needs **≥15 tok/s/stream**; **10 %**
+duty cycle for "named users"; per-developer volume **~66 M tok/mo** (moderate).
+
+**Open inputs that would sharpen this to hard numbers:** (1) the **V100 asking
+price** (locks §6 TCO); (2) the **real per-developer token rate** or current SaaS
+spend (locks §9 payback dates). Both are flagged inline where they bite.
+
+**Limitations.** Throughput/concurrency/RoI are **models, not measurements** for
+every box except the A2000. The RoI scope is **electricity-only** for the Cameroon
+boxes (cooling, UPS/generator, bandwidth, staff, hardware risk excluded per the
+maintainer — "operation is still on us") and **deliberately prices no
+control/privacy/data-residency value**, which is often the real reason to
+self-host. Treat conclusions as **directional**, and benchmark the shortlisted box
+before purchase.
+
+---
+
 ## 1. Scope & sources
 
-Four candidates, one question: *which can serve which models, for how many
-users, at what cost?*
+Five candidates, one question: *which can serve which models, for how many
+users, at what cost — and when does each pay for itself?*
 
 | # | Candidate | Kind | Source |
 |---|---|---|---|
