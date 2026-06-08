@@ -963,6 +963,40 @@ applications:
         prune: true
         selfHeal: true
 
+  # Self-hosted Qwen3.5-4B (Q4_K_M GGUF, llama.cpp) on the home GPU — the upgrade
+  # candidate for qwen3-4b above. charts/model-serving-qwen3-5 renders the weights
+  # PVC + GGUF seed Job + the llama-server StatefulSet (single container, native
+  # --api-key, no Caddy) + Service + Ingress. Federated as the `llama-local-01`
+  # backend / `qwen3-5-4b-local` model in charts/ai-models. Paper:
+  # docs/models/qwen3.5-4b-q4.md; engine ADR-0032.
+  #
+  # ⚠️ STAGED (enabled:false) behind the load-gate (paper §5: a recent server-cuda
+  # build must load the GGUF on the A2000). One GPU → one model, so CUTOVER =
+  # set this enabled:true + the qwen3-4b app enabled:false (add the key) + flip the
+  # ai-models qwen3-5-4b-local/qwen3-4b-local enabled flags, then cut a release +
+  # repoint root. Rollback = the inverse.
+  - name: model-serving-qwen3-5
+    enabled: false
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    homeCluster: true
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: release-2026.06.08-v03
+      path: charts/model-serving-qwen3-5
+      helm:
+        releaseName: model-serving-qwen3-5
+        valuesObject: { }
+    destination:
+      namespace: converse-poc
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- MCPs (App-of-Apps orchestrator, ADR-0027) ---
   # charts/mcps now emits an ApplicationSet (a control object) that generates
   # one child Application per MCP (mcps-brave, mcps-terraform, mcps-firecrawl,

@@ -1,0 +1,270 @@
+# charts/model-serving-qwen3-5 — self-hosted Qwen3.5-4B (Q4_K_M GGUF) on the home GPU.
+# Engine: llama.cpp (llama-server), NOT vLLM/huggingfaceserver.
+# Paper: docs/models/qwen3.5-4b-q4.md · ADRs: 0022 (federation) / 0028 (pricing) /
+# 0030 (one bjw StatefulSet) / 0032 (llama.cpp engine).
+#
+# Shape: hybrid bjw-template chart, but a SINGLE container — llama-server enforces
+# the Bearer natively (--api-key-file), so there is NO Caddy sidecar. bjw renders
+# the StatefulSet + seed Job + Service + Ingress; the chart's own templates/ render
+# the PVC + ExternalSecrets only.
+#
+# ⚠️ STAGED behind the load-gate: this whole deployment is disabled at the app +
+# model level (charts/apps `model-serving-qwen3-5` enabled:false; charts/ai-models
+# `qwen3-5-4b-local` enabled:false) until a recent `server-cuda` build is proven to
+# load the GGUF on the A2000 (paper §5). Cutover = enable those + disable the
+# qwen3-4b ones (one GPU → one model).
+#
+# Sync-wave ordering (home cluster):
+#   -2  ExternalSecret (llama api key + hf-token)
+#   -1  PVC (qwen3-5-4b-models, RWX)
+#    0  seed Job (download the GGUF into the PVC) — ArgoCD Sync hook
+#    1  StatefulSet (llama-server) + Service + Ingress
+
+global:
+  labels:
+    app: model-serving-qwen3-5
+    team: adorsys-gis
+
+model:
+  # Logical name — served model id (--alias) + StatefulSet/Service name.
+  name: qwen3-5-4b
+  # GGUF repo (unsloth imatrix dynamic quant) + the quant pattern to fetch.
+  hfRepo: unsloth/Qwen3.5-4B-GGUF
+  ggufGlob: "*UD-Q4_K_XL*.gguf"
+  storagePath: Qwen3.5-4B-GGUF
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Weights volume (own templates/pvc.yaml). RWX so the seed Job + model co-mount.
+pvc:
+  enabled: true
+  name: qwen3-5-4b-models
+  storageClassName: longhorn
+  accessMode: ReadWriteMany
+  size: 15Gi                         # one ~2.7GB GGUF + headroom
+
+# Seed Job HF token (lifts the anonymous HF Hub rate limit). Own template
+# externalsecret-hf-token.yaml.
+seedJob:
+  enabled: true
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: true
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
+
+# The API key llama-server enforces via --api-key-file. Mounted as a FILE at
+# /etc/llama/api_key (see modelServing.persistence.api-key). Reuses the existing
+# ssegning-aws property `vllm_local_api_key` for now (rename later); the local
+# Secret name is distinct (llama-local-api-key).
+apiKey:
+  enabled: true
+  secretName: llama-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: vllm_local_api_key
+
+# ═════════════════════════════════════════════════════════════════════════════
+# bjw-template subchart (alias `modelServing`) — the whole workload.
+# ═════════════════════════════════════════════════════════════════════════════
+modelServing:
+  global:
+    fullnameOverride: qwen3-5-4b
+
+  # GPU pinning (no nvidia.com/gpu resource — the PoC node has no device plugin).
+  defaultPodOptions:
+    runtimeClassName: nvidia
+    nodeSelector:
+      gpu-node: "true"
+
+  controllers:
+    # ── The model server (StatefulSet) — ONE container: llama-server ──────────
+    main:
+      type: statefulset
+      replicas: 1                            # always-on, single instance (one GPU)
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      containers:
+        model:
+          # Official llama.cpp CUDA-12 server image. Its entrypoint is llama-server,
+          # so `args` are just flags. ⚠️ NOT `server-cuda13` (fails on some GPUs,
+          # ggml-org/llama.cpp#22561). Pin a DIGEST once the load-gate passes — the
+          # Gated-DeltaNet operators need a recent build (paper §5).
+          image:
+            repository: ghcr.io/ggml-org/llama.cpp
+            tag: server-cuda
+            pullPolicy: IfNotPresent
+          args:
+            # The seed Job symlinks the fetched GGUF to a stable path (model.gguf)
+            # so this is decoupled from the exact UD-Q4_K_XL filename.
+            - --model
+            - /models/Qwen3.5-4B-GGUF/model.gguf
+            - --alias
+            - qwen3-5-4b
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8080"
+            - -ngl
+            - "99"                           # offload all layers to the GPU
+            - --ctx-size
+            - "65536"                        # GDN linear-attn KV → big ctx cheap; tune at the gate
+            - --jinja                        # tool calling via the model chat template
+            - --api-key-file
+            - /etc/llama/api_key             # native Bearer auth (no Caddy)
+            - --metrics                      # Prometheus /metrics → Alloy
+          ports:
+            - name: http
+              containerPort: 8080
+          # llama-server /health: 503 while loading, 200 once ready — far simpler
+          # than the huggingfaceserver /v2/health/ready dance, and there is no gRPC
+          # port to collide with. `custom: true` so bjw uses these verbatim.
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /health, port: 8080 }
+                periodSeconds: 15
+                failureThreshold: 80          # ~20 min worst-case load
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /health, port: 8080 }
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }     # kernel-level; won't false-fail a busy server
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000                   # ⚠️ confirm the image runs as 1000 at the gate
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              # nvidia.com/gpu: "1"   # PoC node has no device-plugin for this
+              cpu: "3"
+              memory: 6Gi
+
+    # ── The weight seed Job (bjw `job` controller, ArgoCD Sync hook) ──────────
+    seed:
+      type: job
+      annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+        argocd.argoproj.io/sync-wave: "0"
+      pod:
+        restartPolicy: OnFailure
+      job:
+        backoffLimit: 6
+        activeDeadlineSeconds: 3600
+      containers:
+        seed:
+          image:
+            repository: python
+            tag: "3.12-slim"
+            pullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          # NOTE: repo/glob hardcoded (bjw subchart scope can't read parent
+          # .Values.model.*). Keep in sync with model.hfRepo / model.ggufGlob.
+          # Symlink the fetched file to a stable `model.gguf` so the model arg is
+          # decoupled from the exact UD-Q4_K_XL filename.
+          args:
+            - |
+              MODEL_DIR="/models/Qwen3.5-4B-GGUF"
+              mkdir -p "$MODEL_DIR"
+              echo "Seeding unsloth/Qwen3.5-4B-GGUF (UD-Q4_K_XL) -> $MODEL_DIR"
+              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
+              hf download unsloth/Qwen3.5-4B-GGUF --include "*UD-Q4_K_XL*.gguf" --local-dir "$MODEL_DIR"
+              GGUF="$(ls "$MODEL_DIR"/*UD-Q4_K_XL*.gguf | head -1)"
+              ln -sf "$GGUF" "$MODEL_DIR/model.gguf"
+              echo "Seed complete: $GGUF -> $MODEL_DIR/model.gguf"
+          env:
+            HF_TOKEN:
+              secretKeyRef:
+                name: hf-token
+                key: token
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits:   { cpu: "2", memory: 4Gi }
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          port: 8080
+          targetPort: 8080
+
+  # Public entrypoint — a plain k8s Ingress (className traefik). cert-manager's
+  # ingress-shim issues the TLS cert from `cert-cloudflare` (DNS-01). ⚠️ the host
+  # MUST match charts/ai-models `llama-local-01` hostname.
+  # NOTE: with no Caddy, the long-stream timeout is governed by Traefik's
+  # entrypoint respondingTimeouts + the Envoy BTP (600s). ⚠️ verify Traefik doesn't
+  # cut long generations at the gate; add a ServersTransport/timeout if it does.
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-cloudflare
+      hosts:
+        - host: qwen3-5-4b--poc.ssegning.com
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: http
+      tls:
+        - secretName: qwen3-5-model-edge-tls
+          hosts:
+            - qwen3-5-4b--poc.ssegning.com
+
+  persistence:
+    # The pre-seeded RWX weights PVC (own templates/pvc.yaml), mounted into the
+    # seed Job (rw, full volume) and the model container (ro).
+    model-store:
+      enabled: true
+      existingClaim: qwen3-5-4b-models
+      advancedMounts:
+        main:
+          model:
+            - path: /models
+              readOnly: true
+        seed:
+          seed:
+            - path: /models
+    # The API key Secret mounted as a FILE → /etc/llama/api_key (--api-key-file).
+    api-key:
+      enabled: true
+      type: secret
+      name: llama-local-api-key
+      advancedMounts:
+        main:
+          model:
+            - path: /etc/llama
+              readOnly: true

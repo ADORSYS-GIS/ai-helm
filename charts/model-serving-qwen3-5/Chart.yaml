@@ -1,0 +1,44 @@
+apiVersion: v2
+name: model-serving-qwen3-5
+description: |
+  Self-hosted Qwen3.5-4B (Q4_K_M GGUF) on the home GPU, served by llama.cpp
+  (llama-server) — NOT vLLM/huggingfaceserver. A single bjw-template StatefulSet
+  with ONE container: llama-server enforces the Bearer natively (--api-key-file),
+  so there is no Caddy auth-proxy sidecar. Weights are a single GGUF fed from a
+  pre-seeded RWX PVC (local mount, no per-start download).
+
+  Deployed by an ai-helm Application that targets the HOME cluster (where the GPU
+  lives), the single sanctioned exception to ADR-0017, and federated into the
+  Hetzner Envoy AI Gateway as an ordinary OpenAI backend (prefix /v1) via the
+  public FQDN (see charts/ai-models). The *why*: ADR-0022 (federation) + ADR-0028
+  (pricing) + ADR-0030 (one bjw StatefulSet) + ADR-0032 (llama.cpp engine). The
+  *how*: docs/models/qwen3.5-4b-q4.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+keywords:
+  - llm
+  - llama.cpp
+  - gguf
+  - qwen3.5
+  - inference
+  - gpu
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  # bjw-template (forked bjw-s app-template, ADR-0016) renders the WORKLOAD: a
+  # single StatefulSet with ONE container (llama-server). Values under the
+  # `modelServing:` key. Same hybrid pattern as charts/model-serving-qwen3-4b
+  # (own templates/ for the PVC + ExternalSecret CRDs bjw doesn't render).
+  - name: bjw-template
+    version: "4.6.2"
+    repository: "file://../bjw-template"
+    alias: modelServing
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
