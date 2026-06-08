@@ -12,7 +12,7 @@
 | **Chart** | `charts/model-serving-qwen3-5` |
 | **Gateway model-id** | `qwen3-5-4b-local` · backend `llama-local-01` (`prefix: /v1`) |
 | **Edge host** | `qwen3-5-4b--poc.ssegning.com` |
-| **Measured** | **~52 tok/s decode** single-stream · **~1.3k tok/s prefill** · **4 concurrent slots** · **64k context** (real 35k-token prompts served) — see §6 |
+| **Measured** | **~52 tok/s decode** single-stream · **~1.3k tok/s prefill** · **4 concurrent slots** · **128k context** (raised from 64k; real 35k-token prompts served) — see §6 |
 
 > **Why llama.cpp, not vLLM.** Qwen3.5's Gated-DeltaNet-MoE-VLM is new and vLLM's
 > support is turbulent (no text-only class, multimodal-class "not supported" reports,
@@ -28,7 +28,7 @@ See the [vLLM paper §1](./qwen3.5-4b.md#1-model-card-delta-vs-qwen3-4b) for the
 delta. The short version: [`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B)
 (Feb 2026, Apache-2.0) is a **Gated DeltaNet + sparse-MoE** hybrid, natively
 multimodal, 262k native context. **3-of-4 blocks are linear-attention** → KV barely
-grows → long context is cheap on the A2000 (we run **64k**; the model trains to 262k).
+grows → long context is cheap on the A2000 (we run **128k**; the model trains to 262k).
 We serve it **text-only** (no `--mmproj`).
 
 ## 2. Why Q4_K_M-class + llama.cpp
@@ -61,7 +61,7 @@ A copy of `charts/model-serving-qwen3-4b` with the model container redesigned fo
 - **Image** `ghcr.io/ggml-org/llama.cpp:server-cuda` (CUDA 12; **not** `server-cuda13`
   — [fails on some GPUs](https://github.com/ggml-org/llama.cpp/issues/22561)).
 - **Args:** `--model /models/Qwen3.5-4B-GGUF/model.gguf`, `--alias qwen3-5-4b`,
-  `--host 0.0.0.0 --port 8080`, `-ngl 99` (all layers on GPU), `--ctx-size 65536`,
+  `--host 0.0.0.0 --port 8080`, `-ngl 99` (all layers on GPU), `--ctx-size 131072` (128k),
   `--jinja` (tool calling via the chat template), `--api-key-file /etc/llama/api_key`
   (native Bearer auth), `--metrics`. `n_parallel` auto-resolves to **4** (`kv_unified`).
 - **Single container, no Caddy.** Service → model `:8080` directly. Probes `httpGet /health`
@@ -72,7 +72,7 @@ A copy of `charts/model-serving-qwen3-4b` with the model container redesigned fo
   RWX PVC, then symlinks the file → a stable `model.gguf` (decoupled from the exact filename).
 - **Gateway** (`charts/ai-models`): backend `llama-local-01` (`prefix: /v1`, host
   `qwen3-5-4b--poc.ssegning.com`, APIKey) + model `qwen3-5-4b-local` (`modelNameOverride:
-  qwen3-5-4b`, `contextLength: 65536`, text-only, `minBackends: 1`, ADR-0028 pricing).
+  qwen3-5-4b`, `contextLength: 131072`, text-only, `minBackends: 1`, ADR-0028 pricing).
 - **App** (`charts/apps`): `model-serving-qwen3-5` (`homeCluster: true`). The Qwen3-4B app +
   `qwen3-4b-local` model are `enabled: false` (kept for rollback).
 
@@ -107,26 +107,30 @@ Numbers observed directly from `llama-server` slot timings under real production
 | **Decode under load** | **~37 tok/s per slot** when ≥2 slots active | continuous batching shares the GPU — aggregate across slots is higher than single-stream |
 | **Prefill (prompt eval)** | **~1.3–1.4k tok/s** | sustained even on a **35,728-token prompt** (processed in ~22 s) |
 | **Concurrency** | **4 slots** (`n_parallel=4` auto, `kv_unified=true`) | up to 4 concurrent requests batched on one GPU |
-| **Context** | **65,536** per sequence | real 35k-token prompts served live — 4× the Qwen3-4B 16k wall |
+| **Context** | **131,072 (128k)** per sequence | raised from 64k 2026-06-08 (GDN KV is cheap); real 35k prompts served — **8× the Qwen3-4B 16k wall** |
 | **Prompt cache** | per-slot KV reuse (`context checkpoints`, ~50 MiB each) | idle-slot prompts saved/restored → multi-turn skips re-prefill |
-| **VRAM** | ~2.7 GB weights + unified KV on 12 GB | ~9 GB headroom for the 4-slot 64k KV |
+| **VRAM** | ~2.7 GB weights + unified KV on 12 GB | KV ~40–45 KB/token (only the 1-of-4 attn layers grow); ~5 GB at 128k → ~8.5 GB total, ~3 GB free |
 | **Quality** | UD-Q4_K_XL imatrix (~92–98 % of BF16) | — |
 
 **What the PoC comfortably handles:** up to **4 concurrent interactive-dev streams**
 (opencode / LibreChat — bursty, streaming, low duty cycle) at ~37–52 tok/s each, with
-**long context now in-tier** (up to 64k — the old "route big context to SaaS" caveat is
-largely lifted; 35k-token prompts prefill in ~22 s). **Still route to SaaS:** quality-critical
+**long context in-tier up to 128k** — the old "route big context to SaaS" caveat is largely
+lifted (35k-token prompts prefill in ~22 s). ⚠️ **Prefill latency is the practical ceiling,
+not VRAM:** at ~1.3k tok/s a full 128k prompt takes ~100 s to read, so very large prompts +
+long output approach the 600 s gateway timeout. **Still route to SaaS:** quality-critical
 work, high-QPS / batch fan-out (>4 concurrent saturates the single GPU → per-stream tok/s
-drops and the 5th request queues), and anything needing >64k context.
+drops and the 5th request queues), and anything needing >128k context.
 
-**vs Qwen3-4B (the prior vLLM build):** 4× the usable context (64k vs 16k), comparable
+**vs Qwen3-4B (the prior vLLM build):** **8× the usable context (128k vs 16k)**, comparable
 decode throughput (~52 vs ~30–50 tok/s), native 4-way batching, and a simpler stack (no
 LMCache, no Caddy). The capacity win is **context + concurrency**, not raw single-stream speed.
 
-**Headroom / next levers (none yet needed):** raise `--ctx-size` toward 128k (KV is cheap
-with GDN; VRAM allows); raise `--parallel` past 4 for more concurrency (trades per-slot ctx
-/ speed); a Prometheus benchmark via `--metrics` would turn these spot readings into tracked
-SLOs (the model-side analogue of the gateway's `plans/artillery/` load test).
+**Headroom / next levers:** 128k uses ~8.5 GB of 12 GB. To reach **256k (native)**, add
+`--cache-type-k q8_0 --cache-type-v q8_0` (KV-cache quant ~halves it; V-cache quant needs
+`--flash-attn`) — that buys the headroom F16 KV can't. Raise `--parallel` past 4 for more
+concurrency (trades per-slot ctx/speed under `kv_unified`). A Prometheus benchmark via
+`--metrics` would turn these spot readings into tracked SLOs (the model-side analogue of
+the gateway's `plans/artillery/` load test).
 
 ---
 

@@ -116,7 +116,10 @@ modelServing:
             - -ngl
             - "99"                           # offload all layers to the GPU
             - --ctx-size
-            - "65536"                        # GDN linear-attn KV → big ctx cheap; tune at the gate
+            - "131072"                       # 128k. GDN linear-attn → KV ~5GB at 128k; weights ~2.7GB →
+                                             # ~8.5GB of the 12GB A2000 (~3GB margin). kv_unified ⇒ the pool
+                                             # is shared across the 4 slots (raising ctx raises it ONCE, not
+                                             # per-slot). 256k(native) would need --cache-type-k/v q8_0 + --flash-attn.
             - --jinja                        # tool calling via the model chat template
             - --api-key-file
             - /etc/llama/api_key             # native Bearer auth (no Caddy)
