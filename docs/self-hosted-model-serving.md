@@ -221,3 +221,12 @@ Convert to the **orchestrator-plus-leaves** pattern (ADR-0012/0014 style): an
 ApplicationSet List generator with one `model-serving-<name>` leaf per model. Worth
 the indirection only once 3+ models share the lifecycle; until then, copy-the-chart
 is less machinery. When that day comes, write the ADR and update arc42 §5/§9.
+
+### 10. Choosing the *hardware* for the next model
+
+When the next model outgrows the home A2000, the platform comparison —
+**A2000 vs eBay 5×V100 vs Hetzner GEX44/GEX131** (deployability, concurrency,
+12/24/36-mo TCO, and the [ADR-0028](./adr/0028-owned-hardware-model-pricing.md)
+cost-recovery price of each) — is worked through in
+[`2026-06-08-gpu-platform-procurement-comparison.md`](./2026-06-08-gpu-platform-procurement-comparison.md).
+Short version: A2000 for ≤8B, GEX44 for managed 7–14B, GEX131 or a 5×V100 box for 70B.
