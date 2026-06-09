@@ -88,7 +88,7 @@ The umbrella needs **no ApplicationSet** — `applications.yaml` already passes 
 
 ## ai-helm ↔ ai-gitops separation (PLANNED, not realised)
 
-⚠️ The `ai-gitops` repo described below was the *intended* design but **was never created**. In reality this one repo holds both the chart logic AND (under `environments/`, ADR-0018) the per-env overrides; the root `ai-apps-v2` Application is applied manually. Treat the table as design intent, not current state.
+⚠️ The `ai-gitops` repo described below was the *intended* design but **was never created**. In reality this one repo holds both the chart logic AND (under `environments/`, ADR-0018) the per-env overrides; the root `ai-apps-v2` Application's `targetRevision` is pinned in **`home-os`** `charts/cd/values.yaml` (GitOps-managed by ArgoCD's `cd` app, not applied by hand). Treat the table as design intent, not current state.
 
 | | `ai-helm` (this repo) | `ai-gitops` (planned, absent) |
 |---|---|---|
@@ -99,9 +99,9 @@ The umbrella needs **no ApplicationSet** — `applications.yaml` already passes 
 
 ## `targetRevision`: TAG-BASED deploys, **never `main`**
 
-Deploys are pinned to an **immutable release tag** — currently **`release-2026.06.09`** (cut over from the branch `claude/magical-bohr-390242` on 2026-06-08). `main` is **never** a deploy target. Every self-referencing `targetRevision` pins the tag: `argocd.selfTargetRevision` + the per-app self-Source revisions in `charts/apps/values.yaml`, and the orchestrator children in `charts/ai-models/values.yaml`, `charts/librechart/values.yaml`, and `charts/observability/values.yaml`. The canonical note lives at `argocd.selfTargetRevision` in `charts/apps/values.yaml`. (`HEAD` revisions that point at *other* repos are unaffected.)
+Deploys are pinned to an **immutable release tag** — currently **`release-2026.06.09-v02`** (cut over from the branch `claude/magical-bohr-390242` on 2026-06-08). `main` is **never** a deploy target. Every self-referencing `targetRevision` pins the tag: `argocd.selfTargetRevision` + the per-app self-Source revisions in `charts/apps/values.yaml`, and the orchestrator children in `charts/ai-models/values.yaml`, `charts/librechart/values.yaml`, and `charts/observability/values.yaml`. The canonical note lives at `argocd.selfTargetRevision` in `charts/apps/values.yaml`. (`HEAD` revisions that point at *other* repos are unaffected.)
 
-**To ship a new release: run `tools/release.sh`** (full guide: `docs/releasing.md`). It does the order-sensitive bits — bumps every self-referencing `targetRevision` to the new `release-YYYY.MM.DD` **in one commit**, `helm template`-checks, **tags that commit** (so it's self-consistent — children resolve to a tag containing their own ref), pushes the **tag first**, then the branch + `main`. Always `tools/release.sh <tag> --dry-run` first. The **one manual step** it can't do: repoint the root `ai-apps-v2` Application — update your manually-applied `ai-apps-v2` manifest to `spec.source.targetRevision: <new tag>` and `kubectl apply` it on `admin@homeos` (a live `kubectl patch` alone reverts within minutes — that external manifest is the durable source of truth; `--repoint` does the live patch as a stop-gap). Rollback = repoint the root to any prior tag (immutable → exact prior state). Tags don't trigger CI.
+**To ship a new release: run `tools/release.sh`** (full guide: `docs/releasing.md`). It does the order-sensitive bits — bumps every self-referencing `targetRevision` to the new `release-YYYY.MM.DD` **in one commit**, `helm template`-checks, **tags that commit** (so it's self-consistent — children resolve to a tag containing their own ref), pushes the **tag first**, then the branch + `main`. Always `tools/release.sh <tag> --dry-run` first. The **one manual step** it can't do: repoint the root `ai-apps-v2` Application — bump its `targetRevision` to `<new tag>` in **`home-os`** `charts/cd/values.yaml` (the `ai-apps-v2` entry) and push home-os `main`; ArgoCD's `cd` app (selfHeal) reconciles it and the root rolls forward. ⚠️ Skip this and the root self-heals back to the OLD tag — an effective rollback. A live `kubectl patch` alone reverts within minutes because home-os `charts/cd` is the durable source; `--repoint` does that live patch as an immediate stop-gap. Rollback = bump the root back to any prior tag (immutable → exact prior state). Tags don't trigger CI.
 
 ## ArgoCD destinations: two-tier — control objects in-cluster, workloads home-remote (ADR-0017)
 
@@ -109,7 +109,7 @@ Deploys are pinned to an **immutable release tag** — currently **`release-2026
 
 - **Workloads → `home-remote`.** Driven by `argocd.destination` (`name` / `server` / `allowInCluster`) in `charts/{apps,ai-models,librechart}/values.yaml`. Never use ArgoCD's built-in in-cluster handle (`name: in-cluster` / `server: https://kubernetes.default.svc`) for a workload — even if it resolves to the same physical cluster, it's a different ArgoCD destination. The helper `<chart>.argocd.destinationClusterRef` (each chart's `templates/_helpers.tpl`) **hard-fails the render** if a workload destination resolves to the in-cluster handle unless `allowInCluster: true`.
 - **Control objects → local cluster / argocd.** In `charts/apps`, an app whose deployed content is itself a control object (an orchestrator emitting an ApplicationSet — `models`→`charts/ai-models`, `librechat`→`charts/librechart`) sets **`controlPlane: true`** on its entry. The template then targets `argocd.inClusterServer` (**`server: https://kubernetes.default.svc`** — the canonical local-cluster ref, used instead of the `name: in-cluster` handle which depends on that registration existing) / `argocd.controlPlaneNamespace` (`argocd`) and bypasses the guard. The orchestrators' ApplicationSet `template.spec.destination` (the **child** Applications) stays `home-remote`.
-- **The root `ai-apps-v2` Application** (applied manually on the ArgoCD cluster — there is no `ai-gitops`) deploys `charts/apps` and **must itself target in-cluster/argocd** so the generated Application CRs land where the controller watches.
+- **The root `ai-apps-v2` Application** (its `targetRevision` pinned in `home-os` `charts/cd/values.yaml` — there is no `ai-gitops`) deploys `charts/apps` and **must itself target in-cluster/argocd** so the generated Application CRs land where the controller watches.
 - **`homeCluster: true` — the ONE sanctioned ADR-0017 exception (ADR-0022).** A *workload* (not a control object) that must run on the cluster ArgoCD itself runs on — today only `model-serving-qwen3-4b` (the self-hosted GPU model: KServe/vLLM/LMCache needs the home GPU). It targets `argocd.inClusterServer` but keeps its own workload namespace (unlike `controlPlane`, which forces `argocd`), and the destination guard is called with `allowInCluster: true`. Don't add more `homeCluster` apps without an ADR — the default for every workload is still `home-remote`.
 
 Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone). The render-time guard is complemented out-of-band by the `ai` AppProject's `destinations:` allowlist. See ADR-0017.
@@ -187,7 +187,7 @@ prompted the removal; see `docs/2026-hetzner-cutover.md`.)
   - **External** — `api.ai.camer.digital` (public LB, ACME TLS): humans (opencode) + remote SAs. Full Keycloak JWT. Descriptors via CEL with defaults so `billing_plan`/`organization` claims are **optional** (`→ free` / `→ sub`).
   - **Internal** — `core-gateway-internal.envoy-gateway-system.svc.cluster.local` (ClusterIP only, `api-internal` listener, `self-signed-ca` TLS): in-cluster services. Accepts **EITHER** a k8s SA token (`kubernetesTokenReview`, one-time jobs) **OR** a static `apiKey` (labeled Secret `kuadrant.io/apikey-for=internal-gateway`, long-running services like LibreChat).
 - **Per-user attribution:** a long-running service (LibreChat) authenticates as itself but **forwards the end-user's Keycloak sub** (`X-LibreChat-User`); the internal AuthConfig's CEL prefers it → per-user `x-account-id`/budget. Trust = internal plane is first-party-only + Authorino overwrites the descriptors.
-- **Rate limiting** = per-model `BackendTrafficPolicy` (`charts/ai-model`) keyed on `x-account-id` (burst) + `x-org-id` (monthly µ$ budget) + `x-billing-plan` (tier: free/pro/service/internal). Tiers in `charts/ai-models/values.yaml` `rateLimitBudgeting.plans`. Static via Helm (the AIEG CRD), no dynamic OPA.
+- **Rate limiting** = per-model `BackendTrafficPolicy` (`charts/ai-model`) keyed on `x-account-id` (burst **and** monthly µ$ budget — both **per-person** since ADR-0035, which dropped the shared `x-org-id` budget bucket) + `x-billing-plan` (tier: free/pro/service/internal). Tiers in `charts/ai-models/values.yaml` `rateLimitBudgeting.plans` (free $50/mo, pro $200/mo). Static via Helm (the AIEG CRD), no dynamic OPA.
 
 ## Python tooling (`tools/dashboards/`)
 
@@ -277,3 +277,23 @@ pricing.
 - If you renamed/restructured charts, check `charts/apps/values.yaml` doesn't reference a deleted path.
 - `helm template <touched chart>` is the fastest pre-commit smoke test.
 - For PR work: tasks are tracked in the harness; mark them as you go.
+
+<!-- ai-governance:stanza -->
+## AI Governance
+
+<!-- BEGIN: AI Governance stanza (managed by ADORSYS-GIS/ai-governance) -->
+## AI Governance
+
+AI may accelerate the work, but humans own intent, verification, and consequences.
+AI output is not truth: review AI-generated code as untrusted, and never submit work you cannot explain.
+
+When opening issues or pull requests in this repo:
+
+- Use the provided **issue forms** (Epic, User Story, Dev Ticket) and the **pull request template** — do not open blank issues/PRs.
+- Fill in the **AI Usage Declaration** honestly (what AI was used for, what you verified).
+- Include a **source-of-truth link** (a URL or `#123` reference). No source of truth means the work is not ready.
+- Provide **verification evidence** (commands, logs, links, or checked verification boxes). No evidence means it is not done.
+
+Source of truth and full doctrine: https://adorsys-gis.github.io/ai-governance/
+This stanza is intentionally thin — read the site; do not duplicate the doctrine here.
+<!-- END: AI Governance stanza -->

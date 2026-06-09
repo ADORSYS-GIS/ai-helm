@@ -1,0 +1,21 @@
+# Internal-CA trust bundle for opencode-k8s-agent.
+#
+# The agent reaches the model gateway over the api-internal listener (ADR-0021),
+# whose TLS is signed by the cluster's INTERNAL CA ("Home SSegning Root CA", the
+# self-signed-ca ClusterIssuer). We issue a throwaway leaf from that SAME CA and
+# use only its `ca.crt` (= the Home Root CA), which the agent mounts and trusts
+# via NODE_EXTRA_CA_CERTS. Mirrors environments/<env>/deps/eg/certificate.yaml
+# (and LibreChat's internalCaTrust). The issuer is patched per env.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: opencode-k8s-internal-ca
+  namespace: monitoring
+spec:
+  secretName: opencode-k8s-internal-ca
+  commonName: opencode-k8s-internal-ca
+  dnsNames:
+    - opencode-k8s-internal-ca
+  issuerRef:
+    name: PLACEHOLDER_INTERNAL_CA # ← patched per env (internal-CA ClusterIssuer)
+    kind: ClusterIssuer

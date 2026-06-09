@@ -56,7 +56,7 @@ argocd:
   # this repo (this `selfTargetRevision`, the per-app self-Source revisions, and
   # the orchestrator children in charts/ai-models + charts/librechart +
   # charts/observability) pin an immutable release **tag**, currently
-  # `release-2026.06.09`. `main` is NEVER a deploy target. To ship a new release:
+  # `release-2026.06.09-v02`. `main` is NEVER a deploy target. To ship a new release:
   # cut a new `release-YYYY.MM.DD` tag from the desired commit, bump these
   # self-referencing `targetRevision`s to it (in the same commit the tag points
   # at, so the tag is self-consistent), then repoint the root `ai-apps-v2`
@@ -64,7 +64,7 @@ argocd:
   # OTHER repos are unaffected.) History: deploys previously ran from the branch
   # `claude/magical-bohr-390242`; cut over to tags 2026-06-08.
   selfRepoURL: https://github.com/ADORSYS-GIS/ai-helm
-  selfTargetRevision: release-2026.06.09
+  selfTargetRevision: release-2026.06.09-v02
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
     # `spec.destination.name`. This is the WORKLOAD destination.
@@ -104,7 +104,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/observability
       helm:
         releaseName: observability
@@ -113,25 +113,22 @@ applications:
       namespace: observability
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Notifications: Apprise API — multi-channel notification gateway
-  # Receives webhook calls from grafana-apprise-adapter and fans out to
-  # configured channels (Discord, Slack, email, etc.).
-  # Secrets required:
-  #   apprise-api-config (optional): pre-configured notification URLs
+  # Notifications: Apprise API — STATELESS notify gateway for opencode-k8s-agent.
+  # The agent (below) POSTs its report to this service's /notify with the channel
+  # URLs in the request body (APPRISE_URLS), so this needs NO stored channel
+  # config — hence no apprise-channels secret / persistence mount (that missing
+  # mount was why the old pod hung 0/1). ADR-0036: the Grafana apprise path
+  # (grafana-apprise-adapter + the external-alertmanager override) was removed —
+  # Grafana notifies natively now; this lean apprise-api stays ONLY for the agent.
   # Source: https://github.com/ADORSYS-GIS/opencode-k8s-agent
   # ─────────────────────────────────────────────────────────────────────────────
   - name: apprise-api
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    # Umbrella (ADR-0018): app-scoped dep — the `apprise-channels` ExternalSecret
-    # (notification-channel URLs) the Deployment mounts at /apprise-config.
-    # Folded in as a second (kustomize) source. Fill the ssegning-aws remoteRef.
-    depsOverlay: environments/prod/deps/apprise-api
     source:
       repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
-      # Pinned to a commit for a reproducible release (was HEAD). This is an
-      # EXTERNAL repo, so it doesn't ride the ai-helm release tag — bump this SHA
-      # deliberately when you want a newer opencode-k8s-agent (then re-release).
+      # EXTERNAL repo — doesn't ride the ai-helm release tag; bump the SHA
+      # deliberately (then re-release). Keep in sync with opencode-k8s-agent below.
       targetRevision: 5c8ca29c68922678a50b664074d2ecd0bafae7e4
       path: helm/apprise-api
       helm:
@@ -144,26 +141,12 @@ applications:
                 containers:
                   main:
                     env:
-                      APPRISE_STATEFUL_MODE: simple
-                      APPRISE_CONFIG_DIR: /apprise-config
-                    envFrom:
-                      - secretRef:
-                          name: apprise-api-config
-                          optional: true
+                      # Stateless: only the /notify endpoint (urls supplied per
+                      # request by the agent). No persistent stored configs.
+                      APPRISE_STATEFUL_MODE: disabled
                     resources:
                       requests: { cpu: 100m, memory: 128Mi }
                       limits:   { cpu: 500m, memory: 512Mi }
-            # Secret 'apprise-channels' must exist in the monitoring namespace.
-            # Each key becomes a file — key 'alerts.cfg' is read when
-            # POST /notify/alerts is called (one Apprise URL per line):
-            #   kubectl create secret generic apprise-channels -n monitoring \
-            #     --from-literal=alerts.cfg='discord://WEBHOOK_ID/WEBHOOK_TOKEN'
-            persistence:
-              config:
-                type: secret
-                name: apprise-channels
-                globalMounts:
-                  - path: /apprise-config
             service:
               main:
                 controller: main
@@ -181,25 +164,33 @@ applications:
         selfHeal: true
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # AI Monitoring: OpenCode K8s Agent — AI-powered cluster health monitor
-  # Runs as a CronJob (every 12h by default), uses OpenCode + Kubernetes MCP
-  # to investigate cluster state and send structured reports via Apprise.
-  # Secrets required:
-  #   opencode-k8s-agent-secrets:
-  #     OPENCODE_API_KEY:       <api-key-for-opencode-model-endpoint>
-  #     APPRISE_URLS:           <apprise-notification-url e.g. discord://...>
-  #     KEYCLOAK_CLIENT_SECRET: <keycloak-client-secret-for-opencode-k8s>
+  # AI Monitoring: OpenCode K8s Agent — AI-powered cluster health monitor.
+  # CronJob (every 12h): OpenCode + Kubernetes MCP investigate cluster state and
+  # POST a report to apprise-api's /notify (channel URLs from APPRISE_URLS).
+  #
+  # Auth to the model gateway = the INTERNAL plane via the CronJob's OWN projected
+  # k8s SA token (ADR-0037 / ADR-0021 one-time-job path) — NO Keycloak/OAuth2, NO
+  # apiKey secret. The token (audience core-gateway-internal) is TokenReview'd by
+  # the internal AuthConfig → "internal" tier. Mirrors LibreChat's transport
+  # (api-internal listener + internal-CA trust); differs only in the credential.
+  # The agent repo (PR: static bearer) reads OPENCODE_API_KEY as the Bearer; we
+  # inject the SA token into it via the container command below.
+  # Secret opencode-k8s-agent-secret (via ESO) now needs ONLY: APPRISE_URLS.
   # Source: https://github.com/ADORSYS-GIS/opencode-k8s-agent
   # ─────────────────────────────────────────────────────────────────────────────
   - name: opencode-k8s-agent
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Internal-CA trust bundle (ca.crt of self-signed-ca) → /etc/internal-ca for
+    # NODE_EXTRA_CA_CERTS, to verify the api-internal listener's TLS (ADR-0018).
+    depsOverlay: environments/prod/deps/opencode-k8s-agent
     source:
       repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
-      # Pinned to a commit for a reproducible release (was HEAD). This is an
-      # EXTERNAL repo, so it doesn't ride the ai-helm release tag — bump this SHA
-      # deliberately when you want a newer opencode-k8s-agent (then re-release).
-      targetRevision: 5c8ca29c68922678a50b664074d2ecd0bafae7e4
+      # Pinned to a commit for a reproducible release. EXTERNAL repo — doesn't ride
+      # the ai-helm release tag; bump deliberately (then re-release). This is the
+      # squash-merge of the static-bearer change (ADORSYS-GIS/opencode-k8s-agent#6)
+      # on the agent repo's main.
+      targetRevision: e6f7b500a700abf3d334ec0d92fe9faf68173b45
       path: helm/opencode-k8s-agent
       helm:
         releaseName: opencode-k8s-agent
@@ -216,24 +207,59 @@ applications:
                   activeDeadlineSeconds: 3600
                 containers:
                   main:
+                    # Inject the projected SA token (mounted at /var/run/secrets/
+                    # gateway-token by the gateway-token volume) as the model Bearer,
+                    # then hand off to the upstream entrypoint. run.sh envsubst's
+                    # ${OPENCODE_API_KEY} into opencode.json. No Keycloak, no apiKey
+                    # secret — the SA token IS the credential (ADR-0037).
+                    command:
+                      - /bin/bash
+                      - -c
+                      - 'export OPENCODE_API_KEY="$(cat /var/run/secrets/gateway-token/token)"; exec /bin/bash /config/run.sh'
                     env:
                       OPENCODE_MODEL: "minimax-m2p7"
-                      OPENCODE_BASE_URL: "https://api.ai.camer.digital/v1"
+                      # Internal plane (ADR-0021/0037): the api-internal listener via
+                      # the stable core-gateway-internal ClusterIP (HTTPS, internal CA).
+                      OPENCODE_BASE_URL: "https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1"
+                      # Trust the internal CA for that TLS; ca.crt mounted by the
+                      # internal-ca volume below.
+                      NODE_EXTRA_CA_CERTS: "/etc/internal-ca/ca.crt"
+                      # The agent POSTs its report to apprise-api's /notify with the
+                      # channel URLs (APPRISE_URLS) in the body — it has no built-in
+                      # notifier (apprise-api kept lean, ADR-0036).
                       APPRISE_API_URL: "http://apprise-api.monitoring.svc.cluster.local:8000"
-                      KEYCLOAK_URL: "https://auth.verif.fyi"
-                      KEYCLOAK_REALM: "camer-digital"
-                      KEYCLOAK_CLIENT_ID: "opencode-k8s"
-                    # Secret required (via ESO):
-                    #   opencode-k8s-agent-secrets:
-                    #     OPENCODE_API_KEY:       <api-key for model endpoint>
-                    #     APPRISE_URLS:           <apprise URL e.g. discord://...>
-                    #     KEYCLOAK_CLIENT_SECRET: <keycloak client secret>
+                    # Secret (via ESO) now needs ONLY: APPRISE_URLS (notification
+                    # channels). No OPENCODE_API_KEY / KEYCLOAK_* — auth is the SA token.
                     envFrom:
                       - secretRef:
                           name: opencode-k8s-agent-secret
                     resources:
                       requests: { cpu: 100m, memory: 256Mi }
                       limits:   { cpu: 1000m, memory: 1Gi }
+            persistence:
+              # Projected SA token for the internal gateway. The audience MUST match
+              # the internal AuthConfig's kubernetesTokenReview (core-gateway-internal).
+              # app-template type:custom → raw projected volumeSpec.
+              gateway-token:
+                type: custom
+                volumeSpec:
+                  projected:
+                    sources:
+                      - serviceAccountToken:
+                          audience: core-gateway-internal
+                          expirationSeconds: 3600
+                          path: token
+                globalMounts:
+                  - path: /var/run/secrets/gateway-token
+                    readOnly: true
+              # Internal-CA trust bundle (ca.crt only) from the deps-overlay
+              # Certificate (self-signed-ca). Mounted for NODE_EXTRA_CA_CERTS.
+              internal-ca:
+                type: secret
+                name: opencode-k8s-internal-ca
+                globalMounts:
+                  - path: /etc/internal-ca
+                    readOnly: true
     destination:
       namespace: monitoring
     syncPolicy:
@@ -502,7 +528,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/core-gateway
       helm:
         releaseName: core-gateway
@@ -548,7 +574,7 @@ applications:
     depsOverlay: environments/prod/deps/security-policies
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/kuadrant-policies
       helm:
         releaseName: security-policies
@@ -822,7 +848,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/lightbridge
       helm:
         releaseName: lightbridge
@@ -881,7 +907,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/librechart
       helm:
         releaseName: librechat
@@ -898,7 +924,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/mongodb-backup
       helm:
         releaseName: mongodb-backup
@@ -930,7 +956,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/ai-models
       helm:
         releaseName: models
@@ -955,7 +981,7 @@ applications:
     homeCluster: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/model-serving-qwen3-4b
       helm:
         releaseName: model-serving-qwen3-4b
@@ -989,7 +1015,7 @@ applications:
     homeCluster: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/model-serving-qwen3-5
       helm:
         releaseName: model-serving-qwen3-5
@@ -1017,7 +1043,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.09
+      targetRevision: release-2026.06.09-v02
       path: charts/mcps
       helm:
         releaseName: mcps

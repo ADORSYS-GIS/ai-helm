@@ -25,8 +25,8 @@
 #   --dry-run   show the diff that WOULD be made, then revert; no commit/tag/push.
 #   --yes       skip the interactive confirmation.
 #   --repoint   also patch the LIVE ai-apps-v2 Application to the new tag
-#               (best-effort; the maintainer-held external manifest is the real
-#               source of truth — update it too, see the printed reminder).
+#               (immediate stop-gap; home-os charts/cd/values.yaml is the durable
+#               source — bump it too, see the printed reminder).
 #   --no-push   commit + tag locally but do not push anything (inspect first).
 #
 # Safe to re-read: it refuses to run on a dirty tree, on an existing tag, or if
@@ -158,10 +158,10 @@ fi
 # ── 5. repoint the root app ───────────────────────────────────────────────────
 say "Tag $NEW is published. Final step — repoint the root Application:"
 cat <<EOF
-  (a) Update your manually-applied ${ROOT_APP} manifest (the durable source of
-      truth — a live patch alone reverts within minutes):
-          spec.source.targetRevision: ${NEW}
-      then:  kubectl --context ${ARGO_CTX} -n ${ARGO_NS} apply -f <your ${ROOT_APP}.yaml>
+  (a) Bump ${ROOT_APP} targetRevision in home-os charts/cd/values.yaml (the
+      durable source — a live patch alone reverts when ArgoCD's cd app re-syncs):
+          targetRevision: ${NEW}
+      then commit + push home-os main (ArgoCD's cd app rolls the root forward).
   (b) (optional, immediate) live patch + refresh:
          kubectl --context ${ARGO_CTX} -n ${ARGO_NS} patch application ${ROOT_APP} --type merge \\
            -p '{"spec":{"source":{"targetRevision":"${NEW}"}}}'
@@ -173,12 +173,12 @@ EOF
 
 if [ "$REPOINT" -eq 1 ]; then
   command -v kubectl >/dev/null || die "--repoint: kubectl not found"
-  say "--repoint: patching live ${ROOT_APP} → ${NEW} (remember to update the external manifest!)"
+  say "--repoint: patching live ${ROOT_APP} → ${NEW} (remember to bump home-os charts/cd too!)"
   kubectl --context "$ARGO_CTX" -n "$ARGO_NS" patch application "$ROOT_APP" --type merge \
     -p "{\"spec\":{\"source\":{\"targetRevision\":\"${NEW}\"}}}"
   kubectl --context "$ARGO_CTX" -n "$ARGO_NS" annotate application "$ROOT_APP" \
     argocd.argoproj.io/refresh=hard --overwrite >/dev/null
-  warn "live patch applied — it WILL revert unless you also update the external ${ROOT_APP} manifest (step ⓐ)."
+  warn "live patch applied — it WILL revert unless you also bump ${ROOT_APP} in home-os charts/cd (step ⓐ)."
 fi
 
 say "Done: $NEW"
