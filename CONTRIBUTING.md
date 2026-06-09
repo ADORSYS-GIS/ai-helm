@@ -218,7 +218,7 @@ output is reproducible and cannot be confabulated. Keep AI review as a non-requi
 **Every AI-review finding is a claim, not a verdict.** Before acting on one that asserts a specific
 value or behavior, verify it against the actual cited lines. AI reviewers pattern-match known bug
 *shapes* and will confidently assert details about code they did not actually read — especially code
-in another repository (e.g. a reusable workflow referenced by SHA). The doctrine applies to the
+in another repository (e.g., a reusable workflow referenced by SHA). The doctrine applies to the
 reviewer too: **AI output is not truth.**
 
 ### When a finding is a false positive, close the loop — don't just ignore it
@@ -227,7 +227,7 @@ reviewer too: **AI output is not truth.**
 2. **React 👎** on the finding.
 3. **Resolve the conversation.**
 
-This three-step loop is not busywork; each step does something silent-ignoring does not:
+This three-step loop is not busywork; each step does something that silently ignoring does not:
 
 - **👎 is the only lever that reduces recurrence.** It is the reviewer's feedback channel. Without it,
   the same confabulation fires again every time its trigger reappears — a single false "empty marker"
