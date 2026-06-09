@@ -7,7 +7,8 @@ bucket is exhausted):
   1. burst requests/min — keyed on x-account-id (per user / SA), cost = 1/request.
   2. burst tokens/min   — keyed on x-account-id, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
-  3. monthly budget     — keyed on x-org-id (per org), micro-USD, cost = the
+  3. monthly budget     — keyed on x-account-id (per person, ADR-0035 — NOT a
+                          shared x-org-id bucket), micro-USD, cost = the
                           cost_<model> response metadata (the pricing CEL, which
                           already yields micro-USD). Emitted ONLY for plans that
                           carry a budget → service/internal stay uncapped.
@@ -33,23 +34,22 @@ spec:
       kind: HTTPRoute
       name: {{ $modelName }}
   {{- /*
-  Per-model upstream timeout (optional). A route-scoped BackendTrafficPolicy
-  REPLACES the gateway-wide one for its route (Envoy Gateway = closest-wins, no
-  merge), so without this a model route falls back to Envoy's DEFAULT ~15s route
-  timeout → a slow/cold backend returns 504 "upstream request timeout". Set
-  `timeout.requestTimeout` high enough to ride a cold start + a long generation
-  (e.g. the self-hosted model scaling from zero). Unset ⇒ Envoy default.
+  Per-model upstream timeout. A route-scoped BackendTrafficPolicy REPLACES the
+  gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so
+  without this a model route falls back to Envoy's DEFAULT ~15s route timeout →
+  a slow/cold backend returns 504 "upstream request timeout". We therefore ALWAYS
+  emit requestTimeout, defaulting to 600s (ADR-0034) so cloud models get a real
+  budget too — not just the self-hosted ones that set it explicitly. Override per
+  model via .Values.timeout.requestTimeout (e.g. shorter for rerankers/embeddings,
+  longer to ride a cold start). connectionIdleTimeout is opt-in.
   */ -}}
-  {{- with .Values.timeout }}
+  {{- $t := .Values.timeout | default dict }}
   timeout:
     http:
-      {{- with .requestTimeout }}
-      requestTimeout: {{ . | quote }}
-      {{- end }}
-      {{- with .connectionIdleTimeout }}
+      requestTimeout: {{ $t.requestTimeout | default "600s" | quote }}
+      {{- with $t.connectionIdleTimeout }}
       connectionIdleTimeout: {{ . | quote }}
       {{- end }}
-  {{- end }}
   rateLimit:
     type: Global
     global:
@@ -101,13 +101,13 @@ spec:
                 namespace: io.envoy.ai_gateway
                 key: llm_total_token
         {{- end }}
-        {{- /* ── 3. monthly budget (per-org, micro-USD) — skipped ⇒ uncapped ── */}}
+        {{- /* ── 3. monthly budget (per-person, micro-USD) — skipped ⇒ uncapped ── */}}
         {{- $budgetUsd := or (index $overrides $planName) $planCfg.monthlyBudgetUsd }}
         {{- with $budgetUsd }}
         {{- $limit := mulf . 1000000 | int64 }}
         - clientSelectors:
             - headers:
-                - name: x-org-id
+                - name: x-account-id
                   type: Distinct
                 - name: x-billing-plan
                   type: Exact

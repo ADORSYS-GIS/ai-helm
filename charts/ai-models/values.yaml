@@ -20,7 +20,7 @@ argocd:
   # Deploys are tag-based: pinned to the immutable release tag below (main is
   # never a deploy target). See the canonical note in charts/apps/values.yaml.
   repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.09
+  targetRevision: release-2026.06.09-v02
   destination:
     # The home-remote cluster every child Application targets. This repo's
     # invariant (ADR-0017) is that workloads NEVER deploy to the cluster
@@ -56,7 +56,10 @@ argocd:
 rateLimitBudgeting:
   plans:
     free:
-      monthlyBudgetUsd: 30
+      # Per-person monthly budget (ADR-0035: keyed on x-account-id, NOT a shared
+      # x-org-id bucket — colleagues no longer contend for one pool). Raised
+      # 30 → 50 to relax the free tier.
+      monthlyBudgetUsd: 50
       burst:
         requestsPerMin: 200
         tokensPerMin: 200000

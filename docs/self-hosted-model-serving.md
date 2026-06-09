@@ -221,3 +221,16 @@ Convert to the **orchestrator-plus-leaves** pattern (ADR-0012/0014 style): an
 ApplicationSet List generator with one `model-serving-<name>` leaf per model. Worth
 the indirection only once 3+ models share the lifecycle; until then, copy-the-chart
 is less machinery. When that day comes, write the ADR and update arc42 §5/§9.
+
+### 10. Choosing the *hardware* for the next model
+
+When the next model outgrows the home A2000, the platform comparison —
+**A2000 vs eBay 5×V100 vs Hetzner GEX44/GEX131** (deployability, concurrency,
+12/24/36-mo TCO, and the [ADR-0028](./adr/0028-owned-hardware-model-pricing.md)
+cost-recovery price of each) — is worked through in
+[`2026-06-08-gpu-platform-procurement-comparison.md`](./2026-06-08-gpu-platform-procurement-comparison.md).
+Short version: A2000 for the live small tier; the **already-owned Cameroon 2×4070
+(~€0.16/kWh) for ≤30B — including the 30B-A3B coding MoEs (GLM-4.7-Flash) that GEX44
+can't hold** — try it *before* renting/buying; GEX44 only for managed multimodal
+small models; GEX131 or the Cameroon 5×V100 box for dense-70B / 122B-MoE. ⚠️ Owned
+boxes: count **maintenance/ops** (the comparison's §6.5) — it flips the 70B verdict.

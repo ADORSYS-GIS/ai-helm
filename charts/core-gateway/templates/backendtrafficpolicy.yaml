@@ -33,15 +33,25 @@ spec:
     - type: {{ . }}
     {{- end }}
   {{- end }}
+  {{- with $btp.requestTimeout }}
+  # Whole-request ceiling for routes governed by THIS gateway-wide policy
+  # (non-model routes — model routes carry their own per-model BTP that replaces
+  # this one). ADR-0034.
+  timeout:
+    http:
+      requestTimeout: {{ . | quote }}
+  {{- end }}
   connection:
     bufferLimit: {{ $btp.bufferLimit | default "100Mi" | quote }}
   retry:
-    numRetries: 1
+    numRetries: {{ (default dict $btp.retry).numRetries | default 1 }}
     perRetry:
       backOff:
         baseInterval: 100ms
         maxInterval: 10s
-      timeout: 30s
+      # 300s default (ADR-0034): a single try must outlast a long generation —
+      # the hardcoded 30s cut them. Configurable via retry.perRetryTimeout.
+      timeout: {{ (default dict $btp.retry).perRetryTimeout | default "300s" }}
     retryOn:
       httpStatusCodes:
         - 500
