@@ -208,3 +208,33 @@ This repository follows the [ADORSYS-GIS AI Governance](https://adorsys-gis.gith
 - **Principle** — AI may accelerate the work, but it must not launder ignorance into polished artifacts; humans own intent, verification, and consequences.
 
 See the [AI working agreement](https://adorsys-gis.github.io/ai-governance/12-ai-working-agreement) and the [doctrine](https://adorsys-gis.github.io/ai-governance/13-doctrine).
+
+## Working with AI code review
+
+Automated AI reviewers (Codex, Copilot, and the like) are **advisory — never a merge gate.** Only
+**deterministic** checks (the governance CI check, linting, tests) may block a merge, because their
+output is reproducible and cannot be confabulated. Keep AI review as a non-required status check.
+
+**Every AI-review finding is a claim, not a verdict.** Before acting on one that asserts a specific
+value or behavior, verify it against the actual cited lines. AI reviewers pattern-match known bug
+*shapes* and will confidently assert details about code they did not actually read — especially code
+in another repository (e.g. a reusable workflow referenced by SHA). The doctrine applies to the
+reviewer too: **AI output is not truth.**
+
+### When a finding is a false positive, close the loop — don't just ignore it
+
+1. **Reply with the evidence** — the exact lines or command output that disprove it.
+2. **React 👎** on the finding.
+3. **Resolve the conversation.**
+
+This three-step loop is not busywork; each step does something silent-ignoring does not:
+
+- **👎 is the only lever that reduces recurrence.** It is the reviewer's feedback channel. Without it,
+  the same confabulation fires again every time its trigger reappears — a single false "empty marker"
+  finding recurred *three times* across PRs precisely because it was refuted in prose but never
+  down-voted.
+- **Resolving preserves signal-to-noise.** Real findings get buried under known-false ones if threads
+  stay open; resolution stops both humans and the bot from re-litigating settled points.
+- **The evidence reply is an audit trail.** The next person — or AI — who hits the same flag finds the
+  refutation in-thread and does not have to re-verify from scratch. Silently ignoring a false positive
+  looks unaddressed, erodes trust in the review, and teaches the bot nothing.
