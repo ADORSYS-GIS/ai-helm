@@ -164,25 +164,33 @@ applications:
         selfHeal: true
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # AI Monitoring: OpenCode K8s Agent — AI-powered cluster health monitor
-  # Runs as a CronJob (every 12h by default), uses OpenCode + Kubernetes MCP
-  # to investigate cluster state and send structured reports via Apprise.
-  # Secrets required:
-  #   opencode-k8s-agent-secrets:
-  #     OPENCODE_API_KEY:       <api-key-for-opencode-model-endpoint>
-  #     APPRISE_URLS:           <apprise-notification-url e.g. discord://...>
-  #     KEYCLOAK_CLIENT_SECRET: <keycloak-client-secret-for-opencode-k8s>
+  # AI Monitoring: OpenCode K8s Agent — AI-powered cluster health monitor.
+  # CronJob (every 12h): OpenCode + Kubernetes MCP investigate cluster state and
+  # POST a report to apprise-api's /notify (channel URLs from APPRISE_URLS).
+  #
+  # Auth to the model gateway = the INTERNAL plane via the CronJob's OWN projected
+  # k8s SA token (ADR-0037 / ADR-0021 one-time-job path) — NO Keycloak/OAuth2, NO
+  # apiKey secret. The token (audience core-gateway-internal) is TokenReview'd by
+  # the internal AuthConfig → "internal" tier. Mirrors LibreChat's transport
+  # (api-internal listener + internal-CA trust); differs only in the credential.
+  # The agent repo (PR: static bearer) reads OPENCODE_API_KEY as the Bearer; we
+  # inject the SA token into it via the container command below.
+  # Secret opencode-k8s-agent-secret (via ESO) now needs ONLY: APPRISE_URLS.
   # Source: https://github.com/ADORSYS-GIS/opencode-k8s-agent
   # ─────────────────────────────────────────────────────────────────────────────
   - name: opencode-k8s-agent
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Internal-CA trust bundle (ca.crt of self-signed-ca) → /etc/internal-ca for
+    # NODE_EXTRA_CA_CERTS, to verify the api-internal listener's TLS (ADR-0018).
+    depsOverlay: environments/prod/deps/opencode-k8s-agent
     source:
       repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
-      # Pinned to a commit for a reproducible release (was HEAD). This is an
-      # EXTERNAL repo, so it doesn't ride the ai-helm release tag — bump this SHA
-      # deliberately when you want a newer opencode-k8s-agent (then re-release).
-      targetRevision: 5c8ca29c68922678a50b664074d2ecd0bafae7e4
+      # Pinned to a commit for a reproducible release. EXTERNAL repo — doesn't ride
+      # the ai-helm release tag; bump deliberately (then re-release). This SHA is
+      # the static-bearer PR head (ADORSYS-GIS/opencode-k8s-agent#6); RE-PIN to the
+      # merge commit once it merges (a squash-merge orphans this SHA).
+      targetRevision: 7f4f108f7978635c1734d7e362fbf3fe97257292
       path: helm/opencode-k8s-agent
       helm:
         releaseName: opencode-k8s-agent
@@ -199,28 +207,59 @@ applications:
                   activeDeadlineSeconds: 3600
                 containers:
                   main:
+                    # Inject the projected SA token (mounted at /var/run/secrets/
+                    # gateway-token by the gateway-token volume) as the model Bearer,
+                    # then hand off to the upstream entrypoint. run.sh envsubst's
+                    # ${OPENCODE_API_KEY} into opencode.json. No Keycloak, no apiKey
+                    # secret — the SA token IS the credential (ADR-0037).
+                    command:
+                      - /bin/bash
+                      - -c
+                      - 'export OPENCODE_API_KEY="$(cat /var/run/secrets/gateway-token/token)"; exec /bin/bash /config/run.sh'
                     env:
                       OPENCODE_MODEL: "minimax-m2p7"
-                      OPENCODE_BASE_URL: "https://api.ai.camer.digital/v1"
+                      # Internal plane (ADR-0021/0037): the api-internal listener via
+                      # the stable core-gateway-internal ClusterIP (HTTPS, internal CA).
+                      OPENCODE_BASE_URL: "https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1"
+                      # Trust the internal CA for that TLS; ca.crt mounted by the
+                      # internal-ca volume below.
+                      NODE_EXTRA_CA_CERTS: "/etc/internal-ca/ca.crt"
                       # The agent POSTs its report to apprise-api's /notify with the
-                      # channel URLs (APPRISE_URLS, from opencode-k8s-agent-secret)
-                      # in the body — it has no built-in notifier, so this service
-                      # is required (kept lean per ADR-0036).
+                      # channel URLs (APPRISE_URLS) in the body — it has no built-in
+                      # notifier (apprise-api kept lean, ADR-0036).
                       APPRISE_API_URL: "http://apprise-api.monitoring.svc.cluster.local:8000"
-                      KEYCLOAK_URL: "https://auth.verif.fyi"
-                      KEYCLOAK_REALM: "camer-digital"
-                      KEYCLOAK_CLIENT_ID: "opencode-k8s"
-                    # Secret required (via ESO):
-                    #   opencode-k8s-agent-secrets:
-                    #     OPENCODE_API_KEY:       <api-key for model endpoint>
-                    #     APPRISE_URLS:           <apprise URL e.g. discord://...>
-                    #     KEYCLOAK_CLIENT_SECRET: <keycloak client secret>
+                    # Secret (via ESO) now needs ONLY: APPRISE_URLS (notification
+                    # channels). No OPENCODE_API_KEY / KEYCLOAK_* — auth is the SA token.
                     envFrom:
                       - secretRef:
                           name: opencode-k8s-agent-secret
                     resources:
                       requests: { cpu: 100m, memory: 256Mi }
                       limits:   { cpu: 1000m, memory: 1Gi }
+            persistence:
+              # Projected SA token for the internal gateway. The audience MUST match
+              # the internal AuthConfig's kubernetesTokenReview (core-gateway-internal).
+              # app-template type:custom → raw projected volumeSpec.
+              gateway-token:
+                type: custom
+                volumeSpec:
+                  projected:
+                    sources:
+                      - serviceAccountToken:
+                          audience: core-gateway-internal
+                          expirationSeconds: 3600
+                          path: token
+                globalMounts:
+                  - path: /var/run/secrets/gateway-token
+                    readOnly: true
+              # Internal-CA trust bundle (ca.crt only) from the deps-overlay
+              # Certificate (self-signed-ca). Mounted for NODE_EXTRA_CA_CERTS.
+              internal-ca:
+                type: secret
+                name: opencode-k8s-internal-ca
+                globalMounts:
+                  - path: /etc/internal-ca
+                    readOnly: true
     destination:
       namespace: monitoring
     syncPolicy:
