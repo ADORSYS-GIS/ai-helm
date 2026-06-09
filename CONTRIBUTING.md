@@ -198,3 +198,13 @@ undocumented decision a year later.
 Be kind, be precise, assume good faith. Disagreements about
 architecture are healthy — write an ADR with the alternatives and let
 the discussion happen on a PR.
+
+## AI Governance
+
+This repository follows the [ADORSYS-GIS AI Governance](https://adorsys-gis.github.io/ai-governance/) practices.
+
+- **Issues** — use the structured forms (Epic / User Story / Development Ticket) under *New issue*. Each requires a source-of-truth link, verification evidence, and an accountable owner.
+- **Pull requests** — fill the **AI Usage Declaration**, link a source of truth, and provide verification evidence. The `AI Governance` CI check enforces these on every PR.
+- **Principle** — AI may accelerate the work, but it must not launder ignorance into polished artifacts; humans own intent, verification, and consequences.
+
+See the [AI working agreement](https://adorsys-gis.github.io/ai-governance/12-ai-working-agreement) and the [doctrine](https://adorsys-gis.github.io/ai-governance/13-doctrine).
