@@ -59,6 +59,12 @@ spec:
             - type: Exact
               name: x-ai-eg-model
               value: {{ $modelName }}
+      {{- with .Values.timeout }}
+      timeouts:
+        {{- with .requestTimeout }}
+        request: {{ . | quote }}
+        {{- end }}
+      {{- end }}
       modelsOwnedBy: GIS AI Models
       backendRefs:
         {{- range $bKey, $bVal := $activeBackends }}
