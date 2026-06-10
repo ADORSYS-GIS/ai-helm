@@ -281,8 +281,6 @@ pricing.
 - For PR work: tasks are tracked in the harness; mark them as you go.
 
 <!-- ai-governance:stanza -->
-## AI Governance
-
 <!-- BEGIN: AI Governance stanza (managed by ADORSYS-GIS/ai-governance) -->
 ## AI Governance
 
