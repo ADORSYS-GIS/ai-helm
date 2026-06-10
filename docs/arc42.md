@@ -346,6 +346,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **LibreChat per-user gateway attribution impossible** | Coarse billing for chat users | By design (ADR-0021); handled inside LibreChat |
 | **Mimir 6.0 deferred (breaking)** | Pinned on 5.x | Currency audit tracks it |
 | **Mimir ring wedges if memberlist blocked at startup** | Distributor sees 0 ingesters (`InstancesCount <= 0`) → metrics silently dropped | **Guarded:** durable `allow-same-namespace` (observability-secrets child, wave -3) lands before stores + Mimir `memberlist.rejoin_interval: 1m` self-heals the residual ordering race (audit 2026-06-07) |
+| **External hosted MCPs fail in the AIEG mcpproxy** | context7/firecrawl `SSE 400`, refero 0 tools — through the gateway, while self-hosted brave/terraform work; the upstreams + creds + our config are all verified fine | **Partial:** upgraded AIEG v0.6.0→v0.7.0 (`release-2026.06.10-v01`) as the latest baseline, but v0.7's mcpproxy stateless-GET-405 path is unchanged → may not fully fix. Re-test post-merge; file upstream if it persists. Full diagnosis + repro: [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](2026-06-10-mcp-external-server-proxy-debug.md) |
 
 ---
 

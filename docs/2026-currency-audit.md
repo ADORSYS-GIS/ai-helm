@@ -34,7 +34,7 @@ months behind, and a few are on tracks that have moved or are being phased out.
 | prometheus-node-exporter | 4.39.0 | **4.55.0** | 16 minors | Bump |
 | prometheus-operator-crds | 28.0.1 | 29.0.0 | 1 major | Bump; verify CRD compat |
 | envoy-gateway (eg) | v1.7.0 | **v1.8.0** (2026-05-13) | 1 minor | Bump |
-| envoy-ai-gateway (aieg + aieg-crd) | v0.5.0 | **v0.6.0** (2026-05-05) — *first production-ready API surface, CRDs promoted to `v1beta1`* | 1 minor, big | **Bump now**; required to use `v1beta1` CRDs; v1.0 GA targeted June 2026 |
+| envoy-ai-gateway (aieg + aieg-crd) | ~~v0.6.0~~ → **v0.7.0** (2026-06-06) | **v0.7.0** — *on v0.7.0 since `release-2026.06.10-v01`* | current | **Done.** Bumped v0.6.0→v0.7.0 chasing the external-MCP mcpproxy bug ([2026-06-10 debug doc](2026-06-10-mcp-external-server-proxy-debug.md)). EG floor still v1.7.0+ (run v1.8.0 ✓); v1alpha1 still served; `MCPRoute.securityPolicy.oauth` unchanged; only breaking change (AIGatewayRoute 128→15 rule cap) is N/A (1 rule/route) |
 | authorino-operator | 0.23.1 | 0.24.0 (2025-04-01) | 1 minor | Bump |
 | ~~cnpg (cloudnative-pg)~~ | ~~0.27.1~~ | ~~0.28.2~~ | — | **Superseded:** CNPG operator installed externally; removed from this repo. |
 | ~~plugin-barman-cloud~~ | ~~0.5.0~~ | ~~0.6.0~~ | — | **Superseded:** Barman Cloud plugin installed externally; removed from this repo. |
@@ -53,7 +53,7 @@ months behind, and a few are on tracks that have moved or are being phased out.
 | `operator.authorino.kuadrant.io` (Authorino CR) | v1beta1 | v1beta1 | None | Keep |
 | `gateway.networking.k8s.io` (Gateway/HTTPRoute/…) | v1 | v1 GA — latest v1.5.1 (2025-03-14) | None | Keep; consider v1.5's ListenerSet / CORS |
 | `gateway.envoyproxy.io` | v1alpha1 | v1alpha1 still ships in EG 1.8 | Acceptable | Track promotion |
-| **`aigateway.envoyproxy.io`** | v1alpha1 | **v1beta1 preferred since v0.6.0** (2026-05-05); v1alpha1 is legacy | 1 version | **Migrate manifests to v1beta1** when bumping the chart (`charts/core-gateway/templates/gateway-config.yaml` etc.) |
+| **`aigateway.envoyproxy.io`** | v1alpha1 | **v1beta1 preferred** (storage since v0.6.0); v1alpha1 still **served** through v0.7.0 via the conversion webhook | 1 version | Optional: migrate manifests to v1beta1 (`charts/core-gateway/templates/gateway-config.yaml`, `charts/mcp`, …). Not urgent — v1alpha1 keeps working on v0.7.0 (verified: storage=v1beta1, none removed) |
 | `opentelemetry.io` (OpenTelemetryCollector) | v1beta1 | v1beta1 current; no v1 GA yet | None | Keep |
 | `cert-manager.io` | v1 | v1 (cert-manager 1.20.2) | None | Keep |
 | `monitoring.coreos.com` (PodMonitor/ServiceMonitor) | v1 | v1 | None | Keep |

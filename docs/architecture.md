@@ -177,6 +177,12 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
 > the path-appended PRM alias + the 401 `resource_metadata` challenge), and
 > `claimToHeaders` re-stamps the ADR-0011 `x-oidc-*` set. Rate-limit
 > descriptors are NOT stamped on `/mcp/*` (no MCP rate limiting today).
+>
+> ⚠️ **Self-hosted MCPs (brave, terraform) work; the external hosted ones
+> (context7, firecrawl, refero) currently fail in the AIEG mcpproxy runtime**
+> (gateway→upstream hop, not our config or the OAuth edge). Upgraded AIEG
+> v0.6.0→v0.7.0 as the baseline fix; may not fully resolve. Diagnosis + repro:
+> [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](2026-06-10-mcp-external-server-proxy-debug.md).
 
 **Three identity surfaces** to know:
 - **Human users via LibreChat browser** — Keycloak code+PKCE, returns
