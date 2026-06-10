@@ -321,13 +321,17 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: oci://docker.io/envoyproxy/ai-gateway-crds-helm
-      # v0.6.0 — keep in lockstep with ai-gateway-helm below. v0.6 requires
-      # Envoy Gateway v1.7.x+ (we run v1.8.0 ✓). Our CRs are v1alpha1 and keep
-      # working via the conversion webhook (v0.6 serves v1beta1). The v0.6
-      # breaking changes don't affect us: we don't use AIGatewayRoute.filterConfig
-      # (we use GatewayConfig + the gateway-config annotation), and we already
-      # use AIServiceBackend `prefix` (not version-as-prefix).
-      targetRevision: v0.6.0
+      # v0.7.0 — keep in lockstep with ai-gateway-helm below. Floor is still
+      # Envoy Gateway v1.7.0+ (we run v1.8.0 ✓; no upper bound). v1alpha1 is
+      # still served (storage stays v1beta1) so our v1alpha1 CRs keep working
+      # via the conversion webhook. v0.7 audit (vs v0.6): MCPRoute CRD incl.
+      # securityPolicy.oauth is byte-for-byte unchanged (ADR-0038 safe); the
+      # ONE breaking change — AIGatewayRoute.spec.rules cap 128→15 — doesn't
+      # touch us (every model route has 1 rule). Bumped v0.6.0→v0.7.0 chasing
+      # the MCP-proxy bug with external hosted MCPs (context7/firecrawl/refero);
+      # v0.7 adds the spaceless-SSE decode fix (#2155) + tools/list authz
+      # filtering (#2106).
+      targetRevision: v0.7.0
       path: .
       helm:
         releaseName: aieg-crd
@@ -476,9 +480,13 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: oci://docker.io/envoyproxy/ai-gateway-helm
-      # v0.6.0 — keep in lockstep with ai-gateway-crds-helm above (see its note
-      # for the v0.6 compatibility/breaking-change audit). Requires EG v1.7.x+.
-      targetRevision: v0.6.0
+      # v0.7.0 — keep in lockstep with ai-gateway-crds-helm above (see its note
+      # for the v0.7 compatibility/breaking-change audit). Floor EG v1.7.0+
+      # (we run v1.8.0 ✓). Controller values below are unchanged across v0.6→v0.7
+      # (verified: maxRecvMsgSize, mutatingWebhook.certManager, extProc.logLevel
+      # all still valid). NB v0.7 tools/list now hides tools the caller can't
+      # invoke (authz filtering) — expected, not a regression.
+      targetRevision: v0.7.0
       path: .
       helm:
         releaseName: aieg
