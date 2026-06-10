@@ -4,6 +4,13 @@
 **Date:** 2026-06-10
 **Deciders:** @stephane-segning
 
+> **Update (2026-06-11):** the body below says context7 "is self-hosted instead."
+> That self-host was **not** done — context7 was instead **dropped from the MCP
+> set** (`release-2026.06.10-v03`). Self-hosting needs a custom-built image (no
+> usable published context7 HTTP image) + Upstash Redis (v3 HTTP session store),
+> both against repo constraints. The EnvoyPatchPolicy decision (for the RSA-cert
+> externals firecrawl/refero) is unchanged.
+
 ## Context
 
 After [ADR-0038](0038-mcp-oauth-protected-resource-metadata.md) made the MCPs

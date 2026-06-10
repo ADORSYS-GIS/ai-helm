@@ -38,8 +38,11 @@ self-hosted (tracked separately). Point-in-time change-log; durable contracts in
 > **BoringSSL rejects at the handshake** (`BAD_ECC_CERT`; `connection_error` with
 > `fail_verify=0`), SNI or not — the exact reason AIEG disabled context7 in their
 > own CI ([#1880](https://github.com/envoyproxy/ai-gateway/pull/1880)). firecrawl
-> + refero serve RSA certs → they work. context7 is therefore **self-hosted**
-> in-cluster (plain HTTP, no Envoy→external-TLS hop) instead.
+> + refero serve RSA certs → they work.
+> **context7 was DROPPED** (`release-2026.06.10-v03`, 2026-06-11): self-hosting it
+> would need a custom-built image (no usable published context7 HTTP image) +
+> Upstash Redis (its v3 HTTP session store) — both against repo constraints.
+> Revisit via a published HTTP image or a stdio+supergateway bridge.
 >
 > Diagnostic recipe: `/config_dump` → the `ai-eg-mcp-br-<name>-<name>/rule/0`
 > cluster's `transport_socket` (`dummy.transport_socket` = broken; `sni:""`);
