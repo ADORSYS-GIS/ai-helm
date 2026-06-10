@@ -169,6 +169,15 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
   Envoy access log (JSON) → Alloy → Loki labels {user_id, azp}
 ```
 
+> **Exception — `/mcp/*` (ADR-0038):** the five MCPRoutes carry their own
+> `securityPolicy.oauth` (MCP-spec OAuth), which displaces Authorino on those
+> routes: Envoy's native JWT filter verifies the same Keycloak issuer, the
+> gateway itself serves the RFC 9728 discovery surface unauthenticated
+> (`/.well-known/oauth-protected-resource/mcp/<name>` + AS-metadata aliases +
+> the path-appended PRM alias + the 401 `resource_metadata` challenge), and
+> `claimToHeaders` re-stamps the ADR-0011 `x-oidc-*` set. Rate-limit
+> descriptors are NOT stamped on `/mcp/*` (no MCP rate limiting today).
+
 **Three identity surfaces** to know:
 - **Human users via LibreChat browser** — Keycloak code+PKCE, returns
   a JWT; LibreChat's session represents it; calls to backends carry

@@ -309,6 +309,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0030 | Model + Caddy auth-proxy co-located in ONE StatefulSet (proxy → model over localhost), via bjw-template (refines 0029) |
 | 0031 | Tag-based deploys (`release-YYYY.MM.DD`), never `main` — immutable/reproducible/rollback-able; self-ref `targetRevision`s + root pin the tag; external sources pinned to SHAs; `tools/release.sh` |
 | 0032 | llama.cpp (`llama-server`) as a 2nd self-hosted engine alongside vLLM — GGUF/Q4_K_M, native `--api-key` (no Caddy), `/v1`, `/health`; chosen for Qwen3.5-4B Q4 (vLLM Qwen3.5 support turbulent). Chart `model-serving-qwen3-5` — **LIVE 2026-06-08** (swapped in for qwen3-4b) |
+| 0038 | MCP OAuth discovery (RFC 9728) via native AIEG `MCPRoute.securityPolicy.oauth` — gateway-served protected-resource metadata + 401 `resource_metadata` challenge on `/mcp/*`; Envoy-native JWT displaces Authorino there (x-oidc-* re-stamped via claimToHeaders) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
