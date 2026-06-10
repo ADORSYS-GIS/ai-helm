@@ -1,11 +1,54 @@
 # MCP external-server proxy debug + AIEG v0.6.0 → v0.7.0 upgrade (2026-06-10)
 
-**Status:** investigation complete; fix shipped in `release-2026.06.10-v01`;
-**outcome pending live re-test** (the AIEG upgrade may not fully resolve it — see
-§7). Point-in-time change-log; the durable contracts live in
+**Status:** RESOLVED for firecrawl + refero (fix in `release-2026.06.10-v02`,
+[ADR-0039](adr/0039-mcp-external-backend-tls-envoypatchpolicy.md)); context7
+self-hosted (tracked separately). Point-in-time change-log; durable contracts in
 [ADR-0038](adr/0038-mcp-oauth-protected-resource-metadata.md),
-[ADR-0027](adr/0027-mcps-orchestrator-split-and-coder-removal.md), and the
-`charts/apps` `aieg`/`aieg-crd` value comments.
+[ADR-0039](adr/0039-mcp-external-backend-tls-envoypatchpolicy.md),
+[ADR-0027](adr/0027-mcps-orchestrator-split-and-coder-removal.md).
+
+> ## ⚠️ ACTUAL root cause (supersedes the §4 mcpproxy-bug hypothesis below)
+> The §4 "AIEG mcpproxy runtime bug (#1924/#1996/#1938)" theory was **wrong**,
+> and the AIEG v0.6.0→v0.7.0 upgrade (§5–6, `release-2026.06.10-v01`)
+> consequently **did not fix it** — a useful negative result, and v0.7.0 is the
+> right baseline regardless. The real cause, traced through the live Envoy config
+> dump:
+>
+> **AIEG stamps a placeholder `dummy.transport_socket` (empty `UpstreamTlsContext`
+> — no SNI, no CA) on the cluster it generates for each external HTTPS MCP
+> backend, and EG's `BackendTLSPolicy` / inline `Backend.spec.tls.sni` never reach
+> it** (EG's Backend-TLS translation runs before AIEG's extension hook creates the
+> cluster — verified: inline `spec.tls.sni` had zero effect). So the gateway opens
+> upstream TLS with **empty SNI** → CDN-fronted MCP servers can't select a cert →
+> handshake fails (`ssl.connection_error`, `0` handshakes) → "failed to create MCP
+> session to any backend". Self-hosted plain-HTTP MCPs (brave, terraform) have no
+> TLS hop, so they were never affected. My earlier "in-cluster replay works"
+> (§3) succeeded only because `curl`/`openssl` set SNI themselves — bypassing the
+> broken Envoy socket.
+>
+> **The fix ([ADR-0039](adr/0039-mcp-external-backend-tls-envoypatchpolicy.md)):**
+> an `EnvoyPatchPolicy` (runs last in the xDS pipeline) replaces the dummy socket
+> with a real `envoy.transport_sockets.tls` carrying SNI + system-CA validation.
+> **Verified live before shipping:** with the patch, `refero` returns `200`s
+> (`upstream_rq_2xx`), `firecrawl` handshakes succeed (`ssl.handshake>0`,
+> `connection_error=0`).
+>
+> **Per-cert split — the key finding:** the patch rescues **RSA-cert** upstreams
+> only. **context7 serves an ECDSA cert** (`ecdsa_secp256r1_sha256`) that Envoy's
+> **BoringSSL rejects at the handshake** (`BAD_ECC_CERT`; `connection_error` with
+> `fail_verify=0`), SNI or not — the exact reason AIEG disabled context7 in their
+> own CI ([#1880](https://github.com/envoyproxy/ai-gateway/pull/1880)). firecrawl
+> + refero serve RSA certs → they work. context7 is therefore **self-hosted**
+> in-cluster (plain HTTP, no Envoy→external-TLS hop) instead.
+>
+> Diagnostic recipe: `/config_dump` → the `ai-eg-mcp-br-<name>-<name>/rule/0`
+> cluster's `transport_socket` (`dummy.transport_socket` = broken; `sni:""`);
+> `/stats` → `cluster.<...br-name...>.ssl.{handshake,connection_error}` +
+> `upstream_rq_{2xx,5xx}`; `openssl s_client -servername <host>` → cert key type
+> (RSA = patchable, ECDSA = BoringSSL-blocked).
+>
+> The sections below are kept as the investigation trail (how the wrong theory
+> was reached and discarded).
 
 ## 1. Symptom
 
