@@ -1,0 +1,92 @@
+{{- /*
+Path-appended PRM alias (ADR-0038). AIEG only serves the Protected Resource
+Metadata at the RFC 9728 path-insertion URL
+(/.well-known/oauth-protected-resource<mcp.path>); some lenient MCP clients
+probe the path-appended form (<mcp.path>/.well-known/oauth-protected-resource)
+instead. Serve the SAME JSON there via an exact-match HTTPRoute + a
+DirectResponse HTTPRouteFilter (no pod). The JSON mirrors AIEG's
+buildOAuthProtectedResourceMetadataJSON so both URLs stay byte-equivalent in
+meaning; the CORS headers mirror what AIEG stamps (MCP-inspector requirement).
+
+The allow-all SecurityPolicy exists ONLY to displace the gateway-attached
+Authorino extAuth for this route (EG route policy wins whole-policy) — the
+discovery document must be readable unauthenticated.
+*/ -}}
+{{- if and .Values.oauth.enabled .Values.oauth.pathAppendedDiscovery }}
+{{- $resource := printf "%s%s" (required "oauth.publicOrigin is required when oauth.enabled" .Values.oauth.publicOrigin) .Values.mcp.path }}
+{{- $prm := dict
+      "resource" $resource
+      "authorization_servers" (list (required "oauth.issuer is required when oauth.enabled" .Values.oauth.issuer))
+      "bearer_methods_supported" (list "header")
+      "resource_name" (.Values.oauth.resourceName | default .Values.mcp.name)
+}}
+{{- with .Values.oauth.scopesSupported }}
+{{- $_ := set $prm "scopes_supported" . }}
+{{- end }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: HTTPRouteFilter
+metadata:
+  name: {{ .Values.mcp.name }}-prm-alias
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  directResponse:
+    statusCode: 200
+    contentType: application/json
+    body:
+      type: Inline
+      inline: {{ $prm | toJson | quote }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.mcp.name }}-prm-alias
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "common.tplvalues.render" ( dict "value" .Values.gatewayRef.name "context" $ ) }}
+      namespace: {{ include "common.tplvalues.render" ( dict "value" .Values.gatewayRef.namespace "context" $ ) }}
+      kind: Gateway
+      group: gateway.networking.k8s.io
+      {{- with .Values.gatewayRef.sectionName }}
+      sectionName: {{ include "common.tplvalues.render" ( dict "value" . "context" $ ) }}
+      {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: {{ printf "%s/.well-known/oauth-protected-resource" .Values.mcp.path | quote }}
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: gateway.envoyproxy.io
+            kind: HTTPRouteFilter
+            name: {{ .Values.mcp.name }}-prm-alias
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Access-Control-Allow-Origin
+                value: "*"
+              - name: Access-Control-Allow-Methods
+                value: "GET"
+              - name: Access-Control-Allow-Headers
+                value: "mcp-protocol-version"
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: {{ .Values.mcp.name }}-prm-alias
+  namespace: {{ include "common.names.namespace" $ }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ .Values.mcp.name }}-prm-alias
+  authorization:
+    defaultAction: Allow
+{{- end }}

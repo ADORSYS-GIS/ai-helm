@@ -15,7 +15,7 @@ argocd:
   # the immutable release tag below (main is never a deploy target). See the
   # canonical note in charts/apps/values.yaml.
   repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.08-v09
+  targetRevision: release-2026.06.09-v03
   destination:
     # Every child Application targets home-remote (ADR-0017). The destination
     # helper hard-fails the render if this resolves to in-cluster unless
@@ -37,6 +37,17 @@ gatewayRef:
   namespace: converse-gateway
   sectionName: api-https
 
+# MCP-spec OAuth, shared by every child (ADR-0038). Merged with a per-MCP
+# `oauth:` override (e.g. resourceName) and passed to the leaf's `.Values.oauth`.
+# The leaf's defaults carry the ADR-0011 claimToHeaders set and
+# pathAppendedDiscovery: true. ⚠️ This displaces the gateway-level Authorino
+# extAuth on /mcp/* — JWT verification moves to Envoy's native filter, same
+# Keycloak issuer (the ADR-0021 authz boundary is unchanged).
+oauth:
+  enabled: true
+  issuer: https://auth.verif.fyi/realms/camer-digital
+  publicOrigin: https://api.ai.camer.digital
+
 # ────────────────────────────────────────────────────────────────────────
 # The MCP servers. Each entry → one Application (mcps-<key>). `mcp` is passed
 # verbatim to the leaf chart's `.Values.mcp`; `externalSecret` to its
@@ -54,6 +65,8 @@ mcps:
   # Self-hosted Brave Search MCP. API key via container env (BRAVE_API_KEY).
   brave:
     enabled: true
+    oauth:
+      resourceName: Brave Search MCP Server
     mcp:
       name: brave-search
       mode: selfHosted
@@ -83,6 +96,8 @@ mcps:
   # Self-hosted HashiCorp Terraform MCP. No credential.
   terraform:
     enabled: true
+    oauth:
+      resourceName: HashiCorp Terraform MCP Server
     mcp:
       name: terraform
       mode: selfHosted
@@ -105,6 +120,8 @@ mcps:
   # External Firecrawl MCP (mcp.firecrawl.dev). Bearer apiKey.
   firecrawl:
     enabled: true
+    oauth:
+      resourceName: Firecrawl MCP Server
     mcp:
       name: firecrawl
       mode: external
@@ -128,6 +145,8 @@ mcps:
   # External Context7 MCP (mcp.context7.com). apiKey (default header).
   context7:
     enabled: true
+    oauth:
+      resourceName: Context7 MCP Server
     mcp:
       name: context7
       mode: external
@@ -151,6 +170,8 @@ mcps:
   # Requires a Refero Pro subscription (8k tool calls/mo). See ADR-0027.
   refero:
     enabled: true
+    oauth:
+      resourceName: Refero Design MCP Server
     mcp:
       name: refero
       mode: external

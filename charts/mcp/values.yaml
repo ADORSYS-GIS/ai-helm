@@ -41,6 +41,69 @@ mcp:
     secretName: ""
     header: "" # empty → AIEG default "Authorization" (+ "Bearer " prefix)
 
+# ── oauth: MCP-spec OAuth on the MCPRoute (ADR-0038) ──────────────────────
+# When enabled, AIEG enforces Keycloak JWTs on the route via Envoy's native
+# jwt_authn filter and serves the RFC 9728 discovery surface itself,
+# unauthenticated (exact paths, path-insertion form):
+#   /.well-known/oauth-protected-resource<mcp.path>
+#   /.well-known/oauth-authorization-server<mcp.path>   (issuer snapshot)
+#   /.well-known/openid-configuration<mcp.path>         (same document)
+# plus the 401 challenge `WWW-Authenticate: Bearer ..., resource_metadata="…"`.
+# ⚠️ The route-level SecurityPolicy this generates DISPLACES the gateway-level
+# Authorino extAuth for this MCPRoute (EG policy precedence is whole-policy,
+# not merge) — the x-oidc-* set is re-stamped from JWT claims via
+# claimToHeaders below instead. See ADR-0038 before changing the shape.
+oauth:
+  enabled: false
+  # Keycloak realm issuer — becomes authorization_servers[0] in the PRM and
+  # the issuer Envoy validates JWTs against (JWKS auto-discovered from it).
+  issuer: ""
+  # Public origin of the gateway listener; PRM `resource` = publicOrigin + mcp.path.
+  publicOrigin: "" # e.g. https://api.ai.camer.digital
+  # Human-readable PRM resource_name; defaults to mcp.name.
+  resourceName: ""
+  # Minimal scopes for basic use. Empty = omit scopes_supported from the PRM
+  # and the `scope` hint from the 401 (clients then omit scope; Keycloak
+  # applies the client's default scopes).
+  scopesSupported: []
+  # JWT audience allowlist. Empty = no aud validation (parity with the
+  # Authorino main AuthConfig, which checks issuer only). Enabling this
+  # requires a Keycloak audience mapper deriving aud from the RFC 8707
+  # `resource` parameter — see ADR-0038 follow-ups.
+  audiences: []
+  # ADR-0011 x-oidc-* parity, stamped by the gateway from verified JWT claims
+  # (client-supplied values for these names are stripped — no spoofing).
+  # ⚠️ Encoding caveat: non-primitive claims (realm_access.roles,
+  # resource_access) are serialized by Envoy as base64url(JSON), unlike
+  # Authorino's plain-JSON strings.
+  claimToHeaders:
+    - claim: sub
+      header: x-oidc-user-id
+    - claim: azp
+      header: x-oidc-azp
+    - claim: preferred_username
+      header: x-oidc-user-name
+    - claim: iss
+      header: x-oidc-iss
+    - claim: realm_access.roles
+      header: x-oidc-roles-realm
+    - claim: resource_access
+      header: x-oidc-resource-access
+    - claim: scope
+      header: x-oidc-scope
+    - claim: jti
+      header: x-oidc-jti
+    - claim: email
+      header: x-oidc-email
+    - claim: name
+      header: x-oidc-name
+  # Also serve the SAME PRM JSON at the path-appended form
+  #   <mcp.path>/.well-known/oauth-protected-resource
+  # (not in the MCP spec — lenient-client fallback). Rendered as an exact-match
+  # HTTPRoute + DirectResponse HTTPRouteFilter + an allow-all SecurityPolicy
+  # that exempts it from the gateway-level Authorino extAuth.
+  pathAppendedDiscovery: true
+
 # Gateway the MCPRoute attaches to (HTTPS listener; ADR-0021 dual-plane).
 gatewayRef:
   name: core-gateway

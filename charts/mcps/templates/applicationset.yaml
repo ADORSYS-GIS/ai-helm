@@ -32,6 +32,7 @@ spec:
       "mcp" $mcpConfig.mcp
       "gatewayRef" $.Values.gatewayRef
       "externalSecret" (default (dict "enabled" false) $mcpConfig.externalSecret)
+      "oauth" (mustMergeOverwrite (deepCopy (default (dict) $.Values.oauth)) (default (dict) $mcpConfig.oauth))
 }}
 {{ $childValues | toYaml | indent 14 }}
 {{- end }}

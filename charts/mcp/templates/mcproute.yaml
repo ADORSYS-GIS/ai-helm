@@ -22,6 +22,31 @@ spec:
 
   path: {{ .Values.mcp.path | quote }}
 
+  {{- if .Values.oauth.enabled }}
+  # MCP-spec OAuth (ADR-0038): Envoy-native JWT verification + the RFC 9728
+  # discovery surface, served by AIEG at the path-insertion well-known URLs.
+  # This route-level policy displaces the gateway-level Authorino extAuth for
+  # this MCPRoute; claimToHeaders restores the ADR-0011 x-oidc-* set.
+  securityPolicy:
+    oauth:
+      issuer: {{ required "oauth.issuer is required when oauth.enabled" .Values.oauth.issuer | quote }}
+      {{- with .Values.oauth.audiences }}
+      audiences:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.oauth.claimToHeaders }}
+      claimToHeaders:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      protectedResourceMetadata:
+        resource: {{ printf "%s%s" (required "oauth.publicOrigin is required when oauth.enabled" .Values.oauth.publicOrigin) .Values.mcp.path | quote }}
+        resourceName: {{ .Values.oauth.resourceName | default .Values.mcp.name | quote }}
+        {{- with .Values.oauth.scopesSupported }}
+        scopesSupported:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+  {{- end }}
+
   backendRefs:
     - name: {{ .Values.mcp.name }}
       kind: Backend
