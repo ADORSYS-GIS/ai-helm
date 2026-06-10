@@ -265,3 +265,42 @@ extProc:
     limits:
       cpu: "2000m"
       memory: "512Mi"
+
+# ────────────────────────────────────────────────────────────────────────
+# MCP external-backend TLS fix (ADR-0039).
+#
+# The Envoy AI Gateway stamps a placeholder `dummy.transport_socket` (empty
+# UpstreamTlsContext — no SNI, no CA) on the cluster it generates for an
+# external HTTPS MCP backend, and EG's BackendTLSPolicy / Backend.spec.tls
+# never reach that AIEG-generated cluster. Result: the upstream TLS handshake
+# to a CDN-fronted MCP server is sent with NO SNI → the CDN can't select the
+# cert → handshake fails → "failed to create MCP session to any backend".
+# (Self-hosted plain-HTTP MCPs — brave, terraform — are unaffected.)
+#
+# Fix: an EnvoyPatchPolicy (runs LAST in the xDS pipeline, after AIEG's
+# extension server) replaces that socket with a real `envoy.transport_sockets.tls`
+# carrying the upstream SNI + system-CA validation. Verified live: refero
+# returns 200s, firecrawl handshakes succeed once patched.
+#
+# ⚠️ BoringSSL caveat: this only rescues **RSA-cert** upstreams. context7
+# serves an **ECDSA** cert that Envoy's BoringSSL rejects at the handshake
+# (BAD_ECC_CERT) regardless of SNI — so context7 is NOT listed here; it is
+# self-hosted instead (charts/mcps). See ADR-0039 + the 2026-06-10 debug doc.
+#
+# ⚠️ Brittle coupling: the patched cluster name is AIEG-derived —
+#   httproute/<mcpNamespace>/ai-eg-mcp-br-<name>-<name>/rule/0
+# Keep `backends[].name` == the MCP's `mcp.name` in charts/mcps, and
+# `mcpNamespace` == the mcps destination namespace. If AIEG changes its
+# cluster-naming, these patches silently no-op (re-verify after AIEG bumps).
+mcpBackendTls:
+  enabled: true
+  mcpNamespace: converse-mcp
+  # System CA bundle path inside the EG Envoy image (validated: refero's chain
+  # verified against it, fail_verify_error=0).
+  systemCaPath: /etc/ssl/certs/ca-certificates.crt
+  # The external HTTPS MCP backends needing the SNI fix. name == mcp.name.
+  backends:
+    - name: firecrawl
+      sni: mcp.firecrawl.dev
+    - name: refero
+      sni: api.refero.design

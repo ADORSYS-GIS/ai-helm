@@ -178,10 +178,14 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
 > `claimToHeaders` re-stamps the ADR-0011 `x-oidc-*` set. Rate-limit
 > descriptors are NOT stamped on `/mcp/*` (no MCP rate limiting today).
 >
-> ⚠️ **Self-hosted MCPs (brave, terraform) work; the external hosted ones
-> (context7, firecrawl, refero) currently fail in the AIEG mcpproxy runtime**
-> (gateway→upstream hop, not our config or the OAuth edge). Upgraded AIEG
-> v0.6.0→v0.7.0 as the baseline fix; may not fully resolve. Diagnosis + repro:
+> ⚠️ **External HTTPS MCP backends need a TLS-socket fix (ADR-0039).** AIEG
+> stamps a `dummy.transport_socket` (empty SNI) on the cluster it generates for
+> an external MCP backend, which `BackendTLSPolicy` can't reach → the upstream
+> TLS handshake to CDN-fronted servers fails. An `EnvoyPatchPolicy` in
+> `charts/core-gateway` injects a real TLS socket (SNI + system-CA) — fixes the
+> **RSA-cert** externals (firecrawl, refero). **context7's ECDSA cert is rejected
+> by Envoy's BoringSSL** regardless, so it's **self-hosted** in-cluster (plain
+> HTTP) like brave/terraform. Full diagnosis:
 > [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](2026-06-10-mcp-external-server-proxy-debug.md).
 
 **Three identity surfaces** to know:
