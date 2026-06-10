@@ -184,8 +184,8 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
 > TLS handshake to CDN-fronted servers fails. An `EnvoyPatchPolicy` in
 > `charts/core-gateway` injects a real TLS socket (SNI + system-CA) — fixes the
 > **RSA-cert** externals (firecrawl, refero). **context7's ECDSA cert is rejected
-> by Envoy's BoringSSL** regardless, so it's **self-hosted** in-cluster (plain
-> HTTP) like brave/terraform. Full diagnosis:
+> by Envoy's BoringSSL** regardless, and self-hosting it needs a custom image +
+> Upstash Redis (against repo constraints) — so context7 was **dropped**. Full diagnosis:
 > [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](2026-06-10-mcp-external-server-proxy-debug.md).
 
 **Three identity surfaces** to know:

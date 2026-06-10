@@ -142,29 +142,15 @@ mcps:
           key: ai/camer/digital/prod/env
           property: firecrawl_api_key
 
-  # External Context7 MCP (mcp.context7.com). apiKey (default header).
-  context7:
-    enabled: true
-    oauth:
-      resourceName: Context7 MCP Server
-    mcp:
-      name: context7
-      mode: external
-      path: /mcp/context7
-      backendPath: /mcp
-      externalHost: mcp.context7.com
-      externalPort: 443
-      tls: true
-      auth:
-        enabled: true
-        secretName: context7-token
-    externalSecret:
-      enabled: true
-      secretName: context7-token
-      data:
-        - secretKey: apiKey
-          key: ai/camer/digital/prod/env
-          property: context7_api_key
+  # ⚠️ context7 DROPPED (2026-06-11). mcp.context7.com serves an ECDSA cert
+  # that Envoy's BoringSSL rejects at the handshake (BAD_ECC_CERT) — so it
+  # can't go through the gateway as a remote TLS backend (ADR-0039), unlike the
+  # RSA-cert externals firecrawl/refero. Self-hosting it was rejected too:
+  # context7 has no usable published HTTP image (would need a custom build) and
+  # its v3 HTTP mode requires Upstash Redis — both against repo constraints.
+  # The `context7_api_key` property in ssegning-aws is now unused (leave or prune
+  # out-of-band). To revisit: a published context7 HTTP image, or a
+  # stdio+supergateway bridge as a self-hosted plain-HTTP backend.
 
   # External Refero design-reference MCP (api.refero.design). Bearer apiKey.
   # Requires a Refero Pro subscription (8k tool calls/mo). See ADR-0027.
