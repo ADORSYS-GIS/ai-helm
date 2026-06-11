@@ -50,6 +50,19 @@ jobs:
 
             helm lint "$chart_dir" --strict
             helm template "$chart_name" "$chart_dir" --dry-run > /dev/null
+
+            # Render any ci/*-values.yaml fixtures (Helm convention) so chart
+            # branches that the default values.yaml never reaches get covered.
+            # E.g. charts/mcp defaults to mode=external, so the selfHosted and
+            # proxiedExternal branches are ONLY render-tested via these fixtures.
+            if [[ -d "$chart_dir/ci" ]]; then
+              for vf in "$chart_dir"/ci/*-values.yaml; do
+                [[ -e "$vf" ]] || continue
+                echo "  🧪 fixture $(basename "$vf")"
+                helm template "$chart_name" "$chart_dir" -f "$vf" --dry-run > /dev/null
+              done
+            fi
+
             echo "✅ $chart_name OK"
           done
 
