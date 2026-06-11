@@ -49,13 +49,21 @@ mcp:
 
   # ── proxiedExternal: the Caddy proxy behaviour ─────────────────────────
   # The credential comes from `externalSecret` (key `apiKey`) → Caddy env
-  # MCP_TOKEN (optional: anonymous if unsynced). Caddy reverse-proxies to
-  # https://externalHost (path preserved = backendPath).
+  # MCP_TOKEN. Caddy reverse-proxies to https://externalHost (path preserved =
+  # backendPath).
   proxy:
     # Header Caddy injects toward the upstream with the token.
     authHeader: Authorization
     # Prefix the token with "Bearer " (set false for raw-value headers).
     bearer: true
+    # requireToken (default true): the Caddy container waits in ContainerCreating
+    # until ESO has populated the secret, rather than starting tokenless. This
+    # closes a start-race footgun — env vars from secretKeyRef bind at pod start
+    # and never refresh, so a pod that beats ESO would inject an empty Bearer and
+    # the upstream rejects every request ("Invalid API key") until a manual pod
+    # delete (the 2026-06-11 context7 incident). Set false ONLY for an MCP that
+    # genuinely works anonymously (none today).
+    requireToken: true
     # Optional: overwrite the upstream response Content-Type before the AIEG
     # mcpproxy parses it. Needed for servers that mislabel a JSON body as
     # text/event-stream (e.g. refero) → set "application/json". Leave empty to
