@@ -40,6 +40,12 @@ wellKnown:
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
       - "@vymalo/opencode-models-info"
+      # Reads the IETF draft-03 `x-ratelimit-*` response headers our
+      # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
+      # ADR-0021) and makes opencode rate-limit-aware: it proactively
+      # pauses before the burst quota is exhausted and backs off +
+      # retries on HTTP 429 instead of hammering the gateway.
+      - "@vymalo/opencode-ratelimit"
     provider:
       camer-digital:
         name: "Camer Digital"
@@ -67,6 +73,19 @@ wellKnown:
             # TTL (24h default upstream); override if you want fresher
             # catalogs:
             # modelsInfoTtlSeconds: 3600
+            # @vymalo/opencode-ratelimit config (see the plugin entry
+            # above). headerPrefix defaults to "x-ratelimit", which is
+            # what Envoy's draft-03 ratelimit headers use — no override
+            # needed. maxWaitMs caps a single proactive pause at 60s so
+            # a per-minute burst bucket is honoured, but the client
+            # never freezes for a *monthly*-budget reset (which can be
+            # days away — ADR-0021 unit: Month); past the cap it surfaces
+            # the 429 to the user instead.
+            rateLimit:
+              enabled: true
+              maxWaitMs: 60000
+              maxRetries: 5
+              headerPrefix: "x-ratelimit"
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
