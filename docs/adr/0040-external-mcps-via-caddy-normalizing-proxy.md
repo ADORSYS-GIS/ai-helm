@@ -73,7 +73,8 @@ init, firecrawl → 19 tools.
 
 **Neutral / follow-ups**
 
-- Drop refero's `rewriteResponseContentType` when #2218 lands.
+- Drop refero's `rewriteResponseContentType` when #2218 lands — tracked by Epic
+  [ai-helm#369](https://github.com/ADORSYS-GIS/ai-helm/issues/369).
 - Populate `context7_api_key` for authenticated context7 access.
 - `mode: external` (direct TLS backend) is now legacy — prefer `proxiedExternal`
   for any new external MCP.
