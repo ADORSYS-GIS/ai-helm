@@ -69,6 +69,14 @@ mcp:
     # text/event-stream (e.g. refero) → set "application/json". Leave empty to
     # pass the upstream Content-Type through (e.g. context7/firecrawl real SSE).
     rewriteResponseContentType: ""
+    # Optional: synthesize an Mcp-Session-Id for a STATELESS upstream. The AIEG
+    # mcpproxy requires the backend to return a session id on `initialize`
+    # (envoyproxy/ai-gateway#1555 — wontfix by design); a stateless server (e.g.
+    # firecrawl) returns none → "failed to create MCP session". When true, Caddy
+    # mints a uuid on the initialize hop and echoes the gateway's session id on
+    # subsequent hops (unique-per-session, stable-across-session). Leave false for
+    # stateful upstreams that return their own session id (context7, refero).
+    statelessUpstream: false
 
   # ── auth: inject an API key into the MCPRoute (securityPolicy.apiKey) ────
   # The referenced Secret's key MUST be `apiKey` (AIEG MCPRoute contract). When

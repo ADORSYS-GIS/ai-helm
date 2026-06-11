@@ -283,6 +283,51 @@ are rendered **only** when `externalSecret.enabled: true`; a genuinely keyless M
 → check `MCP_TOKEN` length in the running Caddy container
 (`kubectl exec … -- sh -c 'printf %s "$MCP_TOKEN" | wc -c'`); len 0 = lost the race.
 
+## 9.6 Postscript (2026-06-11): firecrawl failed because it is a STATELESS MCP server
+
+With context7 and refero working through the gateway, only firecrawl still failed
+("failed to create MCP session"). It was **not** the key, the proxy, or the upstream: firecrawl
+authenticates and returns all 19 tools when hit directly AND through the Caddy proxy in-cluster.
+
+**Root cause — the AIEG mcpproxy requires a stateful backend.** firecrawl's hosted MCP
+(`mcp.firecrawl.dev/v2/mcp`, FastMCP) is **stateless**: it returns **no `Mcp-Session-Id`** on
+`initialize`. context7 and refero are stateful (both return one). The AIEG mcpproxy **requires**
+the backend session id — it encrypts it into its own client-facing session token to stay
+replica-stateless. This is a deliberate, **wontfix** design choice: see
+[envoyproxy/ai-gateway#1555](https://github.com/envoyproxy/ai-gateway/issues/1555) ("the
+mcp-session-id header should be optional" — closed) and the
+[MCP-gateway proposal §session-handling](https://github.com/envoyproxy/ai-gateway/blob/main/docs/proposals/006-mcp-gateway/proposal.md#session-handling):
+> All session IDs are encoded into a single (ASCII) session ID, which is then encrypted to avoid
+> leaking details.
+
+No backend session id → nothing to encode → "failed to create MCP session."
+
+**Fix (ADR-0040 normalizing-proxy spirit):** `charts/mcp` `proxy.statelessUpstream: true`
+synthesizes the session id in Caddy. On the hop that carries no `Mcp-Session-Id` (the `initialize`
+hop) Caddy mints a fresh uuid; on every later hop it echoes the gateway-sent session id straight
+back — so the value is **unique per session AND stable across it**:
+
+```caddyfile
+@hasSession header Mcp-Session-Id *
+header @hasSession Mcp-Session-Id {http.request.header.Mcp-Session-Id}
+@noSession not header Mcp-Session-Id *
+header @noSession Mcp-Session-Id {http.request.uuid}
+```
+
+Two Caddy gotchas found while building this (both caught by `caddy validate` + a local run
+against the real upstream *before* shipping — do this, do not ship Caddyfile changes blind):
+1. **`header_down ?Field` is rejected** — the `?` set-if-missing modifier is only valid on the
+   standalone `header` (response) directive, not on `reverse_proxy`'s `header_down`.
+2. **`map` only expands placeholders in its `default` output, not in matched branches** — so a
+   `map` cannot yield two different *live* values (uuid for one case, the request header for the
+   other). The request-matcher form above is the way; both placeholders expand.
+
+Enabled for firecrawl only (`charts/mcps` `firecrawl.mcp.proxy.statelessUpstream: true`);
+context7/refero stay stateful and must NOT set it. Validated end-to-end through a local Caddy
+against `mcp.firecrawl.dev`: init→uuid minted, subsequent→same id echoed, 19 tools, unique per
+session. The one link not reproducible locally (the mcpproxy accepting the synthesized id) is the
+exact behaviour #1555 documents it requires.
+
 ## 9. References
 
 - [ADR-0038](adr/0038-mcp-oauth-protected-resource-metadata.md) — MCP OAuth discovery (the edge surface, working).
