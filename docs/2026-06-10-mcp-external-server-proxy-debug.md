@@ -271,13 +271,16 @@ dashboard key.
 re-read the now-populated Secret (`MCP_TOKEN` len 43). (`kubectl delete pod`, not `rollout
 restart`, which ArgoCD selfHeal reverts.)
 
-**Durable fix (shipped):** `charts/mcp` `proxy.requireToken` (default **true**) renders the env
-with `optional: false`, so a keyed Caddy proxy waits in `ContainerCreating` until ESO has
-populated the Secret rather than starting tokenless. Waiting is the honest failure mode — an
-anonymous context7/firecrawl is useless anyway. Set `requireToken: false` only for an MCP that
-genuinely works without a key (none today). **Recognise the symptom:** `Invalid API key` (or
-empty/anonymous behaviour) from a `proxiedExternal` MCP whose Secret is provably correct, right
-after a fresh deploy/cluster rebuild → check `MCP_TOKEN` length in the running Caddy container
+**Durable fix (shipped):** in `charts/mcp` the `MCP_TOKEN` env is now rendered with
+`optional: false` (never optional), so a keyed Caddy proxy waits in `ContainerCreating` until ESO
+has populated the Secret rather than starting tokenless. Waiting is the honest failure mode — an
+anonymous context7/firecrawl is useless anyway. The env (and the Caddyfile `Authorization` header)
+are rendered **only** when `externalSecret.enabled: true`; a genuinely keyless MCP sets
+`externalSecret.enabled: false` and Caddy proxies anonymously. There is deliberately no
+"declared-secret-but-optional" mode (no knob) — that combination is always a footgun.
+**Recognise the symptom:** `Invalid API key` (or empty/anonymous behaviour) from a
+`proxiedExternal` MCP whose Secret is provably correct, right after a fresh deploy/cluster rebuild
+→ check `MCP_TOKEN` length in the running Caddy container
 (`kubectl exec … -- sh -c 'printf %s "$MCP_TOKEN" | wc -c'`); len 0 = lost the race.
 
 ## 9. References
