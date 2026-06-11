@@ -342,7 +342,14 @@ against `mcp.firecrawl.dev`: init→uuid minted, subsequent→same id echoed, 19
 session. The one link not reproducible locally (the mcpproxy accepting the synthesized id) is the
 exact behaviour #1555 documents it requires.
 
-## 9.7 Postscript (2026-06-11): the REAL firecrawl cause — protocol-version downgrade (ADR-0041)
+## 9.7 Postscript (2026-06-11): firecrawl cause — protocol-version downgrade — ⚠️ ALSO WRONG, see §9.8
+
+> **Also a dead end.** The mcpproxy does NOT compare echoed vs requested versions
+> (a response-side version rewrite had zero effect, and client `2025-06-18` succeeds
+> regardless of the response version). The requested version *does* matter, but
+> because it changes firecrawl's **SSE framing**, not via any version check — see
+> **§9.8**. The `nginx` engine + `rewriteResponseProtocolVersion` this describes was
+> reverted. Kept as a record of the dead end.
 
 Reproduced with the actual MCP TypeScript SDK (what opencode uses), which `curl`
 hand-tests had hidden: `client.connect()` → POST `initialize` → **HTTP 500
@@ -378,6 +385,47 @@ can be minted from opencode's cached refresh token: client_id `opencode-cli`
 (public PKCE), token endpoint `auth.verif.fyi/realms/camer-digital/.../token`,
 grant `refresh_token`, with the `resource=` indicator. The gateway-vs-direct A/B
 and the per-version A/B are what isolate it.
+
+## 9.8 Postscript (2026-06-11): the ACTUAL firecrawl cause — empty leading SSE event (ADR-0041)
+
+Got the mcpproxy's own log at last (it runs as `component=mcp-proxy` inside the
+`ai-gateway-controller`, not a sidecar):
+
+```
+component=mcp-proxy backend=firecrawl error="MCP message is not a response: <nil>"
+```
+
+**firecrawl frames its `initialize` SSE response differently per requested protocol
+version.** Raw bytes, firecrawl direct:
+
+| requested | first SSE event |
+|---|---|
+| `2025-06-18` | `event: message` → `data: {…real response…}` (clean) |
+| `2025-11-25` | `id: …` → `data:` **(empty)** → blank → *then* `event: message` → real `data:` |
+
+The AIEG v0.7.0 mcpproxy reads the **first** event; for `2025-11-25` that's the empty
+one → parses to nil → `MCP message is not a response: <nil>` → 500. context7/refero
+don't emit the empty event. This is why the §9.7 response-version rewrite did nothing
+(the empty event is independent of the version string) and why client `2025-06-18`
+works. It's an upstream SSE-parser bug — the reader should skip non-response /
+keep-alive events — filed
+[envoyproxy/ai-gateway#2219](https://github.com/envoyproxy/ai-gateway/issues/2219).
+
+**Fix (ADR-0041):** make firecrawl *receive* `2025-06-18` so it frames cleanly — a
+**request-body** rewrite, which neither Caddy nor stock nginx can do. `charts/mcp`
+gains an **`openresty` engine** (`proxy.engine: openresty` + `pinRequestProtocolVersion`)
+whose `rewrite_by_lua_block` gsubs the request body's `protocolVersion` down and
+injects the Bearer (`os.getenv`, since openresty has no envsubst entrypoint). firecrawl
+then frames cleanly and the mcpproxy parses it.
+
+**Validated end-to-end** against the live gateway with the chart-rendered manifests
+and the MCP SDK (the exact opencode client): `initialize` → 200, `tools/list` → 19
+tools. The lessons that finally cracked it: (1) reproduce with the **MCP SDK**, not
+curl — curl never sent `2025-11-25` the way the SDK does; (2) find the **mcpproxy's own
+log** (`component=mcp-proxy` in the controller) instead of inferring from HTTP status;
+(3) diff the **raw SSE bytes** per version. Mint a fresh gateway JWT from opencode's
+cached refresh token (`~/.local/share/opencode/mcp-auth.json`, client_id `opencode-cli`,
+public PKCE, `refresh_token` grant + `resource=` indicator) to drive the SDK.
 
 ## 9. References
 

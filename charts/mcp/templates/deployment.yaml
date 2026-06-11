@@ -69,40 +69,39 @@ spec:
 {{- $port := .Values.mcp.port | int }}
 {{- $host := required "mcp.externalHost is required in proxiedExternal mode" .Values.mcp.externalHost }}
 {{- $hdr := $p.authHeader | default "Authorization" }}
-{{- /* engine: caddy (default) or nginx. Caddy is the normal normalizing proxy
+{{- /* engine: caddy (default) or openresty. Caddy is the normal normalizing proxy
        (TLS + credential injection + optional response Content-Type rewrite).
-       nginx is for the ONE case Caddy core can't do: rewriting the response
-       BODY. Today only firecrawl needs it — see proxy.rewriteResponseProtocolVersion. */ -}}
+       openresty (nginx + Lua) is for the ONE case Caddy core can't do: rewriting
+       the REQUEST BODY. Today only firecrawl needs it — see proxy.pinRequestProtocolVersion. */ -}}
 {{- $engine := $p.engine | default "caddy" }}
-{{- if eq $engine "nginx" }}
-{{- /* nginx engine — needed only to REWRITE THE RESPONSE BODY, which Caddy core
-       can't. firecrawl (correctly, per MCP spec) negotiates a newer requested
-       protocolVersion DOWN (2025-11-25 → 2025-06-18), but the AIEG v0.7.0 mcpproxy
-       requires the backend to echo the client's EXACT requested version or it 500s
-       "failed to create MCP session to any backend" (upstream bug — ADR-0041 /
-       docs/2026-06-10-mcp-external-server-proxy-debug.md §9.7). nginx `sub_filter`
-       rewrites the echoed version back to what the client asked for. INTERIM,
-       pinned to `.to`; drop the whole nginx engine once AIEG tolerates downgrade.
-       Token via the nginx image's envsubst (${MCP_TOKEN}); NGINX_ENVSUBST_FILTER
-       scopes substitution to MCP_TOKEN so nginx's own $vars are left intact. */ -}}
-{{- $authVal := ternary "Bearer " "" (ne $p.bearer false) }}
-{{- $ng := list "server {" (printf "  listen %d;" $port) "  location / {" }}
-{{- $ng = append $ng (printf "    proxy_pass https://%s;" $host) }}
-{{- $ng = append $ng (printf "    proxy_set_header Host %s;" $host) }}
+{{- if eq $engine "openresty" }}
+{{- /* openresty engine — rewrites the REQUEST BODY, which neither Caddy nor stock
+       nginx can. firecrawl frames its `initialize` RESPONSE differently per
+       requested protocol version: for the version modern clients send (2025-11-25)
+       it prepends an EMPTY leading SSE event, and the AIEG v0.7.0 mcpproxy reads
+       that first (empty) event and fails: `MCP message is not a response: <nil>` →
+       500 "failed to create MCP session to any backend". For 2025-06-18 firecrawl
+       emits clean framing the mcpproxy parses fine. So we pin the request's
+       protocolVersion down to a value the upstream frames cleanly, via a Lua
+       `gsub` on the request body. Token is injected in Lua from MCP_TOKEN (openresty
+       has no envsubst entrypoint); `env MCP_TOKEN;` exposes it to os.getenv.
+       INTERIM workaround for AIEG #2219 / ADR-0041 — drop once AIEG's SSE parser
+       skips non-response events. Validated end-to-end against the live gateway with
+       the MCP SDK (init 200, 19 tools). */ -}}
+{{- $pin := required "proxy.pinRequestProtocolVersion is required for the openresty engine" $p.pinRequestProtocolVersion }}
+{{- $prefix := ternary "Bearer " "" (ne $p.bearer false) }}
+{{- $or := list "events {}" "http {" "  client_body_buffer_size 256k;" "  server {" (printf "    listen %d;" $port) "    location / {" "      rewrite_by_lua_block {" "        ngx.req.read_body()" "        local b = ngx.req.get_body_data()" }}
+{{- $or = append $or (printf "        if b then ngx.req.set_body_data((b:gsub([[\"protocolVersion\":\"[^\"]*\"]], [[\"protocolVersion\":\"%s\"]]))) end" $pin) }}
 {{- if .Values.externalSecret.enabled }}
-{{- $ng = append $ng (printf "    proxy_set_header %s \"%s${MCP_TOKEN}\";" $hdr $authVal) }}
+{{- $or = append $or (printf "        ngx.req.set_header(\"%s\", \"%s\" .. (os.getenv(\"MCP_TOKEN\") or \"\"))" $hdr $prefix) }}
 {{- end }}
-{{- $ng = append $ng "    proxy_ssl_server_name on;" }}
-{{- $ng = append $ng "    proxy_http_version 1.1;" }}
-{{- $ng = append $ng "    proxy_set_header Accept-Encoding \"\";" }}
-{{- $ng = append $ng "    proxy_buffering off;" }}
-{{- with $p.rewriteResponseProtocolVersion }}
-{{- $ng = append $ng "    sub_filter_types text/event-stream application/json;" }}
-{{- $ng = append $ng "    sub_filter_once on;" }}
-{{- $ng = append $ng (printf "    sub_filter '\"protocolVersion\":\"%s\"' '\"protocolVersion\":\"%s\"';" (required "rewriteResponseProtocolVersion.from required" .from) (required "rewriteResponseProtocolVersion.to required" .to)) }}
-{{- end }}
-{{- $ng = concat $ng (list "  }" "}") }}
-{{- $nginxconf := join "\n" $ng }}
+{{- $or = append $or "      }" }}
+{{- $or = append $or (printf "      proxy_pass https://%s;" $host) }}
+{{- $or = append $or (printf "      proxy_set_header Host %s;" $host) }}
+{{- $or = concat $or (list "      proxy_ssl_server_name on;" "      proxy_http_version 1.1;" "      proxy_set_header Accept-Encoding \"\";" "      proxy_buffering off;") }}
+{{- $or = concat $or (list "    }" "  }" "}") }}
+{{- if .Values.externalSecret.enabled }}{{- $or = prepend $or "env MCP_TOKEN;" }}{{- end }}
+{{- $orconf := join "\n" $or }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -111,8 +110,8 @@ metadata:
   labels:
     {{- include "common.labels.standard" . | nindent 4 }}
 data:
-  default.conf.template: |-
-{{ $nginxconf | indent 4 }}
+  nginx.conf: |-
+{{ $orconf | indent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -132,19 +131,16 @@ spec:
         app: {{ .Values.mcp.name }}
         {{- include "common.labels.standard" . | nindent 8 }}
       annotations:
-        # Roll the pod when the nginx config changes (envsubst runs only at start).
-        checksum/config: {{ $nginxconf | sha256sum }}
+        # Roll the pod when the openresty config changes (read only at start).
+        checksum/config: {{ $orconf | sha256sum }}
     spec:
       containers:
-        - name: nginx
-          image: {{ .Values.mcp.image | default "docker.io/library/nginx:alpine" | quote }}
+        - name: openresty
+          image: {{ .Values.mcp.image | default "docker.io/openresty/openresty:alpine" | quote }}
           ports:
             - containerPort: {{ $port }}
+          {{- if .Values.externalSecret.enabled }}
           env:
-            # Limit envsubst to MCP_TOKEN so nginx's own $variables survive.
-            - name: NGINX_ENVSUBST_FILTER
-              value: MCP_TOKEN
-            {{- if .Values.externalSecret.enabled }}
             # Token is NEVER optional (see the caddy branch for the why) — wait for ESO.
             - name: MCP_TOKEN
               valueFrom:
@@ -152,10 +148,11 @@ spec:
                   name: {{ .Values.externalSecret.secretName }}
                   key: apiKey
                   optional: false
-            {{- end }}
+          {{- end }}
           volumeMounts:
-            - name: nginx-template
-              mountPath: /etc/nginx/templates
+            - name: orconf
+              mountPath: /usr/local/openresty/nginx/conf/nginx.conf
+              subPath: nginx.conf
           readinessProbe:
             tcpSocket:
               port: {{ $port }}
@@ -166,7 +163,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
-        - name: nginx-template
+        - name: orconf
           configMap:
             name: {{ .Values.mcp.name }}-proxy
 {{- else }}

@@ -1,4 +1,4 @@
-# ADR-0041: firecrawl protocol-version rewrite via an nginx proxy engine
+# ADR-0041: firecrawl request protocol-version pin via an openresty proxy engine
 
 **Status:** Accepted
 **Date:** 2026-06-11
@@ -8,78 +8,81 @@
 ## Context
 
 After [ADR-0040](0040-external-mcps-via-caddy-normalizing-proxy.md) made the three
-external MCPs reachable, **firecrawl alone** kept failing at the gateway — every
-`opencode mcp auth firecrawl` ended in `failed to create MCP session to any
-backend`. context7 and refero worked.
+external MCPs reachable, **firecrawl alone** kept failing — every
+`opencode mcp auth firecrawl` ended in `failed to create new session: failed to
+create MCP session to any backend`. context7 and refero worked.
 
-The cause is **not** the key, the Caddy proxy, the TLS, or firecrawl being
-stateless (an earlier hypothesis — the AIEG mcpproxy supports stateless backends
-fine; `internal/mcpproxy/session.go` reads the backend session id but explicitly
-tolerates an empty one). The real cause is **MCP protocol-version negotiation**:
+Three wrong hypotheses preceded the real cause (all recorded in
+`docs/2026-06-10-mcp-external-server-proxy-debug.md` §9.6–§9.7): stale opencode
+creds; firecrawl being stateless (the mcpproxy actually tolerates that); and a
+protocol-version *downgrade* (the mcpproxy does not in fact compare echoed vs
+requested versions). Reproducing with the **MCP SDK** (not curl) and reading the
+mcpproxy's own log (`component=mcp-proxy`, in the `ai-gateway-controller`) gave the
+real cause:
 
-- Modern MCP clients (the MCP TypeScript SDK, hence opencode ≥ 1.16) request
-  protocol version **`2025-11-25`** on `initialize`.
-- firecrawl supports up to `2025-06-18`, so — **correctly, per the MCP spec** — it
-  *negotiates down*: it accepts the connection and echoes back
-  `"protocolVersion":"2025-06-18"`.
-- context7 and refero instead **mirror** the requested `2025-11-25`.
-- The **AIEG v0.7.0 mcpproxy requires the backend to echo the client's EXACT
-  requested version**; when firecrawl returns a *different* (downgraded) version it
-  treats session creation as failed → HTTP 500 `failed to create MCP session to
-  any backend`.
+```
+backend=firecrawl error="MCP message is not a response: <nil>"
+```
 
-A/B proof against the live gateway: firecrawl with `protocolVersion:2025-06-18`
-→ **200**; the same firecrawl backend with `2025-11-25` → **500** (only the
-requested version differs). firecrawl **direct** accepts `2025-11-25` (200,
-echoing `2025-06-18`). So the rejection is the AIEG mcpproxy's, and it's an
-**upstream bug** — a spec-compliant downgrade should be honoured. v0.7.0 is the
-latest AIEG release; no upstream fix exists yet
-([envoyproxy/ai-gateway#2219](https://github.com/envoyproxy/ai-gateway/issues/2219)).
+**firecrawl frames its `initialize` SSE response differently per requested protocol
+version.** For the version modern clients send (`2025-11-25`, the MCP SDK / opencode
+default) firecrawl prepends an **empty leading SSE event** (`id: …` + `data:` with no
+content) before the real `event: message`. The AIEG v0.7.0 mcpproxy reads that first,
+empty event, parses it to nil, and fails session creation → HTTP 500. For
+`2025-06-18` firecrawl emits clean framing (the real `event: message` first), which
+the mcpproxy parses fine.
 
-Caddy can't fix this: the negotiated version is in the **response body**, and
-Caddy core has no response-body rewriting (only a plugin would, which needs a
-custom image — out of bounds per our off-the-shelf-images rule).
+A/B proof (live gateway): firecrawl init with `2025-06-18` → 200; with `2025-11-25`
+→ 500 — same backend, only the requested version differs. The discriminator is the
+**framing**, not any version comparison (a response-side version rewrite had no
+effect; client `2025-06-18` succeeds even when the response version is altered). This
+is an **upstream bug** — the mcpproxy's SSE reader should skip non-response /
+keep-alive events — filed as
+[envoyproxy/ai-gateway#2219](https://github.com/envoyproxy/ai-gateway/issues/2219).
+v0.7.0 is the latest AIEG release; no fix yet.
+
+The fix has to change the **request** (make firecrawl receive a version it frames
+cleanly). Neither Caddy nor stock nginx can rewrite a request body.
 
 ## Decision
 
-Add an **`nginx` proxy engine** to `charts/mcp` (`proxy.engine: nginx`, default
-`caddy`) for the one case Caddy can't serve — rewriting the response body — and a
-`proxy.rewriteResponseProtocolVersion: {from, to}` option that uses nginx
-`sub_filter` to rewrite firecrawl's echoed `initialize` protocol version back to
-what the client requested:
+Add an **`openresty` proxy engine** to `charts/mcp` (`proxy.engine: openresty`,
+default `caddy`) and a `proxy.pinRequestProtocolVersion` option. openresty
+(`openresty/openresty:alpine`, off-the-shelf — nginx + Lua) does the upstream TLS,
+injects the Bearer credential, and runs a `rewrite_by_lua_block` that pins the
+request body's `protocolVersion`:
 
-```nginx
-sub_filter '"protocolVersion":"2025-06-18"' '"protocolVersion":"2025-11-25"';
+```lua
+ngx.req.read_body()
+local b = ngx.req.get_body_data()
+if b then ngx.req.set_body_data((b:gsub([["protocolVersion":"[^"]*"]], [["protocolVersion":"2025-06-18"]]))) end
+ngx.req.set_header("Authorization", "Bearer " .. (os.getenv("MCP_TOKEN") or ""))
 ```
 
-nginx (`nginx:alpine`, off-the-shelf — same class as Caddy) does the upstream TLS
-(OpenSSL handles firecrawl's cert), injects the Bearer credential from the
-ExternalSecret via the image's `envsubst` template feature (`${MCP_TOKEN}`,
-scoped by `NGINX_ENVSUBST_FILTER=MCP_TOKEN` so nginx's own `$vars` survive), and
-rewrites the version. The MCPRoute still points at the in-cluster proxy Service
-(plain HTTP), exactly like the Caddy engine.
+firecrawl thus always receives `2025-06-18` and frames cleanly, so the mcpproxy
+parses the response and creates the session. The MCPRoute still points at the
+in-cluster proxy Service (plain HTTP). The token comes from the ExternalSecret via
+`env MCP_TOKEN;` + `os.getenv` (openresty has no envsubst entrypoint).
 
-context7 and refero stay on the **Caddy** engine (Caddy's TLS handles context7's
-ECDSA cert; refero needs the Caddy-only `rewriteResponseContentType`). Only
-firecrawl uses nginx.
+context7 and refero stay on the **Caddy** engine. Only firecrawl uses openresty.
 
-The earlier `proxy.statelessUpstream` Mcp-Session-Id synthesis (shipped
-v01–v03 of 2026-06-11) was based on the wrong premise and is **removed** — the
-mcpproxy never required a non-empty backend session id.
+The earlier `proxy.statelessUpstream` synthesis (v01–v03) and `proxy.engine: nginx`
++ `rewriteResponseProtocolVersion` (v04) were both based on wrong hypotheses and are
+**removed**.
 
 ## Consequences
 
-- **firecrawl works in modern clients** (opencode, etc.) again.
-- **This is an INTERIM.** The `to` version is pinned (`2025-11-25`); a client
-  requesting a *different* version (a future MCP spec bump, or an old client on
-  `2025-06-18`) would mismatch again. When AIEG ships a mcpproxy that tolerates
-  protocol-version downgrade, **delete the nginx engine + `rewriteResponseProtocolVersion`
-  and move firecrawl back to the Caddy engine.** Tracked alongside the upstream issue.
-- A second proxy engine is now a maintained surface in `charts/mcp`. Kept minimal:
-  nginx is selected only by `engine: nginx`; the default and every other MCP are
-  unchanged Caddy.
-- CI render-tests both engines (`charts/mcp/ci/proxiedexternal{,-nginx}-values.yaml`).
-- `sub_filter` on an SSE/streamed body is mildly fragile (a match split across
-  chunk boundaries would be missed); validated working against the live upstream,
-  and the version string sits within a single `data:` line so this is not a
-  practical risk for `initialize`.
+- **firecrawl works in modern MCP clients** (opencode etc.). Validated end-to-end
+  against the live gateway with the MCP SDK: `initialize` → 200, `tools/list` → 19
+  tools (the chart-rendered manifests, not just a hand-written config).
+- **This is an INTERIM.** The pin (`2025-06-18`) is firecrawl's current max clean
+  version. When AIEG ships an mcpproxy whose SSE reader skips non-response events
+  (#2219), **delete the openresty engine + `pinRequestProtocolVersion` and move
+  firecrawl back to the Caddy engine.**
+- A second proxy engine (openresty) is now a maintained surface in `charts/mcp`,
+  selected only by `engine: openresty`; the default and every other MCP are
+  unchanged Caddy. CI render-tests both engines
+  (`charts/mcp/ci/proxiedexternal{,-openresty}-values.yaml`).
+- The Lua `gsub` assumes compact JSON (`"protocolVersion":"…"`, no spaces), which the
+  MCP SDK emits; if a client sent spaced JSON the pin would no-op and firecrawl would
+  fail again (acceptable for the interim).
