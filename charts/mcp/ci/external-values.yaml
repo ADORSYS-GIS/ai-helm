@@ -1,0 +1,19 @@
+# CI render fixture — mode: external (MCPRoute points straight at the upstream
+# FQDN over TLS; legacy, ADR-0039/0040). This is also the chart default, but
+# pinning it as an explicit ci/ fixture keeps all three modes covered by the
+# charts/*/ci/*-values.yaml loop and exercises the external-mode BackendTLSPolicy
+# branch with oauth enabled (the deployed shape).
+mcp:
+  name: example-external
+  mode: external
+  path: /mcp/example
+  backendPath: /mcp
+  externalHost: example.example.com
+  externalPort: 443
+  tls: true
+
+oauth:
+  enabled: true
+  issuer: https://auth.verif.fyi/realms/camer-digital
+  publicOrigin: https://api.ai.camer.digital
+  resourceName: Example External MCP Server

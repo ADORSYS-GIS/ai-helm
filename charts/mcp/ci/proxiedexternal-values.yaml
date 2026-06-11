@@ -1,0 +1,29 @@
+# CI render fixture — mode: proxiedExternal (Caddy normalizing proxy fronting an
+# external hosted MCP, ADR-0040). Mirrors the real `refero` entry in the mcps
+# orchestrator (charts/mcps values.yaml): externalSecret enabled (so the
+# MCP_TOKEN env block + Caddyfile Authorization header both render — the exact
+# branch a stray `-}}` comment-chomp broke on 2026-06-11) AND the response
+# Content-Type rewrite. helm-lint.yaml renders every charts/*/ci/*-values.yaml;
+# before this the proxiedExternal branch was render-tested by no CI gate.
+mcp:
+  name: refero
+  mode: proxiedExternal
+  path: /mcp/refero
+  backendPath: /mcp
+  externalHost: api.refero.design
+  proxy:
+    rewriteResponseContentType: application/json
+
+oauth:
+  enabled: true
+  issuer: https://auth.verif.fyi/realms/camer-digital
+  publicOrigin: https://api.ai.camer.digital
+  resourceName: Refero Design MCP Server
+
+externalSecret:
+  enabled: true
+  secretName: refero-token
+  data:
+    - secretKey: apiKey
+      key: ai/camer/digital/prod/env
+      property: refero_api_key

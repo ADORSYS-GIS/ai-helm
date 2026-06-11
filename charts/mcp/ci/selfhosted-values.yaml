@@ -1,0 +1,37 @@
+# CI render fixture — mode: selfHosted (an in-cluster MCP image + Service).
+# Mirrors the real `brave` entry in the mcps orchestrator (charts/mcps
+# values.yaml) so CI render-tests the shape we actually deploy, not a synthetic
+# one. helm-lint.yaml renders every charts/*/ci/*-values.yaml; without this the
+# selfHosted branch of templates/deployment.yaml is never exercised.
+mcp:
+  name: brave-search
+  mode: selfHosted
+  path: /mcp/brave
+  backendPath: /mcp
+  image: docker.io/mcp/brave-search:latest
+  port: 8080
+  args:
+    - --transport
+    - http
+  env:
+    - name: BRAVE_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: brave-token
+          key: apiKey
+    - name: BRAVE_MCP_TRANSPORT
+      value: "http"
+
+oauth:
+  enabled: true
+  issuer: https://auth.verif.fyi/realms/camer-digital
+  publicOrigin: https://api.ai.camer.digital
+  resourceName: Brave Search MCP Server
+
+externalSecret:
+  enabled: true
+  secretName: brave-token
+  data:
+    - secretKey: apiKey
+      key: ai/camer/digital/prod/env
+      property: brave_api_key
