@@ -70,9 +70,11 @@ spec:
 {{- $host := required "mcp.externalHost is required in proxiedExternal mode" .Values.mcp.externalHost }}
 {{- $hdr := $p.authHeader | default "Authorization" }}
 {{- /* Build the Caddyfile: TLS reverse-proxy to the upstream, inject the
-       credential (optional — empty token = anonymous), optional response
-       Content-Type rewrite. */ -}}
-{{- $caddy := list "{" "  admin off" "  auto_https off" "}" (printf ":%d {" $port) (printf "  reverse_proxy https://%s {" $host) (printf "    header_up Host %s" $host) }}
+       credential, optional response Content-Type rewrite, optional MCP
+       session-id synthesis for stateless upstreams. */ -}}
+{{- $caddy := list "{" "  admin off" "  auto_https off" "}" (printf ":%d {" $port) }}
+{{- $caddy = append $caddy (printf "  reverse_proxy https://%s {" $host) }}
+{{- $caddy = append $caddy (printf "    header_up Host %s" $host) }}
 {{- if .Values.externalSecret.enabled }}
 {{- $val := ternary "Bearer {env.MCP_TOKEN}" "{env.MCP_TOKEN}" (ne $p.bearer false) }}
 {{- $caddy = append $caddy (printf "    header_up %s \"%s\"" $hdr $val) }}
@@ -80,7 +82,26 @@ spec:
 {{- with $p.rewriteResponseContentType }}
 {{- $caddy = append $caddy (printf "    header_down Content-Type %s" .) }}
 {{- end }}
-{{- $caddy = concat $caddy (list "  }" "}") }}
+{{- $caddy = append $caddy "  }" }}
+{{- if $p.statelessUpstream }}
+{{- /* The AIEG mcpproxy REQUIRES the backend to return an Mcp-Session-Id on
+       `initialize` (envoyproxy/ai-gateway#1555 — wontfix by design: it encrypts
+       the backend session id into its own client-facing token to stay
+       replica-stateless). A stateless upstream (e.g. firecrawl) returns none, so
+       the mcpproxy fails with "failed to create MCP session". Synthesize one:
+       mint a fresh uuid on the hop that carries no session id (the `initialize`
+       hop), otherwise echo the gateway's session id straight back — so the value
+       is unique per session AND stable across it. Done with request matchers on
+       the `header` (response) directive, NOT `map`: Caddy only expands
+       placeholders in a map's `default` output, not in matched branches, so a map
+       can't yield two different live values. Validated end-to-end against
+       mcp.firecrawl.dev (init→uuid, echo→same, 19 tools). */ -}}
+{{- $caddy = append $caddy "  @hasSession header Mcp-Session-Id *" }}
+{{- $caddy = append $caddy "  header @hasSession Mcp-Session-Id {http.request.header.Mcp-Session-Id}" }}
+{{- $caddy = append $caddy "  @noSession not header Mcp-Session-Id *" }}
+{{- $caddy = append $caddy "  header @noSession Mcp-Session-Id {http.request.uuid}" }}
+{{- end }}
+{{- $caddy = append $caddy "}" }}
 {{- $caddyfile := join "\n" $caddy }}
 apiVersion: v1
 kind: ConfigMap

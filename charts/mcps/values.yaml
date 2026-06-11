@@ -131,6 +131,12 @@ mcps:
       path: /mcp/firecrawl
       backendPath: /v2/mcp
       externalHost: mcp.firecrawl.dev
+      proxy:
+        # firecrawl's hosted MCP is STATELESS (returns no Mcp-Session-Id); the
+        # AIEG mcpproxy requires one (envoyproxy/ai-gateway#1555) → "failed to
+        # create MCP session". Caddy synthesizes it. (context7/refero are stateful
+        # and don't need this.)
+        statelessUpstream: true
     externalSecret:
       enabled: true
       secretName: firecrawl-token

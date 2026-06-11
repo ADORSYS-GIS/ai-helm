@@ -1,9 +1,11 @@
 # CI render fixture — mode: proxiedExternal (Caddy normalizing proxy fronting an
-# external hosted MCP, ADR-0040). Mirrors the real `refero` entry in the mcps
-# orchestrator (charts/mcps values.yaml): externalSecret enabled (so the
+# external hosted MCP, ADR-0040). Mirrors the real external MCP entries in the
+# mcps orchestrator (charts/mcps values.yaml): externalSecret enabled (so the
 # MCP_TOKEN env block + Caddyfile Authorization header both render — the exact
-# branch a stray `-}}` comment-chomp broke on 2026-06-11) AND the response
-# Content-Type rewrite. helm-lint.yaml renders every charts/*/ci/*-values.yaml;
+# branch a stray `-}}` comment-chomp broke on 2026-06-11), the response
+# Content-Type rewrite (refero), AND statelessUpstream session-id synthesis
+# (firecrawl). Exercising both proxy options together render-tests the whole
+# Caddyfile builder. helm-lint.yaml renders every charts/*/ci/*-values.yaml;
 # before this the proxiedExternal branch was render-tested by no CI gate.
 mcp:
   name: refero
@@ -13,6 +15,9 @@ mcp:
   externalHost: api.refero.design
   proxy:
     rewriteResponseContentType: application/json
+    # firecrawl needs this (stateless upstream); covered here so CI render-tests
+    # the synthesized-session `header`/matcher block of the Caddyfile.
+    statelessUpstream: true
 
 oauth:
   enabled: true
