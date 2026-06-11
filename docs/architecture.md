@@ -178,14 +178,16 @@ Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycl
 > `claimToHeaders` re-stamps the ADR-0011 `x-oidc-*` set. Rate-limit
 > descriptors are NOT stamped on `/mcp/*` (no MCP rate limiting today).
 >
-> ⚠️ **External HTTPS MCP backends need a TLS-socket fix (ADR-0039).** AIEG
-> stamps a `dummy.transport_socket` (empty SNI) on the cluster it generates for
-> an external MCP backend, which `BackendTLSPolicy` can't reach → the upstream
-> TLS handshake to CDN-fronted servers fails. An `EnvoyPatchPolicy` in
-> `charts/core-gateway` injects a real TLS socket (SNI + system-CA) — fixes the
-> **RSA-cert** externals (firecrawl, refero). **context7's ECDSA cert is rejected
-> by Envoy's BoringSSL** regardless, and self-hosting it needs a custom image +
-> Upstash Redis (against repo constraints) — so context7 was **dropped**. Full diagnosis:
+> ⚠️ **External hosted MCPs go through in-cluster Caddy proxies (ADR-0040).**
+> Direct external-TLS MCP backends were unfixable at the Envoy layer (AIEG's
+> empty-SNI `dummy.transport_socket`; BoringSSL rejecting context7's ECDSA cert;
+> refero's mislabeled `text/event-stream` → empty tools, AIEG #2218). Each
+> external MCP (context7, firecrawl, refero) is now fronted by a per-MCP **Caddy
+> normalizing proxy** (`charts/mcp` `mode: proxiedExternal`) that does the
+> upstream TLS (Go TLS handles ECDSA), injects the credential, and (refero only)
+> rewrites the response `Content-Type → application/json`. They become reliable
+> in-cluster plain-HTTP backends like brave/terraform; the ADR-0039
+> EnvoyPatchPolicy is removed. Full diagnosis:
 > [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](2026-06-10-mcp-external-server-proxy-debug.md).
 
 **Three identity surfaces** to know:

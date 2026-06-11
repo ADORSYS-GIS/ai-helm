@@ -310,6 +310,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0031 | Tag-based deploys (`release-YYYY.MM.DD`), never `main` — immutable/reproducible/rollback-able; self-ref `targetRevision`s + root pin the tag; external sources pinned to SHAs; `tools/release.sh` |
 | 0032 | llama.cpp (`llama-server`) as a 2nd self-hosted engine alongside vLLM — GGUF/Q4_K_M, native `--api-key` (no Caddy), `/v1`, `/health`; chosen for Qwen3.5-4B Q4 (vLLM Qwen3.5 support turbulent). Chart `model-serving-qwen3-5` — **LIVE 2026-06-08** (swapped in for qwen3-4b) |
 | 0038 | MCP OAuth discovery (RFC 9728) via native AIEG `MCPRoute.securityPolicy.oauth` — gateway-served protected-resource metadata + 401 `resource_metadata` challenge on `/mcp/*`; Envoy-native JWT displaces Authorino there (x-oidc-* re-stamped via claimToHeaders) |
+| 0040 | External hosted MCPs (context7/firecrawl/refero) via per-MCP in-cluster **Caddy normalizing proxies** (`mode: proxiedExternal`) — Go-TLS upstream (handles ECDSA), credential injection, response Content-Type rewrite; reliable in-cluster plain-HTTP backends (supersedes the ADR-0039 EnvoyPatchPolicy) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
@@ -346,7 +347,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **LibreChat per-user gateway attribution impossible** | Coarse billing for chat users | By design (ADR-0021); handled inside LibreChat |
 | **Mimir 6.0 deferred (breaking)** | Pinned on 5.x | Currency audit tracks it |
 | **Mimir ring wedges if memberlist blocked at startup** | Distributor sees 0 ingesters (`InstancesCount <= 0`) → metrics silently dropped | **Guarded:** durable `allow-same-namespace` (observability-secrets child, wave -3) lands before stores + Mimir `memberlist.rejoin_interval: 1m` self-heals the residual ordering race (audit 2026-06-07) |
-| **External HTTPS MCP backends: AIEG `dummy.transport_socket` → empty SNI** | AIEG stamps a placeholder TLS socket (no SNI) on MCP backend clusters that `BackendTLSPolicy` can't reach → upstream TLS to CDN-fronted MCPs fails. Self-hosted (brave/terraform) unaffected | **Fixed for RSA upstreams** (firecrawl, refero) via an `EnvoyPatchPolicy` injecting SNI + system-CA (ADR-0039, `release-2026.06.10-v02`); ⚠️ brittle coupling to AIEG's cluster name — re-verify after AIEG bumps. **context7's ECDSA cert is BoringSSL-rejected** regardless → self-hosted instead. Full diagnosis: [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](2026-06-10-mcp-external-server-proxy-debug.md) |
+| **External hosted MCPs unreliable as direct Envoy TLS backends** | AIEG empty-SNI `dummy.transport_socket`; BoringSSL rejects context7's ECDSA cert; refero mislabels JSON as `text/event-stream` → empty tools (AIEG #2218) | **Resolved (ADR-0040, `release-2026.06.10-v04`):** each external MCP (context7, firecrawl, refero) fronted by an in-cluster **Caddy normalizing proxy** (`mode: proxiedExternal`) — Go-TLS upstream (handles ECDSA), credential injection, refero Content-Type rewrite. Reliable in-cluster plain-HTTP backends; the ADR-0039 EnvoyPatchPolicy removed. Follow-ups: drop refero's rewrite when #2218 lands; populate `context7_api_key`. Diagnosis: [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](2026-06-10-mcp-external-server-proxy-debug.md) |
 
 ---
 
