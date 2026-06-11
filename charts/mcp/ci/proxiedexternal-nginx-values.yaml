@@ -1,0 +1,32 @@
+# CI render fixture — mode: proxiedExternal, NGINX engine (ADR-0041). Mirrors the
+# real `firecrawl` entry in the mcps orchestrator: nginx (not Caddy) so the proxy
+# can rewrite the upstream `initialize` response's protocolVersion, working around
+# the AIEG v0.7.0 mcpproxy's intolerance of a spec-compliant version downgrade.
+# Render-tests the nginx branch of the deployment template (ConfigMap template +
+# envsubst Deployment + sub_filter). INTERIM — remove with the nginx engine once
+# AIEG tolerates downgrade.
+mcp:
+  name: firecrawl
+  mode: proxiedExternal
+  path: /mcp/firecrawl
+  backendPath: /v2/mcp
+  externalHost: mcp.firecrawl.dev
+  proxy:
+    engine: nginx
+    rewriteResponseProtocolVersion:
+      from: "2025-06-18"
+      to: "2025-11-25"
+
+oauth:
+  enabled: true
+  issuer: https://auth.verif.fyi/realms/camer-digital
+  publicOrigin: https://api.ai.camer.digital
+  resourceName: Firecrawl MCP Server
+
+externalSecret:
+  enabled: true
+  secretName: firecrawl-token
+  data:
+    - secretKey: apiKey
+      key: ai/camer/digital/prod/env
+      property: firecrawl_api_key

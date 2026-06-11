@@ -118,9 +118,10 @@ mcps:
         - name: HOST
           value: "0.0.0.0"
 
-  # Firecrawl MCP (mcp.firecrawl.dev) via a Caddy normalizing proxy (ADR-0040).
-  # Caddy does the upstream TLS + injects the Bearer key; real SSE responses, so
-  # no Content-Type rewrite.
+  # Firecrawl MCP (mcp.firecrawl.dev) via an NGINX normalizing proxy (ADR-0040 +
+  # ADR-0041). nginx (not Caddy) because it must rewrite the response BODY: the
+  # AIEG v0.7.0 mcpproxy rejects firecrawl's spec-compliant protocol-version
+  # downgrade — see the proxy block.
   firecrawl:
     enabled: true
     oauth:
@@ -132,11 +133,17 @@ mcps:
       backendPath: /v2/mcp
       externalHost: mcp.firecrawl.dev
       proxy:
-        # firecrawl's hosted MCP is STATELESS (returns no Mcp-Session-Id); the
-        # AIEG mcpproxy requires one (envoyproxy/ai-gateway#1555) → "failed to
-        # create MCP session". Caddy synthesizes it. (context7/refero are stateful
-        # and don't need this.)
-        statelessUpstream: true
+        # firecrawl (correctly, per MCP spec) negotiates a newer requested
+        # protocolVersion DOWN — opencode/the MCP SDK request 2025-11-25, firecrawl
+        # echoes 2025-06-18 — but the AIEG v0.7.0 mcpproxy demands the backend echo
+        # the EXACT requested version or it 500s "failed to create MCP session to
+        # any backend" (upstream bug, ADR-0041). nginx sub_filter rewrites the
+        # echoed version back to what modern clients ask for. INTERIM — drop the
+        # nginx engine + this block once AIEG tolerates downgrade.
+        engine: nginx
+        rewriteResponseProtocolVersion:
+          from: "2025-06-18"
+          to: "2025-11-25"
     externalSecret:
       enabled: true
       secretName: firecrawl-token

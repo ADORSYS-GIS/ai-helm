@@ -283,7 +283,14 @@ are rendered **only** when `externalSecret.enabled: true`; a genuinely keyless M
 → check `MCP_TOKEN` length in the running Caddy container
 (`kubectl exec … -- sh -c 'printf %s "$MCP_TOKEN" | wc -c'`); len 0 = lost the race.
 
-## 9.6 Postscript (2026-06-11): firecrawl failed because it is a STATELESS MCP server
+## 9.6 Postscript (2026-06-11): firecrawl failed because it is a STATELESS MCP server — ⚠️ WRONG, see §9.7
+
+> **This section's conclusion was incorrect** and the `proxy.statelessUpstream`
+> fix it describes was reverted. The AIEG mcpproxy *does* support stateless
+> backends (`internal/mcpproxy/session.go` reads the backend `Mcp-Session-Id` but
+> tolerates an empty one — "some servers are stateless hence no (==empty) session
+> ID"). The real cause is protocol-version negotiation — see **§9.7**. Kept here
+> as a record of the dead end.
 
 With context7 and refero working through the gateway, only firecrawl still failed
 ("failed to create MCP session"). It was **not** the key, the proxy, or the upstream: firecrawl
@@ -334,6 +341,43 @@ context7/refero stay stateful and must NOT set it. Validated end-to-end through 
 against `mcp.firecrawl.dev`: init→uuid minted, subsequent→same id echoed, 19 tools, unique per
 session. The one link not reproducible locally (the mcpproxy accepting the synthesized id) is the
 exact behaviour #1555 documents it requires.
+
+## 9.7 Postscript (2026-06-11): the REAL firecrawl cause — protocol-version downgrade (ADR-0041)
+
+Reproduced with the actual MCP TypeScript SDK (what opencode uses), which `curl`
+hand-tests had hidden: `client.connect()` → POST `initialize` → **HTTP 500
+`failed to create new session: failed to create MCP session to any backend`**.
+The SDK sends `protocolVersion: "2025-11-25"`; my curl had used `2025-06-18`.
+
+**Mechanism — the AIEG v0.7.0 mcpproxy requires the backend to echo the client's
+EXACT requested protocol version:**
+
+| backend (req `2025-11-25`) | echoes back | gateway |
+|---|---|---|
+| firecrawl | `2025-06-18` (spec-compliant **downgrade** — its max) | **500** |
+| context7, refero | `2025-11-25` (mirror) | 200 |
+
+A/B on the *same* firecrawl backend: `2025-06-18`→200, `2025-11-25`→500 — only the
+requested version differs. firecrawl **direct** accepts `2025-11-25` (200, echoing
+`2025-06-18`), so the rejection is the mcpproxy's, not firecrawl's. AIEG v0.7.0 is
+the latest release; filed as
+[envoyproxy/ai-gateway#2219](https://github.com/envoyproxy/ai-gateway/issues/2219)
+(a downgrade is legal MCP).
+
+**Fix (ADR-0041):** Caddy can't rewrite a response *body*, so firecrawl moves to a
+new **nginx** proxy engine (`charts/mcp` `proxy.engine: nginx`) whose `sub_filter`
+rewrites the echoed `"protocolVersion":"2025-06-18"` → `"2025-11-25"` so it matches
+what modern clients request. nginx does the TLS + Bearer injection (envsubst
+`${MCP_TOKEN}`) just like Caddy. context7/refero stay on Caddy. INTERIM — pinned to
+`2025-11-25`; remove the nginx engine once AIEG tolerates downgrade.
+
+**How it was found (reusable):** the failing client is the MCP **SDK**, not curl —
+reproduce with `@modelcontextprotocol/sdk` `StreamableHTTPClientTransport` and a
+`fetch` wrapper logging method/status/body. A fresh Keycloak token for the gateway
+can be minted from opencode's cached refresh token: client_id `opencode-cli`
+(public PKCE), token endpoint `auth.verif.fyi/realms/camer-digital/.../token`,
+grant `refresh_token`, with the `resource=` indicator. The gateway-vs-direct A/B
+and the per-version A/B are what isolate it.
 
 ## 9. References
 
