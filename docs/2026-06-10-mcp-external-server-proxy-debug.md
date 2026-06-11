@@ -308,19 +308,26 @@ hop) Caddy mints a fresh uuid; on every later hop it echoes the gateway-sent ses
 back — so the value is **unique per session AND stable across it**:
 
 ```caddyfile
-@hasSession header Mcp-Session-Id *
+@hasSession header_regexp Mcp-Session-Id .+
 header @hasSession Mcp-Session-Id {http.request.header.Mcp-Session-Id}
-@noSession not header Mcp-Session-Id *
+@noSession not header_regexp Mcp-Session-Id .+
 header @noSession Mcp-Session-Id {http.request.uuid}
 ```
 
-Two Caddy gotchas found while building this (both caught by `caddy validate` + a local run
+THREE Caddy gotchas found while building this (all caught by `caddy validate` + a local run
 against the real upstream *before* shipping — do this, do not ship Caddyfile changes blind):
 1. **`header_down ?Field` is rejected** — the `?` set-if-missing modifier is only valid on the
    standalone `header` (response) directive, not on `reverse_proxy`'s `header_down`.
 2. **`map` only expands placeholders in its `default` output, not in matched branches** — so a
    `map` cannot yield two different *live* values (uuid for one case, the request header for the
    other). The request-matcher form above is the way; both placeholders expand.
+3. **Match on NON-EMPTY (`header_regexp … .+`), not presence (`header … *`).** The mcpproxy sends
+   an **empty** `Mcp-Session-Id` header on the `initialize` hop (`'mcp-session-id', ''` in the
+   envoy access log), not an absent one. A presence matcher (`header Mcp-Session-Id *`) treats
+   empty-present as "has session" → it echoes the empty value straight back and the mcpproxy
+   still sees no session → the failure *persists* after deploy. This one slipped the first local
+   pass because a hand-written `curl` *omits* the header rather than sending it empty — reproduce
+   with `-H "Mcp-Session-Id;"` (curl's send-empty-header syntax) to catch it.
 
 Enabled for firecrawl only (`charts/mcps` `firecrawl.mcp.proxy.statelessUpstream: true`);
 context7/refero stay stateful and must NOT set it. Validated end-to-end through a local Caddy

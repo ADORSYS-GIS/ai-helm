@@ -94,11 +94,16 @@ spec:
        is unique per session AND stable across it. Done with request matchers on
        the `header` (response) directive, NOT `map`: Caddy only expands
        placeholders in a map's `default` output, not in matched branches, so a map
-       can't yield two different live values. Validated end-to-end against
-       mcp.firecrawl.dev (init→uuid, echo→same, 19 tools). */ -}}
-{{- $caddy = append $caddy "  @hasSession header Mcp-Session-Id *" }}
+       can't yield two different live values. ⚠️ Match on NON-EMPTY (`header_regexp
+       … .+`), NOT presence (`header … *`): the mcpproxy sends an *empty*
+       `Mcp-Session-Id` header on the initialize hop (`'mcp-session-id', ''` in the
+       envoy log), and a presence matcher treats empty-present as "has session" →
+       it would echo the empty value straight back and the mcpproxy still sees no
+       session. Validated end-to-end against mcp.firecrawl.dev (absent/empty→uuid,
+       non-empty→echoed, 19 tools). */ -}}
+{{- $caddy = append $caddy "  @hasSession header_regexp Mcp-Session-Id .+" }}
 {{- $caddy = append $caddy "  header @hasSession Mcp-Session-Id {http.request.header.Mcp-Session-Id}" }}
-{{- $caddy = append $caddy "  @noSession not header Mcp-Session-Id *" }}
+{{- $caddy = append $caddy "  @noSession not header_regexp Mcp-Session-Id .+" }}
 {{- $caddy = append $caddy "  header @noSession Mcp-Session-Id {http.request.uuid}" }}
 {{- end }}
 {{- $caddy = append $caddy "}" }}
