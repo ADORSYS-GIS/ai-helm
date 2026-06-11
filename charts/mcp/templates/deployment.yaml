@@ -121,25 +121,24 @@ spec:
           ports:
             - containerPort: {{ $port }}
           {{- if .Values.externalSecret.enabled }}
-          {{- /* requireToken (default true): block container start until ESO has
-                 populated the secret. optional:true is a footgun — if the Caddy
-                 pod wins the start race against ESO, the env binds empty and
-                 NEVER refreshes (env vars are start-bound), so Caddy injects an
-                 empty Bearer and the upstream rejects every request as
-                 "Invalid API key" until a manual pod delete (ADR-0040 / the
-                 2026-06-11 context7 incident). Waiting (ContainerCreating: secret
-                 not found) is the honest failure mode for a keyed MCP — anonymous
-                 context7/firecrawl are useless anyway. Set requireToken:false only
-                 for an MCP that genuinely works anonymously. NB Helm's `default`
-                 treats explicit false as empty, so gate on hasKey, not default. */ -}}
-          {{- $optional := and (hasKey $p "requireToken") (not $p.requireToken) }}
+          {{- /* The token is NEVER optional. Env vars from secretKeyRef bind at
+                 pod start and never refresh, so optional:true lets a Caddy pod
+                 that beats ESO capture an EMPTY token and inject `Bearer ` forever
+                 → the upstream rejects every request as "Invalid API key" until a
+                 manual pod delete (the 2026-06-11 context7 incident). optional:false
+                 makes the container WAIT in ContainerCreating until ESO has
+                 populated the Secret — the honest failure mode for a keyed MCP.
+                 A genuinely keyless MCP sets externalSecret.enabled:false instead:
+                 this block AND the Caddyfile Authorization header are then both
+                 unrendered, so Caddy proxies anonymously. There is no middle
+                 ground, so there is no knob. */}}
           env:
             - name: MCP_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.externalSecret.secretName }}
                   key: apiKey
-                  optional: {{ $optional }}
+                  optional: false
           {{- end }}
           volumeMounts:
             - name: caddyfile

@@ -56,14 +56,14 @@ mcp:
     authHeader: Authorization
     # Prefix the token with "Bearer " (set false for raw-value headers).
     bearer: true
-    # requireToken (default true): the Caddy container waits in ContainerCreating
-    # until ESO has populated the secret, rather than starting tokenless. This
-    # closes a start-race footgun — env vars from secretKeyRef bind at pod start
-    # and never refresh, so a pod that beats ESO would inject an empty Bearer and
-    # the upstream rejects every request ("Invalid API key") until a manual pod
-    # delete (the 2026-06-11 context7 incident). Set false ONLY for an MCP that
-    # genuinely works anonymously (none today).
-    requireToken: true
+    # NB the token is injected ONLY when externalSecret.enabled (below) is true,
+    # and when injected it is NEVER optional — the Caddy container waits in
+    # ContainerCreating until ESO has populated the Secret rather than starting
+    # tokenless (env vars from secretKeyRef bind at pod start and never refresh, so
+    # a pod that beats ESO would inject an empty Bearer and the upstream rejects
+    # every request — the 2026-06-11 context7 incident). To run an MCP anonymously,
+    # set externalSecret.enabled:false — then no token env and no Authorization
+    # header are rendered. There is no anonymous-with-a-declared-secret mode.
     # Optional: overwrite the upstream response Content-Type before the AIEG
     # mcpproxy parses it. Needed for servers that mislabel a JSON body as
     # text/event-stream (e.g. refero) → set "application/json". Leave empty to
