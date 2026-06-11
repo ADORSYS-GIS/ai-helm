@@ -118,10 +118,9 @@ mcps:
         - name: HOST
           value: "0.0.0.0"
 
-  # Firecrawl MCP (mcp.firecrawl.dev) via an NGINX normalizing proxy (ADR-0040 +
-  # ADR-0041). nginx (not Caddy) because it must rewrite the response BODY: the
-  # AIEG v0.7.0 mcpproxy rejects firecrawl's spec-compliant protocol-version
-  # downgrade — see the proxy block.
+  # Firecrawl MCP (mcp.firecrawl.dev) via an OPENRESTY normalizing proxy (ADR-0040
+  # + ADR-0041). openresty (nginx + Lua), not Caddy, because it must rewrite the
+  # REQUEST body — see the proxy block.
   firecrawl:
     enabled: true
     oauth:
@@ -133,17 +132,17 @@ mcps:
       backendPath: /v2/mcp
       externalHost: mcp.firecrawl.dev
       proxy:
-        # firecrawl (correctly, per MCP spec) negotiates a newer requested
-        # protocolVersion DOWN — opencode/the MCP SDK request 2025-11-25, firecrawl
-        # echoes 2025-06-18 — but the AIEG v0.7.0 mcpproxy demands the backend echo
-        # the EXACT requested version or it 500s "failed to create MCP session to
-        # any backend" (upstream bug, ADR-0041). nginx sub_filter rewrites the
-        # echoed version back to what modern clients ask for. INTERIM — drop the
-        # nginx engine + this block once AIEG tolerates downgrade.
-        engine: nginx
-        rewriteResponseProtocolVersion:
-          from: "2025-06-18"
-          to: "2025-11-25"
+        # firecrawl frames its `initialize` RESPONSE with an empty leading SSE
+        # event for the protocolVersion modern clients send (opencode/the MCP SDK
+        # request 2025-11-25); the AIEG v0.7.0 mcpproxy reads that empty event and
+        # fails: `MCP message is not a response: <nil>` → 500 "failed to create MCP
+        # session to any backend" (upstream bug #2219, ADR-0041). For 2025-06-18
+        # firecrawl frames cleanly, so openresty's Lua pins the REQUEST body's
+        # protocolVersion down to it. Validated end-to-end (init 200, 19 tools).
+        # INTERIM — drop the openresty engine + this block once AIEG's SSE parser
+        # skips non-response events.
+        engine: openresty
+        pinRequestProtocolVersion: "2025-06-18"
     externalSecret:
       enabled: true
       secretName: firecrawl-token

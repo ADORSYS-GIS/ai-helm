@@ -1,0 +1,30 @@
+# CI render fixture — mode: proxiedExternal, OPENRESTY engine (ADR-0041). Mirrors
+# the real `firecrawl` entry in the mcps orchestrator: openresty (nginx + Lua), not
+# Caddy, so the proxy can rewrite the REQUEST body's protocolVersion — firecrawl
+# frames its initialize RESPONSE with an empty leading SSE event for 2025-11-25 that
+# the AIEG v0.7.0 mcpproxy mis-parses, so we pin the request down to 2025-06-18
+# (clean framing). Render-tests the openresty branch (Lua request rewrite + token
+# injection). INTERIM — remove with the openresty engine once AIEG #2219 is fixed.
+mcp:
+  name: firecrawl
+  mode: proxiedExternal
+  path: /mcp/firecrawl
+  backendPath: /v2/mcp
+  externalHost: mcp.firecrawl.dev
+  proxy:
+    engine: openresty
+    pinRequestProtocolVersion: "2025-06-18"
+
+oauth:
+  enabled: true
+  issuer: https://auth.verif.fyi/realms/camer-digital
+  publicOrigin: https://api.ai.camer.digital
+  resourceName: Firecrawl MCP Server
+
+externalSecret:
+  enabled: true
+  secretName: firecrawl-token
+  data:
+    - secretKey: apiKey
+      key: ai/camer/digital/prod/env
+      property: firecrawl_api_key
