@@ -1,15 +1,19 @@
 # ADR-0039: Repair external MCP backend upstream TLS via EnvoyPatchPolicy
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0040](0040-external-mcps-via-caddy-normalizing-proxy.md)
 **Date:** 2026-06-10
 **Deciders:** @stephane-segning
 
-> **Update (2026-06-11):** the body below says context7 "is self-hosted instead."
-> That self-host was **not** done — context7 was instead **dropped from the MCP
-> set** (`release-2026.06.10-v03`). Self-hosting needs a custom-built image (no
-> usable published context7 HTTP image) + Upstash Redis (v3 HTTP session store),
-> both against repo constraints. The EnvoyPatchPolicy decision (for the RSA-cert
-> externals firecrawl/refero) is unchanged.
+> **Superseded (2026-06-11) by [ADR-0040](0040-external-mcps-via-caddy-normalizing-proxy.md).**
+> The `EnvoyPatchPolicy` below worked for RSA-cert externals (firecrawl, refero)
+> but was brittle (AIEG cluster-name coupling), couldn't reach context7's ECDSA
+> cert (BoringSSL), and didn't fix refero's empty-tools (content-type
+> mislabeling, #2218). ADR-0040 replaces it with per-MCP in-cluster **Caddy
+> normalizing proxies** that do the upstream TLS (Go TLS handles ECDSA) + fix the
+> content-type — and **removes this EnvoyPatchPolicy** (`charts/core-gateway`
+> `mcpBackendTls`). The body below is retained as the record of the interim fix.
+> (The earlier "context7 self-hosted/dropped" notes are also obsolete — context7
+> is back via the Caddy proxy.)
 
 ## Context
 

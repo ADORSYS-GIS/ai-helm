@@ -5,18 +5,32 @@
 mcp:
   # Resource-name base — Backend / Deployment / Service / MCPRoute all use it.
   name: example
-  # Backend mode: "external" (upstream FQDN) or "selfHosted" (in-cluster pod).
+  # Backend mode:
+  #   selfHosted      — the MCP server runs in-cluster (own image), plain HTTP.
+  #   proxiedExternal — a Caddy normalizing proxy fronts an EXTERNAL hosted MCP
+  #                     (ADR-0040): Caddy does the upstream TLS (Go TLS handles
+  #                     ECDSA certs Envoy's BoringSSL rejects), injects the
+  #                     credential, and can rewrite the response Content-Type.
+  #                     Preferred for external MCPs — turns them into reliable
+  #                     in-cluster plain-HTTP backends.
+  #   external        — MCPRoute points straight at the upstream FQDN over TLS
+  #                     (legacy; needs the ADR-0039 EnvoyPatchPolicy SNI hack and
+  #                     can't reach ECDSA/mislabeling upstreams — prefer
+  #                     proxiedExternal).
   mode: external
   # MCPRoute path exposed on the gateway (e.g. /mcp/brave).
   path: /mcp/example
-  # Path the MCPRoute rewrites to on the upstream backend.
+  # Path the MCPRoute rewrites to on the upstream backend. For proxiedExternal
+  # this is the UPSTREAM path (Caddy forwards it verbatim, e.g. /mcp, /v2/mcp).
   backendPath: /mcp
 
-  # ── selfHosted mode ────────────────────────────────────────────────────
+  # ── selfHosted / proxiedExternal: in-cluster pod ───────────────────────
+  # selfHosted: the MCP image. proxiedExternal: the Caddy image (default
+  # caddy:2-alpine) + `port` = Caddy's listen port.
   image: ""
   port: 8080
   args: []
-  # Free-form container env (supports valueFrom.secretKeyRef, e.g. an API key).
+  # Free-form container env (selfHosted only; supports valueFrom.secretKeyRef).
   env: []
   resources:
     requests:
@@ -26,16 +40,33 @@ mcp:
       cpu: 300m
       memory: 512Mi
 
-  # ── external mode ──────────────────────────────────────────────────────
+  # ── external / proxiedExternal: the upstream ───────────────────────────
   externalHost: "example.example.com"
   externalPort: 443
-  # TLS to the upstream (System CA trust + SNI = externalHost). external only.
+  # TLS to the upstream (System CA + SNI = externalHost). `external` mode only;
+  # proxiedExternal always does TLS via Caddy.
   tls: true
+
+  # ── proxiedExternal: the Caddy proxy behaviour ─────────────────────────
+  # The credential comes from `externalSecret` (key `apiKey`) → Caddy env
+  # MCP_TOKEN (optional: anonymous if unsynced). Caddy reverse-proxies to
+  # https://externalHost (path preserved = backendPath).
+  proxy:
+    # Header Caddy injects toward the upstream with the token.
+    authHeader: Authorization
+    # Prefix the token with "Bearer " (set false for raw-value headers).
+    bearer: true
+    # Optional: overwrite the upstream response Content-Type before the AIEG
+    # mcpproxy parses it. Needed for servers that mislabel a JSON body as
+    # text/event-stream (e.g. refero) → set "application/json". Leave empty to
+    # pass the upstream Content-Type through (e.g. context7/firecrawl real SSE).
+    rewriteResponseContentType: ""
 
   # ── auth: inject an API key into the MCPRoute (securityPolicy.apiKey) ────
   # The referenced Secret's key MUST be `apiKey` (AIEG MCPRoute contract). When
   # `header` is empty the gateway defaults to "Authorization" and prefixes the
   # value with "Bearer " automatically — so the Secret holds the raw token.
+  # NOT used by proxiedExternal (Caddy injects the credential instead).
   auth:
     enabled: false
     secretName: ""

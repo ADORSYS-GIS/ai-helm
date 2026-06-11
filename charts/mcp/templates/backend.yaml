@@ -12,7 +12,9 @@ metadata:
 spec:
   endpoints:
     - fqdn:
-        {{- if eq .Values.mcp.mode "selfHosted" }}
+        {{- if or (eq .Values.mcp.mode "selfHosted") (eq .Values.mcp.mode "proxiedExternal") }}
+        # In-cluster: the self-hosted server, or the Caddy normalizing proxy
+        # (proxiedExternal) that fronts the external upstream — see deployment.yaml.
         hostname: {{ .Values.mcp.name }}.{{ include "common.names.namespace" $ }}.svc.cluster.local
         port: {{ .Values.mcp.port }}
         {{- else }}

@@ -1,11 +1,32 @@
 # MCP external-server proxy debug + AIEG v0.6.0 → v0.7.0 upgrade (2026-06-10)
 
-**Status:** RESOLVED for firecrawl + refero (fix in `release-2026.06.10-v02`,
-[ADR-0039](adr/0039-mcp-external-backend-tls-envoypatchpolicy.md)); context7
-self-hosted (tracked separately). Point-in-time change-log; durable contracts in
+**Status:** RESOLVED — **final fix = [ADR-0040](adr/0040-external-mcps-via-caddy-normalizing-proxy.md)**
+(`release-2026.06.10-v04`): all three external MCPs (context7, firecrawl, refero)
+go through per-MCP in-cluster **Caddy normalizing proxies**. Point-in-time
+change-log of the whole investigation; durable contracts in
 [ADR-0038](adr/0038-mcp-oauth-protected-resource-metadata.md),
-[ADR-0039](adr/0039-mcp-external-backend-tls-envoypatchpolicy.md),
+[ADR-0040](adr/0040-external-mcps-via-caddy-normalizing-proxy.md),
 [ADR-0027](adr/0027-mcps-orchestrator-split-and-coder-removal.md).
+
+> ## ✅ FINAL resolution (supersedes the ADR-0039 EnvoyPatchPolicy below)
+> The investigation went through three fixes; only the last stuck:
+> 1. AIEG v0.6→v0.7 upgrade (`-v01`) — red herring (mcpproxy unchanged).
+> 2. EnvoyPatchPolicy SNI injection ([ADR-0039](adr/0039-mcp-external-backend-tls-envoypatchpolicy.md), `-v02`) —
+>    fixed firecrawl/refero **TLS**, but brittle, BoringSSL-only (context7's ECDSA
+>    cert still failed), and **didn't fix refero's empty tools** (it returns a
+>    JSON body mislabeled `text/event-stream`, so the mcpproxy's SSE parser yields
+>    nothing — [envoyproxy/ai-gateway#2218](https://github.com/envoyproxy/ai-gateway/issues/2218)).
+> 3. **[ADR-0040](adr/0040-external-mcps-via-caddy-normalizing-proxy.md) (`-v04`) — the real fix:**
+>    front each external MCP with an in-cluster **Caddy** proxy (`mode:
+>    proxiedExternal`). Caddy does the upstream TLS (Go TLS → **handles context7's
+>    ECDSA cert** that BoringSSL rejected), injects the credential, and rewrites
+>    refero's response `Content-Type → application/json` so the mcpproxy parses it.
+>    External MCPs become reliable in-cluster plain-HTTP backends (like
+>    brave/terraform); the EnvoyPatchPolicy is removed. Validated live: refero 8
+>    tools, context7 ECDSA handshake OK, firecrawl 19 tools.
+>
+> The sections below are the investigation trail (incl. the discarded mcpproxy-bug
+> and EnvoyPatchPolicy stages).
 
 > ## ⚠️ ACTUAL root cause (supersedes the §4 mcpproxy-bug hypothesis below)
 > The §4 "AIEG mcpproxy runtime bug (#1924/#1996/#1938)" theory was **wrong**,
