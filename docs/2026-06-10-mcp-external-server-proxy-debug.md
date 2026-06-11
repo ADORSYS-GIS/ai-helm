@@ -247,6 +247,39 @@ curl -si https://api.ai.camer.digital/mcp/brave -X POST \
 # 4. End-to-end (the real test): `opencode mcp auth` each server, then use a tool.
 ```
 
+## 9.5 Postscript (2026-06-11): context7 "Invalid API key" was a token-bind race, NOT a bad key
+
+After the Caddy proxies went live, context7 returned `Error: Invalid API key … keys should
+start with 'ctx7sk'` on every doc query — even though the secret value was confirmed correct.
+It looked like an unregistered/invalid key. It was not.
+
+**Root cause — a 1-second start race.** The context7 Caddy pod started at `08:33:40Z`; ESO
+synced the `context7-token` Secret at `08:33:41Z`, one second later. The credential is wired as
+an env var (`MCP_TOKEN` ← `secretKeyRef … optional: true`). With `optional: true`, the kubelet
+starts the container even when the secret key is absent — so the pod captured **`MCP_TOKEN=""`**.
+Env vars from `secretKeyRef` **bind at pod start and never refresh**, so Caddy kept injecting
+`Authorization: Bearer ` (empty) long after ESO populated the Secret. context7 saw no key →
+"Invalid API key." firecrawl and refero won the same race that boot, so only context7 was hit.
+
+**Proof the key was always good.** A direct `tools/call query-docs {libraryId:/vercel/next.js}`
+against `https://mcp.context7.com/mcp` with `Authorization: Bearer ctx7sk-…1509` returned real
+Next.js docs; the same call **through the Caddy proxy** (Caddy injecting the key, no client auth)
+also returned real docs once the pod was restarted. The cluster Secret value byte-matched the
+dashboard key.
+
+**Immediate fix:** `kubectl -n converse-mcp delete pod <context7-caddy>` — the replacement
+re-read the now-populated Secret (`MCP_TOKEN` len 43). (`kubectl delete pod`, not `rollout
+restart`, which ArgoCD selfHeal reverts.)
+
+**Durable fix (shipped):** `charts/mcp` `proxy.requireToken` (default **true**) renders the env
+with `optional: false`, so a keyed Caddy proxy waits in `ContainerCreating` until ESO has
+populated the Secret rather than starting tokenless. Waiting is the honest failure mode — an
+anonymous context7/firecrawl is useless anyway. Set `requireToken: false` only for an MCP that
+genuinely works without a key (none today). **Recognise the symptom:** `Invalid API key` (or
+empty/anonymous behaviour) from a `proxiedExternal` MCP whose Secret is provably correct, right
+after a fresh deploy/cluster rebuild → check `MCP_TOKEN` length in the running Caddy container
+(`kubectl exec … -- sh -c 'printf %s "$MCP_TOKEN" | wc -c'`); len 0 = lost the race.
+
 ## 9. References
 
 - [ADR-0038](adr/0038-mcp-oauth-protected-resource-metadata.md) — MCP OAuth discovery (the edge surface, working).

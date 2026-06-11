@@ -121,15 +121,25 @@ spec:
           ports:
             - containerPort: {{ $port }}
           {{- if .Values.externalSecret.enabled }}
+          {{- /* requireToken (default true): block container start until ESO has
+                 populated the secret. optional:true is a footgun — if the Caddy
+                 pod wins the start race against ESO, the env binds empty and
+                 NEVER refreshes (env vars are start-bound), so Caddy injects an
+                 empty Bearer and the upstream rejects every request as
+                 "Invalid API key" until a manual pod delete (ADR-0040 / the
+                 2026-06-11 context7 incident). Waiting (ContainerCreating: secret
+                 not found) is the honest failure mode for a keyed MCP — anonymous
+                 context7/firecrawl are useless anyway. Set requireToken:false only
+                 for an MCP that genuinely works anonymously. NB Helm's `default`
+                 treats explicit false as empty, so gate on hasKey, not default. */ -}}
+          {{- $optional := and (hasKey $p "requireToken") (not $p.requireToken) }}
           env:
-            # Upstream credential. optional: the proxy still starts (anonymous)
-            # if the secret isn't synced yet — e.g. context7_api_key unpopulated.
             - name: MCP_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.externalSecret.secretName }}
                   key: apiKey
-                  optional: true
+                  optional: {{ $optional }}
           {{- end }}
           volumeMounts:
             - name: caddyfile
