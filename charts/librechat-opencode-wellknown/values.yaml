@@ -145,15 +145,16 @@ wellKnown:
     #     terraform→iac). `enabled: false` = not connected → no agent can
     #     use it (reserve for servers no role needs yet).
     mcp:
-      # Local — runs on the USER's machine via npx, not through our
-      # gateway. Off by default: the maintainer (AI Advocate) wants every
-      # user to have a unified Chrome DevTools experience *available*, but
-      # it needs a local Chrome + a bun/npx install, so it's opt-in, not
-      # forced on.
+      # Local — runs on the USER's machine via npx, not through our gateway.
+      # CONNECTED but scoped to the frontend agent (the maintainer, as AI
+      # Advocate, wants a unified Chrome DevTools experience). ⚠️ Being local,
+      # it spawns `npx chrome-devtools-mcp` on every user's box and needs a
+      # real Chrome — a user without that setup sees it fail to start; that's
+      # accepted (kept on purpose).
       chrome-devtools:
         type: local
         command: ["npx", "-y", "chrome-devtools-mcp@latest"]
-        enabled: false
+        enabled: true            # connected; scoped to the frontend agent
       # Remote — the gateway's /mcp/<name> routes (ADR-0038): Keycloak JWT
       # via the opencode-cli client, RFC 9728 discovery on the route. All
       # remotes share one OAuth client, so the block is defined once
@@ -199,6 +200,7 @@ wellKnown:
       "context7_*": deny
       "terraform_*": deny
       "refero_*": deny
+      "chrome-devtools_*": deny
 
     # ────────────────────────────────────────────────────────────────────
     # Role subagents (ADR-0044). Delegated specialists (`mode: subagent`) the
@@ -346,12 +348,14 @@ wellKnown:
         model: "camer-digital/adorsys-coder-pro"   # Adorsys Coder Pro (→GLM-5.1) — UI work
         description: >-
           Builds and edits frontend UI, grounded in design references (Refero)
-          and framework docs (Context7). Read + write; runs the JS toolchain
+          and framework docs (Context7), and inspects/debugs the running app in
+          a real browser (Chrome DevTools). Read + write; runs the JS toolchain
           with guardrails. Delegate for "build/adjust the UI" tasks.
         temperature: 0.3
         prompt: >-
           You are a frontend specialist. Use the Refero MCP for design
-          references and Context7 for framework/library docs, then implement
+          references, Context7 for framework/library docs, and the Chrome
+          DevTools MCP to inspect and debug the running app, then implement
           clean, accessible UI. You may edit files and run the JS toolchain
           (pnpm/npm/bun/yarn); never run destructive shell (rm, etc.) and pause
           for approval on anything unrecognized.
@@ -366,6 +370,7 @@ wellKnown:
             "rm *": deny
           "context7_*": allow
           "refero_*": allow
+          "chrome-devtools_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the

@@ -34,9 +34,9 @@ subagents** behind a **lean primary agent**:
 
 1. **Connectivity** (`config.mcp.<name>.enabled`) = whether opencode connects to
    the server at all. Connect every server some role needs (now: brave,
-   context7, **terraform**, **refero** — flipped on). `enabled: false` means
-   *not connected* → reserved for servers no role uses yet (firecrawl,
-   chrome-devtools).
+   context7, **terraform**, **refero**, and the local **chrome-devtools** —
+   flipped on). `enabled: false` means *not connected* → reserved for servers
+   no role uses yet (firecrawl).
 2. **Access** (`config.permission` + `config.agent.<name>.permission`):
    - A **global `permission` deny-baseline** denies every connected MCP tool
      (`brave_*`, `context7_*`, `terraform_*`) so the **primary/default agent is
@@ -60,7 +60,7 @@ user default.
 | `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` (read-only code review) |
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
-| `frontend` | `adorsys-coder-pro` | allow | `ask`; allow JS toolchain (`pnpm`/`npm`/`bun`/`yarn`); deny `rm *` | `context7_*`, `refero_*` (design-aware UI) |
+| `frontend` | `adorsys-coder-pro` | allow | `ask`; allow JS toolchain (`pnpm`/`npm`/`bun`/`yarn`); deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` (design-aware UI + browser inspect) |
 
 ### Branded model aliases
 
@@ -86,12 +86,15 @@ MCP tools; each lives behind a named role).
   doc writes) is funnelled through narrow, auditable subagents.
 - **terraform + refero now connect for every user** (an OAuth handshake to
   `/mcp/terraform` and `/mcp/refero` at startup) even though only `@iac` /
-  `@frontend` can call them. Acceptable; the tools stay gated. firecrawl +
-  chrome-devtools remain unconnected until a role needs them.
-- Each branded alias carries its own per-model monthly budget cap
-  (`rateLimitBudgeting`): generous for the cheap `adorsys-researcher`
-  (free $25 / pro $125), tighter for the `-pro` tier (`adorsys-coder-pro`
-  free $5 / pro $25). Tunable per alias in `charts/ai-models`.
+  `@frontend` can call them. firecrawl stays unconnected until a role needs it.
+- **chrome-devtools is connected too** (scoped to `@frontend`), kept on purpose
+  despite being **local**: it spawns `npx chrome-devtools-mcp` on every user's
+  box and needs a real Chrome, so users without that setup see it fail to start
+  — an accepted trade for the unified DevTools experience.
+- Each new branded alias carries a uniform per-model monthly budget cap
+  (`rateLimitBudgeting`: free $30 / pro $100; tunable per alias in
+  `charts/ai-models`). The pre-existing `adorsys-planner` / `-pro` keep their
+  own (tiered) caps.
 - Adding a role = one `agent` block (+ connecting its server if new). The pattern
   generalizes (e.g. `code-review`: read-only, no MCP; `test-runner`: `bash`
   scoped to the test command).
