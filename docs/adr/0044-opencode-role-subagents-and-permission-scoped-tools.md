@@ -51,6 +51,9 @@ Initial roles (extend by copying a block; models inherited, not pinned):
 | `web-search` | deny | deny | `brave_*` (read-only researcher) |
 | `doc-research` | only `docs/**` | deny | `context7_*` |
 | `iac` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
+| `reviewer` | deny | deny | `context7_*` (read-only code review) |
+| `test` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
+| `skill` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
 
 This **refines ADR-0042**: brave + context7 are no longer "on for the primary
 agent" — they're connected but scoped to their specialist subagents. The

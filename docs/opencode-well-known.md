@@ -117,6 +117,9 @@ Tool access is modelled on **two decoupled axes**:
 | `web-search` | deny | deny | `brave_*` |
 | `doc-research` | only `docs/**` | deny | `context7_*` |
 | `iac` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
+| `reviewer` | deny | deny | `context7_*` |
+| `test` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
+| `skill` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
 are inherited (our provider), not pinned; prompts are inline strings (the

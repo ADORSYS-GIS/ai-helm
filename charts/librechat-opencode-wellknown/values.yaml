@@ -260,6 +260,74 @@ wellKnown:
             "rm *": deny
           "context7_*": allow
           "terraform_*": allow
+      reviewer:
+        mode: subagent
+        description: >-
+          Reviews code/changes for correctness, security, and maintainability
+          and returns findings. READ-ONLY — never edits files or runs shell.
+          Delegate for "review this / what's wrong with X" tasks.
+        temperature: 0.1
+        prompt: >-
+          You are a code reviewer. Read the change and surrounding code and
+          report concrete correctness, security, and maintainability findings
+          with file:line references. Use Context7 only to confirm correct API
+          usage. You cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "context7_*": allow
+      test:
+        mode: subagent
+        description: >-
+          Writes and runs tests (TDD): adds failing tests, makes them pass, and
+          runs the suite. Can edit code but only AUTO-runs test commands.
+          Delegate for "write tests / run the tests / TDD this" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are a test-driven-development specialist. Write a failing test
+          first, then the minimal code to pass it, and run the suite to verify.
+          Use Context7 for testing-library docs. You may run test commands
+          freely; anything else needs approval, and never run destructive shell.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "npm test*": allow
+            "npm run test*": allow
+            "pnpm test*": allow
+            "pnpm run test*": allow
+            "bun test*": allow
+            "yarn test*": allow
+            "go test*": allow
+            "pytest*": allow
+            "uv run pytest*": allow
+            "cargo test*": allow
+            "vitest*": allow
+            "jest*": allow
+            "helm lint*": allow
+            "helm template*": allow
+            "rm *": deny
+          "context7_*": allow
+      skill:
+        mode: subagent
+        description: >-
+          Authors and refines opencode skills (skill definitions) and helps pick
+          the right skill for a task. Writes ONLY under the skills directory.
+          Delegate for "write/refine a skill" tasks.
+        temperature: 0.3
+        prompt: >-
+          You are an opencode skill author. Create and refine skill definitions
+          under the skills directory, and use the skill tool to test discovery.
+          Use Context7 for any library facts a skill needs. You may write ONLY
+          under the skills directory — every other path is denied.
+        permission:
+          edit:
+            "*": deny
+            ".opencode/skills/**": allow
+            "skills/**": allow
+          bash: deny
+          skill: allow
+          "context7_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
