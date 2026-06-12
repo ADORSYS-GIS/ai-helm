@@ -47,6 +47,21 @@ wellKnown:
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
       - "@vymalo/opencode-ratelimit"
+      # Dynamic Context Pruning — auto-compresses/dedups stale tool
+      # outputs and prunes failed-tool inputs from the running context.
+      # Zero-config (sensible defaults); provider-agnostic. Pushed
+      # org-wide it lowers per-request token spend against the ADR-0021
+      # per-user budgets — a cost win for every session. Users can tune
+      # via an optional ~/.config/opencode/dcp.jsonc.
+      - "@tarquinen/opencode-dcp"
+      # Curated skills bundle (1000+) behind a token-efficient
+      # "SkillPointer" loader (~80k → ~255 startup tokens vs. inlining
+      # them). Zero-config. MUST stay pinned to @latest — the package
+      # IS the skill catalog, so a fixed version freezes the skills and
+      # defeats its auto-sync. Users can opt into risk-filtering via an
+      # optional ~/.config/opencode/skill-filter.jsonc (all skills load
+      # by default).
+      - "opencode-skills-collection@latest"
     provider:
       camer-digital:
         name: "Camer Digital"
