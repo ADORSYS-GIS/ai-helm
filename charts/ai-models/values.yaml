@@ -62,12 +62,16 @@ rateLimitBudgeting:
       monthlyBudgetUsd: 50
       burst:
         requestsPerMin: 200
-        tokensPerMin: 200000
+        # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
+        # (charts/ai-models-info) — a single max-context request no longer
+        # blows the per-minute token bucket. The monthly budget ($50) stays the
+        # real cost cap; this is just the per-minute RATE.
+        tokensPerMin: 1000000
     pro:
       monthlyBudgetUsd: 200
       burst:
         requestsPerMin: 400
-        tokensPerMin: 400000
+        tokensPerMin: 2000000     # 400k → 2M: a couple of max-context requests/min
     # Remote service accounts (GitHub runners, …) on the EXTERNAL plane.
     # Uncapped budget (no monthlyBudgetUsd) — burst-only.
     service:
@@ -794,6 +798,31 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-4.7-Flash"
+
+  minimax-m2.7:
+    kind: text
+    # DeepInfra · MiniMaxAI/MiniMax-M2.7 — reasoning + agentic tools, 196,608 ctx.
+    # The DeepInfra-hosted M2.7 — CHEAPER than the Fireworks `minimax-m2p7`
+    # ($0.25/$1.00 vs $0.30/$1.20). (The adorsys-coder/-reviewer brands still
+    # back the Fireworks one; repoint them here to consolidate on DeepInfra.)
+    info:
+      displayName: "MiniMax M2.7 (DeepInfra)"
+      contextLength: 196608
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.25
+        cachedInputPer1M: 0.05
+        outputPer1M: 1.00
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
 
   # ── Branded "Adorsys" model aliases ───────────────────────────────────────
   # Stable, user-facing model IDs whose BACKING model can be swapped later
