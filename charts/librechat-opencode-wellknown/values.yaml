@@ -261,14 +261,30 @@ wellKnown:
         prompt: >-
           You are an infrastructure-as-code specialist. Use Context7 for
           provider docs and the Terraform MCP for registry lookups. You may
-          edit files and run terraform/tofu, but never destructive shell
-          (rm, etc.); pause for approval on anything unrecognized.
+          edit files and run the SAFE terraform/tofu subcommands (init,
+          validate, plan, fmt, show, output); `apply` requires the user's
+          approval and `destroy` is blocked. Never run other destructive
+          shell (rm, etc.); pause for approval on anything unrecognized.
         permission:
           edit: allow
+          # Only the SAFE, read-only-ish subcommands auto-run; `apply` falls to
+          # the `*: ask` default (needs human approval) and `destroy` is denied
+          # outright — never auto-apply/destroy infra from an org-wide default.
           bash:
             "*": ask
-            "terraform *": allow
-            "tofu *": allow
+            "terraform init*": allow
+            "terraform validate*": allow
+            "terraform plan*": allow
+            "terraform fmt*": allow
+            "terraform show*": allow
+            "terraform output*": allow
+            "terraform providers*": allow
+            "tofu init*": allow
+            "tofu validate*": allow
+            "tofu plan*": allow
+            "tofu fmt*": allow
+            "terraform destroy*": deny
+            "tofu destroy*": deny
             "rm *": deny
           "context7_*": allow
           "terraform_*": allow

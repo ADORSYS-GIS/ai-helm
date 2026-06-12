@@ -72,14 +72,14 @@ user — one shared config instead of each person hand-wiring the gateway routes
 opencode merges it *under* the user's own `opencode.json`, so any default is
 overridable locally.
 
-| Server | Type | Source | Default `enabled` |
+| Server | Type | Source | `enabled` (connected) |
 |---|---|---|---|
 | `brave` | remote | gateway `/mcp/brave` (web search) | `true` |
 | `context7` | remote | gateway `/mcp/context7` (library docs) | `true` |
-| `refero` | remote | gateway `/mcp/refero` (design refs) | `false` |
+| `terraform` | remote | gateway `/mcp/terraform` (IaC) | `true` |
+| `refero` | remote | gateway `/mcp/refero` (design refs) | `true` |
 | `firecrawl` | remote | gateway `/mcp/firecrawl` (web scraping) | `false` |
-| `terraform` | remote | gateway `/mcp/terraform` (IaC) | `false` |
-| `chrome-devtools` | local | `npx -y chrome-devtools-mcp@latest` | `false` |
+| `chrome-devtools` | local | `npx -y chrome-devtools-mcp@latest` | `true` |
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
   with the **same** `opencode-cli` Keycloak client
@@ -87,12 +87,17 @@ overridable locally.
   is a YAML anchor (`&mcpOAuth` / `*mcpOAuth`) — declared once, reused; the
   serialized JSON expands it per server. Add a remote by copying three lines,
   never the credential.
-- **`enabled: false` = available but off.** A user opts in with `enabled: true`
-  in their own config (or turns a default-on server off). Default-on is kept
-  lean — only the two broadly-useful, zero-setup servers (`brave`, `context7`).
-- **`chrome-devtools`** ships disabled on purpose: it's a `local` server needing
-  a real Chrome + bun/npx on the user's machine, so it's a one-flag opt-in for a
-  uniform DevTools experience rather than something forced on.
+- ⚠️ **Since ADR-0044, `enabled` means *connectivity*, not "on for the primary
+  agent".** A connected server's tools are denied by the global permission
+  baseline and re-allowed only on the role subagent that needs them (see *Agents
+  & tool scoping* below) — so `terraform` / `refero` / `chrome-devtools` are
+  connected but reachable only via `@iac` / `@frontend`, never the default agent.
+  `firecrawl` stays unconnected until a role claims it. (ADR-0042 originally
+  shipped only `brave` + `context7` connected; ADR-0044 connected the rest as
+  roles needed them.)
+- **`chrome-devtools`** is the one `local` server — it spawns `npx
+  chrome-devtools-mcp` on the user's machine and needs a real Chrome, so users
+  without that setup see it fail to start; kept on purpose, scoped to `@frontend`.
 
 To verify it reached a server after deploy: `opencode mcp list` shows the merged
 catalog; the rendered descriptor's `config.mcp` should match the table above.
@@ -116,7 +121,7 @@ Tool access is modelled on **two decoupled axes**:
 |---|---|---|---|---|
 | `web-search` | `adorsys-researcher` | deny | deny | `brave_*` |
 | `doc-research` | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
-| `iac` | `adorsys-planner` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
+| `iac` | `adorsys-planner` | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
 | `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` |
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |

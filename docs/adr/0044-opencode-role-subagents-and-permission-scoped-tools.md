@@ -56,7 +56,7 @@ user default.
 |---|---|---|---|---|
 | `web-search` | `adorsys-researcher` | deny | deny | `brave_*` (read-only researcher) |
 | `doc-research` | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
-| `iac` | `adorsys-planner` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
+| `iac` | `adorsys-planner` | allow | `ask`; allow SAFE `terraform`/`tofu` (init/validate/plan/fmt/show); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
 | `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` (read-only code review) |
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
