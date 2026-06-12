@@ -62,8 +62,11 @@ catalogDefaults:
   contextLength: 128000
   maxCompletionTokens: 8192
   # Hard ceiling on context_length (+ top_provider.context_length) — no model
-  # advertises more than this regardless of its info.contextLength.
-  maxContextLength: 400000
+  # advertises more than this regardless of its info.contextLength. Raised
+  # 400000 → 1000000 (2026-06-12): clients now use the FULL model context, not
+  # the ~80-90% the old 400k clamp left for large-context models (DeepSeek-V4
+  # was 1M clamped to 400k; now ~1M).
+  maxContextLength: 1000000
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `models-info`). Renders the
