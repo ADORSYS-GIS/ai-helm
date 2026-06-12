@@ -903,3 +903,63 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-5"
+
+  adorsys-frontend:
+    # Backing: DeepInfra · nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning — an OPEN
+    # OMNI-MODAL model: text/IMAGE/video/audio IN → text out, MoE 30B-A3B (3B
+    # active), reasoning. The frontend agent uses THIS so it can read the
+    # chrome-devtools screenshots. `kind: multimodal` → catalog advertises
+    # `input_modalities:[text,image]` so opencode actually sends images.
+    # ⚠️ price unconfirmed (DeepInfra page $0.20/$0.80, a blog said $0.07/$0.30) —
+    # verify the one line. It's a perception-tuned model; for screenshot-free
+    # heavy coding the `-pro` (Kimi) brand is the stronger text option.
+    kind: multimodal
+    info:
+      displayName: "Adorsys Frontend (Nemotron 3 Nano Omni)"
+      contextLength: 262144
+      maxOutputTokens: 16384
+      supportedParameters: *spReasoning
+    rateLimitBudgeting:
+      free: 15
+      pro: 50
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.20
+        cachedInputPer1M: 0.04
+        outputPer1M: 0.80
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning"
+
+  adorsys-frontend-pro:
+    # Backing: DeepInfra · moonshotai/Kimi-K2.6 — strong agentic coder.
+    # ⚠️ TEXT-ONLY (no image input) — the frontend AGENT uses `adorsys-frontend`
+    # (Nemotron Omni) for vision; this `-pro` brand is the heavier text option
+    # for screenshot-free frontend reasoning/coding (manual selection).
+    kind: text
+    info:
+      displayName: "Adorsys Frontend Pro (Kimi K2.6)"
+      contextLength: 262144
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    rateLimitBudgeting:
+      free: 15
+      pro: 50
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.75
+        cachedInputPer1M: 0.15
+        outputPer1M: 3.50
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "moonshotai/Kimi-K2.6"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "moonshotai/Kimi-K2.6"

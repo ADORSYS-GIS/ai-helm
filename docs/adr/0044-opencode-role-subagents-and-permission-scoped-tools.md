@@ -60,12 +60,15 @@ user default.
 | `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` (read-only code review) |
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
-| `frontend` | `adorsys-coder-pro` | allow | `ask`; allow JS toolchain (`pnpm`/`npm`/`bun`/`yarn`); deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` (design-aware UI + browser inspect) |
+| `frontend` | `adorsys-frontend` (MULTIMODAL) | allow | `ask`; allow JS toolchain (`pnpm`/`npm`/`bun`/`yarn`); deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` (design-aware UI + reads browser screenshots) |
 
 ### Branded model aliases
 
 Agents (and users) select **branded catalog aliases** — `adorsys-researcher`,
-`adorsys-coder` / `-pro`, `adorsys-reviewer` / `-pro`, `adorsys-planner` / `-pro`
+`adorsys-coder` / `-pro`, `adorsys-reviewer` / `-pro`, `adorsys-planner` / `-pro`,
+and `adorsys-frontend` / `-pro` (the only **multimodal** one — `adorsys-frontend`
+backs the omni-modal Nemotron 3 Nano Omni so the `frontend` agent can read
+chrome-devtools screenshots; its `-pro` is text-only Kimi K2.6)
 (`charts/ai-models`) — whose **backing model can be swapped without informing
 users**: the id they selected never changes, and only the alias
 `info.displayName` parenthetical reveals today's backing (e.g. *"Adorsys Coder
