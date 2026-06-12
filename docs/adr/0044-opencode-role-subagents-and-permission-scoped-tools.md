@@ -66,9 +66,9 @@ user default.
 
 Agents (and users) select **branded catalog aliases** — `adorsys-researcher`,
 `adorsys-coder` / `-pro`, `adorsys-reviewer` / `-pro`, `adorsys-planner` / `-pro`,
-and `adorsys-frontend` / `-pro` (the only **multimodal** one — `adorsys-frontend`
-backs the omni-modal Nemotron 3 Nano Omni so the `frontend` agent can read
-chrome-devtools screenshots; its `-pro` is text-only Kimi K2.6)
+and `adorsys-frontend` / `-pro` (both **multimodal** — `adorsys-frontend` backs
+the omni-modal Nemotron 3 Nano Omni so the `frontend` agent can read
+chrome-devtools screenshots; its `-pro` is the heavier, also-multimodal Kimi K2.6)
 (`charts/ai-models`) — whose **backing model can be swapped without informing
 users**: the id they selected never changes, and only the alias
 `info.displayName` parenthetical reveals today's backing (e.g. *"Adorsys Coder

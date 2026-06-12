@@ -586,9 +586,10 @@ models:
         modelNameOverride: "moonshotai/Kimi-K2.5"
 
   kimi-k2.6:
-    kind: text
-    # DeepInfra · moonshotai/Kimi-K2.6 — 262,144-token context, 131k max
-    # output (per-step generation limit), agentic tool use + thinking.
+    kind: multimodal
+    # DeepInfra · moonshotai/Kimi-K2.6 — native MULTIMODAL (text + IMAGE in,
+    # MoonViT vision encoder; "visual inputs → production-ready UI"), 262,144-token
+    # context, 131k max output, agentic tool use + thinking.
     info:
       contextLength: 262144
       maxOutputTokens: 131072
@@ -948,11 +949,11 @@ models:
         modelNameOverride: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning"
 
   adorsys-frontend-pro:
-    # Backing: DeepInfra · moonshotai/Kimi-K2.6 — strong agentic coder.
-    # ⚠️ TEXT-ONLY (no image input) — the frontend AGENT uses `adorsys-frontend`
-    # (Nemotron Omni) for vision; this `-pro` brand is the heavier text option
-    # for screenshot-free frontend reasoning/coding (manual selection).
-    kind: text
+    # Backing: DeepInfra · moonshotai/Kimi-K2.6 — strong agentic coder, and
+    # native MULTIMODAL (text + IMAGE in, MoonViT; "visual inputs → UI"). The
+    # heavier vision-capable frontend option; the `frontend` agent defaults to
+    # the cheaper `adorsys-frontend` (Nemotron Omni) but could use this instead.
+    kind: multimodal
     info:
       displayName: "Adorsys Frontend Pro (Kimi K2.6)"
       contextLength: 262144
