@@ -74,17 +74,41 @@ wellKnown:
             # catalogs:
             # modelsInfoTtlSeconds: 3600
             # @vymalo/opencode-ratelimit config (see the plugin entry
-            # above). headerPrefix defaults to "x-ratelimit", which is
-            # what Envoy's draft-03 ratelimit headers use — no override
-            # needed. maxWaitMs caps a single proactive pause at 60s so
-            # a per-minute burst bucket is honoured, but the client
-            # never freezes for a *monthly*-budget reset (which can be
-            # days away — ADR-0021 unit: Month); past the cap it surfaces
-            # the 429 to the user instead.
+            # above). headerPrefix "x-ratelimit" matches Envoy's draft-03
+            # header names — plugin default, left as-is.
+            #
+            # ⚠️ v0.5.0 limitation — bias to FAIL FAST, not freeze.
+            # The plugin can't tell a ~60s per-minute burst reset from a
+            # days-away *monthly* budget reset (ADR-0021/0035, unit:
+            # Month) — both arrive only as `x-ratelimit-reset`. Worse, on
+            # 429 it retries up to maxRetries with each wait clamped to
+            # maxWaitMs (NOT "one cap then surface"), and its state is
+            # keyed per-PROVIDER — one `camer-digital` provider serves
+            # every model, while our BackendTrafficPolicy buckets are
+            # per-model (`x-ai-eg-model`), so an exhausted model can gate
+            # the whole provider for the reset window. So we keep the
+            # pause SHORT and retries at 1: a monthly-budget exhaustion
+            # surfaces its 429 in seconds instead of holding for minutes,
+            # at the cost of an occasional transient 429 mid-burst rather
+            # than a smooth pause-through. 8s stays under opencode's
+            # ~10s header timeout, so the pause completes without us
+            # having to raise the provider's headerTimeout/chunkTimeout.
+            #
+            # TODO(vymalo): replace with the tiered + per-model-scope
+            # config once a plugin release ships it (maintainer is
+            # building it, 2026-06-12) — then bursts can wait fully and
+            # only long resets fail fast:
+            #   rateLimit:
+            #     enabled: true
+            #     scope: model
+            #     headerPrefix: "x-ratelimit"
+            #     tiers:
+            #       - {maxResetSeconds: 120,  maxWaitMs: 0, maxRetries: 3}
+            #       - {maxResetSeconds: null, action: error}
             rateLimit:
               enabled: true
-              maxWaitMs: 60000
-              maxRetries: 5
+              maxWaitMs: 8000
+              maxRetries: 1
               headerPrefix: "x-ratelimit"
 
 # ────────────────────────────────────────────────────────────────────────
