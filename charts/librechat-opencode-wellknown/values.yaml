@@ -40,11 +40,29 @@ wellKnown:
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
       - "@vymalo/opencode-models-info"
+      # Reads the IETF draft-03 `x-ratelimit-*` response headers our
+      # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
+      # ADR-0021) and makes opencode rate-limit-aware: on a short burst
+      # reset it waits the quota out, and on a days-away monthly-budget
+      # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
+      # under the provider options below.
+      - "@vymalo/opencode-ratelimit"
     provider:
       camer-digital:
         name: "Camer Digital"
         options:
           baseURL: "https://api.ai.camer.digital/v1"
+          # The opencode-ratelimit plugin's `wait` tier (below) pauses
+          # INSIDE this provider's fetch, so opencode's own
+          # header/chunk timeouts bound it — a default ~10s timeout
+          # would abort a ~60s burst-reset wait and turn a cooperative
+          # pause into a cancellation. Raise both above our largest
+          # wait window (per the plugin README). 90s comfortably covers
+          # the 60s per-minute reset and is harmless for normal traffic
+          # (the gateway budget is 600s, ADR-0034; our self-hosted GPU
+          # model also cold-starts slowly).
+          headerTimeout: 90000
+          chunkTimeout: 90000
           oauth2:
             issuer: "https://auth.verif.fyi/realms/camer-digital"
             clientId: "opencode-cli"
@@ -67,6 +85,37 @@ wellKnown:
             # TTL (24h default upstream); override if you want fresher
             # catalogs:
             # modelsInfoTtlSeconds: 3600
+            # @vymalo/opencode-ratelimit config. Requires the plugin
+            # ≥ 0.6.1 (the `scope` + `tiers` schema; opencode auto-pulls
+            # latest at startup). headerPrefix "x-ratelimit" matches
+            # Envoy's draft-03 header names — plugin default.
+            #
+            # `scope: model` keys rate-limit state per model, matching
+            # our per-model BackendTrafficPolicy buckets (every selector
+            # carries `x-ai-eg-model`, ADR-0021) — exhausting one model
+            # no longer gates the whole `camer-digital` provider.
+            #
+            # `tiers` resolve the burst-vs-budget ambiguity the plugin
+            # otherwise can't (both arrive only as `x-ratelimit-reset`).
+            # First tier whose maxResetSeconds ≥ the observed reset wins:
+            #   • ≤120s  → a per-minute burst (ADR-0021 burst buckets):
+            #     WAIT it out (up to 65s, bounded so it stays under the
+            #     90s header/chunk timeout above) and retry a few times.
+            #   • longer → a monthly *budget* reset (unit: Month, days
+            #     away, ADR-0021/0035) or anything else: ERROR FAST so
+            #     the 429 surfaces to the user immediately instead of
+            #     freezing.
+            rateLimit:
+              enabled: true
+              scope: model
+              headerPrefix: "x-ratelimit"
+              tiers:
+                - maxResetSeconds: 120
+                  action: wait
+                  maxWaitMs: 65000
+                  maxRetries: 3
+                - maxResetSeconds: null
+                  action: error
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
