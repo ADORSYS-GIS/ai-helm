@@ -792,3 +792,36 @@ db:
   replicaSet:
     name: rs0
     members: 1
+  # Pod + container hardening so the mongod StatefulSet clears Trivy
+  # KSV-0118 (non-default securityContext) + KSV-0014 (readOnlyRootFilesystem).
+  # The official `mongo` image runs fine as UID 999 (its own `mongodb` user);
+  # the chart already sets fsGroup 999 so the data PVC stays writable. With a
+  # read-only root fs mongod still needs a writable /tmp — it puts its unix
+  # socket at /tmp/mongodb-27017.sock — so a `tmp` emptyDir is mounted there via
+  # the subchart's extraVolumes/extraVolumeMounts.
+  # ⚠️ This reconciles onto the LIVE LibreChat database (a mongod pod restart) —
+  # roll out deliberately and watch the StatefulSet come Ready.
+  podSecurityContext:
+    fsGroup: 999
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /tmp

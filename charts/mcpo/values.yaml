@@ -39,6 +39,25 @@ mcpo:
                   type: Utilization
                   averageUtilization: 80
 
+  # Pod-level hardening (bjw-template applies this to every pod). Pairs with the
+  # per-container securityContext below so the Deployment clears Trivy KSV-0118
+  # (non-default securityContext) + KSV-0014 (readOnlyRootFilesystem). The
+  # upstream open-webui/mcpo image ships as root with HOME=/root; running as a
+  # non-root UID + a read-only root fs therefore needs writable emptyDirs for
+  # /tmp and HOME (the MCP servers are spawned via npx/uvx, which write package
+  # caches under $HOME) — mounted via `persistence` below, with HOME + cache
+  # dirs redirected via env. ⚠️ mcpo is NOT a deployed app today (no entry in
+  # charts/apps), so this hardening is render-/scan-verified but untested at
+  # runtime; validate the pod when/if mcpo is enabled.
+  defaultPodOptions:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+
   controllers:
     main:
       type: deployment
@@ -60,13 +79,31 @@ mcpo:
             pullPolicy: IfNotPresent
           
           command: /bin/sh
-          
+
           args:
             - -c
             - |
               set -e
               mcpo --api-key $API_KEY --config=/tmp/config.json
-          
+
+          # Container-level hardening (KSV-0014 + KSV-0118). Root fs is read-only;
+          # writable paths (/tmp, HOME) come from the emptyDirs in `persistence`.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # Redirect HOME + the npm/uv caches to the writable `home` emptyDir so
+          # the npx/uvx-spawned MCP servers can write their package caches under
+          # a read-only root fs.
+          env:
+            HOME: /home/app
+            XDG_CACHE_HOME: /home/app/.cache
+            npm_config_cache: /home/app/.npm
+            UV_CACHE_DIR: /home/app/.cache/uv
+
           resources:
             requests:
               cpu: 1000m
@@ -182,4 +219,21 @@ mcpo:
             - path: /tmp/config.json
               readOnly: true
               subPath: config.json
+    # Writable scratch for a read-only root fs (securityContext above). /tmp is
+    # for runtime temp (the config.json subPath mount sits on top of it); home
+    # backs HOME=/home/app for the npx/uvx package caches.
+    tmp:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          mcpo:
+            - path: /tmp
+    home:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          mcpo:
+            - path: /home/app
   
