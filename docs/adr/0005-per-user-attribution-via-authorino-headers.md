@@ -4,6 +4,7 @@
 **Date:** 2026-05-24
 **Deciders:** @stephane-segning
 **Supplemented by:** [ADR-0011](./0011-oidc-downstream-headers.md) — header prefix renamed `x-cd-*` → `x-oidc-*`, header inventory expanded (roles, scope, jti, email, name). The propagation pipeline (this ADR) is unchanged; the payload contract is now in ADR-0011.
+**Supplemented by:** [ADR-0046](./0046-per-user-attribution-otlp-envelope-repair.md) — repairs the Alloy promotion mechanism (Envoy's OTel sink delivers the fields as OTLP *attributes*, so Alloy must flatten the envelope before the labels promised here can fire; adds the `model` label + the `service_name=envoy-ai-gateway` stream anchor). The decision and cardinality budget here are unchanged.
 
 ## Context
 

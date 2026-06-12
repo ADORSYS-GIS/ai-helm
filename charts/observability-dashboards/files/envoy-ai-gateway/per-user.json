@@ -7,7 +7,7 @@
         "name": "azp",
         "label": "Client (azp)",
         "skipUrlSync": false,
-        "query": "label_values(azp)",
+        "query": "label_values({service_name=\"envoy-ai-gateway\"}, azp)",
         "datasource": {
           "type": "loki",
           "uid": "loki"
@@ -36,7 +36,7 @@
         "name": "user_id",
         "label": "User",
         "skipUrlSync": false,
-        "query": "label_values({azp=~\"$azp\"}, user_id)",
+        "query": "label_values({service_name=\"envoy-ai-gateway\", azp=~\"$azp\"}, user_id)",
         "datasource": {
           "type": "loki",
           "uid": "loki"
@@ -65,7 +65,7 @@
         "name": "model",
         "label": "Model",
         "skipUrlSync": false,
-        "query": "label_values(gen_ai_request_model)",
+        "query": "label_values({service_name=\"envoy-ai-gateway\"}, model)",
         "datasource": {
           "type": "loki",
           "uid": "loki"
@@ -94,7 +94,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-per-user",
   "title": "AI Gateway — per-user activity",
-  "description": "Per-user activity for the Envoy AI Gateway. Data flows: JWT -> Authorino response headers (x-oidc-user-id, x-oidc-azp; full x-oidc-* contract in ADR-0011) -> Envoy access log JSON -> OTLP -> Alloy loki.process 'ai_gateway_user_attribution' -> Loki labels (user_id, azp). See docs/per-user-observability.md. GENERATED — source: tools/dashboards/envoy_ai_gateway/per_user.py.",
+  "description": "Per-user activity for the Envoy AI Gateway. Data flows: JWT -> Authorino response headers (x-oidc-user-id, x-oidc-azp; full x-oidc-* contract in ADR-0011) -> Envoy access log JSON (OTLP attributes) -> Alloy loki.process 'ai_gateway_user_attribution' (flattens the envelope, pins service_name=envoy-ai-gateway; ADR-0046) -> Loki labels (user_id, azp, model). Shows ATTRIBUTED traffic only — unauthenticated requests carry no identity labels. See docs/per-user-observability.md. GENERATED — source: tools/dashboards/envoy_ai_gateway/per_user.py.",
   "tags": [
     "ai-gateway",
     "per-user",
@@ -114,7 +114,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range]))",
+          "expr": "sum(count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} [$__range]))",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -173,7 +173,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "count(sum by (user_id) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range])))",
+          "expr": "count(sum by (user_id) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} [$__range])))",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -232,7 +232,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(sum_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap gen_ai_usage_total_tokens [$__range]))",
+          "expr": "sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} | json | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range]))",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -291,7 +291,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "quantile_over_time(0.95, {azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap duration [$__range])",
+          "expr": "quantile_over_time(0.95, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} | json | unwrap duration | __error__=\"\" [$__range])",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -358,7 +358,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (user_id) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [1m]))",
+          "expr": "sum by (user_id) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} [1m]))",
           "refId": "A",
           "legendFormat": "{{user_id}}",
           "queryType": "range",
@@ -416,7 +416,7 @@
       "type": "table",
       "targets": [
         {
-          "expr": "topk(20, sum by (user_id, azp) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range])))",
+          "expr": "topk(20, sum by (user_id, azp) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} [$__range])))",
           "refId": "A",
           "queryType": "instant",
           "datasource": {
@@ -476,9 +476,9 @@
       "type": "piechart",
       "targets": [
         {
-          "expr": "sum by (gen_ai_request_model) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" [$__range]))",
+          "expr": "sum by (model) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} [$__range]))",
           "refId": "A",
-          "legendFormat": "{{gen_ai_request_model}}",
+          "legendFormat": "{{model}}",
           "queryType": "instant",
           "datasource": {
             "type": "loki",
@@ -525,7 +525,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "quantile_over_time(0.50, {azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap duration [5m]) by (user_id)",
+          "expr": "quantile_over_time(0.50, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} | json | unwrap duration | __error__=\"\" [5m]) by (user_id)",
           "refId": "A",
           "legendFormat": "p50 {{user_id}}",
           "queryType": "range",
@@ -535,7 +535,7 @@
           }
         },
         {
-          "expr": "quantile_over_time(0.95, {azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap duration [5m]) by (user_id)",
+          "expr": "quantile_over_time(0.95, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} | json | unwrap duration | __error__=\"\" [5m]) by (user_id)",
           "refId": "B",
           "legendFormat": "p95 {{user_id}}",
           "queryType": "range",
@@ -590,7 +590,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (user_id) (count_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | response_code >= 500 [1m]))",
+          "expr": "sum by (user_id) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} | json | response_code >= 500 [1m]))",
           "refId": "A",
           "legendFormat": "{{user_id}}",
           "queryType": "range",
@@ -646,7 +646,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (user_id) (sum_over_time({azp=~\"$azp\", user_id=~\"$user_id\"} | json | gen_ai_request_model =~ \"$model\" | unwrap gen_ai_usage_total_tokens [1m]))",
+          "expr": "sum by (user_id) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\"$user_id\", model=~\"$model\"} | json | unwrap gen_ai_usage_total_tokens | __error__=\"\" [1m]))",
           "refId": "A",
           "legendFormat": "{{user_id}}",
           "queryType": "range",
