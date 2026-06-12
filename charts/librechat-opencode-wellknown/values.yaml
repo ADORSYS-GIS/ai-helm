@@ -175,7 +175,7 @@ wellKnown:
         type: remote
         url: "https://api.ai.camer.digital/mcp/refero"
         oauth: *mcpOAuth
-        enabled: false           # no agent uses it yet (design refs)
+        enabled: true            # connected; scoped to the frontend agent
       firecrawl:
         type: remote
         url: "https://api.ai.camer.digital/mcp/firecrawl"
@@ -198,6 +198,7 @@ wellKnown:
       "brave_*": deny
       "context7_*": deny
       "terraform_*": deny
+      "refero_*": deny
 
     # ────────────────────────────────────────────────────────────────────
     # Role subagents (ADR-0044). Delegated specialists (`mode: subagent`) the
@@ -340,6 +341,31 @@ wellKnown:
           bash: deny
           skill: allow
           "context7_*": allow
+      frontend:
+        mode: subagent
+        model: "camer-digital/adorsys-coder-pro"   # Adorsys Coder Pro (→GLM-5.1) — UI work
+        description: >-
+          Builds and edits frontend UI, grounded in design references (Refero)
+          and framework docs (Context7). Read + write; runs the JS toolchain
+          with guardrails. Delegate for "build/adjust the UI" tasks.
+        temperature: 0.3
+        prompt: >-
+          You are a frontend specialist. Use the Refero MCP for design
+          references and Context7 for framework/library docs, then implement
+          clean, accessible UI. You may edit files and run the JS toolchain
+          (pnpm/npm/bun/yarn); never run destructive shell (rm, etc.) and pause
+          for approval on anything unrecognized.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "pnpm *": allow
+            "npm *": allow
+            "bun *": allow
+            "yarn *": allow
+            "rm *": deny
+          "context7_*": allow
+          "refero_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the

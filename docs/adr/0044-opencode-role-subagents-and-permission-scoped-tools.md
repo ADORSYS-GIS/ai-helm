@@ -34,8 +34,9 @@ subagents** behind a **lean primary agent**:
 
 1. **Connectivity** (`config.mcp.<name>.enabled`) = whether opencode connects to
    the server at all. Connect every server some role needs (now: brave,
-   context7, **terraform** — flipped on). `enabled: false` means *not connected*
-   → reserved for servers no role uses yet (refero, firecrawl, chrome-devtools).
+   context7, **terraform**, **refero** — flipped on). `enabled: false` means
+   *not connected* → reserved for servers no role uses yet (firecrawl,
+   chrome-devtools).
 2. **Access** (`config.permission` + `config.agent.<name>.permission`):
    - A **global `permission` deny-baseline** denies every connected MCP tool
      (`brave_*`, `context7_*`, `terraform_*`) so the **primary/default agent is
@@ -59,6 +60,7 @@ user default.
 | `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` (read-only code review) |
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
+| `frontend` | `adorsys-coder-pro` | allow | `ask`; allow JS toolchain (`pnpm`/`npm`/`bun`/`yarn`); deny `rm *` | `context7_*`, `refero_*` (design-aware UI) |
 
 ### Branded model aliases
 
@@ -82,9 +84,14 @@ MCP tools; each lives behind a named role).
 
 - The primary experience stays lean and governed; risky capability (IaC apply,
   doc writes) is funnelled through narrow, auditable subagents.
-- **terraform now connects for every user** (an OAuth handshake to `/mcp/terraform`
-  at startup) even though only `@iac` can call it. Acceptable; the tool stays
-  gated. refero/firecrawl remain unconnected until a role needs them.
+- **terraform + refero now connect for every user** (an OAuth handshake to
+  `/mcp/terraform` and `/mcp/refero` at startup) even though only `@iac` /
+  `@frontend` can call them. Acceptable; the tools stay gated. firecrawl +
+  chrome-devtools remain unconnected until a role needs them.
+- Each branded alias carries its own per-model monthly budget cap
+  (`rateLimitBudgeting`): generous for the cheap `adorsys-researcher`
+  (free $25 / pro $125), tighter for the `-pro` tier (`adorsys-coder-pro`
+  free $5 / pro $25). Tunable per alias in `charts/ai-models`.
 - Adding a role = one `agent` block (+ connecting its server if new). The pattern
   generalizes (e.g. `code-review`: read-only, no MCP; `test-runner`: `bash`
   scoped to the test command).
