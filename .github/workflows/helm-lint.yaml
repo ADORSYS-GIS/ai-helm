@@ -33,6 +33,7 @@ jobs:
             chart_name=$(yq eval '.name' "$chart_file")
             chart_version=$(yq eval '.version' "$chart_file")
             chart_type=$(yq eval '.type // "application"' "$chart_file")
+            lint_mode=$(yq eval '.annotations."ai-helm.adorsys-gis.github.io/lint-mode" // ""' "$chart_file")
 
             # Skip library charts as they are not installable
             if [[ "$chart_type" == "library" ]]; then
@@ -48,7 +49,40 @@ jobs:
 
             [[ -f "$chart_dir/values.yaml" ]] || echo "⚠️  Missing values.yaml"
 
-            helm lint "$chart_dir" --strict
+            # --strict promotes WARNINGs to errors. A chart whose manifests come
+            # ENTIRELY from a subchart (e.g. bjw-template) has no own templates/
+            # dir, so --strict trips on "[WARNING] templates/: directory not
+            # found" even though it renders fine and passes non-strict lint
+            # (CLAUDE.md tooling-quirks: judge these by render + non-strict
+            # lint). Apply --strict only when the chart has its own templates/.
+            strict_flag="--strict"
+            if [[ ! -d "$chart_dir/templates" ]]; then
+              strict_flag=""
+              echo "  ℹ️  no own templates/ — linting non-strict (subchart-only chart)"
+            fi
+
+            # Render-only LEAF charts (annotation lint-mode=ci-values, e.g.
+            # ai-model) `fail`-guard on per-model values the orchestrator injects
+            # (ADR-0012), so they can't lint/render with the default values.yaml.
+            # Lint AND render them via their ci/*-values.yaml fixtures instead.
+            if [[ "$lint_mode" == "ci-values" ]]; then
+              shopt -s nullglob
+              fixtures=("$chart_dir"/ci/*-values.yaml)
+              shopt -u nullglob
+              if [[ ${#fixtures[@]} -eq 0 ]]; then
+                echo "❌ $chart_name has lint-mode=ci-values but no ci/*-values.yaml fixtures"
+                exit 1
+              fi
+              for vf in "${fixtures[@]}"; do
+                echo "  🧪 fixture $(basename "$vf") (render-only leaf)"
+                helm lint "$chart_dir" $strict_flag -f "$vf"
+                helm template "$chart_name" "$chart_dir" -f "$vf" --dry-run > /dev/null
+              done
+              echo "✅ $chart_name OK"
+              continue
+            fi
+
+            helm lint "$chart_dir" $strict_flag
             helm template "$chart_name" "$chart_dir" --dry-run > /dev/null
 
             # Render any ci/*-values.yaml fixtures (Helm convention) so chart
