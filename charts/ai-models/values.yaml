@@ -709,50 +709,6 @@ models:
         <<: *fwBackendSecondary
         modelNameOverride: "accounts/fireworks/models/qwen3p6-plus"
 
-  reviewer-flash:
-    kind: text
-    # Fireworks · minimax-m2p7 (MiniMax-M2.7) — 204,800-token context (NOT 400k),
-    # 131k max output, reasoning + agentic tools.
-    info:
-      contextLength: 204800
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
-    backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-
-  minimax-m2p7:
-    kind: text
-    # Fireworks · minimax-m2p7 (MiniMax-M2.7) — 204,800-token context (NOT 400k),
-    # 131k max output, reasoning + agentic tools.
-    info:
-      contextLength: 204800
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
-    backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-
   gemma-4:
     kind: text
     # DeepInfra · google/gemma-4-26B-A4B-it — 262,144-token (256K) context,
@@ -802,9 +758,9 @@ models:
   minimax-m2.7:
     kind: text
     # DeepInfra · MiniMaxAI/MiniMax-M2.7 — reasoning + agentic tools, 196,608 ctx.
-    # The DeepInfra-hosted M2.7 — CHEAPER than the Fireworks `minimax-m2p7`
-    # ($0.25/$1.00 vs $0.30/$1.20). (The adorsys-coder/-reviewer brands still
-    # back the Fireworks one; repoint them here to consolidate on DeepInfra.)
+    # The DeepInfra-hosted M2.7 ($0.25/$1.00). The old Fireworks `minimax-m2p7`
+    # + `reviewer-flash` entries were REMOVED (2026-06-12, consolidating on
+    # DeepInfra); the adorsys-coder/-reviewer brands now back this provider too.
     info:
       displayName: "MiniMax M2.7 (DeepInfra)"
       contextLength: 196608
@@ -859,28 +815,29 @@ models:
 
   adorsys-coder:
     kind: text
-    # Backing: Fireworks · minimax-m2p7 (MiniMax-M2.7) — fast agentic coder.
+    # Backing: DeepInfra · MiniMaxAI/MiniMax-M2.7 — fast agentic coder
+    # (moved off Fireworks → DeepInfra, cheaper, 2026-06-12).
     rateLimitBudgeting:
       free: 15
       pro: 50
     info:
       displayName: "Adorsys Coder (MiniMax M2.7)"
-      contextLength: 204800
+      contextLength: 196608
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
+        inputPer1M: 0.25
+        cachedInputPer1M: 0.05
+        outputPer1M: 1.00
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
 
   adorsys-coder-pro:
     kind: text
@@ -909,28 +866,29 @@ models:
 
   adorsys-reviewer:
     kind: text
-    # Backing: Fireworks · minimax-m2p7 (MiniMax-M2.7) — fast reviewer.
+    # Backing: DeepInfra · MiniMaxAI/MiniMax-M2.7 — fast reviewer
+    # (moved off Fireworks → DeepInfra, cheaper, 2026-06-12).
     rateLimitBudgeting:
       free: 15
       pro: 50
     info:
       displayName: "Adorsys Reviewer (MiniMax M2.7)"
-      contextLength: 204800
+      contextLength: 196608
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
+        inputPer1M: 0.25
+        cachedInputPer1M: 0.05
+        outputPer1M: 1.00
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
 
   adorsys-reviewer-pro:
     kind: text
