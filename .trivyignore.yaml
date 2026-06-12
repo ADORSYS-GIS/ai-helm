@@ -1,0 +1,28 @@
+# Trivy misconfiguration ignores for the chart `config` scan.
+#
+# Read by BOTH Trivy gates over charts/ — the dedicated Security Audit workflow
+# (.github/workflows/security.yml → ADORSYS-GIS/ai-ops security-gates) and the
+# release-helm-charts workflow — since each checks out this repo and Trivy reads
+# this file from the working directory.
+#
+# Policy: keep every entry SCOPED (id + explicit paths) and justified. Never a
+# blanket whole-ID ignore — a real finding in another chart must still fail.
+# Path-scoping is deliberately brittle: if a template is renamed/moved the
+# ignore stops applying and the finding re-surfaces for re-review.
+misconfigurations:
+  - id: KSV-0109
+    # KSV-0109 "ConfigMap with secrets" — FALSE POSITIVE here: these two
+    # ConfigMap keys are merely NAMED *secret* but carry no secret VALUE.
+    #  - keycloak-baseline realm-configmap `clientSecret:` renders EMPTY (no
+    #    value set in values.yaml; the IdP brokering secret is supplied
+    #    out-of-band, not from this ConfigMap).
+    #  - librechat-config `client_secret:` is a `${GITHUB_MCP_SECRET_ID}` /
+    #    `${CD_MCP_SECRET_ID}` env placeholder that LibreChat substitutes at
+    #    runtime from an ESO-provided Secret (see CLAUDE.md "Secrets + ESO").
+    # No real secret is ever stored in either ConfigMap.
+    statement: >-
+      ConfigMap keys named *secret* whose values are empty or ${ENV} placeholders;
+      real secrets are injected at runtime via ESO, never stored in the ConfigMap.
+    paths:
+      - "keycloak-baseline/templates/realm-configmap.yaml"
+      - "librechat-app/templates/configmap.yaml"

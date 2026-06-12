@@ -86,6 +86,11 @@ jobs:
           format: 'table'
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
+          # Trivy auto-detects a plain `.trivyignore` but NOT `.trivyignore.yaml`,
+          # so the structured (path-scoped) ignore file must be named explicitly.
+          # It scopes the KSV-0109 false positives to two specific ConfigMap
+          # templates — see .trivyignore.yaml for the justification.
+          trivyignores: '.trivyignore.yaml'
 
       - name: Configure Git
         if: github.event_name == 'workflow_dispatch'
