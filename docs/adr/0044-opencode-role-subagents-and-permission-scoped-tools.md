@@ -45,18 +45,33 @@ subagents** behind a **lean primary agent**:
      file/bash scope; everything else falls through to the deny-baseline.
 
 Initial roles (extend by copying a block). **Models are pinned cost-lean** —
-the cheap/fast catalog tier for high-volume low-stakes roles, a stronger model
-only where the stakes warrant it (`camer-digital/<id>` → our gateway catalog;
-a user can override per agent locally; the PRIMARY agent keeps the user default):
+the cheap/fast tier for high-volume low-stakes roles, a stronger model only
+where the stakes warrant it — and referenced by a **branded `adorsys-*` alias**
+(see below), never the raw model id, so the backing can change without editing
+this config. A user can override per agent locally; the PRIMARY agent keeps the
+user default.
 
-| Agent | model | edit | bash | MCP tools |
+| Agent | model (alias) | edit | bash | MCP tools |
 |---|---|---|---|---|
-| `web-search` | `deepseek-v4-flash` | deny | deny | `brave_*` (read-only researcher) |
-| `doc-research` | `deepseek-v4-flash` | only `docs/**` | deny | `context7_*` |
-| `iac` | `adorsys-planner` (GLM-5) | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
-| `reviewer` | `reviewer-flash` | deny | deny | `context7_*` (read-only code review) |
-| `test` | `minimax-m2p7` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
-| `skill` | `deepseek-v4-flash` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
+| `web-search` | `adorsys-researcher` | deny | deny | `brave_*` (read-only researcher) |
+| `doc-research` | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
+| `iac` | `adorsys-planner` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
+| `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` (read-only code review) |
+| `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
+| `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
+
+### Branded model aliases
+
+Agents (and users) select **branded catalog aliases** — `adorsys-researcher`,
+`adorsys-coder` / `-pro`, `adorsys-reviewer` / `-pro`, `adorsys-planner` / `-pro`
+(`charts/ai-models`) — whose **backing model can be swapped without informing
+users**: the id they selected never changes, and only the alias
+`info.displayName` parenthetical reveals today's backing (e.g. *"Adorsys Coder
+(MiniMax M2.7)"*, *"Adorsys Reviewer Pro (GLM-5)"*). Each alias is a normal
+catalog entry (own route + `BackendTrafficPolicy` + budget bucket); a swap is a
+one-line `modelNameOverride` + displayName edit in `charts/ai-models`, invisible
+to the well-known and to users. Backings deliberately avoid `qwen3-5-4b-local`
+(single-GPU capacity) and `gemma-4` (maintainer preference).
 
 This **refines ADR-0042**: brave + context7 are no longer "on for the primary
 agent" — they're connected but scoped to their specialist subagents. The

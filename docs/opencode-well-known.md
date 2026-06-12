@@ -112,20 +112,22 @@ Tool access is modelled on **two decoupled axes**:
   delegates to (`@name` / the task tool) and a **whitelist** that re-allows only
   its tools + its file/bash scope (per-agent permission overrides the root).
 
-| Subagent | model | edit | bash | MCP |
+| Subagent | model (alias) | edit | bash | MCP |
 |---|---|---|---|---|
-| `web-search` | `deepseek-v4-flash` | deny | deny | `brave_*` |
-| `doc-research` | `deepseek-v4-flash` | only `docs/**` | deny | `context7_*` |
+| `web-search` | `adorsys-researcher` | deny | deny | `brave_*` |
+| `doc-research` | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
 | `iac` | `adorsys-planner` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
-| `reviewer` | `reviewer-flash` | deny | deny | `context7_*` |
-| `test` | `minimax-m2p7` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
-| `skill` | `deepseek-v4-flash` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
+| `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` |
+| `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
+| `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
-are pinned **cost-lean** (`camer-digital/<id>` — cheap/fast tier for high-volume
-roles, a stronger model only where stakes warrant; a user can override per agent,
-and the primary keeps the user default); prompts are inline strings (the
-well-known can't ship prompt *files* to users). ⚠️ **Validate runtime
+are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**
+(`camer-digital/adorsys-<role>` → `charts/ai-models`) so the backing model can be
+swapped there without editing this config or telling users — the alias
+`info.displayName` is what reveals today's backing (e.g. *"Adorsys Coder (MiniMax
+M2.7)"*). A user can override per agent locally; the primary keeps the user
+default. Prompts are inline strings (the well-known can't ship prompt *files*). ⚠️ **Validate runtime
 enforcement on a live opencode** (delegate to each role; confirm the primary
 lacks the MCP tools and each scope holds) before relying on it — agent-vs-root
 permission precedence + MCP-glob gating are opencode-version behaviors.
