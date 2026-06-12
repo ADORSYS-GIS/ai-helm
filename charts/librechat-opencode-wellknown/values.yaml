@@ -132,6 +132,57 @@ wellKnown:
                 - maxResetSeconds: null
                   action: error
 
+    # ────────────────────────────────────────────────────────────────────
+    # MCP servers (ADR-0042). Pushed org-wide via the well-known so every
+    # opencode user shares one curated MCP catalog. `enabled: false` ships
+    # a server "available but off" — a user opts in locally with
+    # `enabled: true` (opencode merges the well-known config under the
+    # user's own). Default-ON is kept deliberately lean: only the two
+    # broadly-useful, low-friction servers. Specialist/local ones are
+    # present-but-disabled so the default tool surface stays small.
+    mcp:
+      # Local — runs on the USER's machine via npx, not through our
+      # gateway. Off by default: the maintainer (AI Advocate) wants every
+      # user to have a unified Chrome DevTools experience *available*, but
+      # it needs a local Chrome + a bun/npx install, so it's opt-in, not
+      # forced on.
+      chrome-devtools:
+        type: local
+        command: ["npx", "-y", "chrome-devtools-mcp@latest"]
+        enabled: false
+      # Remote — the gateway's /mcp/<name> routes (ADR-0038): Keycloak JWT
+      # via the opencode-cli client, RFC 9728 discovery on the route. All
+      # remotes share one OAuth client, so the block is defined once
+      # (&mcpOAuth) and reused (*mcpOAuth) — add a remote by copying three
+      # lines, not the credential.
+      brave:
+        type: remote
+        url: "https://api.ai.camer.digital/mcp/brave"
+        oauth: &mcpOAuth
+          clientId: opencode-cli
+          scope: "openid profile offline_access"
+        enabled: true            # default-ON — web search
+      context7:
+        type: remote
+        url: "https://api.ai.camer.digital/mcp/context7"
+        oauth: *mcpOAuth
+        enabled: true            # default-ON — library docs lookup
+      refero:
+        type: remote
+        url: "https://api.ai.camer.digital/mcp/refero"
+        oauth: *mcpOAuth
+        enabled: false           # specialist (design refs) — opt-in
+      firecrawl:
+        type: remote
+        url: "https://api.ai.camer.digital/mcp/firecrawl"
+        oauth: *mcpOAuth
+        enabled: false           # specialist (web scraping) — opt-in
+      terraform:
+        type: remote
+        url: "https://api.ai.camer.digital/mcp/terraform"
+        oauth: *mcpOAuth
+        enabled: false           # specialist (IaC) — opt-in
+
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
 # Deployment + Service + Ingress. The two ConfigMaps that hold the
