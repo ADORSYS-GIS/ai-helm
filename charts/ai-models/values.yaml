@@ -512,6 +512,7 @@ models:
     kind: text
     # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output.
     info:
+      displayName: "Adorsys Planner (GLM-5)"
       contextLength: 202752
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -528,8 +529,8 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-5"
-    rateLimitBudgeting:
-      free: 10
+    rateLimitBudgeting:                 # unified $15/$50 across all adorsys-* brands
+      free: 15
       pro: 50
 
   adorsys-planner-pro:
@@ -537,6 +538,7 @@ models:
     # DeepInfra · zai-org/GLM-5.1 — 202,752-token context, 131k max output,
     # long-horizon agentic engineering (thinking + function calling + MCP).
     info:
+      displayName: "Adorsys Planner Pro (GLM-5.1)"
       contextLength: 202752
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -553,9 +555,9 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-5.1"
-    rateLimitBudgeting:
-      free: 5
-      pro: 25
+    rateLimitBudgeting:                 # unified $15/$50 across all adorsys-* brands
+      free: 15
+      pro: 50
 
   kimi-k2.5:
     kind: text
@@ -768,3 +770,136 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "google/gemma-4-26B-A4B-it"
+
+  # ── Branded "Adorsys" model aliases ───────────────────────────────────────
+  # Stable, user-facing model IDs whose BACKING model can be swapped later
+  # WITHOUT changing the id a user/agent selected — only the
+  # `info.displayName` parenthetical reveals what's behind it today. Same
+  # pattern as `adorsys-planner` / `-pro`. The opencode role subagents
+  # (charts/librechat-opencode-wellknown, ADR-0044) reference THESE brands,
+  # never the raw model ids, so a backing swap is invisible to users.
+  # (Backings deliberately avoid qwen3-local and gemma-4 per maintainer pref.)
+  adorsys-researcher:
+    kind: text
+    # Backing: DeepInfra · deepseek-ai/DeepSeek-V4-Flash (cheap/fast research).
+    rateLimitBudgeting:                 # uniform across the new adorsys-* brands
+      free: 15
+      pro: 50
+    info:
+      displayName: "Adorsys Researcher (DeepSeek V4)"
+      contextLength: 1048576
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.14
+        cachedInputPer1M: 0.028
+        outputPer1M: 0.28
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
+
+  adorsys-coder:
+    kind: text
+    # Backing: Fireworks · minimax-m2p7 (MiniMax-M2.7) — fast agentic coder.
+    rateLimitBudgeting:
+      free: 15
+      pro: 50
+    info:
+      displayName: "Adorsys Coder (MiniMax M2.7)"
+      contextLength: 204800
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.30
+        cachedInputPer1M: 0.06
+        outputPer1M: 1.20
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+
+  adorsys-coder-pro:
+    kind: text
+    # Backing: DeepInfra · zai-org/GLM-5.1 — strong long-horizon coder.
+    rateLimitBudgeting:
+      free: 15
+      pro: 50
+    info:
+      displayName: "Adorsys Coder Pro (GLM-5.1)"
+      contextLength: 202752
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 1.05
+        cachedInputPer1M: 0.205
+        outputPer1M: 3.50
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "zai-org/GLM-5.1"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "zai-org/GLM-5.1"
+
+  adorsys-reviewer:
+    kind: text
+    # Backing: Fireworks · minimax-m2p7 (MiniMax-M2.7) — fast reviewer.
+    rateLimitBudgeting:
+      free: 15
+      pro: 50
+    info:
+      displayName: "Adorsys Reviewer (MiniMax M2.7)"
+      contextLength: 204800
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.30
+        cachedInputPer1M: 0.06
+        outputPer1M: 1.20
+    backends:
+      fw-01:
+        <<: *fwBackendPrimary
+        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+      fw-02:
+        <<: *fwBackendSecondary
+        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+
+  adorsys-reviewer-pro:
+    kind: text
+    # Backing: DeepInfra · zai-org/GLM-5 — thorough agentic reviewer.
+    rateLimitBudgeting:
+      free: 15
+      pro: 50
+    info:
+      displayName: "Adorsys Reviewer Pro (GLM-5)"
+      contextLength: 202752
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.60
+        cachedInputPer1M: 0.12
+        outputPer1M: 2.08
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "zai-org/GLM-5"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "zai-org/GLM-5"

@@ -133,23 +133,28 @@ wellKnown:
                   action: error
 
     # ────────────────────────────────────────────────────────────────────
-    # MCP servers (ADR-0042). Pushed org-wide via the well-known so every
-    # opencode user shares one curated MCP catalog. `enabled: false` ships
-    # a server "available but off" — a user opts in locally with
-    # `enabled: true` (opencode merges the well-known config under the
-    # user's own). Default-ON is kept deliberately lean: only the two
-    # broadly-useful, low-friction servers. Specialist/local ones are
-    # present-but-disabled so the default tool surface stays small.
+    # MCP servers (ADR-0042, scoping model refined by ADR-0044). Two axes:
+    #   • CONNECTIVITY — `enabled` here decides whether opencode connects to
+    #     the server AT ALL. A tool only exists if its server is connected,
+    #     so every server some `agent` (below) needs is `enabled: true`.
+    #   • ACCESS — WHO may call a connected tool is decided per-agent under
+    #     `config.agent.*.permission`, on top of the global `permission`
+    #     deny-baseline that keeps the PRIMARY agent lean. So a connected
+    #     server is NOT on the default agent; it lives behind its specialist
+    #     subagent (brave→web-search, context7→doc-research/iac,
+    #     terraform→iac). `enabled: false` = not connected → no agent can
+    #     use it (reserve for servers no role needs yet).
     mcp:
-      # Local — runs on the USER's machine via npx, not through our
-      # gateway. Off by default: the maintainer (AI Advocate) wants every
-      # user to have a unified Chrome DevTools experience *available*, but
-      # it needs a local Chrome + a bun/npx install, so it's opt-in, not
-      # forced on.
+      # Local — runs on the USER's machine via npx, not through our gateway.
+      # CONNECTED but scoped to the frontend agent (the maintainer, as AI
+      # Advocate, wants a unified Chrome DevTools experience). ⚠️ Being local,
+      # it spawns `npx chrome-devtools-mcp` on every user's box and needs a
+      # real Chrome — a user without that setup sees it fail to start; that's
+      # accepted (kept on purpose).
       chrome-devtools:
         type: local
         command: ["npx", "-y", "chrome-devtools-mcp@latest"]
-        enabled: false
+        enabled: true            # connected; scoped to the frontend agent
       # Remote — the gateway's /mcp/<name> routes (ADR-0038): Keycloak JWT
       # via the opencode-cli client, RFC 9728 discovery on the route. All
       # remotes share one OAuth client, so the block is defined once
@@ -161,27 +166,227 @@ wellKnown:
         oauth: &mcpOAuth
           clientId: opencode-cli
           scope: "openid profile offline_access"
-        enabled: true            # default-ON — web search
+        enabled: true            # connected; scoped to the web-search agent
       context7:
         type: remote
         url: "https://api.ai.camer.digital/mcp/context7"
         oauth: *mcpOAuth
-        enabled: true            # default-ON — library docs lookup
+        enabled: true            # connected; scoped to doc-research + iac agents
       refero:
         type: remote
         url: "https://api.ai.camer.digital/mcp/refero"
         oauth: *mcpOAuth
-        enabled: false           # specialist (design refs) — opt-in
+        enabled: true            # connected; scoped to the frontend agent
       firecrawl:
         type: remote
         url: "https://api.ai.camer.digital/mcp/firecrawl"
         oauth: *mcpOAuth
-        enabled: false           # specialist (web scraping) — opt-in
+        enabled: false           # no agent uses it yet (web scraping)
       terraform:
         type: remote
         url: "https://api.ai.camer.digital/mcp/terraform"
         oauth: *mcpOAuth
-        enabled: false           # specialist (IaC) — opt-in
+        enabled: true            # connected; scoped to the iac agent
+
+    # ────────────────────────────────────────────────────────────────────
+    # Global permission baseline (ADR-0044) — keeps the PRIMARY/default agent
+    # LEAN: every connected MCP tool is denied by default, so the main agent
+    # has none of them. Each role subagent below re-allows exactly its own
+    # (agent permission overrides root). edit/bash keep opencode's defaults
+    # for the primary. (refero/firecrawl aren't connected, so no deny needed;
+    # `.env` reads are already denied by opencode.)
+    permission:
+      "brave_*": deny
+      "context7_*": deny
+      "terraform_*": deny
+      "refero_*": deny
+      "chrome-devtools_*": deny
+
+    # ────────────────────────────────────────────────────────────────────
+    # Role subagents (ADR-0044). Delegated specialists (`mode: subagent`) the
+    # primary agent dispatches to via the task tool / `@name`. Each is a
+    # WHITELIST: it allows only its tools + its file/bash scope; everything
+    # else falls back to the deny-baseline above. Add a role by copying a
+    # block. Models are pinned COST-LEAN (ADR-0044): the cheap/fast tier for
+    # high-volume low-stakes roles, a stronger model only where the stakes
+    # warrant it. Each is referenced by its BRANDED `adorsys-*` alias
+    # (`camer-digital/adorsys-<role>` → charts/ai-models), so the backing
+    # model can be swapped THERE without editing this file or telling users —
+    # the alias `info.displayName` is what reveals today's backing. A user can
+    # override per agent locally. The PRIMARY agent keeps the user's default.
+    agent:
+      web-search:
+        mode: subagent
+        model: "camer-digital/adorsys-researcher"  # Adorsys Researcher (→DeepSeek V4)
+        description: >-
+          Searches the web (Brave) and returns a concise, source-cited
+          summary. Read-only — never writes files or runs shell. Delegate for
+          "look this up / find current info" tasks.
+        temperature: 0.3
+        prompt: >-
+          You are a web-research specialist. Use the Brave MCP tools to search
+          and read sources, then return a concise, cited summary. You cannot
+          write files or run shell commands — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          webfetch: allow
+          "brave_*": allow
+      doc-research:
+        mode: subagent
+        model: "camer-digital/adorsys-researcher"  # Adorsys Researcher (→DeepSeek V4)
+        description: >-
+          Researches a topic (Context7 library docs + reading the repo) and
+          writes documentation. May write ONLY under docs/. Delegate for
+          "document X / update the docs" tasks.
+        temperature: 0.3
+        prompt: >-
+          You are a documentation specialist. Read freely and use the Context7
+          MCP for authoritative library docs. You may create or edit files
+          ONLY under docs/ — every other path is denied; do not edit code.
+        permission:
+          edit:
+            "*": deny
+            "docs/**": allow
+          bash: deny
+          "context7_*": allow
+      iac:
+        mode: subagent
+        model: "camer-digital/adorsys-planner"     # Adorsys Planner (→GLM-5) — IaC stakes
+        description: >-
+          Authors and plans infrastructure-as-code (Terraform/OpenTofu). Read
+          + write; runs terraform/tofu via shell with guardrails. Delegate for
+          "write/plan the infrastructure" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are an infrastructure-as-code specialist. Use Context7 for
+          provider docs and the Terraform MCP for registry lookups. You may
+          edit files and run the SAFE terraform/tofu subcommands (init,
+          validate, plan, fmt, show, output); `apply` requires the user's
+          approval and `destroy` is blocked. Never run other destructive
+          shell (rm, etc.); pause for approval on anything unrecognized.
+        permission:
+          edit: allow
+          # Only the SAFE, read-only-ish subcommands auto-run; `apply` falls to
+          # the `*: ask` default (needs human approval) and `destroy` is denied
+          # outright — never auto-apply/destroy infra from an org-wide default.
+          bash:
+            "*": ask
+            "terraform init*": allow
+            "terraform validate*": allow
+            "terraform plan*": allow
+            "terraform fmt*": allow
+            "terraform show*": allow
+            "terraform output*": allow
+            "terraform providers*": allow
+            "tofu init*": allow
+            "tofu validate*": allow
+            "tofu plan*": allow
+            "tofu fmt*": allow
+            "terraform destroy*": deny
+            "tofu destroy*": deny
+            "rm *": deny
+          "context7_*": allow
+          "terraform_*": allow
+      reviewer:
+        mode: subagent
+        model: "camer-digital/adorsys-reviewer"    # Adorsys Reviewer (→MiniMax M2.7)
+        description: >-
+          Reviews code/changes for correctness, security, and maintainability
+          and returns findings. READ-ONLY — never edits files or runs shell.
+          Delegate for "review this / what's wrong with X" tasks.
+        temperature: 0.1
+        prompt: >-
+          You are a code reviewer. Read the change and surrounding code and
+          report concrete correctness, security, and maintainability findings
+          with file:line references. Use Context7 only to confirm correct API
+          usage. You cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "context7_*": allow
+      test:
+        mode: subagent
+        model: "camer-digital/adorsys-coder"       # Adorsys Coder (→MiniMax M2.7) — TDD
+        description: >-
+          Writes and runs tests (TDD): adds failing tests, makes them pass, and
+          runs the suite. Can edit code but only AUTO-runs test commands.
+          Delegate for "write tests / run the tests / TDD this" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are a test-driven-development specialist. Write a failing test
+          first, then the minimal code to pass it, and run the suite to verify.
+          Use Context7 for testing-library docs. You may run test commands
+          freely; anything else needs approval, and never run destructive shell.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "npm test*": allow
+            "npm run test*": allow
+            "pnpm test*": allow
+            "pnpm run test*": allow
+            "bun test*": allow
+            "yarn test*": allow
+            "go test*": allow
+            "pytest*": allow
+            "uv run pytest*": allow
+            "cargo test*": allow
+            "vitest*": allow
+            "jest*": allow
+            "helm lint*": allow
+            "helm template*": allow
+            "rm *": deny
+          "context7_*": allow
+      skill:
+        mode: subagent
+        model: "camer-digital/adorsys-researcher"  # Adorsys Researcher (→DeepSeek V4)
+        description: >-
+          Authors and refines opencode skills (skill definitions) and helps pick
+          the right skill for a task. Writes ONLY under the skills directory.
+          Delegate for "write/refine a skill" tasks.
+        temperature: 0.3
+        prompt: >-
+          You are an opencode skill author. Create and refine skill definitions
+          under the skills directory, and use the skill tool to test discovery.
+          Use Context7 for any library facts a skill needs. You may write ONLY
+          under the skills directory — every other path is denied.
+        permission:
+          edit:
+            "*": deny
+            ".opencode/skills/**": allow
+            "skills/**": allow
+          bash: deny
+          skill: allow
+          "context7_*": allow
+      frontend:
+        mode: subagent
+        model: "camer-digital/adorsys-coder-pro"   # Adorsys Coder Pro (→GLM-5.1) — UI work
+        description: >-
+          Builds and edits frontend UI, grounded in design references (Refero)
+          and framework docs (Context7), and inspects/debugs the running app in
+          a real browser (Chrome DevTools). Read + write; runs the JS toolchain
+          with guardrails. Delegate for "build/adjust the UI" tasks.
+        temperature: 0.3
+        prompt: >-
+          You are a frontend specialist. Use the Refero MCP for design
+          references, Context7 for framework/library docs, and the Chrome
+          DevTools MCP to inspect and debug the running app, then implement
+          clean, accessible UI. You may edit files and run the JS toolchain
+          (pnpm/npm/bun/yarn); never run destructive shell (rm, etc.) and pause
+          for approval on anything unrecognized.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "pnpm *": allow
+            "npm *": allow
+            "bun *": allow
+            "yarn *": allow
+            "rm *": deny
+          "context7_*": allow
+          "refero_*": allow
+          "chrome-devtools_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
