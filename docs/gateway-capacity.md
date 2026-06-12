@@ -86,6 +86,27 @@ the load test confirms it.
 2. **Cluster CPU** for scale-out (Envoy + Authorino + the platform sharing 32 CPU).
 3. **Envoy / Authorino / Redis** — last, and cheap, on the interactive profile.
 
+## Large-context + multimodal impact (2026-06-12)
+
+Raising the catalog context ceiling 400k → **1M** (`charts/ai-models-info`) and
+adding **multimodal** models (image inputs) doesn't change Envoy's own limits —
+it changes *what clients send*: bigger request/response bodies (a 1M-token JSON
+is ~4–8 MB; a base64 screenshot ≤~2 MB). Effects, in order of who feels it:
+
+- **ExtProc** is the per-request brain that buffers + parses both bodies (token
+  counting / cost CEL / metadata). Bigger bodies = more CPU + memory per request
+  → its memory limit was raised **512Mi → 1Gi** (the OOM risk under concurrency).
+- **Per-connection memory** rises (500Mi buffers already absorb the bytes, no
+  413s; the cost is RAM held while streaming). Memory is now a scaling signal
+  alongside CPU on the `[3;5]` HPA / 32-CPU pool.
+- **Rate-limit caps had to follow** — the per-minute token burst was free 200k /
+  pro 400k, both *below* the 1M ceiling, so a max-context request blew the bucket
+  and throttled the user. Raised to **free 1M / pro 2M** `tokensPerMin`
+  (`charts/ai-models`); the monthly $ budget stays the real cost cap.
+- **Compute stays on the backends** (DeepInfra/Fireworks do the 1M-context
+  inference) — Envoy just buffers/counts/streams. Each new model also adds a
+  route/policy/cluster to the xDS config (marginal control-plane).
+
 ## Next steps to turn "config-ready" into a measured number
 
 1. **Run the artillery suite against the Hetzner gateway** (`plans/artillery/`) —

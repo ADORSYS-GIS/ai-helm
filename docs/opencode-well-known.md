@@ -125,7 +125,7 @@ Tool access is modelled on **two decoupled axes**:
 | `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` |
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
-| `frontend` | `adorsys-coder-pro` | allow | `ask`; allow JS toolchain; deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` |
+| `frontend` | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` |
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
 are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**
