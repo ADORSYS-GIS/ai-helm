@@ -311,6 +311,8 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0032 | llama.cpp (`llama-server`) as a 2nd self-hosted engine alongside vLLM — GGUF/Q4_K_M, native `--api-key` (no Caddy), `/v1`, `/health`; chosen for Qwen3.5-4B Q4 (vLLM Qwen3.5 support turbulent). Chart `model-serving-qwen3-5` — **LIVE 2026-06-08** (swapped in for qwen3-4b) |
 | 0038 | MCP OAuth discovery (RFC 9728) via native AIEG `MCPRoute.securityPolicy.oauth` — gateway-served protected-resource metadata + 401 `resource_metadata` challenge on `/mcp/*`; Envoy-native JWT displaces Authorino there (x-oidc-* re-stamped via claimToHeaders) |
 | 0040 | External hosted MCPs (context7/firecrawl/refero) via per-MCP in-cluster **Caddy normalizing proxies** (`mode: proxiedExternal`) — Go-TLS upstream (handles ECDSA), credential injection, response Content-Type rewrite; reliable in-cluster plain-HTTP backends (supersedes the ADR-0039 EnvoyPatchPolicy) |
+| 0045 | Scrape-first dashboard sourcing — no board without verified metrics; API-verified gnetIds only; dashboards-as-code reserved for bespoke boards (per-user usage, ratelimit, Authorino) |
+| 0046 | Per-user attribution repair — flatten the OTLP access-log `attributes` envelope at Alloy, pin the stream `service_name=envoy-ai-gateway`, promote `user_id`/`azp`/`model` labels (supplements 0005) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
