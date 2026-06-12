@@ -44,16 +44,19 @@ subagents** behind a **lean primary agent**:
      task tool), and is a **whitelist**: it re-allows only its own tools + its
      file/bash scope; everything else falls through to the deny-baseline.
 
-Initial roles (extend by copying a block; models inherited, not pinned):
+Initial roles (extend by copying a block). **Models are pinned cost-lean** —
+the cheap/fast catalog tier for high-volume low-stakes roles, a stronger model
+only where the stakes warrant it (`camer-digital/<id>` → our gateway catalog;
+a user can override per agent locally; the PRIMARY agent keeps the user default):
 
-| Agent | edit | bash | MCP tools |
-|---|---|---|---|
-| `web-search` | deny | deny | `brave_*` (read-only researcher) |
-| `doc-research` | only `docs/**` | deny | `context7_*` |
-| `iac` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
-| `reviewer` | deny | deny | `context7_*` (read-only code review) |
-| `test` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
-| `skill` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
+| Agent | model | edit | bash | MCP tools |
+|---|---|---|---|---|
+| `web-search` | `deepseek-v4-flash` | deny | deny | `brave_*` (read-only researcher) |
+| `doc-research` | `deepseek-v4-flash` | only `docs/**` | deny | `context7_*` |
+| `iac` | `adorsys-planner` (GLM-5) | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
+| `reviewer` | `reviewer-flash` | deny | deny | `context7_*` (read-only code review) |
+| `test` | `minimax-m2p7` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` (TDD: write + run tests) |
+| `skill` | `deepseek-v4-flash` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` (author opencode skills) |
 
 This **refines ADR-0042**: brave + context7 are no longer "on for the primary
 agent" — they're connected but scoped to their specialist subagents. The

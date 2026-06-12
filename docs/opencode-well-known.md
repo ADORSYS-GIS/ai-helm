@@ -112,17 +112,19 @@ Tool access is modelled on **two decoupled axes**:
   delegates to (`@name` / the task tool) and a **whitelist** that re-allows only
   its tools + its file/bash scope (per-agent permission overrides the root).
 
-| Subagent | edit | bash | MCP |
-|---|---|---|---|
-| `web-search` | deny | deny | `brave_*` |
-| `doc-research` | only `docs/**` | deny | `context7_*` |
-| `iac` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
-| `reviewer` | deny | deny | `context7_*` |
-| `test` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
-| `skill` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
+| Subagent | model | edit | bash | MCP |
+|---|---|---|---|---|
+| `web-search` | `deepseek-v4-flash` | deny | deny | `brave_*` |
+| `doc-research` | `deepseek-v4-flash` | only `docs/**` | deny | `context7_*` |
+| `iac` | `adorsys-planner` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
+| `reviewer` | `reviewer-flash` | deny | deny | `context7_*` |
+| `test` | `minimax-m2p7` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
+| `skill` | `deepseek-v4-flash` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
-are inherited (our provider), not pinned; prompts are inline strings (the
+are pinned **cost-lean** (`camer-digital/<id>` — cheap/fast tier for high-volume
+roles, a stronger model only where stakes warrant; a user can override per agent,
+and the primary keeps the user default); prompts are inline strings (the
 well-known can't ship prompt *files* to users). ⚠️ **Validate runtime
 enforcement on a live opencode** (delegate to each role; confirm the primary
 lacks the MCP tools and each scope holds) before relying on it — agent-vs-root

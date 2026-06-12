@@ -204,10 +204,14 @@ wellKnown:
     # primary agent dispatches to via the task tool / `@name`. Each is a
     # WHITELIST: it allows only its tools + its file/bash scope; everything
     # else falls back to the deny-baseline above. Add a role by copying a
-    # block. Models are inherited (our camer-digital provider) — not pinned.
+    # block. Models are pinned COST-LEAN (ADR-0044): the cheap/fast tier for
+    # high-volume low-stakes roles, a stronger model only where the stakes
+    # warrant it (`camer-digital/<id>` → our gateway catalog). A user can
+    # override per agent locally. The PRIMARY agent keeps the user's default.
     agent:
       web-search:
         mode: subagent
+        model: "camer-digital/deepseek-v4-flash"   # cheap/fast — summarizing search
         description: >-
           Searches the web (Brave) and returns a concise, source-cited
           summary. Read-only — never writes files or runs shell. Delegate for
@@ -224,6 +228,7 @@ wellKnown:
           "brave_*": allow
       doc-research:
         mode: subagent
+        model: "camer-digital/deepseek-v4-flash"   # cheap/fast — read + write prose
         description: >-
           Researches a topic (Context7 library docs + reading the repo) and
           writes documentation. May write ONLY under docs/. Delegate for
@@ -241,6 +246,7 @@ wellKnown:
           "context7_*": allow
       iac:
         mode: subagent
+        model: "camer-digital/adorsys-planner"     # strong agentic (GLM-5) — IaC stakes
         description: >-
           Authors and plans infrastructure-as-code (Terraform/OpenTofu). Read
           + write; runs terraform/tofu via shell with guardrails. Delegate for
@@ -262,6 +268,7 @@ wellKnown:
           "terraform_*": allow
       reviewer:
         mode: subagent
+        model: "camer-digital/reviewer-flash"      # fast reviewer (MiniMax-M2.7)
         description: >-
           Reviews code/changes for correctness, security, and maintainability
           and returns findings. READ-ONLY — never edits files or runs shell.
@@ -278,6 +285,7 @@ wellKnown:
           "context7_*": allow
       test:
         mode: subagent
+        model: "camer-digital/minimax-m2p7"        # fast agentic — iterative TDD loop
         description: >-
           Writes and runs tests (TDD): adds failing tests, makes them pass, and
           runs the suite. Can edit code but only AUTO-runs test commands.
@@ -310,6 +318,7 @@ wellKnown:
           "context7_*": allow
       skill:
         mode: subagent
+        model: "camer-digital/deepseek-v4-flash"   # cheap/fast — authoring skill markdown
         description: >-
           Authors and refines opencode skills (skill definitions) and helps pick
           the right skill for a task. Writes ONLY under the skills directory.
