@@ -65,6 +65,38 @@ The `librechat-opencode-wellknown` chart deploys:
 Total resource footprint: ≈ 50Mi RAM per pod, two pods = 100Mi.
 Effectively free.
 
+## The MCP catalog (ADR-0042)
+
+The well-known `config.mcp` block pushes a curated set of MCP servers to every
+user — one shared config instead of each person hand-wiring the gateway routes.
+opencode merges it *under* the user's own `opencode.json`, so any default is
+overridable locally.
+
+| Server | Type | Source | Default `enabled` |
+|---|---|---|---|
+| `brave` | remote | gateway `/mcp/brave` (web search) | `true` |
+| `context7` | remote | gateway `/mcp/context7` (library docs) | `true` |
+| `refero` | remote | gateway `/mcp/refero` (design refs) | `false` |
+| `firecrawl` | remote | gateway `/mcp/firecrawl` (web scraping) | `false` |
+| `terraform` | remote | gateway `/mcp/terraform` (IaC) | `false` |
+| `chrome-devtools` | local | `npx -y chrome-devtools-mcp@latest` | `false` |
+
+- **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
+  with the **same** `opencode-cli` Keycloak client
+  (`scope: openid profile offline_access`). In `values.yaml` that `oauth` block
+  is a YAML anchor (`&mcpOAuth` / `*mcpOAuth`) — declared once, reused; the
+  serialized JSON expands it per server. Add a remote by copying three lines,
+  never the credential.
+- **`enabled: false` = available but off.** A user opts in with `enabled: true`
+  in their own config (or turns a default-on server off). Default-on is kept
+  lean — only the two broadly-useful, zero-setup servers (`brave`, `context7`).
+- **`chrome-devtools`** ships disabled on purpose: it's a `local` server needing
+  a real Chrome + bun/npx on the user's machine, so it's a one-flag opt-in for a
+  uniform DevTools experience rather than something forced on.
+
+To verify it reached a server after deploy: `opencode mcp list` shows the merged
+catalog; the rendered descriptor's `config.mcp` should match the table above.
+
 ## Verifying the endpoint after deploy
 
 ```bash
@@ -231,6 +263,8 @@ client config above).
 ## Related
 
 - ADR-0014 — the chart split + the well-known design
+- ADR-0042 — the curated MCP catalog pushed via `config.mcp`
+- ADR-0038 — the gateway `/mcp/*` routes + OAuth the remote MCPs target
 - ADR-0009 — humans use Lightbridge self-service for API keys; the
   opencode CLI flow is the desktop complement
 - ADR-0003 — SA-skip-OPA via `azp`; opencode tokens have
