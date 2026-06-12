@@ -92,7 +92,7 @@ MCP tools; each lives behind a named role).
   box and needs a real Chrome, so users without that setup see it fail to start
   — an accepted trade for the unified DevTools experience.
 - All seven `adorsys-*` aliases carry a **uniform** per-model monthly budget cap
-  (`rateLimitBudgeting`: free $30 / pro $100). ⚠️ That budget is per-(user,
+  (`rateLimitBudgeting`: free $15 / pro $50). ⚠️ That budget is per-(user,
   **model**) — the rule is keyed on `x-ai-eg-model` (ADR-0021/0035), so it is
   **NOT a shared per-user total**: a user gets $30 on *each* brand independently.
   Equal caps are deliberate — a user who exhausts one brand's block rotates to
