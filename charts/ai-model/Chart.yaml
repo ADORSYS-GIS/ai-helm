@@ -12,6 +12,15 @@ description: |
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
+# Render-only LEAF chart: the orchestrating ApplicationSet in charts/ai-models
+# (ADR-0012) injects per-model values that the templates `fail`-guard on
+# (modelName, gatewayRef, backendsInventory, ≥2 enabled backends, pricing,
+# plans). With the default (empty) values.yaml the chart intentionally refuses
+# to render, so it can't be lint/render-tested standalone. CI (.github/
+# workflows/helm-lint.yaml) reads this annotation and lint+renders the chart via
+# its ci/*-values.yaml fixtures instead of the default values.
+annotations:
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
 keywords:
   - ai-gateway
   - envoy-ai-gateway

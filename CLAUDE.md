@@ -45,12 +45,22 @@ uv run ruff format . && uv run ruff check .
 # After editing the dashboard .py source, you MUST run `dashboards build`
 # and commit the regenerated JSON — CI fails otherwise.
 
-# Match CI before pushing chart changes — CI lints --strict AND renders every
-# chart (.github/workflows/helm-lint.yaml). To check the whole repo at once:
-for c in charts/*/; do helm lint "$c" --strict && helm template x "$c" --dry-run >/dev/null || echo "FAIL: $c"; done
+# Match CI before pushing chart changes (.github/workflows/helm-lint.yaml). CI
+# lints --strict ONLY for charts with their own templates/ dir, NON-strict for
+# subchart-only charts (no templates/ — --strict false-trips on "templates/:
+# directory not found"), and render-only LEAF charts (Chart.yaml annotation
+# ai-helm.adorsys-gis.github.io/lint-mode: ci-values, e.g. ai-model) are
+# lint+rendered via their ci/*-values.yaml fixtures, not default values. To
+# check the whole repo at once, matching that logic:
+for cf in charts/*/Chart.yaml; do c=$(dirname "$cf"); n=$(yq e .name "$cf")
+  [[ $(yq e '.type // "application"' "$cf") == library ]] && continue
+  sf=--strict; [[ -d "$c/templates" ]] || sf=
+  if [[ $(yq e '.annotations."ai-helm.adorsys-gis.github.io/lint-mode" // ""' "$cf") == ci-values ]]; then
+    for vf in "$c"/ci/*-values.yaml; do helm lint "$c" $sf -f "$vf" >/dev/null && helm template x "$c" -f "$vf" --dry-run >/dev/null || echo "FAIL: $n"; done
+  else helm lint "$c" $sf >/dev/null && helm template x "$c" --dry-run >/dev/null || echo "FAIL: $n"; fi; done
 ```
 
-There is no `npm`, no `pytest`, no `cargo`, no `go build` in this repo. The dashboards Python project at `tools/dashboards/` is the only code that runs; everything else is YAML rendered by Helm. **CI gates** (`.github/workflows/`): `helm-lint` (`helm lint --strict` + `helm template --dry-run` per chart), `dashboards-drift` (`uv run dashboards check`), `security` (scans), `release-helm-charts` (package on tag), `opencode` (the agent/CI rules — see `.github/workflows/opencode.yml`, the canonical agent rules; the stale `.opencode/README.md` is unrelated).
+There is no `npm`, no `pytest`, no `cargo`, no `go build` in this repo. The dashboards Python project at `tools/dashboards/` is the only code that runs; everything else is YAML rendered by Helm. **CI gates** (`.github/workflows/`): `helm-lint` (per-chart `helm lint` + `helm template --dry-run`; `--strict` only for charts with own `templates/`, render-only leaves go through their `ci/*-values.yaml` fixtures — see the tool-quirks note below), `dashboards-drift` (`uv run dashboards check`), `security` (scans), `release-helm-charts` (non-strict lint + Trivy config scan + package on tag), `opencode` (the agent/CI rules — see `.github/workflows/opencode.yml`, the canonical agent rules; the stale `.opencode/README.md` is unrelated).
 
 ## The orchestrator-plus-leaves pattern (used for `ai-models` and `librechart`)
 
@@ -222,7 +232,8 @@ Default shell on the maintainer's laptop is **zsh** (not bash). For shell comman
 - **`gh` CLI** sometimes needs `zsh -i -c '...'` to pick up `GITHUB_TOKEN` from interactive profile. The harness's Bash tool runs zsh but non-interactively.
 - **`helm template` warnings** about `~/.kube/config` group/world readability are noise — ignore.
 - **`helm lint`** WARNING-level output ≠ failure. Look for `1 chart(s) failed`.
-- **bjw-template-only charts fail `helm lint --strict`** with `[WARNING] templates/: directory not found` → `1 chart(s) failed`. This is expected: charts like `mcpo`/`lmcache` carry no own `templates/` dir — every manifest comes from the `bjw-template` subchart. **It's fine for us** — non-strict `helm lint` passes (`0 chart(s) failed`) and the real gate, `helm template … --dry-run`, renders cleanly. Don't add an empty `templates/` dir to silence it; judge these charts by render + non-strict lint.
+- **bjw-template-only charts fail `helm lint --strict`** with `[WARNING] templates/: directory not found` → `1 chart(s) failed`. This is expected: charts like `mcpo`/`lmcache` carry no own `templates/` dir — every manifest comes from the `bjw-template` subchart. **It's fine for us** — non-strict `helm lint` passes (`0 chart(s) failed`) and the real gate, `helm template … --dry-run`, renders cleanly. Don't add an empty `templates/` dir to silence it; judge these charts by render + non-strict lint. **The `helm-lint` CI now does this automatically:** it applies `--strict` only when a chart has its own `templates/` dir, and lints subchart-only charts non-strict (so the workflow is green without weakening the render gate). Before this, `--strict` ran on every chart and CI was red repo-wide on these charts + `ai-model`.
+- **Render-only LEAF charts (e.g. `ai-model`) can't be lint/render-tested standalone** — their templates `fail`-guard on per-model values the orchestrator injects (ADR-0012), so `helm lint`/`helm template` with the default (empty) `values.yaml` aborts by design. **Convention:** mark such a chart with the Chart.yaml annotation `ai-helm.adorsys-gis.github.io/lint-mode: ci-values` and add a representative fixture at `charts/<chart>/ci/lint-values.yaml`. The `helm-lint` CI then skips the default lint+template for that chart and instead **lints AND renders each `ci/*-values.yaml` fixture** (so the leaf is still fully covered). Add a fixture when you add a new render-only leaf — don't exclude the chart from CI, and don't loosen its `fail` guards to make defaults render.
 - **The `.opencode/README.md`** is stale (refers to an unrelated "Azamra monorepo"). Ignore it. The canonical agent/CI rules live in `.github/workflows/opencode.yml`.
 
 ## `.well-known/opencode` is NOT OIDC discovery

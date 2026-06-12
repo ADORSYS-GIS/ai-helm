@@ -1,0 +1,77 @@
+# CI lint/render fixture for the ai-model LEAF chart.
+#
+# ai-model is never installed standalone — the `ai-models` orchestrator
+# (ADR-0012) instantiates it once per model, passing the per-model values its
+# templates `fail`-guard on (modelName, gatewayRef, backendsInventory, ≥2
+# enabled backends, pricing, plans). With the default values.yaml (all empty)
+# the chart intentionally refuses to render, so a standalone
+# `helm lint`/`helm template` can't exercise it.
+#
+# This fixture mirrors ONE representative orchestrator invocation (a 2-backend
+# weighted-pricing SaaS model — the canonical HA shape) so CI can lint AND
+# render the leaf in isolation. Keep it in sync with the leaf value contract in
+# charts/ai-models/templates/applicationset.yaml ($childValues dict); it is a
+# render fixture, not a deployed model.
+modelName: ci-lint-model
+kind: text
+
+gatewayRef:
+  name: core-gateway
+  namespace: converse-gateway
+  sectionName: api-https
+  internalSectionName: api-internal
+
+minBackends: 2
+
+timeout:
+  requestTimeout: 600s
+  connectionIdleTimeout: 1h
+
+# Two enabled backends (priority 0 primary / 1 secondary) — satisfies the
+# default minBackends:2 HA guard. Each `ref` must key into backendsInventory.
+backends:
+  primary:
+    ref: deepinfra-01
+    priority: 0
+    modelNameOverride: "zai-org/GLM-5"
+  secondary:
+    ref: deepinfra-02
+    priority: 1
+    modelNameOverride: "zai-org/GLM-5"
+
+# Mirrors the parent `backends:` map — provides the resourceName lookup the
+# AIGatewayRoute uses to resolve each backend ref to a Service.
+backendsInventory:
+  deepinfra-01:
+    resourceName: deepinfra-backend-01-svc
+  deepinfra-02:
+    resourceName: deepinfra-backend-02-svc
+
+pricing:
+  strategy: weighted
+  standard:
+    inputPer1M: 0.60
+    cachedInputPer1M: 0.12
+    outputPer1M: 2.08
+
+# Full plan set (budgeted + burst-only) so the BackendTrafficPolicy renders
+# every rule family (burst req/min, burst tokens/min, monthly budget).
+plans:
+  free:
+    monthlyBudgetUsd: 50
+    burst:
+      requestsPerMin: 200
+      tokensPerMin: 200000
+  pro:
+    monthlyBudgetUsd: 200
+    burst:
+      requestsPerMin: 400
+      tokensPerMin: 400000
+  service:
+    burst:
+      requestsPerMin: 600
+      tokensPerMin: 2000000
+  internal:
+    burst:
+      requestsPerMin: 1000
+      tokensPerMin: 5000000
