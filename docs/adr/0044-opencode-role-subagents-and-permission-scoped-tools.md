@@ -91,10 +91,13 @@ MCP tools; each lives behind a named role).
   despite being **local**: it spawns `npx chrome-devtools-mcp` on every user's
   box and needs a real Chrome, so users without that setup see it fail to start
   — an accepted trade for the unified DevTools experience.
-- Each new branded alias carries a uniform per-model monthly budget cap
-  (`rateLimitBudgeting`: free $30 / pro $100; tunable per alias in
-  `charts/ai-models`). The pre-existing `adorsys-planner` / `-pro` keep their
-  own (tiered) caps.
+- All seven `adorsys-*` aliases carry a **uniform** per-model monthly budget cap
+  (`rateLimitBudgeting`: free $30 / pro $100). ⚠️ That budget is per-(user,
+  **model**) — the rule is keyed on `x-ai-eg-model` (ADR-0021/0035), so it is
+  **NOT a shared per-user total**: a user gets $30 on *each* brand independently.
+  Equal caps are deliberate — a user who exhausts one brand's block rotates to
+  another. (A single shared per-user pool was considered and declined; would need
+  a gateway-level bucket, not per-model policies.)
 - Adding a role = one `agent` block (+ connecting its server if new). The pattern
   generalizes (e.g. `code-review`: read-only, no MCP; `test-runner`: `bash`
   scoped to the test command).
