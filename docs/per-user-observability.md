@@ -1,8 +1,16 @@
 # Per-user observability: JWT identity → Loki labels
 
-Adds two Loki labels — `user_id` and `azp` — to every Envoy AI Gateway access
-log, so dashboards can break down requests, latency, tokens, and cost by
-authenticated user.
+Adds three Loki labels — `user_id`, `azp`, and `model` — to every Envoy AI
+Gateway access log, so dashboards can break down requests, latency, tokens,
+and cost by authenticated user.
+
+> **Repaired 2026-06-12 (ADR-0046).** The original wiring assumed the access
+> log JSON would arrive as the Loki line body. In reality Envoy's OTel sink
+> delivers the fields as OTLP log **attributes**, and Alloy stored the line
+> as `{"attributes":{...},"resources":{...}}` — so the label promotion never
+> fired and the per-user dashboard was empty since rollout. Alloy now
+> flattens the envelope and pins the stream name. This doc describes the
+> repaired pipeline.
 
 ## End-to-end flow
 
@@ -21,36 +29,38 @@ authenticated user.
                                            │    x-oidc-user-id   ← auth.identity.sub
                                            │    x-oidc-user-name ← auth.identity.preferred_username
                                            │    x-oidc-azp       ← auth.identity.azp
-                                           │    x-oidc-iss       ← auth.identity.iss
-                                           │    x-oidc-roles-realm
-                                           │    x-oidc-resource-access
-                                           │    x-oidc-scope
-                                           │    x-oidc-jti
-                                           │    x-oidc-email     ← (PII)
-                                           │    x-oidc-name      ← (PII)
+                                           │    x-oidc-iss, x-oidc-roles-realm,
+                                           │    x-oidc-resource-access, x-oidc-scope,
+                                           │    x-oidc-jti, x-oidc-email (PII), x-oidc-name (PII)
                                            ▼
                             ┌────────────────────────────────┐
-                            │  Envoy access log (JSON sink)  │
-                            │   → OTLP → core-gw-usage-     │
-                            │     collector (OpenTelemetryCo) │
+                            │  Envoy access log — OTel sink  │
+                            │  format.json fields become     │
+                            │  OTLP log ATTRIBUTES; straight │
+                            │  to alloy.observability:4317   │
+                            │  (resource service.name =      │
+                            │   envoy-ai-gateway)            │
                             └──────────────┬─────────────────┘
-                                           │  otlphttp/lightbridge_usage  AND
-                                           │  otlp/alloy
                                            ▼
-                            ┌────────────────────────────────┐
-                            │  Alloy (observability ns)      │
-                            │   otelcol.receiver.otlp →      │
-                            │   otelcol.exporter.loki →      │
+                            ┌─────────────────────────────────┐
+                            │  Alloy (observability ns)       │
+                            │   otelcol.receiver.otlp →       │
+                            │   otelcol.exporter.loki →       │
                             │   loki.process                  │
-                            │     ai_gateway_user_attribution │  ← extracts JSON
-                            │   → loki.write.default          │     promotes labels
-                            └──────────────┬─────────────────┘
+                            │     ai_gateway_user_attribution │
+                            │   (ADR-0046: match gateway logs,│
+                            │    flatten {"attributes":{…}} → │
+                            │    line, promote labels, pin    │
+                            │    service_name)                │
+                            │   → loki.write.default          │
+                            └──────────────┬──────────────────┘
                                            ▼
                             ┌────────────────────────────────┐
                             │  Loki                          │
-                            │  streams keyed by              │
-                            │  {namespace, pod, container,   │
-                            │   level, user_id, azp}         │
+                            │  gateway streams keyed by      │
+                            │  {service_name=envoy-ai-gateway,│
+                            │   exporter, cluster,           │
+                            │   user_id, azp, model}         │
                             └──────────────┬─────────────────┘
                                            ▼
                             ┌────────────────────────────────┐
@@ -58,25 +68,51 @@ authenticated user.
                             └────────────────────────────────┘
 ```
 
+## The stored-line contract (ADR-0046)
+
+For gateway access logs, the Loki line is the **flat** attributes object:
+
+```json
+{"user_id":"<sub>","azp":"opencode-cli","gen_ai.request.model":"glm-5p1",
+ "gen_ai.usage.total_tokens":"49845","duration":"51042","response_code":"200", ...}
+```
+
+Querying rules that follow from it:
+
+- `| json` sanitizes dotted keys to underscores: `gen_ai.usage.total_tokens`
+  → `gen_ai_usage_total_tokens`.
+- **Numeric fields are strings** (`"49845"`) and **absent fields are `"-"`**
+  (Envoy's placeholder) — always guard unwraps:
+  `| json | unwrap gen_ai_usage_total_tokens | __error__=""`.
+- Anchor every query on `{service_name="envoy-ai-gateway"}` — it's pinned by
+  Alloy (`stage.static_labels`), deterministic and cheap.
+- Identity labels exist on **attributed traffic only**: for unauthenticated
+  requests Envoy logs `-`, which Alloy maps to empty (exact match — UUIDs
+  contain `-`), so no label is created and `user_id=~".+"` excludes them.
+- Lines ingested **before** the repair keep the old nested shape under
+  `service_name="unknown_service"` — query those with `attributes_`-prefixed
+  field names if you ever need the history.
+
 ## Where each step lives
 
 | Step | File | Change |
 |---|---|---|
 | Authorino emits the OIDC header set (ADR-0011) | `charts/apps/values.yaml` `security-policies.authConfigs.main.response.success.headers` | Entries `x-oidc-user-id`, `x-oidc-user-name`, `x-oidc-azp`, `x-oidc-iss`, `x-oidc-roles-realm`, `x-oidc-resource-access`, `x-oidc-scope`, `x-oidc-jti`, `x-oidc-email`, `x-oidc-name` |
-| Envoy access log carries them through | `charts/core-gateway/templates/envoy-proxy.yaml` `telemetry.accessLog.settings[0].format.json` | New fields `user_id` / `user_name` / `azp` |
-| OTel collector forwards to Alloy | `charts/core-gateway/templates/otel.yaml` `-usage` collector | Unchanged — already forwards to `otlp/alloy` |
-| Alloy promotes JSON fields to Loki labels | `charts/apps/values.yaml` Alloy `extraConfig` | New `loki.process "ai_gateway_user_attribution"` stage between `otelcol.exporter.loki` and `loki.write.default` |
+| Envoy access log carries them through | `charts/core-gateway/templates/envoy-proxy.yaml` `telemetry.accessLog.settings[0]` | Fields `user_id` / `user_name` / `azp` in `format.json`; sink resource `service.name: envoy-ai-gateway`; sent directly to `alloy.observability:4317` (the old `-usage` OTel collector middleman was removed) |
+| Alloy flattens the OTLP envelope + promotes labels | `charts/observability/values.yaml` alloy child `valuesObject` (`extraConfig`) | `loki.process "ai_gateway_user_attribution"`: `stage.match` on the `otel_envoy_accesslog` marker → extract `attributes` → `stage.output` (flatten) → promote `user_id`/`azp`/`model` → pin `service_name=envoy-ai-gateway` |
+| Dashboard consumes the labels | `tools/dashboards/src/dashboards/envoy_ai_gateway/per_user.py` (generated → `charts/observability-dashboards/files/envoy-ai-gateway/per-user.json`) | Label-only stream selectors, `label_values(...)` variables, guarded unwraps |
 
 ## Label cardinality budget
 
 Loki streams are O(N) on `(label set)` × `(distinct value combinations)`. We
-promote two attribution fields to labels; everything else stays in the log
+promote three attribution fields to labels; everything else stays in the log
 body and is queried with `| json | <field>=~"..."`.
 
 | Field | Source | Bound | Why labeled |
 |---|---|---|---|
 | `user_id` | Keycloak JWT `sub` (UUID) | One value per registered user | Primary attribution dimension; required for per-user dashboards |
 | `azp` | Keycloak JWT `azp` (client_id) | One value per Keycloak client (~10–20 today) | Cheap; lets dashboards split human vs SA traffic and pivot by app |
+| `model` | `gen_ai.request.model` (`x-ai-eg-model`) | One value per catalog model (~10–20) | Cheap (ADR-0046); backs the dashboard's model variable + per-model splits without a body parse |
 | `user_name` | `preferred_username` | One value per user | **Not labeled.** Carried in the body as a display field; query with `| json | user_name=~"alice.*"` when you need a human-readable filter. |
 
 If user count exceeds a few thousand and `{user_id}` cardinality becomes a
@@ -106,10 +142,10 @@ allowlist from `docs/authorino-service-account-bypass.md`:
 
 ```logql
 # Human traffic only
-{namespace="observability", azp!~"adorsys-gis-github-ci|lightbridge-api-key"}
+{service_name="envoy-ai-gateway", azp!~"adorsys-gis-github-ci|lightbridge-api-key"}
 
 # Service-account traffic only
-{namespace="observability", azp=~"adorsys-gis-github-ci|lightbridge-api-key"}
+{service_name="envoy-ai-gateway", azp=~"adorsys-gis-github-ci|lightbridge-api-key"}
 ```
 
 ## Verifying it works
@@ -123,47 +159,46 @@ curl -sv -H "Authorization: Bearer $HUMAN_TOKEN" \
   -d '{"model":"glm-5","messages":[{"role":"user","content":"hi"}]}'
 
 # 2. In Grafana → Explore → Loki, query
-{namespace="converse-gateway", azp=~".+"} | json | user_id != ""
-# Expect: lines tagged with your user_id and azp.
+{service_name="envoy-ai-gateway", azp=~".+"}
+# Expect: lines tagged with your user_id, azp, and model labels.
 
 # 3. Aggregate over time, by user
-sum by (user_id) (count_over_time({namespace="converse-gateway"} | json [5m]))
+sum by (user_id) (count_over_time({service_name="envoy-ai-gateway"} [5m]))
 ```
 
 If you see the JSON fields but no labels, Alloy's
 `loki.process "ai_gateway_user_attribution"` stage didn't fire — typical
-causes: typo in the field name in the access log JSON, or the access log
-isn't reaching Alloy's OTLP receiver (Envoy now pushes access logs
-straight to `alloy.observability:4317` — the old `-usage` OTel collector
-was removed; check the Alloy pod logs).
+causes: the `stage.match` marker (`otel_envoy_accesslog`) missing from the
+line, or the access log isn't reaching Alloy's OTLP receiver at all (Envoy
+pushes access logs straight to `alloy.observability:4317` — the old
+`-usage` OTel collector was removed; check the Alloy pod logs).
 
 ## LogQL queries for common dashboards
 
 ```logql
-# Requests per user per minute
+# Requests per user per minute (labels only — no body parse needed)
 sum by (user_id) (
-  count_over_time({namespace="converse-gateway"} | json [1m])
+  count_over_time({service_name="envoy-ai-gateway"} [1m])
 )
 
-# Per-user p95 latency (duration field in the log body)
+# Per-user p95 latency (duration is a string in the body — guard the unwrap)
 quantile_over_time(0.95,
-  {namespace="converse-gateway"} | json | unwrap duration [5m]
+  {service_name="envoy-ai-gateway"} | json | unwrap duration | __error__="" [5m]
 ) by (user_id)
 
 # Per-user total tokens
 sum by (user_id) (
   sum_over_time(
-    {namespace="converse-gateway"}
+    {service_name="envoy-ai-gateway"}
       | json
-      | unwrap gen_ai_usage_total_tokens [1h]
+      | unwrap gen_ai_usage_total_tokens | __error__="" [1h]
   )
 )
 
-# Per-model usage by a specific user
-sum by (gen_ai_request_model) (
+# Per-model usage by a specific user (model is a label now)
+sum by (model) (
   count_over_time(
-    {namespace="converse-gateway", user_id="<uuid>"}
-      | json [1h]
+    {service_name="envoy-ai-gateway", user_id="<uuid>"} [1h]
   )
 )
 ```
@@ -172,18 +207,25 @@ sum by (gen_ai_request_model) (
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `user_id` label present but empty | Authorino didn't set the header for this request | Was the request authenticated? Check Authorino logs — selector `auth.identity.sub` resolves to empty for unauthenticated requests |
-| `user_id` label absent entirely on AI Gateway logs | Alloy stage isn't seeing the field | `kubectl logs -n observability daemonset/alloy` and look for parse errors; verify the access-log JSON contains `"user_id":` (not the header name `"x-oidc-user-id":`) |
-| Header reaches the upstream but no Loki label | Access log not flowing through the OTel collector | Check the `-usage` collector pod logs; ensure it's healthy and exporting to `alloy.observability.svc:4317` |
+| Streams land as `service_name="unknown_service"` with a `{"attributes":...}` body | The `ai_gateway_user_attribution` stage isn't matching (the exact pre-ADR-0046 failure mode) | Check the Alloy config actually deployed (`stage.match` selector `{exporter="OTLP"} \|= "otel_envoy_accesslog"`); diff against `charts/observability/values.yaml` |
+| `user_id` label missing on some requests, `azp` present | Request authenticated via a path that doesn't stamp `sub` | Was the request authenticated? Envoy logs `-` for absent headers and Alloy maps `-` → no label by design (unauthenticated traffic is intentionally unlabeled) |
+| `user_id` label absent entirely on AI Gateway logs | Alloy stage isn't seeing the field | `kubectl logs -n observability daemonset/alloy` and look for parse errors; verify the flattened line contains `"user_id":` (not the header name `"x-oidc-user-id":`) |
+| No gateway streams in Loki at all | Access log not reaching Alloy's OTLP receiver | Envoy exports straight to `alloy.observability.svc:4317`; check the deps overlay's OTLP ingress allow (`environments/*/deps/alloy/`) and the Alloy receiver logs. Remember only requests with `x-ai-eg-model` set are logged (`matches` condition) |
+| Token/latency panels empty but request panels work | Unwrap failing on string/`-` values | Every unwrap needs the `\| __error__=""` guard (ADR-0046); fields are strings and absent values are `-` |
 | SA tokens missing labels too | `auth.identity.sub` selector returns empty for some tokens | Some Keycloak realm configs hide `sub` on SA tokens. Switch the selector to `auth.identity.<claim-actually-present>` and update this doc |
 | All requests label as same user | Authorino is using the wrong identity source | Confirm the AuthConfig `authentication.keycloak.jwt.issuerUrl` matches the realm issuing the tokens you're sending |
 
 ## Related
 
+- `docs/adr/0046-per-user-attribution-otlp-envelope-repair.md` — the
+  repair decision (flatten + label promotion + stream anchor)
+- `docs/adr/0005-per-user-attribution-via-authorino-headers.md` — the original
+  design this implements
+- `docs/observability-dashboard-research.md` — the audit that found the break
 - `docs/authorino-service-account-bypass.md` — how SA tokens differ
 - `docs/observability-fix-no-data-dashboards.md` — the Alloy pipeline this
   extends
 - `docs/grafana-operator-and-dashboards.md` — where the dashboards consuming
-  these labels live (task #7)
-- `charts/apps/values.yaml` Alloy `extraConfig` — the
+  these labels live
+- `charts/observability/values.yaml` alloy child `extraConfig` — the
   `loki.process "ai_gateway_user_attribution"` stage

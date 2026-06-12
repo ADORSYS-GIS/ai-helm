@@ -84,6 +84,12 @@ spec:
                 port: 4317
                 resources:
                   k8s.cluster.name: "converse-llm-1"
+                  # Name the OTLP log stream. Without this the OTel SDK
+                  # default leaks through and the stream lands in Loki as
+                  # service_name="unknown_service" (ADR-0046). Alloy also
+                  # pins the service_name label deterministically — this
+                  # resource documents intent at the source.
+                  service.name: "envoy-ai-gateway"
           matches:
             - "request.headers['x-ai-eg-model'] != ''"
           format:

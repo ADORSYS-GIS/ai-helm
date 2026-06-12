@@ -22,13 +22,18 @@ ALERTMANAGER_UID = "alertmanager"
 
 # ---------------------------------------------------------------------------
 # Loki label keys promoted by Alloy's `ai_gateway_user_attribution` stage
-# (see ADR-0005 and docs/per-user-observability.md).
+# (see ADR-0005 + ADR-0046 and docs/per-user-observability.md).
 # ---------------------------------------------------------------------------
 LABEL_USER_ID = "user_id"
 LABEL_AZP = "azp"
+LABEL_MODEL = "model"
 LABEL_NAMESPACE = "namespace"
 LABEL_POD = "pod"
 LABEL_CONTAINER = "container"
+
+# Stream anchor pinned by the same Alloy stage (stage.static_labels) on every
+# gateway access-log stream — ADR-0046. Every per-user query selects on it.
+GATEWAY_SERVICE_NAME = "envoy-ai-gateway"
 
 
 # ---------------------------------------------------------------------------

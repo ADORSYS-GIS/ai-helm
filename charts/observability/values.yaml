@@ -435,31 +435,79 @@ children:
                   forward_to = [loki.process.ai_gateway_user_attribution.receiver]
                 }
 
-                // Promote selected JSON fields from Envoy AI Gateway access
-                // logs into Loki labels.
+                // Reshape Envoy AI Gateway access logs + promote attribution
+                // labels (ADR-0046, supplements ADR-0005).
                 //
-                // Cardinality budget:
-                //   user_id  — Keycloak `sub` (UUID per user). Bounded by
-                //              user count; safe up to a few thousand.
-                //   azp      — Keycloak client_id. Bounded by client count
-                //              (<20 today). Very cheap.
+                // Envoy's OTel access-log sink delivers the format.json
+                // fields as OTLP log ATTRIBUTES (not the body), so
+                // otelcol.exporter.loki stores the line as
+                //   {"attributes":{...},"resources":{...}}
+                // The original flat-body assumption never held — top-level
+                // stage.json found nothing and no labels were ever promoted
+                // (the per-user dashboard was empty since rollout).
+                //
+                // Cardinality budget (ADR-0005):
+                //   user_id — Keycloak `sub` (UUID per user). Bounded by
+                //             user count; safe up to a few thousand.
+                //   azp     — Keycloak client_id. Bounded by client count
+                //             (<20 today). Very cheap.
+                //   model   — gen_ai.request.model. Bounded by the model
+                //             catalog (~10–20). Very cheap.
                 //
                 // user_name is intentionally NOT promoted (display field).
-                // Lines without these fields (e.g. non-gateway logs flowing
-                // through the same OTLP receiver) pass through unchanged —
-                // stage.json silently no-ops on missing keys, and
-                // stage.labels skips empty values.
+                // Only gateway access logs are matched (on the
+                // resources.log_name marker, present in every line); other
+                // OTLP logs pass through this block unchanged.
                 loki.process "ai_gateway_user_attribution" {
-                  stage.json {
-                    expressions = {
-                      user_id = "user_id",
-                      azp     = "azp",
+                  stage.match {
+                    selector = "{exporter=\"OTLP\"} |= \"otel_envoy_accesslog\""
+
+                    // Pull the attributes object out of the OTLP envelope
+                    // and make it the stored line, so LogQL `| json` sees
+                    // user_id / azp / gen_ai_* / duration etc. top-level
+                    // (dotted keys sanitize to underscores at query time).
+                    stage.json {
+                      expressions = { attributes = "attributes" }
                     }
-                  }
-                  stage.labels {
-                    values = {
-                      user_id = "user_id",
-                      azp     = "azp",
+                    stage.output {
+                      source = "attributes"
+                    }
+
+                    stage.json {
+                      expressions = {
+                        user_id = "user_id",
+                        azp     = "azp",
+                        model   = "\"gen_ai.request.model\"",
+                      }
+                    }
+                    // Envoy renders absent fields as "-": map to empty by
+                    // EXACT match (never substring-replace — UUIDs contain
+                    // "-") so stage.labels skips them and unauthenticated
+                    // requests get no identity labels.
+                    stage.template {
+                      source   = "user_id"
+                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    }
+                    stage.template {
+                      source   = "azp"
+                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    }
+                    stage.template {
+                      source   = "model"
+                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    }
+                    stage.labels {
+                      values = {
+                        user_id = "user_id",
+                        azp     = "azp",
+                        model   = "model",
+                      }
+                    }
+                    // Deterministic stream anchor for dashboards — don't
+                    // depend on the exporter's service.name translation or
+                    // Loki's discover_service_name default.
+                    stage.static_labels {
+                      values = { service_name = "envoy-ai-gateway" }
                     }
                   }
                   forward_to = [loki.write.default.receiver]

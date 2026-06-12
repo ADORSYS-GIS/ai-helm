@@ -23,48 +23,44 @@ and model.
 
 ## Variables
 
-- **`azp`** — Keycloak client_id (`label_values(azp)`). Multi-select with All. Use to split human vs SA traffic (see `docs/authorino-service-account-bypass.md` for the SA allowlist).
-- **`user_id`** — Keycloak user `sub` (`label_values({azp=~"$azp"}, user_id)`). Cascades from `azp`.
-- **`model`** — `gen_ai_request_model` extracted from the access log JSON. Filters all panels.
+All three are label-backed (ADR-0046), multi-select with All:
+
+- **`azp`** — Keycloak client_id (`label_values({service_name="envoy-ai-gateway"}, azp)`). Use to split human vs SA traffic (see `docs/authorino-service-account-bypass.md` for the SA allowlist).
+- **`user_id`** — Keycloak user `sub` (`label_values({service_name="envoy-ai-gateway", azp=~"$azp"}, user_id)`). Cascades from `azp`.
+- **`model`** — `gen_ai.request.model`, promoted to the `model` label by Alloy. Filters all panels.
 
 ## Data path
 
-The dashboard relies on labels added by the per-user attribution pipeline:
+The dashboard relies on labels added by the per-user attribution pipeline
+(ADR-0005, repaired by ADR-0046):
 
 ```
 JWT → Authorino response headers (x-oidc-user-id, x-oidc-azp; full x-oidc-* contract in ADR-0011)
-    → Envoy access-log JSON (user_id, azp fields)
+    → Envoy access-log OTel sink (fields arrive as OTLP ATTRIBUTES)
     → OTLP → Alloy (direct; the -usage collector was removed)
     → loki.process "ai_gateway_user_attribution"
-    → Loki labels {user_id, azp}
+        (flattens {"attributes":{...}} → line; promotes labels;
+         pins service_name=envoy-ai-gateway)
+    → Loki labels {service_name, user_id, azp, model}
 ```
 
-If the dashboard is empty, walk that flow backwards using the
+The dashboard shows **attributed traffic only** — unauthenticated requests
+carry no identity labels by design. If the dashboard is empty, walk the flow
+backwards using the
 [troubleshooting matrix in `docs/per-user-observability.md`](../../../../docs/per-user-observability.md#troubleshooting).
 
 ## Editing
 
-1. Open the dashboard in Grafana, make changes.
-2. Settings → JSON Model → copy the JSON.
-3. Replace `per-user.json` with the new content. **Strip** before committing:
-   - `id` (Grafana assigns)
-   - `__inputs` / `__elements` if a fresh import added them
-   - Any cached `dashboard.version` bumps that don't reflect a real change
-4. Keep `uid: envoy-ai-gateway-per-user` stable — changing it breaks bookmarks.
-5. `helm template observability-dashboards charts/observability-dashboards` should diff cleanly.
+**Do not hand-edit `per-user.json`.** It is GENERATED (ADR-0008) from
+`tools/dashboards/src/dashboards/envoy_ai_gateway/per_user.py`:
 
-## Adding panels
+```bash
+cd tools/dashboards
+# edit src/dashboards/envoy_ai_gateway/per_user.py
+uv run dashboards build       # regenerates per-user.json — commit both
+uv run dashboards check       # what CI runs; fails on drift
+```
 
-Add panel objects to the `panels` array. The dashboard uses a 24-column grid.
-Current layout heights:
-
-| Row y | Height | Width split |
-|---|---|---|
-| 0  | 4 | 6 + 6 + 6 + 6 (stats) |
-| 4  | 9 | 24 (full-width timeseries) |
-| 13 | 9 | 12 + 12 (table + pie) |
-| 22 | 9 | 24 (latency timeseries) |
-| 31 | 9 | 12 + 12 (errors + tokens) |
-| 40 | — | next free row |
-
-Anything you append should start at `y: 40` or rearrange existing panels.
+Keep `uid: envoy-ai-gateway-per-user` stable — changing it breaks bookmarks
+(and the epic's source-of-truth link). To prototype in Grafana, edit a *copy*
+in the UI, then port the change back into the generator module.
