@@ -133,13 +133,17 @@ wellKnown:
                   action: error
 
     # ────────────────────────────────────────────────────────────────────
-    # MCP servers (ADR-0042). Pushed org-wide via the well-known so every
-    # opencode user shares one curated MCP catalog. `enabled: false` ships
-    # a server "available but off" — a user opts in locally with
-    # `enabled: true` (opencode merges the well-known config under the
-    # user's own). Default-ON is kept deliberately lean: only the two
-    # broadly-useful, low-friction servers. Specialist/local ones are
-    # present-but-disabled so the default tool surface stays small.
+    # MCP servers (ADR-0042, scoping model refined by ADR-0044). Two axes:
+    #   • CONNECTIVITY — `enabled` here decides whether opencode connects to
+    #     the server AT ALL. A tool only exists if its server is connected,
+    #     so every server some `agent` (below) needs is `enabled: true`.
+    #   • ACCESS — WHO may call a connected tool is decided per-agent under
+    #     `config.agent.*.permission`, on top of the global `permission`
+    #     deny-baseline that keeps the PRIMARY agent lean. So a connected
+    #     server is NOT on the default agent; it lives behind its specialist
+    #     subagent (brave→web-search, context7→doc-research/iac,
+    #     terraform→iac). `enabled: false` = not connected → no agent can
+    #     use it (reserve for servers no role needs yet).
     mcp:
       # Local — runs on the USER's machine via npx, not through our
       # gateway. Off by default: the maintainer (AI Advocate) wants every
@@ -161,27 +165,101 @@ wellKnown:
         oauth: &mcpOAuth
           clientId: opencode-cli
           scope: "openid profile offline_access"
-        enabled: true            # default-ON — web search
+        enabled: true            # connected; scoped to the web-search agent
       context7:
         type: remote
         url: "https://api.ai.camer.digital/mcp/context7"
         oauth: *mcpOAuth
-        enabled: true            # default-ON — library docs lookup
+        enabled: true            # connected; scoped to doc-research + iac agents
       refero:
         type: remote
         url: "https://api.ai.camer.digital/mcp/refero"
         oauth: *mcpOAuth
-        enabled: false           # specialist (design refs) — opt-in
+        enabled: false           # no agent uses it yet (design refs)
       firecrawl:
         type: remote
         url: "https://api.ai.camer.digital/mcp/firecrawl"
         oauth: *mcpOAuth
-        enabled: false           # specialist (web scraping) — opt-in
+        enabled: false           # no agent uses it yet (web scraping)
       terraform:
         type: remote
         url: "https://api.ai.camer.digital/mcp/terraform"
         oauth: *mcpOAuth
-        enabled: false           # specialist (IaC) — opt-in
+        enabled: true            # connected; scoped to the iac agent
+
+    # ────────────────────────────────────────────────────────────────────
+    # Global permission baseline (ADR-0044) — keeps the PRIMARY/default agent
+    # LEAN: every connected MCP tool is denied by default, so the main agent
+    # has none of them. Each role subagent below re-allows exactly its own
+    # (agent permission overrides root). edit/bash keep opencode's defaults
+    # for the primary. (refero/firecrawl aren't connected, so no deny needed;
+    # `.env` reads are already denied by opencode.)
+    permission:
+      "brave_*": deny
+      "context7_*": deny
+      "terraform_*": deny
+
+    # ────────────────────────────────────────────────────────────────────
+    # Role subagents (ADR-0044). Delegated specialists (`mode: subagent`) the
+    # primary agent dispatches to via the task tool / `@name`. Each is a
+    # WHITELIST: it allows only its tools + its file/bash scope; everything
+    # else falls back to the deny-baseline above. Add a role by copying a
+    # block. Models are inherited (our camer-digital provider) — not pinned.
+    agent:
+      web-search:
+        mode: subagent
+        description: >-
+          Searches the web (Brave) and returns a concise, source-cited
+          summary. Read-only — never writes files or runs shell. Delegate for
+          "look this up / find current info" tasks.
+        temperature: 0.3
+        prompt: >-
+          You are a web-research specialist. Use the Brave MCP tools to search
+          and read sources, then return a concise, cited summary. You cannot
+          write files or run shell commands — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          webfetch: allow
+          "brave_*": allow
+      doc-research:
+        mode: subagent
+        description: >-
+          Researches a topic (Context7 library docs + reading the repo) and
+          writes documentation. May write ONLY under docs/. Delegate for
+          "document X / update the docs" tasks.
+        temperature: 0.3
+        prompt: >-
+          You are a documentation specialist. Read freely and use the Context7
+          MCP for authoritative library docs. You may create or edit files
+          ONLY under docs/ — every other path is denied; do not edit code.
+        permission:
+          edit:
+            "*": deny
+            "docs/**": allow
+          bash: deny
+          "context7_*": allow
+      iac:
+        mode: subagent
+        description: >-
+          Authors and plans infrastructure-as-code (Terraform/OpenTofu). Read
+          + write; runs terraform/tofu via shell with guardrails. Delegate for
+          "write/plan the infrastructure" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are an infrastructure-as-code specialist. Use Context7 for
+          provider docs and the Terraform MCP for registry lookups. You may
+          edit files and run terraform/tofu, but never destructive shell
+          (rm, etc.); pause for approval on anything unrecognized.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "terraform *": allow
+            "tofu *": allow
+            "rm *": deny
+          "context7_*": allow
+          "terraform_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the

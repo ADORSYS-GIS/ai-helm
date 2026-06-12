@@ -97,6 +97,34 @@ overridable locally.
 To verify it reached a server after deploy: `opencode mcp list` shows the merged
 catalog; the rendered descriptor's `config.mcp` should match the table above.
 
+## Agents & tool scoping (ADR-0044)
+
+Tool access is modelled on **two decoupled axes**:
+
+- **Connectivity** — `config.mcp.<name>.enabled` decides whether opencode
+  connects to a server at all. A tool only exists if its server is connected, so
+  every server a role needs is `enabled: true` (brave, context7, terraform);
+  `enabled: false` = not connected (refero/firecrawl/chrome-devtools, until a
+  role needs them).
+- **Access** — a global `config.permission` **deny-baseline** denies every
+  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`), so the **primary
+  agent is lean** (no MCP tools). Each role is a **`mode: subagent`** the primary
+  delegates to (`@name` / the task tool) and a **whitelist** that re-allows only
+  its tools + its file/bash scope (per-agent permission overrides the root).
+
+| Subagent | edit | bash | MCP |
+|---|---|---|---|
+| `web-search` | deny | deny | `brave_*` |
+| `doc-research` | only `docs/**` | deny | `context7_*` |
+| `iac` | allow | `ask`; allow `terraform *`/`tofu *`; deny `rm *` | `context7_*`, `terraform_*` |
+
+Add a role by copying an `agent` block (+ connecting its server if new). Models
+are inherited (our provider), not pinned; prompts are inline strings (the
+well-known can't ship prompt *files* to users). ⚠️ **Validate runtime
+enforcement on a live opencode** (delegate to each role; confirm the primary
+lacks the MCP tools and each scope holds) before relying on it — agent-vs-root
+permission precedence + MCP-glob gating are opencode-version behaviors.
+
 ## Verifying the endpoint after deploy
 
 ```bash
