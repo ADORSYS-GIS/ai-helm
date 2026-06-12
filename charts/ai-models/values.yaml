@@ -771,6 +771,30 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "google/gemma-4-26B-A4B-it"
 
+  glm-4.7-flash:
+    kind: text
+    # DeepInfra · zai-org/GLM-4.7-Flash — fast/cheap GLM, reasoning + agentic
+    # tools (Terminal-Bench / SWE-bench). ⚠️ contextLength unconfirmed (DeepInfra
+    # page omits it) — set to 200k per the GLM-4.x family; verify.
+    info:
+      displayName: "GLM-4.7 Flash"
+      contextLength: 200000
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.06
+        cachedInputPer1M: 0.01
+        outputPer1M: 0.40
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "zai-org/GLM-4.7-Flash"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "zai-org/GLM-4.7-Flash"
+
   # ── Branded "Adorsys" model aliases ───────────────────────────────────────
   # Stable, user-facing model IDs whose BACKING model can be swapped later
   # WITHOUT changing the id a user/agent selected — only the
