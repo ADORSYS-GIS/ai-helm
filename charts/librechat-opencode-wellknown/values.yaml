@@ -90,6 +90,27 @@ wellKnown:
             # breaks headless / remote-dev use.
             authFlow: device_code
             syncIntervalMinutes: 60
+            # Route inference through the OpenAI **Responses API**
+            # (`/v1/responses`) instead of Chat Completions
+            # (`/v1/chat/completions`). Requires the plugin ≥ 0.6.2
+            # (vymalo/opencode-oauth2#37; opencode auto-pulls latest at
+            # startup). Mechanically this swaps the registered AI-SDK
+            # package from `@ai-sdk/openai-compatible` (chat-only) to the
+            # native `@ai-sdk/openai`, whose default languageModel() has
+            # targeted Responses since AI SDK v5; with our `/v1` baseURL it
+            # resolves to the gateway's `/v1/responses`. Auth is untouched —
+            # the real OAuth bearer is still injected per request by the
+            # plugin's chat.headers hook (the native provider's mandatory
+            # apiKey is stamped with an inert placeholder that's never sent).
+            #
+            # The flag ALSO enables the plugin's streaming SSE index-repair,
+            # which injects the `output_index`/`content_index` fields our
+            # Envoy AI Gateway omits from its Responses SSE stream — without
+            # them OpenCode's part layer aborts with `text part <id> not
+            # found`. Verified live end-to-end against this gateway in the PR.
+            # Provider-wide (one boolean, no per-model granularity): EVERY
+            # camer-digital request goes through /v1/responses.
+            responseApi: true
           meta:
             # Relative path → resolves to baseURL + "models/info" =
             # https://api.ai.camer.digital/v1/models/info (the
