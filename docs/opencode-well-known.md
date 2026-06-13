@@ -154,7 +154,7 @@ Expected:
   },
   "config": {
     "$schema": "https://opencode.ai/config.json",
-    "plugin": ["@vymalo/opencode-oauth2"],
+    "plugin": ["@vymalo/opencode-oauth2@0.6.2"],
     "provider": {
       "camer-digital": {
         "name": "Camer Digital",
