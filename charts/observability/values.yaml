@@ -480,21 +480,36 @@ children:
                         model   = "\"gen_ai.request.model\"",
                       }
                     }
-                    // Envoy renders absent fields as "-": map to empty by
-                    // EXACT match (never substring-replace — UUIDs contain
-                    // "-") so stage.labels skips them and unauthenticated
-                    // requests get no identity labels.
-                    stage.template {
-                      source   = "user_id"
-                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    // Envoy renders absent fields as "-": blank them so
+                    // stage.labels skips them and unauthenticated requests
+                    // get no identity labels. Anchored regex ^-$ matches
+                    // ONLY the exact placeholder — never a substring (a
+                    // UUID/client_id/model name is never just "-").
+                    //
+                    // ⚠️ Use stage.replace, NOT stage.template here. The
+                    // alloy chart runs this whole config string through
+                    // Helm's `tpl` (configmap.yaml), so any Go-template
+                    // double-brace action (as in stage.template) is
+                    // evaluated by Helm at sync time and breaks manifest
+                    // generation ("unexpected ... in operand"). Keep this
+                    // entire config free of double-brace sequences —
+                    // including in comments. stage.replace is regex-only.
+                    // (Cost a sync outage on release-2026.06.12-v05;
+                    // ADR-0046.)
+                    stage.replace {
+                      source     = "user_id"
+                      expression = "^-$"
+                      replace    = ""
                     }
-                    stage.template {
-                      source   = "azp"
-                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    stage.replace {
+                      source     = "azp"
+                      expression = "^-$"
+                      replace    = ""
                     }
-                    stage.template {
-                      source   = "model"
-                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    stage.replace {
+                      source     = "model"
+                      expression = "^-$"
+                      replace    = ""
                     }
                     stage.labels {
                       values = {
