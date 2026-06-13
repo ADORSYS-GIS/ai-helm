@@ -68,12 +68,15 @@ wellKnown:
       - "@tarquinen/opencode-dcp@3.1.12"
       # Curated skills bundle (1000+) behind a token-efficient
       # "SkillPointer" loader (~80k → ~255 startup tokens vs. inlining
-      # them). Zero-config. MUST stay on @latest — the package IS the skill
-      # catalog, so an exact pin would freeze the skills and defeat its
-      # auto-sync. This is the deliberate exception to the version-pinning
-      # above. Users can opt into risk-filtering via an optional
+      # them). Zero-config. PINNED like the rest for a fully deterministic
+      # org-wide rollout — nobody's skill set shifts under them between
+      # releases. ⚠️ Trade-off: the package IS the skill catalog, so this
+      # freezes the available skills at this version — BUMP IT DELIBERATELY
+      # (re-validate) when you want the latest catalog; leaving it on @latest
+      # would auto-sync new skills but reintroduces non-determinism. Users
+      # can opt into risk-filtering via an optional
       # ~/.config/opencode/skill-filter.jsonc (all skills load by default).
-      - "opencode-skills-collection@latest"
+      - "opencode-skills-collection@3.0.45"
     provider:
       camer-digital:
         name: "Camer Digital"
