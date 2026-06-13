@@ -154,7 +154,7 @@ Expected:
   },
   "config": {
     "$schema": "https://opencode.ai/config.json",
-    "plugin": ["@vymalo/opencode-oauth2@0.6.2"],
+    "plugin": ["@vymalo/opencode-oauth2@0.6.3"],
     "provider": {
       "camer-digital": {
         "name": "Camer Digital",
@@ -189,6 +189,17 @@ them OpenCode aborts with `text part <id> not found`). It is provider-wide
 — every `camer-digital` request goes through `/v1/responses` — and does not
 touch the token lifecycle. See the inline comment in
 `charts/librechat-opencode-wellknown/values.yaml`.
+
+`meta.modelsInfoOverwrite: ["name"]` (models-info plugin ≥ 0.6.3,
+[vymalo/opencode-models-info#38](https://github.com/vymalo/opencode-oauth2/pull/38))
+exempts `name` from the plugin's upstream-wins merge. The oauth2 plugin's
+model discovery auto-stamps a *normalized* `name` (id `adorsys-coder` →
+"Adorsys Coder") before the models-info hook runs, which upstream-wins treats
+as handwritten config — so our `/v1/models/info` `name` (each model's branded
+`info.displayName`, e.g. "Adorsys Coder (MiniMax M2.7)", ADR-0044) never
+landed and the UI showed the plain normalized label. Listing `name` lets the
+endpoint value replace it; a field only changes when the endpoint actually
+provides one.
 
 ## Prerequisites the cluster must satisfy
 
