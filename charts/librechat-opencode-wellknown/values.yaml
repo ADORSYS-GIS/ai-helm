@@ -34,33 +34,45 @@ wellKnown:
   config:
     $schema: https://opencode.ai/config.json
     plugin:
-      # opencode auto-installs both via `bun install` at startup; cached
+      # opencode auto-installs each via `bun install` at startup; cached
       # under ~/.cache/opencode/node_modules/. No user action needed.
-      - "@vymalo/opencode-oauth2"
+      #
+      # VERSION-PINNED on purpose. opencode treats a `name@x.y.z` spec as an
+      # exact pin — it installs that version and runs NO stale/latest checks,
+      # whereas a bare `name` floats to @latest and silently refreshes when
+      # the cache goes stale (per opencode's plugin install spec). Pinning
+      # makes this org-wide push deterministic: every user runs the same
+      # plugin code we validated, and a publish upstream can't change
+      # behaviour under us mid-rollout. Bump these deliberately (and
+      # re-validate) rather than letting them drift. The three @vymalo/*
+      # plugins share one version line (released together, currently 0.6.2).
+      # The lone exception is opencode-skills-collection (kept @latest — see
+      # its note below).
+      - "@vymalo/opencode-oauth2@0.6.2"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info"
+      - "@vymalo/opencode-models-info@0.6.2"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit"
+      - "@vymalo/opencode-ratelimit@0.6.2"
       # Dynamic Context Pruning — auto-compresses/dedups stale tool
       # outputs and prunes failed-tool inputs from the running context.
       # Zero-config (sensible defaults); provider-agnostic. Pushed
       # org-wide it lowers per-request token spend against the ADR-0021
       # per-user budgets — a cost win for every session. Users can tune
       # via an optional ~/.config/opencode/dcp.jsonc.
-      - "@tarquinen/opencode-dcp"
+      - "@tarquinen/opencode-dcp@3.1.12"
       # Curated skills bundle (1000+) behind a token-efficient
       # "SkillPointer" loader (~80k → ~255 startup tokens vs. inlining
-      # them). Zero-config. MUST stay pinned to @latest — the package
-      # IS the skill catalog, so a fixed version freezes the skills and
-      # defeats its auto-sync. Users can opt into risk-filtering via an
-      # optional ~/.config/opencode/skill-filter.jsonc (all skills load
-      # by default).
+      # them). Zero-config. MUST stay on @latest — the package IS the skill
+      # catalog, so an exact pin would freeze the skills and defeat its
+      # auto-sync. This is the deliberate exception to the version-pinning
+      # above. Users can opt into risk-filtering via an optional
+      # ~/.config/opencode/skill-filter.jsonc (all skills load by default).
       - "opencode-skills-collection@latest"
     provider:
       camer-digital:
@@ -93,8 +105,8 @@ wellKnown:
             # Route inference through the OpenAI **Responses API**
             # (`/v1/responses`) instead of Chat Completions
             # (`/v1/chat/completions`). Requires the plugin ≥ 0.6.2
-            # (vymalo/opencode-oauth2#37; opencode auto-pulls latest at
-            # startup). Mechanically this swaps the registered AI-SDK
+            # (vymalo/opencode-oauth2#37 — we pin 0.6.2 in the plugin list
+            # above). Mechanically this swaps the registered AI-SDK
             # package from `@ai-sdk/openai-compatible` (chat-only) to the
             # native `@ai-sdk/openai`, whose default languageModel() has
             # targeted Responses since AI SDK v5; with our `/v1` baseURL it
@@ -121,9 +133,9 @@ wellKnown:
             # TTL (24h default upstream); override if you want fresher
             # catalogs:
             # modelsInfoTtlSeconds: 3600
-            # @vymalo/opencode-ratelimit config. Requires the plugin
-            # ≥ 0.6.1 (the `scope` + `tiers` schema; opencode auto-pulls
-            # latest at startup). headerPrefix "x-ratelimit" matches
+            # @vymalo/opencode-ratelimit config. Needs the `scope` + `tiers`
+            # schema (plugin ≥ 0.6.1; we pin 0.6.2 in the plugin list
+            # above). headerPrefix "x-ratelimit" matches
             # Envoy's draft-03 header names — plugin default.
             #
             # `scope: model` keys rate-limit state per model, matching
