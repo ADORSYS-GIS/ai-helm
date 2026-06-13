@@ -178,16 +178,18 @@ Expected:
 Content-Type must be `application/json` (nginx adds it via
 `default_type` in the chart's nginx config).
 
-`oauth2.responseApi: true` (plugin ≥ 0.6.2,
+`oauth2.responseApi` (plugin ≥ 0.6.2,
 [vymalo/opencode-oauth2#37](https://github.com/vymalo/opencode-oauth2/pull/37))
-routes inference through the OpenAI **Responses API** (`/v1/responses`)
-instead of Chat Completions by registering the provider with
-`@ai-sdk/openai` rather than `@ai-sdk/openai-compatible`. It also enables
-the plugin's streaming SSE index-repair, which supplies the
+is **currently `false`** — inference uses Chat Completions
+(`/v1/chat/completions`), the plugin default. It was enabled in
+`release-2026.06.13` then turned back off. When `true` it routes inference
+through the OpenAI **Responses API** (`/v1/responses`) by registering the
+provider with `@ai-sdk/openai` rather than `@ai-sdk/openai-compatible`, and
+enables the plugin's streaming SSE index-repair, which supplies the
 `output_index`/`content_index` fields our Envoy AI Gateway omits (without
 them OpenCode aborts with `text part <id> not found`). It is provider-wide
-— every `camer-digital` request goes through `/v1/responses` — and does not
-touch the token lifecycle. See the inline comment in
+— every `camer-digital` request would go through `/v1/responses` — and does
+not touch the token lifecycle. See the inline comment in
 `charts/librechat-opencode-wellknown/values.yaml`.
 
 `meta.modelsInfoOverwrite: ["name"]` (models-info plugin ≥ 0.6.3,
