@@ -45,20 +45,20 @@ wellKnown:
       # plugin code we validated, and a publish upstream can't change
       # behaviour under us mid-rollout. Bump these deliberately (and
       # re-validate) rather than letting them drift. The three @vymalo/*
-      # plugins share one version line (released together, currently 0.6.2).
+      # plugins share one version line (released together, currently 0.6.3).
       # The lone exception is opencode-skills-collection (kept @latest — see
       # its note below).
-      - "@vymalo/opencode-oauth2@0.6.2"
+      - "@vymalo/opencode-oauth2@0.6.3"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.6.2"
+      - "@vymalo/opencode-models-info@0.6.3"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.6.2"
+      - "@vymalo/opencode-ratelimit@0.6.3"
       # Dynamic Context Pruning — auto-compresses/dedups stale tool
       # outputs and prunes failed-tool inputs from the running context.
       # Zero-config (sensible defaults); provider-agnostic. Pushed
@@ -108,7 +108,7 @@ wellKnown:
             # Route inference through the OpenAI **Responses API**
             # (`/v1/responses`) instead of Chat Completions
             # (`/v1/chat/completions`). Requires the plugin ≥ 0.6.2
-            # (vymalo/opencode-oauth2#37 — we pin 0.6.2 in the plugin list
+            # (vymalo/opencode-oauth2#37 — we pin 0.6.3 in the plugin list
             # above). Mechanically this swaps the registered AI-SDK
             # package from `@ai-sdk/openai-compatible` (chat-only) to the
             # native `@ai-sdk/openai`, whose default languageModel() has
@@ -136,8 +136,23 @@ wellKnown:
             # TTL (24h default upstream); override if you want fresher
             # catalogs:
             # modelsInfoTtlSeconds: 3600
+            # Force our endpoint's `name` to win over the normalized label
+            # the oauth2 plugin pre-stamps (vymalo/opencode-models-info#38,
+            # needs plugin ≥ 0.6.3 — pinned 0.6.3 above). models-info merges
+            # upstream-wins, and oauth2's model discovery auto-stamps a
+            # normalized `name` (e.g. id `adorsys-coder` → "Adorsys Coder")
+            # BEFORE the models-info hook runs; upstream-wins then can't tell
+            # that from handwritten config, so our `/v1/models/info` `name`
+            # (= each model's branded `info.displayName`, e.g. "Adorsys Coder
+            # (MiniMax M2.7)", ADR-0044) never landed — the UI showed the
+            # plain normalized label. Listing `name` here exempts ONLY that
+            # field from upstream-wins so the endpoint value replaces it. (A
+            # field only changes when the endpoint actually provides it; a
+            # missing value never blanks an existing one.)
+            modelsInfoOverwrite:
+              - name
             # @vymalo/opencode-ratelimit config. Needs the `scope` + `tiers`
-            # schema (plugin ≥ 0.6.1; we pin 0.6.2 in the plugin list
+            # schema (plugin ≥ 0.6.1; we pin 0.6.3 in the plugin list
             # above). headerPrefix "x-ratelimit" matches
             # Envoy's draft-03 header names — plugin default.
             #
