@@ -53,7 +53,7 @@ How the system is wired and how to integrate against it.
 | [`librechat-oidc-integration.md`](./librechat-oidc-integration.md) | LibreChat ↔ Keycloak OIDC wiring, claim mapping, role propagation |
 | [`librechat-oidc-experiments.md`](./librechat-oidc-experiments.md) | Notes from earlier OIDC iterations — kept as historical record |
 | [`librechat_headers_tracing_doc.md`](./librechat_headers_tracing_doc.md) | How LibreChat templated headers flow into downstream MCP/Converse calls |
-| [`authorino-service-account-bypass.md`](./authorino-service-account-bypass.md) | How service-account tokens skip OPA / external metadata in Authorino |
+| [`authorino-service-account-bypass.md`](./authorino-service-account-bypass.md) | **Historical** (OPA removed 2026-06-04, ADR-0021): how service-account tokens used to skip OPA / external metadata in Authorino |
 | [`per-user-observability.md`](./per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki `user_id`/`azp` labels |
 | [`opencode-well-known.md`](./opencode-well-known.md) | opencode `.well-known/opencode` flow at `ai.camer.digital`; prerequisites, plugin install, troubleshooting |
 | [`opencode-sandboxing.md`](./opencode-sandboxing.md) | Why the opencode permission config is **not** a sandbox (string-matched bash rules over code-execution tools), opencode's lack of a native OS sandbox (worktree = recovery only), the containment options (worktree / OS wrapper / devcontainer / hosted in-cluster), and the recommendation (devcontainer for local; hosted = future ADR reversing ADR-0027) |

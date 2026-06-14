@@ -79,10 +79,11 @@ and how.
 
 ---
 
-### 2.1 Lightbridge Backend (API, OPA, MCP, Usage)
+### 2.1 Lightbridge Backend (API, MCP, Usage)
 
-**What it is:** The core authorization and billing service. Handles API key
-validation, OPA policy evaluation, and usage tracking.
+**What it is:** The core authorization and billing service. Handles
+authorization and usage tracking. (OPA was removed 2026-06-04, ADR-0021 — a
+valid Keycloak JWT is now the authorization boundary.)
 
 **Why it matters:** Every AI API request passes through Lightbridge. Latency
 spikes or error rate increases here directly impact end users.
@@ -96,7 +97,6 @@ spikes or error rate increases here directly impact end users.
    exposes `/metrics` via the `metrics` feature of `actix-web-prom` or similar).
    If not yet instrumented, add `prometheus` crate metrics for:
    - Request rate and latency per endpoint (`http_requests_total`, `http_request_duration_seconds`)
-   - OPA policy evaluation latency
    - API key validation cache hit/miss ratio
    - Active database connections
 
@@ -108,7 +108,6 @@ spikes or error rate increases here directly impact end users.
 3. **Dashboard** — Once metrics flow, use gnetId `19924` (Rust service metrics)
    or build a custom dashboard tracking:
    - API key validation rate and error rate
-   - OPA policy decision latency (p50/p95/p99)
    - Usage DB write latency
    - Active connections per service
 
@@ -215,8 +214,7 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 2. Key metrics:
    - Auth evaluation rate and latency per `AuthConfig`
    - Cache hit/miss ratio
-   - External metadata fetch latency (the Lightbridge OPA calls)
-   - Denial rate per policy
+   - Denial rate per AuthConfig
 
 ---
 
@@ -243,7 +241,7 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 
 | Priority | Component | Effort | Impact |
 |----------|-----------|--------|--------|
-| 🔴 High | Lightbridge (API + OPA) | Medium | Every API request passes through here |
+| 🔴 High | Lightbridge (API + Usage) | Medium | Every API request passes through here |
 | 🔴 High | Envoy AI Gateway metrics | Low | Token usage and routing visibility |
 | 🟡 Medium | LibreChat + MongoDB | Medium | User-facing service health |
 | 🟡 Medium | Authorino | Low | Auth latency directly affects API response time |
