@@ -49,6 +49,17 @@ resources:
         requests:
           cpu: 200m
           memory: 500Mi
+      # Declarative role for lightbridge-repo-auth (ADR-0047): a dedicated login
+      # role, isolated from the bootstrap `app` role. Password from the
+      # basic-auth Secret below (ESO-provisioned); CNPG creates/maintains the
+      # role and the `repoauth` Database (below) is owned by it.
+      managed:
+        roles:
+          - name: repoauth
+            ensure: present
+            login: true
+            passwordSecret:
+              name: repo-auth-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -124,3 +135,52 @@ resources:
       podMetricsEndpoints:
         - port: metrics
           interval: 30s
+  # ────────────────────────────────────────────────────────────────────
+  # lightbridge-repo-auth (ADR-0047): a `repoauth` Database owned by the
+  # managed role above, plus the role's basic-auth Secret (username +
+  # password) consumed by BOTH CNPG (passwordSecret) and the app.
+  # NOTE: the ESO `password` template braces are double-escaped so Helm's
+  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO —
+  # an un-escaped `{{ }}` here breaks render (CLAUDE.md tpl-brace trap).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: repoauth
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: repoauth
+      owner: repoauth
+      ensure: present
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: repo-auth-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: repo-auth-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "repoauth"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: repo_auth_db_password

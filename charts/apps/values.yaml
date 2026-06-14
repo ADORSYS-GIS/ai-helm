@@ -615,6 +615,16 @@ applications:
             main:
               gatewayName: core-gateway
               authorinoService: kuadrant-policies-main-authorino-authorization
+          # ExternalSecret for the X-Internal-Token the `repobinding` metadata
+          # step presents to lightbridge-repo-auth (ADR-0047). Same value the
+          # service reads in `converse` from the same remote property.
+          # ⚠️ The remote property MUST exist in ssegning-aws BEFORE releasing —
+          # a sharedSecretRef to a missing Secret makes the main AuthConfig fail
+          # readiness → gateway-wide 404 (the OPA-removal failure mode).
+          repoAuthInternalSecret:
+            enabled: true
+            remoteKey: ai/camer/digital/prod/env
+            property: repo_auth_resolve_internal_token
           authConfigs:
             main:
               hosts:
@@ -647,6 +657,18 @@ applications:
                     # home-os / cluster DNS). With ttl caching above, the
                     # JWKS fetch is already off the request hot path, so this
                     # is a resilience nicety, not a latency fix.
+                # ── GitHub Actions OIDC (ADR-0047) ─────────────────────────────
+                # CI runners present their RAW GitHub Actions OIDC token. We only
+                # validate it here (issuer below); the repo→account binding is
+                # enforced by the `repobinding` metadata + `repo-binding-allowed`
+                # authorization steps, both `when`-gated to this issuer so the
+                # Keycloak path above is completely unaffected. Authorino does not
+                # enforce `aud` (SkipClientIDCheck) — the per-customer audience is
+                # validated against the Source by lightbridge-repo-auth.
+                github-actions:
+                  jwt:
+                    issuerUrl: https://token.actions.githubusercontent.com
+                    ttl: 3600
               # NOTE (2026-06-04): the lightbridge-opa `lightbridge-validation`
               # metadata source AND its `enforce-valid-key` authorization step
               # were REMOVED. Authorization is now Keycloak's job — a valid
@@ -657,6 +679,54 @@ applications:
               # lightbridge-opa backend, whose absence made the AuthConfig fail
               # readiness → "Service not found" 404 on every request. The
               # rate-limit accounting headers are now JWT-derived (see response).
+              # ── GitHub Actions binding (ADR-0047) ──────────────────────────────
+              # Both steps run ONLY for GitHub-issued tokens (the `when` predicate),
+              # so Keycloak/SA requests skip them. lightbridge-repo-auth returns 403
+              # on a failed binding (→ this metadata fetch fails → request denied);
+              # `repo-binding-allowed` is the deterministic secondary gate.
+              metadata:
+                "repobinding":
+                  when:
+                    - selector: auth.identity.iss
+                      operator: eq
+                      value: https://token.actions.githubusercontent.com
+                  http:
+                    url: http://lightbridge-repo-auth.converse.svc.cluster.local:3000/v1/resolve
+                    method: POST
+                    contentType: application/json
+                    # Shared secret → X-Internal-Token header. The resolve endpoint
+                    # is ClusterIP-only and trusts the posted claims only with it.
+                    # Secret lives in THIS (Authorino) namespace; provisioned by ESO.
+                    credentials:
+                      customHeader:
+                        name: X-Internal-Token
+                    sharedSecretRef:
+                      name: lightbridge-repo-auth-internal
+                      key: internal-token
+                    bodyParameters:
+                      audience:
+                        selector: auth.identity.aud
+                      repository_owner_id:
+                        selector: auth.identity.repository_owner_id
+                      repository_id:
+                        selector: auth.identity.repository_id
+                      repository:
+                        selector: auth.identity.repository
+                      subject:
+                        selector: auth.identity.sub
+              authorization:
+                "repo-binding-allowed":
+                  when:
+                    - selector: auth.identity.iss
+                      operator: eq
+                      value: https://token.actions.githubusercontent.com
+                  patternMatching:
+                    patterns:
+                      # Present + non-empty only on a 200 allow (mirrors the proven
+                      # `.id neq ""` form, not a boolean compare).
+                      - selector: auth.metadata.repobinding.account_id
+                        operator: neq
+                        value: ""
               response:
                 success:
                   headers:
@@ -675,15 +745,20 @@ applications:
                     #   their OWN budget bucket rather than all sharing one.
                     # SA clients can still carry billing_plan="service". (The
                     # internal-plane AuthConfig sets x-billing-plan="internal".)
+                    # ADR-0047: GitHub CI tokens → the bound account + its plan
+                    # (from the `repobinding` metadata, present only on the GitHub
+                    # path); every other identity → the prior Keycloak-derived
+                    # values, unchanged. CEL short-circuits the ternary, so the
+                    # else-branch never touches the absent metadata.
                     "x-account-id":
                       plain:
-                        selector: "auth.identity.sub"
+                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.account_id) : string(auth.identity.sub)'
                     "x-org-id":
                       plain:
-                        expression: 'has(auth.identity.organization) ? string(auth.identity.organization) : string(auth.identity.sub)'
+                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.account_id) : (has(auth.identity.organization) ? string(auth.identity.organization) : string(auth.identity.sub))'
                     "x-billing-plan":
                       plain:
-                        expression: 'has(auth.identity.billing_plan) ? string(auth.identity.billing_plan) : "free"'
+                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.billing_plan) : (has(auth.identity.billing_plan) ? string(auth.identity.billing_plan) : "free")'
                     # ── x-oidc-* downstream header contract (ADR-0011) ────
                     # Set on every successful auth, for both human and SA tokens.
                     # Envoy access-log JSON sink reads these via %REQ(...)%
@@ -861,6 +936,37 @@ applications:
       helm:
         releaseName: lightbridge
         valuesObject: {}
+    destination:
+      namespace: converse
+
+  # --- lightbridge-repo-auth (ADR-0047) ---
+  # GitHub-App webhook control plane + the /v1/resolve binding the gateway's
+  # Authorino calls. Plain workload → home-remote (default). EXTERNAL private
+  # repo: pin a commit SHA (doesn't ride the ai-helm release tag) — ⚠️ ArgoCD
+  # needs read creds for the private repo. depsOverlay folds in the webhook
+  # ingress Certificate (Source B). Secrets: webhook/internal-token/private-key
+  # via the chart's ExternalSecret (ssegning-aws repo_auth_*); the DB `repoauth`
+  # Database + role + password Secret live on lightbridge-main-db
+  # (charts/lightbridge-db). ⚠️ ghcr package is private today — the image pulls
+  # only if it's made public OR an imagePullSecret is added (see #393).
+  - name: lightbridge-repo-auth
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    depsOverlay: environments/prod/deps/lightbridge-repo-auth
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/lightbridge-repo-auth
+      targetRevision: d84692bc197b68a3d210e8faaebd0a12f751781e
+      path: charts/lightbridge-repo-auth
+      helm:
+        releaseName: lightbridge-repo-auth
+        valuesObject:
+          image:
+            tag: sha-d84692b
+          ingress:
+            enabled: true
+          env:
+            # Numeric App id from the registered GitHub App (public, not secret).
+            RA__GITHUB__APP_ID: "3253522"
     destination:
       namespace: converse
 
