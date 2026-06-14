@@ -1,3 +1,11 @@
+# opencode PR review / issue task — thin caller for the reusable workflow in
+# ADORSYS-GIS/ai-governance (ADR-0047 + ADR-0049). Auth to the AI gateway is the
+# repo's own GitHub-OIDC token validated by lightbridge-repo-auth (keyless); the
+# review is posted by github-actions[bot]. The whole job logic lives in the
+# reusable workflow — bump the pinned SHA deliberately to adopt a new version.
+#
+# Needs the org/repo variable OPENCODE_GATEWAY_AUDIENCE (set org-wide for
+# ADORSYS-GIS = this org's lightbridge-repo-auth Source URL).
 name: opencode
 
 on:
@@ -13,157 +21,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  detect-trigger:
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
-      run_kind: ${{ steps.check.outputs.run_kind }}
-      pr_number: ${{ steps.check.outputs.pr_number }}
-      issue_number: ${{ steps.check.outputs.issue_number }}
-    steps:
-      - id: check
-        env:
-          COMMENT_BODY: ${{ github.event.comment.body }}
-          EVENT_NAME: ${{ github.event_name }}
-          IS_PR: ${{ github.event.issue.pull_request != '' || github.event.pull_request != '' }}
-        run: |
-          PR_NUMBER="${{ github.event.pull_request.number || github.event.issue.number }}"
-          ISSUE_NUMBER="${{ github.event.issue.number || github.event.pull_request.number }}"
-
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "run_kind=auto_pr_review" >> "$GITHUB_OUTPUT"
-            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-            echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT_NAME" = "issue_comment" ] || [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
-            if echo "$COMMENT_BODY" | grep -qE '(^|[[:space:]])/(oc|opencode)\b'; then
-              if [ "$IS_PR" = "true" ]; then
-                echo "should_run=true" >> "$GITHUB_OUTPUT"
-                echo "run_kind=manual_pr_review" >> "$GITHUB_OUTPUT"
-                echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-                echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-              else
-                echo "should_run=true" >> "$GITHUB_OUTPUT"
-                echo "run_kind=issue_task" >> "$GITHUB_OUTPUT"
-                echo "pr_number=" >> "$GITHUB_OUTPUT"
-                echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              echo "should_run=false" >> "$GITHUB_OUTPUT"
-              echo "run_kind=none" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "run_kind=none" >> "$GITHUB_OUTPUT"
-          fi
-
-  opencode:
-    needs: detect-trigger
-    if: needs.detect-trigger.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  review:
+    # No-op if the audience var isn't set (keeps unprepared forks/CI green).
+    if: ${{ vars.OPENCODE_GATEWAY_AUDIENCE != '' }}
+    # ADORSYS-GIS/ai-governance @ the opencode-review-reusable merge (PR #9).
+    uses: ADORSYS-GIS/ai-governance/.github/workflows/opencode-review.yml@f9f84263066887a9215e49ec8cfc164aba3e0e0c
     permissions:
-      id-token: write
-      contents: write
-      pull-requests: write
-      issues: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Bot Details
-        id: bot-details
-        uses: raven-actions/bot-details@v1
-
-      - name: Setup credentials
-        run: |
-          git config --global user.name "${{ steps.bot-details.outputs.name }}"
-          git config --global user.email "${{ steps.bot-details.outputs.email }}"
-          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf https://github.com/
-
-      - name: Mint gateway OIDC token (lightbridge-repo-auth binding, ADR-0047)
-        id: gwtoken
-        # The external gateway AuthConfig is JWT-only; the old static
-        # LIGHTBRIDGE_API_KEY is not a JWT → "oidc: malformed jwt". Instead mint
-        # this run's GitHub Actions OIDC token with the ADORSYS-GIS Source as the
-        # audience: Authorino validates it and lightbridge-repo-auth resolves
-        # owner 139577169 → account adorsys-gis (plan pro). Needs id-token: write.
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const aud = 'https://api.ai.camer.digital/sources/src-cz55gv0nljenr7bxw4lmd8at';
-            const token = await core.getIDToken(aud);
-            core.setSecret(token);
-            // opencode reads this via {env:CAMER_DIGITAL_API_KEY} in the config below
-            core.exportVariable('CAMER_DIGITAL_API_KEY', token);
-
-      - name: Write opencode config (our camer-digital provider → the gateway)
-        # Drive the action's `opencode github run` with OUR provider so auth goes
-        # through the lightbridge-repo-auth binding (apiKey = the minted OIDC
-        # token) and the model id matches the gateway's bare routes. This is what
-        # "use our app, not a github-bot/static key" means in practice.
-        run: |
-          cat > opencode.json <<'JSON'
-          {
-            "$schema": "https://opencode.ai/config.json",
-            "provider": {
-              "camer-digital": {
-                "npm": "@ai-sdk/openai-compatible",
-                "name": "Camer Digital",
-                "options": {
-                  "baseURL": "https://api.ai.camer.digital/v1",
-                  "apiKey": "{env:CAMER_DIGITAL_API_KEY}"
-                },
-                "models": {
-                  "adorsys-reviewer": { "name": "Adorsys Reviewer" },
-                  "adorsys-reviewer-pro": { "name": "Adorsys Reviewer Pro" }
-                }
-              }
-            }
-          }
-          JSON
-
-      - name: Run OpenCode Review
-        # Pinned 2026-05-24. `@latest` is not a real Git ref — GitHub resolves
-        # it as a literal branch/tag named "latest" (or silently fails). Third-
-        # party action invoked with repo-write scopes; pinning is a supply-chain
-        # control. Bump deliberately and verify the release notes.
-        uses: anomalyco/opencode/github@v1.16.2
-        env:
-          # CAMER_DIGITAL_API_KEY (the minted GHA OIDC token) is exported into
-          # GITHUB_ENV by the mint step; opencode reads it via {env:...} in the
-          # provider config above. Gateway auth = our OIDC binding, not a key.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          model: ${{ needs.detect-trigger.outputs.run_kind == 'manual_pr_review' && 'camer-digital/adorsys-reviewer-pro' || needs.detect-trigger.outputs.run_kind == 'issue_task' && 'camer-digital/adorsys-reviewer-pro' || 'camer-digital/adorsys-reviewer' }}
-          agent: ${{ needs.detect-trigger.outputs.run_kind == 'issue_task' && 'build' || needs.detect-trigger.outputs.run_kind == 'manual_pr_review' && 'manual-review' || 'auto-review' }}
-          use_github_token: true
-
-      # ── Failure handler ───────────────────────────────────────────────────
-      - name: Report failure
-        if: failure()
-        env:
-          PR_NUMBER: ${{ needs.detect-trigger.outputs.pr_number }}
-          ISSUE_NUMBER: ${{ needs.detect-trigger.outputs.issue_number }}
-          RUN_KIND: ${{ needs.detect-trigger.outputs.run_kind }}
-        uses: actions/github-script@v9
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const issueNumber = process.env.RUN_KIND === 'issue_task'
-              ? Number(process.env.ISSUE_NUMBER)
-              : Number(process.env.PR_NUMBER)
-            const body = process.env.RUN_KIND === 'issue_task'
-              ? `🤖 Task failed. [View logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
-              : `🤖 Review failed. [View logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              body,
-            })
+      id-token: write # mint the GHA OIDC token (gateway auth)
+      contents: write # checkout + the action's git ops
+      pull-requests: write # post the review
+      issues: write # post issue-task / failure comments
+    with:
+      audience: ${{ vars.OPENCODE_GATEWAY_AUDIENCE }}
+      # Models default in the reusable workflow: auto=adorsys-reviewer,
+      # manual+issue=adorsys-reviewer-pro. Override here only to diverge.
