@@ -79,7 +79,6 @@ overridable locally.
 | `terraform` | remote | gateway `/mcp/terraform` (IaC) | `true` |
 | `refero` | remote | gateway `/mcp/refero` (design refs) | `true` |
 | `firecrawl` | remote | gateway `/mcp/firecrawl` (web scraping) | `false` |
-| `chrome-devtools` | local | `npx -y chrome-devtools-mcp@latest` | `true` |
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
   with the **same** `opencode-cli` Keycloak client
@@ -90,14 +89,13 @@ overridable locally.
 - ⚠️ **Since ADR-0044, `enabled` means *connectivity*, not "on for the primary
   agent".** A connected server's tools are denied by the global permission
   baseline and re-allowed only on the role subagent that needs them (see *Agents
-  & tool scoping* below) — so `terraform` / `refero` / `chrome-devtools` are
-  connected but reachable only via `@iac` / `@frontend`, never the default agent.
-  `firecrawl` stays unconnected until a role claims it. (ADR-0042 originally
-  shipped only `brave` + `context7` connected; ADR-0044 connected the rest as
-  roles needed them.)
-- **`chrome-devtools`** is the one `local` server — it spawns `npx
-  chrome-devtools-mcp` on the user's machine and needs a real Chrome, so users
-  without that setup see it fail to start; kept on purpose, scoped to `@frontend`.
+  & tool scoping* below) — so `terraform` / `refero` are connected but reachable
+  only via `@iac` / `@frontend`, never the default agent. `firecrawl` stays
+  unconnected until a role claims it. (ADR-0042 originally shipped only `brave` +
+  `context7` connected; ADR-0044 connected the rest as roles needed them.)
+- All connected MCP servers are now **remote** (gateway `/mcp/<name>` routes).
+  The `chrome-devtools` **local** MCP was removed — live-browser inspection is now
+  the `@vymalo/opencode-browser` plugin's `browser_*` tools, owned by `@frontend`.
 
 To verify it reached a server after deploy: `opencode mcp list` shows the merged
 catalog; the rendered descriptor's `config.mcp` should match the table above.
@@ -109,10 +107,9 @@ Tool access is modelled on **two decoupled axes**:
 - **Connectivity** — `config.mcp.<name>.enabled` decides whether opencode
   connects to a server at all. A tool only exists if its server is connected, so
   every server a role needs is `enabled: true` (brave, context7, terraform,
-  refero, the local chrome-devtools); `enabled: false` = not connected
-  (firecrawl, until a role needs it).
+  refero); `enabled: false` = not connected (firecrawl, until a role needs it).
 - **Access** — a global `config.permission` **deny-baseline** denies every
-  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`, `chrome-devtools_*`)
+  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`)
   plus the `@vymalo/opencode-browser` plugin's `browser_*` tools. Each role is a
   **`mode: subagent`** the primary delegates to (`@name` / the task tool) and a
   **whitelist** that re-allows only its tools + its file/bash scope (per-agent
@@ -132,9 +129,9 @@ Tool access is modelled on **two decoupled axes**:
 > - **For the browser PLUGIN, the `browser_*` denies/allows are currently inert** —
 >   plugin tools self-gate via `ctx.ask` and `@vymalo/opencode-browser` doesn't, so
 >   unlike MCP tools the deny neither hides nor blocks them. Kept for intent +
->   forward-compat. The value of the `browser-*` subagents is **focused prompts +
->   delegation routing** (and keeping browsing churn out of the primary's context),
->   not token savings or enforcement.
+>   forward-compat. The browser tools are owned by `@frontend` for **focused
+>   prompting + delegation routing** (and to keep browsing churn out of the
+>   primary's context), not for token savings or enforcement.
 
 | Subagent | model (alias) | edit | bash | MCP / tools |
 |---|---|---|---|---|
@@ -144,15 +141,16 @@ Tool access is modelled on **two decoupled axes**:
 | `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` |
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
-| `frontend` | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` |
-| `browser-page` | `adorsys-frontend` (multimodal) | deny | deny | `page` group (8): snapshot, get_text/html/attribute, query, tabs, targets, screenshot — read-only observe |
-| `browser-control` | `adorsys-frontend` (multimodal) | deny | deny | `control` group (19) + snapshot/query: open/navigate, click/type/fill/select, scroll/hover/drag, history/tabs, upload — drives tabs |
+| `frontend` | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | `context7_*`, `refero_*`, `browser_*` (full page+control) |
 
-> The two `browser-*` rows split `@vymalo/opencode-browser` by tool **group**
-> (only `page` + `control` are registered; `debug`/`browser_eval` is dropped). Per
-> the note above this split is **organisational** (focused prompts/routing), not a
-> token or enforcement boundary — all 27 `browser_*` schemas load everywhere and the
-> permission lines are inert for this plugin.
+> `@frontend` is the **closed-loop UI agent**: it owns the full
+> `@vymalo/opencode-browser` surface (page + control — `debug`/`browser_eval`
+> isn't registered) alongside edit + the JS toolchain + Refero/Context7, so it
+> runs **implement → reload → screenshot → inspect → decide → iterate** in one
+> context (multimodal: it reads the screenshots it captures). This **replaces** the
+> former `chrome-devtools` MCP and the split `browser-page`/`browser-control`
+> subagents. Per the note above, keeping it one agent (vs. splitting by group)
+> costs nothing extra — all 27 `browser_*` schemas load everywhere regardless.
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
 are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**

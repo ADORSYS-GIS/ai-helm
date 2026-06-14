@@ -62,11 +62,13 @@ wellKnown:
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
-      # into. LOCAL like chrome-devtools-mcp — the bridge runs on the user's
-      # machine (127.0.0.1:4517) and each user installs the extension once
-      # (Releases page / web stores) + pastes the bridge URL+token into it;
-      # a user without that setup just sees the tools fail to connect (same
-      # accepted trade-off as chrome-devtools). Needs Node ≥22. CONFIG goes
+      # into. This REPLACES the removed local chrome-devtools MCP as the
+      # frontend agent's live-browser capability. LOCAL — the bridge runs on
+      # the user's machine (127.0.0.1:4517) and each user installs the
+      # extension once (Releases page / web stores) + pastes the bridge
+      # URL+token into it; a user without that setup just sees the tools fail
+      # to connect (accepted, same trade-off the local MCP had). Needs Node
+      # ≥22. CONFIG goes
       # in the plugin TUPLE's second arg — this plugin reads its options from
       # there (NOT from provider.options.meta like the others), i.e.
       # opencode's `[name, {opts}]` install form, which toJson renders as a
@@ -86,8 +88,9 @@ wellKnown:
       # `debug` (browser_eval = arbitrary in-page JS + console/network/cookies
       # — risky to push org-wide and 6 more schemas in every context). page +
       # control = 27 tool schemas loaded everywhere; that's the deliberate
-      # cost ceiling. The per-group subagents below are organisational only
-      # (focused prompts/routing) — they do NOT reduce that cost.
+      # cost ceiling. The full page+control surface is owned by the `frontend`
+      # agent below, which drives the implement→reload→screenshot→iterate loop
+      # in one context.
       - - "@vymalo/opencode-browser"
         - port: 4517
           groups:
@@ -221,16 +224,6 @@ wellKnown:
     #     terraform→iac). `enabled: false` = not connected → no agent can
     #     use it (reserve for servers no role needs yet).
     mcp:
-      # Local — runs on the USER's machine via npx, not through our gateway.
-      # CONNECTED but scoped to the frontend agent (the maintainer, as AI
-      # Advocate, wants a unified Chrome DevTools experience). ⚠️ Being local,
-      # it spawns `npx chrome-devtools-mcp` on every user's box and needs a
-      # real Chrome — a user without that setup sees it fail to start; that's
-      # accepted (kept on purpose).
-      chrome-devtools:
-        type: local
-        command: ["npx", "-y", "chrome-devtools-mcp@latest"]
-        enabled: true            # connected; scoped to the frontend agent
       # Remote — the gateway's /mcp/<name> routes (ADR-0038): Keycloak JWT
       # via the opencode-cli client, RFC 9728 discovery on the route. All
       # remotes share one OAuth client, so the block is defined once
@@ -276,7 +269,6 @@ wellKnown:
       "context7_*": deny
       "terraform_*": deny
       "refero_*": deny
-      "chrome-devtools_*": deny
       # ⚠️ INERT for the browser PLUGIN (kept for intent + forward-compat).
       # MCP-tool denies above are enforced at call time (Authorino-style
       # ctx.ask wrapper opencode adds for MCP); plugin tools self-gate via
@@ -446,18 +438,31 @@ wellKnown:
         mode: subagent
         model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL, reads screenshots
         description: >-
-          Builds and edits frontend UI, grounded in design references (Refero)
-          and framework docs (Context7), and inspects/debugs the running app in
-          a real browser (Chrome DevTools). Read + write; runs the JS toolchain
-          with guardrails. Delegate for "build/adjust the UI" tasks.
+          Builds and edits frontend UI end-to-end, grounded in design
+          references (Refero) and framework docs (Context7), and DRIVES a real
+          browser (@vymalo/opencode-browser) to run the full loop: implement →
+          reload → screenshot → inspect → decide → implement again, until the
+          UI is right. Read + write; runs the JS toolchain with guardrails.
+          Multimodal — reads the screenshots it captures. Delegate for
+          "build / adjust / debug the UI" tasks. Requires the companion browser
+          extension connected to the local bridge for the browser tools.
         temperature: 0.3
         prompt: >-
-          You are a frontend specialist. Use the Refero MCP for design
-          references, Context7 for framework/library docs, and the Chrome
-          DevTools MCP to inspect and debug the running app, then implement
-          clean, accessible UI. You may edit files and run the JS toolchain
-          (pnpm/npm/bun/yarn); never run destructive shell (rm, etc.) and pause
-          for approval on anything unrecognized.
+          You are a frontend specialist who closes the loop in a real browser.
+          Workflow: pull design references from the Refero MCP and framework
+          facts from Context7; implement (edit files, run the JS toolchain to
+          build/serve); then drive the browser to verify your work — open or
+          browser_reload the running app, browser_snapshot to get stable
+          element refs, interact (click/type/fill) to reach the state you're
+          building, and browser_screenshot to SEE the result (you are
+          multimodal — read the saved screenshot under .opencode/browser/).
+          Compare against the design reference, decide what's off, and iterate:
+          edit → reload → screenshot → adjust, until it matches. Always
+          snapshot before targeting elements (never guess selectors), and call
+          browser_release when you're done so the user gets their browser back.
+          You may edit files and run the JS toolchain (pnpm/npm/bun/yarn);
+          never run destructive shell (rm, etc.) and pause for approval on
+          anything unrecognized.
         permission:
           edit: allow
           bash:
@@ -469,101 +474,11 @@ wellKnown:
             "rm *": deny
           "context7_*": allow
           "refero_*": allow
-          "chrome-devtools_*": allow
-      # @vymalo/opencode-browser subagents, split by tool GROUP per the
-      # maintainer's request. ⚠️ This split is ORGANISATIONAL only (focused
-      # prompts + delegation routing): it does NOT reduce tokens — all 27
-      # registered browser_* schemas load into every agent's context globally
-      # (see the plugin note above) — and the per-agent `browser_*` allow is
-      # INERT for this plugin (see the deny-baseline note). The names share no
-      # per-group prefix, so each group is enumerated by exact tool name (kept
-      # in sync with @vymalo/opencode-browser catalog.ts). Only the `page`
-      # (8) + `control` (19) groups are registered; `debug` is dropped.
-      browser-page:
-        mode: subagent
-        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL, reads screenshots
-        description: >-
-          OBSERVES a real browser (read-only) through the
-          @vymalo/opencode-browser bridge — accessibility/DOM snapshots,
-          visible text, HTML, element attributes, CSS queries, tab lists, and
-          screenshots — then reports what it sees. Never navigates, clicks, or
-          types; never edits files or runs shell. Delegate for "read / inspect
-          / screenshot what's on this page" tasks. Requires the companion
-          browser extension connected to the local bridge.
-        temperature: 0.3
-        prompt: >-
-          You are a browser-OBSERVATION specialist (the `page` tool group).
-          Use browser_snapshot (start here — it gives stable element refs),
-          browser_get_text / browser_get_html / browser_get_attribute,
-          browser_query, browser_tabs, browser_targets, and browser_screenshot
-          to read and capture real browser tabs, then report what you found —
-          reading any screenshot files the bridge saves under .opencode/browser/.
-          You only OBSERVE: you cannot open/navigate/click/type, edit files, or
-          run shell — for interaction, the caller should delegate to the
-          browser-control agent.
-        permission:
-          edit: deny
-          bash: deny
-          # page group (read/observe) — enumerated; browser_* has no per-group prefix.
-          "browser_snapshot": allow
-          "browser_get_text": allow
-          "browser_get_html": allow
-          "browser_get_attribute": allow
-          "browser_query": allow
-          "browser_tabs": allow
-          "browser_targets": allow
-          "browser_screenshot": allow
-      browser-control:
-        mode: subagent
-        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL, reads screenshots
-        description: >-
-          DRIVES a real browser through the @vymalo/opencode-browser bridge —
-          opens tabs (in named groups), navigates, clicks, types, fills forms,
-          selects, scrolls, hovers, drags, presses keys, waits, uploads, and
-          manages history/tabs — then reports the outcome. Never edits files
-          or runs shell. Delegate for "open / navigate / click / fill /
-          submit this page in a real browser" tasks. Distinct from the
-          frontend agent's chrome-devtools MCP (inspection/debugging) — this
-          one actually controls tabs. Requires the companion browser extension
-          connected to the local bridge.
-        temperature: 0.3
-        prompt: >-
-          You are a browser-CONTROL specialist (the `control` tool group). Use
-          browser_open / browser_navigate, browser_click / browser_double_click,
-          browser_type / browser_fill / browser_select, browser_scroll /
-          browser_hover / browser_drag / browser_press_key, browser_wait,
-          browser_back / browser_forward / browser_reload / browser_activate,
-          browser_upload, and browser_close / browser_release to drive real
-          tabs. ALWAYS browser_snapshot (and browser_query when needed) first to
-          get stable element refs, then target actions by ref — never guess
-          selectors. Call browser_release when you're done so the user gets
-          their browser back. You cannot edit files or run shell commands.
-        permission:
-          edit: deny
-          bash: deny
-          # control group (interact/navigate) — enumerated by exact tool name.
-          "browser_open": allow
-          "browser_navigate": allow
-          "browser_click": allow
-          "browser_double_click": allow
-          "browser_type": allow
-          "browser_fill": allow
-          "browser_select": allow
-          "browser_scroll": allow
-          "browser_press_key": allow
-          "browser_wait": allow
-          "browser_close": allow
-          "browser_release": allow
-          "browser_back": allow
-          "browser_forward": allow
-          "browser_reload": allow
-          "browser_activate": allow
-          "browser_hover": allow
-          "browser_drag": allow
-          "browser_upload": allow
-          # acting needs refs first — allow the two read tools that produce them.
-          "browser_snapshot": allow
-          "browser_query": allow
+          # Full @vymalo/opencode-browser surface (page + control, the two
+          # registered groups) so this agent runs the implement→reload→
+          # screenshot→iterate loop in ONE context. ⚠️ INERT for the plugin
+          # (see deny-baseline note) — kept for intent + forward-compat.
+          "browser_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
