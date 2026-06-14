@@ -141,4 +141,71 @@ Each consumer namespace needs its own `redis-ha-redis-auth` Secret (via
 ExternalSecret) plus a cert-manager `Certificate` from `self-signed-ca`
 (`ca.crt` only) for the CA trust.
 
+### Why the master-router (not the round-robin Service)
+
+redis-ha is a Sentinel cluster: one **master** (accepts writes) + one **replica**
+(`replica-read-only` → rejects writes). The `redis-ha-redis` Service round-robins
+**both**, so a write-consumer's connection lands on the read-only replica ~50 % of the
+time → `READONLY You can't write against a read only replica` (hit LibreChat
+cache/leader-election and the rate-limiter's counters). Neither consumer speaks
+Sentinel, so **HAProxy (`redis-ha-haproxy`) does master discovery for them**: it
+health-checks both pods over TLS and routes only to the one reporting `role:master`,
+re-electing automatically on failover.
+
+**Master election** — the HAProxy health check, every ~2 s, over TLS:
+
+```mermaid
+sequenceDiagram
+    participant H as HAProxy check
+    participant R as redis pod
+    H->>R: TLS connect (tcp-check connect ssl, verify CA)
+    H->>R: AUTH password (rendered into config at startup)
+    R-->>H: +OK
+    H->>R: PING
+    R-->>H: +PONG
+    H->>R: INFO replication
+    R-->>H: role:master  or  role:slave
+    alt contains role:master
+        H->>H: server UP — eligible (gets traffic)
+    else role:slave
+        H->>H: server DOWN — excluded (expected for the replica)
+    end
+```
+
+**Failover** — Sentinel promotes the replica; HAProxy re-points, no client change:
+
+```mermaid
+sequenceDiagram
+    participant App as Consumer
+    participant HAP as HAProxy
+    participant M as redis-0 master
+    participant S as Sentinels
+    participant R as redis-1 replica
+    Note over M: master dies / node reboot
+    HAP--xM: health check fails → DOWN
+    S->>R: quorum reached → promote redis-1
+    R->>R: now role:master
+    HAP->>R: next check role:master → UP
+    App->>HAP: write → routed to the new master
+```
+
+**⚠️ HAProxy-for-TLS-Redis gotchas** (in `home-os charts/home-apps/redis-ha`):
+
+| Gotcha | Fix |
+|---|---|
+| Checks are cleartext by default → hit the TLS-only port → `Layer7 timeout` | `tcp-check connect ssl` + `check-ssl` |
+| Crashloops on boot-DNS / uses stale pod IPs after a pod cycles (`Layer4 timeout`) | `init-addr last,libc,none` + a `resolvers` (`parse-resolv-conf`) section + `resolve-prefer ipv4` |
+| `${ENV}` is **not** expanded inside `tcp-check send` → literal password sent → `+OK` times out | render the password into the config at startup (an `awk` literal substitution into tmpfs — never in the ConfigMap) |
+| `bind ssl crt` needs key+cert in one PEM | cert-manager `additionalOutputFormats: [{type: CombinedPEM}]` |
+
+**Verify** (`home-remote` kubeconfig): a replica showing `DOWN` is expected — only the
+master is `UP`; `backend 'redis_master' has no server available!` means no master is
+reachable (failover in progress, or a check regression — revisit the gotchas).
+
+```bash
+HP=$(kubectl -n redis-system get po -l app.kubernetes.io/controller=haproxy -o name | head -1)
+kubectl -n redis-system logs "$HP" | grep -iE "is UP|is DOWN|no server available" | tail
+kubectl -n converse logs -l app.kubernetes.io/name=librechat-app --since=10m | grep -ic READONLY   # 0 = healthy
+```
+
 → Related: [07 Data & secrets](07-data-secrets.md) · [08 Observability](08-observability.md)
