@@ -507,9 +507,15 @@ wellKnown:
             "trunk *": allow
             # `rm` is gated by approval (ask), NOT hard-denied: a frontend build
             # loop legitimately cleans artifacts (rm -rf dist, trunk/cargo
-            # output), so blocking rm outright is more annoying than safe — and
-            # the user is right here to approve. Org-wide we still never AUTO-run
-            # it (falls under "*": ask anyway; explicit for self-documentation).
+            # output), so blocking rm outright is more annoying than safe.
+            # ⚠️ This is FRICTION, NOT A SANDBOX. opencode matches the command
+            # STRING, not what it does — so the allowed wrappers above are
+            # arbitrary-code escape hatches that defeat this gate: `npm run
+            # <script>` / `npm exec` / `pnpm exec` / `bun x` / `cargo run` /
+            # build.rs / a postinstall hook can all delete files without ever
+            # hitting `rm`. No per-command rule can close that. Real containment
+            # is the ENVIRONMENT (git-tracked worktree, ephemeral/sandboxed run),
+            # not these patterns. Keep `rm: ask` as a casual-mistake guard only.
             "rm *": ask
           # NB: no browser_*/refero_*/context7_* re-allow here — they stay denied
           # by the baseline so they're NOT injected into the primary's context.

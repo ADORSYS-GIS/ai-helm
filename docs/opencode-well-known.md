@@ -168,6 +168,17 @@ Tool access is modelled on **two decoupled axes**:
 > cheap model. Only `@browser`/`@design` use the branded `adorsys-frontend` alias
 > (`camer-digital/adorsys-frontend` → `charts/ai-models`, swappable there).
 
+> ⚠️ **`bash` permissions are friction, not a sandbox.** opencode matches the
+> command **string**, not what the process does. So allow-listing any wrapper
+> (`npm */pnpm */bun */yarn */cargo */trunk *`) is effectively arbitrary-code
+> execution: `npm run <script>`, `npm exec`, `pnpm exec`, `bun x`, `cargo run`,
+> a `build.rs`, or a postinstall hook can delete files **without ever invoking
+> `rm`** — so `"rm *": ask` only catches a *directly typed* `rm`, not `rm` routed
+> through an allowed command. No per-command rule can close this. Real containment
+> is the **environment** (git-tracked worktree, ephemeral/sandboxed run), not the
+> permission patterns. Size the allow-list for convenience and assume an allowed
+> build tool can do anything its project's scripts can.
+
 Add a role by copying an `agent` block (+ connecting its server if new). Pin a
 model **only** if the role needs vision (the `adorsys-frontend` multimodal alias);
 otherwise omit `model` so it inherits the session model. A user can override per
