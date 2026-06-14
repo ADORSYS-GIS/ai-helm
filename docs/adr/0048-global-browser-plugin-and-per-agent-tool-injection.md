@@ -4,6 +4,15 @@
 **Date:** 2026-06-14
 **Deciders:** @stephane-segning
 
+> **Amendment 2026-06-14 (post-merge):** the `debug` group — dropped in
+> Decision 1 below (`browser_eval` = arbitrary in-page JS + console/network/
+> cookies, deemed too sharp for an org-wide push) — was **re-enabled at the
+> maintainer's explicit request**. The browser plugin now registers all three
+> groups (`page` + `control` + `debug` = 33 tools); `debug` remains scoped to
+> the `@browser` subagent only (the deny-baseline keeps it off every other
+> agent). The original decision body is unchanged; only the registered `groups`
+> differ. Shipped in `release-2026.06.14-v02`.
+
 ## Context
 
 opencode users doing UI work needed a *real browser* in the loop — open a page,

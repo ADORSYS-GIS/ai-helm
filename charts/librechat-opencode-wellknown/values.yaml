@@ -86,9 +86,12 @@ wellKnown:
       #
       # TWO independent token levers, at different scopes:
       #   • `groups` (here) = GLOBAL registration — only a registered tool can
-      #     be allowed at all. We register `page` (observe, 8) + `control`
-      #     (interact/navigate, 19) and DROP `debug` (browser_eval = arbitrary
-      #     in-page JS + console/network/cookies — risky to push org-wide).
+      #     be allowed at all. We register ALL three: `page` (observe, 8) +
+      #     `control` (interact/navigate, 19) + `debug` (6) = 33 tools.
+      #     ⚠️ `debug` includes `browser_eval` (arbitrary in-page JS) plus
+      #     console/network/cookies — a sharp, powerful surface pushed org-wide
+      #     by the maintainer's explicit call. It's scoped to the `@browser`
+      #     subagent only (the deny-baseline keeps it off every other agent).
       #   • per-agent `permission` (below) = PER-AGENT injection. opencode DOES
       #     scope the injected tool set per agent (verified opencode 1.17.6:
       #     session/llm/request.ts `resolveTools` → `Permission.disabled` drops
@@ -100,15 +103,15 @@ wellKnown:
       #     *string* form gives pattern `*`; the nested `{sub: deny}` form would
       #     gate execution but NOT remove from injection — we use string form.)
       # ⇒ the deny-baseline genuinely keeps browser_* OUT of every agent that
-      # doesn't re-allow it. The full page+control surface (27 tools) is allowed
+      # doesn't re-allow it. The full page+control+debug surface (33 tools) is allowed
       # ONLY on the `@browser` subagent below — NOT on the lean `frontend`
-      # primary — so the heavy 27-tool set is injected only into `@browser`'s
+      # primary — so the heavy 33-tool set is injected only into `@browser`'s
       # context when the primary delegates to it, and never into the default
       # context every turn.
       #
       # ⚠️ Do NOT ALSO add a browser server to `mcp:` below. opencode-browser is
       # a DUAL package — the same `browser_*` catalog ships as this plugin AND as
-      # an MCP server. Connecting both registers the 27 tools TWICE (same names),
+      # an MCP server. Connecting both registers the 33 tools TWICE (same names),
       # doubling them in every agent that allows `browser_*`. The PLUGIN is the
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
@@ -118,6 +121,7 @@ wellKnown:
           groups:
             - page
             - control
+            - debug
       # Dynamic Context Pruning — auto-compresses/dedups stale tool
       # outputs and prunes failed-tool inputs from the running context.
       # Zero-config (sensible defaults); provider-agnostic. Pushed
@@ -554,7 +558,7 @@ wellKnown:
           edit: deny
           bash: deny
           # The full registered surface (page + control). Injected into THIS
-          # subagent only (the primary denies it), so the heavy 27-tool set
+          # subagent only (the primary denies it), so the heavy 33-tool set
           # never loads into the default context.
           "browser_*": allow
       design:
