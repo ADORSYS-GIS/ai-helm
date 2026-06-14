@@ -32,6 +32,7 @@ How the system is wired and how to integrate against it.
 | [`authorino-service-account-bypass.md`](./authorino-service-account-bypass.md) | How service-account tokens skip OPA / external metadata in Authorino |
 | [`per-user-observability.md`](./per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki `user_id`/`azp` labels |
 | [`opencode-well-known.md`](./opencode-well-known.md) | opencode `.well-known/opencode` flow at `ai.camer.digital`; prerequisites, plugin install, troubleshooting |
+| [`opencode-sandboxing.md`](./opencode-sandboxing.md) | Why the opencode permission config is **not** a sandbox (string-matched bash rules over code-execution tools), opencode's lack of a native OS sandbox (worktree = recovery only), the containment options (worktree / OS wrapper / devcontainer / hosted in-cluster), and the recommendation (devcontainer for local; hosted = future ADR reversing ADR-0027) |
 | [`architecture.md`](./architecture.md) | System-level map: ArgoCD topology, sync waves, auth flow, observability pipeline, glossary |
 | [`arc42.md`](./arc42.md) | Formal arc42 architecture description (12 sections): goals, constraints, context, building blocks, runtime/deployment views, crosscutting concepts, risks, glossary |
 | [`architectural-shift-main-to-magical-bohr.md`](./architectural-shift-main-to-magical-bohr.md) | The full `main → claude/magical-bohr-390242` shift: 8 shifts (two-cluster Hetzner topology, LiteLLM removal, JWT authz, LGTM observability, GitOps structure, secrets, scale, dual-plane gateway) |
