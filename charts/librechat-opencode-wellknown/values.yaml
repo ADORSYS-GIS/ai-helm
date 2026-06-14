@@ -33,6 +33,14 @@ wellKnown:
 
   config:
     $schema: https://opencode.ai/config.json
+    # The org-wide DEFAULT agent: a frontend-flavoured PRIMARY (ADR-0048). On
+    # `opencode auth login` this merges UNDER each user's own config, so a user
+    # who sets their own default_agent keeps it; otherwise they start on
+    # `frontend`. Must name a `mode: primary`, visible agent (opencode hard-fails
+    # otherwise — agent/agent.ts). The frontend primary is kept LEAN (edit + JS
+    # toolchain only) and delegates browser/design/docs to subagents below, so
+    # the default context isn't carrying the 27 browser_* schemas every turn.
+    default_agent: frontend
     plugin:
       # opencode auto-installs each via `bun install` at startup; cached
       # under ~/.cache/opencode/node_modules/. No user action needed.
@@ -63,7 +71,8 @@ wellKnown:
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
       # into. This REPLACES the removed local chrome-devtools MCP as the
-      # frontend agent's live-browser capability. LOCAL — the bridge runs on
+      # live-browser capability (owned by the `@browser` subagent, which the
+      # frontend primary delegates to). LOCAL — the bridge runs on
       # the user's machine (127.0.0.1:4517) and each user installs the
       # extension once (Releases page / web stores) + pastes the bridge
       # URL+token into it; a user without that setup just sees the tools fail
@@ -92,9 +101,10 @@ wellKnown:
       #     gate execution but NOT remove from injection — we use string form.)
       # ⇒ the deny-baseline genuinely keeps browser_* OUT of every agent that
       # doesn't re-allow it. The full page+control surface (27 tools) is allowed
-      # ONLY on the `frontend` agent below, so it is injected into `frontend`
-      # (the cost of the implement→reload→screenshot→iterate loop, in one
-      # context) and into NO other agent.
+      # ONLY on the `@browser` subagent below — NOT on the lean `frontend`
+      # primary — so the heavy 27-tool set is injected only into `@browser`'s
+      # context when the primary delegates to it, and never into the default
+      # context every turn.
       #
       # ⚠️ Do NOT ALSO add a browser server to `mcp:` below. opencode-browser is
       # a DUAL package — the same `browser_*` catalog ships as this plugin AND as
@@ -257,7 +267,7 @@ wellKnown:
         type: remote
         url: "https://api.ai.camer.digital/mcp/refero"
         oauth: *mcpOAuth
-        enabled: true            # connected; scoped to the frontend agent
+        enabled: true            # connected; scoped to the @design subagent
       firecrawl:
         type: remote
         url: "https://api.ai.camer.digital/mcp/firecrawl"
@@ -284,24 +294,29 @@ wellKnown:
       # Removes browser_* from the INJECTED tool set of every agent that doesn't
       # re-allow it (request.ts `resolveTools` → `Permission.disabled`: a
       # string-form `*`-deny drops the tool from `tools`/`activeTools`). Works
-      # for plugin tools exactly as for MCP — keyed on tool name. Only
-      # `frontend` re-allows it. (At call time plugin tools aren't ctx.ask-gated
-      # like MCP tools, but that's moot for a denied tool — the model never
-      # receives it.)
+      # for plugin tools exactly as for MCP — keyed on tool name. Only the
+      # `@browser` subagent re-allows it (the lean `frontend` primary does NOT).
+      # (At call time plugin tools aren't ctx.ask-gated like MCP tools, but
+      # that's moot for a denied tool — the model never receives it.)
       "browser_*": deny
 
     # ────────────────────────────────────────────────────────────────────
-    # Role subagents (ADR-0044). Delegated specialists (`mode: subagent`) the
-    # primary agent dispatches to via the task tool / `@name`. Each is a
-    # WHITELIST: it allows only its tools + its file/bash scope; everything
-    # else falls back to the deny-baseline above. Add a role by copying a
-    # block. Models are pinned COST-LEAN (ADR-0044): the cheap/fast tier for
-    # high-volume low-stakes roles, a stronger model only where the stakes
-    # warrant it. Each is referenced by its BRANDED `adorsys-*` alias
-    # (`camer-digital/adorsys-<role>` → charts/ai-models), so the backing
-    # model can be swapped THERE without editing this file or telling users —
-    # the alias `info.displayName` is what reveals today's backing. A user can
-    # override per agent locally. The PRIMARY agent keeps the user's default.
+    # Agents (ADR-0044, topology revised by ADR-0048). The `frontend` entry is
+    # the PRIMARY (default agent, see `default_agent` above); everything else is
+    # a delegated `mode: subagent` the primary dispatches via the task tool /
+    # `@name`. Each subagent is a WHITELIST: it allows only its tools + its
+    # file/bash scope; everything else falls back to the deny-baseline above.
+    #
+    # MODELS — two tiers (ADR-0048):
+    #  • The EXISTING role subagents (web-search/doc-research/iac/reviewer/test/
+    #    skill) keep their COST-LEAN `adorsys-*` pins (ADR-0044): cheap/fast for
+    #    high-volume low-stakes roles, a stronger model where stakes warrant.
+    #    Referenced by BRANDED `adorsys-*` alias (`camer-digital/adorsys-<role>`
+    #    → charts/ai-models) so the backing model swaps THERE, not here.
+    #  • The PRIMARY pins the multimodal `adorsys-frontend`; the SPLIT-OFF
+    #    subagents (@browser, @design) carry NO `model` → they INHERIT the
+    #    session model (so they run the primary's multimodal model, which
+    #    @browser needs for screenshots). A user can override per agent locally.
     agent:
       web-search:
         mode: subagent
@@ -447,35 +462,42 @@ wellKnown:
           bash: deny
           skill: allow
           "context7_*": allow
+      # ── PRIMARY (the org-wide default agent, ADR-0048) ──────────────────
+      # A LEAN, frontend-flavoured primary. It IMPLEMENTS directly (edit + JS
+      # toolchain) and DELEGATES tool-heavy work to the model-less subagents
+      # below (browser → @browser, design refs → @design, library docs →
+      # @doc-research). The deny-baseline keeps browser_*/refero_*/context7_*
+      # OUT of this agent's injected toolset, so the default context stays light
+      # (no 27 browser_* schemas every turn). It KEEPS the multimodal model
+      # (adorsys-frontend) — the "most important model" — so the model-less
+      # subagents it spawns INHERIT a vision model (the @browser subagent needs
+      # it to read screenshots; subagent model = input.model ?? agent.model ??
+      # currentModel(session), prompt.ts).
       frontend:
-        mode: subagent
-        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL, reads screenshots
+        mode: primary
+        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; inherited by model-less subagents
         description: >-
-          Builds and edits frontend UI end-to-end, grounded in design
-          references (Refero) and framework docs (Context7), and DRIVES a real
-          browser (@vymalo/opencode-browser) to run the full loop: implement →
-          reload → screenshot → inspect → decide → implement again, until the
-          UI is right. Read + write; runs the JS toolchain with guardrails.
-          Multimodal — reads the screenshots it captures. Delegate for
-          "build / adjust / debug the UI" tasks. Requires the companion browser
-          extension connected to the local bridge for the browser tools.
+          The default agent: a lean frontend-focused primary. Implements and
+          edits code and runs the JS toolchain directly, and delegates the rest
+          — driving a real browser (@browser), pulling design references
+          (@design), and looking up library/framework docs (@doc-research) —
+          to specialist subagents, then decides and iterates.
         temperature: 0.3
         prompt: >-
-          You are a frontend specialist who closes the loop in a real browser.
-          Workflow: pull design references from the Refero MCP and framework
-          facts from Context7; implement (edit files, run the JS toolchain to
-          build/serve); then drive the browser to verify your work — open or
-          browser_reload the running app, browser_snapshot to get stable
-          element refs, interact (click/type/fill) to reach the state you're
-          building, and browser_screenshot to SEE the result (you are
-          multimodal — read the saved screenshot under .opencode/browser/).
-          Compare against the design reference, decide what's off, and iterate:
-          edit → reload → screenshot → adjust, until it matches. Always
-          snapshot before targeting elements (never guess selectors), and call
-          browser_release when you're done so the user gets their browser back.
-          You may edit files and run the JS toolchain (pnpm/npm/bun/yarn);
-          never run destructive shell (rm, etc.) and pause for approval on
-          anything unrecognized.
+          You are the primary agent, tuned for frontend work but capable across
+          the stack. You IMPLEMENT directly: edit files and run the JS toolchain
+          (pnpm/npm/bun/yarn) to build and serve. For everything else you
+          DELEGATE to a subagent via the task tool and act on what it reports:
+          • to verify UI in a real browser (open/reload, click/type, screenshot)
+            → delegate to `@browser`; it returns what it saw on the page.
+          • for design references / visual targets → delegate to `@design`.
+          • for authoritative library/framework docs → delegate to
+            `@doc-research`.
+          Close the loop: implement → ask @browser to reload + screenshot +
+          report → compare to the @design reference → decide what's off →
+          implement again, until it matches. Never run destructive shell (rm,
+          etc.); pause for approval on anything unrecognized. You do not hold the
+          browser/design/docs tools yourself — route those through the subagents.
         permission:
           edit: allow
           bash:
@@ -485,14 +507,67 @@ wellKnown:
             "bun *": allow
             "yarn *": allow
             "rm *": deny
-          "context7_*": allow
-          "refero_*": allow
-          # Re-allow the full @vymalo/opencode-browser surface (page+control)
-          # so it is INJECTED here (and only here) for the implement→reload→
-          # screenshot→iterate loop. This `allow` merges after the root
-          # `browser_*: deny` and wins (findLast), so `frontend` gets the tools
-          # while every other agent stays browser-free.
+          # NB: no browser_*/refero_*/context7_* re-allow here — they stay denied
+          # by the baseline so they're NOT injected into the primary's context.
+          # Delegated to @browser / @design / @doc-research below.
+      # ── Split-off specialist subagents (NO model → inherit the primary's
+      #    multimodal model). These own the tools lifted off the lean primary.
+      #    Created per the maintainer's "split tool usages into model-less
+      #    subagents" direction; the existing role subagents above keep their
+      #    cost-lean adorsys-* pins. ────────────────────────────────────────
+      browser:
+        mode: subagent
+        # No `model`: inherits the session model. Spawned by the multimodal
+        # frontend primary, so it inherits a vision model and CAN read the
+        # screenshots it captures. (If a user switches the primary to a
+        # non-multimodal model, this subagent loses screenshot vision — a
+        # documented trade-off of model inheritance.)
+        description: >-
+          Drives a REAL browser through the @vymalo/opencode-browser bridge —
+          opens tabs (named groups), navigates, clicks, types, fills, scrolls,
+          and screenshots — then REPORTS what it observed (it reads the
+          screenshots it captures). READ-ONLY on the filesystem; never edits
+          code or runs shell. Delegate for "open / navigate / interact with /
+          screenshot this page". Requires the companion browser extension
+          connected to the local bridge.
+        temperature: 0.3
+        prompt: >-
+          You are a browser-automation specialist. Use the browser_* tools to
+          open/reload tabs (in named groups), observe (snapshot / get_text /
+          get_html / query), interact (click / type / fill / scroll), and
+          screenshot real browser tabs, then REPORT back concisely what you saw
+          — read any screenshot the bridge saves under .opencode/browser/ and
+          describe the relevant visual state for the caller. ALWAYS
+          browser_snapshot first to get stable element refs; target actions by
+          ref, never guess selectors. Call browser_release when done so the user
+          gets their browser back. You cannot edit files or run shell — do not
+          attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          # The full registered surface (page + control). Injected into THIS
+          # subagent only (the primary denies it), so the heavy 27-tool set
+          # never loads into the default context.
           "browser_*": allow
+      design:
+        mode: subagent
+        # No `model`: inherits the session model.
+        description: >-
+          Fetches design references and visual targets from the Refero MCP and
+          returns them (screens, flows, styles) for the primary to build
+          against. READ-ONLY; never edits code or runs shell. Delegate for
+          "find a design reference / what should this look like".
+        temperature: 0.3
+        prompt: >-
+          You are a design-reference specialist. Use the Refero MCP tools to
+          search and fetch screens, flows, and styles, then return a concise,
+          actionable summary (with the key visual details and any image refs)
+          for the primary to implement against. You cannot edit files or run
+          shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "refero_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the

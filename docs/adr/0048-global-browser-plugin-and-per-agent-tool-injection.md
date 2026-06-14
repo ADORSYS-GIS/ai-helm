@@ -1,4 +1,4 @@
-# ADR-0048: Global browser plugin, a closed-loop frontend agent, and the per-agent tool-injection token model
+# ADR-0048: Global browser plugin, a lean frontend primary, and the per-agent tool-injection token model
 
 **Status:** Accepted
 **Date:** 2026-06-14
@@ -39,13 +39,25 @@ groups**; **drop `debug`** (its `browser_eval` is arbitrary in-page JS, plus
 replace it as the live-browser capability. With it gone, every connected MCP
 server is now remote (gateway `/mcp/*`).
 
-**3. Own the full browser surface on a single closed-loop `frontend` agent.** Fold
-`edit` + the JS toolchain + Refero (design refs) + Context7 (docs) + the full
-`browser_*` surface onto one multimodal `@frontend` subagent so it runs the whole
-loop in one context: **implement → reload → snapshot → screenshot → compare to the
-reference → decide → iterate**. It is multimodal (`adorsys-frontend` → Nemotron
-Omni) so it reads the screenshots it captures. `browser_*` is denied at the global
-baseline and re-allowed **only** on `@frontend`.
+**3. Promote `frontend` to a *lean* default primary; split the heavy tools onto
+model-less subagents.** Make `frontend` the org-wide default agent
+(`config.default_agent: frontend`, `mode: primary`) but keep it **lean**: it holds
+only `edit` + the JS toolchain (it *implements* directly) and **delegates**
+everything tool-heavy — driving the browser, design references, library docs — to
+subagents. Lift `browser_*` onto a dedicated **`@browser`** subagent and Refero
+onto **`@design`**; library docs route to the existing `@doc-research`. The
+deny-baseline keeps `browser_*`/`refero_*`/`context7_*` **out of the primary's
+injected toolset**, so the default context never carries the 27 `browser_*`
+schemas — they load only in `@browser`'s context, on delegation. The loop becomes
+**primary implements → `@browser` reloads + screenshots + reports → primary decides
+→ iterates**.
+
+**Model tiering.** The primary pins the **multimodal** `adorsys-frontend` (the
+"most important model"). The split-off subagents (`@browser`, `@design`) carry
+**no `model`** → they inherit the session model (`input.model ?? agent.model ??
+currentModel`, `prompt.ts`), so `@browser` runs a vision model and can read its
+screenshots. The existing role subagents (`web-search`, `doc-research`, `iac`,
+`reviewer`, `test`, `skill`) keep their **cost-lean `adorsys-*` pins** (ADR-0044).
 
 **4. One source only — do not also connect the browser *MCP* form.**
 `@vymalo/opencode-browser` is a dual package: the same `browser_*` catalog ships
@@ -63,29 +75,41 @@ the model. A config **string-form** `"glob": "deny"` compiles to `pattern:"*"` �
 removed from injection; `"glob": "allow"` re-injects; an agent's own rules merge
 **after** the root baseline and win via `findLast`. This is uniform across
 built-in, MCP, **and plugin** tools (keyed on name). ⇒ the deny-baseline genuinely
-keeps a tool out of every agent except those that re-allow it, and the 27
-`browser_*` schemas are injected into `@frontend` **only**.
+keeps a tool out of every agent except those that re-allow it, so the 27
+`browser_*` schemas are injected into the `@browser` subagent **only** — never the
+lean primary or any other agent. This is what makes decision **3** cheap.
 
 ## Consequences
 
 **Positive**
 
 - Real closed-loop UI development from opencode: implement → verify in a real
-  browser → iterate, in one agent's context, grounded in design references.
-- Token cost is **bounded and isolated**: the ~27 browser schemas (~2–4k tokens)
-  land in `@frontend` only — never the primary or the other six subagents. No
-  context flood, no duplication.
+  browser → iterate, grounded in design references — now spanning *primary →
+  `@browser` → primary* (the primary implements; `@browser` reloads, screenshots,
+  and reports back; the primary decides and edits again).
+- **The default context stays light.** The primary holds only `edit` + the JS
+  toolchain, so a user's everyday session never carries the 27 `browser_*` schemas
+  (~2–4k tokens) or the MCP tool schemas — those load only in the subagent that
+  owns them, on delegation. This is the per-agent injection win put to work.
 - The corrected model validates the whole ADR-0044 design: the deny-baseline + per
   agent allow-lists are a **real per-agent token lever**, not just a safety gate.
-  The primary agent is genuinely lean.
 - Removing `chrome-devtools` drops a local MCP and consolidates two roles
-  (inspect + drive) into one better-integrated capability.
+  (inspect + drive) into one better-integrated capability (`@browser`).
+- Model tiering keeps cost down: cheap `adorsys-*` pins on the existing roles, one
+  multimodal model on the primary, inherited (not re-paid-for) by the split-offs.
 
 **Negative**
 
-- `@frontend` is the heaviest agent (browser + refero + context7 + edit + JS
-  toolchain). Acceptable — it's the one role that needs all of it — but it sets the
-  ceiling on that agent's per-request overhead.
+- The loop now crosses an agent boundary: the primary doesn't see the screenshot
+  itself — `@browser` reads it (multimodal, inherited) and *describes* it back.
+  Slightly less direct than one-context vision, traded for a lean default context.
+- **Model inheritance is load-bearing for screenshots.** `@browser` has no pinned
+  model, so if a user switches the primary to a non-multimodal model, `@browser`
+  loses screenshot vision. Documented trade-off; acceptable because the org default
+  primary is multimodal.
+- Forcing `default_agent: frontend` org-wide makes every user start on the
+  frontend-flavoured primary (a user can still override in their own config, which
+  wins on merge). Reasonable for a frontend/marketing-heavy org; not neutral.
 - The browser plugin is **local**: each user installs the companion extension once
   and pastes the bridge URL+token; a user without that setup sees the tools fail to
   connect (Node ≥22 required). Same accepted trade-off the local `chrome-devtools`
@@ -108,12 +132,17 @@ keeps a tool out of every agent except those that re-allow it, and the 27
 
 ## Alternatives considered
 
-- **Per-group browser subagents (`browser-page` + `browser-control`)** — the
-  original shape. Rejected: the iterate loop needs *both* groups (screenshot *and*
-  reload/navigate) plus `edit` in one context, so splitting breaks the loop; and
-  since per-agent injection already isolates the cost to `@frontend`, splitting
-  buys no further token win for the rest of the roster. (It *would* isolate page-vs
-  control tokens from each other — but that's not the bottleneck here.)
+- **Keep the closed loop in one agent (browser on the primary, or on a single
+  `@frontend` subagent)** — the prior shape in this ADR. Rejected: it injects the
+  27 `browser_*` schemas (plus refero/context7) into the agent users talk to every
+  turn. Since per-agent injection lets us push `browser_*` onto a delegated
+  `@browser` subagent at *zero* cost to the default context, a lean primary that
+  delegates is strictly cheaper; the only cost is the cross-agent hop (the primary
+  reads `@browser`'s text report instead of the screenshot directly).
+- **Per-group browser subagents (`browser-page` + `browser-control`)** — rejected:
+  a single `@browser` already isolates the whole 27-tool set from the default
+  context; splitting page-vs-control further fragments one capability for no real
+  gain (the browsing work wants both groups together).
 - **Keep `chrome-devtools` alongside the plugin** — rejected: redundant (both are
   local live-browser tools), and the plugin is better integrated (native
   screenshot-to-disk, named tab groups) and authored in-house.
@@ -128,13 +157,14 @@ keeps a tool out of every agent except those that re-allow it, and the 27
 ## Related
 
 - Commits: `0261f33` (add plugin), `b54b9ec` (groups + initial split), `c945803`
-  (remove chrome-devtools + unify frontend), `06cbfdd` (correct the token model),
-  `f44321f` (dual-package guardrail)
+  (remove chrome-devtools), `06cbfdd` (correct the token model), `f44321f`
+  (dual-package guardrail), + the lean-primary restructure (`default_agent:
+  frontend`; `@browser`/`@design` model-less subagents)
 - Docs: [`docs/opencode-well-known.md`](../opencode-well-known.md) (the *how*:
   plugin config, agent table, the per-agent injection note)
-- Charts/files: `charts/librechat-opencode-wellknown/values.yaml` (plugin entry,
-  deny-baseline, `frontend` agent), `charts/ai-models/values.yaml` (`adorsys-frontend`
-  multimodal rationale)
+- Charts/files: `charts/librechat-opencode-wellknown/values.yaml` (`default_agent`,
+  plugin entry, deny-baseline, the `frontend` primary + `@browser`/`@design`
+  subagents), `charts/ai-models/values.yaml` (`adorsys-frontend` multimodal rationale)
 - Refines / overrides in part: [0042](./0042-opencode-wellknown-mcp-catalog.md)
   (removes `chrome-devtools` from the catalog), [0044](./0044-opencode-role-subagents-and-permission-scoped-tools.md)
   (corrects the token rationale; rewrites the `@frontend` role); builds on

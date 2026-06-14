@@ -137,27 +137,33 @@ Tool access is modelled on **two decoupled axes**:
 >   / don't register a plugin `group` you'll never allow) — registration gates
 >   what *can* be allowed; per-agent permission gates what *is* injected.
 
-| Subagent | model (alias) | edit | bash | MCP / tools |
-|---|---|---|---|---|
-| `web-search` | `adorsys-researcher` | deny | deny | `brave_*` |
-| `doc-research` | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
-| `iac` | `adorsys-planner` | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
-| `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` |
-| `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
-| `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
-| `frontend` | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | `context7_*`, `refero_*`, `browser_*` (full page+control) |
+| Agent | mode | model (alias) | edit | bash | MCP / tools |
+|---|---|---|---|---|---|
+| `frontend` | **primary** (default) | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | **none** — delegates (lean) |
+| `browser` | subagent | *inherit* | deny | deny | `browser_*` (full page+control, the 27 tools) |
+| `design` | subagent | *inherit* | deny | deny | `refero_*` |
+| `web-search` | subagent | `adorsys-researcher` | deny | deny | `brave_*` |
+| `doc-research` | subagent | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
+| `iac` | subagent | `adorsys-planner` | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
+| `reviewer` | subagent | `adorsys-reviewer` | deny | deny | `context7_*` |
+| `test` | subagent | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
+| `skill` | subagent | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 
-> `@frontend` is the **closed-loop UI agent**: it owns the full
-> `@vymalo/opencode-browser` surface (page + control — `debug`/`browser_eval`
-> isn't registered) alongside edit + the JS toolchain + Refero/Context7, so it
-> runs **implement → reload → screenshot → inspect → decide → iterate** in one
-> context (multimodal: it reads the screenshots it captures). This **replaces** the
-> former `chrome-devtools` MCP and the split `browser-page`/`browser-control`
-> subagents. The 27 `browser_*` schemas are injected into `@frontend` **only** —
-> the loop genuinely needs all of them in one context — and into no other agent.
-> Splitting them back into page/control subagents would isolate tokens *further*
-> (8 vs 19 per agent), but the loop needs both groups together, so unifying is the
-> right call here; it does **not** leak the cost to the rest of the roster.
+> **`@frontend` is the org-wide default PRIMARY (`config.default_agent`), kept
+> lean.** It implements directly (`edit` + JS toolchain) and **delegates** the
+> tool-heavy work — so the deny-baseline keeps `browser_*`/`refero_*`/`context7_*`
+> out of its injected context (no 27-tool overhead on every turn). The closed loop
+> runs **primary implements → `@browser` reloads + screenshots + reports → primary
+> decides → iterates**. `@browser` owns the full `browser_*` surface (replacing the
+> removed `chrome-devtools` MCP); `@design` owns Refero; library docs route to
+> `@doc-research`.
+>
+> **Model tiering:** the primary pins the multimodal `adorsys-frontend` (the "most
+> important model"); the split-off `@browser`/`@design` carry **no `model`** and
+> *inherit* the session model — so `@browser` runs a vision model and reads its
+> screenshots. The other role subagents keep their cost-lean `adorsys-*` pins.
+> ⚠️ If a user switches the primary to a non-multimodal model, `@browser` loses
+> screenshot vision (the inheritance trade-off).
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
 are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**
