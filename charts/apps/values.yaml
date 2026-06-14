@@ -939,6 +939,37 @@ applications:
     destination:
       namespace: converse
 
+  # --- lightbridge-repo-auth (ADR-0047) ---
+  # GitHub-App webhook control plane + the /v1/resolve binding the gateway's
+  # Authorino calls. Plain workload → home-remote (default). EXTERNAL private
+  # repo: pin a commit SHA (doesn't ride the ai-helm release tag) — ⚠️ ArgoCD
+  # needs read creds for the private repo. depsOverlay folds in the webhook
+  # ingress Certificate (Source B). Secrets: webhook/internal-token/private-key
+  # via the chart's ExternalSecret (ssegning-aws repo_auth_*); the DB `repoauth`
+  # Database + role + password Secret live on lightbridge-main-db
+  # (charts/lightbridge-db). ⚠️ ghcr package is private today — the image pulls
+  # only if it's made public OR an imagePullSecret is added (see #393).
+  - name: lightbridge-repo-auth
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    depsOverlay: environments/prod/deps/lightbridge-repo-auth
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/lightbridge-repo-auth
+      targetRevision: 937439ff93f46e71efa41f0a9513d880db498b7c
+      path: charts/lightbridge-repo-auth
+      helm:
+        releaseName: lightbridge-repo-auth
+        valuesObject:
+          image:
+            tag: sha-937439f
+          ingress:
+            enabled: true
+          env:
+            # Numeric App id from the registered GitHub App (public, not secret).
+            RA__GITHUB__APP_ID: "3253522"
+    destination:
+      namespace: converse
+
   # --- Converse UI ---
   - name: converse-ui
     finalizers:
