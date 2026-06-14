@@ -120,7 +120,7 @@ jobs:
                 },
                 "models": {
                   "adorsys-reviewer": { "name": "Adorsys Reviewer" },
-                  "glm-5": { "name": "GLM-5" }
+                  "adorsys-reviewer-pro": { "name": "Adorsys Reviewer Pro" }
                 }
               }
             }
@@ -139,7 +139,7 @@ jobs:
           # provider config above. Gateway auth = our OIDC binding, not a key.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          model: ${{ needs.detect-trigger.outputs.run_kind == 'manual_pr_review' && 'camer-digital/glm-5' || needs.detect-trigger.outputs.run_kind == 'issue_task' && 'camer-digital/glm-5' || 'camer-digital/adorsys-reviewer' }}
+          model: ${{ needs.detect-trigger.outputs.run_kind == 'manual_pr_review' && 'camer-digital/adorsys-reviewer-pro' || needs.detect-trigger.outputs.run_kind == 'issue_task' && 'camer-digital/adorsys-reviewer-pro' || 'camer-digital/adorsys-reviewer' }}
           agent: ${{ needs.detect-trigger.outputs.run_kind == 'issue_task' && 'build' || needs.detect-trigger.outputs.run_kind == 'manual_pr_review' && 'manual-review' || 'auto-review' }}
           use_github_token: true
 
