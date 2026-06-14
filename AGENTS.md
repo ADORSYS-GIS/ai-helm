@@ -1,17 +1,23 @@
 <!-- ai-governance:stanza -->
-<!-- BEGIN: AI Governance stanza (managed by ADORSYS-GIS/ai-governance) -->
-## AI Governance
+# AGENTS.md
 
-AI may accelerate the work, but humans own intent, verification, and consequences.
-AI output is not truth: review AI-generated code as untrusted, and never submit work you cannot explain.
+**Single source of truth → [`CLAUDE.md`](./CLAUDE.md).**
 
-When opening issues or pull requests in this repo:
+Every piece of agent and contributor guidance for this repository — repo
+conventions, the architecture entry points, common commands, tooling rules, the
+hard-won cluster gotchas, and the **AI Governance** rules — lives in
+[`CLAUDE.md`](./CLAUDE.md). This file is deliberately only a pointer, so the
+guidance exists in exactly one place and can never drift.
 
-- Use the provided **issue forms** (Epic, User Story, Dev Ticket) and the **pull request template** — do not open blank issues/PRs.
-- Fill in the **AI Usage Declaration** honestly (what AI was used for, what you verified).
-- Include a **source-of-truth link** (a URL or `#123` reference). No source of truth means the work is not ready.
-- Provide **verification evidence** (commands, logs, links, or checked verification boxes). No evidence means it is not done.
+> **Whatever agent you are — Claude, opencode, Codex, Cursor, Gemini, Copilot, …
+> — read [`CLAUDE.md`](./CLAUDE.md).** `AGENTS.md` and `CLAUDE.md` are two doors
+> to the same room; open whichever your tool prefers.
 
-Source of truth and full doctrine: https://adorsys-gis.github.io/ai-governance/
-This stanza is intentionally thin — read the site; do not duplicate the doctrine here.
-<!-- END: AI Governance stanza -->
+**AI Governance:** see the "AI Governance" section of [`CLAUDE.md`](./CLAUDE.md).
+Full doctrine: https://adorsys-gis.github.io/ai-governance/
+
+<!--
+  The `ai-governance:stanza` marker above is intentional: it tells
+  ADORSYS-GIS/ai-governance's sync-templates script the stanza is already handled
+  here, so it won't re-append a duplicate. The canonical stanza lives in CLAUDE.md.
+-->

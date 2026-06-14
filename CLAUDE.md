@@ -1,6 +1,11 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is the **single source of truth** for agent and contributor guidance in
+this repository. It is written for Claude Code (claude.ai/code) but applies to
+**every** coding agent — [`AGENTS.md`](./AGENTS.md) and
+[`.github/copilot-instructions.md`](./.github/copilot-instructions.md) are thin
+pointers back here so the guidance lives in exactly one place and never drifts.
+Read whichever entry point your tool prefers; they all resolve to this document.
 
 ## Repo type
 
