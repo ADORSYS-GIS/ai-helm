@@ -113,10 +113,28 @@ Tool access is modelled on **two decoupled axes**:
   (firecrawl, until a role needs it).
 - **Access** — a global `config.permission` **deny-baseline** denies every
   connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`, `chrome-devtools_*`)
-  plus the `@vymalo/opencode-browser` plugin's `browser_*` tools, so the **primary
-  agent is lean** (no MCP / browser tools). Each role is a **`mode: subagent`** the primary
-  delegates to (`@name` / the task tool) and a **whitelist** that re-allows only
-  its tools + its file/bash scope (per-agent permission overrides the root).
+  plus the `@vymalo/opencode-browser` plugin's `browser_*` tools. Each role is a
+  **`mode: subagent`** the primary delegates to (`@name` / the task tool) and a
+  **whitelist** that re-allows only its tools + its file/bash scope (per-agent
+  permission overrides the root).
+
+> ⚠️ **What permission scoping actually buys you (verified in opencode 1.17.6).**
+> The deny-baseline gates **execution** of MCP tools at call time — it does **not**
+> make the primary agent's *context* leaner. opencode advertises the **full** tool
+> set to **every** agent regardless of permission: `registry.tools()` filters only
+> web-search/gpt-patch quirks and the model call sends `activeTools = all prepared
+> tools`. The only things `permission` deny removes from context are **skills** and
+> **subagent/task targets** — never tools. So:
+> - **Tool schemas are NOT a per-agent token lever.** Every connected MCP tool +
+>   every registered `browser_*` tool loads into the primary *and* every subagent.
+>   To cut tool-schema tokens you must **not connect** the server / **not register**
+>   the group (e.g. the browser plugin's `groups` option), not deny it per agent.
+> - **For the browser PLUGIN, the `browser_*` denies/allows are currently inert** —
+>   plugin tools self-gate via `ctx.ask` and `@vymalo/opencode-browser` doesn't, so
+>   unlike MCP tools the deny neither hides nor blocks them. Kept for intent +
+>   forward-compat. The value of the `browser-*` subagents is **focused prompts +
+>   delegation routing** (and keeping browsing churn out of the primary's context),
+>   not token savings or enforcement.
 
 | Subagent | model (alias) | edit | bash | MCP / tools |
 |---|---|---|---|---|
@@ -127,7 +145,14 @@ Tool access is modelled on **two decoupled axes**:
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 | `frontend` | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` |
-| `browser` | `adorsys-frontend` (multimodal) | deny | deny | `browser_*` (`@vymalo/opencode-browser` plugin — drives real tabs via the local bridge + extension) |
+| `browser-page` | `adorsys-frontend` (multimodal) | deny | deny | `page` group (8): snapshot, get_text/html/attribute, query, tabs, targets, screenshot — read-only observe |
+| `browser-control` | `adorsys-frontend` (multimodal) | deny | deny | `control` group (19) + snapshot/query: open/navigate, click/type/fill/select, scroll/hover/drag, history/tabs, upload — drives tabs |
+
+> The two `browser-*` rows split `@vymalo/opencode-browser` by tool **group**
+> (only `page` + `control` are registered; `debug`/`browser_eval` is dropped). Per
+> the note above this split is **organisational** (focused prompts/routing), not a
+> token or enforcement boundary — all 27 `browser_*` schemas load everywhere and the
+> permission lines are inert for this plugin.
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
 are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**
