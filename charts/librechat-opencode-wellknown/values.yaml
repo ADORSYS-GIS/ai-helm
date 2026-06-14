@@ -95,6 +95,14 @@ wellKnown:
       # ONLY on the `frontend` agent below, so it is injected into `frontend`
       # (the cost of the implement→reload→screenshot→iterate loop, in one
       # context) and into NO other agent.
+      #
+      # ⚠️ Do NOT ALSO add a browser server to `mcp:` below. opencode-browser is
+      # a DUAL package — the same `browser_*` catalog ships as this plugin AND as
+      # an MCP server. Connecting both registers the 27 tools TWICE (same names),
+      # doubling them in every agent that allows `browser_*`. The PLUGIN is the
+      # right form here: it's local-only (bridge + extension on the user's box,
+      # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
+      # adapter saves screenshots to disk for the model to read. One source only.
       - - "@vymalo/opencode-browser"
         - port: 4517
           groups:
