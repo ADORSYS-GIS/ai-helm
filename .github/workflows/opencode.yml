@@ -75,6 +75,18 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Mint camer-digital-ai installation token (branded bot author)
+        id: apptoken
+        # Post the review AS our App's bot (camer-digital-ai[bot]) rather than
+        # github-actions[bot]. Requires the App to carry issues:write +
+        # pull_requests:write and its install to have re-approved them, plus the
+        # private key as the CAMER_DIGITAL_AI_PRIVATE_KEY secret. See ADR-0050.
+        # (Git push stays on GITHUB_TOKEN below, so the App needs NO contents:write.)
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: "3253522" # camer-digital-ai (public App id)
+          private-key: ${{ secrets.CAMER_DIGITAL_AI_PRIVATE_KEY }}
+
       - name: Bot Details
         id: bot-details
         uses: raven-actions/bot-details@v1
@@ -137,7 +149,10 @@ jobs:
           # CAMER_DIGITAL_API_KEY (the minted GHA OIDC token) is exported into
           # GITHUB_ENV by the mint step; opencode reads it via {env:...} in the
           # provider config above. Gateway auth = our OIDC binding, not a key.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          #
+          # GITHUB_TOKEN here = the camer-digital-ai App installation token, so
+          # the posted review is authored by camer-digital-ai[bot] (ADR-0050).
+          GITHUB_TOKEN: ${{ steps.apptoken.outputs.token }}
         with:
           model: ${{ needs.detect-trigger.outputs.run_kind == 'manual_pr_review' && 'camer-digital/glm-5' || needs.detect-trigger.outputs.run_kind == 'issue_task' && 'camer-digital/glm-5' || 'camer-digital/adorsys-reviewer' }}
           agent: ${{ needs.detect-trigger.outputs.run_kind == 'issue_task' && 'build' || needs.detect-trigger.outputs.run_kind == 'manual_pr_review' && 'manual-review' || 'auto-review' }}
@@ -152,7 +167,9 @@ jobs:
           RUN_KIND: ${{ needs.detect-trigger.outputs.run_kind }}
         uses: actions/github-script@v9
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Prefer the App bot; fall back to GITHUB_TOKEN if the App-token step
+          # itself failed (e.g. missing secret) so the failure note still posts.
+          github-token: ${{ steps.apptoken.outputs.token || secrets.GITHUB_TOKEN }}
           script: |
             const issueNumber = process.env.RUN_KIND === 'issue_task'
               ? Number(process.env.ISSUE_NUMBER)
