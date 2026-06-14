@@ -140,7 +140,7 @@ Tool access is modelled on **two decoupled axes**:
 | Agent | mode | model | edit | bash | MCP / tools |
 |---|---|---|---|---|---|
 | `frontend` | **primary** (default) | *inherit* | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`) + Rust/WASM (`cargo`/`trunk`); `rm`→ask | **none** — delegates (lean) |
-| `browser` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `browser_*` (page+control+debug, all 33 tools — incl. `browser_eval`) |
+| `browser` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `browser_*` (page+control+debug+interactive, all 34 tools — incl. `browser_eval` and `browser_request_feedback`) |
 | `design` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `refero_*` |
 | `web-search` | subagent | *inherit* | deny | deny | `brave_*` |
 | `doc-research` | subagent | *inherit* | only `docs/**` | deny | `context7_*` |
@@ -205,7 +205,7 @@ Expected:
   },
   "config": {
     "$schema": "https://opencode.ai/config.json",
-    "plugin": ["@vymalo/opencode-oauth2@0.6.3"],
+    "plugin": ["@vymalo/opencode-oauth2@0.8.0"],
     "provider": {
       "camer-digital": {
         "name": "Camer Digital",
@@ -229,7 +229,7 @@ Expected:
 Content-Type must be `application/json` (nginx adds it via
 `default_type` in the chart's nginx config).
 
-`oauth2.responseApi` (plugin ≥ 0.6.2,
+`oauth2.responseApi` (plugin ≥ 0.7.1,
 [vymalo/opencode-oauth2#37](https://github.com/vymalo/opencode-oauth2/pull/37))
 is **currently `false`** — inference uses Chat Completions
 (`/v1/chat/completions`), the plugin default. It was enabled in
@@ -243,7 +243,7 @@ them OpenCode aborts with `text part <id> not found`). It is provider-wide
 not touch the token lifecycle. See the inline comment in
 `charts/librechat-opencode-wellknown/values.yaml`.
 
-`meta.modelsInfoOverwrite: ["name"]` (models-info plugin ≥ 0.6.3,
+`meta.modelsInfoOverwrite: ["name"]` (models-info plugin ≥ 0.7.1,
 [vymalo/opencode-models-info#38](https://github.com/vymalo/opencode-oauth2/pull/38))
 exempts `name` from the plugin's upstream-wins merge. The oauth2 plugin's
 model discovery auto-stamps a *normalized* `name` (id `adorsys-coder` →
@@ -381,6 +381,9 @@ client config above).
 ## Related
 
 - ADR-0014 — the chart split + the well-known design
+- ADR-0050 — bump the `@vymalo/*` line to **0.8.0** (the "OpenCode Toolbelt"
+  suite) + register the opt-in **`interactive`** browser group
+  (`browser_request_feedback`, scoped to `@browser`)
 - ADR-0048 — the global browser plugin + closed-loop `@frontend`; removes
   `chrome-devtools`; **the per-agent tool-injection token model** (the *why*
   behind the ✅ note in *Agents & tool scoping*)
