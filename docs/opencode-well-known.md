@@ -100,7 +100,7 @@ overridable locally.
 To verify it reached a server after deploy: `opencode mcp list` shows the merged
 catalog; the rendered descriptor's `config.mcp` should match the table above.
 
-## Agents & tool scoping (ADR-0044)
+## Agents & tool scoping (ADR-0044, token model corrected in ADR-0048)
 
 Tool access is modelled on **two decoupled axes**:
 
@@ -362,6 +362,9 @@ client config above).
 ## Related
 
 - ADR-0014 — the chart split + the well-known design
+- ADR-0048 — the global browser plugin + closed-loop `@frontend`; removes
+  `chrome-devtools`; **the per-agent tool-injection token model** (the *why*
+  behind the ✅ note in *Agents & tool scoping*)
 - ADR-0042 — the curated MCP catalog pushed via `config.mcp`
 - ADR-0038 — the gateway `/mcp/*` routes + OAuth the remote MCPs target
 - ADR-0009 — humans use Lightbridge self-service for API keys; the

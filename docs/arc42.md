@@ -313,6 +313,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0040 | External hosted MCPs (context7/firecrawl/refero) via per-MCP in-cluster **Caddy normalizing proxies** (`mode: proxiedExternal`) — Go-TLS upstream (handles ECDSA), credential injection, response Content-Type rewrite; reliable in-cluster plain-HTTP backends (supersedes the ADR-0039 EnvoyPatchPolicy) |
 | 0045 | Scrape-first dashboard sourcing — no board without verified metrics; API-verified gnetIds only; dashboards-as-code reserved for bespoke boards (per-user usage, ratelimit, Authorino) |
 | 0046 | Per-user attribution repair — flatten the OTLP access-log `attributes` envelope at Alloy, pin the stream `service_name=envoy-ai-gateway`, promote `user_id`/`azp`/`model` labels (supplements 0005) |
+| 0048 | Global `@vymalo/opencode-browser` plugin (page+control, no `debug`) + a single closed-loop multimodal `@frontend` agent; **removes the `chrome-devtools` MCP**; one source only (don't also connect the dual package's MCP form). Corrects ADR-0044's token model — opencode DOES scope the *injected* tool set per agent (`request.ts resolveTools`→`Permission.disabled`: string-form `*`-deny drops a tool from `tools`/`activeTools`, agent `allow` wins), so the deny-baseline keeps `browser_*` in `@frontend` only |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
