@@ -177,7 +177,8 @@ Tool access is modelled on **two decoupled axes**:
 > through an allowed command. No per-command rule can close this. Real containment
 > is the **environment** (git-tracked worktree, ephemeral/sandboxed run), not the
 > permission patterns. Size the allow-list for convenience and assume an allowed
-> build tool can do anything its project's scripts can.
+> build tool can do anything its project's scripts can. See
+> [`opencode-sandboxing.md`](./opencode-sandboxing.md) for the containment options.
 
 Add a role by copying an `agent` block (+ connecting its server if new). Pin a
 model **only** if the role needs vision (the `adorsys-frontend` multimodal alias);
