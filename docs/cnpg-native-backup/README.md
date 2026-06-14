@@ -2,6 +2,15 @@
 
 A comprehensive guide to understanding how CloudNativePG (CNPG) backups work with the Barman Cloud plugin, including the complete architecture and configuration.
 
+> ⚠️ **Live store = Hetzner Object Storage** (bucket `ssegning-k8s-state`,
+> endpoint `nbg1.your-objectstorage.com`, secret `lightbridge-cnpg-s3`). The
+> pre-Hetzner MinIO (`s3.ssegning.me`, bucket `ai-ops-backups`, the in-cluster
+> `minio` namespace) is **decommissioned**, and the `lightbridge-usage-db` was
+> dropped. The endpoints/paths in the examples below are updated, but any
+> residual `mc ls myminio/ai-ops-backups/…` or `-n minio` command refers to the
+> old setup — point `mc` at `nbg1.your-objectstorage.com`. **Source of truth for
+> the actual backup config:** `charts/lightbridge-db/values.yaml`.
+
 ## Table of Contents
 
 1. [Core Concepts](#core-concepts)
@@ -317,8 +326,8 @@ metadata:
 spec:
   retentionPolicy: 180d
   configuration:
-    destinationPath: s3://ai-ops-backups/lightbridge-main-db/
-    endpointURL: https://s3.ssegning.me
+    destinationPath: s3://ssegning-k8s-state/lightbridge-main-db
+    endpointURL: https://nbg1.your-objectstorage.com
     s3Credentials:
       accessKeyId:
         name: lightbridge-cnpg-s3
@@ -488,8 +497,8 @@ spec:
                                     │ Uploads/Downloads
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           S3 / MinIO                                    │
-│                           https://s3.ssegning.me                        │
+│                    S3 (Hetzner Object Storage)                          │
+│                  https://nbg1.your-objectstorage.com                    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  s3://ai-ops-backups/lightbridge-main-db/                              │

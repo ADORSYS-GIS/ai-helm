@@ -10,8 +10,9 @@
 
 ### 1.1 Object Storage Backend
 
-All three telemetry stores share a single S3-compatible bucket (`monitoring` on
-`s3.ssegning.me`) with prefix-based namespace isolation:
+All three telemetry stores share a single S3-compatible bucket
+(`ssegning-k8s-state` on Hetzner Object Storage, `nbg1.your-objectstorage.com`)
+with prefix-based namespace isolation:
 
 | Store | S3 Prefix | Data Type |
 |-------|-----------|-----------|
@@ -334,7 +335,7 @@ less query fan-out; smaller window = more frequent compaction cycles.
 
 ### 3.1 Primary Backup: S3 Object Storage
 
-The S3 bucket (`monitoring` on `s3.ssegning.me`) is the primary durable store
+The S3 bucket (`ssegning-k8s-state` on Hetzner Object Storage) is the primary durable store
 for all telemetry data. Backup strategy depends on the S3 provider's
 capabilities:
 

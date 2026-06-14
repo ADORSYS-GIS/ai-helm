@@ -41,7 +41,7 @@ The solution uses:
 | CNPG operator | ✅ | v0.27.1 in `cnpg-system` |
 | barman-cloud plugin | ✅ | v0.5.0 in `cnpg-system` |
 | ObjectStore CRD | ✅ | `objectstores.barmancloud.cnpg.io` |
-| MinIO/S3 | ✅ | `s3://ai-ops-backups/lightbridge-cnpg-backups/` |
+| Hetzner Object Storage (S3) | ✅ | `s3://ssegning-k8s-state/lightbridge-main-db` |
 
 ### Phase 2: Create S3 Credentials Secret
 
@@ -74,8 +74,8 @@ metadata:
   namespace: converse
 spec:
   configuration:
-    destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
-    endpointURL: https://s3.ssegning.me
+    destinationPath: s3://ssegning-k8s-state/lightbridge-main-db
+    endpointURL: https://nbg1.your-objectstorage.com
     s3Credentials:
       accessKeyId:
         name: lightbridge-cnpg-s3
@@ -96,8 +96,8 @@ metadata:
   namespace: converse
 spec:
   configuration:
-    destinationPath: s3://ai-ops-backups/lightbridge-cnpg-backups/
-    endpointURL: https://s3.ssegning.me
+    destinationPath: s3://ssegning-k8s-state/lightbridge-main-db
+    endpointURL: https://nbg1.your-objectstorage.com
     s3Credentials:
       accessKeyId:
         name: lightbridge-cnpg-s3

@@ -103,6 +103,6 @@ flowchart LR
   (Keycloak, Redis, cert-manager, ESO, CNPG operator, object storage, providers).
 - **Pink** — runs on the home GPU cluster (the `homeCluster: true` exception).
 
-> **Accuracy note.** Diagrams reflect `release-2026.06.14-v03`. Coder
+> **Accuracy note.** Diagrams reflect `release-2026.06.14-v09`. Coder
 > (old ADR-0019) was **removed** (ADR-0027) and does not appear here, despite
 > lingering mentions in some older `docs/` files.

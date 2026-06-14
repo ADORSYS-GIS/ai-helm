@@ -2,7 +2,7 @@
 
 > [arc42](https://arc42.org) architecture description for the AI platform
 > deployed by this repository — the twelve sections applied to the steady state
-> at `release-2026.06.14-v03`. Every diagram is mermaid.
+> at `release-2026.06.14-v09`. Every diagram is mermaid.
 >
 > **Companion reading:** the single-page [architecture map](./architecture.md),
 > the layered, mermaid-rich [architecture suite](./architecture/README.md)

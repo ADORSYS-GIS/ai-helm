@@ -7,7 +7,7 @@ component, plus one page per subsystem) or the formal
 **[arc42 description](arc42.md)**. Every *why* lives in the
 [ADR index](adr/README.md).
 
-> Reflects `release-2026.06.14-v03`. Coder was removed (ADR-0027) and is not shown.
+> Reflects `release-2026.06.14-v09`. Coder was removed (ADR-0027) and is not shown.
 
 ## Where to go for what
 

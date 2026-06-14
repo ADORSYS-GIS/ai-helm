@@ -32,8 +32,10 @@
 ---
 
 > ⚠️ **Parts of "What Was Done" below are historical** (Linode Object Storage,
-> namespace `monitoring`, chart versions 5.3.0/6.6.0). The stack now lives in
-> namespace `observability` on Hetzner Object Storage via the App-of-Apps
+> the MinIO endpoint `s3.ssegning.me`, `linode-block-storage` PVCs, namespace
+> `monitoring`, chart versions 5.3.0/6.6.0 — all pre-Hetzner). The stack now lives
+> in namespace `observability` on **Hetzner Object Storage**
+> (`nbg1.your-objectstorage.com`, bucket `ssegning-k8s-state`) via the App-of-Apps
 > orchestrator (`charts/observability`, ADR-0020); current chart versions are
 > mimir-distributed 5.8.0 / loki 7.0.0 / tempo 1.24.4. For the *current* topology
 > and the answers to "why N pods?", read the next section — or the canonical
@@ -79,7 +81,7 @@ Four new ArgoCD Applications were added to `charts/apps/values.yaml`, plus an up
 - **Namespace:** `monitoring`
 - **Sync wave:** `-1` (deploys before Grafana)
 - **Components deployed:** ingester, distributor, querier, query-frontend, store-gateway, compactor, alertmanager, nginx gateway
-- **Storage:** S3-compatible backend (configurable — currently points to Linode Object Storage; can be swapped to MinIO)
+- **Storage:** S3-compatible backend (historically Linode Object Storage / MinIO `s3.ssegning.me`; **now Hetzner Object Storage** `nbg1.your-objectstorage.com`, bucket `ssegning-k8s-state`)
 - **Buckets:** `converse-mimir-blocks`, `converse-mimir-alertmanager`, `converse-mimir-ruler`
 - **Secrets required:** `mimir-s3` (keys: `MIMIR_S3_ACCESS_KEY_ID`, `MIMIR_S3_SECRET_ACCESS_KEY`)
 - **ResourceQuota & LimitRange:** Expanded in `extraObjects` to accommodate the full LGTM stack (16 CPU limit, 24 Gi memory, 40 pods)

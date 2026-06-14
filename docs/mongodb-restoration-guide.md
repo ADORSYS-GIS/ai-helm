@@ -41,7 +41,7 @@ The production restoration is carried out using a standalone Kubernetes Pod depl
 The restoration is automated through a multi-stage `Pod` execution defined in `recoveries/librechat/mongorestore-pod.yaml`:
 
 1. **Backup Download (Init Container: `download-backup`)**:
-   - Uses `minio/mc` to pull the backup from S3-compatible storage (`s3.ssegning.me`).
+   - Uses `minio/mc` to pull the backup from S3-compatible storage (`nbg1.your-objectstorage.com`, Hetzner Object Storage).
    - Credentials are provided via the `librechat-s3-config` secret.
    - The backup `mongodb-backup/all-databases_20260415_020035.gz` is downloaded to a shared volume at `/backup/backup.archive`.
 
