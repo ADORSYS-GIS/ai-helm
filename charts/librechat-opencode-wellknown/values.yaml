@@ -53,20 +53,21 @@ wellKnown:
       # plugin code we validated, and a publish upstream can't change
       # behaviour under us mid-rollout. Bump these deliberately (and
       # re-validate) rather than letting them drift. The four @vymalo/*
-      # plugins share one version line (released together, currently 0.7.3).
+      # plugins share one version line (released together, currently 0.8.0 —
+      # the "OpenCode Toolbelt" suite; see ADR-0050 for the 0.7.3→0.8.0 bump).
       # The lone exception is opencode-skills-collection (kept @latest — see
       # its note below).
-      - "@vymalo/opencode-oauth2@0.7.3"
+      - "@vymalo/opencode-oauth2@0.8.0"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.7.3"
+      - "@vymalo/opencode-models-info@0.8.0"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.7.3"
+      - "@vymalo/opencode-ratelimit@0.8.0"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
@@ -81,17 +82,24 @@ wellKnown:
       # in the plugin TUPLE's second arg — this plugin reads its options from
       # there (NOT from provider.options.meta like the others), i.e.
       # opencode's `[name, {opts}]` install form, which toJson renders as a
-      # JSON 2-tuple. Part of the 0.7.3 vymalo line — pin matches the three
+      # JSON 2-tuple. Part of the 0.8.0 vymalo line — pin matches the three
       # above.
       #
       # TWO independent token levers, at different scopes:
       #   • `groups` (here) = GLOBAL registration — only a registered tool can
-      #     be allowed at all. We register ALL three: `page` (observe, 8) +
-      #     `control` (interact/navigate, 19) + `debug` (6) = 33 tools.
+      #     be allowed at all. We register ALL FOUR groups: `page` (observe, 8) +
+      #     `control` (interact/navigate, 19) + `debug` (6) + `interactive` (1)
+      #     = 34 tools.
       #     ⚠️ `debug` includes `browser_eval` (arbitrary in-page JS) plus
       #     console/network/cookies — a sharp, powerful surface pushed org-wide
       #     by the maintainer's explicit call. It's scoped to the `@browser`
       #     subagent only (the deny-baseline keeps it off every other agent).
+      #     `interactive` (new in 0.8.0, opt-in like `debug`) is just
+      #     `browser_request_feedback`: the agent asks the human to respond ON
+      #     THE PAGE (confirm / choose / point / element / region / comment) and
+      #     BLOCKS up to 300s for the answer — a human-in-the-loop tool that fits
+      #     the design loop. Far tamer than `debug` (no arbitrary JS); also
+      #     scoped to `@browser` only (ADR-0050).
       #   • per-agent `permission` (below) = PER-AGENT injection. opencode DOES
       #     scope the injected tool set per agent (verified opencode 1.17.6:
       #     session/llm/request.ts `resolveTools` → `Permission.disabled` drops
@@ -103,25 +111,26 @@ wellKnown:
       #     *string* form gives pattern `*`; the nested `{sub: deny}` form would
       #     gate execution but NOT remove from injection — we use string form.)
       # ⇒ the deny-baseline genuinely keeps browser_* OUT of every agent that
-      # doesn't re-allow it. The full page+control+debug surface (33 tools) is allowed
-      # ONLY on the `@browser` subagent below — NOT on the lean `frontend`
-      # primary — so the heavy 33-tool set is injected only into `@browser`'s
-      # context when the primary delegates to it, and never into the default
-      # context every turn.
+      # doesn't re-allow it. The full page+control+debug+interactive surface (34
+      # tools) is allowed ONLY on the `@browser` subagent below — NOT on the lean
+      # `frontend` primary — so the heavy 34-tool set is injected only into
+      # `@browser`'s context when the primary delegates to it, and never into the
+      # default context every turn.
       #
       # ⚠️ Do NOT ALSO add a browser server to `mcp:` below. opencode-browser is
       # a DUAL package — the same `browser_*` catalog ships as this plugin AND as
-      # an MCP server. Connecting both registers the 33 tools TWICE (same names),
+      # an MCP server. Connecting both registers the 34 tools TWICE (same names),
       # doubling them in every agent that allows `browser_*`. The PLUGIN is the
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
       # adapter saves screenshots to disk for the model to read. One source only.
-      - - "@vymalo/opencode-browser@0.7.3"
+      - - "@vymalo/opencode-browser@0.8.0"
         - port: 4517
           groups:
             - page
             - control
             - debug
+            - interactive
       # Dynamic Context Pruning — auto-compresses/dedups stale tool
       # outputs and prunes failed-tool inputs from the running context.
       # Zero-config (sensible defaults); provider-agnostic. Pushed
@@ -173,7 +182,7 @@ wellKnown:
             # routes inference through the OpenAI **Responses API**
             # (`/v1/responses`) by registering the provider with the native
             # `@ai-sdk/openai` instead of `@ai-sdk/openai-compatible` (plugin
-            # ≥ 0.6.2, vymalo/opencode-oauth2#37) and turning on the streaming
+            # ≥ 0.7.1, vymalo/opencode-oauth2#37) and turning on the streaming
             # SSE index-repair for the `output_index`/`content_index` fields
             # our Envoy AI Gateway omits. It was enabled (release-2026.06.13)
             # then turned back off — re-enable by flipping to `true` if/when
@@ -192,7 +201,7 @@ wellKnown:
             # modelsInfoTtlSeconds: 3600
             # Force our endpoint's `name` to win over the normalized label
             # the oauth2 plugin pre-stamps (vymalo/opencode-models-info#38,
-            # needs plugin ≥ 0.6.3 — pinned 0.6.3 above). models-info merges
+            # needs plugin ≥ 0.7.1 — pinned 0.8.0 above). models-info merges
             # upstream-wins, and oauth2's model discovery auto-stamps a
             # normalized `name` (e.g. id `adorsys-coder` → "Adorsys Coder")
             # BEFORE the models-info hook runs; upstream-wins then can't tell
@@ -206,7 +215,7 @@ wellKnown:
             modelsInfoOverwrite:
               - name
             # @vymalo/opencode-ratelimit config. Needs the `scope` + `tiers`
-            # schema (plugin ≥ 0.6.1; we pin 0.6.3 in the plugin list
+            # schema (plugin ≥ 0.6.1; we pin 0.8.0 in the plugin list
             # above). headerPrefix "x-ratelimit" matches
             # Envoy's draft-03 header names — plugin default.
             #
@@ -551,15 +560,19 @@ wellKnown:
           — read any screenshot the bridge saves under .opencode/browser/ and
           describe the relevant visual state for the caller. ALWAYS
           browser_snapshot first to get stable element refs; target actions by
-          ref, never guess selectors. Call browser_release when done so the user
-          gets their browser back. You cannot edit files or run shell — do not
-          attempt to.
+          ref, never guess selectors. When you're unsure what the user means and
+          a screenshot or snapshot isn't enough ("which of these did you mean?"),
+          use browser_request_feedback to ask the human ON THE PAGE (confirm /
+          choose / point / element / region / comment) and act on their answer;
+          on timeout it returns { timedOut: true } so fall back gracefully. Call
+          browser_release when done so the user gets their browser back. You
+          cannot edit files or run shell — do not attempt to.
         permission:
           edit: deny
           bash: deny
-          # The full registered surface (page + control). Injected into THIS
-          # subagent only (the primary denies it), so the heavy 33-tool set
-          # never loads into the default context.
+          # The full registered surface (page + control + debug + interactive).
+          # Injected into THIS subagent only (the primary denies it), so the
+          # heavy 34-tool set never loads into the default context.
           "browser_*": allow
       design:
         mode: subagent
