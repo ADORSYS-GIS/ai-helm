@@ -10,7 +10,7 @@ metered. This is the layer where latency and correctness live.
 flowchart TB
     CLIENT["client (HTTP/2)"]:::ext
 
-    subgraph dp["Envoy data plane (eg) — HPA 3–20, LeastRequest LB"]
+    subgraph dp["Envoy data plane (eg) — HPA 3–5, LeastRequest LB"]
         LISTEN["Listeners<br/><b>external</b>: api.ai.camer.digital (ACME TLS)<br/><b>internal</b>: core-gateway-internal.svc (self-signed CA)"]:::own
         FILTER["HTTP filter chain<br/>ext_authz → ratelimit → router"]:::own
     end
@@ -117,7 +117,7 @@ sequenceDiagram
     W->>E: /v1 call (Bearer GHA-OIDC)
     E->>A: ext_authz
     A->>A: verify (github issuer), then github-actions →
-    A->>RA: GET /v1/resolve (repository_owner_id)
+    A->>RA: POST /v1/resolve (JSON body: repository_owner_id)
     alt owner bound & not blocked
         RA-->>A: {account_id, billing_plan}
         A-->>E: 200 + x-account-id, x-billing-plan
@@ -154,7 +154,7 @@ sequenceDiagram
 
 | Concern | Mechanism | Where |
 |---|---|---|
-| Throughput | HTTP/2 multiplexing + data-plane HPA `3→20`, LeastRequest LB | `ClientTrafficPolicy` / `EnvoyProxy` |
+| Throughput | HTTP/2 multiplexing + data-plane HPA `3→5` (right-sized to the 32-CPU worker pool), LeastRequest LB | `ClientTrafficPolicy` / `EnvoyProxy` |
 | Fairness | Per-user burst + per-user monthly budget | `BackendTrafficPolicy` + Redis |
 | Resilience | Circuit breaker + outlier detection (eject erroring backend ≤30 s) | `BackendTrafficPolicy` |
 | Zero-cut rollout | 60 s drain (`minDrainDuration` 15 s); PDB `maxUnavailable: 1` | `EnvoyProxy` |

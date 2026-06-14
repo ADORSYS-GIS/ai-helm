@@ -31,9 +31,9 @@ flowchart TB
         REPOAUTH["lightbridge-repo-auth<br/><i>GitHub org→account binding</i>"]:::own
         UI["converse-ui<br/><i>self-service frontend</i>"]:::own
     end
-    subgraph chat_ns["ns: converse-chat"]
-        LC["librechat<br/><i>app + MongoDB + Meili search<br/>+ opencode well-known</i>"]:::ctrl
-        MB["mongodb-backup"]:::own
+    subgraph chat_ns["ns: converse (LibreChat) · converse-chat (backup)"]
+        LC["librechat → ns converse<br/><i>app + MongoDB + Meili search<br/>+ opencode well-known</i>"]:::ctrl
+        MB["mongodb-backup<br/><i>ns converse-chat</i>"]:::own
     end
     subgraph mcp_ns["ns: converse-mcp"]
         MCPS["mcps<br/><i>brave · terraform (self-hosted)<br/>context7 · firecrawl · refero (proxied)</i>"]:::ctrl
@@ -105,7 +105,7 @@ flowchart TB
 | `lightbridge-backend` | `converse` | `charts/lightbridge` | First-party authz/usage service |
 | `lightbridge-repo-auth` | `converse` | external repo | Binds GitHub orgs → billing accounts so CI authenticates via GHA OIDC ([05](05-auth-identity.md)) |
 | `converse-ui` | `converse` | external repo | Self-service frontend |
-| `librechat` | `converse-chat` | `charts/librechart` (orchestrator) | Chat UI + MongoDB + Meili search + the opencode `.well-known` discovery |
+| `librechat` | `converse` (children, via librechart `destination.namespace`) | `charts/librechart` (orchestrator) | Chat UI + MongoDB + Meili search + the opencode `.well-known` discovery |
 | `mongodb-backup` | `converse-chat` | `charts/mongodb-backup` | CronJob → object storage |
 | `mcps` | `converse-mcp` | `charts/mcps` (orchestrator) | The MCP tool servers — see [10 MCP](10-mcp.md) |
 

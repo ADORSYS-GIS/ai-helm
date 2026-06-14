@@ -98,7 +98,7 @@ flowchart TB
     RA --> DB
     CTL -->|"claim --owner-id --account-id --plan"| RA
     OIDC -->|"runner mints token<br/>(audience = org Source URL)"| A
-    A -->|"github-actions JWT →<br/>GET /v1/resolve(owner_id)"| RA
+    A -->|"github-actions JWT →<br/>POST /v1/resolve (owner_id)"| RA
     RA -->|"account_id + plan, or 403"| A
 
     classDef own fill:#eaf3ea,stroke:#4a8a4a;

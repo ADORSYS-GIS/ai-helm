@@ -179,7 +179,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     C["client (HTTP/2)"]:::ext
-    E["EnvoyProxy (HPA 3–20, LeastRequest LB)"]:::own
+    E["EnvoyProxy (HPA 3–5, LeastRequest LB)"]:::own
     A["Authorino (replicas 2, JWKS ttl 3600)<br/>verify Keycloak JWT<br/>stamp x-oidc-* + x-account-id/x-org-id/x-billing-plan"]:::own
     R["AIGatewayRoute (per model)"]:::own
     B["BackendTrafficPolicy<br/>burst (per user) + monthly budget (per person)<br/>circuit breaker + outlier detection"]:::own
@@ -333,7 +333,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | Quality | Scenario | Target | Status |
 |---|---|---|---|
 | **Performance** | 2000 sustained, 5000 peak, mixed streaming | p95 added gateway latency < 50 ms; no window stalls | Tuned (ADR-0021); load test pending |
-| **Scalability** | Traffic doubles | HPA scales data plane 3→20; Authorino HA | Configured |
+| **Scalability** | Traffic doubles | HPA scales data plane 3→5 (right-sized to the 32-CPU worker pool; raise with workers); Authorino HA | Configured |
 | **Availability** | A model backend starts erroring | Outlier detection ejects it in ≤30 s; clients reroute | Configured |
 | **Resilience** | Proxy rollout under load | No stream cut (60 s drain) | Configured |
 | **Observability** | "What did user X spend on model Y this month?" | Answerable in Grafana from Mimir counters | Partially shipped |

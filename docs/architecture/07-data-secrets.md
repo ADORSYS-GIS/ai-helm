@@ -15,11 +15,11 @@ flowchart TB
         REPOAUTH["lightbridge-repo-auth"]:::own
         LGTM["Mimir / Loki / Tempo"]:::own
         MBK["mongodb-backup CronJob"]:::own
+        LBDB["lightbridge-db cluster (CNPG Cluster CR)<br/>charts/lightbridge-db + repoauth Database CR"]:::own
     end
 
     subgraph external["Owned externally (the actual engines)"]
-        CNPGOP["CNPG operator + Barman<br/>cnpg-system"]:::ext
-        LBDB["lightbridge-db cluster<br/>(CNPG) + repoauth Database CR"]:::ext
+        CNPGOP["CNPG operator + Barman plugin<br/>cnpg-system"]:::ext
         REDIS["redis-ha · redis-system<br/>(TLS-only)"]:::ext
         S3["Hetzner Object Storage<br/>bucket: ssegning-k8s-state"]:::ext
     end
@@ -29,7 +29,7 @@ flowchart TB
     LC -->|sessions| REDIS
     LC -->|files| S3
     REPOAUTH -->|"Database CR + managed role"| LBDB
-    LBDB --- CNPGOP
+    LBDB -->|reconciled by| CNPGOP
     LGTM -->|blocks| S3
     MONGO --> MBK --> S3
     LBDB -->|Barman backup| S3
@@ -43,7 +43,7 @@ flowchart TB
 | Chat data | MongoDB | in-chart (`librechat-app`) | the StatefulSet + `mongodb-backup` |
 | Chat search | Meilisearch | in-chart (`librechat-search`) | the deployment |
 | Sessions / ratelimit counters | redis-ha | `home-os` | consumer config + auth Secret only |
-| `lightbridge-repo-auth` DB | CNPG Postgres | external operator | a `Database` CR + managed role on the **existing** `lightbridge-db` cluster (not a new pod) |
+| `lightbridge-repo-auth` DB | CNPG Postgres | **repo-owned** Cluster (`charts/lightbridge-db`); reconciled by the external CNPG operator | the `lightbridge-db` `Cluster` CR + a `repoauth` `Database` CR + managed role (not a new pod) |
 | Metrics / logs / traces | Mimir / Loki / Tempo | in-chart (`observability`) | the charts (data → S3) |
 | Object storage | Hetzner S3 (Ceph-RGW) | Hetzner | bucket prefixes + creds reference |
 

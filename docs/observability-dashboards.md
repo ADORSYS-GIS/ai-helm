@@ -79,7 +79,11 @@ and how.
 
 ---
 
-### 2.1 Lightbridge Backend (API, MCP, Usage)
+### 2.1 Lightbridge Backend (API, MCP)
+
+> Note: `usage.enabled: false` and `opa.enabled: false` in `charts/lightbridge`
+> — the usage sub-service and OPA are not running today, so the usage/OPA metrics
+> below are aspirational, not live.
 
 **What it is:** The core authorization and billing service. Handles
 authorization and usage tracking. (OPA was removed 2026-06-04, ADR-0021 — a
@@ -241,7 +245,7 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 
 | Priority | Component | Effort | Impact |
 |----------|-----------|--------|--------|
-| 🔴 High | Lightbridge (API + Usage) | Medium | Every API request passes through here |
+| 🔴 High | Lightbridge (API) | Medium | Every API request passes through here |
 | 🔴 High | Envoy AI Gateway metrics | Low | Token usage and routing visibility |
 | 🟡 Medium | LibreChat + MongoDB | Medium | User-facing service health |
 | 🟡 Medium | Authorino | Low | Auth latency directly affects API response time |

@@ -131,7 +131,7 @@ internal CA — a plaintext client gets `connection reset by peer`.
 
 ```mermaid
 flowchart LR
-    LCC["LibreChat"]:::own -->|"REDIS_PASSWORD + TLS"| R["redis-ha-redis.redis-system:6379"]:::ext
+    LCC["LibreChat"]:::own -->|"REDIS_PASSWORD + TLS"| R["redis-ha-haproxy.redis-system:6379<br/>(master-router, not the round-robin redis-ha-redis)"]:::ext
     RL["Envoy ratelimit"]:::own -->|"REDIS_TLS=true + REDIS_TLS_CACERT"| R
     classDef own fill:#eaf3ea,stroke:#4a8a4a;
     classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;

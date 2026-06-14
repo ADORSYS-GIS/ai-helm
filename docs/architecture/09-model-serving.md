@@ -57,6 +57,11 @@ flowchart LR
     classDef t fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
+**Per-model overrides:** a model can override the plan defaults with its own
+`rateLimitBudgeting:` block in `charts/ai-models/values.yaml` — e.g. the
+`adorsys-*` brand models use a unified lower budget rather than the table above.
+The plan tiers are the default; the per-model block wins where present.
+
 Cost is metered natively (`llmRequestCosts` token extraction) — no Python/Lua hop.
 
 ## The self-hosted model (home GPU)
