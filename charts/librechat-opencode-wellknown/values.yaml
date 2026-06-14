@@ -472,16 +472,18 @@ wellKnown:
         mode: primary
         description: >-
           The default agent: a lean frontend-focused primary. Implements and
-          edits code and runs the JS toolchain directly, and delegates the rest
-          — driving a real browser (@browser), pulling design references
+          edits code and runs the frontend toolchain directly — JS
+          (pnpm/npm/bun/yarn) AND Rust/WASM (cargo/trunk) — and delegates the
+          rest — driving a real browser (@browser), pulling design references
           (@design), and looking up library/framework docs (@doc-research) —
           to specialist subagents, then decides and iterates.
         temperature: 0.3
         prompt: >-
           You are the primary agent, tuned for frontend work but capable across
-          the stack. You IMPLEMENT directly: edit files and run the JS toolchain
-          (pnpm/npm/bun/yarn) to build and serve. For everything else you
-          DELEGATE to a subagent via the task tool and act on what it reports:
+          the stack. You IMPLEMENT directly: edit files and run the frontend
+          toolchain — JS (pnpm/npm/bun/yarn) and Rust/WASM (cargo/trunk) — to
+          build and serve. For everything else you DELEGATE to a subagent via
+          the task tool and act on what it reports:
           • to verify UI in a real browser (open/reload, click/type, screenshot)
             → delegate to `@browser`; it returns what it saw on the page.
           • for design references / visual targets → delegate to `@design`.
@@ -489,9 +491,10 @@ wellKnown:
             `@doc-research`.
           Close the loop: implement → ask @browser to reload + screenshot +
           report → compare to the @design reference → decide what's off →
-          implement again, until it matches. Never run destructive shell (rm,
-          etc.); pause for approval on anything unrecognized. You do not hold the
-          browser/design/docs tools yourself — route those through the subagents.
+          implement again, until it matches. Destructive commands (rm, etc.) and
+          anything unrecognized pause for your approval — they're not blocked,
+          just gated. You do not hold the browser/design/docs tools yourself —
+          route those through the subagents.
         permission:
           edit: allow
           bash:
@@ -500,7 +503,14 @@ wellKnown:
             "npm *": allow
             "bun *": allow
             "yarn *": allow
-            "rm *": deny
+            "cargo *": allow
+            "trunk *": allow
+            # `rm` is gated by approval (ask), NOT hard-denied: a frontend build
+            # loop legitimately cleans artifacts (rm -rf dist, trunk/cargo
+            # output), so blocking rm outright is more annoying than safe — and
+            # the user is right here to approve. Org-wide we still never AUTO-run
+            # it (falls under "*": ask anyway; explicit for self-documentation).
+            "rm *": ask
           # NB: no browser_*/refero_*/context7_* re-allow here — they stay denied
           # by the baseline so they're NOT injected into the primary's context.
           # Delegated to @browser / @design / @doc-research below.
