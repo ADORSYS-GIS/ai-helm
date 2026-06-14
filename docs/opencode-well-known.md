@@ -112,12 +112,13 @@ Tool access is modelled on **two decoupled axes**:
   refero, the local chrome-devtools); `enabled: false` = not connected
   (firecrawl, until a role needs it).
 - **Access** — a global `config.permission` **deny-baseline** denies every
-  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`, `chrome-devtools_*`), so the **primary
-  agent is lean** (no MCP tools). Each role is a **`mode: subagent`** the primary
+  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`, `chrome-devtools_*`)
+  plus the `@vymalo/opencode-browser` plugin's `browser_*` tools, so the **primary
+  agent is lean** (no MCP / browser tools). Each role is a **`mode: subagent`** the primary
   delegates to (`@name` / the task tool) and a **whitelist** that re-allows only
   its tools + its file/bash scope (per-agent permission overrides the root).
 
-| Subagent | model (alias) | edit | bash | MCP |
+| Subagent | model (alias) | edit | bash | MCP / tools |
 |---|---|---|---|---|
 | `web-search` | `adorsys-researcher` | deny | deny | `brave_*` |
 | `doc-research` | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
@@ -126,6 +127,7 @@ Tool access is modelled on **two decoupled axes**:
 | `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
 | `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 | `frontend` | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` |
+| `browser` | `adorsys-frontend` (multimodal) | deny | deny | `browser_*` (`@vymalo/opencode-browser` plugin — drives real tabs via the local bridge + extension) |
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
 are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**

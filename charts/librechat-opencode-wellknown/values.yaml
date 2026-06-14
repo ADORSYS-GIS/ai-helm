@@ -44,21 +44,37 @@ wellKnown:
       # makes this org-wide push deterministic: every user runs the same
       # plugin code we validated, and a publish upstream can't change
       # behaviour under us mid-rollout. Bump these deliberately (and
-      # re-validate) rather than letting them drift. The three @vymalo/*
-      # plugins share one version line (released together, currently 0.6.3).
+      # re-validate) rather than letting them drift. The four @vymalo/*
+      # plugins share one version line (released together, currently 0.7.0).
       # The lone exception is opencode-skills-collection (kept @latest — see
       # its note below).
-      - "@vymalo/opencode-oauth2@0.6.3"
+      - "@vymalo/opencode-oauth2@0.7.0"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.6.3"
+      - "@vymalo/opencode-models-info@0.7.0"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.6.3"
+      - "@vymalo/opencode-ratelimit@0.7.0"
+      # Gives an agent a real browser: registers `browser_*` tools (open
+      # tabs, click, type, scroll, screenshot — in named tab groups) backed
+      # by a localhost WebSocket bridge a companion browser EXTENSION dials
+      # into. LOCAL like chrome-devtools-mcp — the bridge runs on the user's
+      # machine (127.0.0.1:4517) and each user installs the extension once
+      # (Releases page / web stores) + pastes the bridge URL+token into it;
+      # a user without that setup just sees the tools fail to connect (same
+      # accepted trade-off as chrome-devtools). Needs Node ≥22. CONFIG goes
+      # in the plugin TUPLE's second arg — this plugin reads its options from
+      # there (NOT from provider.options.meta like the others), i.e.
+      # opencode's `[name, {opts}]` install form, which toJson renders as a
+      # JSON 2-tuple. Scoped to the `browser` subagent below (ADR-0044
+      # deny-baseline). Part of the 0.7.0 vymalo line — pin matches the three
+      # above.
+      - - "@vymalo/opencode-browser"
+        - port: 4517
       # Dynamic Context Pruning — auto-compresses/dedups stale tool
       # outputs and prunes failed-tool inputs from the running context.
       # Zero-config (sensible defaults); provider-agnostic. Pushed
@@ -243,6 +259,7 @@ wellKnown:
       "terraform_*": deny
       "refero_*": deny
       "chrome-devtools_*": deny
+      "browser_*": deny
 
     # ────────────────────────────────────────────────────────────────────
     # Role subagents (ADR-0044). Delegated specialists (`mode: subagent`) the
@@ -429,6 +446,31 @@ wellKnown:
           "context7_*": allow
           "refero_*": allow
           "chrome-devtools_*": allow
+      browser:
+        mode: subagent
+        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL, reads screenshots
+        description: >-
+          Drives a REAL browser through the @vymalo/opencode-browser bridge —
+          opens tabs (in named groups), clicks, types, scrolls, and
+          screenshots — then reports what it observed. READ-ONLY on the
+          filesystem; never edits code or runs shell. Delegate for "open /
+          navigate / click / fill / screenshot this page in a real browser"
+          tasks. Distinct from the frontend agent's chrome-devtools MCP
+          (inspection/debugging) — this one actually controls tabs. Requires
+          the companion browser extension connected to the local bridge.
+        temperature: 0.3
+        prompt: >-
+          You are a browser-automation specialist. Use the browser_* tools to
+          open tabs in named groups, observe (snapshot/get_text/get_html/
+          query), interact (click/type/scroll), and screenshot real browser
+          tabs, then report what you found — reading any screenshot files the
+          bridge saves under .opencode/browser/. Start every interaction with
+          browser_snapshot to get stable element refs before acting on them.
+          You cannot edit files or run shell commands — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "browser_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
