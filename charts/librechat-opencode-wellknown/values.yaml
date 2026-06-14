@@ -53,20 +53,20 @@ wellKnown:
       # plugin code we validated, and a publish upstream can't change
       # behaviour under us mid-rollout. Bump these deliberately (and
       # re-validate) rather than letting them drift. The four @vymalo/*
-      # plugins share one version line (released together, currently 0.7.1).
+      # plugins share one version line (released together, currently 0.7.3).
       # The lone exception is opencode-skills-collection (kept @latest — see
       # its note below).
-      - "@vymalo/opencode-oauth2@0.7.1"
+      - "@vymalo/opencode-oauth2@0.7.3"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.7.1"
+      - "@vymalo/opencode-models-info@0.7.3"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.7.1"
+      - "@vymalo/opencode-ratelimit@0.7.3"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
@@ -81,7 +81,7 @@ wellKnown:
       # in the plugin TUPLE's second arg — this plugin reads its options from
       # there (NOT from provider.options.meta like the others), i.e.
       # opencode's `[name, {opts}]` install form, which toJson renders as a
-      # JSON 2-tuple. Part of the 0.7.1 vymalo line — pin matches the three
+      # JSON 2-tuple. Part of the 0.7.3 vymalo line — pin matches the three
       # above.
       #
       # TWO independent token levers, at different scopes:
@@ -116,7 +116,7 @@ wellKnown:
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
       # adapter saves screenshots to disk for the model to read. One source only.
-      - - "@vymalo/opencode-browser@0.7.1"
+      - - "@vymalo/opencode-browser@0.7.3"
         - port: 4517
           groups:
             - page
