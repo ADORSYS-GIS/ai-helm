@@ -46,7 +46,6 @@ mindmap
       argocd-gitops-repo
       argocd-webhook-secret
     Platform Authentication
-      lightbridge-opa-auth
       authz-tls
     AI Model API Keys
       OpenAI API Keys
@@ -61,7 +60,6 @@ mindmap
     Database Credentials
       PostgreSQL Credentials
       MongoDB Credentials
-      Coder DB Credentials
     Backup Credentials
       S3 Backup Credentials
       Keycloak Backup
@@ -83,7 +81,6 @@ Secrets for platform-level authentication and authorization.
 
 | Secret Name | Namespace | Type | Keys | Description |
 |-------------|-----------|------|------|-------------|
-| `lightbridge-opa-auth` | converse | Opaque | `credentials` | Basic auth for OPA validation |
 | `authz-tls` | converse-gateway | Opaque | `ca.crt`, `tls.crt`, `tls.key` | TLS certificates for authorization |
 
 ### Category 3: AI Model API Keys
@@ -128,7 +125,6 @@ Secrets for platform-level authentication and authorization.
 
 | Secret Name | Namespace | Type | Keys | Description |
 |-------------|-----------|------|------|-------------|
-| `lightbridge-opa-auth` | converse-gateway | Opaque | `credentials` | OPA validation credentials |
 | `authz-tls` | converse-gateway | Opaque | `ca.crt`, `tls.crt`, `tls.key` | TLS certificates for authorization |
 
 ### Category 6: Database Credentials
@@ -139,7 +135,6 @@ Database connection credentials for platform services.
 |-------------|-----------|------|------|-------------|
 | `lightbridge-main-db-app` | converse | Opaque | 11 keys | Main PostgreSQL credentials |
 | `lightbridge-usage-db-app` | converse | Opaque | 11 keys | Usage DB credentials |
-| `coder-db-credentials` | coder | Opaque | `username`, `password`, `database` | Coder database credentials |
 
 ### Category 7: Backup Credentials
 
@@ -209,32 +204,6 @@ kubectl create secret generic argocd-webhook-secret \
 ```
 
 ### Platform Authentication
-
-#### lightbridge-opa-auth
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: lightbridge-opa-auth
-  namespace: converse
-  labels:
-    app.kubernetes.io/component: authorization
-    platform.ai.camer.digital/type: bootstrap
-type: Opaque
-stringData:
-  credentials: <base64-encoded-basic-auth>
-```
-
-**Creation Command:**
-```bash
-# Generate basic auth credentials
-CREDENTIALS=$(echo -n "username:password" | base64)
-
-kubectl create secret generic lightbridge-opa-auth \
-  --from-literal=credentials="$CREDENTIALS" \
-  -n converse
-```
 
 #### authz-tls
 
@@ -364,33 +333,6 @@ kubectl create secret generic librechat-mongodb-uri \
   -n librechat
 ```
 
-#### coder-db-credentials
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: coder-db-credentials
-  namespace: coder
-  labels:
-    app.kubernetes.io/component: database
-    platform.ai.camer.digital/type: bootstrap
-type: Opaque
-stringData:
-  username: coder
-  password: <secure-password>
-  database: coder
-```
-
-**Creation Command:**
-```bash
-kubectl create secret generic coder-db-credentials \
-  --from-literal=username="coder" \
-  --from-literal=password="$(openssl rand -base64 32)" \
-  --from-literal=database="coder" \
-  -n coder
-```
-
 ### Backup Credentials
 
 #### backup-s3-credentials
@@ -452,12 +394,6 @@ kubectl create secret generic argocd-gitops-repo \
 kubectl create secret generic argocd-webhook-secret \
   --from-literal=secret="$(openssl rand -hex 32)" \
   -n argocd
-
-echo "Creating platform authentication secrets..."
-CREDENTIALS=$(echo -n "admin:$(openssl rand -base64 24)" | base64)
-kubectl create secret generic lightbridge-opa-auth \
-  --from-literal=credentials="$CREDENTIALS" \
-  -n converse
 
 echo "Creating AI model API key secrets..."
 kubectl create secret generic openai-api-key \

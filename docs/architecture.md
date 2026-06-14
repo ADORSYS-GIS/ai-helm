@@ -1,324 +1,147 @@
 # Architecture overview
 
-One document mapping how this repo's charts compose into a running
-system. Read after the top-level [README](../README.md), before diving
-into any specific subsystem.
+The single-page map of how this repo's charts compose into a running system.
+Read after the top-level [README](../README.md). For depth, follow the
+**[layered architecture suite](architecture/README.md)** (C4 context → container →
+component, plus one page per subsystem) or the formal
+**[arc42 description](arc42.md)**. Every *why* lives in the
+[ADR index](adr/README.md).
 
-## Cluster topology
+> Reflects `release-2026.06.14-v09`. Coder was removed (ADR-0027) and is not shown.
 
-```
-                          ┌────────────────────────────────────────┐
-                          │             Internet                   │
-                          └────────────────┬───────────────────────┘
-                                           │ TLS (Let's Encrypt + Cloudflare DNS-01)
-                                           ▼
-                          ┌────────────────────────────────────────┐
-                          │ Traefik / Envoy AI Gateway             │
-                          │   (`core-gateway`)                     │
-                          │   ├── ai.camer.digital      → librechat│
-                          │   ├── ai.camer.digital/opencode/...    │
-                          │   │                          → opencode-wellknown
-                          │   ├── api.ai.camer.digital  → AI       │
-                          │   │                            backend │
-                          │   │     (Authorino auth + AIGateway-   │
-                          │   │      Routes per model)             │
-                          │   └── auth.verif.fyi        → Keycloak │
-                          │       (separate cluster, federated)    │
-                          └────────────────┬───────────────────────┘
-                                           │
-                      ┌────────────────────┼────────────────────┐
-                      ▼                    ▼                    ▼
-        ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
-        │  LibreChat       │   │ Lightbridge      │   │ Coder            │
-        │  (charts/        │   │ (lightbridge-    │   │ (coder + coder-db│
-        │   librechart)    │   │  backend)        │   │  CNPG cluster)   │
-        │   ├── librechat- │   │ Validates API    │   │ Dev environments │
-        │   │   app +Mongo │   │ keys; injects    │   │ in cloud         │
-        │   ├── librechat- │   │ x-project-id, ...│   │                  │
-        │   │   search    │   │                  │   │                  │
-        │   │   (Meili)    │   │                  │   │                  │
-        │   └── opencode-  │   │                  │   │                  │
-        │       wellknown  │   │                  │   │                  │
-        └──────────────────┘   └──────────────────┘   └──────────────────┘
-                                           │
-                  ┌────────────────────────┼────────────────────────────┐
-                  ▼                        ▼                            ▼
-        ┌──────────────────┐   ┌──────────────────┐         ┌──────────────────┐
-        │ AI models        │   │ MCP servers      │         │ Observability    │
-        │ (charts/         │   │ (mcpo + mcps:    │         │ (Mimir / Loki /  │
-        │  ai-models, fans │   │  brave, terraform│         │  Tempo / Alloy / │
-        │  out to one App  │   │  firecrawl, ...) │         │  Grafana)        │
-        │  per model)      │   │                  │         │                  │
-        │  ├── DeepInfra   │   │                  │         │  + dashboards    │
-        │  ├── Fireworks   │   │                  │         │    via grafana-  │
-        │  └── Google AI   │   │                  │         │    operator      │
-        └──────────────────┘   └──────────────────┘         └──────────────────┘
+## Where to go for what
+
+```mermaid
+flowchart LR
+    HERE["📍 architecture.md<br/><i>you are here — the map</i>"]:::own
+    SUITE["architecture/ suite<br/><i>11 layered, mermaid pages</i>"]:::own
+    ARC["arc42.md<br/><i>formal 12-section</i>"]:::own
+    ADR["adr/<br/><i>the why</i>"]:::own
+    HERE --> SUITE & ARC & ADR
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
-## ArgoCD topology
-
-Everything is GitOps:
-
-The **entrypoint** is a single root Application, `ai-apps-v2`, that points at
-`charts/apps` in this repo. There is **no `ai-gitops` repo** — the root is
-**applied manually** (from a maintainer-held manifest) onto the ArgoCD cluster.
-Deploys are **tag-based** (immutable `release-YYYY.MM.DD`, never `main` — ADR-0031):
-
-```yaml
-# applied manually on the ArgoCD cluster (admin@homeos) — no ai-gitops repo
-- name: ai-apps-v2
-  project: ai
-  source:
-    repoURL: https://github.com/ADORSYS-GIS/ai-helm
-    targetRevision: release-2026.06.08-v02   # immutable release tag — never main (ADR-0031)
-    path: charts/apps
-  destination:
-    server: https://kubernetes.default.svc   # in-cluster/argocd: the root is a
-    namespace: argocd                         # control object (ADR-0017); children → home-remote
-  syncPolicy:
-    automated: { prune: true, selfHeal: true }
-```
-
-`charts/apps` is reconciled onto the `home-remote` cluster; the
-Application CRDs it emits land in that cluster's `argocd` namespace and
-are reconciled there. **Every** generated Application references the same
-cluster by the same registered name `home-remote` — never ArgoCD's
-built-in in-cluster handle (a render-time guard enforces this; ADR-0017).
-
-Two-tier destination (ADR-0017): the `Application` / `ApplicationSet`
-CRs themselves live **in-cluster** (the `argocd` namespace where ArgoCD's
-controllers run); the **workloads** they deploy target **`home-remote`**.
-
-```
-ArgoCD (in-cluster)                         ← Application/ApplicationSet CRs live here (argocd ns)
-  ├─ Application: ai-apps-v2               (entry point; points at charts/apps; dest in-cluster)
-  │
-  └─ charts/apps emits 1 Application per workload (workloads → home-remote):
-       │
-       ├─ Application: kube-state-metrics, node-exporter
-       ├─ Application: mimir, loki, tempo, alloy, grafana, grafana-operator
-       ├─ Application: observability-dashboards
-       ├─ Application: eg, aieg, aieg-crd
-       ├─ Application: core-gateway, authorino-operator, security-policies
-       ├─ Application: keycloak-baseline    (keycloak-config-cli realm sync)
-       ├─ Application: librechat  ─┐  controlPlane:true → the ApplicationSet
-       ├─ Application: models     ─┤  lands in-cluster; its child Applications
-       │                           ┘  deploy workloads to home-remote
-       └─ Application: <≈ 25 more apps>     (workloads → home-remote)
-```
-
-**Two render patterns** for complex charts:
-
-1. **Direct** — chart renders its workloads directly. Most charts. One
-   ArgoCD `Application` per chart.
-2. **Orchestrator + leaves** — the chart emits a single `ApplicationSet`
-   (List generator) that fans out to N child Applications, each pointing
-   at a leaf chart in this same repo. Used by `ai-models` (ADR-0012) and
-   `librechart` (ADR-0014). One `Application` becomes one
-   `ApplicationSet` becomes N `Application`s.
-
-Choose pattern (2) when the components inside the chart have
-**different lifecycles** (sync waves, restart cadence, per-component
-rollback) or when adding/removing components should be a list edit
-rather than a values diff.
-
-## Sync waves
-
-Lower waves sync first. Conventions:
-
-| Wave | What |
+| You want… | Go to |
 |---|---|
-| `-5` to `-3` | (reserved for namespace bootstrap, ResourceQuota / LimitRange — see [SYNC_WAVE_PATTERN.md](../SYNC_WAVE_PATTERN.md)) |
-| `-2` | Storage / observability backends (Mimir, Loki, Tempo, kube-state-metrics, node-exporter) |
-| `-1` | Operators + grafana-operator + collectors (Alloy). NOTE: **cert-manager and the External Secrets Operator (ESO) are no longer synced here** — both their controllers/CRDs, the shared ClusterIssuers (`cert-home-cert-http`, `self-signed-ca`, …), and the `ssegning-aws` ClusterSecretStore are provisioned externally (home-os / cluster bootstrap). This repo only references the issuers + Secret names. |
-| `0` | Workloads (LibreChat, AI Gateway, Coder, all per-model apps) |
-| `1` | Content (Grafana dashboards, opencode-wellknown, anything that depends on a running gateway) |
-| `2+` | Per-app post-sync work |
+| Who uses it & what it depends on | [suite · 01 Context](architecture/01-context.md) |
+| What's deployed where | [suite · 02 Containers](architecture/02-containers.md) |
+| How a request flows | [suite · 03 Gateway components](architecture/03-gateway-components.md) |
+| How charts become workloads; releases | [suite · 04 GitOps](architecture/04-gitops-deployment.md) |
+| Auth, identity, the `x-oidc-*` contract | [suite · 05 Auth](architecture/05-auth-identity.md) |
+| Networking, Cilium, TLS | [suite · 06 Networking & TLS](architecture/06-networking-tls.md) |
+| Data, secrets, object storage | [suite · 07 Data & secrets](architecture/07-data-secrets.md) |
+| The observability pipeline | [suite · 08 Observability](architecture/08-observability.md) |
+| Model fan-out + the GPU model | [suite · 09 Model serving](architecture/09-model-serving.md) |
+| MCP routing + proxies | [suite · 10 MCP](architecture/10-mcp.md) |
 
-The rule is **infrastructure before storage before collection before
-visualisation** (and the postmortem in [MONITORING_FIX.md](../MONITORING_FIX.md)
-explains why a violation cost us a day).
+## Cluster topology (the one-glance view)
 
-## Auth & identity
+```mermaid
+flowchart TB
+    NET["🌐 Internet"]:::ext
+    LB["Hetzner LB → Traefik / Envoy data-plane"]:::ext
 
-```
-Browser / CLI ──── OIDC code+PKCE / device-code ─────► Keycloak (auth.verif.fyi)
-                                                       realm: camer-digital
-                                                       ↓
-                                                       JWT (RS256)
-                                                       ↓
-       ┌───────────────────────────────────────────────┴────────┐
-       │                                                        │
-       ▼                                                        ▼
-  api.ai.camer.digital                                    Self-service portal
-  (Envoy AI Gateway)                                      (selfServiceMcpApi
-  ↓                                                       Keycloak client)
-  Authorino ext_authz  (DUAL-PLANE, AuthConfig-per-host — ADR-0021)
-  ↓
-  ├── EXTERNAL host (api.ai-v2…) → verify Keycloak JWT (JWKS)
-  ├── INTERNAL host (core-gateway-internal.svc) → k8s SA TokenReview OR apiKey
-  ├── (OPA REMOVED 2026-06-04 — a valid JWT/SA/apiKey = access; OPA was the old
-  │    lightbridge-validation step, now gone; reserved for future burst control)
-  ├── inject x-oidc-* headers downstream (ADR-0011):
-  │    user_id, user_name, azp, iss, roles, scope, jti, email, name
-  └── inject rate-limit descriptors: x-account-id, x-org-id, x-billing-plan
-       (CEL: Keycloak claims w/ defaults; or a LibreChat-forwarded end-user sub)
-  ↓
-  per-model BackendTrafficPolicy → burst (x-account-id) + budget (x-org-id) by tier
-  ↓
-  Envoy access log (JSON) → Alloy → Loki labels {user_id, azp}
-```
+    subgraph gw["Gateway (converse-gateway + envoy-*-system + authorino-system)"]
+        CG["Envoy AI Gateway (core-gateway)<br/>ai.camer.digital → LibreChat<br/>api.ai.camer.digital → /v1 (Authorino)<br/>api.ai.camer.digital/mcp/* → MCP (native JWT)"]:::own
+    end
 
-> **Exception — `/mcp/*` (ADR-0038):** the five MCPRoutes carry their own
-> `securityPolicy.oauth` (MCP-spec OAuth), which displaces Authorino on those
-> routes: Envoy's native JWT filter verifies the same Keycloak issuer, the
-> gateway itself serves the RFC 9728 discovery surface unauthenticated
-> (`/.well-known/oauth-protected-resource/mcp/<name>` + AS-metadata aliases +
-> the path-appended PRM alias + the 401 `resource_metadata` challenge), and
-> `claimToHeaders` re-stamps the ADR-0011 `x-oidc-*` set. Rate-limit
-> descriptors are NOT stamped on `/mcp/*` (no MCP rate limiting today).
->
-> ⚠️ **External hosted MCPs go through in-cluster Caddy proxies (ADR-0040).**
-> Direct external-TLS MCP backends were unfixable at the Envoy layer (AIEG's
-> empty-SNI `dummy.transport_socket`; BoringSSL rejecting context7's ECDSA cert;
-> refero's mislabeled `text/event-stream` → empty tools, AIEG #2218). Each
-> external MCP (context7, firecrawl, refero) is now fronted by a per-MCP **Caddy
-> normalizing proxy** (`charts/mcp` `mode: proxiedExternal`) that does the
-> upstream TLS (Go TLS handles ECDSA), injects the credential, and (refero only)
-> rewrites the response `Content-Type → application/json`. They become reliable
-> in-cluster plain-HTTP backends like brave/terraform; the ADR-0039
-> EnvoyPatchPolicy is removed. Full diagnosis:
-> [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](2026-06-10-mcp-external-server-proxy-debug.md).
+    subgraph app["Application plane"]
+        LC["LibreChat<br/>(converse-chat)"]:::ctrl
+        MODELS["AI models<br/>(converse)"]:::ctrl
+        MCP["MCP servers<br/>(converse-mcp)"]:::ctrl
+        REPO["lightbridge-repo-auth<br/>(converse)"]:::own
+    end
 
-**Three identity surfaces** to know:
-- **Human users via LibreChat browser** — Keycloak code+PKCE, returns
-  a JWT; LibreChat's session represents it; calls to backends carry
-  LibreChat-templated headers (X-USER-ID, X-USER-EMAIL, etc.) per
-  [`docs/librechat_headers_tracing_doc.md`](librechat_headers_tracing_doc.md).
-- **Humans via the OpenAI-compatible endpoint** — API keys from the
-  Lightbridge self-service portal. Used by `opencode`, third-party
-  CLIs, scripts. Backed by Keycloak OAuth flows via the
-  `@vymalo/opencode-oauth2` plugin (ADR-0014, [`opencode-well-known.md`](opencode-well-known.md)).
-- **Service accounts (CI / remote)** — Keycloak service-account tokens on the
-  external plane. **In-cluster** services use the internal plane instead:
-  a k8s SA token (one-time jobs) or a static apiKey (long-running, e.g.
-  LibreChat) — ADR-0021. (OPA / the `azp`-skip of ADR-0003 are removed.)
+    subgraph infra["Platform plane"]
+        GPU["Self-hosted model 🟢<br/>(converse-poc, home GPU)"]:::gpu
+        OBS["Observability LGTM<br/>(observability)"]:::ctrl
+    end
 
-> ⚠️ The OPA-era detail above (lightbridge-opa validation, the SA-skip-OPA path,
-> the `x-project-id`/`x-api-key-id` headers) is **historical** — OPA was removed
-> 2026-06-04. See **ADR-0021** + `docs/2026-hetzner-cutover.md` for the current
-> dual-plane / Keycloak-JWT model.
+    KC["Keycloak"]:::ext
+    PROV["Model providers"]:::ext
 
-## Observability
+    NET --> LB --> CG
+    CG --> LC & MODELS & MCP
+    CG -.-> REPO
+    MODELS --> PROV & GPU
+    CG -.OIDC.-> KC
+    LC --> OBS
+    MODELS --> OBS
 
-```
-                  ┌──────────────────────────────────────┐
-                  │              Grafana                 │
-                  │  (datasources: mimir, loki, tempo,   │
-                  │   alertmanager)                      │
-                  └──────────────┬───────────────────────┘
-                                 │
-       ┌─────────────────────────┼─────────────────────────┐
-       ▼                         ▼                         ▼
-  ┌──────────┐              ┌──────────┐              ┌──────────┐
-  │  Mimir   │              │   Loki   │              │  Tempo   │
-  │ metrics  │              │   logs   │              │  traces  │
-  └──────────┘              └──────────┘              └──────────┘
-       ▲                         ▲                         ▲
-       │                         │                         │
-       └───────────┬─────────────┴─────────────┬───────────┘
-                   ▼                            ▼
-              ┌──────────┐                ┌──────────┐
-              │   Alloy  │                │   Alloy  │
-              │  (DaemonSet, ServiceMonitor / PodMonitor discovery,
-              │   pod-log tail, OTLP receiver, ai_gateway_user_attribution
-              │   stage promotes user_id/azp to Loki labels)
-              └──────────┘
-                   ▲
-                   │
-    OTLP: traces via the core-gateway -traces OTel collector;
-          Envoy access logs pushed direct to Alloy (the -usage
-          collector was removed — usage/billing is via the AI
-          Gateway + OAuth2 path)
-    /metrics scrape from kube-state-metrics, node-exporter, every
-    workload that ships a Service/PodMonitor
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    classDef ctrl fill:#e8eef7,stroke:#4a6fa5;
+    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+    classDef gpu fill:#f7e8f0,stroke:#a54a81;
 ```
 
-**Dashboards** ship as `GrafanaDashboard` CRs via `grafana-operator`
-(external mode — see [ADR-0004](adr/0004-grafana-operator-external-mode.md))
-and are generated from Python in `tools/dashboards/`
-(see [ADR-0008](adr/0008-python-dashboard-generation.md)).
+## GitOps in one diagram
 
-## Where every architectural choice is documented
+Two clusters: ArgoCD runs on `admin@homeos`; workloads run on Hetzner
+`home-remote`. The root `ai-apps-v2` Application is **applied manually** and pins
+an **immutable release tag** (never `main` — ADR-0031). Detail:
+[suite · 04 GitOps](architecture/04-gitops-deployment.md).
 
-In one place: [`docs/adr/`](adr/). Read [ADR-0001](adr/0001-record-architecture-decisions.md)
-first for the format and conventions, then the index in
-[`docs/adr/README.md`](adr/README.md).
+```mermaid
+flowchart LR
+    ROOT["ai-apps-v2 (root, in-cluster/argocd)<br/>→ charts/apps"]:::ctrl
+    APPS["~21 Applications/ApplicationSets<br/>(control objects in argocd ns)"]:::ctrl
+    WL["workloads → home-remote"]:::own
+    ROOT --> APPS ==> WL
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    classDef ctrl fill:#e8eef7,stroke:#4a6fa5;
+```
 
-The high-impact ones:
+## Auth in one diagram
 
-- [ADR-0002](adr/0002-replace-phoenix-with-tempo.md) — Arize Phoenix retired, Tempo is the LLM trace backend
-- [ADR-0003](adr/0003-skip-opa-for-service-accounts.md) — `azp`-allowlist for SA-skip-OPA
-- [ADR-0004](adr/0004-grafana-operator-external-mode.md) — grafana-operator + dashboards-as-code
-- [ADR-0005](adr/0005-per-user-attribution-via-authorino-headers.md) — JWT identity → Loki labels pipeline
-- [ADR-0011](adr/0011-oidc-downstream-headers.md) — canonical `x-oidc-*` header contract
-- [ADR-0012](adr/0012-split-ai-models-applicationset.md) — `ai-models` orchestrator split
-- [ADR-0014](adr/0014-split-librechart-and-opencode-wellknown.md) — `librechart` orchestrator split + opencode well-known
-- [ADR-0021](adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md) — burst/budget/billing via dual-plane AuthConfigs (OPA removed; Keycloak JWT is the boundary)
-- [ADR-0022](adr/0022-self-hosted-gpu-model-federated-into-gateway.md) — self-hosted GPU model federated into the gateway (cluster-local + Caddy auth-proxy; `homeCluster: true`); the *how* is [`self-hosted-model-serving.md`](self-hosted-model-serving.md)
-- [ADR-0028](adr/0028-owned-hardware-model-pricing.md) — cost-recovery pricing for owned-hardware models (€/hour TCO → weighted per-token)
-- [ADR-0029](adr/0029-self-hosted-model-plain-deployment.md) — self-hosted model as a plain Deployment (drop KServe/Knative); always-on + Recreate on the dedicated GPU
-- [ADR-0030](adr/0030-merge-model-and-proxy-into-one-statefulset-bjw.md) — model + Caddy auth-proxy co-located in one StatefulSet (proxy → model over localhost), via bjw-template
-- [ADR-0032](adr/0032-llama-cpp-engine-for-self-hosted-models.md) — llama.cpp (`llama-server`) as a 2nd serving engine; **Qwen3.5-4B Q4 is the LIVE self-hosted model** (2026-06-08, `charts/model-serving-qwen3-5`, GGUF/`/v1`/native-`--api-key`), Qwen3-4B (vLLM) on standby. Per-model papers + measured capacity in [`docs/models/`](models/qwen3.5-4b-q4.md)
+Dual-plane, AuthConfig-per-Host (ADR-0021). A valid Keycloak JWT is the
+authorization boundary; CI uses GitHub OIDC via `lightbridge-repo-auth`. OPA was
+removed (2026-06-04). Detail: [suite · 05 Auth](architecture/05-auth-identity.md).
+
+```mermaid
+flowchart LR
+    H["human / dev"]:::ext -->|JWT / API key| EXT["EXTERNAL plane<br/>api.ai.camer.digital"]:::own
+    CI["CI runner"]:::ext -->|GHA OIDC| EXT
+    SVC["in-cluster svc"]:::ext -->|SA token / apiKey| INT["INTERNAL plane<br/>core-gateway-internal.svc"]:::own
+    EXT --> A["Authorino<br/>x-oidc-* + x-account-id/x-billing-plan"]:::own
+    INT --> A
+    A --> RL["per-model burst + monthly budget"]:::own
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+```
+
+> ⚠️ `/mcp/*` is the one carve-out from Authorino — Envoy-native JWT verification
+> + RFC 9728 discovery (ADR-0038), with external MCPs fronted by in-cluster
+> normalizing proxies (ADR-0040/0041). See [suite · 10 MCP](architecture/10-mcp.md).
+
+## Observability in one diagram
+
+LGTM + Alloy, per-user attribution from JWT → Loki labels. Detail:
+[suite · 08 Observability](architecture/08-observability.md).
+
+```mermaid
+flowchart BT
+    SRC["workloads · ksm · node-exporter ·<br/>pod logs · Envoy access log · traces"]:::own
+    ALLOY["Alloy (collect)"]:::own
+    STORE["Mimir / Loki / Tempo → S3"]:::own
+    GRAF["Grafana (+ operator dashboards)"]:::own
+    SRC --> ALLOY --> STORE --> GRAF
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+```
 
 ## What is *not* in this repo
 
-- **Shared cluster infrastructure (installed externally).** Several
-  platform components are deployed/owned outside this repo — this repo
-  only *consumes* them by name. None of them have an Application here:
-  - **Traefik** — the ingress controller + `traefik` IngressClass (runs
-    in the `traefik` namespace). Charts here set `ingressClassName:
-    traefik`.
-  - **CloudNativePG** — the `cnpg` Postgres operator + the Barman Cloud
-    backup plugin (`cnpg-system`). This repo defines CNPG `Cluster` CRs
-    (e.g. `charts/coder-db`) that the external operator reconciles.
-  - **cert-manager** — controller, CRDs, and the shared ClusterIssuers
-    (home-os). This repo references `cert-manager.io/cluster-issuer:`.
-  - **Redis** — `redis-ha` (home-os, `redis-system`).
-- **Secrets + the External Secrets Operator.** ESO itself (controller +
-  CRDs) is installed externally — *not* by this repo. The
-  `ClusterSecretStore` in use is `ssegning-aws` (cluster-scoped,
-  external). ExternalSecret CRs are now **chart-owned** (in-chart +
-  `environments/<env>/deps/*` overlays), all referencing `ssegning-aws` —
-  the old wholesale `secrets` Application from `ai-ops-secrets.git` was
-  **removed (2026-06-04)**. App secrets pull from key
-  `ai/camer/digital/prod/env`, platform secrets from `prod/meta/test-app`.
-- **Deploy state (no `ai-gitops` repo).** It was planned (ADR-0010/0013) but
-  never built. Instead: per-env config lives **in this repo** under
-  `environments/<env>/` (ADR-0018); the root `ai-apps-v2` `Application` is
-  **applied manually** on the ArgoCD cluster; and the deployed version is an
-  **immutable release tag** `release-YYYY.MM.DD` that every self-reference pins
-  (ADR-0031 — see `docs/releasing.md` + `tools/release.sh`). Image-tag defaults
-  stay in `charts/<x>/values.yaml`, not chart logic (ADR-0013).
-- **Realm config secrets** — Keycloak client secrets are ESO-injected
-  at sync time; the realm structure is in
-  `charts/keycloak-baseline/values.yaml`.
-- **Backups themselves** — only the backup-job definitions
-  (`charts/*-backup/`); the S3 buckets and contents are operated
-  out-of-band.
+Shared cluster infrastructure is owned externally — this repo only *consumes* it
+by name (no Application here): **Traefik**, **CloudNativePG** + Barman,
+**cert-manager** + ClusterIssuers, **redis-ha**, the **External Secrets
+Operator** + the `ssegning-aws` store, and the **OpenTelemetry Operator**. There
+is also **no `ai-gitops` repo** — per-env config lives in `environments/` and the
+root Application is applied manually with its tag pinned in `home-os`
+`charts/cd`. Detail: [suite · 07 Data & secrets](architecture/07-data-secrets.md).
 
 ## Glossary
 
-- **AI Gateway** — Envoy AI Gateway (`aieg`); the OpenAI-compatible
-  reverse proxy fronting upstream LLM providers.
-- **Lightbridge** — first-party authz/authn service that validates
-  API keys + tracks usage per project/account.
-- **LGTM stack** — Grafana Labs' Loki + Grafana + Tempo + Mimir
-  observability set.
-- **MCP** — Model Context Protocol; the protocol LibreChat uses to
-  talk to first-party tool servers (Coder, GitHub, Lightbridge
-  self-service).
-- **ESO** — External Secrets Operator.
-- **CNPG** — CloudNativePG, the Postgres operator.
-- **Authorino** — Kuadrant project's ext_authz implementation;
-  enforces our AuthConfig.
+- **AI Gateway** — Envoy AI Gateway (`aieg`); the OpenAI-compatible reverse proxy fronting upstream LLM providers.
+- **lightbridge-repo-auth** — the GitHub-OIDC → billing-account binding for CI (ADR-0047).
+- **LGTM stack** — Loki + Grafana + Tempo + Mimir.
+- **MCP** — Model Context Protocol; the tool-server protocol exposed at `/mcp/*`.
+- **ESO** — External Secrets Operator. **CNPG** — CloudNativePG. **Authorino** — Kuadrant ext_authz enforcing our AuthConfig.

@@ -8,9 +8,33 @@ know where a topic lives, grep — file names are stable and descriptive.
 > several files (backups, secrets, model gateway) get their own subdirectory
 > with a local `README.md` that indexes the contents.
 
-**Start here:** [`architecture.md`](./architecture.md) for the system map,
-[`adr/README.md`](./adr/README.md) for every architectural decision,
-[`../CONTRIBUTING.md`](../CONTRIBUTING.md) for how to ship a change.
+**Start here:** [`architecture.md`](./architecture.md) for the single-page system
+map, the **[architecture suite](./architecture/README.md)** for the layered
+deep-dive (C4 + per-subsystem, all mermaid), [`arc42.md`](./arc42.md) for the
+formal description, [`adr/README.md`](./adr/README.md) for every architectural
+decision, [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for how to ship a change.
+
+---
+
+## Architecture suite (layered, mermaid)
+
+The primary architecture reference: a navigable set following the **C4 model**
+(context → container → component) plus one page per cross-cutting subsystem.
+Every diagram is mermaid; start at the hub and zoom in.
+
+| File | Layer | Covers |
+|---|---|---|
+| [`architecture/README.md`](./architecture/README.md) | hub | How the layers relate; C4 ↔ arc42 map; diagram conventions |
+| [`architecture/01-context.md`](./architecture/01-context.md) | C4 L1 | Actors + external systems (the one-box view) |
+| [`architecture/02-containers.md`](./architecture/02-containers.md) | C4 L2 | Deployable units by namespace; render patterns |
+| [`architecture/03-gateway-components.md`](./architecture/03-gateway-components.md) | C4 L3 | The gateway request path + 4 runtime sequences |
+| [`architecture/04-gitops-deployment.md`](./architecture/04-gitops-deployment.md) | infra | Two-cluster GitOps, destinations, sync waves, release flow |
+| [`architecture/05-auth-identity.md`](./architecture/05-auth-identity.md) | security | Dual-plane auth, identity surfaces, `x-oidc-*`, GitHub-OIDC binding |
+| [`architecture/06-networking-tls.md`](./architecture/06-networking-tls.md) | infra | Ingress, Hetzner LB, Cilium deny-egress, TLS issuance |
+| [`architecture/07-data-secrets.md`](./architecture/07-data-secrets.md) | infra | Mongo/CNPG/Redis/S3, the ESO secret flow, ownership split |
+| [`architecture/08-observability.md`](./architecture/08-observability.md) | platform | LGTM pipeline, per-user attribution, dashboards-as-code |
+| [`architecture/09-model-serving.md`](./architecture/09-model-serving.md) | platform | Provider fan-out + the self-hosted GPU model; budget tiers |
+| [`architecture/10-mcp.md`](./architecture/10-mcp.md) | platform | MCP routing, the OAuth carve-out, external-proxy modes |
 
 ---
 
@@ -29,7 +53,7 @@ How the system is wired and how to integrate against it.
 | [`librechat-oidc-integration.md`](./librechat-oidc-integration.md) | LibreChat ↔ Keycloak OIDC wiring, claim mapping, role propagation |
 | [`librechat-oidc-experiments.md`](./librechat-oidc-experiments.md) | Notes from earlier OIDC iterations — kept as historical record |
 | [`librechat_headers_tracing_doc.md`](./librechat_headers_tracing_doc.md) | How LibreChat templated headers flow into downstream MCP/Converse calls |
-| [`authorino-service-account-bypass.md`](./authorino-service-account-bypass.md) | How service-account tokens skip OPA / external metadata in Authorino |
+| [`authorino-service-account-bypass.md`](./authorino-service-account-bypass.md) | **Historical** (OPA removed 2026-06-04, ADR-0021): how service-account tokens used to skip OPA / external metadata in Authorino |
 | [`per-user-observability.md`](./per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki `user_id`/`azp` labels |
 | [`opencode-well-known.md`](./opencode-well-known.md) | opencode `.well-known/opencode` flow at `ai.camer.digital`; prerequisites, plugin install, troubleshooting |
 | [`opencode-sandboxing.md`](./opencode-sandboxing.md) | Why the opencode permission config is **not** a sandbox (string-matched bash rules over code-execution tools), opencode's lack of a native OS sandbox (worktree = recovery only), the containment options (worktree / OS wrapper / devcontainer / hosted in-cluster), and the recommendation (devcontainer for local; hosted = future ADR reversing ADR-0027) |

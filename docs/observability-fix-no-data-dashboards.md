@@ -133,8 +133,6 @@ Each CNPG instance runs a metrics exporter on port `9187` (named `metrics`),
 but no PodMonitor existed, so the CNPG dashboard had no data. `.spec.monitoring.
 enablePodMonitor` is deprecated, so manual PodMonitors are used instead.
 
-- **`charts/coder-db/values.yaml`** — added a `PodMonitor` for the `coder-cnpg`
-  cluster (selector `cnpg.io/cluster: coder-cnpg`, port `metrics`).
 - **`charts/apps/values.yaml`** (lightbridge resources list) — added
   `PodMonitor`s for `lightbridge-main-db` and `lightbridge-usage-db` (selector
   `cnpg.io/cluster: <name>`, port `metrics`).
