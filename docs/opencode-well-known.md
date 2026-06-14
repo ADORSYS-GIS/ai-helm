@@ -391,8 +391,9 @@ client config above).
 - ADR-0038 — the gateway `/mcp/*` routes + OAuth the remote MCPs target
 - ADR-0009 — humans use Lightbridge self-service for API keys; the
   opencode CLI flow is the desktop complement
-- ADR-0003 — SA-skip-OPA via `azp`; opencode tokens have
-  `azp=opencode-cli` so they go through full OPA validation (humans)
+- ADR-0003 — SA-skip-OPA via `azp` (historical: OPA was removed 2026-06-04,
+  ADR-0021; a valid Keycloak JWT now suffices, so opencode tokens with
+  `azp=opencode-cli` are accepted without a policy hop)
 - `charts/librechat-opencode-wellknown/values.yaml` — the JSON content
   source
 - `charts/keycloak-baseline/values.yaml` — where the `opencode-cli`

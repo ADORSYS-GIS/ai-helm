@@ -76,7 +76,7 @@ both, identical workflow.
 | Layout | When | OUTPUT_PATH target |
 |---|---|---|
 | **B (central)** | Cross-app dashboards (per-user AI Gateway, total cost per user, GitOps overview) | `charts/observability-dashboards/files/<area>/<name>.json` |
-| **A (chart-local)** | App-specific (LibreChat user activity, Coder workspace health) | `charts/<chart>/files/dashboards/<name>.json` |
+| **A (chart-local)** | App-specific (LibreChat user activity, per-model gateway usage) | `charts/<chart>/files/dashboards/<name>.json` |
 
 The grafana-operator picks both up — it reconciles every `GrafanaDashboard`
 CR regardless of which chart shipped it. The choice is purely about

@@ -273,7 +273,7 @@ spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   storage:
-    storageClass: linode-block-storage
+    storageClass: hcloud-volumes
     size: "5Gi"
   plugins:
     - name: barman-cloud.cloudnative-pg.io
@@ -391,7 +391,7 @@ kubectl delete pvc -n converse -l postgresql.cnpg.io/cluster=lightbridge-main-db
 | lightbridge-main-db | s3://ai-ops-backups/lightbridge-main-db/ | lightbridge-main-db |
 | lightbridge-usage-db | s3://ai-ops-backups/lightbridge-usage-db/ | lightbridge-usage-db |
 
-**MinIO Endpoint:** https://s3.ssegning.me
+**S3 Endpoint:** https://nbg1.your-objectstorage.com (Hetzner Object Storage)
 
 ---
 
