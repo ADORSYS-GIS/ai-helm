@@ -307,20 +307,21 @@ wellKnown:
     # `@name`. Each subagent is a WHITELIST: it allows only its tools + its
     # file/bash scope; everything else falls back to the deny-baseline above.
     #
-    # MODELS — two tiers (ADR-0048):
-    #  • The EXISTING role subagents (web-search/doc-research/iac/reviewer/test/
-    #    skill) keep their COST-LEAN `adorsys-*` pins (ADR-0044): cheap/fast for
-    #    high-volume low-stakes roles, a stronger model where stakes warrant.
-    #    Referenced by BRANDED `adorsys-*` alias (`camer-digital/adorsys-<role>`
-    #    → charts/ai-models) so the backing model swaps THERE, not here.
-    #  • The PRIMARY pins the multimodal `adorsys-frontend`; the SPLIT-OFF
-    #    subagents (@browser, @design) carry NO `model` → they INHERIT the
-    #    session model (so they run the primary's multimodal model, which
-    #    @browser needs for screenshots). A user can override per agent locally.
+    # MODELS — pin ONLY where vision is required (ADR-0048, no-risk rule):
+    #  • An agent whose tools return IMAGES it must interpret PINS a multimodal
+    #    model — guaranteeing vision no matter the user's session model. Only
+    #    `@browser` (browser_screenshot) and `@design` (refero_get_screen_image)
+    #    qualify; both pin the branded multimodal alias `adorsys-frontend`
+    #    (`camer-digital/adorsys-frontend` → charts/ai-models, swappable THERE).
+    #  • EVERY OTHER agent — the `frontend` primary AND all role subagents
+    #    (web-search/doc-research/iac/reviewer/test/skill) — carries NO `model`
+    #    and INHERITS the user's session model. (This drops the old per-role
+    #    cost-lean pins: simpler + risk-free, at the cost of those roles no
+    #    longer forcing a cheap model — they run on whatever the user picks.)
+    #    A user can override per agent locally.
     agent:
       web-search:
         mode: subagent
-        model: "camer-digital/adorsys-researcher"  # Adorsys Researcher (→DeepSeek V4)
         description: >-
           Searches the web (Brave) and returns a concise, source-cited
           summary. Read-only — never writes files or runs shell. Delegate for
@@ -337,7 +338,6 @@ wellKnown:
           "brave_*": allow
       doc-research:
         mode: subagent
-        model: "camer-digital/adorsys-researcher"  # Adorsys Researcher (→DeepSeek V4)
         description: >-
           Researches a topic (Context7 library docs + reading the repo) and
           writes documentation. May write ONLY under docs/. Delegate for
@@ -355,7 +355,6 @@ wellKnown:
           "context7_*": allow
       iac:
         mode: subagent
-        model: "camer-digital/adorsys-planner"     # Adorsys Planner (→GLM-5) — IaC stakes
         description: >-
           Authors and plans infrastructure-as-code (Terraform/OpenTofu). Read
           + write; runs terraform/tofu via shell with guardrails. Delegate for
@@ -393,7 +392,6 @@ wellKnown:
           "terraform_*": allow
       reviewer:
         mode: subagent
-        model: "camer-digital/adorsys-reviewer"    # Adorsys Reviewer (→MiniMax M2.7)
         description: >-
           Reviews code/changes for correctness, security, and maintainability
           and returns findings. READ-ONLY — never edits files or runs shell.
@@ -410,7 +408,6 @@ wellKnown:
           "context7_*": allow
       test:
         mode: subagent
-        model: "camer-digital/adorsys-coder"       # Adorsys Coder (→MiniMax M2.7) — TDD
         description: >-
           Writes and runs tests (TDD): adds failing tests, makes them pass, and
           runs the suite. Can edit code but only AUTO-runs test commands.
@@ -443,7 +440,6 @@ wellKnown:
           "context7_*": allow
       skill:
         mode: subagent
-        model: "camer-digital/adorsys-researcher"  # Adorsys Researcher (→DeepSeek V4)
         description: >-
           Authors and refines opencode skills (skill definitions) and helps pick
           the right skill for a task. Writes ONLY under the skills directory.
@@ -464,18 +460,16 @@ wellKnown:
           "context7_*": allow
       # ── PRIMARY (the org-wide default agent, ADR-0048) ──────────────────
       # A LEAN, frontend-flavoured primary. It IMPLEMENTS directly (edit + JS
-      # toolchain) and DELEGATES tool-heavy work to the model-less subagents
-      # below (browser → @browser, design refs → @design, library docs →
-      # @doc-research). The deny-baseline keeps browser_*/refero_*/context7_*
-      # OUT of this agent's injected toolset, so the default context stays light
-      # (no 27 browser_* schemas every turn). It KEEPS the multimodal model
-      # (adorsys-frontend) — the "most important model" — so the model-less
-      # subagents it spawns INHERIT a vision model (the @browser subagent needs
-      # it to read screenshots; subagent model = input.model ?? agent.model ??
-      # currentModel(session), prompt.ts).
+      # toolchain) and DELEGATES tool-heavy work to subagents (browser →
+      # @browser, design refs → @design, library docs → @doc-research). The
+      # deny-baseline keeps browser_*/refero_*/context7_* OUT of this agent's
+      # injected toolset, so the default context stays light (no 27 browser_*
+      # schemas every turn). NO `model` pin — the primary handles no images
+      # itself (it delegates all visual work), so it INHERITS the user's chosen
+      # session model. Only the agents that actually read images pin a
+      # multimodal model (see @browser / @design).
       frontend:
         mode: primary
-        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; inherited by model-less subagents
         description: >-
           The default agent: a lean frontend-focused primary. Implements and
           edits code and runs the JS toolchain directly, and delegates the rest
@@ -510,18 +504,16 @@ wellKnown:
           # NB: no browser_*/refero_*/context7_* re-allow here — they stay denied
           # by the baseline so they're NOT injected into the primary's context.
           # Delegated to @browser / @design / @doc-research below.
-      # ── Split-off specialist subagents (NO model → inherit the primary's
-      #    multimodal model). These own the tools lifted off the lean primary.
-      #    Created per the maintainer's "split tool usages into model-less
-      #    subagents" direction; the existing role subagents above keep their
-      #    cost-lean adorsys-* pins. ────────────────────────────────────────
+      # ── Split-off VISUAL specialist subagents. These own the tools lifted
+      #    off the lean primary, and because their tools return IMAGES the
+      #    agent must interpret (browser_screenshot, refero_get_screen_image),
+      #    they are the ONLY agents that PIN a multimodal model — guaranteeing
+      #    vision regardless of the user's session model (no inheritance risk).
+      #    Every other agent (primary + roles) pins NO model and inherits the
+      #    session model. ─────────────────────────────────────────────────────
       browser:
         mode: subagent
-        # No `model`: inherits the session model. Spawned by the multimodal
-        # frontend primary, so it inherits a vision model and CAN read the
-        # screenshots it captures. (If a user switches the primary to a
-        # non-multimodal model, this subagent loses screenshot vision — a
-        # documented trade-off of model inheritance.)
+        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads screenshots
         description: >-
           Drives a REAL browser through the @vymalo/opencode-browser bridge —
           opens tabs (named groups), navigates, clicks, types, fills, scrolls,
@@ -551,7 +543,7 @@ wellKnown:
           "browser_*": allow
       design:
         mode: subagent
-        # No `model`: inherits the session model.
+        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads refero screen images
         description: >-
           Fetches design references and visual targets from the Refero MCP and
           returns them (screens, flows, styles) for the primary to build

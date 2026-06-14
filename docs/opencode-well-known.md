@@ -137,17 +137,17 @@ Tool access is modelled on **two decoupled axes**:
 >   / don't register a plugin `group` you'll never allow) — registration gates
 >   what *can* be allowed; per-agent permission gates what *is* injected.
 
-| Agent | mode | model (alias) | edit | bash | MCP / tools |
+| Agent | mode | model | edit | bash | MCP / tools |
 |---|---|---|---|---|---|
-| `frontend` | **primary** (default) | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | **none** — delegates (lean) |
-| `browser` | subagent | *inherit* | deny | deny | `browser_*` (full page+control, the 27 tools) |
-| `design` | subagent | *inherit* | deny | deny | `refero_*` |
-| `web-search` | subagent | `adorsys-researcher` | deny | deny | `brave_*` |
-| `doc-research` | subagent | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
-| `iac` | subagent | `adorsys-planner` | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
-| `reviewer` | subagent | `adorsys-reviewer` | deny | deny | `context7_*` |
-| `test` | subagent | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
-| `skill` | subagent | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
+| `frontend` | **primary** (default) | *inherit* | allow | `ask`; allow JS toolchain; deny `rm *` | **none** — delegates (lean) |
+| `browser` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `browser_*` (full page+control, the 27 tools) |
+| `design` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `refero_*` |
+| `web-search` | subagent | *inherit* | deny | deny | `brave_*` |
+| `doc-research` | subagent | *inherit* | only `docs/**` | deny | `context7_*` |
+| `iac` | subagent | *inherit* | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
+| `reviewer` | subagent | *inherit* | deny | deny | `context7_*` |
+| `test` | subagent | *inherit* | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
+| `skill` | subagent | *inherit* | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 
 > **`@frontend` is the org-wide default PRIMARY (`config.default_agent`), kept
 > lean.** It implements directly (`edit` + JS toolchain) and **delegates** the
@@ -158,20 +158,21 @@ Tool access is modelled on **two decoupled axes**:
 > removed `chrome-devtools` MCP); `@design` owns Refero; library docs route to
 > `@doc-research`.
 >
-> **Model tiering:** the primary pins the multimodal `adorsys-frontend` (the "most
-> important model"); the split-off `@browser`/`@design` carry **no `model`** and
-> *inherit* the session model — so `@browser` runs a vision model and reads its
-> screenshots. The other role subagents keep their cost-lean `adorsys-*` pins.
-> ⚠️ If a user switches the primary to a non-multimodal model, `@browser` loses
-> screenshot vision (the inheritance trade-off).
+> **Model pinning — vision-only (no-risk rule):** pin a multimodal model **only**
+> on the agents whose tools return images they must interpret — `@browser`
+> (`browser_screenshot`) and `@design` (`refero_get_screen_image`) — so they
+> **always** have vision regardless of the session model. **Every other agent**
+> (the `frontend` primary *and* all role subagents) carries **no `model`** and
+> inherits the user's session model. This drops the old per-role cost-lean pins
+> (ADR-0044): simpler and risk-free, at the cost that those roles no longer force a
+> cheap model. Only `@browser`/`@design` use the branded `adorsys-frontend` alias
+> (`camer-digital/adorsys-frontend` → `charts/ai-models`, swappable there).
 
-Add a role by copying an `agent` block (+ connecting its server if new). Models
-are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**
-(`camer-digital/adorsys-<role>` → `charts/ai-models`) so the backing model can be
-swapped there without editing this config or telling users — the alias
-`info.displayName` is what reveals today's backing (e.g. *"Adorsys Coder (MiniMax
-M2.7)"*). A user can override per agent locally; the primary keeps the user
-default. Prompts are inline strings (the well-known can't ship prompt *files*). ⚠️ **Validate runtime
+Add a role by copying an `agent` block (+ connecting its server if new). Pin a
+model **only** if the role needs vision (the `adorsys-frontend` multimodal alias);
+otherwise omit `model` so it inherits the session model. A user can override per
+agent locally. Prompts are inline strings (the well-known can't ship prompt
+*files*). ⚠️ **Validate runtime
 enforcement on a live opencode** (delegate to each role; confirm the primary
 lacks the MCP tools and each scope holds) before relying on it — agent-vs-root
 permission precedence + MCP-glob gating are opencode-version behaviors.

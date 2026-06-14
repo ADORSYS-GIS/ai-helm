@@ -40,7 +40,7 @@ replace it as the live-browser capability. With it gone, every connected MCP
 server is now remote (gateway `/mcp/*`).
 
 **3. Promote `frontend` to a *lean* default primary; split the heavy tools onto
-model-less subagents.** Make `frontend` the org-wide default agent
+delegated subagents.** Make `frontend` the org-wide default agent
 (`config.default_agent: frontend`, `mode: primary`) but keep it **lean**: it holds
 only `edit` + the JS toolchain (it *implements* directly) and **delegates**
 everything tool-heavy — driving the browser, design references, library docs — to
@@ -52,12 +52,18 @@ schemas — they load only in `@browser`'s context, on delegation. The loop beco
 **primary implements → `@browser` reloads + screenshots + reports → primary decides
 → iterates**.
 
-**Model tiering.** The primary pins the **multimodal** `adorsys-frontend` (the
-"most important model"). The split-off subagents (`@browser`, `@design`) carry
-**no `model`** → they inherit the session model (`input.model ?? agent.model ??
-currentModel`, `prompt.ts`), so `@browser` runs a vision model and can read its
-screenshots. The existing role subagents (`web-search`, `doc-research`, `iac`,
-`reviewer`, `test`, `skill`) keep their **cost-lean `adorsys-*` pins** (ADR-0044).
+**Model pinning — only where vision is required (no-risk rule).** Pin a
+multimodal model **only** on the agents whose tools return images the agent must
+interpret: `@browser` (`browser_screenshot`) and `@design`
+(`refero_get_screen_image`). Both pin the branded multimodal alias
+`adorsys-frontend`, which **guarantees** they have vision regardless of the
+user's session model. **Every other agent** — the `frontend` primary *and* all
+role subagents (`web-search`, `doc-research`, `iac`, `reviewer`, `test`, `skill`)
+— carries **no `model`** and inherits the user's session model (`input.model ??
+agent.model ?? currentModel`, `prompt.ts`). This supersedes the ADR-0044 per-role
+cost-lean pins: simpler and risk-free (no agent can lose vision by inheriting the
+wrong model), at the cost that those roles no longer *force* a cheap model — they
+run on whatever the user picks.
 
 **4. One source only — do not also connect the browser *MCP* form.**
 `@vymalo/opencode-browser` is a dual package: the same `browser_*` catalog ships
@@ -95,18 +101,21 @@ lean primary or any other agent. This is what makes decision **3** cheap.
   agent allow-lists are a **real per-agent token lever**, not just a safety gate.
 - Removing `chrome-devtools` drops a local MCP and consolidates two roles
   (inspect + drive) into one better-integrated capability (`@browser`).
-- Model tiering keeps cost down: cheap `adorsys-*` pins on the existing roles, one
-  multimodal model on the primary, inherited (not re-paid-for) by the split-offs.
+- Pinning a multimodal model **only** on the vision agents (`@browser`, `@design`)
+  removes the inheritance risk entirely: they always have vision, whatever the user
+  runs. Every other agent inherits the session model, so there's one model to think
+  about per session, not a per-role matrix.
 
 **Negative**
 
 - The loop now crosses an agent boundary: the primary doesn't see the screenshot
   itself — `@browser` reads it (multimodal, inherited) and *describes* it back.
   Slightly less direct than one-context vision, traded for a lean default context.
-- **Model inheritance is load-bearing for screenshots.** `@browser` has no pinned
-  model, so if a user switches the primary to a non-multimodal model, `@browser`
-  loses screenshot vision. Documented trade-off; acceptable because the org default
-  primary is multimodal.
+- Dropping the per-role cost-lean pins means `web-search`/`reviewer`/etc. now run
+  on the user's session model instead of a forced-cheap `adorsys-*` model — a
+  possible cost regression for those high-volume roles (the deliberate trade for a
+  simpler, risk-free model policy). Re-pin a cheap model per role if cost matters
+  more than simplicity.
 - Forcing `default_agent: frontend` org-wide makes every user start on the
   frontend-flavoured primary (a user can still override in their own config, which
   wins on merge). Reasonable for a frontend/marketing-heavy org; not neutral.
@@ -159,7 +168,7 @@ lean primary or any other agent. This is what makes decision **3** cheap.
 - Commits: `0261f33` (add plugin), `b54b9ec` (groups + initial split), `c945803`
   (remove chrome-devtools), `06cbfdd` (correct the token model), `f44321f`
   (dual-package guardrail), + the lean-primary restructure (`default_agent:
-  frontend`; `@browser`/`@design` model-less subagents)
+  frontend`; the `@browser`/`@design` vision subagents + the model-pinning rule)
 - Docs: [`docs/opencode-well-known.md`](../opencode-well-known.md) (the *how*:
   plugin config, agent table, the per-agent injection note)
 - Charts/files: `charts/librechat-opencode-wellknown/values.yaml` (`default_agent`,
