@@ -79,7 +79,6 @@ overridable locally.
 | `terraform` | remote | gateway `/mcp/terraform` (IaC) | `true` |
 | `refero` | remote | gateway `/mcp/refero` (design refs) | `true` |
 | `firecrawl` | remote | gateway `/mcp/firecrawl` (web scraping) | `false` |
-| `chrome-devtools` | local | `npx -y chrome-devtools-mcp@latest` | `true` |
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
   with the **same** `opencode-cli` Keycloak client
@@ -90,50 +89,102 @@ overridable locally.
 - ⚠️ **Since ADR-0044, `enabled` means *connectivity*, not "on for the primary
   agent".** A connected server's tools are denied by the global permission
   baseline and re-allowed only on the role subagent that needs them (see *Agents
-  & tool scoping* below) — so `terraform` / `refero` / `chrome-devtools` are
-  connected but reachable only via `@iac` / `@frontend`, never the default agent.
-  `firecrawl` stays unconnected until a role claims it. (ADR-0042 originally
-  shipped only `brave` + `context7` connected; ADR-0044 connected the rest as
-  roles needed them.)
-- **`chrome-devtools`** is the one `local` server — it spawns `npx
-  chrome-devtools-mcp` on the user's machine and needs a real Chrome, so users
-  without that setup see it fail to start; kept on purpose, scoped to `@frontend`.
+  & tool scoping* below) — so `terraform` / `refero` are connected but reachable
+  only via `@iac` / `@frontend`, never the default agent. `firecrawl` stays
+  unconnected until a role claims it. (ADR-0042 originally shipped only `brave` +
+  `context7` connected; ADR-0044 connected the rest as roles needed them.)
+- All connected MCP servers are now **remote** (gateway `/mcp/<name>` routes).
+  The `chrome-devtools` **local** MCP was removed — live-browser inspection is now
+  the `@vymalo/opencode-browser` plugin's `browser_*` tools, owned by `@frontend`.
 
 To verify it reached a server after deploy: `opencode mcp list` shows the merged
 catalog; the rendered descriptor's `config.mcp` should match the table above.
 
-## Agents & tool scoping (ADR-0044)
+## Agents & tool scoping (ADR-0044, token model corrected in ADR-0048)
 
 Tool access is modelled on **two decoupled axes**:
 
 - **Connectivity** — `config.mcp.<name>.enabled` decides whether opencode
   connects to a server at all. A tool only exists if its server is connected, so
   every server a role needs is `enabled: true` (brave, context7, terraform,
-  refero, the local chrome-devtools); `enabled: false` = not connected
-  (firecrawl, until a role needs it).
+  refero); `enabled: false` = not connected (firecrawl, until a role needs it).
 - **Access** — a global `config.permission` **deny-baseline** denies every
-  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`, `chrome-devtools_*`), so the **primary
-  agent is lean** (no MCP tools). Each role is a **`mode: subagent`** the primary
-  delegates to (`@name` / the task tool) and a **whitelist** that re-allows only
-  its tools + its file/bash scope (per-agent permission overrides the root).
+  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`)
+  plus the `@vymalo/opencode-browser` plugin's `browser_*` tools. Each role is a
+  **`mode: subagent`** the primary delegates to (`@name` / the task tool) and a
+  **whitelist** that re-allows only its tools + its file/bash scope (per-agent
+  permission overrides the root).
 
-| Subagent | model (alias) | edit | bash | MCP |
-|---|---|---|---|---|
-| `web-search` | `adorsys-researcher` | deny | deny | `brave_*` |
-| `doc-research` | `adorsys-researcher` | only `docs/**` | deny | `context7_*` |
-| `iac` | `adorsys-planner` | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
-| `reviewer` | `adorsys-reviewer` | deny | deny | `context7_*` |
-| `test` | `adorsys-coder` | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
-| `skill` | `adorsys-researcher` | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
-| `frontend` | `adorsys-frontend` (multimodal) | allow | `ask`; allow JS toolchain; deny `rm *` | `context7_*`, `refero_*`, `chrome-devtools_*` |
+> ✅ **Permission scoping IS a per-agent token lever (verified in opencode 1.17.6).**
+> opencode filters the **injected** tool set per agent in request-prep:
+> `session/llm/request.ts` `resolveTools()` runs every tool name through
+> `Permission.disabled()`, which **drops a tool from that agent's injected
+> `tools`/`activeTools`** when its effective rule is a `pattern:"*"` **deny**
+> (`permission/index.ts`). The filtered set is what's sent to the model — so a
+> denied tool costs **zero** tokens for that agent. Mechanics:
+> - A config **string-form** `"glob": "deny"` compiles to `{permission:glob,
+>   pattern:"*", action:"deny"}` → removes those tools from injection. `"glob":
+>   "allow"` re-injects. ⚠️ The **nested** form (`"glob": {sub: "deny"}`) yields a
+>   non-`*` pattern → it gates *execution* but does **not** remove from injection.
+>   Use the string form for tool gating (we do).
+> - An agent's own `permission` merges **after** the root baseline and wins
+>   (`findLast`), so the deny-baseline keeps a tool out of every agent **except**
+>   the ones that re-`allow` it. This applies uniformly to built-in, MCP, **and
+>   plugin** tools (keyed on tool name — `browser_*` included).
+> - ⇒ the deny-baseline genuinely makes the **primary agent lean** (those tools
+>   are *not injected* into it), and each subagent carries **only its own** tools.
+>   The other token lever is **global registration** (don't connect an MCP server
+>   / don't register a plugin `group` you'll never allow) — registration gates
+>   what *can* be allowed; per-agent permission gates what *is* injected.
 
-Add a role by copying an `agent` block (+ connecting its server if new). Models
-are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**
-(`camer-digital/adorsys-<role>` → `charts/ai-models`) so the backing model can be
-swapped there without editing this config or telling users — the alias
-`info.displayName` is what reveals today's backing (e.g. *"Adorsys Coder (MiniMax
-M2.7)"*). A user can override per agent locally; the primary keeps the user
-default. Prompts are inline strings (the well-known can't ship prompt *files*). ⚠️ **Validate runtime
+| Agent | mode | model | edit | bash | MCP / tools |
+|---|---|---|---|---|---|
+| `frontend` | **primary** (default) | *inherit* | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`) + Rust/WASM (`cargo`/`trunk`); `rm`→ask | **none** — delegates (lean) |
+| `browser` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `browser_*` (full page+control, the 27 tools) |
+| `design` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `refero_*` |
+| `web-search` | subagent | *inherit* | deny | deny | `brave_*` |
+| `doc-research` | subagent | *inherit* | only `docs/**` | deny | `context7_*` |
+| `iac` | subagent | *inherit* | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
+| `reviewer` | subagent | *inherit* | deny | deny | `context7_*` |
+| `test` | subagent | *inherit* | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
+| `skill` | subagent | *inherit* | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
+
+> **`@frontend` is the org-wide default PRIMARY (`config.default_agent`), kept
+> lean.** It implements directly (`edit` + JS toolchain) and **delegates** the
+> tool-heavy work — so the deny-baseline keeps `browser_*`/`refero_*`/`context7_*`
+> out of its injected context (no 27-tool overhead on every turn). The closed loop
+> runs **primary implements → `@browser` reloads + screenshots + reports → primary
+> decides → iterates**. `@browser` owns the full `browser_*` surface (replacing the
+> removed `chrome-devtools` MCP); `@design` owns Refero; library docs route to
+> `@doc-research`.
+>
+> **Model pinning — vision-only (no-risk rule):** pin a multimodal model **only**
+> on the agents whose tools return images they must interpret — `@browser`
+> (`browser_screenshot`) and `@design` (`refero_get_screen_image`) — so they
+> **always** have vision regardless of the session model. **Every other agent**
+> (the `frontend` primary *and* all role subagents) carries **no `model`** and
+> inherits the user's session model. This drops the old per-role cost-lean pins
+> (ADR-0044): simpler and risk-free, at the cost that those roles no longer force a
+> cheap model. Only `@browser`/`@design` use the branded `adorsys-frontend` alias
+> (`camer-digital/adorsys-frontend` → `charts/ai-models`, swappable there).
+
+> ⚠️ **`bash` permissions are friction, not a sandbox.** opencode matches the
+> command **string**, not what the process does. So allow-listing any wrapper
+> (`npm */pnpm */bun */yarn */cargo */trunk *`) is effectively arbitrary-code
+> execution: `npm run <script>`, `npm exec`, `pnpm exec`, `bun x`, `cargo run`,
+> a `build.rs`, or a postinstall hook can delete files **without ever invoking
+> `rm`** — so `"rm *": ask` only catches a *directly typed* `rm`, not `rm` routed
+> through an allowed command. No per-command rule can close this. Real containment
+> is the **environment** (git-tracked worktree, ephemeral/sandboxed run), not the
+> permission patterns. Size the allow-list for convenience and assume an allowed
+> build tool can do anything its project's scripts can. See
+> [`opencode-sandboxing.md`](./opencode-sandboxing.md) for the containment options.
+
+Add a role by copying an `agent` block (+ connecting its server if new). Pin a
+model **only** if the role needs vision (the `adorsys-frontend` multimodal alias);
+otherwise omit `model` so it inherits the session model. A user can override per
+agent locally. Prompts are inline strings (the well-known can't ship prompt
+*files*). ⚠️ **Validate runtime
 enforcement on a live opencode** (delegate to each role; confirm the primary
 lacks the MCP tools and each scope holds) before relying on it — agent-vs-root
 permission precedence + MCP-glob gating are opencode-version behaviors.
@@ -330,6 +381,9 @@ client config above).
 ## Related
 
 - ADR-0014 — the chart split + the well-known design
+- ADR-0048 — the global browser plugin + closed-loop `@frontend`; removes
+  `chrome-devtools`; **the per-agent tool-injection token model** (the *why*
+  behind the ✅ note in *Agents & tool scoping*)
 - ADR-0042 — the curated MCP catalog pushed via `config.mcp`
 - ADR-0038 — the gateway `/mcp/*` routes + OAuth the remote MCPs target
 - ADR-0009 — humans use Lightbridge self-service for API keys; the
