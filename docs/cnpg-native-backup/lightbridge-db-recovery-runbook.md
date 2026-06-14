@@ -273,7 +273,7 @@ spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   storage:
-    storageClass: linode-block-storage
+    storageClass: hcloud-volumes
     size: "5Gi"
   plugins:
     - name: barman-cloud.cloudnative-pg.io

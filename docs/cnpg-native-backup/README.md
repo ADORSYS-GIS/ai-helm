@@ -229,7 +229,7 @@ flowchart TB
 ┌─────────────────────────────────────────────────────────────────┐
 │                     PostgreSQL Pod                              │
 │  name: lightbridge-main-db-1                                    │
-│  PVC: 5Gi (linode-block-storage)                                │
+│  PVC: 5Gi (hcloud-volumes)                                      │
 │  ├── /var/lib/postgresql/data (PGDATA)                          │
 │  └── /var/lib/postgresql/wal (WAL)                              │
 │                                                                 │
@@ -274,7 +274,7 @@ metadata:
 spec:
   instances: 2
   storage:
-    storageClass: linode-block-storage  # Storage class
+    storageClass: hcloud-volumes  # Storage class (Hetzner default)
     size: 5Gi                           # PVC size
 ```
 

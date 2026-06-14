@@ -124,7 +124,7 @@ spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   storage:
-    storageClass: linode-block-storage
+    storageClass: hcloud-volumes
     size: 5Gi
   # ADD THIS SECTION - enables WAL archiving
   plugins:
@@ -150,7 +150,7 @@ spec:
     name: lightbridge-usage-db
     major: 17
   storage:
-    storageClass: linode-block-storage
+    storageClass: hcloud-volumes
     size: 10Gi
   postgresql:
     shared_preload_libraries:

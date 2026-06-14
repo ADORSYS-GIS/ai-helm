@@ -180,26 +180,7 @@ now lives in Grafana on top of Tempo.
 
 ---
 
-### 2.5 Coder
-
-**What it is:** Cloud development environment platform.
-
-**Current state:** No dashboards.
-
-**Instrumentation plan:**
-
-1. Coder exposes Prometheus metrics at `/metrics` on port 2112 by default.
-   Add a `ServiceMonitor` targeting the `coder` service on port `2112`.
-
-2. Use gnetId `19261` (Coder) for the dashboard. Key metrics:
-   - Active workspaces
-   - Build success/failure rate
-   - Agent connection latency
-   - Resource usage per workspace template
-
----
-
-### 2.6 Envoy AI Gateway (AIEG)
+### 2.5 Envoy AI Gateway (AIEG)
 
 **What it is:** The AI-specific gateway layer that routes requests to AI model
 backends, handles token counting, and enforces rate limits.
@@ -220,7 +201,7 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 
 ---
 
-### 2.7 Authorino
+### 2.6 Authorino
 
 **What it is:** The authentication/authorization proxy for the API gateway.
 
@@ -239,7 +220,7 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 
 ---
 
-### 2.8 OpenCode K8s Agent
+### 2.7 OpenCode K8s Agent
 
 **What it is:** The AI-powered cluster health monitor CronJob.
 
@@ -266,7 +247,6 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 | 🔴 High | Envoy AI Gateway metrics | Low | Token usage and routing visibility |
 | 🟡 Medium | LibreChat + MongoDB | Medium | User-facing service health |
 | 🟡 Medium | Authorino | Low | Auth latency directly affects API response time |
-| 🟡 Medium | Coder | Low | ServiceMonitor already supported upstream |
 | 🟢 Low | Converse UI (nginx) | Low | Frontend availability signal |
 | 🟢 Low | OpenCode Agent | Low | Operational nicety, not critical path |
 

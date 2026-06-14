@@ -61,7 +61,6 @@ mindmap
     Database Credentials
       PostgreSQL Credentials
       MongoDB Credentials
-      Coder DB Credentials
     Backup Credentials
       S3 Backup Credentials
       Keycloak Backup
@@ -139,7 +138,6 @@ Database connection credentials for platform services.
 |-------------|-----------|------|------|-------------|
 | `lightbridge-main-db-app` | converse | Opaque | 11 keys | Main PostgreSQL credentials |
 | `lightbridge-usage-db-app` | converse | Opaque | 11 keys | Usage DB credentials |
-| `coder-db-credentials` | coder | Opaque | `username`, `password`, `database` | Coder database credentials |
 
 ### Category 7: Backup Credentials
 
@@ -362,33 +360,6 @@ stringData:
 kubectl create secret generic librechat-mongodb-uri \
   --from-literal=MONGO_URI="mongodb://user:pass@mongodb:27017/librechat" \
   -n librechat
-```
-
-#### coder-db-credentials
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: coder-db-credentials
-  namespace: coder
-  labels:
-    app.kubernetes.io/component: database
-    platform.ai.camer.digital/type: bootstrap
-type: Opaque
-stringData:
-  username: coder
-  password: <secure-password>
-  database: coder
-```
-
-**Creation Command:**
-```bash
-kubectl create secret generic coder-db-credentials \
-  --from-literal=username="coder" \
-  --from-literal=password="$(openssl rand -base64 32)" \
-  --from-literal=database="coder" \
-  -n coder
 ```
 
 ### Backup Credentials

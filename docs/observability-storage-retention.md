@@ -33,7 +33,8 @@ External Secrets Operator (ESO):
 ### 1.2 Local Persistent Volumes
 
 In addition to object storage, each stateful component uses a local PVC
-(Linode Block Storage) as a write-ahead buffer and WAL:
+(the cluster default StorageClass — `hcloud-volumes` on Hetzner) as a
+write-ahead buffer and WAL:
 
 | Component | PVC Size | Purpose |
 |-----------|----------|---------|

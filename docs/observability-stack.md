@@ -36,7 +36,8 @@
 > namespace `observability` on Hetzner Object Storage via the App-of-Apps
 > orchestrator (`charts/observability`, ADR-0020); current chart versions are
 > mimir-distributed 5.8.0 / loki 7.0.0 / tempo 1.24.4. For the *current* topology
-> and the answers to "why N pods?", read the next section.
+> and the answers to "why N pods?", read the next section — or the canonical
+> mermaid map at [`architecture/08-observability.md`](./architecture/08-observability.md).
 
 ## Topology & component rationale (current)
 

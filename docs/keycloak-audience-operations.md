@@ -12,7 +12,6 @@ This document outlines the standard operating procedures for configuring and man
 
 ### Authorized Clients
 The following clients are managed within this environment:
-*   `coder`
 *   `converse`
 *   `converse-frontend`
 *   `lightbridge-api-key`
