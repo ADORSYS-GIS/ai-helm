@@ -140,7 +140,7 @@ Tool access is modelled on **two decoupled axes**:
 | Agent | mode | model | edit | bash | MCP / tools |
 |---|---|---|---|---|---|
 | `frontend` | **primary** (default) | *inherit* | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`) + Rust/WASM (`cargo`/`trunk`); `rm`→ask | **none** — delegates (lean) |
-| `browser` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `browser_*` (full page+control, the 27 tools) |
+| `browser` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `browser_*` (page+control+debug, all 33 tools — incl. `browser_eval`) |
 | `design` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `refero_*` |
 | `web-search` | subagent | *inherit* | deny | deny | `brave_*` |
 | `doc-research` | subagent | *inherit* | only `docs/**` | deny | `context7_*` |
