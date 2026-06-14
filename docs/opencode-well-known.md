@@ -115,23 +115,27 @@ Tool access is modelled on **two decoupled axes**:
   **whitelist** that re-allows only its tools + its file/bash scope (per-agent
   permission overrides the root).
 
-> ⚠️ **What permission scoping actually buys you (verified in opencode 1.17.6).**
-> The deny-baseline gates **execution** of MCP tools at call time — it does **not**
-> make the primary agent's *context* leaner. opencode advertises the **full** tool
-> set to **every** agent regardless of permission: `registry.tools()` filters only
-> web-search/gpt-patch quirks and the model call sends `activeTools = all prepared
-> tools`. The only things `permission` deny removes from context are **skills** and
-> **subagent/task targets** — never tools. So:
-> - **Tool schemas are NOT a per-agent token lever.** Every connected MCP tool +
->   every registered `browser_*` tool loads into the primary *and* every subagent.
->   To cut tool-schema tokens you must **not connect** the server / **not register**
->   the group (e.g. the browser plugin's `groups` option), not deny it per agent.
-> - **For the browser PLUGIN, the `browser_*` denies/allows are currently inert** —
->   plugin tools self-gate via `ctx.ask` and `@vymalo/opencode-browser` doesn't, so
->   unlike MCP tools the deny neither hides nor blocks them. Kept for intent +
->   forward-compat. The browser tools are owned by `@frontend` for **focused
->   prompting + delegation routing** (and to keep browsing churn out of the
->   primary's context), not for token savings or enforcement.
+> ✅ **Permission scoping IS a per-agent token lever (verified in opencode 1.17.6).**
+> opencode filters the **injected** tool set per agent in request-prep:
+> `session/llm/request.ts` `resolveTools()` runs every tool name through
+> `Permission.disabled()`, which **drops a tool from that agent's injected
+> `tools`/`activeTools`** when its effective rule is a `pattern:"*"` **deny**
+> (`permission/index.ts`). The filtered set is what's sent to the model — so a
+> denied tool costs **zero** tokens for that agent. Mechanics:
+> - A config **string-form** `"glob": "deny"` compiles to `{permission:glob,
+>   pattern:"*", action:"deny"}` → removes those tools from injection. `"glob":
+>   "allow"` re-injects. ⚠️ The **nested** form (`"glob": {sub: "deny"}`) yields a
+>   non-`*` pattern → it gates *execution* but does **not** remove from injection.
+>   Use the string form for tool gating (we do).
+> - An agent's own `permission` merges **after** the root baseline and wins
+>   (`findLast`), so the deny-baseline keeps a tool out of every agent **except**
+>   the ones that re-`allow` it. This applies uniformly to built-in, MCP, **and
+>   plugin** tools (keyed on tool name — `browser_*` included).
+> - ⇒ the deny-baseline genuinely makes the **primary agent lean** (those tools
+>   are *not injected* into it), and each subagent carries **only its own** tools.
+>   The other token lever is **global registration** (don't connect an MCP server
+>   / don't register a plugin `group` you'll never allow) — registration gates
+>   what *can* be allowed; per-agent permission gates what *is* injected.
 
 | Subagent | model (alias) | edit | bash | MCP / tools |
 |---|---|---|---|---|
@@ -149,8 +153,11 @@ Tool access is modelled on **two decoupled axes**:
 > runs **implement → reload → screenshot → inspect → decide → iterate** in one
 > context (multimodal: it reads the screenshots it captures). This **replaces** the
 > former `chrome-devtools` MCP and the split `browser-page`/`browser-control`
-> subagents. Per the note above, keeping it one agent (vs. splitting by group)
-> costs nothing extra — all 27 `browser_*` schemas load everywhere regardless.
+> subagents. The 27 `browser_*` schemas are injected into `@frontend` **only** —
+> the loop genuinely needs all of them in one context — and into no other agent.
+> Splitting them back into page/control subagents would isolate tokens *further*
+> (8 vs 19 per agent), but the loop needs both groups together, so unifying is the
+> right call here; it does **not** leak the cost to the rest of the roster.
 
 Add a role by copying an `agent` block (+ connecting its server if new). Models
 are pinned **cost-lean** and referenced by a **branded `adorsys-*` alias**

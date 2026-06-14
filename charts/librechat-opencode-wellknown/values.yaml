@@ -75,22 +75,26 @@ wellKnown:
       # JSON 2-tuple. Part of the 0.7.0 vymalo line — pin matches the three
       # above.
       #
-      # ⚠️ `groups` is the ONLY real token lever here. Each registered group's
-      # tools are advertised to EVERY agent's context (opencode does NOT scope
-      # the advertised toolset per agent — verified in opencode 1.17.6:
-      # registry.tools() filters only web-search/gpt-patch quirks, and the
-      # model call sends activeTools = all prepared tools; only SKILLS and
-      # SUBAGENT-targets are permission-filtered from context, never tools).
-      # So per-agent `browser_*` permission saves no tokens and — for a PLUGIN
-      # tool — doesn't even gate execution (unlike MCP tools, the browser
-      # plugin's execute never calls ctx.ask). We register only `page`
-      # (observe, 8 tools) + `control` (interact/navigate, 19) and DROP
-      # `debug` (browser_eval = arbitrary in-page JS + console/network/cookies
-      # — risky to push org-wide and 6 more schemas in every context). page +
-      # control = 27 tool schemas loaded everywhere; that's the deliberate
-      # cost ceiling. The full page+control surface is owned by the `frontend`
-      # agent below, which drives the implement→reload→screenshot→iterate loop
-      # in one context.
+      # TWO independent token levers, at different scopes:
+      #   • `groups` (here) = GLOBAL registration — only a registered tool can
+      #     be allowed at all. We register `page` (observe, 8) + `control`
+      #     (interact/navigate, 19) and DROP `debug` (browser_eval = arbitrary
+      #     in-page JS + console/network/cookies — risky to push org-wide).
+      #   • per-agent `permission` (below) = PER-AGENT injection. opencode DOES
+      #     scope the injected tool set per agent (verified opencode 1.17.6:
+      #     session/llm/request.ts `resolveTools` → `Permission.disabled` drops
+      #     a tool from that agent's injected `tools`/`activeTools` when its
+      #     effective rule is a `*`-pattern DENY; the agent's own rules merge
+      #     LAST and win via findLast). A string-form `"glob": "deny"` → pattern
+      #     `*` → tool removed from injection; `"glob": "allow"` re-injects it.
+      #     Applies uniformly to built-in / MCP / PLUGIN tools by name. (Only the
+      #     *string* form gives pattern `*`; the nested `{sub: deny}` form would
+      #     gate execution but NOT remove from injection — we use string form.)
+      # ⇒ the deny-baseline genuinely keeps browser_* OUT of every agent that
+      # doesn't re-allow it. The full page+control surface (27 tools) is allowed
+      # ONLY on the `frontend` agent below, so it is injected into `frontend`
+      # (the cost of the implement→reload→screenshot→iterate loop, in one
+      # context) and into NO other agent.
       - - "@vymalo/opencode-browser"
         - port: 4517
           groups:
@@ -269,12 +273,13 @@ wellKnown:
       "context7_*": deny
       "terraform_*": deny
       "refero_*": deny
-      # ⚠️ INERT for the browser PLUGIN (kept for intent + forward-compat).
-      # MCP-tool denies above are enforced at call time (Authorino-style
-      # ctx.ask wrapper opencode adds for MCP); plugin tools self-gate via
-      # ctx.ask and @vymalo/opencode-browser doesn't, so this neither hides
-      # browser_* from any context nor blocks calls today. Documents the same
-      # scoping intent and takes effect if opencode adds plugin-tool gating.
+      # Removes browser_* from the INJECTED tool set of every agent that doesn't
+      # re-allow it (request.ts `resolveTools` → `Permission.disabled`: a
+      # string-form `*`-deny drops the tool from `tools`/`activeTools`). Works
+      # for plugin tools exactly as for MCP — keyed on tool name. Only
+      # `frontend` re-allows it. (At call time plugin tools aren't ctx.ask-gated
+      # like MCP tools, but that's moot for a denied tool — the model never
+      # receives it.)
       "browser_*": deny
 
     # ────────────────────────────────────────────────────────────────────
@@ -474,10 +479,11 @@ wellKnown:
             "rm *": deny
           "context7_*": allow
           "refero_*": allow
-          # Full @vymalo/opencode-browser surface (page + control, the two
-          # registered groups) so this agent runs the implement→reload→
-          # screenshot→iterate loop in ONE context. ⚠️ INERT for the plugin
-          # (see deny-baseline note) — kept for intent + forward-compat.
+          # Re-allow the full @vymalo/opencode-browser surface (page+control)
+          # so it is INJECTED here (and only here) for the implement→reload→
+          # screenshot→iterate loop. This `allow` merges after the root
+          # `browser_*: deny` and wins (findLast), so `frontend` gets the tools
+          # while every other agent stays browser-free.
           "browser_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
