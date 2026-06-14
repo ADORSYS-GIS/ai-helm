@@ -85,6 +85,21 @@ jobs:
           git config --global user.email "${{ steps.bot-details.outputs.email }}"
           git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf https://github.com/
 
+      - name: Mint gateway OIDC token (lightbridge-repo-auth binding, ADR-0047)
+        id: gwtoken
+        # The external gateway AuthConfig is JWT-only; the old static
+        # LIGHTBRIDGE_API_KEY is not a JWT → "oidc: malformed jwt". Instead mint
+        # this run's GitHub Actions OIDC token with the ADORSYS-GIS Source as the
+        # audience: Authorino validates it and lightbridge-repo-auth resolves
+        # owner 139577169 → account adorsys-gis (plan pro). Needs id-token: write.
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const aud = 'https://api.ai.camer.digital/sources/src-cz55gv0nljenr7bxw4lmd8at';
+            const token = await core.getIDToken(aud);
+            core.setSecret(token);
+            core.setOutput('token', token);
+
       - name: Run OpenCode Review
         # Pinned 2026-05-24. `@latest` is not a real Git ref — GitHub resolves
         # it as a literal branch/tag named "latest" (or silently fails). Third-
@@ -92,7 +107,9 @@ jobs:
         # control. Bump deliberately and verify the release notes.
         uses: anomalyco/opencode/github@v1.16.2
         env:
-          LIGHTBRIDGE_API_KEY: ${{ secrets.LIGHTBRIDGE_API_KEY }}
+          # The GitHub Actions OIDC token minted above (a JWT the gateway
+          # accepts), NOT the old static key. ~10 min TTL covers a review run.
+          LIGHTBRIDGE_API_KEY: ${{ steps.gwtoken.outputs.token }}
           LIGHTBRIDGE_BASE_URL: ${{ vars.LIGHTBRIDGE_BASE_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
