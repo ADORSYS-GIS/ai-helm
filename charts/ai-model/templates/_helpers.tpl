@@ -1,11 +1,3 @@
-{{/*
-metadataKeySafe turns a model name into a metadata key safe string.
-Example: "gpt-5.4-mini" -> "cost_gpt_5_4_mini"
-*/}}
-{{- define "ai-model.metadataKeySafe" -}}
-{{- printf "cost_%s" (. | replace "-" "_" | replace "." "_") -}}
-{{- end -}}
-
 {{- define "ai-model.priceScale" -}}
 {{- printf "%d" (int (round (mulf (default 0 .) 1000) 0)) -}}
 {{- end -}}

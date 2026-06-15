@@ -30,6 +30,7 @@ from dashboards._common import (
     GATEWAY_SERVICE_NAME,
     LABEL_AZP,
     LABEL_DISPLAY_NAME,
+    LABEL_EMAIL,
     LABEL_MODEL,
     LABEL_USER_ID,
     LOKI_UID,
@@ -48,14 +49,18 @@ OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/per-u
 _LOKI_DS = dm.DataSourceRef(type_val="loki", uid=LOKI_UID)
 
 # Stream selector filtered by all dashboard variables (per-user scope).
+# Filters on email (not user_id UUID) so the User picker is human-readable.
+# email=~"$email" also naturally excludes service-account traffic, which
+# carries no email label — that traffic stays visible in the Overall section
+# via _OVERALL_SELECTOR which anchors on user_id=~".+" (present on all
+# authenticated requests including SAs).
 _SELECTOR = (
     f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_AZP}=~"$azp",'
-    f' {LABEL_USER_ID}=~"$user_id", {LABEL_MODEL}=~"$model"}}'
+    f' {LABEL_EMAIL}=~"$email", {LABEL_MODEL}=~"$model"}}'
 )
 
-# Stream selector that always spans ALL attributed users regardless of $user_id.
-# user_id=~".+" excludes unauthenticated requests (no identity label) from
-# overall totals, matching the behaviour of the per-user panels.
+# Stream selector that always spans ALL attributed users regardless of $email.
+# user_id=~".+" (not email) so SA traffic is included in overall aggregates.
 _OVERALL_SELECTOR = (
     f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_AZP}=~"$azp",'
     f' {LABEL_USER_ID}=~".+", {LABEL_MODEL}=~"$model"}}'
@@ -139,8 +144,10 @@ def _pie_panel(
     expr: str,
     legend_label: str,
     grid: tuple[int, int, int, int],
-    instant: bool = True,
 ) -> piechart.Panel:
+    # Range query (not instant): the Loki Grafana plugin does not substitute
+    # $__range in instant queries, causing them to silently return no data.
+    # Range mode returns a time series per slice; the pie uses the last value.
     h, w, x, y = grid
     return (
         piechart.Panel()
@@ -155,7 +162,7 @@ def _pie_panel(
             .values([pm.PieChartLegendValues.VALUE, pm.PieChartLegendValues.PERCENT])
         )
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.SINGLE))
-        .with_target(_loki_target(expr, legend=legend_label, instant=instant))
+        .with_target(_loki_target(expr, legend=legend_label, instant=False))
     )
 
 
@@ -197,7 +204,7 @@ def _panel_requests_range() -> stat.Panel:
 def _panel_unique_users() -> stat.Panel:
     return _stat_panel(
         title="Unique users (range)",
-        expr=f"count(sum by (user_id) (count_over_time({_SELECTOR} [$__range])))",
+        expr=f"count(sum by ({LABEL_EMAIL}) (count_over_time({_SELECTOR} [$__range])))",
         unit="short",
         color="purple",
         grid=(4, 6, 6, 0),
@@ -215,9 +222,12 @@ def _panel_total_tokens() -> stat.Panel:
 
 
 def _panel_p95_latency() -> stat.Panel:
+    # Use [5m] instead of [$__range] — quantile_over_time with a 1h window
+    # scans too much data per step and times out in Loki for this panel size.
+    # [5m] gives "current p95 latency" which is more actionable anyway.
     panel = _stat_panel(
-        title="p95 latency (range)",
-        expr=f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [$__range])",
+        title="p95 latency (5m)",
+        expr=f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m])",
         unit="ms",
         color="green",
         grid=(4, 6, 18, 0),
@@ -261,8 +271,8 @@ def _panel_requests_per_user() -> timeseries.Panel:
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
         .with_target(
             _loki_target(
-                f"sum by (user_id) (count_over_time({_SELECTOR} [1m]))",
-                legend="{{user_id}}",
+                f"sum by ({LABEL_EMAIL}) (count_over_time({_SELECTOR} [1m]))",
+                legend="{{email}}",
             )
         )
     )
@@ -391,15 +401,15 @@ def _panel_latency_per_user() -> timeseries.Panel:
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
         .with_target(
             _loki_target(
-                f"quantile_over_time(0.50, {_SELECTOR} {_unwrap('duration')} [5m]) by (user_id)",
-                legend="p50 {{user_id}}",
+                f"quantile_over_time(0.50, {_SELECTOR} {_unwrap('duration')} [5m]) by ({LABEL_EMAIL})",
+                legend="p50 {{email}}",
                 ref_id="A",
             )
         )
         .with_target(
             _loki_target(
-                f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m]) by (user_id)",
-                legend="p95 {{user_id}}",
+                f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m]) by ({LABEL_EMAIL})",
+                legend="p95 {{email}}",
                 ref_id="B",
             )
         )
@@ -522,10 +532,10 @@ def _dashboard() -> db.Dashboard:
         )
         .with_variable(
             _query_var(
-                name="user_id",
-                label="User",
+                name="email",
+                label="User (email)",
                 definition=(
-                    f'label_values({{service_name="{GATEWAY_SERVICE_NAME}", azp=~"$azp"}}, user_id)'
+                    f'label_values({{service_name="{GATEWAY_SERVICE_NAME}", azp=~"$azp"}}, email)'
                 ),
             )
         )

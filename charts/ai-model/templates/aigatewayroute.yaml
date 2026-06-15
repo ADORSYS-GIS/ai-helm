@@ -56,7 +56,12 @@ spec:
       type: OutputToken
     - metadataKey: llm_total_token
       type: TotalToken
-    - metadataKey: {{ include "ai-model.metadataKeySafe" $modelName }}
+    # Standard AIEG cost key — read by the Envoy access log format
+    # (%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_custom_total_cost)%) and by
+    # the BackendTrafficPolicy monthly-budget rate-limit rule.  All models
+    # share this single key; current Envoy prevents the multi-route metadata
+    # deduplication issue that previously forced per-model key names.
+    - metadataKey: llm_custom_total_cost
       type: CEL
       cel: {{ include "ai-model.costExpression" (dict "modelName" $modelName "pricing" .Values.pricing) | quote }}
 
