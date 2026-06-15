@@ -101,30 +101,37 @@ While the Graphify CLI builds the graph, exposing it as a Model Context Protocol
 
 > **Note on `graphify install`:** Graphify provides a convenience command (`graphify install --platform opencode`) that copies a skill file for OpenCode. However, that command **does not** configure the MCP server itself – it only installs a prompt / instruction file. To actually expose the graph as queryable tools, you must follow the manual MCP server setup below.
 
-### 4.2 Start the Graphify MCP Server
-Expose your generated graph via the native MCP server:
+### 4.2 Expose the Graphify MCP Server
+Expose your generated graph via the native MCP server. If installed globally or via `pipx`, you can run:
+```bash
+graphify-mcp graphify-out/graph.json
+```
+Or run the module directly:
 ```bash
 python -m graphify.serve graphify-out/graph.json
 ```
 *Note: Make sure you installed the `[mcp]` extra so the server dependencies are met.*
 
 ### 4.3 Configure OpenCode to connect to the MCP server
-Add the server configuration to your project-level or user-level MCP configuration (e.g. `.opencode/mcp_config.json` or `.mcp.json`):
+Add the server configuration to your project's `.opencode/opencode.json` configuration file. OpenCode uses the `"mcp"` object mapping to a `"local"` configuration, where the `"command"` is an array containing the executable command and its arguments.
 
 ```json
 {
-  "mcpServers": {
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [".opencode/plugins/graphify.js"],
+  "mcp": {
     "graphify": {
-      "command": "python",
-      "args": [
-        "-m",
-        "graphify.serve",
-        "graphify-out/graph.json"
-      ]
+      "type": "local",
+      "command": ["graphify-mcp", "graphify-out/graph.json"],
+      "enabled": true
     }
   }
 }
 ```
+
+> **Configuration Details:**
+> - **`command`**: This must be an array where the first item is the command executable, followed by its arguments. If you do not have `graphify-mcp` on your global path, you can use `["python", "-m", "graphify.serve", "graphify-out/graph.json"]`.
+> - **`plugin`**: Add `".opencode/plugins/graphify.js"` to register the Graphify skill/plugin in OpenCode (copied during the `graphify install` step).
 
 Once connected, OpenCode automatically gains access to the following tools:
 - `query_graph`: Execute structured queries against the graph
@@ -169,8 +176,8 @@ For CI (e.g., GitLab/GitHub Actions), add a job that runs `graphify update .` an
 - [ ] Install package with needed extras: `pip install "graphifyy[mcp,gemini,pdf]"` (or `[openai]` if using custom provider)
 - [ ] Build initial graph: `cd your-project && graphify update .`
 - [ ] Open `graphify-out/graph.html` in browser to explore the visual map
-- [ ] Start the MCP server: `python -m graphify.serve graphify-out/graph.json`
-- [ ] Configure the server in `.opencode/mcp_config.json`
+- [ ] Start the MCP server: `graphify-mcp graphify-out/graph.json` (or `python -m graphify.serve graphify-out/graph.json`)
+- [ ] Configure the server in `.opencode/opencode.json`
 - [ ] Verify the graph status from the command line: `graphify check-update`
 - [ ] Ask OpenCode: *“What are the most central files in the codebase?”*
 - [ ] (Optional) Configure custom OpenAI/Gemini credentials for doc-code enrichment
