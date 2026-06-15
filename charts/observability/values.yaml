@@ -1864,6 +1864,28 @@ children:
             enabled:  true
             interval: 60s
 
+          # grafana-image-renderer: headless-Chrome panel-export sidecar.
+          # The chart auto-sets GF_RENDERING_SERVER_URL (→ renderer Service on
+          # port 8081) and GF_RENDERING_CALLBACK_URL (→ grafana internal svc DNS
+          # http://grafana.observability.svc.cluster.local/) so the renderer
+          # reaches Grafana via same-namespace traffic — already covered by the
+          # allow-same-namespace Cilium policy (no new egress rule needed).
+          # DISABLE_SANDBOX avoids requiring SYS_ADMIN in the renderer container
+          # (Chrome --no-sandbox mode; namespace is privileged PSS anyway).
+          imageRenderer:
+            enabled:     true
+            image:
+              tag:        latest
+              pullPolicy: IfNotPresent
+            env:
+              DISABLE_SANDBOX: "true"
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 512Mi }
+            networkPolicy:
+              limitIngress: true   # allow only Grafana pod → renderer:8081
+              limitEgress:  false  # allow-same-namespace covers renderer→Grafana
+
           # grafana-apprise-adapter REMOVED (ADR-0036): the apprise notification
           # path (Grafana → adapter → apprise-api) is gone. Grafana's embedded
           # Alertmanager + native contact points handle notifications now.
