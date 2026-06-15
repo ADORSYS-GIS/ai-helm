@@ -447,14 +447,21 @@ children:
                 // (the per-user dashboard was empty since rollout).
                 //
                 // Cardinality budget (ADR-0005):
-                //   user_id — Keycloak `sub` (UUID per user). Bounded by
-                //             user count; safe up to a few thousand.
-                //   azp     — Keycloak client_id. Bounded by client count
-                //             (<20 today). Very cheap.
-                //   model   — gen_ai.request.model. Bounded by the model
-                //             catalog (~10–20). Very cheap.
-                //
-                // user_name is intentionally NOT promoted (display field).
+                //   user_id      — Keycloak `sub` (UUID per user). Bounded by
+                //                  user count; safe up to a few thousand.
+                //   azp          — Keycloak client_id. Bounded by client count
+                //                  (<20 today). Very cheap.
+                //   model        — gen_ai.request.model. Bounded by the model
+                //                  catalog (~10–20). Very cheap.
+                //   email        — Keycloak `email` claim (oidc_email attribute).
+                //                  1:1 with user_id; adds no stream cardinality.
+                //                  Enables human-readable per-user dashboards.
+                //   display_name — Keycloak `name` claim (oidc_name attribute).
+                //                  1:1 with user_id; used for bar chart labels
+                //                  (first-name extraction via label_replace).
+                //   billing_plan — x-billing-plan rate-limit descriptor. 4
+                //                  distinct values (free/pro/service/internal).
+                //                  Very cheap; enables tier segmentation.
                 // Only gateway access logs are matched (on the
                 // resources.log_name marker, present in every line); other
                 // OTLP logs pass through this block unchanged.
@@ -475,9 +482,12 @@ children:
 
                     stage.json {
                       expressions = {
-                        user_id = "user_id",
-                        azp     = "azp",
-                        model   = "\"gen_ai.request.model\"",
+                        user_id      = "user_id",
+                        azp          = "azp",
+                        model        = "\"gen_ai.request.model\"",
+                        email        = "oidc_email",
+                        display_name = "oidc_name",
+                        billing_plan = "billing_plan",
                       }
                     }
                     // Envoy renders absent fields as "-": blank them so
@@ -511,11 +521,29 @@ children:
                       expression = "^-$"
                       replace    = ""
                     }
+                    stage.replace {
+                      source     = "email"
+                      expression = "^-$"
+                      replace    = ""
+                    }
+                    stage.replace {
+                      source     = "display_name"
+                      expression = "^-$"
+                      replace    = ""
+                    }
+                    stage.replace {
+                      source     = "billing_plan"
+                      expression = "^-$"
+                      replace    = ""
+                    }
                     stage.labels {
                       values = {
-                        user_id = "user_id",
-                        azp     = "azp",
-                        model   = "model",
+                        user_id      = "user_id",
+                        azp          = "azp",
+                        model        = "model",
+                        email        = "email",
+                        display_name = "display_name",
+                        billing_plan = "billing_plan",
                       }
                     }
                     // Deterministic stream anchor for dashboards — don't

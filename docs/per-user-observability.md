@@ -1,8 +1,8 @@
 # Per-user observability: JWT identity → Loki labels
 
-Adds three Loki labels — `user_id`, `azp`, and `model` — to every Envoy AI
-Gateway access log, so dashboards can break down requests, latency, tokens,
-and cost by authenticated user.
+Adds six Loki labels — `user_id`, `azp`, `model`, `email`, `display_name`,
+and `billing_plan` — to every Envoy AI Gateway access log, so dashboards can
+break down requests, latency, tokens, and cost by authenticated user.
 
 > **Repaired 2026-06-12 (ADR-0046).** The original wiring assumed the access
 > log JSON would arrive as the Loki line body. In reality Envoy's OTel sink
@@ -60,7 +60,9 @@ and cost by authenticated user.
                             │  gateway streams keyed by      │
                             │  {service_name=envoy-ai-gateway,│
                             │   exporter, cluster,           │
-                            │   user_id, azp, model}         │
+                            │   user_id, azp, model,         │
+                            │   email, display_name,         │
+                            │   billing_plan}                │
                             └──────────────┬─────────────────┘
                                            ▼
                             ┌────────────────────────────────┐
@@ -99,21 +101,31 @@ Querying rules that follow from it:
 |---|---|---|
 | Authorino emits the OIDC header set (ADR-0011) | `charts/apps/values.yaml` `security-policies.authConfigs.main.response.success.headers` | Entries `x-oidc-user-id`, `x-oidc-user-name`, `x-oidc-azp`, `x-oidc-iss`, `x-oidc-roles-realm`, `x-oidc-resource-access`, `x-oidc-scope`, `x-oidc-jti`, `x-oidc-email`, `x-oidc-name` |
 | Envoy access log carries them through | `charts/core-gateway/templates/envoy-proxy.yaml` `telemetry.accessLog.settings[0]` | Fields `user_id` / `user_name` / `azp` in `format.json`; sink resource `service.name: envoy-ai-gateway`; sent directly to `alloy.observability:4317` (the old `-usage` OTel collector middleman was removed) |
-| Alloy flattens the OTLP envelope + promotes labels | `charts/observability/values.yaml` alloy child `valuesObject` (`extraConfig`) | `loki.process "ai_gateway_user_attribution"`: `stage.match` on the `otel_envoy_accesslog` marker → extract `attributes` → `stage.output` (flatten) → promote `user_id`/`azp`/`model` → pin `service_name=envoy-ai-gateway` |
+| Alloy flattens the OTLP envelope + promotes labels | `charts/observability/values.yaml` alloy child `valuesObject` (`extraConfig`) | `loki.process "ai_gateway_user_attribution"`: `stage.match` on the `otel_envoy_accesslog` marker → extract `attributes` → `stage.output` (flatten) → promote `user_id`/`azp`/`model`/`email`/`display_name`/`billing_plan` → pin `service_name=envoy-ai-gateway` |
 | Dashboard consumes the labels | `tools/dashboards/src/dashboards/envoy_ai_gateway/per_user.py` (generated → `charts/observability-dashboards/files/envoy-ai-gateway/per-user.json`) | Label-only stream selectors, `label_values(...)` variables, guarded unwraps |
 
 ## Label cardinality budget
 
 Loki streams are O(N) on `(label set)` × `(distinct value combinations)`. We
-promote three attribution fields to labels; everything else stays in the log
+promote six attribution fields to labels; everything else stays in the log
 body and is queried with `| json | <field>=~"..."`.
 
-| Field | Source | Bound | Why labeled |
+| Field | Source attribute | Bound | Why labeled |
 |---|---|---|---|
-| `user_id` | Keycloak JWT `sub` (UUID) | One value per registered user | Primary attribution dimension; required for per-user dashboards |
-| `azp` | Keycloak JWT `azp` (client_id) | One value per Keycloak client (~10–20 today) | Cheap; lets dashboards split human vs SA traffic and pivot by app |
-| `model` | `gen_ai.request.model` (`x-ai-eg-model`) | One value per catalog model (~10–20) | Cheap (ADR-0046); backs the dashboard's model variable + per-model splits without a body parse |
-| `user_name` | `preferred_username` | One value per user | **Not labeled.** Carried in the body as a display field; query with `| json | user_name=~"alice.*"` when you need a human-readable filter. |
+| `user_id` | `user_id` ← `x-oidc-user-id` (JWT `sub`) | One value per registered user | Primary attribution dimension; required for per-user dashboards |
+| `azp` | `azp` ← `x-oidc-azp` (JWT `azp`) | One value per Keycloak client (~10–20) | Lets dashboards split human vs SA traffic and pivot by app |
+| `model` | `gen_ai.request.model` ← `x-ai-eg-model` | One value per catalog model (~10–20) | Backs the dashboard's model variable + per-model splits without a body parse (ADR-0046) |
+| `email` | `oidc_email` ← `x-oidc-email` (JWT `email`) | 1:1 with user_id — adds no stream cardinality | Unique human-readable user identity; PII (stored in label index) |
+| `display_name` | `oidc_name` ← `x-oidc-name` (JWT `name`, e.g. "Kunga Derick") | 1:1 with user_id | Human-readable label for bar charts; first name extracted at query time via `label_replace` |
+| `billing_plan` | `billing_plan` ← `x-billing-plan` | 4 distinct values (free/pro/service/internal) | Very cheap; enables tier segmentation in dashboards |
+
+Fields intentionally **not** labeled:
+
+| Field | Reason |
+|---|---|
+| `response_code` | ~15 values × user × model = large stream count for marginal query gain; queried via `\| json` instead |
+| `user_name` (`preferred_username`) | Redundant with `email`; same cardinality, less unique |
+| Request/trace IDs, token counts | Unbounded cardinality — would explode stream count |
 
 If user count exceeds a few thousand and `{user_id}` cardinality becomes a
 problem, options:
@@ -128,14 +140,15 @@ We are nowhere near these limits today.
 
 SAs get the same three headers as humans, with the following semantics:
 
-| Header | Human token | SA token |
+| Header / label | Human token | SA token |
 |---|---|---|
-| `x-oidc-user-id` | Keycloak user UUID | The SA's internal user UUID (Keycloak auto-creates a user behind every SA client) |
-| `x-oidc-user-name` | `alice` | `service-account-adorsys-gis-github-ci` |
-| `x-oidc-azp` | `converse-frontend` etc. | `adorsys-gis-github-ci`, `lightbridge-api-key`, … |
-| `x-oidc-email` | `alice@example.com` | empty |
-| `x-oidc-name` | `Alice Lastname` | empty |
-| `x-oidc-resource-access` | `{"converse":["admin"],"phoenix":["admin"],...}` | `{"<sa-client-id>":["uma_protection"],"account":[...]}` |
+| `x-oidc-user-id` → `user_id` | Keycloak user UUID | The SA's internal user UUID (Keycloak auto-creates a user behind every SA client) |
+| `x-oidc-user-name` (body only) | `alice` | `service-account-adorsys-gis-github-ci` |
+| `x-oidc-azp` → `azp` | `converse-frontend` etc. | `adorsys-gis-github-ci`, `lightbridge-api-key`, … |
+| `x-oidc-email` → `email` | `alice@example.com` | empty → no label |
+| `x-oidc-name` → `display_name` | `Alice Lastname` | empty → no label |
+| `x-billing-plan` → `billing_plan` | `free` / `pro` / `service` | `internal` |
+| `x-oidc-resource-access` (body only) | `{"converse":["admin"],"phoenix":["admin"],...}` | `{"<sa-client-id>":["uma_protection"],"account":[...]}` |
 
 To filter human-only or SA-only in dashboards, use the `azp` label and the
 allowlist from `docs/authorino-service-account-bypass.md`:
@@ -201,6 +214,33 @@ sum by (model) (
     {service_name="envoy-ai-gateway", user_id="<uuid>"} [1h]
   )
 )
+
+# Top 15 users by cost — first name via label_replace on display_name label
+label_replace(
+  topk(15, sum by (display_name) (
+    sum_over_time(
+      {service_name="envoy-ai-gateway", user_id=~".+"}
+        | json | unwrap gen_ai_usage_custom_total_cost | __error__="" [$__range]
+    )
+  )),
+  "given_name", "$1", "display_name", "^(\\S+).*"
+)
+
+# Filter by billing tier (billing_plan is a label — no body parse)
+sum by (user_id) (
+  count_over_time({service_name="envoy-ai-gateway", billing_plan="free"} [1h])
+)
+
+# Status code distribution (response_code is body-only — requires | json)
+sum by (response_code) (
+  count_over_time(
+    {service_name="envoy-ai-gateway", user_id=~".+"}
+      | json | response_code !~ "^(-|)$" [1h]
+  )
+)
+
+# Look up a user by email (email is a label — fast, no body parse)
+{service_name="envoy-ai-gateway", email="abonghoderick@gmail.com"}
 ```
 
 ## Troubleshooting
@@ -214,6 +254,8 @@ sum by (model) (
 | Token/latency panels empty but request panels work | Unwrap failing on string/`-` values | Every unwrap needs the `\| __error__=""` guard (ADR-0046); fields are strings and absent values are `-` |
 | SA tokens missing labels too | `auth.identity.sub` selector returns empty for some tokens | Some Keycloak realm configs hide `sub` on SA tokens. Switch the selector to `auth.identity.<claim-actually-present>` and update this doc |
 | All requests label as same user | Authorino is using the wrong identity source | Confirm the AuthConfig `authentication.keycloak.jwt.issuerUrl` matches the realm issuing the tokens you're sending |
+| `email` / `display_name` labels missing | JWT doesn't include `email` / `name` claims | Verify the Keycloak client has the `email` and `profile` scopes mapped; decode a live JWT at jwt.io and confirm `email` and `name` fields are present |
+| `billing_plan` label missing | Rate-limit descriptor not stamped | The `x-billing-plan` header is set by Authorino's CEL descriptor (ADR-0021); missing means the request bypassed the rate-limit path or the AuthConfig CEL expression returned empty |
 
 ## Related
 
