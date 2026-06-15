@@ -1,16 +1,49 @@
 # Coder Capability & Architecture Analysis
 
-**Date:** June 12, 2026  
-**Author:** AI Governance Team  
-**Status:** Draft for Review  
-**Ticket:** #339 (Spike: Understand Coder capabilities and architecture)  
+**Date:** June 12, 2026
+**Author:** @benie-joy-possi
+**Status:** Draft for Review
+**Ticket:** #339 (Spike: Understand Coder capabilities and architecture)
 **Context:** Evaluation of Coder for integration into the **Converse** AI platform (LibreChat, Envoy Gateway ecosystem).
+
+---
+
+## Table of Contents
+
+### Full Document Structure
+
+1. [Executive Summary](#1-executive-summary)
+
+2. [Architecture Deep Dive](#2-architecture-deep-dive)
+
+3. [VS Code Remote Integration](#3-vs-code-remote-integration)
+
+4. [Coder Platform Authentication & Authorization](#4-coder-platform-authentication--authorization)
+
+5. [OpenCode Integration in Coder](#5-opencode-integration-in-coder)
+
+6. [Workspace Persistence Strategies](#6-workspace-persistence-strategies)
+
+7. [Capabilities & Use Cases](#7-capabilities--use-cases)
+
+8. [Security & Isolation Strategy](#8-security--isolation-strategy)
+
+9. [Limitations & Gotchas](#9-limitations--gotchas)
+
+10. [Comparison with Alternatives](#10-comparison-with-alternatives)
+
+11. [Cost & Operational Analysis](#11-cost--operational-analysis)
+
+12. [Conclusion & Recommendations](#12-conclusion--recommendations)
+
+13. [References & Further Reading](#13-references--further-reading)
+
 
 ---
 
 ## 1. Executive Summary
 
-**Recommendation:** **Proceed with Production Deployment.**  
+**Recommendation:** **InCase Proceed with Production Deployment.**  
 
 Coder provides a robust platform for standardizing development environments, accelerating onboarding, and enabling secure, isolated AI agent workflows. Its architecture enables **self-service** infrastructure provisioning via Terraform templates, decoupling the "control plane" (Coder Server) from the "data plane" (Workspaces).
 
@@ -27,7 +60,7 @@ Coder provides a robust platform for standardizing development environments, acc
 ### Key Value Propositions
 
 *   **Instant Onboarding:** Reduces environment setup from days to minutes.
-*   **AI Agent Orchestration:** Provides ephemeral, GPU-enabled sandboxes for AI agents (like OpenCode) to run code, test, and self-heal.
+*   **AI Agent Orchestration:** Provides ephemeral, sandboxes for AI agents (like OpenCode) to run code, test, and self-heal.
 *   **Security:** Network-isolated workspaces prevent lateral movement from compromised environments to internal AI platforms.
 *   **Cost Efficiency:** Ephemeral workspaces (stop/start) reduce cloud spend compared to always-on VMs.
 
@@ -91,15 +124,136 @@ VS Code Remote is **essential** for interactive development. When you connect vi
 - *OpenCode runs inside workspace, sees same files as VS Code*
 - *Both edit the same remote filesystem*
 
-### 3.2 Why VS Code Remote is Essential
+### 3.2 Workspace Access Methods
 
-| Use Case | Why VS Code Remote |
-|----------|-------------------|
-| **Interactive Coding** | Edit files, run terminals, debug code in the workspace |
-| **Using OpenCode Interactively** | Run `opencode run "help me refactor"` in terminal; see results in real-time |
-| **Debugging** | Set breakpoints, inspect variables, all in the workspace |
-| **Extension Compatibility** | Most VS Code extensions work remotely without modification |
-| **File Synchronization** | VS Code handles syncing files between local and remote automatically |
+There are **three primary ways** to access a Coder workspace:
+
+#### Method 1: VS Code Desktop (Remote SSH)
+
+Connect to Coder workspaces using a local VS Code instance. The experience is **full-desktop**, where files are mounted directly from the remote server (no syncing), and code executes on the remote machine while utilizing your local screen and GPU.
+
+**The Architecture:**
+
+1. **Coder Extension (`coder.coder`):** The **Manager**. Handles authentication, workspace browsing, and lifecycle (start/stop).
+2. **Remote - SSH (Microsoft):** The **Transport**. The underlying engine that creates the secure tunnel and mounts the file system.
+   - *Note:* The Coder Extension automatically triggers Remote - SSH when you connect. You cannot use the Coder Extension without it.
+
+---
+
+##### Option A: Coder VS Code Extension (Recommended)
+
+*Best for daily development. It integrates directly with your Coder deployment.*
+
+**Key Features:**
+
+- **One-Click Connect:** Browse and connect to workspaces from the sidebar; no manual SSH config.
+- **Workspace Management:** Start, stop, and delete workspaces directly from VS Code.
+- **Smart Auth:** Uses your Coder session (OIDC/Token); no manual SSH keys needed.
+- **Auto-Reconnect:** Handles workspace sleep/wake cycles automatically.
+
+**Setup:**
+
+1. Install the **Coder** extension from the Marketplace.
+2. Set your Coder URL in settings.
+3. Authenticate via sidebar.
+4. Select a workspace and click **Connect**.
+
+---
+
+##### Option B: VS Code Remote - SSH (Manual)
+
+*Best for advanced SSH configurations or connecting to custom servers.*
+
+**Key Features:**
+
+- Full control over SSH configuration files.
+- Requires manual setup of connection details.
+
+**Setup:**
+
+1. Install **Remote - SSH** from the Marketplace.
+2. Generate config: Run `coder ssh-config` in your terminal and append it to `~/.ssh/config`.
+3. Connect via VS Code **Remote Explorer**.
+
+---
+
+##### Comparison
+
+| Feature | Coder Extension (Option A) | Remote - SSH (Option B) |
+| :--- | :--- | :--- |
+| **Setup** | Zero config (One-click) | Manual config required |
+| **Auth** | Integrated Session | Manual SSH Keys |
+| **Management** | Full UI (Start/Stop) | CLI only |
+| **Workflow** | Daily Development | Advanced/Custom |
+
+---
+
+##### Supported Workflows
+
+- **Interactive Coding:** Edit files and run terminals directly in the workspace.
+- **Debugging:** Full support for breakpoints and variable inspection.
+- **AI Agents:** Run tools like `opencode` in the remote terminal.
+- **Extensions:** Most extensions (Python, Docker, etc.) run natively in the remote environment.
+
+#### Method 2: VS Code Web (code-server)
+
+| Aspect | Details |
+|--------|---------|
+| **Experience** | VS Code running in browser (code-server) |
+| **Access** | Directly from Coder dashboard (no local install required) |
+| **Files** | Edited directly in workspace |
+| **Extensions** | Installed in workspace |
+| **Best for** | Quick edits, machines without VS Code, tablet access |
+
+**How to Access VS Code Web from Coder Dashboard:**
+
+1. **Navigate to your workspace** in the Coder Web UI at `https://coder.example.com`
+2. **Click the "VS Code Web" button** (or "Open in code-server") on the workspace card
+3. **A new browser tab opens** with the full VS Code interface running inside your workspace
+4. **Authenticate** if prompted (uses your Coder session, so usually seamless)
+
+> **Note:** VS Code Web runs inside the workspace pod, consuming workspace resources (CPU, RAM). It's ideal for quick edits or when you don't have VS Code installed locally. The experience is nearly identical to desktop VS Code, with some limitations around terminal access and certain extensions.
+
+**Key Features of VS Code Web (code-server):**
+
+- **Full IDE in Browser:** Complete VS Code experience with syntax highlighting, IntelliSense, debugging
+- **Integrated Terminal:** Terminal runs inside the workspace, allowing you to run `opencode` commands directly
+- **Extension Marketplace:** Browse and install extensions (stored in workspace, persist across sessions if using PVC)
+- **Git Integration:** Clone, commit, and push directly from the browser
+- **No Local Setup:** Works on any device with a browser - perfect for tablets, Chromebooks, or shared computers
+
+#### Method 3: SSH Terminal
+
+| Aspect | Details |
+|--------|---------|
+| **Experience** | Terminal-only access |
+| **Access** | `coder ssh <workspace-name>` or web terminal from dashboard |
+| **Files** | Edited directly in workspace using terminal editors (vim, nano) |
+| **Best for** | Quick commands, CI/CD automation, headless tasks |
+
+#### Access Method Comparison
+
+```mermaid
+graph LR
+    A[User] --> B[VS Code Desktop]
+    A --> C[VS Code Web<br/>code-server]
+    A --> D[SSH Terminal]
+    
+    B --> E[SSH Tunnel via Coder Agent]
+    C --> F[HTTP/WebSocket via Coder Proxy]
+    D --> E
+    
+    E --> G[Workspace Pod]
+    F --> G
+```
+
+| Criteria | VS Code Desktop | VS Code Web | SSH Terminal |
+|----------|-----------------|-------------|--------------|
+| **Local install required** | Yes | No | No (CLI tool optional) |
+| **Full IDE features** | Yes | Most | No |
+| **Works on tablets** | No | Yes | Yes (web terminal) |
+| **Resource usage** | Local | Workspace | Workspace |
+| **Extension installs** | Local | Workspace | N/A |
 
 ### 3.3 VS Code Remote vs. Coder Tasks
 
@@ -122,9 +276,85 @@ Files get into the workspace through:
 
 ---
 
-## 4. OpenCode Integration in Coder
+## 4. Coder Platform Authentication & Authorization
 
-### 4.1 Running OpenCode Inside Coder Workspaces
+Before users can access workspaces or run AI agents, they must authenticate with the Coder platform itself. This section covers Coder's built-in authentication and its integration with external identity providers.
+
+### 4.1 Authentication Methods
+
+| Method | Use Case | Configuration |
+|--------|----------|---------------|
+| **Built-in (Password)** | Development/Testing | Default, no configuration needed |
+| **OIDC/SSO** | Production | Enterprise SSO (Okta, Azure AD, Keycloak, etc.) |
+| **GitHub** | Developer Teams | OAuth via GitHub |
+| **GitLab** | Developer Teams | OAuth via GitLab |
+
+### 4.2 Authorization Model
+
+Coder uses a role-based access control (RBAC) model:
+
+| Role | Permissions |
+|------|-------------|
+| **Owner** | Full platform administration, manage templates, users, and settings |
+| **Template Admin** | Create and manage templates, but not platform-level settings |
+| **User** | Create workspaces from templates, manage own workspaces |
+| **Organization Member** | Access to organization-specific resources and templates |
+
+### 4.3 Group-Based Template Access
+
+Templates can restrict which groups can use them:
+
+```hcl
+# In Terraform template
+resource "coder_workspace" "main" {
+# ... workspace configuration ...
+}
+
+# Template metadata for group restrictions
+variable "groups" {
+  default = ["developers", "ai-team"]
+}
+```
+
+### 4.4 SSO Configuration Example (Keycloak/OIDC)
+
+For production deployments, configure OIDC authentication in your Coder Helm values:
+
+```yaml
+# values.yaml for Coder Helm chart
+coder:
+  env:
+    - name: CODER_OIDC_ISSUER_URL
+      value: "https://auth.example.com/realms/myrealm"
+    - name: CODER_OIDC_CLIENT_ID
+      value: "coder"
+    - name: CODER_OIDC_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: coder-oidc-secret
+          key: client-secret
+    # Optional: Group claims for RBAC
+    - name: CODER_OIDC_GROUPS_FIELD
+      value: "groups"
+    - name: CODER_OIDC_SCOPES
+      value: "openid,profile,email,groups"
+```
+
+### 4.5 User Management
+
+| Operation | Command/Action |
+|-----------|---------------|
+| **Create user** | `coder users create --email=user@example.com --username=user` |
+| **List users** | `coder users list` |
+| **Promote to admin** | `coder users promote <user-id>` |
+| **Reset password** | `coder users reset-password <user-id>` (built-in auth only) |
+
+
+---
+
+## 5. OpenCode Integration in Coder
+
+### 5.1 Running OpenCode Inside Coder Workspaces
 
 OpenCode runs inside the workspace pod, providing AI assistance for coding tasks. The integration uses the `coder-labs/opencode` Terraform module.
 
@@ -133,10 +363,10 @@ OpenCode runs inside the workspace pod, providing AI assistance for coding tasks
 | Issue | Resolution |
 |-------|------------|
 | `small_model: null` causes crash | Remove from config or set to valid model name |
-| Model name format `provider/model` | Use correct format in `models` block (e.g., `qwen-3-5-4b-local` not `camer/qwen-3-5-4b-local`) |
+| Model name format `provider/model` | Use correct format in `models` block (e.g., `qwen-3-5-4b-local` not `camer-digital/qwen-3-5-4b-local`) |
 | API Key vs OAuth2 | OAuth2 preferred for production; API key works for testing |
 
-### 4.2 Authentication Setup
+### 5.2 Authentication Setup
 
 For production use with OAuth2:
 
@@ -157,7 +387,7 @@ The authentication configuration in your Terraform template should point to your
 
 ```hcl
 provider = {
-  camer = {
+  camer-digital = {
     options = {
       oauth2 = {
         authFlow = "device_code"
@@ -170,7 +400,7 @@ provider = {
 }
 ```
 
-### 4.3 OpenCode Permission System
+### 5.3 OpenCode Permission System
 
 OpenCode has a configurable permission system for controlling actions:
 
@@ -188,7 +418,7 @@ permission = {
 | `bash = "ask"` | Security-sensitive environments |
 | `bash = "allow"` | Trusted CI/CD or autonomous agents |
 
-### 4.4 OpenCode Health Check Architecture
+### 5.4 OpenCode Health Check Architecture
 
 ![OpenCode Health Check](./images/opencode-health-check.png)
 
@@ -204,7 +434,7 @@ permission = {
 2. **OpenCode crashes** - Invalid configuration (e.g., `small_model: null`)
 3. **Authentication failed** - API key invalid or OAuth2 token expired
 
-### 4.5 When to Use Coder + OpenCode vs Direct OpenCode
+### 5.5 When to Use Coder + OpenCode vs Direct OpenCode
 
 | Criteria | Use Coder + OpenCode | Use Direct OpenCode |
 |----------|---------------------|---------------------|
@@ -218,13 +448,13 @@ permission = {
 
 ---
 
-## 5. Workspace Persistence Strategies
+## 6. Workspace Persistence Strategies
 
-### 5.1 The Persistence Problem
+### 6.1 The Persistence Problem
 
 Each Coder Task creates a **fresh workspace**, losing changes from previous sessions.
 
-### 5.2 Solutions
+### 6.2 Solutions
 
 #### Solution 1: Persistent Volume Claims (PVC)
 
@@ -282,9 +512,9 @@ volume {
 
 ---
 
-## 6. Capabilities & Use Cases
+## 7. Capabilities & Use Cases
 
-### 6.1 Workspace Types
+### 7.1 Workspace Types
 
 | Type | Description | Best For |
 | :--- | :--- | :--- |
@@ -294,11 +524,12 @@ volume {
 | **Ephemeral Test** | Pod that self-destructs after task completion. | CI/CD, security scanning, one-off AI tasks. |
 | **(Optional) VM** | Full VM via KubeVirt (if enabled). | Kernel modules, Windows, strict isolation. |
 
-### 6.2 Good Use Cases for VS Code Remote + Coder
+### 7.2 Good Use Cases for VS Code Remote + Coder
 
 | Use Case | Why Coder Wins |
 |----------|----------------|
 | **Team Collaboration** | All developers use identical environments - no "works on my machine" issues |
+| **AI Agent Scale** | Teams can deploy 500+ parallel AI agents across the cluster to analyze the entire codebase simultaneously, a feat impossible on local laptops which bottleneck on a single machine's CPU/RAM.|
 | **Secure API Key Management** | API keys stored in K8s secrets, never on developer machines; rotated centrally |
 | **Audit & Compliance** | All OpenCode sessions logged, tracked, and auditable via Coder's task reporting |
 | **CI/CD Integration** | Workspace can be spun up as part of pipeline, run opencode tasks, and self-destruct |
@@ -307,7 +538,7 @@ volume {
 | **Onboarding Speed** | New developer gets fully configured opencode workspace in ~2 minutes |
 | **Resource Limits** | Prevent runaway opencode sessions from consuming all local CPU/RAM |
 
-### 6.3 Bad Use Cases for VS Code Remote + Coder
+### 7.3 Bad Use Cases for VS Code Remote + Coder
 
 | Use Case | Why NOT Use Coder |
 |----------|-------------------|
@@ -318,7 +549,7 @@ volume {
 | **Quick Prototyping** | Workspace startup time (even if 30 seconds); overkill for "just testing something" |
 | **Large Media Files** | File sync latency is painful; better to work locally with cloud storage |
 
-### 6.4 Key Features
+### 7.4 Key Features
 
 *   **IDE Integrations:** Native support for **VS Code** (Extension), **JetBrains**, and **Browser-based** (code-server).
 *   **Resource Management:** CPU/RAM limits enforced via K8s `ResourceQuota`.
@@ -328,15 +559,15 @@ volume {
 
 ---
 
-## 7. Security & Isolation Strategy
+## 8. Security & Isolation Strategy
 
-### 7.1 Namespace Isolation
+### 8.1 Namespace Isolation
 
-Every workspace runs in its own K8s namespace (`workspace-<username>`).
+Every workspace should be configured to run in its own K8s namespace (`workspace-<username>`) or isolated namaspace dedicated to all coder worspaces.
 *   **Network Policies:** Default deny all ingress/egress. Only allow traffic to explicitly whitelisted services.
 *   **Prevention:** A compromised workspace cannot scan or attack other namespaces.
 
-### 7.2 Resource Quotas
+### 8.2 Resource Quotas
 
 ```yaml
 # Example Quota per User
@@ -346,14 +577,14 @@ limits:
   pods: "10"
 ```
 
-### 7.3 Pod Security Standards (PSS)
+### 8.3 Pod Security Standards (PSS)
 
 Enforce `restricted` mode:
 *   No root users.
 *   No host network/filesystem access.
 *   No privileged containers.
 
-### 7.4 Secrets Management
+### 8.4 Secrets Management
 
 *   Secrets are injected at runtime via K8s Secrets or Vault.
 *   Never baked into container images.
@@ -361,7 +592,7 @@ Enforce `restricted` mode:
 
 ---
 
-## 8. Limitations & Gotchas
+## 9. Limitations & Gotchas
 
 | Limitation | Impact | Mitigation |
 | :--- | :--- | :--- |
@@ -373,9 +604,9 @@ Enforce `restricted` mode:
 
 ---
 
-## 9. Comparison with Alternatives
+## 10. Comparison with Alternatives
 
-### 9.1 Coder vs. ONa (GitPod)
+### 10.1 Coder vs. ONa (GitPod)
 
 | Feature | **Coder (Self-Hosted)** | **ONa / GitPod (SaaS)** |
 | :--- | :--- | :--- |
@@ -385,7 +616,7 @@ Enforce `restricted` mode:
 | **AI Agent Integration** | Native API | Limited |
 | **Setup Complexity** | High (Terraform, K8s) | Low (Instant) |
 
-### 9.2 Coder vs. Local Development
+### 10.2 Coder vs. Local Development
 
 | Feature | Coder | Local |
 |----------|------|-------|
@@ -397,9 +628,9 @@ Enforce `restricted` mode:
 
 ---
 
-## 10. Cost & Operational Analysis
+## 11. Cost & Operational Analysis
 
-### 10.1 Infrastructure Costs
+### 11.1 Infrastructure Costs
 
 *   **Server:** Low overhead (1-2 nodes).
 *   **Workspaces:** Pay only for active time.
@@ -407,7 +638,7 @@ Enforce `restricted` mode:
     *   *Savings:* If developers stop workspaces at 6 PM, savings are >60% compared to always-on VMs.
 *   **Storage:** PVCs (Block storage) are charged per GB/month. Keep them small (10-20GB).
 
-### 10.2 Operational Overhead
+### 11.2 Operational Overhead
 
 *   **Maintenance:** Coder Server updates (monthly). Template maintenance (as tools change).
 *   **Monitoring:** Use K8s native monitoring (Prometheus/Grafana).
@@ -415,9 +646,9 @@ Enforce `restricted` mode:
 
 ---
 
-## 11. Conclusion & Recommendations
+## 12. Conclusion & Recommendations
 
-### 11.1 Final Recommendation
+### 12.1 Final Recommendation
 
 **Use Coder if:**
 *   You need **secure, ephemeral, GPU-rich environments** that developers cannot replicate locally.
@@ -429,14 +660,14 @@ Enforce `restricted` mode:
 *   Your team is small and trusts their local environments.
 *   You don't have a dedicated DevOps/SRE person.
 
-### 11.2 Specific Recommendations for OpenCode
+### 12.2 Specific Recommendations for OpenCode
 
 1.  **Use OAuth2 authentication** - Run `opencode auth login` in workspace terminal for production
 2.  **Configure permissions** (`edit = "ask"`, `bash = "allow"`) for appropriate security
 3.  **Use Git as source of truth** for AI tasks to persist changes
 4.  **Combine with VS Code Remote** for interactive development
 
-### 11.3 Key Lessons from Investigation
+### 12.3 Key Lessons from Investigation
 
 1.  **OpenCode configuration must be valid JSON** - `null` values cause crashes
 2.  **Model names must match provider format** - `provider/model` in top-level, `model` in models block
@@ -445,10 +676,16 @@ Enforce `restricted` mode:
 
 ---
 
-## Image Placeholders
+## 13. References 
 
-The following images should be created and placed in `docs/images/`:
+### Official Coder Documentation
 
-1. **coder-architecture.png** - Architecture diagram showing Control Plane / Data Plane split, user connection flow, and workspace components
-2. **vscode-remote-architecture.png** - Diagram showing how VS Code Remote connects to workspace, file access flow
-3. **opencode-health-check.png** - Health check flow between Coder Server, Coder Agent, agentapi, and opencode
+| Topic | Link |
+|-------|------|
+| **VS Code Desktop Access** | [coder.com/docs/user-guides/workspace-access/vscode](https://coder.com/docs/@v2.34.2/user-guides/workspace-access/vscode#vs-code-desktop) |
+| **VS Code Web (code-server)** | [coder.com/docs/user-guides/workspace-access/vscode-web](https://coder.com/docs/@v2.34.2/user-guides/workspace-access/vscode-web) |
+| **Web Terminal** | [coder.com/docs/user-guides/workspace-access/web-terminal](https://coder.com/docs/@v2.34.2/user-guides/workspace-access/web-terminal) |
+| **Audit Logs** | [coder.com/docs/admin/security/audit-logs](https://coder.com/docs/admin/security/audit-logs) |
+| **User Management** | [coder.com/docs/admin/users](https://coder.com/docs/admin/users) |
+| **Authentication (OIDC/SSO)** | [coder.com/docs/admin/auth](https://coder.com/docs/admin/auth) |
+| **Templates & Workspaces** | [coder.com/docs/templates](https://coder.com/docs/templates) |
