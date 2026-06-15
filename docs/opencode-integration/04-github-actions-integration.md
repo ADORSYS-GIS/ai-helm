@@ -4,7 +4,7 @@
 
 ### 1. Create Composite Action
 
-Create `. github/actions/opencode-config/action.yaml`:
+Create `.github/actions/opencode-config/action.yaml`:
 
 ```yaml
 name: 'Setup OpenCode Config'
@@ -66,15 +66,24 @@ runs:
 
 ```yaml
 name: opencode
-on: [pull_request, issue_comment]
+on:
+  pull_request:
+  issue_comment:
+    types: [created]
 
 jobs:
   opencode:
     runs-on: ubuntu-latest
+    # Filter to only run on /oc or /opencode commands
+    if: |
+      github.event_name == 'pull_request' ||
+      contains(github.event.comment.body, '/oc') ||
+      contains(github.event.comment.body, '/opencode')
     permissions:
       id-token: write
       contents: write
       pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/opencode-config
@@ -89,4 +98,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: lightbridge/${{ secrets.OPENCODE_MODEL }}
+          use_github_token: true
 ```
+
+**Note:** The `if` condition filters comment events to only run when `/oc` or `/opencode` is present, preventing wasted CI minutes on regular comments.
