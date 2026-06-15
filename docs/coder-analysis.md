@@ -60,7 +60,7 @@ Coder provides a robust platform for standardizing development environments, acc
 ### Key Value Propositions
 
 *   **Instant Onboarding:** Reduces environment setup from days to minutes.
-*   **AI Agent Orchestration:** Provides ephemeral, sandboxes for AI agents (like OpenCode) to run code, test, and self-heal.
+*   **AI Agent Orchestration:** Provides ephemeral, GPU enabled or not  sandboxes for AI agents (like OpenCode) to run code, test, and self-heal.
 *   **Security:** Network-isolated workspaces prevent lateral movement from compromised environments to internal AI platforms.
 *   **Cost Efficiency:** Ephemeral workspaces (stop/start) reduce cloud spend compared to always-on VMs.
 
@@ -104,7 +104,7 @@ Coder operates on a **Control Plane / Data Plane** architecture.
 ### 2.3 Integration with Converse Stack
 
 *   **Envoy Gateway:** Coder workspaces can be configured with specific egress policies. If the workspace needs to talk to internal services, a `NetworkPolicy` must explicitly allow traffic.
-*   **LibreChat:** AI agents running inside workspaces can access the LibreChat API via internal K8s service DNS (e.g., `http://librechat-service:3000`), provided network policies allow it.
+*   **LibreChat:** AI agents running inside workspaces can access the LibreChat API via internal K8s service DNS (e.g., `http://librechat-service:3080`), provided network policies allow it.
 *   **Security:** The Coder Agent uses **outbound-only** connections, meaning no firewall ports need to be opened on the cluster for incoming workspace traffic.
 
 ---
@@ -130,7 +130,7 @@ There are **three primary ways** to access a Coder workspace:
 
 #### Method 1: VS Code Desktop (Remote SSH)
 
-Connect to Coder workspaces using a local VS Code instance. The experience is **full-desktop**, where files are mounted directly from the remote server (no syncing), and code executes on the remote machine while utilizing your local screen and GPU.
+Connect to Coder workspaces using a local VS Code instance. The experience is **full-desktop**, where files are mounted directly from the remote server (no syncing), and code executes on the remote machine while utilizing your local screen and GPU(optional).
 
 **The Architecture:**
 
@@ -207,7 +207,7 @@ Connect to Coder workspaces using a local VS Code instance. The experience is **
 
 **How to Access VS Code Web from Coder Dashboard:**
 
-1. **Navigate to your workspace** in the Coder Web UI at `https://coder.example.com`
+1. **Navigate to your workspace** in the Coder Web UI 
 2. **Click the "VS Code Web" button** (or "Open in code-server") on the workspace card
 3. **A new browser tab opens** with the full VS Code interface running inside your workspace
 4. **Authenticate** if prompted (uses your Coder session, so usually seamless)
@@ -256,6 +256,8 @@ graph LR
 | **Extension installs** | Local | Workspace | N/A |
 
 ### 3.3 VS Code Remote vs. Coder Tasks
+
+> **Note:** Coder Tasks entered Extended Support Release (ESR) on **June 2, 2026** and will be removed starting with Coder v2.37 (September 2026). New AI automation work should use **[Coder Agents](https://coder.com/docs/ai-coder/agents)** instead.
 
 | Feature | VS Code Remote (Human) | Coder Task (AI Agent) |
 |---------|----------------------|----------------------|
@@ -372,7 +374,8 @@ For production use with OAuth2:
 
 1. **In VS Code Remote terminal** (or Coder shell), run:
    ```bash
-   opencode auth login
+   opencode auth login https://ai.camer.digital/opencode/
+
    ```
 
 2. **Follow the device code flow**:
@@ -485,6 +488,7 @@ volume_mount {
 
 ```hcl
 startup_script = <<-EOT
+  mkdir -p /home/coder/project
   cd /home/coder/project
   if [ ! -d ".git" ]; then
     git clone ${var.repo_url} .
@@ -689,3 +693,4 @@ Enforce `restricted` mode:
 | **User Management** | [coder.com/docs/admin/users](https://coder.com/docs/admin/users) |
 | **Authentication (OIDC/SSO)** | [coder.com/docs/admin/auth](https://coder.com/docs/admin/auth) |
 | **Templates & Workspaces** | [coder.com/docs/templates](https://coder.com/docs/templates) |
+| **Coder Agents** | [coder.com/docs/ai-coder/agents](https://coder.com/docs/ai-coder/agents) |
