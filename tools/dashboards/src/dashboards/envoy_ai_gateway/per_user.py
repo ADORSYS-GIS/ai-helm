@@ -236,9 +236,13 @@ def _panel_p95_latency() -> stat.Panel:
     # Use [5m] instead of [$__range] — quantile_over_time with a 1h window
     # scans too much data per step and times out in Loki for this panel size.
     # [5m] gives "current p95 latency" which is more actionable anyway.
+    # `by ()` collapses to ONE overall series — without a grouping clause,
+    # quantile_over_time keys its output by each underlying stream's full
+    # label set (not just the dashboard variables), which blows past Loki's
+    # 500-series-per-query cap and surfaces as a silent "No data" stat panel.
     panel = _stat_panel(
         title="p95 latency (5m)",
-        expr=f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m])",
+        expr=f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m]) by ()",
         unit="ms",
         color="green",
         grid=(4, 6, 18, 0),
