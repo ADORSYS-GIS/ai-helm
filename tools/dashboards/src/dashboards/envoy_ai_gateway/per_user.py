@@ -303,12 +303,19 @@ def _panel_top_users_bar() -> bargauge.Panel:
     # display_name ("Kunga Derick" -> "Kunga") so 15 bars fit comfortably.
     # Uses _OVERALL_SELECTOR so the ranking always reflects all users
     # regardless of the $user_id filter variable.
+    # `by (display_name)` MUST be inline on sum_over_time itself, not an
+    # outer `sum by (...)` wrap — unwrap aggregations default-group by every
+    # JSON-extracted field on the line (trace_id, jti, ...) when no grouping
+    # clause is given directly on them, so an outer wrap only sees the
+    # already-blown-up result and hits Loki's 500-series cap (same root
+    # cause as the p95 latency panel fix above).
     _cost_sum = (
-        f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range])"
+        f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')}"
+        f" [$__range]) by ({LABEL_DISPLAY_NAME})"
     )
     expr = (
         f"label_replace("
-        f"topk(15, sum by ({LABEL_DISPLAY_NAME}) ({_usd(_cost_sum)})),"
+        f"topk(15, {_usd(_cost_sum)}),"
         f'"given_name", "$1", "{LABEL_DISPLAY_NAME}", "^(\\\\S+).*"'
         f")"
     )
@@ -369,10 +376,13 @@ def _panel_user_model_by_requests() -> piechart.Panel:
 
 
 def _panel_user_model_by_cost() -> piechart.Panel:
+    # `by (model)` inline on sum_over_time — see the Top-15-bar comment for why
+    # an outer `sum by (...)` wrap doesn't avoid the 500-series cap here.
     return _pie_panel(
         title="User — model distribution (cost $)",
         expr=_usd(
-            f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+            f"sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')}"
+            f" [$__range]) by ({LABEL_MODEL})"
         ),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 18, 22),
@@ -382,7 +392,7 @@ def _panel_user_model_by_cost() -> piechart.Panel:
 def _panel_user_model_by_tokens() -> piechart.Panel:
     return _pie_panel(
         title="User — model distribution (tokens)",
-        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
+        expr=f"sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]) by ({LABEL_MODEL})",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 0, 30),
     )
@@ -453,10 +463,13 @@ def _panel_overall_model_by_requests() -> piechart.Panel:
 
 
 def _panel_overall_model_by_cost() -> piechart.Panel:
+    # `by (model)` inline on sum_over_time — see the Top-15-bar comment for why
+    # an outer `sum by (...)` wrap doesn't avoid the 500-series cap here.
     return _pie_panel(
         title="Overall — model distribution (cost $)",
         expr=_usd(
-            f"sum by ({LABEL_MODEL}) (sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+            f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')}"
+            f" [$__range]) by ({LABEL_MODEL})"
         ),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 6, 38),
@@ -466,7 +479,7 @@ def _panel_overall_model_by_cost() -> piechart.Panel:
 def _panel_overall_model_by_tokens() -> piechart.Panel:
     return _pie_panel(
         title="Overall — model distribution (tokens)",
-        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
+        expr=f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]) by ({LABEL_MODEL})",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 12, 38),
     )
