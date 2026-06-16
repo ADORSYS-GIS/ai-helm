@@ -67,6 +67,12 @@ _OVERALL_SELECTOR = (
 )
 
 
+_JSON_PATHS = {
+    "gen_ai_usage_total_tokens": "gen_ai.usage.total_tokens",
+    "gen_ai_usage_custom_total_cost": "gen_ai.usage.custom_total_cost",
+}
+
+
 def _unwrap(field: str) -> str:
     """`| json <field> | unwrap <field>` with the error guard ADR-0046 requires.
 
@@ -80,8 +86,21 @@ def _unwrap(field: str) -> str:
     explicit grouping is given, blowing past Loki's 500-series cap under real
     traffic. Restricting extraction to the one field we unwrap keeps the
     per-line label set down to just the genuine stream labels.
+
+    Envoy's access-log format.json (charts/core-gateway/templates/envoy-proxy.yaml)
+    declares the GenAI usage fields with LITERAL DOTS in the key name
+    (`gen_ai.usage.total_tokens`, not a nested object) -- a bare `| json` auto-
+    flattens that into the underscored label we use here, but the explicit
+    `| json <name>` form treats `<name>` as a path lookup, which does NOT
+    match a literal dotted key by bare name. Loki's json-field grammar isn't
+    full JMESPath -- a literal/quoted key isn't a valid expression on its
+    own, it must be wrapped in brackets: `["dotted.key"]` (confirmed via the
+    parser's own error: "unexpected STRING, expecting LSB or FIELD"). Flat
+    keys like `duration` have no dot and extract by bare name as before.
     """
-    return f'| json {field} | unwrap {field} | __error__=""'
+    path = _JSON_PATHS.get(field)
+    extract = f'{field}=`["{path}"]`' if path else field
+    return f'| json {extract} | unwrap {field} | __error__=""'
 
 
 def _usd(expr: str) -> str:
@@ -184,6 +203,26 @@ def _pie_panel(
     )
 
 
+class _RowBuilder:
+    """Minimal `cogbuilder.Builder[dashboard.RowPanel]` adapter.
+
+    The SDK ships a `RowPanel` model but no dedicated row *builder* module
+    (unlike stat/piechart/timeseries) -- `Dashboard.with_panel`/`with_row`
+    only need a `.build()` method, so this tiny wrapper is enough to reuse
+    `with_panel`'s existing grid_pos handling for row headers.
+    """
+
+    def __init__(self, row: dm.RowPanel) -> None:
+        self._row = row
+
+    def build(self) -> dm.RowPanel:
+        return self._row
+
+
+def _row(title: str, *, y: int) -> _RowBuilder:
+    return _RowBuilder(dm.RowPanel(title=title, grid_pos=dm.GridPos(h=1, w=24, x=0, y=y)))
+
+
 def _query_var(
     *,
     name: str,
@@ -215,7 +254,7 @@ def _panel_requests_range() -> stat.Panel:
         expr=f"sum(count_over_time({_SELECTOR} [$__range]))",
         unit="short",
         color="blue",
-        grid=(4, 6, 0, 0),
+        grid=(4, 6, 0, 1),
     )
 
 
@@ -225,7 +264,7 @@ def _panel_unique_users() -> stat.Panel:
         expr=f"count(sum by ({LABEL_EMAIL}) (count_over_time({_SELECTOR} [$__range])))",
         unit="short",
         color="purple",
-        grid=(4, 6, 6, 0),
+        grid=(4, 6, 6, 1),
     )
 
 
@@ -235,7 +274,7 @@ def _panel_total_tokens() -> stat.Panel:
         expr=f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
         unit="short",
         color="green",
-        grid=(4, 6, 12, 0),
+        grid=(4, 6, 12, 1),
     )
 
 
@@ -252,7 +291,7 @@ def _panel_p95_latency() -> stat.Panel:
         expr=f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m]) by ()",
         unit="ms",
         color="green",
-        grid=(4, 6, 18, 0),
+        grid=(4, 6, 18, 1),
     )
     return panel.thresholds(
         db.ThresholdsConfig()
@@ -277,7 +316,7 @@ def _panel_requests_per_user() -> timeseries.Panel:
         timeseries.Panel()
         .title("Requests per user / minute")
         .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=8, w=24, x=0, y=4))
+        .grid_pos(dm.GridPos(h=8, w=24, x=0, y=5))
         .unit("short")
         .draw_style(cm.GraphDrawStyle.LINE)
         .line_interpolation(cm.LineInterpolation.SMOOTH)
@@ -328,7 +367,7 @@ def _panel_top_users_bar() -> bargauge.Panel:
         bargauge.Panel()
         .title("Top 15 users — cost (selected range)")
         .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=10, w=24, x=0, y=12))
+        .grid_pos(dm.GridPos(h=10, w=24, x=0, y=13))
         .unit("currencyUSD")
         .orientation(cm.VizOrientation.HORIZONTAL)
         .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
@@ -346,72 +385,24 @@ def _panel_top_users_bar() -> bargauge.Panel:
 
 
 def _panel_user_total_cost() -> stat.Panel:
-    # calcs=["sum"] sums 1m-bucket costs across the whole range → total spend.
-    # graph_mode=AREA renders the per-minute cost curve as the sparkline.
+    # [$__range] + the default lastNotNull calc, same trick as the top-row
+    # "Requests (range)" stat: at the LAST evaluated point, the window
+    # stretches back exactly to the start of the dashboard's selected range,
+    # so that one point already IS the total -- lastNotNull just reads it.
+    # (The previous [1m]-bucket + calcs=["sum"] version double/triple-counted:
+    # Grafana's auto step for a range query is normally well under 60s, so a
+    # 1-minute window evaluated every ~10-15s overlaps itself 4-6x, and
+    # summing those overlapping buckets inflated the total by that same
+    # factor -- this is why "User"/"Overall" totals looked implausibly large
+    # relative to e.g. the Top-15 cost breakdown.)
     return _stat_panel(
         title="User — total cost",
         expr=_usd(
-            f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [1m]))"
+            f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
         ),
         unit="currencyUSD",
         color="orange",
-        grid=(8, 6, 0, 22),
-        calcs=["sum"],
-    )
-
-
-def _panel_user_total_requests() -> stat.Panel:
-    return _stat_panel(
-        title="User — total requests",
-        expr=f"sum(count_over_time({_SELECTOR} [1m]))",
-        unit="short",
-        color="blue",
-        grid=(8, 6, 6, 22),
-        calcs=["sum"],
-    )
-
-
-def _panel_user_model_by_requests() -> piechart.Panel:
-    return _pie_panel(
-        title="User — model distribution (requests)",
-        expr=f"sum by ({LABEL_MODEL}) (count_over_time({_SELECTOR} [$__range]))",
-        legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 6, 12, 22),
-    )
-
-
-def _panel_user_model_by_cost() -> piechart.Panel:
-    return _pie_panel(
-        title="User — model distribution (cost $)",
-        expr=_usd(
-            f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
-        ),
-        legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 6, 18, 22),
-    )
-
-
-def _panel_user_model_by_tokens() -> piechart.Panel:
-    return _pie_panel(
-        title="User — model distribution (tokens)",
-        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
-        legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 6, 0, 30),
-    )
-
-
-def _panel_user_status_codes() -> piechart.Panel:
-    # response_code is in the log body (not a label); | json extracts it.
-    # The ^(-|)$ filter drops absent/placeholder values before grouping.
-    return _pie_panel(
-        title="User — status codes",
-        expr=(
-            f"sum by (response_code) ("
-            f'count_over_time({_SELECTOR} | json | response_code !~ "^(-|)$" [$__range])'
-            f")"
-        ),
-        legend_label="{{response_code}}",
-        grid=(8, 6, 6, 30),
+        grid=(8, 12, 0, 24),
     )
 
 
@@ -420,7 +411,7 @@ def _panel_latency_per_user() -> timeseries.Panel:
         timeseries.Panel()
         .title("Latency per user — p50 / p95")
         .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=8, w=12, x=12, y=30))
+        .grid_pos(dm.GridPos(h=8, w=12, x=12, y=24))
         .unit("ms")
         .draw_style(cm.GraphDrawStyle.LINE)
         .line_interpolation(cm.LineInterpolation.LINEAR)
@@ -450,6 +441,50 @@ def _panel_latency_per_user() -> timeseries.Panel:
     )
 
 
+def _panel_user_model_by_requests() -> piechart.Panel:
+    return _pie_panel(
+        title="User — model distribution (requests)",
+        expr=f"sum by ({LABEL_MODEL}) (count_over_time({_SELECTOR} [$__range]))",
+        legend_label=f"{{{{{LABEL_MODEL}}}}}",
+        grid=(8, 6, 0, 32),
+    )
+
+
+def _panel_user_model_by_cost() -> piechart.Panel:
+    return _pie_panel(
+        title="User — model distribution (cost $)",
+        expr=_usd(
+            f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+        ),
+        legend_label=f"{{{{{LABEL_MODEL}}}}}",
+        grid=(8, 6, 6, 32),
+    )
+
+
+def _panel_user_model_by_tokens() -> piechart.Panel:
+    return _pie_panel(
+        title="User — model distribution (tokens)",
+        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
+        legend_label=f"{{{{{LABEL_MODEL}}}}}",
+        grid=(8, 6, 12, 32),
+    )
+
+
+def _panel_user_status_codes() -> piechart.Panel:
+    # response_code is in the log body (not a label); | json extracts it.
+    # The ^(-|)$ filter drops absent/placeholder values before grouping.
+    return _pie_panel(
+        title="User — status codes",
+        expr=(
+            f"sum by (response_code) ("
+            f'count_over_time({_SELECTOR} | json | response_code !~ "^(-|)$" [$__range])'
+            f")"
+        ),
+        legend_label="{{response_code}}",
+        grid=(8, 6, 18, 32),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Overall section  (y=38)
 # ---------------------------------------------------------------------------
@@ -460,7 +495,7 @@ def _panel_overall_model_by_requests() -> piechart.Panel:
         title="Overall — model distribution (requests)",
         expr=f"sum by ({LABEL_MODEL}) (count_over_time({_OVERALL_SELECTOR} [$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 6, 0, 38),
+        grid=(8, 6, 0, 41),
     )
 
 
@@ -471,7 +506,7 @@ def _panel_overall_model_by_cost() -> piechart.Panel:
             f"sum by ({LABEL_MODEL}) (sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
         ),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 6, 6, 38),
+        grid=(8, 6, 6, 41),
     )
 
 
@@ -480,7 +515,7 @@ def _panel_overall_model_by_tokens() -> piechart.Panel:
         title="Overall — model distribution (tokens)",
         expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 6, 12, 38),
+        grid=(8, 6, 12, 41),
     )
 
 
@@ -493,42 +528,42 @@ def _panel_overall_status_codes() -> piechart.Panel:
             f")"
         ),
         legend_label="{{response_code}}",
-        grid=(8, 6, 18, 38),
+        grid=(8, 6, 18, 41),
     )
 
 
 def _panel_overall_total_cost() -> stat.Panel:
+    # See _panel_user_total_cost -- same [$__range]+lastNotNull fix, same
+    # reason (the prior [1m]+sum form double/triple-counted via overlapping
+    # auto-step windows).
     return _stat_panel(
         title="Overall — total cost",
         expr=_usd(
-            f"sum(sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [1m]))"
+            f"sum(sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
         ),
         unit="currencyUSD",
         color="orange",
-        grid=(4, 8, 0, 46),
-        calcs=["sum"],
+        grid=(4, 8, 0, 49),
     )
 
 
 def _panel_overall_total_tokens() -> stat.Panel:
     return _stat_panel(
         title="Overall — total tokens",
-        expr=f"sum(sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [1m]))",
+        expr=f"sum(sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
         unit="short",
         color="green",
-        grid=(4, 8, 8, 46),
-        calcs=["sum"],
+        grid=(4, 8, 8, 49),
     )
 
 
 def _panel_overall_total_requests() -> stat.Panel:
     return _stat_panel(
         title="Overall — total requests",
-        expr=f"sum(count_over_time({_OVERALL_SELECTOR} [1m]))",
+        expr=f"sum(count_over_time({_OVERALL_SELECTOR} [$__range]))",
         unit="short",
         color="blue",
-        grid=(4, 8, 16, 46),
-        calcs=["sum"],
+        grid=(4, 8, 16, 49),
     )
 
 
@@ -584,7 +619,8 @@ def _dashboard() -> db.Dashboard:
                 definition=(f'label_values({{service_name="{GATEWAY_SERVICE_NAME}"}}, model)'),
             )
         )
-        # Overview stats
+        # Overview row
+        .with_panel(_row("Overview", y=0))
         .with_panel(_panel_requests_range())
         .with_panel(_panel_unique_users())
         .with_panel(_panel_total_tokens())
@@ -593,15 +629,16 @@ def _dashboard() -> db.Dashboard:
         .with_panel(_panel_requests_per_user())
         # Top 15 users by cost
         .with_panel(_panel_top_users_bar())
-        # Per-user section
+        # Per-user row
+        .with_panel(_row("Per-User", y=23))
         .with_panel(_panel_user_total_cost())
-        .with_panel(_panel_user_total_requests())
+        .with_panel(_panel_latency_per_user())
         .with_panel(_panel_user_model_by_requests())
         .with_panel(_panel_user_model_by_cost())
         .with_panel(_panel_user_model_by_tokens())
         .with_panel(_panel_user_status_codes())
-        .with_panel(_panel_latency_per_user())
-        # Overall section
+        # Overall row
+        .with_panel(_row("Overall", y=40))
         .with_panel(_panel_overall_model_by_requests())
         .with_panel(_panel_overall_model_by_cost())
         .with_panel(_panel_overall_model_by_tokens())

@@ -818,13 +818,22 @@ applications:
                     # PROFILE (PII) — opt-in per ADR-0011; downstream services
                     # that surface these in their own logs MUST treat them as
                     # PII (redact, restrict, expire). Empty for SA tokens.
+                    # ADR-0047: GitHub Actions OIDC tokens carry no email/name
+                    # claim at all — a bare selector against a missing claim
+                    # let Authorino/Envoy/Loki stamp the degenerate "-" / nil
+                    # placeholder straight into these PII headers, surfacing
+                    # as junk "-"/"<nil>" rows in the per-user dashboard.
+                    # has()-guard like x-billing-plan above; GitHub identities
+                    # fall back to "owner/repo" (still no real PII) instead.
                     "x-oidc-email":
                       plain:
-                        selector: "auth.identity.email"
+                        expression: 'has(auth.identity.email) ? string(auth.identity.email) : ""'
                     "x-oidc-name":
                       plain:
-                        # Full display name, e.g. "Stephane Segning".
-                        selector: "auth.identity.name"
+                        # Full display name, e.g. "Stephane Segning"; GitHub
+                        # CI falls back to the repository slug, e.g.
+                        # "ADORSYS-GIS/ai-helm".
+                        expression: 'has(auth.identity.name) ? string(auth.identity.name) : (has(auth.identity.repository) ? string(auth.identity.repository) : "")'
 
             # ── Internal plane (ADR-0021) ──────────────────────────────────────
             internal:
