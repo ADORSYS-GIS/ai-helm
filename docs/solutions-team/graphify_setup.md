@@ -165,7 +165,7 @@ Add the server configuration to your project's `.opencode/opencode.json` file. T
 
 **When to use:** Team projects where consistency across contributors is important, or when you need project-specific settings.
 
-#### Option B: Global Configuration (Recommended for personal workflows)
+#### Option B: Global Configuration (Use with caution)
 
 Configure the MCP server once in your user-level OpenCode configuration at `~/.config/opencode/opencode.jsonc`. This makes Graphify available across all your projects without per-project setup.
 
@@ -182,25 +182,41 @@ Configure the MCP server once in your user-level OpenCode configuration at `~/.c
 }
 ```
 
+> **⚠️ Important: How MCP Servers Work**
+>
+> The MCP server is a **running process** that OpenCode starts automatically when you launch it. OpenCode executes the `command` from your **current working directory** (where you run `opencode` from).
+>
+> For global config:
+> - OpenCode will try to start `graphify-mcp` from **whatever directory you're in**
+> - If `graphify-out/graph.json` doesn't exist in that directory, **the server fails to start**
+> - You'll see "graphify failed and disabled" in the MCP status
+>
+> **This means:** Global config only works if you **always run OpenCode from a project directory that has `graphify-out/graph.json`**.
+
 **Key difference:** Notice the `command` array omits the graph path argument. The `graphify-mcp` executable defaults to `graphify-out/graph.json` relative to the current working directory.
 
 **Advantages:**
 - Single configuration applies to all projects
 - No per-project `.opencode/opencode.json` required for MCP setup
-- Ideal for developers who work across many repositories
 
-**When to use:** Personal projects, solo development, or when you consistently use the default `graphify-out/graph.json` path across all projects.
+**Disadvantages:**
+- **Fails silently** if you run OpenCode from a directory without `graphify-out/graph.json`
+- Requires you to always remember to run OpenCode from the correct directory
 
-#### Critical: Project-Specific vs Global — Where You Run OpenCode Matters
+**When to use:** Only if you consistently work from project directories that have `graphify-out/graph.json` and understand the directory requirement.
 
-**This is a common source of confusion. Understand the difference:**
+#### Critical: Understanding How MCP Servers Work
 
-| Configuration | MCP Server Listed In OpenCode | MCP Server Works When |
-|--------------|------------------------------|----------------------|
-| **Project-specific** | Only when running `opencode` from that project's directory (or subdirectories) | Graph exists at `graphify-out/graph.json` in that project |
-| **Global** | Always listed, regardless of which directory you run `opencode` from | Only when current directory contains `graphify-out/graph.json` |
+**The MCP server is a running process, not just a configuration.**
 
-**Scenario 1: Project-specific config, running from wrong directory**
+When you start OpenCode, it reads your MCP configuration and **automatically starts the server process** by executing the `command` from your current working directory. This is why the directory matters:
+
+| Configuration | When MCP Server Starts | What Happens |
+|--------------|------------------------|--------------|
+| **Project-specific** | Only when running `opencode` from that project's directory | OpenCode starts `graphify-mcp` from the project root where `graphify-out/graph.json` exists ✅ |
+| **Global** | Always, regardless of directory | OpenCode tries to start `graphify-mcp` from whatever directory you're in. If no `graphify-out/graph.json`, the server **fails to start** ❌ |
+
+**Scenario 1: Project-specific config (Recommended)**
 
 ```bash
 # Config exists in: /home/user/projects/myapp/.opencode/opencode.json
@@ -208,44 +224,48 @@ Configure the MCP server once in your user-level OpenCode configuration at `~/.c
 # ✅ CORRECT - running from the project
 cd /home/user/projects/myapp
 opencode
-# → MCP server "graphify" is listed and works (graph found)
+# → OpenCode loads .opencode/opencode.json
+# → Starts graphify-mcp from /home/user/projects/myapp
+# → graphify-out/graph.json exists → SERVER STARTS SUCCESSFULLY ✅
 
 # ❌ WRONG - running from different directory
 cd /home/user/projects/other-project
 opencode
-# → MCP server "graphify" is NOT LISTED at all
-# → The .opencode/opencode.json from myapp was never loaded
+# → OpenCode does NOT load myapp's .opencode/opencode.json
+# → No graphify MCP configured at all
 ```
 
-**Scenario 2: Global config, running from directory without graph**
+**Scenario 2: Global config (Use with caution)**
 
 ```bash
 # Config exists in: ~/.config/opencode/opencode.jsonc (global)
 
 # ✅ CORRECT - running from project with graph
-cd /home/user/projects/myapp
+cd /home/user/projects/myapp  # has graphify-out/graph.json
 opencode
-# → MCP server "graphify" is LISTED
-# → Works because graphify-out/graph.json exists
+# → OpenCode loads global config
+# → Starts graphify-mcp from /home/user/projects/myapp
+# → graphify-out/graph.json exists → SERVER STARTS SUCCESSFULLY ✅
 
-# ⚠️ WARNING - running from directory without graph
-cd /home/user/projects/other-project  # (no graphify-out/)
+# ❌ WRONG - running from directory without graph
+cd /home/user/projects/other-project  # NO graphify-out/
 opencode
-# → MCP server "graphify" is LISTED (global config always loads)
-# → But the MCP server will ERROR: graph file not found
-# → You need to run `graphify update .` in that directory first
+# → OpenCode loads global config
+# → Tries to start graphify-mcp from /home/user/projects/other-project
+# → graphify-out/graph.json NOT FOUND → SERVER FAILS TO START ❌
+# → You'll see: "graphify failed and disabled"
 ```
 
 **Summary:**
 
-| Scope | Config Location | When MCP Appears | Prerequisite for Working |
-|-------|----------------|------------------|-------------------------|
-| Project-specific | `.opencode/opencode.json` | Only in that project | Run `graphify update .` in project |
-| Global | `~/.config/opencode/opencode.jsonc` | Everywhere | Run `graphify update .` in each project |
+| Scope | Config Location | Server Starts From | Prerequisite for Success |
+|-------|----------------|-------------------|-------------------------|
+| Project-specific | `.opencode/opencode.json` | Project root (where `.opencode/` exists) | `graphify-out/graph.json` must exist in project |
+| Global | `~/.config/opencode/opencode.jsonc` | Current working directory | You must run `opencode` from a directory with `graphify-out/graph.json` |
 
 **Recommendation:**
-- **Team projects:** Use project-specific config so MCP is guaranteed available when working in that project
-- **Personal multi-project workflow:** Use global config, but remember to run `graphify update .` in each project before using Graphify tools
+- **Team projects:** Use project-specific config — guarantees the server starts from the correct directory
+- **Personal multi-project workflow:** Either use project-specific config for each project, OR always remember to run `opencode` from a project directory that has `graphify-out/graph.json`
 
 #### Configuration Details
 
@@ -382,10 +402,13 @@ For CI (e.g., GitLab/GitHub Actions), add a job that runs `graphify update .` an
 
 ### For Personal Workflows (Global Config)
 
+> **⚠️ Remember:** With global config, you must run `opencode` from a directory that has `graphify-out/graph.json`, otherwise the MCP server will fail to start.
+
 - [ ] Install package with needed extras: `pip install "graphifyy[mcp,gemini,pdf]"` (or `[openai]` if using custom provider)
 - [ ] Configure Graphify MCP globally in `~/.config/opencode/opencode.jsonc` (see Section 4.2, Option B)
 - [ ] For each project: `cd your-project && graphify update .`
 - [ ] Verify the graph exists: `ls graphify-out/graph.json`
+- [ ] **Always run `opencode` from the project directory** (where `graphify-out/` exists)
 - [ ] Ask OpenCode: *"What graph tools do you have available?"*
 
 ---
@@ -401,7 +424,7 @@ For CI (e.g., GitLab/GitHub Actions), add a job that runs `graphify update .` an
 | Graph is very slow or huge | Repository very large | Use `.graphifyignore` to exclude `node_modules`, `dist`, etc. |
 | Graphify tools not available in OpenCode | MCP server not configured or not running | Verify configuration in `.opencode/opencode.json` (project) or `~/.config/opencode/opencode.jsonc` (global); ensure `graphify-out/graph.json` exists |
 | MCP server not listed at all (project-specific) | Running opencode from wrong directory | Run `opencode` from the project root (where `.opencode/` exists), not from a subdirectory or different location |
-| MCP server listed but graph not found (global config) | Running from directory without graph | Run `graphify update .` in the project directory first, or navigate to a project that has `graphify-out/graph.json` |
+| MCP server listed but "failed and disabled" (global config) | Running OpenCode from a directory without `graphify-out/graph.json` | Run `opencode` from a project directory that has `graphify-out/graph.json`, or use project-specific config instead |
 | Global config not working | Graph file missing in project | Global config requires `graphify-out/graph.json` in the project root. Run `graphify update .` first |
 | Both global and project config present | Configs merge; project can override global | Check for conflicting `enabled: false` in project config, or duplicate MCP server names |
 | `graphify-mcp` not found in global PATH | Installed via pipx or in user-local bin | Use full path in command: `["/home/user/.local/bin/graphify-mcp"]` |
