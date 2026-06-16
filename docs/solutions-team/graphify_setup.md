@@ -78,18 +78,18 @@ export GEMINI_API_KEY="your-gemini-key-here"
 graphify .
 ```
 
-#### Option B: Using a Custom OpenAI-Compatible Provider (e.g. ADORSYS Provider)
+#### Option B: Using a Custom OpenAI-Compatible Provider (e.g. kivoyo Provider)
 To point Graphify to a custom OpenAI-compatible endpoint, register a custom provider via the Graphify CLI:
 ```bash
 # Register the custom provider
-graphify provider add adorsys \
+graphify provider add kivoyo \
   --base-url "https://your-custom-openai-endpoint/v1" \
   --default-model "your-model-name" \
   --env-key "OPENAI_API_KEY"
 
 # Set the key and extract the graph
 export OPENAI_API_KEY="your-custom-api-key"
-graphify . --backend adorsys
+graphify . --backend kivoyo
 ```
 
 ---
