@@ -77,6 +77,17 @@ def _unwrap(field: str) -> str:
     return f'| json | unwrap {field} | __error__=""'
 
 
+def _usd(expr: str) -> str:
+    """Convert a raw micro-USD LogQL aggregation to USD for display.
+
+    The pricing CEL (ai-model.costExpression, ADR-0028/ADR-0051) emits
+    gen_ai_usage_custom_total_cost in micro-USD. Every cost panel must
+    divide by 1e6 before applying the currencyUSD unit, or values display
+    1,000,000x too large.
+    """
+    return f"(({expr}) / 1e6)"
+
+
 # ---------------------------------------------------------------------------
 # Small builder helpers
 # ---------------------------------------------------------------------------
@@ -288,11 +299,12 @@ def _panel_top_users_bar() -> bargauge.Panel:
     # display_name ("Kunga Derick" -> "Kunga") so 15 bars fit comfortably.
     # Uses _OVERALL_SELECTOR so the ranking always reflects all users
     # regardless of the $user_id filter variable.
+    _cost_sum = (
+        f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range])"
+    )
     expr = (
         f"label_replace("
-        f"topk(15, sum by ({LABEL_DISPLAY_NAME}) ("
-        f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range])"
-        f")),"
+        f"topk(15, sum by ({LABEL_DISPLAY_NAME}) ({_usd(_cost_sum)})),"
         f'"given_name", "$1", "{LABEL_DISPLAY_NAME}", "^(\\\\S+).*"'
         f")"
     )
@@ -306,7 +318,9 @@ def _panel_top_users_bar() -> bargauge.Panel:
         .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
         .display_mode(cm.BarGaugeDisplayMode.BASIC)
         .thresholds(_single_color_thresholds("blue"))
-        .with_target(_loki_target(expr, legend="{{given_name}}", instant=True))
+        # Range query (not instant): same $__range-not-substituted bug as the
+        # pie charts above — instant queries silently return no data here too.
+        .with_target(_loki_target(expr, legend="{{given_name}}", instant=False))
     )
 
 
@@ -320,7 +334,9 @@ def _panel_user_total_cost() -> stat.Panel:
     # graph_mode=AREA renders the per-minute cost curve as the sparkline.
     return _stat_panel(
         title="User — total cost",
-        expr=f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [1m]))",
+        expr=_usd(
+            f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [1m]))"
+        ),
         unit="currencyUSD",
         color="orange",
         grid=(8, 6, 0, 22),
@@ -351,7 +367,9 @@ def _panel_user_model_by_requests() -> piechart.Panel:
 def _panel_user_model_by_cost() -> piechart.Panel:
     return _pie_panel(
         title="User — model distribution (cost $)",
-        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))",
+        expr=_usd(
+            f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+        ),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 18, 22),
     )
@@ -433,7 +451,9 @@ def _panel_overall_model_by_requests() -> piechart.Panel:
 def _panel_overall_model_by_cost() -> piechart.Panel:
     return _pie_panel(
         title="Overall — model distribution (cost $)",
-        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))",
+        expr=_usd(
+            f"sum by ({LABEL_MODEL}) (sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+        ),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 6, 38),
     )
@@ -464,7 +484,9 @@ def _panel_overall_status_codes() -> piechart.Panel:
 def _panel_overall_total_cost() -> stat.Panel:
     return _stat_panel(
         title="Overall — total cost",
-        expr=f"sum(sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [1m]))",
+        expr=_usd(
+            f"sum(sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [1m]))"
+        ),
         unit="currencyUSD",
         color="orange",
         grid=(4, 8, 0, 46),
