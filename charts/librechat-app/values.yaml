@@ -112,10 +112,66 @@ librechat:
             - ai.camer.digital
 
   rawResources:
+    # Vanity-domain redirect (ADR-0053): we own kivoyo.com and ai.kivoyo.com DNS
+    # already points at this cluster's Traefik LB. Redirect it (temporary → 302,
+    # path+query preserved) to the canonical ai.camer.digital. The redirect is a
+    # Traefik redirectRegex Middleware attached to a dedicated Ingress; the
+    # Ingress backend is never reached (the middleware 302s first) but the spec
+    # requires one. TLS for ai.kivoyo.com is issued by the same ClusterIssuer as
+    # the main ingress (cert-home-cert-http). ACME-safe: cert-manager's HTTP-01
+    # solver Ingress for the exact /.well-known/acme-challenge/<token> path
+    # out-ranks this Host-only redirect by Traefik router priority.
+    # (The API host api.ai.kivoyo.com is redirected separately at the Envoy AI
+    # Gateway — charts/core-gateway gateway.redirectHosts.)
+    kivoyoRedirectMiddleware:
+      enabled: true
+      apiVersion: traefik.io/v1alpha1
+      kind: Middleware
+      # forceRename pins the exact metadata.name (bjw-s otherwise prefixes the
+      # chart fullname + appends the identifier once >1 rawResource exists). The
+      # Ingress's router.middlewares annotation references this name verbatim.
+      forceRename: kivoyo-redirect
+      spec:
+        spec:
+          redirectRegex:
+            regex: "^https?://ai\\.kivoyo\\.com/(.*)"
+            replacement: "https://ai.camer.digital/${1}"
+            permanent: false
+
+    kivoyoRedirectIngress:
+      enabled: true
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      forceRename: librechat-kivoyo-redirect
+      annotations:
+        cert-manager.io/cluster-issuer: cert-home-cert-http
+        traefik.ingress.kubernetes.io/router.middlewares: '{{ .Release.Namespace }}-kivoyo-redirect@kubernetescrd'
+      spec:
+        spec:
+          ingressClassName: traefik
+          tls:
+            - hosts:
+                - ai.kivoyo.com
+              secretName: ai.kivoyo.com-tls
+          rules:
+            - host: ai.kivoyo.com
+              http:
+                paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: '{{ .Release.Name }}'
+                        port:
+                          number: 3080
+
     hpa:
       enabled: true
       apiVersion: autoscaling/v2
       kind: HorizontalPodAutoscaler
+      # Pin the name (adding the redirect rawResources above pushes the count >1,
+      # which would otherwise append the `hpa` identifier and rename this HPA).
+      forceRename: '{{ .Release.Name }}'
       spec:
         spec:
           scaleTargetRef:

@@ -158,7 +158,7 @@ flowchart TB
 
 | Chart | Responsibility | Pattern |
 |---|---|---|
-| `core-gateway` | Envoy AI Gateway, listeners (external + internal), ClientTrafficPolicy, BackendTrafficPolicy, ACME issuer, OTel collector | Direct |
+| `core-gateway` | Envoy AI Gateway, listeners (external + internal), ClientTrafficPolicy, BackendTrafficPolicy, ACME issuer, OTel collector, `gateway.redirectHosts` (vanity-domain redirects, ADR-0053) | Direct |
 | `kuadrant-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy | Direct |
 | `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget) | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
@@ -323,6 +323,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0046 | Per-user attribution repair (flatten OTLP access-log attributes at Alloy) |
 | 0047/0049 | GitHub-OIDC CI binding (`lightbridge-repo-auth`) + operator-only onboarding |
 | 0048 | Global opencode-browser plugin + lean default primary agent |
+| 0053 | Vanity-domain redirects (`kivoyo.com` → `camer.digital`, temporary) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 

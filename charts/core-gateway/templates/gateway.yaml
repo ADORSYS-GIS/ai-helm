@@ -37,6 +37,24 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    {{- range .Values.gateway.redirectHosts }}
+    # Vanity/alias redirect listener (ADR-0053): terminates TLS for {{ .from }}
+    # so the HTTPS redirect HTTPRoute (templates/redirect-hosts.yaml) can issue a
+    # cross-host redirect to {{ .to }}. Cert is {{ include "core-gateway.fullname" $ }}-redirect-{{ .name }}-tls.
+    - name: redirect-{{ .name }}
+      protocol: HTTPS
+      port: 443
+      hostname: {{ .from | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ include "core-gateway.fullname" $ }}-redirect-{{ .name }}-tls
+            kind: Secret
+            group: ''
+      allowedRoutes:
+        namespaces:
+          from: All
+    {{- end }}
     {{- if .Values.gateway.internal.enabled }}
     # Internal plane (ADR-0021): same :443, scoped by the k8s svc-DNS hostname.
     # Reached only in-cluster via the core-gateway-internal ClusterIP Service;
