@@ -178,6 +178,7 @@ curl -s 'https://grafana.com/api/dashboards?orderBy=downloads&direction=desc&pag
 
 ## Related
 
+- [docs/observability-gaps.md](observability-gaps.md) — the full service-by-service inventory (ticket #354; this doc evaluates dashboards for the gaps it ranks)
 - [ADR-0045](adr/0045-scrape-first-dashboard-sourcing.md) — the sourcing policy arising from this research
 - [ADR-0046](adr/0046-per-user-attribution-otlp-envelope-repair.md) — the per-user attribution repair arising from §1
 - [ADR-0005](adr/0005-per-user-attribution-via-authorino-headers.md) — the per-user attribution design ADR-0046 repairs
