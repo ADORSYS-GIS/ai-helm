@@ -33,7 +33,17 @@ externalSecrets:
         property: lightbridge_opa_password
   # CNPG barman backup credentials (Hetzner Object Storage). Same creds the
   # Keycloak CNPG backup uses — platform secret under prod/meta/test-app.
+  #
+  # `s3_region_name` is a STATIC literal (not in the AWS store): the barman-cloud
+  # ObjectStore's defaulting webhook injects an `s3Credentials.region` ref →
+  # {name: lightbridge-cnpg-s3, key: s3_region_name} that the chart never
+  # declares, and the plugin then reads that key at backup time. Without it every
+  # ScheduledBackup fails `missing key s3_region_name, inside secret
+  # lightbridge-cnpg-s3`. us-east-1 is the Ceph-RGW-accepted convention used
+  # repo-wide (mimir/loki/tempo). Merged via target.template (mergePolicy: Merge).
   lightbridge-cnpg-s3:
+    literals:
+      s3_region_name: us-east-1
     data:
       - secretKey: s3_access_key_id
         key: prod/meta/test-app
