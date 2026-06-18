@@ -8,9 +8,14 @@ description: |
   CloudNativePG cluster `lightbridge-main-db` (charts/lightbridge-db) via a
   dedicated `codeintel` role + database.
 
-  Self-contained (hand-written templates, no chart deps) so it lints/renders
-  offline. Modelled on the librechat-app deployment pattern (ExternalSecrets via
-  ssegning-aws, Traefik ingress + cert-home-cert-http).
+  Workloads use the bjw-s app-template (`bjw-template` v4.6.2, aliased `lci`),
+  matching the librechat-app pattern; ExternalSecrets are chart templates resolving
+  against the ssegning-aws ClusterSecretStore; ingress is Traefik + cert-home-cert-http.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+dependencies:
+  - name: bjw-template
+    version: "4.6.2"
+    repository: file://../bjw-template
+    alias: lci
