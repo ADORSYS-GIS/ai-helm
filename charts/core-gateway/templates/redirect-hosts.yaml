@@ -1,0 +1,75 @@
+{{- /*
+Vanity/alias domain redirects (ADR-0053). For each gateway.redirectHosts entry,
+emit a TLS Certificate for the `from` host + an HTTPRoute that RequestRedirects
+to the `to` host (path + query preserved). The matching HTTPS listener is added
+in templates/gateway.yaml.
+
+The Certificate reuses the exact issuer logic of templates/certificate.yaml:
+the in-chart ACME Issuer (`<fullname>-acme`) when acmeHttp01 is enabled — which
+solves HTTP-01 through this Gateway's :80 listener, so the only requirement is
+that `from` resolves to this Gateway's LoadBalancer (DNS) — else the external
+`gateway.issuer` of `gateway.issuerKind`.
+
+The redirect HTTPRoute is attached to BOTH the `http` (:80) listener (plain HTTP)
+and the per-host `redirect-<name>` HTTPS listener (after TLS terminates). It is
+ACME-safe for the same reason as templates/https-redirect-route.yaml: the
+solver's exact `/.well-known/acme-challenge/<token>` path out-ranks the `/`
+PathPrefix here, so challenges still serve over :80 during issuance.
+*/}}
+{{- $root := . -}}
+{{- range .Values.gateway.redirectHosts }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "core-gateway.fullname" $root }}-redirect-{{ .name }}-tls
+  namespace: {{ $root.Release.Namespace }}
+spec:
+  secretName: {{ include "core-gateway.fullname" $root }}-redirect-{{ .name }}-tls
+  dnsNames:
+    - {{ .from | quote }}
+  issuerRef:
+  {{- if $root.Values.gateway.acmeHttp01.enabled }}
+    name: {{ include "core-gateway.fullname" $root }}-acme
+    kind: Issuer
+  {{- else }}
+    name: {{ $root.Values.gateway.issuer | default "self-signed-ca" }}
+    kind: {{ $root.Values.gateway.issuerKind | default "ClusterIssuer" }}
+  {{- end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "core-gateway.fullname" $root }}-redirect-{{ .name }}
+  namespace: {{ $root.Release.Namespace }}
+spec:
+  parentRefs:
+    # Plain HTTP (:80) → catches http://{{ .from }} and lets the ACME challenge
+    # exact-path out-rank the `/` redirect during cert issuance.
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ include "core-gateway.fullname" $root }}
+      namespace: {{ $root.Release.Namespace }}
+      sectionName: http
+    # The per-host HTTPS listener (TLS terminated) → catches https://{{ .from }}.
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ include "core-gateway.fullname" $root }}
+      namespace: {{ $root.Release.Namespace }}
+      sectionName: redirect-{{ .name }}
+  hostnames:
+    - {{ .from | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            # Cross-host redirect: rewrite the Host to the canonical target.
+            # No path modifier → original path + query string are preserved.
+            hostname: {{ .to | quote }}
+            statusCode: {{ .statusCode | default 307 }}
+{{- end }}

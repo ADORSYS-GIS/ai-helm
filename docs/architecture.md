@@ -74,6 +74,14 @@ flowchart TB
     classDef gpu fill:#f7e8f0,stroke:#a54a81;
 ```
 
+> **Vanity-domain redirects (ADR-0053).** We own `kivoyo.com`; its DNS already
+> points at these LBs. `api.ai.kivoyo.com` is `307`-redirected to
+> `api.ai.camer.digital` at the Envoy Gateway (`charts/core-gateway`
+> `gateway.redirectHosts`), and `ai.kivoyo.com` is `302`-redirected to
+> `ai.camer.digital` at Traefik (a `redirectRegex` Middleware + Ingress in
+> `charts/librechat-app`). Temporary + path-preserving; `camer.digital` stays
+> canonical.
+
 ## GitOps in one diagram
 
 Two clusters: ArgoCD runs on `admin@homeos`; workloads run on Hetzner
