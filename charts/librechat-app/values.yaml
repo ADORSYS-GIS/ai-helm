@@ -799,10 +799,16 @@ config:
         # opencode usage). TRUST: only safe because the internal plane accepts
         # authenticated first-party services only, and Authorino OVERWRITES
         # x-account-id/x-billing-plan from these (a client can't set them directly).
+        # X-LibreChat-Email / -Name also feed the per-user OBSERVABILITY board:
+        # the internal AuthConfig stamps them into x-oidc-email / x-oidc-name so
+        # LibreChat users show up as named humans (not the "missing:*" sentinel)
+        # in the Top-15 / per-user panels. Without -Name forwarded, LibreChat
+        # traffic would attribute by id+email but render as "missing:name".
         headers:
           X-LibreChat-User: '{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
           X-LibreChat-Role: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
           X-LibreChat-Email: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
+          X-LibreChat-Name: '{{ `{{` }}LIBRECHAT_USER_NAME{{ `}}` }}'
 
 # ────────────────────────────────────────────────────────────────────────
 # MongoDB subchart values (helmforge/mongodb@1.7.6, aliased as `db`).

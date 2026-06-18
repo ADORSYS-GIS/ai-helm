@@ -127,7 +127,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} [$__range]))",
+          "expr": "sum(count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} [$__range]))",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -186,7 +186,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "count(sum by (email) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} [$__range])))",
+          "expr": "count(sum by (email) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} [$__range])))",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -245,7 +245,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range]))",
+          "expr": "sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range]))",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -304,7 +304,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "quantile_over_time(0.95, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} | json duration | unwrap duration | __error__=\"\" [5m]) by ()",
+          "expr": "quantile_over_time(0.95, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} | json duration | unwrap duration | __error__=\"\" [5m]) by ()",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -371,7 +371,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (email) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} [1m]))",
+          "expr": "sum by (email) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} [1m]))",
           "refId": "A",
           "legendFormat": "{{email}}",
           "queryType": "range",
@@ -509,7 +509,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "((sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6)",
+          "expr": "((sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6)",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -568,7 +568,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "quantile_over_time(0.50, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} | json duration | unwrap duration | __error__=\"\" [5m]) by (email)",
+          "expr": "quantile_over_time(0.50, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} | json duration | unwrap duration | __error__=\"\" [5m]) by (email)",
           "refId": "A",
           "legendFormat": "p50 {{email}}",
           "queryType": "range",
@@ -578,7 +578,7 @@
           }
         },
         {
-          "expr": "quantile_over_time(0.95, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} | json duration | unwrap duration | __error__=\"\" [5m]) by (email)",
+          "expr": "quantile_over_time(0.95, {service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} | json duration | unwrap duration | __error__=\"\" [5m]) by (email)",
           "refId": "B",
           "legendFormat": "p95 {{email}}",
           "queryType": "range",
@@ -633,7 +633,7 @@
       "type": "piechart",
       "targets": [
         {
-          "expr": "sum by (model) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} [$__range]))",
+          "expr": "sum by (model) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} [$__range]))",
           "refId": "A",
           "legendFormat": "{{model}}",
           "queryType": "range",
@@ -682,7 +682,7 @@
       "type": "piechart",
       "targets": [
         {
-          "expr": "((sum by (model) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6)",
+          "expr": "((sum by (model) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6)",
           "refId": "A",
           "legendFormat": "{{model}}",
           "queryType": "range",
@@ -731,7 +731,7 @@
       "type": "piechart",
       "targets": [
         {
-          "expr": "sum by (model) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range]))",
+          "expr": "sum by (model) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range]))",
           "refId": "A",
           "legendFormat": "{{model}}",
           "queryType": "range",
@@ -780,7 +780,7 @@
       "type": "piechart",
       "targets": [
         {
-          "expr": "sum by (response_code) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", model=~\"$model\"} | json | response_code !~ \"^(-|)$\" [$__range]))",
+          "expr": "sum by (response_code) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", email=~\"$email\", email!~\"(missing|unstamped):.*\", model=~\"$model\"} | json | response_code !~ \"^(-|)$\" [$__range]))",
           "refId": "A",
           "legendFormat": "{{response_code}}",
           "queryType": "range",
