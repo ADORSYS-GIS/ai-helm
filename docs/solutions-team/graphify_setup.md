@@ -1,6 +1,3 @@
-I’ve updated the guide by adding a new **Section 3.4** that explains the `graphify install --platform opencode` step, its purpose, and why it’s recommended before integrating with OpenCode’s MCP. I also adjusted the related note in Section 4.1 and the checklist to reflect this addition.
-
-Here is the complete revised documentation:
 
 ---
 
