@@ -60,6 +60,15 @@ resources:
             login: true
             passwordSecret:
               name: repo-auth-db-role
+          # Dedicated login role for lightbridge-code-intelligence
+          # (charts/lightbridge-code-intelligence), isolated from `app`/`repoauth`.
+          # Owns the `codeintel` Database below; password from the basic-auth Secret
+          # `lightbridge-codeintel-db-role` (ESO-provisioned, below).
+          - name: codeintel
+            ensure: present
+            login: true
+            passwordSecret:
+              name: lightbridge-codeintel-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -184,3 +193,54 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: repo_auth_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # lightbridge-code-intelligence: a `codeintel` Database owned by the
+  # managed `codeintel` role above, plus the role's basic-auth Secret
+  # (username + password) consumed by BOTH CNPG (passwordSecret) and the
+  # control plane. Mirrors the repoauth pattern (ADR-0047).
+  # NOTE(pgvector): semantic search needs the `vector` extension, which the
+  # current CNPG image does not ship — declare it on this Database once the
+  # cluster image bundles pgvector (see charts/lightbridge-code-intelligence).
+  # Double-escaped tpl braces leave `{{ .password }}` for ESO (CLAUDE.md trap).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: codeintel
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: codeintel
+      owner: codeintel
+      ensure: present
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lightbridge-codeintel-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lightbridge-codeintel-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "codeintel"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: codeintel_db_password
