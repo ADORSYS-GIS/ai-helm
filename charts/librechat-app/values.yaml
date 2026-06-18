@@ -746,16 +746,43 @@ config:
         # NODE_EXTRA_CA_CERTS (container env) trusts the internal CA for this TLS.
         baseURL: "https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1"
         models:
+          # The FULL chat-capable catalog. Static list (fetch:false) so embedding
+          # + reranker kinds are excluded by construction — LibreChat can't filter
+          # an auto-fetched /v1/models by kind, and they're not conversational. Rule:
+          # every ENABLED text/multimodal model in charts/ai-models/values.yaml
+          # appears here; embedding (qwen3-embedding-8b), reranker (qwen3-reranker-8b)
+          # and disabled models (qwen3-4b-local) are omitted. Each id MUST equal the
+          # ai-models gateway model id. ⚠️ Keep in sync when adding/removing a model
+          # in charts/ai-models (no auto-derivation across charts).
           default:
+            # ── General vendor chat models ──────────────────────────────────
+            - "glm-5p1"
             - "glm-5"
+            - "glm-4.7-flash"
             - "minimax-m2.7"
-            - "gemini-3.1-flash-lite"
+            - "minimax-m2p5"
+            - "kimi-k2.7-code"
+            - "kimi-k2.5"
+            - "deepseek-v4-flash"
+            - "qwen3p6-plus"
             - "gemma-4"
-            # Self-hosted Qwen3.5-4B Q4 on the home GPU (llama.cpp, 128k ctx) — routed
-            # via the internal plane like the SaaS models. Owned/cheap/private tier;
-            # see docs/models/qwen3.5-4b-q4.md. (Static list: fetch:false, so it must be
-            # added explicitly; the id MUST equal the ai-models gateway model id.)
+            - "reviewer"
+            # ── Self-hosted (home GPU) ──────────────────────────────────────
+            # Qwen3.5-4B Q4 via llama.cpp (128k ctx), routed via the internal
+            # plane like the SaaS models. Owned/cheap/private tier; see
+            # docs/models/qwen3.5-4b-q4.md.
             - "qwen3-5-4b-local"
+            # ── Branded adorsys-* aliases (stable ids, swappable backings; ──
+            #    ADR-0044/0050). Each carries its own $15/$50 budget bucket.
+            - "adorsys-planner"
+            - "adorsys-planner-pro"
+            - "adorsys-coder"
+            - "adorsys-coder-pro"
+            - "adorsys-reviewer"
+            - "adorsys-reviewer-pro"
+            - "adorsys-frontend"
+            - "adorsys-frontend-pro"
+            - "adorsys-researcher"
           fetch: false
         iconURL: "https://s3.ssegning.me/ai-ops-backups/public/chicken-leg.png"
         titleConvo: false

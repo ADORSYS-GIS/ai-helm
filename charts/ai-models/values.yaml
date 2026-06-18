@@ -589,29 +589,32 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "moonshotai/Kimi-K2.5"
 
-  kimi-k2.6:
+  kimi-k2.7-code:
     kind: multimodal
-    # DeepInfra · moonshotai/Kimi-K2.6 — native MULTIMODAL (text + IMAGE in,
-    # MoonViT vision encoder; "visual inputs → production-ready UI"), 262,144-token
-    # context, 131k max output, agentic tool use + thinking.
+    # DeepInfra · moonshotai/Kimi-K2.7-Code — code-specialized successor to K2.6;
+    # native MULTIMODAL (text + IMAGE in, MoonViT vision encoder; "visual inputs →
+    # production-ready UI"), 262,144-token context, 131k max output, agentic tool
+    # use + thinking. +21.8% Kimi Code Bench v2 / +11% Program Bench over K2.6
+    # while spending ~30% fewer reasoning tokens — at K2.6's price ($0.74 vs
+    # $0.75 in, identical cached/out). Retires kimi-k2.6 (ADR-0050).
     info:
-      displayName: "Kimi K2.6"
+      displayName: "Kimi K2.7 Code"
       contextLength: 262144
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.75
+        inputPer1M: 0.74
         cachedInputPer1M: 0.15
         outputPer1M: 3.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "moonshotai/Kimi-K2.6"
+        modelNameOverride: "moonshotai/Kimi-K2.7-Code"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "moonshotai/Kimi-K2.6"
+        modelNameOverride: "moonshotai/Kimi-K2.7-Code"
 
   qwen3-reranker-8b:
     enabled: false
@@ -959,13 +962,15 @@ models:
         modelNameOverride: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning"
 
   adorsys-frontend-pro:
-    # Backing: DeepInfra · moonshotai/Kimi-K2.6 — strong agentic coder, and
+    # Backing: DeepInfra · moonshotai/Kimi-K2.7-Code — code-specialized, and
     # native MULTIMODAL (text + IMAGE in, MoonViT; "visual inputs → UI"). The
     # heavier vision-capable frontend option; the `frontend` agent defaults to
     # the cheaper `adorsys-frontend` (Nemotron Omni) but could use this instead.
+    # Succeeds Kimi K2.6 at the same price (+21.8% coding, ~30% fewer tokens) —
+    # ADR-0050; supersedes the ADR-0044 K2.6 backing.
     kind: multimodal
     info:
-      displayName: "Adorsys Frontend Pro (Kimi K2.6)"
+      displayName: "Adorsys Frontend Pro (Kimi K2.7 Code)"
       contextLength: 262144
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -975,13 +980,13 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.75
+        inputPer1M: 0.74
         cachedInputPer1M: 0.15
         outputPer1M: 3.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "moonshotai/Kimi-K2.6"
+        modelNameOverride: "moonshotai/Kimi-K2.7-Code"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "moonshotai/Kimi-K2.6"
+        modelNameOverride: "moonshotai/Kimi-K2.7-Code"
