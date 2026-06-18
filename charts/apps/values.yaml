@@ -1064,7 +1064,10 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.18
+      # Must track the current release tag (like sibling ai-helm apps) — the bare base
+      # tag predates this chart, so it would 404 the path. The release script swaps this
+      # on each cut along with selfTargetRevision.
+      targetRevision: release-2026.06.18-v03
       path: charts/lightbridge-code-intelligence
       helm:
         releaseName: lightbridge-ci
