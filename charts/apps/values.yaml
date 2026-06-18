@@ -503,32 +503,15 @@ applications:
     destination:
       namespace: envoy-ai-gateway-system
 
-  - name: metrics-server
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://kubernetes-sigs.github.io/metrics-server/
-      targetRevision: 3.13.0
-      chart: metrics-server
-      helm:
-        releaseName: metrics-server
-        valuesObject:
-          args:
-            - --kubelet-insecure-tls
-            - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
-            - --kubelet-use-node-status-port
-            - --metric-resolution=15s
-          # Monitoring infrastructure: 2 replicas to avoid gaps in metrics during node drains.
-          replicas: 2
-          resources:
-            requests:
-              cpu: 100m
-              memory: 200Mi
-          podDisruptionBudget:
-            enabled: true
-            minAvailable: 1
-    destination:
-      namespace: kube-system
+  # NOTE: no `metrics-server` app here — we deliberately do NOT ship one (ADR-0054).
+  # k3s bundles its own metrics-server addon (sourced from the server's on-disk
+  # manifests), which kept squatting the `metrics-server` Deployment/Service name
+  # and reverting our GitOps copy → the Service selector (app.kubernetes.io/*) no
+  # longer matched the k3s pod (k8s-app only) → empty endpointslice →
+  # `v1beta1.metrics.k8s.io` MissingEndpoints → `kubectl top`/HPA dead, every sync.
+  # Rather than fight the addon (which needs `--disable metrics-server` + a CP node
+  # reprovision per hetzner-k8s ADR-0015), we let the healthy k3s one serve metrics
+  # and own the APIService. Don't re-add this entry — see ADR-0054.
 
   # --- Gateway ---
   - name: core-gateway

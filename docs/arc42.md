@@ -324,6 +324,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0047/0049 | GitHub-OIDC CI binding (`lightbridge-repo-auth`) + operator-only onboarding |
 | 0048 | Global opencode-browser plugin + lean default primary agent |
 | 0053 | Vanity-domain redirects (`kivoyo.com` → `camer.digital`, temporary) |
+| 0054 | Adopt the k3s-bundled metrics-server; drop our GitOps copy (ends the ADR-0015 name collision) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 

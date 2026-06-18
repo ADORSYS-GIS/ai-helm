@@ -50,7 +50,7 @@ flowchart TB
         APPR["apprise-api · opencode-k8s-agent"]:::own
     end
     subgraph sys_ns["ns: kube-system"]
-        MS["metrics-server"]:::own
+        MS["metrics-server<br/>(k3s-bundled, ADR-0054)"]:::ext
     end
 
     subgraph external["External (consumed by name)"]
@@ -122,7 +122,7 @@ flowchart TB
 |---|---|---|---|
 | `observability` | `observability` | `charts/observability` (orchestrator) | The whole LGTM + collection + dashboards stack ([08](08-observability.md)) |
 | `apprise-api` / `opencode-k8s-agent` | `monitoring` | external repo | Notification + the in-cluster opencode agent |
-| `metrics-server` | `kube-system` | upstream | `kubectl top` / HPA metrics (ADR-0015 collision caveat) |
+| `metrics-server` | `kube-system` | **k3s-bundled** (not ours — ADR-0054) | `kubectl top` / HPA metrics. We deliberately don't ship one; the k3s addon owns it (dropped our GitOps copy after the ADR-0015 name collision). |
 
 ## Render patterns
 

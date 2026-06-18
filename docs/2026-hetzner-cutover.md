@@ -154,14 +154,17 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
 ### ⏳ Pre-existing / unrelated (not caused by this branch)
 - **lightbridge-backend** — `CreateContainerConfigError` (missing referenced
   secrets); predates this work.
-- **metrics-server — ✅ RESOLVED (2026-06-05).** The real collision was the
-  `aii-metrics-server` chart vs **k3s's bundled metrics-server** (both on Hetzner):
-  k3s ships its own (Addon CRs from on-disk manifests, pods labelled `k8s-app=*`)
-  while the chart's Service selects `app.kubernetes.io/*` → `Endpoints <none>` →
-  `metrics.k8s.io` unavailable. Fixed by force-syncing `aii-metrics-server` so the
-  HA chart owns it (pod 2/2, endpoints populated, `metrics.k8s.io` **Available**,
-  `kubectl top` works) + committing **`--disable metrics-server`** to hetzner-k8s
-  (k3s stops shipping its own; durable on the next reprovision/k3s-restart).
+- **metrics-server — ✅ RESOLVED (2026-06-05), then reversed → ADR-0054 (2026-06-19).**
+  The collision was the `aii-metrics-server` chart vs **k3s's bundled metrics-server**
+  (both on Hetzner): k3s ships its own (Addon CRs from on-disk manifests, pods labelled
+  `k8s-app=*`) while the chart's Service selects `app.kubernetes.io/*` → `Endpoints
+  <none>` → `metrics.k8s.io` unavailable. The 2026-06-05 fix (force-sync `aii-metrics-server`
+  so the HA chart owns it + commit `--disable metrics-server` to hetzner-k8s) **did not
+  hold** — the addon kept returning on restores, so the collision recurred on every sync.
+  **Final resolution ([ADR-0054](adr/0054-adopt-k3s-bundled-metrics-server.md)): we
+  dropped our GitOps metrics-server entirely and adopted the healthy k3s-bundled one**
+  (removed the `charts/apps/values.yaml` entry; the k3s addon re-owns the Service +
+  APIService). No node reprovision, no `--disable metrics-server` dependency.
   ⚠️ NOT a same-cluster `ai-*`↔`aii-*` fight — those generations target **different
   clusters** (see below). The earlier grafana-operator CrashLoop was Cilium
   deny-egress, a separate bug.

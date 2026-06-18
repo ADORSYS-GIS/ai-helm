@@ -202,10 +202,21 @@ two more issues surfaced:
   `app.kubernetes.io/{name,instance}` → **zero endpoints**. The ai-helm
   `aii-metrics-server` app (kubernetes-sigs chart, 2 replicas) is stuck
   `Progressing` because the bundled Deployment squats the `metrics-server` name.
-  This is **not an ai-helm bug** — it's hetzner-k8s ADR-0015's documented trap:
+
+  > **⚠️ SUPERSEDED by [ADR-0054](adr/0054-adopt-k3s-bundled-metrics-server.md) (2026-06-19).**
+  > The collision recurred on essentially every sync, and the k3s addon kept
+  > coming back across restores. Rather than keep fighting it, we **dropped our
+  > GitOps metrics-server** (removed the `charts/apps/values.yaml` entry) and
+  > adopted the healthy k3s-bundled one — ArgoCD prunes our objects and the k3s
+  > addon re-owns the Service+APIService → metrics recover, no node reprovision.
+  > The "delete + re-own" remediation below is **obsolete** (it re-owned with our
+  > chart, which we no longer ship); it's kept only as the historical record.
+
+  This was **not an ai-helm bug** — it's hetzner-k8s ADR-0015's documented trap:
   `--disable metrics-server` is in cloud-init but only takes effect on
   (re)provision, so a CP node that restarted/restored without it re-enabled the
-  bundled addon. Remediation (one-time, shared cluster — run deliberately):
+  bundled addon. ~~Remediation (one-time, shared cluster — run deliberately):~~
+  (obsolete — see ADR-0054)
 
   ```bash
   export KUBECONFIG=/Users/selast/dev/personal/hetzner-k8s/kubeconfig
@@ -218,9 +229,10 @@ two more issues surfaced:
 
   ⚠️ If the bundled Deployment reappears within seconds, the k3s addon manager is
   still active on the live node → `--disable metrics-server` is NOT in effect
-  there. The durable fix is to reprovision / `terraform … -replace` that CP node
-  so it starts with the flag (ADR-0015), since `ignore_changes=[user_data]` keeps
-  an existing CP on its old start args.
+  there. ~~The durable fix is to reprovision / `terraform … -replace` that CP node
+  so it starts with the flag (ADR-0015)~~ — under ADR-0054 this is the *expected*
+  steady state (we WANT the k3s addon to own metrics-server); the CP-node-reprovision
+  route only applies if we later decide to run our own metrics-server again.
 
 ### 6. "Is Grafana showing real data?" — the network-policy gaps (2026-06-07)
 
