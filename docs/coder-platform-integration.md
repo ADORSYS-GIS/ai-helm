@@ -407,26 +407,6 @@ For production/multi-user scenarios:
 }
 ```
 
-#### OpenCode Configuration (OAuth2)
-
-```json
-// 3. opencode.json
-{
-  "mcp": {
-    "coder": {
-      "type": "remote",
-      "url": "http://localhost:30822/api/experimental/mcp/http",
-      "oauth": {
-        "clientId": "<from-step-2>",
-        "clientSecret": "<from-step-2>",
-        "scope": "coder:all",
-        "callbackPort": 19876
-      }
-    }
-  }
-}
-```
-
 #### Available MCP Tools
 
 | Tool | Description |
