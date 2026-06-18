@@ -27,7 +27,7 @@ argocd:
   # This repo, source for the local leaf charts + the secrets overlay.
   # Deploy branch now → release tag next, never main (see charts/apps note).
   repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.12-v05
+  targetRevision: release-2026.06.18
   destination:
     # home-remote cluster (ADR-0017 guard). Children may override .namespace
     # but all observability children use `observability`.
@@ -66,7 +66,7 @@ children:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: environments/prod/deps/observability-secrets
     destination:
       namespace: observability
@@ -447,14 +447,21 @@ children:
                 // (the per-user dashboard was empty since rollout).
                 //
                 // Cardinality budget (ADR-0005):
-                //   user_id — Keycloak `sub` (UUID per user). Bounded by
-                //             user count; safe up to a few thousand.
-                //   azp     — Keycloak client_id. Bounded by client count
-                //             (<20 today). Very cheap.
-                //   model   — gen_ai.request.model. Bounded by the model
-                //             catalog (~10–20). Very cheap.
-                //
-                // user_name is intentionally NOT promoted (display field).
+                //   user_id      — Keycloak `sub` (UUID per user). Bounded by
+                //                  user count; safe up to a few thousand.
+                //   azp          — Keycloak client_id. Bounded by client count
+                //                  (<20 today). Very cheap.
+                //   model        — gen_ai.request.model. Bounded by the model
+                //                  catalog (~10–20). Very cheap.
+                //   email        — Keycloak `email` claim (oidc_email attribute).
+                //                  1:1 with user_id; adds no stream cardinality.
+                //                  Enables human-readable per-user dashboards.
+                //   display_name — Keycloak `name` claim (oidc_name attribute).
+                //                  1:1 with user_id; used for bar chart labels
+                //                  (first-name extraction via label_replace).
+                //   billing_plan — x-billing-plan rate-limit descriptor. 4
+                //                  distinct values (free/pro/service/internal).
+                //                  Very cheap; enables tier segmentation.
                 // Only gateway access logs are matched (on the
                 // resources.log_name marker, present in every line); other
                 // OTLP logs pass through this block unchanged.
@@ -475,32 +482,68 @@ children:
 
                     stage.json {
                       expressions = {
-                        user_id = "user_id",
-                        azp     = "azp",
-                        model   = "\"gen_ai.request.model\"",
+                        user_id      = "user_id",
+                        azp          = "azp",
+                        model        = "\"gen_ai.request.model\"",
+                        email        = "oidc_email",
+                        display_name = "oidc_name",
+                        billing_plan = "billing_plan",
                       }
                     }
-                    // Envoy renders absent fields as "-": map to empty by
-                    // EXACT match (never substring-replace — UUIDs contain
-                    // "-") so stage.labels skips them and unauthenticated
-                    // requests get no identity labels.
-                    stage.template {
-                      source   = "user_id"
-                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    // Envoy renders absent fields as "-": blank them so
+                    // stage.labels skips them and unauthenticated requests
+                    // get no identity labels. Anchored regex ^-$ matches
+                    // ONLY the exact placeholder — never a substring (a
+                    // UUID/client_id/model name is never just "-").
+                    //
+                    // ⚠️ Use stage.replace, NOT stage.template here. The
+                    // alloy chart runs this whole config string through
+                    // Helm's `tpl` (configmap.yaml), so any Go-template
+                    // double-brace action (as in stage.template) is
+                    // evaluated by Helm at sync time and breaks manifest
+                    // generation ("unexpected ... in operand"). Keep this
+                    // entire config free of double-brace sequences —
+                    // including in comments. stage.replace is regex-only.
+                    // (Cost a sync outage on release-2026.06.12-v05;
+                    // ADR-0046.)
+                    stage.replace {
+                      source     = "user_id"
+                      expression = "^-$"
+                      replace    = ""
                     }
-                    stage.template {
-                      source   = "azp"
-                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    stage.replace {
+                      source     = "azp"
+                      expression = "^-$"
+                      replace    = ""
                     }
-                    stage.template {
-                      source   = "model"
-                      template = "{{ if eq .Value \"-\" }}{{ else }}{{ .Value }}{{ end }}"
+                    stage.replace {
+                      source     = "model"
+                      expression = "^-$"
+                      replace    = ""
+                    }
+                    stage.replace {
+                      source     = "email"
+                      expression = "^-$"
+                      replace    = ""
+                    }
+                    stage.replace {
+                      source     = "display_name"
+                      expression = "^-$"
+                      replace    = ""
+                    }
+                    stage.replace {
+                      source     = "billing_plan"
+                      expression = "^-$"
+                      replace    = ""
                     }
                     stage.labels {
                       values = {
-                        user_id = "user_id",
-                        azp     = "azp",
-                        model   = "model",
+                        user_id      = "user_id",
+                        azp          = "azp",
+                        model        = "model",
+                        email        = "email",
+                        display_name = "display_name",
+                        billing_plan = "billing_plan",
                       }
                     }
                     // Deterministic stream anchor for dashboards — don't
@@ -1821,6 +1864,28 @@ children:
             enabled:  true
             interval: 60s
 
+          # grafana-image-renderer: headless-Chrome panel-export sidecar.
+          # The chart auto-sets GF_RENDERING_SERVER_URL (→ renderer Service on
+          # port 8081) and GF_RENDERING_CALLBACK_URL (→ grafana internal svc DNS
+          # http://grafana.observability.svc.cluster.local/) so the renderer
+          # reaches Grafana via same-namespace traffic — already covered by the
+          # allow-same-namespace Cilium policy (no new egress rule needed).
+          # DISABLE_SANDBOX avoids requiring SYS_ADMIN in the renderer container
+          # (Chrome --no-sandbox mode; namespace is privileged PSS anyway).
+          imageRenderer:
+            enabled:     true
+            image:
+              tag:        latest
+              pullPolicy: IfNotPresent
+            env:
+              DISABLE_SANDBOX: "true"
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 512Mi }
+            networkPolicy:
+              limitIngress: true   # allow only Grafana pod → renderer:8081
+              limitEgress:  false  # allow-same-namespace covers renderer→Grafana
+
           # grafana-apprise-adapter REMOVED (ADR-0036): the apprise notification
           # path (Grafana → adapter → apprise-api) is gone. Grafana's embedded
           # Alertmanager + native contact points handle notifications now.
@@ -1850,7 +1915,7 @@ children:
       argocd.argoproj.io/sync-wave: "1"
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/observability-dashboards
       helm:
         releaseName: observability-dashboards

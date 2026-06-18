@@ -20,7 +20,7 @@ argocd:
   # Deploys are tag-based: pinned to the immutable release tag below (main is
   # never a deploy target). See the canonical note in charts/apps/values.yaml.
   repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.12-v05
+  targetRevision: release-2026.06.18
   destination:
     # The home-remote cluster every child Application targets. This repo's
     # invariant (ADR-0017) is that workloads NEVER deploy to the cluster
@@ -62,12 +62,16 @@ rateLimitBudgeting:
       monthlyBudgetUsd: 50
       burst:
         requestsPerMin: 200
-        tokensPerMin: 200000
+        # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
+        # (charts/ai-models-info) — a single max-context request no longer
+        # blows the per-minute token bucket. The monthly budget ($50) stays the
+        # real cost cap; this is just the per-minute RATE.
+        tokensPerMin: 1000000
     pro:
       monthlyBudgetUsd: 200
       burst:
         requestsPerMin: 400
-        tokensPerMin: 400000
+        tokensPerMin: 2000000     # 400k → 2M: a couple of max-context requests/min
     # Remote service accounts (GitHub runners, …) on the EXTERNAL plane.
     # Uncapped budget (no monthlyBudgetUsd) — burst-only.
     service:
@@ -445,6 +449,7 @@ models:
     # (clamped to the 400k catalog ceiling), 384k max output (capped to a
     # sane 131k generation ceiling). Dual Think/Non-Think modes → reasoning.
     info:
+      displayName: "DeepSeek V4 Flash"
       contextLength: 1048576
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -467,6 +472,7 @@ models:
     # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output,
     # agentic thinking mode + function calling + vision.
     info:
+      displayName: "Reviewer (GLM-5)"
       contextLength: 202752
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -488,6 +494,7 @@ models:
     kind: text
     # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output.
     info:
+      displayName: "GLM-5"
       contextLength: 202752
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -564,6 +571,7 @@ models:
     # DeepInfra · moonshotai/Kimi-K2.5 — 262,144-token context, 131k max
     # output, agentic tool use + thinking.
     info:
+      displayName: "Kimi K2.5"
       contextLength: 262144
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -581,27 +589,32 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "moonshotai/Kimi-K2.5"
 
-  kimi-k2.6:
-    kind: text
-    # DeepInfra · moonshotai/Kimi-K2.6 — 262,144-token context, 131k max
-    # output (per-step generation limit), agentic tool use + thinking.
+  kimi-k2.7-code:
+    kind: multimodal
+    # DeepInfra · moonshotai/Kimi-K2.7-Code — code-specialized successor to K2.6;
+    # native MULTIMODAL (text + IMAGE in, MoonViT vision encoder; "visual inputs →
+    # production-ready UI"), 262,144-token context, 131k max output, agentic tool
+    # use + thinking. +21.8% Kimi Code Bench v2 / +11% Program Bench over K2.6
+    # while spending ~30% fewer reasoning tokens — at K2.6's price ($0.74 vs
+    # $0.75 in, identical cached/out). Retires kimi-k2.6 (ADR-0050).
     info:
+      displayName: "Kimi K2.7 Code"
       contextLength: 262144
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.75
+        inputPer1M: 0.74
         cachedInputPer1M: 0.15
         outputPer1M: 3.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "moonshotai/Kimi-K2.6"
+        modelNameOverride: "moonshotai/Kimi-K2.7-Code"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "moonshotai/Kimi-K2.6"
+        modelNameOverride: "moonshotai/Kimi-K2.7-Code"
 
   qwen3-reranker-8b:
     enabled: false
@@ -623,6 +636,7 @@ models:
     # DeepInfra · MiniMaxAI/MiniMax-M2.5 — 204,800-token context (NOT 400k:
     # 196k usable per sequence), 131k max output, reasoning + agentic tools.
     info:
+      displayName: "MiniMax M2.5"
       contextLength: 204800
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -647,6 +661,7 @@ models:
     # GLM-5.1 rates (matches adorsys-planner-pro, same model + provider).
     kind: text
     info:
+      displayName: "GLM-5.1"
       contextLength: 202752
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
@@ -688,6 +703,7 @@ models:
     # + 8k max output; multimodal (image input) + reasoning + tools.
     kind: multimodal
     info:
+      displayName: "Qwen3.6 Plus"
       contextLength: 128000
       maxOutputTokens: 8192
       supportedParameters: *spReasoning
@@ -705,55 +721,12 @@ models:
         <<: *fwBackendSecondary
         modelNameOverride: "accounts/fireworks/models/qwen3p6-plus"
 
-  reviewer-flash:
-    kind: text
-    # Fireworks · minimax-m2p7 (MiniMax-M2.7) — 204,800-token context (NOT 400k),
-    # 131k max output, reasoning + agentic tools.
-    info:
-      contextLength: 204800
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
-    backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-
-  minimax-m2p7:
-    kind: text
-    # Fireworks · minimax-m2p7 (MiniMax-M2.7) — 204,800-token context (NOT 400k),
-    # 131k max output, reasoning + agentic tools.
-    info:
-      contextLength: 204800
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
-    backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-
   gemma-4:
     kind: text
     # DeepInfra · google/gemma-4-26B-A4B-it — 262,144-token (256K) context,
     # 8k max output, native function calling (no exposed thinking mode).
     info:
+      displayName: "Gemma 4"
       contextLength: 262144
       maxOutputTokens: 8192
       supportedParameters: *spStandard
@@ -770,6 +743,55 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "google/gemma-4-26B-A4B-it"
+
+  glm-4.7-flash:
+    kind: text
+    # DeepInfra · zai-org/GLM-4.7-Flash — fast/cheap GLM, reasoning + agentic
+    # tools (Terminal-Bench / SWE-bench). ⚠️ contextLength unconfirmed (DeepInfra
+    # page omits it) — set to 200k per the GLM-4.x family; verify.
+    info:
+      displayName: "GLM-4.7 Flash"
+      contextLength: 200000
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.06
+        cachedInputPer1M: 0.01
+        outputPer1M: 0.40
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "zai-org/GLM-4.7-Flash"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "zai-org/GLM-4.7-Flash"
+
+  minimax-m2.7:
+    kind: text
+    # DeepInfra · MiniMaxAI/MiniMax-M2.7 — reasoning + agentic tools, 196,608 ctx.
+    # The DeepInfra-hosted M2.7 ($0.25/$1.00). The old Fireworks `minimax-m2p7`
+    # + `reviewer-flash` entries were REMOVED (2026-06-12, consolidating on
+    # DeepInfra); the adorsys-coder/-reviewer brands now back this provider too.
+    info:
+      displayName: "MiniMax M2.7 (DeepInfra)"
+      contextLength: 196608
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.25
+        cachedInputPer1M: 0.05
+        outputPer1M: 1.00
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
 
   # ── Branded "Adorsys" model aliases ───────────────────────────────────────
   # Stable, user-facing model IDs whose BACKING model can be swapped later
@@ -806,28 +828,29 @@ models:
 
   adorsys-coder:
     kind: text
-    # Backing: Fireworks · minimax-m2p7 (MiniMax-M2.7) — fast agentic coder.
+    # Backing: DeepInfra · MiniMaxAI/MiniMax-M2.7 — fast agentic coder
+    # (moved off Fireworks → DeepInfra, cheaper, 2026-06-12).
     rateLimitBudgeting:
       free: 15
       pro: 50
     info:
       displayName: "Adorsys Coder (MiniMax M2.7)"
-      contextLength: 204800
+      contextLength: 196608
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
+        inputPer1M: 0.25
+        cachedInputPer1M: 0.05
+        outputPer1M: 1.00
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
 
   adorsys-coder-pro:
     kind: text
@@ -856,28 +879,29 @@ models:
 
   adorsys-reviewer:
     kind: text
-    # Backing: Fireworks · minimax-m2p7 (MiniMax-M2.7) — fast reviewer.
+    # Backing: DeepInfra · MiniMaxAI/MiniMax-M2.7 — fast reviewer
+    # (moved off Fireworks → DeepInfra, cheaper, 2026-06-12).
     rateLimitBudgeting:
       free: 15
       pro: 50
     info:
       displayName: "Adorsys Reviewer (MiniMax M2.7)"
-      contextLength: 204800
+      contextLength: 196608
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
+        inputPer1M: 0.25
+        cachedInputPer1M: 0.05
+        outputPer1M: 1.00
     backends:
-      fw-01:
-        <<: *fwBackendPrimary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
-      fw-02:
-        <<: *fwBackendSecondary
-        modelNameOverride: "accounts/fireworks/models/minimax-m2p7"
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
 
   adorsys-reviewer-pro:
     kind: text
@@ -903,3 +927,66 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-5"
+
+  adorsys-frontend:
+    # Backing: DeepInfra · nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning — an OPEN
+    # OMNI-MODAL model: text/IMAGE/video/audio IN → text out, MoE 30B-A3B (3B
+    # active), reasoning. The frontend agent uses THIS so it can read the
+    # browser screenshots it captures (@vymalo/opencode-browser
+    # browser_screenshot). `kind: multimodal` → catalog advertises
+    # `input_modalities:[text,image]` so opencode actually sends images.
+    # ⚠️ price unconfirmed (DeepInfra page $0.20/$0.80, a blog said $0.07/$0.30) —
+    # verify the one line. It's a perception-tuned model; for screenshot-free
+    # heavy coding the `-pro` (Kimi) brand is the stronger text option.
+    kind: multimodal
+    info:
+      displayName: "Adorsys Frontend (Nemotron 3 Nano Omni)"
+      contextLength: 262144
+      maxOutputTokens: 16384
+      supportedParameters: *spReasoning
+    rateLimitBudgeting:
+      free: 15
+      pro: 50
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.20
+        cachedInputPer1M: 0.04
+        outputPer1M: 0.80
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning"
+
+  adorsys-frontend-pro:
+    # Backing: DeepInfra · moonshotai/Kimi-K2.7-Code — code-specialized, and
+    # native MULTIMODAL (text + IMAGE in, MoonViT; "visual inputs → UI"). The
+    # heavier vision-capable frontend option; the `frontend` agent defaults to
+    # the cheaper `adorsys-frontend` (Nemotron Omni) but could use this instead.
+    # Succeeds Kimi K2.6 at the same price (+21.8% coding, ~30% fewer tokens) —
+    # ADR-0050; supersedes the ADR-0044 K2.6 backing.
+    kind: multimodal
+    info:
+      displayName: "Adorsys Frontend Pro (Kimi K2.7 Code)"
+      contextLength: 262144
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    rateLimitBudgeting:
+      free: 15
+      pro: 50
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.74
+        cachedInputPer1M: 0.15
+        outputPer1M: 3.50
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "moonshotai/Kimi-K2.7-Code"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "moonshotai/Kimi-K2.7-Code"

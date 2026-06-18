@@ -56,7 +56,7 @@ argocd:
   # this repo (this `selfTargetRevision`, the per-app self-Source revisions, and
   # the orchestrator children in charts/ai-models + charts/librechart +
   # charts/observability) pin an immutable release **tag**, currently
-  # `release-2026.06.12-v05`. `main` is NEVER a deploy target. To ship a new release:
+  # `release-2026.06.18`. `main` is NEVER a deploy target. To ship a new release:
   # cut a new `release-YYYY.MM.DD` tag from the desired commit, bump these
   # self-referencing `targetRevision`s to it (in the same commit the tag points
   # at, so the tag is self-consistent), then repoint the root `ai-apps-v2`
@@ -64,7 +64,7 @@ argocd:
   # OTHER repos are unaffected.) History: deploys previously ran from the branch
   # `claude/magical-bohr-390242`; cut over to tags 2026-06-08.
   selfRepoURL: https://github.com/ADORSYS-GIS/ai-helm
-  selfTargetRevision: release-2026.06.12-v05
+  selfTargetRevision: release-2026.06.18
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
     # `spec.destination.name`. This is the WORKLOAD destination.
@@ -104,7 +104,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/observability
       helm:
         releaseName: observability
@@ -217,7 +217,7 @@ applications:
                       - -c
                       - 'export OPENCODE_API_KEY="$(cat /var/run/secrets/gateway-token/token)"; exec /bin/bash /config/run.sh'
                     env:
-                      OPENCODE_MODEL: "minimax-m2p7"
+                      OPENCODE_MODEL: "minimax-m2.7"
                       # Internal plane (ADR-0021/0037): the api-internal listener via
                       # the stable core-gateway-internal ClusterIP (HTTPS, internal CA).
                       OPENCODE_BASE_URL: "https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1"
@@ -536,7 +536,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/core-gateway
       helm:
         releaseName: core-gateway
@@ -582,7 +582,7 @@ applications:
     depsOverlay: environments/prod/deps/security-policies
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/kuadrant-policies
       helm:
         releaseName: security-policies
@@ -615,6 +615,16 @@ applications:
             main:
               gatewayName: core-gateway
               authorinoService: kuadrant-policies-main-authorino-authorization
+          # ExternalSecret for the X-Internal-Token the `repobinding` metadata
+          # step presents to lightbridge-repo-auth (ADR-0047). Same value the
+          # service reads in `converse` from the same remote property.
+          # ⚠️ The remote property MUST exist in ssegning-aws BEFORE releasing —
+          # a sharedSecretRef to a missing Secret makes the main AuthConfig fail
+          # readiness → gateway-wide 404 (the OPA-removal failure mode).
+          repoAuthInternalSecret:
+            enabled: true
+            remoteKey: ai/camer/digital/prod/env
+            property: repo_auth_resolve_internal_token
           authConfigs:
             main:
               hosts:
@@ -647,6 +657,18 @@ applications:
                     # home-os / cluster DNS). With ttl caching above, the
                     # JWKS fetch is already off the request hot path, so this
                     # is a resilience nicety, not a latency fix.
+                # ── GitHub Actions OIDC (ADR-0047) ─────────────────────────────
+                # CI runners present their RAW GitHub Actions OIDC token. We only
+                # validate it here (issuer below); the repo→account binding is
+                # enforced by the `repobinding` metadata + `repo-binding-allowed`
+                # authorization steps, both `when`-gated to this issuer so the
+                # Keycloak path above is completely unaffected. Authorino does not
+                # enforce `aud` (SkipClientIDCheck) — the per-customer audience is
+                # validated against the Source by lightbridge-repo-auth.
+                github-actions:
+                  jwt:
+                    issuerUrl: https://token.actions.githubusercontent.com
+                    ttl: 3600
               # NOTE (2026-06-04): the lightbridge-opa `lightbridge-validation`
               # metadata source AND its `enforce-valid-key` authorization step
               # were REMOVED. Authorization is now Keycloak's job — a valid
@@ -657,6 +679,54 @@ applications:
               # lightbridge-opa backend, whose absence made the AuthConfig fail
               # readiness → "Service not found" 404 on every request. The
               # rate-limit accounting headers are now JWT-derived (see response).
+              # ── GitHub Actions binding (ADR-0047) ──────────────────────────────
+              # Both steps run ONLY for GitHub-issued tokens (the `when` predicate),
+              # so Keycloak/SA requests skip them. lightbridge-repo-auth returns 403
+              # on a failed binding (→ this metadata fetch fails → request denied);
+              # `repo-binding-allowed` is the deterministic secondary gate.
+              metadata:
+                "repobinding":
+                  when:
+                    - selector: auth.identity.iss
+                      operator: eq
+                      value: https://token.actions.githubusercontent.com
+                  http:
+                    url: http://lightbridge-repo-auth.converse.svc.cluster.local:3000/v1/resolve
+                    method: POST
+                    contentType: application/json
+                    # Shared secret → X-Internal-Token header. The resolve endpoint
+                    # is ClusterIP-only and trusts the posted claims only with it.
+                    # Secret lives in THIS (Authorino) namespace; provisioned by ESO.
+                    credentials:
+                      customHeader:
+                        name: X-Internal-Token
+                    sharedSecretRef:
+                      name: lightbridge-repo-auth-internal
+                      key: internal-token
+                    bodyParameters:
+                      audience:
+                        selector: auth.identity.aud
+                      repository_owner_id:
+                        selector: auth.identity.repository_owner_id
+                      repository_id:
+                        selector: auth.identity.repository_id
+                      repository:
+                        selector: auth.identity.repository
+                      subject:
+                        selector: auth.identity.sub
+              authorization:
+                "repo-binding-allowed":
+                  when:
+                    - selector: auth.identity.iss
+                      operator: eq
+                      value: https://token.actions.githubusercontent.com
+                  patternMatching:
+                    patterns:
+                      # Present + non-empty only on a 200 allow (mirrors the proven
+                      # `.id neq ""` form, not a boolean compare).
+                      - selector: auth.metadata.repobinding.account_id
+                        operator: neq
+                        value: ""
               response:
                 success:
                   headers:
@@ -675,15 +745,20 @@ applications:
                     #   their OWN budget bucket rather than all sharing one.
                     # SA clients can still carry billing_plan="service". (The
                     # internal-plane AuthConfig sets x-billing-plan="internal".)
+                    # ADR-0047: GitHub CI tokens → the bound account + its plan
+                    # (from the `repobinding` metadata, present only on the GitHub
+                    # path); every other identity → the prior Keycloak-derived
+                    # values, unchanged. CEL short-circuits the ternary, so the
+                    # else-branch never touches the absent metadata.
                     "x-account-id":
                       plain:
-                        selector: "auth.identity.sub"
+                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.account_id) : string(auth.identity.sub)'
                     "x-org-id":
                       plain:
-                        expression: 'has(auth.identity.organization) ? string(auth.identity.organization) : string(auth.identity.sub)'
+                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.account_id) : (has(auth.identity.organization) ? string(auth.identity.organization) : string(auth.identity.sub))'
                     "x-billing-plan":
                       plain:
-                        expression: 'has(auth.identity.billing_plan) ? string(auth.identity.billing_plan) : "free"'
+                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.billing_plan) : (has(auth.identity.billing_plan) ? string(auth.identity.billing_plan) : "free")'
                     # ── x-oidc-* downstream header contract (ADR-0011) ────
                     # Set on every successful auth, for both human and SA tokens.
                     # Envoy access-log JSON sink reads these via %REQ(...)%
@@ -743,13 +818,22 @@ applications:
                     # PROFILE (PII) — opt-in per ADR-0011; downstream services
                     # that surface these in their own logs MUST treat them as
                     # PII (redact, restrict, expire). Empty for SA tokens.
+                    # ADR-0047: GitHub Actions OIDC tokens carry no email/name
+                    # claim at all — a bare selector against a missing claim
+                    # let Authorino/Envoy/Loki stamp the degenerate "-" / nil
+                    # placeholder straight into these PII headers, surfacing
+                    # as junk "-"/"<nil>" rows in the per-user dashboard.
+                    # has()-guard like x-billing-plan above; GitHub identities
+                    # fall back to "owner/repo" (still no real PII) instead.
                     "x-oidc-email":
                       plain:
-                        selector: "auth.identity.email"
+                        expression: 'has(auth.identity.email) ? string(auth.identity.email) : ""'
                     "x-oidc-name":
                       plain:
-                        # Full display name, e.g. "Stephane Segning".
-                        selector: "auth.identity.name"
+                        # Full display name, e.g. "Stephane Segning"; GitHub
+                        # CI falls back to the repository slug, e.g.
+                        # "ADORSYS-GIS/ai-helm".
+                        expression: 'has(auth.identity.name) ? string(auth.identity.name) : (has(auth.identity.repository) ? string(auth.identity.repository) : "")'
 
             # ── Internal plane (ADR-0021) ──────────────────────────────────────
             internal:
@@ -856,11 +940,42 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/lightbridge
       helm:
         releaseName: lightbridge
         valuesObject: {}
+    destination:
+      namespace: converse
+
+  # --- lightbridge-repo-auth (ADR-0047) ---
+  # GitHub-App webhook control plane + the /v1/resolve binding the gateway's
+  # Authorino calls. Plain workload → home-remote (default). EXTERNAL private
+  # repo: pin a commit SHA (doesn't ride the ai-helm release tag) — ⚠️ ArgoCD
+  # needs read creds for the private repo. depsOverlay folds in the webhook
+  # ingress Certificate (Source B). Secrets: webhook/internal-token/private-key
+  # via the chart's ExternalSecret (ssegning-aws repo_auth_*); the DB `repoauth`
+  # Database + role + password Secret live on lightbridge-main-db
+  # (charts/lightbridge-db). ⚠️ ghcr package is private today — the image pulls
+  # only if it's made public OR an imagePullSecret is added (see #393).
+  - name: lightbridge-repo-auth
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    depsOverlay: environments/prod/deps/lightbridge-repo-auth
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/lightbridge-repo-auth
+      targetRevision: f45cf0ee38cc0a16aaa57a903f9e900d8a6bc22a
+      path: charts/lightbridge-repo-auth
+      helm:
+        releaseName: lightbridge-repo-auth
+        valuesObject:
+          image:
+            tag: sha-f45cf0e
+          ingress:
+            enabled: true
+          env:
+            # Numeric App id from the registered GitHub App (public, not secret).
+            RA__GITHUB__APP_ID: "3253522"
     destination:
       namespace: converse
 
@@ -915,7 +1030,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/librechart
       helm:
         releaseName: librechat
@@ -932,7 +1047,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/mongodb-backup
       helm:
         releaseName: mongodb-backup
@@ -964,7 +1079,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/ai-models
       helm:
         releaseName: models
@@ -989,7 +1104,7 @@ applications:
     homeCluster: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/model-serving-qwen3-4b
       helm:
         releaseName: model-serving-qwen3-4b
@@ -1023,7 +1138,7 @@ applications:
     homeCluster: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/model-serving-qwen3-5
       helm:
         releaseName: model-serving-qwen3-5
@@ -1051,7 +1166,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.12-v05
+      targetRevision: release-2026.06.18
       path: charts/mcps
       helm:
         releaseName: mcps

@@ -261,10 +261,14 @@ extProc:
   resources:
     requests:
       cpu: "250m"
-      memory: "256Mi"
+      memory: "512Mi"
     limits:
       cpu: "2000m"
-      memory: "512Mi"
+      # Memory raised 512Mi → 1Gi (2026-06-12): the processor buffers + parses
+      # request/response bodies, which grew with the 1M context ceiling
+      # (charts/ai-models-info) and multimodal image inputs (base64). Big bodies
+      # under concurrency were the OOM risk; this gives headroom.
+      memory: "1Gi"
 
 # NOTE: the `mcpBackendTls` EnvoyPatchPolicy (ADR-0039) was REMOVED by ADR-0040.
 # External MCPs no longer terminate TLS at Envoy — they're fronted by per-MCP

@@ -79,10 +79,15 @@ and how.
 
 ---
 
-### 2.1 Lightbridge Backend (API, OPA, MCP, Usage)
+### 2.1 Lightbridge Backend (API, MCP)
 
-**What it is:** The core authorization and billing service. Handles API key
-validation, OPA policy evaluation, and usage tracking.
+> Note: `usage.enabled: false` and `opa.enabled: false` in `charts/lightbridge`
+> — the usage sub-service and OPA are not running today, so the usage/OPA metrics
+> below are aspirational, not live.
+
+**What it is:** The core authorization and billing service. Handles
+authorization and usage tracking. (OPA was removed 2026-06-04, ADR-0021 — a
+valid Keycloak JWT is now the authorization boundary.)
 
 **Why it matters:** Every AI API request passes through Lightbridge. Latency
 spikes or error rate increases here directly impact end users.
@@ -96,7 +101,6 @@ spikes or error rate increases here directly impact end users.
    exposes `/metrics` via the `metrics` feature of `actix-web-prom` or similar).
    If not yet instrumented, add `prometheus` crate metrics for:
    - Request rate and latency per endpoint (`http_requests_total`, `http_request_duration_seconds`)
-   - OPA policy evaluation latency
    - API key validation cache hit/miss ratio
    - Active database connections
 
@@ -108,7 +112,6 @@ spikes or error rate increases here directly impact end users.
 3. **Dashboard** — Once metrics flow, use gnetId `19924` (Rust service metrics)
    or build a custom dashboard tracking:
    - API key validation rate and error rate
-   - OPA policy decision latency (p50/p95/p99)
    - Usage DB write latency
    - Active connections per service
 
@@ -180,26 +183,7 @@ now lives in Grafana on top of Tempo.
 
 ---
 
-### 2.5 Coder
-
-**What it is:** Cloud development environment platform.
-
-**Current state:** No dashboards.
-
-**Instrumentation plan:**
-
-1. Coder exposes Prometheus metrics at `/metrics` on port 2112 by default.
-   Add a `ServiceMonitor` targeting the `coder` service on port `2112`.
-
-2. Use gnetId `19261` (Coder) for the dashboard. Key metrics:
-   - Active workspaces
-   - Build success/failure rate
-   - Agent connection latency
-   - Resource usage per workspace template
-
----
-
-### 2.6 Envoy AI Gateway (AIEG)
+### 2.5 Envoy AI Gateway (AIEG)
 
 **What it is:** The AI-specific gateway layer that routes requests to AI model
 backends, handles token counting, and enforces rate limits.
@@ -220,7 +204,7 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 
 ---
 
-### 2.7 Authorino
+### 2.6 Authorino
 
 **What it is:** The authentication/authorization proxy for the API gateway.
 
@@ -234,12 +218,11 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 2. Key metrics:
    - Auth evaluation rate and latency per `AuthConfig`
    - Cache hit/miss ratio
-   - External metadata fetch latency (the Lightbridge OPA calls)
-   - Denial rate per policy
+   - Denial rate per AuthConfig
 
 ---
 
-### 2.8 OpenCode K8s Agent
+### 2.7 OpenCode K8s Agent
 
 **What it is:** The AI-powered cluster health monitor CronJob.
 
@@ -262,11 +245,10 @@ the AI Gateway extension (`aieg`) has its own metrics that are not yet captured.
 
 | Priority | Component | Effort | Impact |
 |----------|-----------|--------|--------|
-| 🔴 High | Lightbridge (API + OPA) | Medium | Every API request passes through here |
+| 🔴 High | Lightbridge (API) | Medium | Every API request passes through here |
 | 🔴 High | Envoy AI Gateway metrics | Low | Token usage and routing visibility |
 | 🟡 Medium | LibreChat + MongoDB | Medium | User-facing service health |
 | 🟡 Medium | Authorino | Low | Auth latency directly affects API response time |
-| 🟡 Medium | Coder | Low | ServiceMonitor already supported upstream |
 | 🟢 Low | Converse UI (nginx) | Low | Frontend availability signal |
 | 🟢 Low | OpenCode Agent | Low | Operational nicety, not critical path |
 

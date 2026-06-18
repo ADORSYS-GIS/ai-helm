@@ -9,9 +9,10 @@ bucket is exhausted):
                           response metadata (TotalToken) the AIGatewayRoute emits.
   3. monthly budget     — keyed on x-account-id (per person, ADR-0035 — NOT a
                           shared x-org-id bucket), micro-USD, cost = the
-                          cost_<model> response metadata (the pricing CEL, which
-                          already yields micro-USD). Emitted ONLY for plans that
-                          carry a budget → service/internal stay uncapped.
+                          llm_custom_total_cost response metadata (the pricing
+                          CEL emitted by the AIGatewayRoute, micro-USD).
+                          Emitted ONLY for plans that carry a budget →
+                          service/internal stay uncapped.
 
 x-billing-plan (stamped by the AuthConfig from Keycloak) selects the plan.
 
@@ -22,7 +23,7 @@ comes from .Values.plans.<plan>.burst.
 {{- $modelName := .Values.modelName -}}
 {{- $overrides := default dict .Values.rateLimitBudgeting -}}
 {{- $plans := .Values.plans -}}
-{{- $costKey := include "ai-model.metadataKeySafe" $modelName -}}
+{{- $costKey := "llm_custom_total_cost" -}}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
