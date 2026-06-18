@@ -79,11 +79,30 @@ spec:
             {{- toYaml .Values.neo4j.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           volumeMounts:
             - name: data
               mountPath: /data
+            # Writable paths Neo4j needs under a read-only rootfs (data stays on the PVC).
+            - name: logs
+              mountPath: /logs
+            - name: metrics
+              mountPath: /metrics
+            - name: run
+              mountPath: /var/lib/neo4j/run
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: metrics
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: data

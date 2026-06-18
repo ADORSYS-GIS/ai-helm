@@ -72,9 +72,22 @@ spec:
             {{- toYaml .Values.web.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             runAsUser: 1000
             capabilities:
               drop: [ALL]
+          volumeMounts:
+            # Writable paths a Next.js standalone server needs under a read-only rootfs.
+            # (Adjust if the image's WORKDIR differs from /app when it is built.)
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
