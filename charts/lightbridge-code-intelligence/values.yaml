@@ -170,8 +170,13 @@ lci:
     neo4j:
       type: statefulset
       replicas: 1
+      # Sync-wave 0 (NOT 2) so the StatefulSet applies in the SAME wave as its data PVC
+      # (bjw renders the PVC with no wave annotation → wave 0). Otherwise ArgoCD health-gates
+      # the WaitForFirstConsumer PVC (which can't bind until a pod mounts it) before applying
+      # the StatefulSet (the pod) → permanent deadlock. Same wave = both applied together →
+      # the pod schedules → the PVC binds.
       annotations:
-        argocd.argoproj.io/sync-wave: "2"
+        argocd.argoproj.io/sync-wave: "0"
       # Govern the StatefulSet with the neo4j Service (rather than the default fullname,
       # which has no matching Service). Single replica → the ClusterIP service is reached
       # at lightbridge-ci-neo4j:7687.
