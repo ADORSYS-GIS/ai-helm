@@ -50,13 +50,21 @@ _LOKI_DS = dm.DataSourceRef(type_val="loki", uid=LOKI_UID)
 
 # Stream selector filtered by all dashboard variables (per-user scope).
 # Filters on email (not user_id UUID) so the User picker is human-readable.
-# email=~"$email" also naturally excludes service-account traffic, which
-# carries no email label — that traffic stays visible in the Overall section
-# via _OVERALL_SELECTOR which anchors on user_id=~".+" (present on all
-# authenticated requests including SAs).
+#
+# `email!~"(missing|unstamped):.*"` keeps the per-user (human) panels clean.
+# Absent identity now resolves to a descriptive SENTINEL instead of an empty
+# value — "missing:<claim>" when the token lacked the claim (Authorino,
+# charts/apps/values.yaml) and "unstamped:<field>" when no header was stamped at
+# all (Alloy, charts/observability/values.yaml). Empty used to be dropped by Loki
+# and so auto-excluded SA/no-email traffic here; non-empty sentinels would
+# otherwise leak into the per-user aggregates, so we exclude both namespaces
+# explicitly. That traffic stays VISIBLE in the Overall section (via
+# _OVERALL_SELECTOR) and as a "missing:*"/"unstamped:*" row in the Top-15 — the
+# whole point of the sentinels is that the gap is named, not hidden.
 _SELECTOR = (
     f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_AZP}=~"$azp",'
-    f' {LABEL_EMAIL}=~"$email", {LABEL_MODEL}=~"$model"}}'
+    f' {LABEL_EMAIL}=~"$email", {LABEL_EMAIL}!~"(missing|unstamped):.*",'
+    f' {LABEL_MODEL}=~"$model"}}'
 )
 
 # Stream selector that always spans ALL attributed users regardless of $email.

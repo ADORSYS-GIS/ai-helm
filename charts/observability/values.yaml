@@ -490,11 +490,22 @@ children:
                         billing_plan = "billing_plan",
                       }
                     }
-                    // Envoy renders absent fields as "-": blank them so
-                    // stage.labels skips them and unauthenticated requests
-                    // get no identity labels. Anchored regex ^-$ matches
-                    // ONLY the exact placeholder — never a substring (a
-                    // UUID/client_id/model name is never just "-").
+                    // SENTINEL CONVENTION (layered diagnosis). Envoy renders a
+                    // header that was NEVER stamped as "-", and a bare Authorino
+                    // selector against a missing claim as "<nil>". Either way the
+                    // header didn't arrive — that's a DIFFERENT failure from a
+                    // claim the AuthConfig could not find in the token (which it
+                    // now stamps as "missing:<claim>", charts/apps/values.yaml).
+                    // So map an unstamped "-"/"<nil>" to "unstamped:<field>" — a
+                    // bucket that says "no header reached Alloy" (request matched
+                    // no AuthConfig response, or a plane that omits this field —
+                    // e.g. the internal plane never sets a name). At a glance:
+                    //   missing:*    → token lacked the claim (Authorino level)
+                    //   unstamped:*  → header never stamped  (gateway/Alloy level)
+                    // The anchored regex ^(-|<nil>)$ matches ONLY those exact
+                    // placeholders, never a substring (a real UUID/client_id/name
+                    // is never just "-" or "<nil>"), and the "missing:*" sentinels
+                    // from Authorino pass through untouched.
                     //
                     // ⚠️ Use stage.replace, NOT stage.template here. The
                     // alloy chart runs this whole config string through
@@ -508,33 +519,33 @@ children:
                     // ADR-0046.)
                     stage.replace {
                       source     = "user_id"
-                      expression = "^-$"
-                      replace    = ""
+                      expression = "^(-|<nil>)$"
+                      replace    = "unstamped:user_id"
                     }
                     stage.replace {
                       source     = "azp"
-                      expression = "^-$"
-                      replace    = ""
+                      expression = "^(-|<nil>)$"
+                      replace    = "unstamped:azp"
                     }
                     stage.replace {
                       source     = "model"
-                      expression = "^-$"
-                      replace    = ""
+                      expression = "^(-|<nil>)$"
+                      replace    = "unstamped:model"
                     }
                     stage.replace {
                       source     = "email"
-                      expression = "^-$"
-                      replace    = ""
+                      expression = "^(-|<nil>)$"
+                      replace    = "unstamped:email"
                     }
                     stage.replace {
                       source     = "display_name"
-                      expression = "^-$"
-                      replace    = ""
+                      expression = "^(-|<nil>)$"
+                      replace    = "unstamped:display_name"
                     }
                     stage.replace {
                       source     = "billing_plan"
-                      expression = "^-$"
-                      replace    = ""
+                      expression = "^(-|<nil>)$"
+                      replace    = "unstamped:billing_plan"
                     }
                     stage.labels {
                       values = {

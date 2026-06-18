@@ -771,19 +771,44 @@ applications:
                     "x-oidc-user-id":
                       plain:
                         # JWT `sub` — Keycloak user UUID. Stable per identity.
-                        selector: "auth.identity.sub"
+                        # Normally guaranteed, but a mis-configured token-exchange
+                        # (impersonation not wired) can drop it — observed live as
+                        # user_id="-". Sentinel-guard so that failure is named,
+                        # not silently empty.
+                        expression: 'has(auth.identity.sub) ? string(auth.identity.sub) : (has(auth.identity.repository) ? "missing:github:sub" : "missing:keycloak:sub")'
                     "x-oidc-user-name":
                       plain:
                         # `preferred_username` — for humans: their login;
                         # for SAs: `service-account-<clientid>`.
                         # Carried in the body; NOT a Loki label (cardinality).
-                        selector: "auth.identity.preferred_username"
+                        # ADR-0047 guard (extended). SENTINEL CONVENTION: a
+                        # missing claim must resolve to a descriptive
+                        # "missing:<issuer>:<claim>" marker — NEVER "". An empty
+                        # value is dropped by Loki (the label vanishes) so the gap
+                        # becomes invisible; a sentinel makes the exact failure
+                        # obvious at a glance. (A bare selector would instead stamp
+                        # the opaque literal "<nil>".) ISSUER-QUALIFY: this plane
+                        # serves two issuers, told apart by the GitHub-only
+                        # `repository` claim — so a missing claim is tagged
+                        # "missing:github:<claim>" (often expected: GitHub OIDC
+                        # tokens carry no preferred_username/email/scope) vs
+                        # "missing:keycloak:<claim>" (a real Keycloak token/client
+                        # gap). The dashboard's "(missing|unstamped):.*" exclusion
+                        # still matches all forms.
+                        expression: 'has(auth.identity.preferred_username) ? string(auth.identity.preferred_username) : (has(auth.identity.repository) ? "missing:github:preferred_username" : "missing:keycloak:preferred_username")'
                     "x-oidc-azp":
                       plain:
                         # Authorized Party — the Keycloak client_id that
                         # requested the token. Bounded by registered client
                         # count; promoted to a Loki label.
-                        selector: "auth.identity.azp"
+                        # GitHub Actions OIDC tokens (ADR-0047) carry NO azp
+                        # claim → a bare selector stamped "<nil>" as the azp
+                        # label (the junk row in the per-user dashboard). Guard
+                        # it: Keycloak tokens keep their azp; GitHub identities
+                        # (detected via the repository claim) fall back to a
+                        # stable "github-actions" label so CI stays filterable
+                        # by Client instead of polluting it with "<nil>".
+                        expression: 'has(auth.identity.azp) ? string(auth.identity.azp) : (has(auth.identity.repository) ? "github-actions" : "missing:keycloak:azp")'
                     "x-oidc-iss":
                       plain:
                         # Issuer URL. Multi-realm future-proofing; today one
@@ -806,14 +831,18 @@ applications:
                     "x-oidc-scope":
                       plain:
                         # OAuth scopes granted, space-separated as per spec.
-                        selector: "auth.identity.scope"
+                        # has()-guard (ADR-0047): scope-poor/lightweight tokens
+                        # may omit it → "missing:scope" sentinel (see convention
+                        # above; never "", which Loki drops and hides the gap).
+                        expression: 'has(auth.identity.scope) ? string(auth.identity.scope) : (has(auth.identity.repository) ? "missing:github:scope" : "missing:keycloak:scope")'
                     #
                     # TRACING — request-level correlation
                     "x-oidc-jti":
                       plain:
                         # JWT ID. Per-request unique; pair with x-request-id
                         # for cross-system tracing. Body only — NEVER a label.
-                        selector: "auth.identity.jti"
+                        # has()-guard (ADR-0047): tokens without jti → "missing:jti".
+                        expression: 'has(auth.identity.jti) ? string(auth.identity.jti) : (has(auth.identity.repository) ? "missing:github:jti" : "missing:keycloak:jti")'
                     #
                     # PROFILE (PII) — opt-in per ADR-0011; downstream services
                     # that surface these in their own logs MUST treat them as
@@ -827,13 +856,27 @@ applications:
                     # fall back to "owner/repo" (still no real PII) instead.
                     "x-oidc-email":
                       plain:
-                        expression: 'has(auth.identity.email) ? string(auth.identity.email) : ""'
+                        # Issuer-qualified sentinel (see convention above):
+                        # "missing:github:email" is EXPECTED (GitHub OIDC tokens
+                        # carry no email), while "missing:keycloak:email" flags a
+                        # real Keycloak token/client gap worth chasing.
+                        # ⚠️ DASHBOARD COUPLING: the per-user board's _SELECTOR
+                        # keys on email=~"$email" and relied on an EMPTY email to
+                        # drop service-account/no-email traffic from the per-user
+                        # (human) panels. With a non-empty sentinel, that traffic
+                        # is no longer auto-excluded — the board's selector now
+                        # filters it explicitly (email!~"(missing|unstamped):.*"),
+                        # keeping the gap visible in raw queries while preserving
+                        # "per-user = humans".
+                        expression: 'has(auth.identity.email) ? string(auth.identity.email) : (has(auth.identity.repository) ? "missing:github:email" : "missing:keycloak:email")'
                     "x-oidc-name":
                       plain:
                         # Full display name, e.g. "Stephane Segning"; GitHub
                         # CI falls back to the repository slug, e.g.
-                        # "ADORSYS-GIS/ai-helm".
-                        expression: 'has(auth.identity.name) ? string(auth.identity.name) : (has(auth.identity.repository) ? string(auth.identity.repository) : "")'
+                        # "ADORSYS-GIS/ai-helm"; no name claim AND not GitHub →
+                        # "missing:keycloak:name" sentinel (never "") so the
+                        # nameless bucket is self-identifying in the Top-15.
+                        expression: 'has(auth.identity.name) ? string(auth.identity.name) : (has(auth.identity.repository) ? string(auth.identity.repository) : "missing:keycloak:name")'
 
             # ── Internal plane (ADR-0021) ──────────────────────────────────────
             internal:
@@ -901,7 +944,34 @@ applications:
                         expression: 'has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name)'
                     "x-oidc-email":
                       plain:
-                        expression: '"x-librechat-email" in request.headers ? request.headers["x-librechat-email"] : ""'
+                        # Forwarded end-user email (LibreChat → X-LibreChat-Email)
+                        # when present & non-empty; else a PLANE-QUALIFIED sentinel
+                        # (never "") so the source is obvious at a glance, distinct
+                        # from the external plane's bare "missing:email":
+                        #   missing:librechat:email — a forwarded LibreChat user the
+                        #     app did not forward an email for (actionable gap)
+                        #   missing:service:email   — a non-human caller (cron/SA),
+                        #     which legitimately has no email
+                        # Both keep the row OUT of per-user (human) panels (the
+                        # board excludes "(missing|unstamped):.*") while staying
+                        # visible in Overall.
+                        expression: '"x-librechat-email" in request.headers && request.headers["x-librechat-email"] != "" ? request.headers["x-librechat-email"] : ("x-librechat-user" in request.headers && request.headers["x-librechat-user"] != "" ? "missing:librechat:email" : "missing:service:email")'
+                    # Display name — the internal plane previously OMITTED this
+                    # entirely, so every internal request (all LibreChat traffic
+                    # + every cron/service caller) was nameless in the dashboard.
+                    # Resolution order:
+                    #   1. forwarded end-user name (LibreChat → X-LibreChat-Name)
+                    #   2. a FORWARDED user with no name → "missing:librechat:name"
+                    #      (a real gap; LibreChat should forward the name header) —
+                    #      plane-qualified to distinguish from the external plane's
+                    #      bare "missing:name"
+                    #   3. a non-forwarded caller (cron-job / service) → its OWN
+                    #      authenticated identity (SA username or apiKey Secret
+                    #      name) so internal SERVICES are named in the Top-15
+                    #      instead of collapsing under one anonymous bucket.
+                    "x-oidc-name":
+                      plain:
+                        expression: '"x-librechat-name" in request.headers && request.headers["x-librechat-name"] != "" ? request.headers["x-librechat-name"] : ("x-librechat-user" in request.headers && request.headers["x-librechat-user"] != "" ? "missing:librechat:name" : (has(auth.identity.user) ? string(auth.identity.user.username) : string(auth.identity.metadata.name)))'
 
             # ── Catch-all deny (security backstop, ADR-0021) ───────────────────
             catch-all:

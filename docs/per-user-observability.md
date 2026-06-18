@@ -88,12 +88,41 @@ Querying rules that follow from it:
   `| json | unwrap gen_ai_usage_total_tokens | __error__=""`.
 - Anchor every query on `{service_name="envoy-ai-gateway"}` — it's pinned by
   Alloy (`stage.static_labels`), deterministic and cheap.
-- Identity labels exist on **attributed traffic only**: for unauthenticated
-  requests Envoy logs `-`, which Alloy maps to empty (exact match — UUIDs
-  contain `-`), so no label is created and `user_id=~".+"` excludes them.
+- Identity labels are **always present** (ADR-0052, supersedes the old
+  blank-to-empty behaviour): an absent value is never stored empty — Loki drops
+  empty labels, which would make the failure *invisible*. It resolves to a
+  descriptive sentinel instead: `missing:<source>:<claim>` (Authorino — the
+  token lacked the claim) or `unstamped:<field>` (Alloy — no header arrived).
+  Both match `=~".+"`, so the Overall section counts them; the per-user *human*
+  panels exclude `(missing|unstamped):.*`. See "Identity sentinels" below.
 - Lines ingested **before** the repair keep the old nested shape under
   `service_name="unknown_service"` — query those with `attributes_`-prefixed
   field names if you ever need the history.
+
+## Identity sentinels (ADR-0052)
+
+An absent identity claim/header is **never** stored empty. It resolves to a
+descriptive, source-qualified sentinel that names *what* is missing and *where*
+it was lost — so an attribution gap is loud, not invisible:
+
+| Sentinel | Set by | Meaning |
+|---|---|---|
+| `missing:keycloak:<claim>` | Authorino | external Keycloak token lacked the claim — a real token/client gap |
+| `missing:github:<claim>` | Authorino | external GitHub Actions token — usually *expected* (GitHub OIDC carries no `email`/`preferred_username`/`scope`) |
+| `missing:librechat:<claim>` | Authorino (internal plane) | a forwarded LibreChat user the app didn't forward that field for |
+| `missing:service:<claim>` | Authorino (internal plane) | a non-human cron/SA caller (field legitimately absent) |
+| `unstamped:<field>` | Alloy | no header arrived at all (request matched no AuthConfig response, or a plane that omits the field) |
+
+Rule of thumb: a `missing:`/`unstamped:` prefix marks an attribution gap, and
+the shape tells you the layer — `missing:<source>:<claim>` is token-level
+(Authorino), `unstamped:<field>` is header-level (gateway/Alloy). The external
+source is told apart by the GitHub-only `repository` claim. Internal-plane
+display names fall back to the caller's OWN identity (SA username / apiKey
+Secret name) for non-forwarded services, so services are *named* in the Top-15;
+LibreChat forwards `X-LibreChat-Name` (`charts/librechat-app`) so its users
+resolve by real name. The per-user board's `_SELECTOR` adds
+`email!~"(missing|unstamped):.*"` to keep sentinels out of the human panels
+while they stay visible in Overall and as their own Top-15 row.
 
 ## Where each step lives
 
@@ -101,8 +130,9 @@ Querying rules that follow from it:
 |---|---|---|
 | Authorino emits the OIDC header set (ADR-0011) | `charts/apps/values.yaml` `security-policies.authConfigs.main.response.success.headers` | Entries `x-oidc-user-id`, `x-oidc-user-name`, `x-oidc-azp`, `x-oidc-iss`, `x-oidc-roles-realm`, `x-oidc-resource-access`, `x-oidc-scope`, `x-oidc-jti`, `x-oidc-email`, `x-oidc-name` |
 | Envoy access log carries them through | `charts/core-gateway/templates/envoy-proxy.yaml` `telemetry.accessLog.settings[0]` | Fields `user_id` / `user_name` / `azp` in `format.json`; sink resource `service.name: envoy-ai-gateway`; sent directly to `alloy.observability:4317` (the old `-usage` OTel collector middleman was removed) |
-| Alloy flattens the OTLP envelope + promotes labels | `charts/observability/values.yaml` alloy child `valuesObject` (`extraConfig`) | `loki.process "ai_gateway_user_attribution"`: `stage.match` on the `otel_envoy_accesslog` marker → extract `attributes` → `stage.output` (flatten) → promote `user_id`/`azp`/`model`/`email`/`display_name`/`billing_plan` → pin `service_name=envoy-ai-gateway` |
-| Dashboard consumes the labels | `tools/dashboards/src/dashboards/envoy_ai_gateway/per_user.py` (generated → `charts/observability-dashboards/files/envoy-ai-gateway/per-user.json`) | Label-only stream selectors, `label_values(...)` variables, guarded unwraps |
+| Alloy flattens the OTLP envelope + promotes labels | `charts/observability/values.yaml` alloy child `valuesObject` (`extraConfig`) | `loki.process "ai_gateway_user_attribution"`: `stage.match` on the `otel_envoy_accesslog` marker → extract `attributes` → `stage.output` (flatten) → map `^(-\|<nil>)$` → `unstamped:<field>` (ADR-0052) → promote `user_id`/`azp`/`model`/`email`/`display_name`/`billing_plan` → pin `service_name=envoy-ai-gateway` |
+| LibreChat forwards the end-user identity (internal plane) | `charts/librechat-app/values.yaml` custom-endpoint `headers` | `X-LibreChat-User`/`-Email`/`-Role`/`-Name` → consumed by the internal AuthConfig into `x-account-id`/`x-oidc-*` (ADR-0021/0052) |
+| Dashboard consumes the labels | `tools/dashboards/src/dashboards/envoy_ai_gateway/per_user.py` (generated → `charts/observability-dashboards/files/envoy-ai-gateway/per-user.json`) | Label-only stream selectors (per-user `_SELECTOR` excludes `(missing\|unstamped):.*`), `label_values(...)` variables, guarded unwraps |
 
 ## Label cardinality budget
 
