@@ -26,3 +26,17 @@ misconfigurations:
     paths:
       - "keycloak-baseline/templates/realm-configmap.yaml"
       - "librechat-app/templates/configmap.yaml"
+  - id: KSV-0014
+    # KSV-0014 "readOnlyRootFilesystem" — the neo4j StatefulSet container needs a
+    # WRITABLE rootfs: the official neo4j image entrypoint renders its config to
+    # /var/lib/neo4j/conf at startup, so readOnlyRootFilesystem:true crashes it
+    # (verified in-cluster: "/var/lib/neo4j/conf/neo4j.conf: Read-only file system").
+    # /data still persists on a PVC. The lightbridge-code-intelligence control-plane and
+    # web containers DO keep readOnlyRootFilesystem:true — only neo4j is exempt. The
+    # workloads are rendered by the bjw-template subchart (aliased `lci`).
+    statement: >-
+      Neo4j requires a writable rootfs (its entrypoint writes /var/lib/neo4j/conf at
+      startup); /data persists on a PVC. Only the neo4j container is exempt — the
+      control-plane and web containers keep readOnlyRootFilesystem:true.
+    paths:
+      - "lightbridge-code-intelligence/charts/lci/templates/common.yaml"

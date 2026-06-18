@@ -229,7 +229,10 @@ lci:
             limits: { cpu: "1", memory: 2Gi }
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            # Neo4j writes its rendered config to /var/lib/neo4j/conf at startup, so it needs a
+            # writable rootfs (the official image is not read-only-rootfs compatible). /data still
+            # persists on the PVC. A scoped Trivy ignore covers KSV-0014 for this container.
+            readOnlyRootFilesystem: false
             capabilities:
               drop: [ALL]
 
@@ -288,15 +291,15 @@ lci:
           hosts:
             - code-intelligence-api.ai.camer.digital
 
-  # Neo4j /data + the read-only-rootfs scratch dirs are all emptyDir. /data is NON-PERSISTENT
-  # for now: a standalone PVC for the StatefulSet deadlocks ArgoCD on WaitForFirstConsumer
-  # storage (the PVC can't bind until the pod mounts it, but ArgoCD won't apply the pod until
-  # the PVC is healthy). The graph rebuilds on indexing; restore a volumeClaimTemplate later.
-  # advancedMounts scope each volume to one container.
+  # Neo4j /data on a persistent PVC; the read-only-rootfs scratch dirs (below) are emptyDir.
+  # The standalone PVC binds fine on home-remote (WaitForFirstConsumer — slow to bind, ~minutes,
+  # but not a deadlock). advancedMounts scope each volume to one container.
   persistence:
     data:
       enabled: true
-      type: emptyDir
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 10Gi
       advancedMounts:
         neo4j:
           main:
