@@ -18,6 +18,21 @@ gateway:
     listenerName: http
     statusCode: 308
 
+  # Vanity / alias hostnames redirected to a canonical host (ADR-0053). Each
+  # entry gets its OWN HTTPS listener + ACME cert (same issuer as the api host)
+  # + an HTTPRoute carrying a RequestRedirect filter, so e.g. callers of
+  # api.ai.kivoyo.com land on api.ai.camer.digital (path + query preserved).
+  # ACME-safe: cert-manager's exact /.well-known/acme-challenge/<token> path
+  # out-ranks the redirect's `/` prefix on the :80 listener (same as
+  # httpsRedirect above). Empty by default → zero behaviour change.
+  #
+  #   redirectHosts:
+  #     - name: kivoyo-api        # short slug → listener/cert/route names
+  #       from: api.ai.kivoyo.com # vanity host (its DNS must point at this LB)
+  #       to: api.ai.camer.digital# canonical host
+  #       statusCode: 307         # 307 temporary (keeps method); 302 also valid
+  redirectHosts: []
+
   # Internal plane (ADR-0021): a second HTTPS listener (`api-internal`) bound to a
   # k8s service-DNS hostname, for IN-CLUSTER callers (LibreChat, cron-jobs, k8s
   # SAs). A ClusterIP Service in the proxy namespace gives the stable DNS and

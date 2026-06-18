@@ -553,6 +553,19 @@ applications:
               email: selastlambou@protonmail.com
             # (fallback when acmeHttp01.enabled=false: external issuer by name/kind,
             #  e.g. issuer: cert-cloudflare / issuerKind: ClusterIssuer for DNS-01.)
+            # Vanity/alias domain redirects (ADR-0053): we own kivoyo.com and its
+            # api.ai.kivoyo.com DNS already points at this Gateway's LB, so we
+            # 307-redirect it (temporary, method-preserving, path+query kept) to
+            # the canonical api.ai.camer.digital. Each entry gets its own HTTPS
+            # listener + ACME cert (reusing the acmeHttp01 issuer above) — see
+            # charts/core-gateway/templates/redirect-hosts.yaml. (The web UI
+            # ai.kivoyo.com is redirected separately via Traefik in
+            # charts/librechat-app.)
+            redirectHosts:
+              - name: kivoyo-api
+                from: api.ai.kivoyo.com
+                to: api.ai.camer.digital
+                statusCode: 307
     destination:
       namespace: converse-gateway
 
