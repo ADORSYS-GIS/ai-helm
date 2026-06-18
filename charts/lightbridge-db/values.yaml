@@ -75,10 +75,16 @@ resources:
   # The old store pointed at the now-decommissioned MinIO (s3.ssegning.me,
   # bucket ai-ops-backups). It now uses Hetzner Object Storage (Ceph-RGW):
   # shared bucket `ssegning-k8s-state`, endpoint nbg1.your-objectstorage.com,
-  # same pattern Keycloak's CNPG backup uses. NO `region` field — it isn't in
-  # the barmancloud ObjectStore schema (a literal there breaks ArgoCD's diff:
-  # ".spec.configuration.region: field not declared in schema"), and the working
-  # Keycloak store omits it (Ceph-RGW doesn't require it).
+  # same pattern Keycloak's CNPG backup uses. NO top-level `region` field — it
+  # isn't in the barmancloud ObjectStore schema (a literal there breaks ArgoCD's
+  # diff: ".spec.configuration.region: field not declared in schema").
+  # ⚠️ The barman-cloud plugin's defaulting webhook DOES inject an
+  # `s3Credentials.region` ref → {name: lightbridge-cnpg-s3, key: s3_region_name}
+  # server-side (the valid per-credential field), and reads that key at backup
+  # time — so the `lightbridge-cnpg-s3` Secret MUST carry `s3_region_name`
+  # (provisioned as a literal in charts/lightbridge-secrets) or every
+  # ScheduledBackup fails `missing key s3_region_name`. Left undeclared here so
+  # ArgoCD doesn't diff the webhook-owned default.
   # No trailing slash on destinationPath (MinIO/Ceph ListObjectsV2 quirk).
   # ────────────────────────────────────────────────────────────────────
   - |
