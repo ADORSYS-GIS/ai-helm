@@ -42,8 +42,8 @@ App-owned `ExternalSecret`s resolve against the `ssegning-aws` `ClusterSecretSto
 
 Traefik + cert-manager (`cert-home-cert-http`), librechat-style:
 
-- Web console: `lightbridge.ai.camer.digital`
-- Control plane (webhook + authN): `lightbridge-api.ai.camer.digital`
+- Web console: `code-intelligence.ai.camer.digital`
+- Control plane (webhook + authN): `code-intelligence-api.ai.camer.digital`
 
 ## Known follow-ups
 
