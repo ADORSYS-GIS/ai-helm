@@ -41,7 +41,11 @@ lci:
     # Rust control plane: webhook trust boundary + /auth/verify authN surface.
     control-plane:
       type: deployment
-      replicas: 2
+      # Single replica until delivery-id dedupe is durable: the control plane currently keeps
+      # its X-GitHub-Delivery dedupe set in process memory, so two replicas behind the Service
+      # could each accept the same delivery and (once task creation is wired) double-process it.
+      # Move dedupe to Postgres before scaling out.
+      replicas: 1
       annotations:
         argocd.argoproj.io/sync-wave: "2"
       containers:
@@ -174,6 +178,17 @@ lci:
       statefulset:
         serviceName:
           identifier: neo4j
+      # The neo4j image runs as uid/gid 7474. Pin it + fsGroup so the non-root process can
+      # write the /data PVC even on storage classes that provision root-owned volumes
+      # (otherwise the pod CrashLoops). Overrides defaultPodOptions for this controller.
+      pod:
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 7474
+          runAsGroup: 7474
+          fsGroup: 7474
+          seccompProfile:
+            type: RuntimeDefault
       containers:
         main:
           image:
