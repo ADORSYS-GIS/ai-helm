@@ -312,6 +312,138 @@ coder_mcp:
       value: "oauth2,mcp-server-http"
 ```
 
+### 6.4 OpenCode & IDE MCP Configuration
+
+The same Coder MCP endpoint can be configured in OpenCode and MCP-compatible IDEs (Cursor, Windsurf, Claude Desktop) for direct workspace management.
+
+#### Authentication Options
+
+| Method | Use Case | Flow | Configuration |
+|--------|----------|------|---------------|
+| Session Token | Single-user, development | Direct token | `headers.Coder-Session-Token` |
+| OAuth2 Authorization Code | Multi-user, production | Browser redirect | `oauth.clientId` + `oauth.clientSecret` |
+| Keycloak Client Credentials | Service accounts, automation | Token exchange | Not supported by Coder MCP |
+
+**Important:** Keycloak tokens cannot be used directly with Coder MCP. Coder issues its own tokens after authenticating users via Keycloak OIDC.
+
+#### Authentication Flow
+
+```mermaid
+graph TB
+    subgraph Client
+        OC[OpenCode/IDE]
+    end
+    subgraph Coder
+        CS[Coder Server]
+        MCP[MCP Endpoint]
+    end
+    subgraph Identity
+        KC[Keycloak]
+    end
+    OC -->|1. Get OAuth2 Token| CS
+    CS -->|2. Redirect to Keycloak| KC
+    KC -->|3. User Login| KC
+    KC -->|4. Return to Coder| CS
+    CS -->|5. Issue Coder Token| OC
+    OC -->|6. MCP Request + Token| MCP
+    MCP -->|7. Response| OC
+```
+
+**Important:** `CODER_ACCESS_URL` must be externally accessible (not Kubernetes internal DNS). OpenCode discovers OAuth2 endpoints from `/.well-known/oauth-authorization-server`.
+
+#### OpenCode Configuration (Session Token)
+
+For development/single-user scenarios:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "coder": {
+      "type": "remote",
+      "url": "https://coder.ai.camer.digital/api/experimental/mcp/http",
+      "enabled": true,
+      "headers": {
+        "Coder-Session-Token": "{env:CODER_SESSION_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Get session token:
+```bash
+# Via Coder CLI
+coder login https://coder.ai.camer.digital
+coder users show me --output json | jq -r '.session_token'
+
+# Or create via API
+curl -X POST https://coder.ai.camer.digital/api/v2/users/me/keys/tokens \
+  -H "Coder-Session-Token: $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "opencode-mcp"}'
+```
+
+#### OpenCode Configuration (OAuth2)
+
+For production/multi-user scenarios:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "coder": {
+      "type": "remote",
+      "url": "https://coder.ai.camer.digital/api/experimental/mcp/http",
+      "enabled": true,
+      "oauth": {
+        "clientId": "your-client-id",
+        "clientSecret": "{env:CODER_OAUTH_SECRET}",
+        "scope": "coder:all",
+        "callbackPort": 19876
+      }
+    }
+  }
+}
+```
+
+#### OpenCode Configuration (OAuth2)
+
+```json
+// 3. opencode.json
+{
+  "mcp": {
+    "coder": {
+      "type": "remote",
+      "url": "http://localhost:30822/api/experimental/mcp/http",
+      "oauth": {
+        "clientId": "<from-step-2>",
+        "clientSecret": "<from-step-2>",
+        "scope": "coder:all",
+        "callbackPort": 19876
+      }
+    }
+  }
+}
+```
+
+#### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `coder_list_workspaces` | List workspaces |
+| `coder_get_workspace` | Get workspace details |
+| `coder_create_workspace` | Create workspace from template |
+| `coder_workspace_bash` | Execute commands in workspace |
+| `coder_workspace_read_file` | Read files from workspace |
+| `coder_workspace_write_file` | Write files to workspace |
+| `coder_list_templates` | List available templates |
+| `coder_get_template` | Get template details |
+
+Full tool list: 24 tools for workspace, template, and task management.
+
+
+
 ---
 
 ## 7. OpenCode Integration with Keycloak
