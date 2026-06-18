@@ -288,14 +288,15 @@ lci:
           hosts:
             - code-intelligence-api.ai.camer.digital
 
-  # PVC for Neo4j data + emptyDir mounts so each container can run under a read-only
-  # rootfs (data persists on the PVC). advancedMounts scope each volume to one container.
+  # Neo4j /data + the read-only-rootfs scratch dirs are all emptyDir. /data is NON-PERSISTENT
+  # for now: a standalone PVC for the StatefulSet deadlocks ArgoCD on WaitForFirstConsumer
+  # storage (the PVC can't bind until the pod mounts it, but ArgoCD won't apply the pod until
+  # the PVC is healthy). The graph rebuilds on indexing; restore a volumeClaimTemplate later.
+  # advancedMounts scope each volume to one container.
   persistence:
     data:
       enabled: true
-      type: persistentVolumeClaim
-      accessMode: ReadWriteOnce
-      size: 10Gi
+      type: emptyDir
       advancedMounts:
         neo4j:
           main:

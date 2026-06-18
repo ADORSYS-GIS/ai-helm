@@ -10,7 +10,7 @@ deployment pattern.
 |---|---|---|---|
 | Control plane | Deployment (`*-control-plane`) | `ghcr.io/vymalo/lightbridge-control-plane` | Rust/Axum trust boundary + `/auth/verify` authN surface + GitHub webhook |
 | Web console | Deployment (`*-web`) | `ghcr.io/vymalo/lightbridge-web` | Next.js + better-auth; delegates authN to the control plane |
-| Knowledge graph | StatefulSet (`*-neo4j`) | `neo4j:5.26-community` | Single instance, PVC-backed |
+| Knowledge graph | StatefulSet (`*-neo4j`) | `neo4j:5.26-community` | Single instance, emptyDir (non-persistent for now; see values comment) |
 | Postgres / pgvector | **reused** | — | Uses the existing CNPG cluster `lightbridge-main-db` via a dedicated `codeintel` role + database |
 
 ## Database — reuse of `lightbridge-main-db`
