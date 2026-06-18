@@ -1,0 +1,133 @@
+# lightbridge-code-intelligence — Lightbridge Code Intelligence stack.
+#
+# Components: Rust control plane (authN + GitHub webhook trust boundary), Next.js
+# web console (better-auth), and a Neo4j knowledge graph. Postgres/pgvector is
+# REUSED from the CloudNativePG cluster `lightbridge-main-db` (charts/lightbridge-db)
+# through a dedicated `codeintel` role + database (added there in this same change).
+#
+# Namespace is `converse` (the lightbridge family namespace), matching the CNPG
+# cluster so the DB service + role-password Secret resolve without cross-namespace refs.
+
+# Used to prefix resource names. Keep short — services are referenced by name.
+nameOverride: lightbridge-ci
+
+# Standard image pull secrets (the app images may live in a private GHCR package).
+imagePullSecrets: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rust control plane: webhook trust boundary + /auth/verify authN surface.
+# ─────────────────────────────────────────────────────────────────────────────
+controlPlane:
+  enabled: true
+  replicas: 2
+  image:
+    # TODO(images): published by vymalo/lightbridge-code-intelligence CI. Until that
+    # exists, this tag is a placeholder — bump deliberately once the image ships.
+    repository: ghcr.io/vymalo/lightbridge-control-plane
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  port: 8080
+  ingress:
+    enabled: true
+    host: lightbridge-api.ai.camer.digital
+    className: traefik
+    clusterIssuer: cert-home-cert-http
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  # Extra plain env (non-secret). Secrets/DB/Neo4j are wired by the template.
+  extraEnv: {}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Next.js web console (better-auth, rust-backend plugin → control plane authN).
+# ─────────────────────────────────────────────────────────────────────────────
+web:
+  enabled: true
+  replicas: 2
+  image:
+    repository: ghcr.io/vymalo/lightbridge-web
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  port: 3000
+  ingress:
+    enabled: true
+    host: lightbridge.ai.camer.digital
+    className: traefik
+    clusterIssuer: cert-home-cert-http
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  extraEnv: {}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Neo4j knowledge graph (single-instance community StatefulSet).
+# 5.26 is the current Neo4j 5 LTS line; the newer calver line is 2025.08.
+# ─────────────────────────────────────────────────────────────────────────────
+neo4j:
+  enabled: true
+  image:
+    repository: neo4j
+    tag: "5.26-community"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 5Gi
+    # null → cluster default StorageClass (matches the librechat/mongo convention).
+    storageClass: ~
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Database: REUSES the existing CNPG cluster lightbridge-main-db (converse ns).
+# The `codeintel` role + database + password Secret are provisioned by
+# charts/lightbridge-db (see this change). The control plane assembles DATABASE_URL
+# from these plus the password from the basic-auth Secret below.
+#
+# NOTE(pgvector): the CNPG image (postgresql:18.4-system-trixie) does not bundle
+# pgvector today, so semantic search is not yet enabled. Enabling it needs a CNPG
+# image variant that ships `vector` (or an ImageVolume) + a declared extension on
+# the codeintel Database — tracked as a follow-up. The skeleton control plane does
+# not use pgvector yet, so this does not block the deployment.
+database:
+  host: lightbridge-main-db-rw.converse.svc.cluster.local
+  port: 5432
+  name: codeintel
+  user: codeintel
+  # ESO-provisioned basic-auth Secret created by charts/lightbridge-db.
+  passwordSecret: lightbridge-codeintel-db-role
+  passwordSecretKey: password
+
+# ─────────────────────────────────────────────────────────────────────────────
+# App-owned ExternalSecrets (ssegning-aws ClusterSecretStore), librechat-style.
+# Properties live under remoteRef key ai/camer/digital/prod/env.
+# ─────────────────────────────────────────────────────────────────────────────
+secrets:
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  remoteKey: ai/camer/digital/prod/env
+  githubWebhookProperty: lightbridge_ci_github_webhook_secret
+  betterAuthProperty: lightbridge_ci_better_auth_secret
+  neo4jPasswordProperty: lightbridge_ci_neo4j_password
+
+# Sync-wave ordering: secrets first, then workloads (DB lives in lightbridge-db).
+syncWave:
+  secrets: "0"
+  app: "2"
+
+# Pod security defaults (cluster baseline PSS). Overridable per component if needed.
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
