@@ -29,7 +29,7 @@
 | **envoy-ratelimit** | critical (budget enforcement, ADR-0021/0035) | ❌ own service; ✅ Envoy-side `ratelimit_ok/over_limit/error` counters already in Mimir | ❌ | small custom board off existing Envoy counters (no community board exists — verified) | **P1** |
 | **Authorino** (`kuadrant-policies-main`, `converse-gateway`) | critical (auth boundary) | ❌ (exposes auth-server + controller metrics, unscraped) | ❌ | add scrape + small custom board (no community board exists — verified) | **P1** |
 | **Keycloak** (`keycloak-ha-app`) | critical | ❌ (KC 26 micrometer metrics not enabled/scraped) | ❌ | enable `metrics-enabled=true` on the Keycloak CR + ServiceMonitor (check ns ingress NetworkPolicy for the Alloy scrape) + adopt gnetId 23338 | **P1** |
-| Keycloak OTel collector (`keycloak-ha-otel`) | medium | ⚠️ collector self-metrics on :8888, unscraped | ❌ | ⚠️ **finding: its only pipeline is traces → `debug` exporter — Keycloak traces are received and DROPPED.** Rewire exporter → Alloy (`alloy.observability:4317`) → Tempo, or remove the collector | P2 |
+| Keycloak OTel collector (`keycloak-ha-otel`) | medium | ⚠️ collector self-metrics on :8888, unscraped | ❌ | ⚠️ **finding: its only pipeline is traces → `debug` exporter — Keycloak traces are received and DROPPED.** Rewire exporter → Alloy (`alloy.observability:4317`) → Tempo, or remove the collector. **(cross-repo: home-os / hetzner-k8s)** | P2 |
 | ai-gateway-controller / AIEG extproc + mcpproxy (`envoy-ai-gateway-system`) | critical (every AI request + MCP session) | ❌ (no `gen_ai_*`/`ai_gateway_*` series in Mimir — verified) | ❌ | logs-only today (incl. `component=mcp-proxy`); token visibility comes from access logs (ADR-0046), so residual gap = extproc/mcpproxy internal health. Revisit if AIEG exposes a metrics endpoint | P2 |
 | authorino-operator, keycloak-operator | low | ❌ | ❌ | operator pod logs suffice | — |
 
@@ -44,7 +44,7 @@
 | lightbridge-api-main, lightbridge-mcp | medium | ❌ | ❌ | logs + gateway-side visibility suffice for now | P2 |
 | converse-ui, models-info, librechat-opencode-wellknown | low (static/nginx serve) | ❌ | ❌ | uptime via kube-state-metrics + gateway; nothing app-specific needed | — |
 | MCP servers: brave-search, terraform (mcpo) | medium | ❌ | ❌ | logs only; no MCP rate-limit descriptors by design (ADR-0038) | P2 |
-| MCP proxies: context7, refero (Caddy), firecrawl (openresty) | medium | ❌ (Caddy/nginx metrics not enabled) | ❌ | enable Caddy admin metrics if wanted; boards 20802/22870 identified. Known failure modes are log-diagnosable (`MCP_TOKEN` length-0, ADR-0040/0041) | P2 |
+| MCP proxies: context7/refero (Caddy), firecrawl (OpenResty) | medium | ❌ (Caddy/OpenResty metrics not enabled) | ❌ | context7/refero: enable Caddy admin metrics; boards 20802/22870 identified. firecrawl: OpenResty/nginx metrics separate. Known failure modes are log-diagnosable (`MCP_TOKEN` length-0, ADR-0040/0041) | P2 |
 
 ## 3. Model serving (HOME GPU cluster — ADR-0022, **not** this cluster)
 
@@ -58,8 +58,8 @@
 | Service | Crit | Metrics | Dashboard | Gap → action | Prio |
 |---|---|---|---|---|---|
 | Alloy (DaemonSet — the single ingest path) | critical | ✅ ServiceMonitor | ✅ custom `alloy-collector` | none | — |
-| **Loki** | high | ❌ (chart `monitoring.serviceMonitor` not enabled) | ⚠️ 14055 imported, **dead** | enable the self-scrape → board comes alive with zero dashboard work | **P0** |
-| **Mimir** | high | ❌ (`metaMonitoring.serviceMonitor` not enabled) | ⚠️ 17607 imported, **dead** | enable the self-scrape → board comes alive | **P0** |
+| **Loki** | high | ❌ (chart `monitoring.serviceMonitor` not enabled) | ⚠️ 14055 imported, **dead** | enable `monitoring.serviceMonitor.enabled: true` → board comes alive with zero dashboard work | **P0** |
+| **Mimir** | high | ❌ (`metaMonitoring.serviceMonitor` not enabled) | ⚠️ 17607 imported, **dead** | enable `metaMonitoring.serviceMonitor.enabled: true` → board comes alive. **Note:** `charts/observability/values.yaml:955-957` sets a top-level `serviceMonitor.enabled: true` which is **inert in mimir-distributed 5.8.0** — delete that block when enabling `metaMonitoring`. | **P0** |
 | Tempo | medium | ✅ ServiceMonitor | ✅ custom `tempo-single-binary` + 23242 | none | — |
 | Grafana, grafana-operator | medium | ✅ ServiceMonitors | ❌ dedicated | scraped; no board needed beyond k8s views | — |
 | kube-state-metrics, node-exporter | high (feed everything) | ✅ | ✅ (k8s views ×4, via honorLabels fix) | none | — |
@@ -71,9 +71,10 @@
 |---|---|---|---|---|---|
 | core-gateway-traces-collector (`converse-gateway`) | medium | ❌ (collector self-metrics unscraped) | ❌ | add to a future collectors board if trace loss is ever suspected | P2 |
 | mail (`mail-system`) | medium | ❌ | ❌ | logs suffice | P2 |
-| apprise-api (`monitoring`) | low (alert egress) | ❌ | ❌ | logs suffice; alert-delivery failures surface in grafana logs | — |
+| apprise-api (`monitoring`) | low (agent notification egress) | ❌ | ❌ | logs suffice. ADR-0036 removed Grafana→apprise; agent-only now (opencode-k8s-agent reports). Check agent/apprise logs, not Grafana | — |
 | ARC gh-runners (controller `arc-systems` + 3 scale sets) | medium (CI capacity) | ❌ (controller exposes metrics upstream, unscraped) | ❌ | opportunistic: scrape the gha-rs-controller if runner starvation becomes a question | P2 |
-| **knative-serving** (6 deployments) + knative-operator | ❓ | ❌ | ❌ | ⚠️ **finding: ADR-0029 dropped KServe/Knative for model serving, yet knative-serving still runs here.** Confirm whether anything depends on it; if not, decommission (removes 8 unmonitored deployments) rather than monitor it. Boards 18032/14589 only if it stays | P2 (investigate first) |
+| **knative-serving** (6 deployments) + knative-operator | ❓ | ❌ | ❌ | ⚠️ **finding: ADR-0029 dropped KServe/Knative for model serving, yet knative-serving still runs here.** Confirm whether anything depends on it; if not, decommission (removes 8 unmonitored deployments) rather than monitor it. Boards 18032/14589 only if it stays. **(cross-repo: hetzner-k8s)** | P2 (investigate first) |
+| metrics-server (`kube-system`) | medium (HPA/VPA data source) | ❌ | ❌ | logs suffice; k8s resource views cover it | — |
 
 ## 6. Externally-owned (recorded for completeness — actions are cross-repo)
 
@@ -85,7 +86,7 @@
 | external-secrets (`external-secrets`) | external install | board 21640 imported, **dead** | enable metrics + ServiceMonitor |
 | CNPG operator + barman plugin (`cnpg-system`) | external install | cluster-level DB metrics ✅; operator metrics ❌ | optional operator scrape |
 | Cilium (CNI) | hetzner-k8s | no scrape/board here | official boards 16611/16612/16613 once hetzner-k8s scrapes it |
-| opentelemetry-operator, hcloud-csi, metrics-server, CoreDNS | external / k3s | CoreDNS ✅ (board live); rest logs-only | — |
+| opentelemetry-operator, hcloud-csi, CoreDNS | external / k3s | CoreDNS ✅ (board live); rest logs-only | — |
 
 ## 7. Priority ranking (rollup)
 
