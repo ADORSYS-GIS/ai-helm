@@ -129,7 +129,7 @@ lci:
             PORT: "3000"
             HOSTNAME: "0.0.0.0"
             AUTH_BACKEND_URL: "http://{{ .Release.Name }}-control-plane:8080"
-            BETTER_AUTH_URL: "https://lightbridge.ai.camer.digital"
+            BETTER_AUTH_URL: "https://code-intelligence.ai.camer.digital"
             BETTER_AUTH_SECRET:
               valueFrom:
                 secretKeyRef:
@@ -259,7 +259,7 @@ lci:
       annotations:
         cert-manager.io/cluster-issuer: cert-home-cert-http
       hosts:
-        - host: lightbridge.ai.camer.digital
+        - host: code-intelligence.ai.camer.digital
           paths:
             - path: /
               pathType: Prefix
@@ -267,16 +267,16 @@ lci:
                 identifier: web
                 port: http
       tls:
-        - secretName: lightbridge.ai.camer.digital-tls
+        - secretName: code-intelligence.ai.camer.digital-tls
           hosts:
-            - lightbridge.ai.camer.digital
+            - code-intelligence.ai.camer.digital
     control-plane:
       enabled: true
       className: traefik
       annotations:
         cert-manager.io/cluster-issuer: cert-home-cert-http
       hosts:
-        - host: lightbridge-api.ai.camer.digital
+        - host: code-intelligence-api.ai.camer.digital
           paths:
             - path: /
               pathType: Prefix
@@ -284,9 +284,9 @@ lci:
                 identifier: control-plane
                 port: http
       tls:
-        - secretName: lightbridge-api.ai.camer.digital-tls
+        - secretName: code-intelligence-api.ai.camer.digital-tls
           hosts:
-            - lightbridge-api.ai.camer.digital
+            - code-intelligence-api.ai.camer.digital
 
   # PVC for Neo4j data + emptyDir mounts so each container can run under a read-only
   # rootfs (data persists on the PVC). advancedMounts scope each volume to one container.
@@ -295,7 +295,7 @@ lci:
       enabled: true
       type: persistentVolumeClaim
       accessMode: ReadWriteOnce
-      size: 5Gi
+      size: 10Gi
       advancedMounts:
         neo4j:
           main:
