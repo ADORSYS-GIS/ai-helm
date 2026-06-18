@@ -1049,6 +1049,43 @@ applications:
     destination:
       namespace: converse
 
+  # --- Lightbridge Code Intelligence ---
+  # The GitHub-App code-review / repo-Q&A system (repo:
+  # vymalo/lightbridge-code-intelligence): Rust control plane + Next.js web console
+  # + Neo4j. Postgres/pgvector is REUSED from the lightbridge-main-db CNPG cluster via
+  # a dedicated `codeintel` role + database (charts/lightbridge-db). Plain workload →
+  # home-remote (default). ⚠️ App images (ghcr.io/vymalo/lightbridge-*) are placeholders
+  # until the app repo's CI publishes them; bump the tags here once they ship.
+  - name: lightbridge-code-intelligence
+    # Staged (not synced) until the app images are published: the values below pin
+    # ghcr.io/vymalo/lightbridge-* tags that don't exist yet, so enabling this before
+    # vymalo/lightbridge-code-intelligence#7 publishes them (e.g. a v0.1.0 tag) would leave
+    # both Deployments in ImagePullBackOff. Flip to enabled once the images exist.
+    enabled: false
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: release-2026.06.18
+      path: charts/lightbridge-code-intelligence
+      helm:
+        releaseName: lightbridge-ci
+        valuesObject:
+          lci:
+            controllers:
+              control-plane:
+                containers:
+                  main:
+                    image:
+                      tag: "0.1.0"
+              web:
+                containers:
+                  main:
+                    image:
+                      tag: "0.1.0"
+    destination:
+      namespace: converse
+
   # --- Converse UI ---
   - name: converse-ui
     finalizers:

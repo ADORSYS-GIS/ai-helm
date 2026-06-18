@@ -1,0 +1,344 @@
+# lightbridge-code-intelligence — Lightbridge Code Intelligence stack.
+#
+# Components: Rust control plane (authN + GitHub webhook trust boundary), Next.js
+# web console (better-auth), and a Neo4j knowledge graph. Postgres/pgvector is
+# REUSED from the CloudNativePG cluster `lightbridge-main-db` (charts/lightbridge-db)
+# through a dedicated `codeintel` role + database (added there in this same change).
+#
+# Workloads are expressed via the bjw-s app-template (bjw-template v4.6.2, aliased
+# `lci`). The release name is `lightbridge-ci`, so resources are `lightbridge-ci-<key>`.
+# Namespace is `converse` (the lightbridge family namespace), matching the CNPG cluster.
+
+# ── App-owned ExternalSecrets (templates/externalsecret.yaml) ────────────────
+# Resolve against the ssegning-aws ClusterSecretStore. Properties live under
+# remoteRef key ai/camer/digital/prod/env.
+secrets:
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  remoteKey: ai/camer/digital/prod/env
+  githubWebhookProperty: lightbridge_ci_github_webhook_secret
+  betterAuthProperty: lightbridge_ci_better_auth_secret
+  neo4jPasswordProperty: lightbridge_ci_neo4j_password
+
+syncWave:
+  secrets: "0"
+  app: "2"
+
+# ── bjw-s app-template (v4) instance ─────────────────────────────────────────
+lci:
+  # Force the fullname so resource/service names are deterministic `lightbridge-ci-*`
+  # (the web→control-plane and Neo4j DNS names depend on this).
+  fullnameOverride: lightbridge-ci
+
+  # Cluster-baseline pod security applied to every controller below.
+  defaultPodOptions:
+    securityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+
+  controllers:
+    # Rust control plane: webhook trust boundary + /auth/verify authN surface.
+    control-plane:
+      type: deployment
+      # Single replica until delivery-id dedupe is durable: the control plane currently keeps
+      # its X-GitHub-Delivery dedupe set in process memory, so two replicas behind the Service
+      # could each accept the same delivery and (once task creation is wired) double-process it.
+      # Move dedupe to Postgres before scaling out.
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+      containers:
+        main:
+          image:
+            repository: ghcr.io/vymalo/lightbridge-control-plane
+            # TODO(images): placeholder until vymalo/lightbridge-code-intelligence CI ships it.
+            tag: "0.1.0"
+            pullPolicy: IfNotPresent
+          env:
+            BIND_ADDR: "0.0.0.0:8080"
+            RUST_LOG: "info"
+            GITHUB_WEBHOOK_SECRET:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-github'
+                  key: webhook-secret
+            # DATABASE_URL reuses the CNPG cluster; $(DB_PASSWORD) is interpolated by the
+            # kubelet, and `dependsOn` makes bjw emit DB_PASSWORD first.
+            DB_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: lightbridge-codeintel-db-role
+                  key: password
+            DATABASE_URL:
+              dependsOn: DB_PASSWORD
+              value: "postgresql://codeintel:$(DB_PASSWORD)@lightbridge-main-db-rw.converse.svc.cluster.local:5432/codeintel"
+            NEO4J_URI:
+              value: "bolt://{{ .Release.Name }}-neo4j:7687"
+            NEO4J_USERNAME: "neo4j"
+            NEO4J_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-neo4j-auth'
+                  key: password
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 8080
+                initialDelaySeconds: 5
+                periodSeconds: 15
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /readyz
+                  port: 8080
+                initialDelaySeconds: 5
+                periodSeconds: 10
+            startup:
+              enabled: false
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1000
+            capabilities:
+              drop: [ALL]
+
+    # Next.js web console (better-auth → control-plane authN).
+    web:
+      type: deployment
+      replicas: 2
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+      containers:
+        main:
+          image:
+            repository: ghcr.io/vymalo/lightbridge-web
+            tag: "0.1.0"
+            pullPolicy: IfNotPresent
+          env:
+            NODE_ENV: "production"
+            PORT: "3000"
+            HOSTNAME: "0.0.0.0"
+            AUTH_BACKEND_URL: "http://{{ .Release.Name }}-control-plane:8080"
+            BETTER_AUTH_URL: "https://lightbridge.ai.camer.digital"
+            BETTER_AUTH_SECRET:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-auth'
+                  key: better-auth-secret
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /
+                  port: 3000
+                initialDelaySeconds: 10
+                periodSeconds: 20
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /
+                  port: 3000
+                initialDelaySeconds: 5
+                periodSeconds: 10
+            startup:
+              enabled: false
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1000
+            capabilities:
+              drop: [ALL]
+
+    # Neo4j knowledge graph (single-instance StatefulSet; 5.26 LTS).
+    neo4j:
+      type: statefulset
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+      # Govern the StatefulSet with the neo4j Service (rather than the default fullname,
+      # which has no matching Service). Single replica → the ClusterIP service is reached
+      # at lightbridge-ci-neo4j:7687.
+      statefulset:
+        serviceName:
+          identifier: neo4j
+      # The neo4j image runs as uid/gid 7474. Pin it + fsGroup so the non-root process can
+      # write the /data PVC even on storage classes that provision root-owned volumes
+      # (otherwise the pod CrashLoops). Overrides defaultPodOptions for this controller.
+      pod:
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 7474
+          runAsGroup: 7474
+          fsGroup: 7474
+          seccompProfile:
+            type: RuntimeDefault
+      containers:
+        main:
+          image:
+            repository: neo4j
+            tag: "5.26-community"
+            pullPolicy: IfNotPresent
+          env:
+            NEO4J_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-neo4j-auth'
+                  key: password
+            NEO4J_AUTH:
+              dependsOn: NEO4J_PASSWORD
+              value: "neo4j/$(NEO4J_PASSWORD)"
+            NEO4J_server_memory_pagecache_size: "512M"
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: 7687
+                initialDelaySeconds: 30
+                periodSeconds: 20
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: 7687
+                initialDelaySeconds: 15
+                periodSeconds: 10
+            startup:
+              enabled: false
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+
+  service:
+    control-plane:
+      controller: control-plane
+      ports:
+        http:
+          port: 8080
+    web:
+      controller: web
+      ports:
+        http:
+          port: 3000
+    neo4j:
+      controller: neo4j
+      ports:
+        bolt:
+          port: 7687
+        http:
+          port: 7474
+
+  ingress:
+    web:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-home-cert-http
+      hosts:
+        - host: lightbridge.ai.camer.digital
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: web
+                port: http
+      tls:
+        - secretName: lightbridge.ai.camer.digital-tls
+          hosts:
+            - lightbridge.ai.camer.digital
+    control-plane:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-home-cert-http
+      hosts:
+        - host: lightbridge-api.ai.camer.digital
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: control-plane
+                port: http
+      tls:
+        - secretName: lightbridge-api.ai.camer.digital-tls
+          hosts:
+            - lightbridge-api.ai.camer.digital
+
+  # PVC for Neo4j data + emptyDir mounts so each container can run under a read-only
+  # rootfs (data persists on the PVC). advancedMounts scope each volume to one container.
+  persistence:
+    data:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 5Gi
+      advancedMounts:
+        neo4j:
+          main:
+            - path: /data
+    neo4j-logs:
+      type: emptyDir
+      advancedMounts:
+        neo4j:
+          main:
+            - path: /logs
+    neo4j-metrics:
+      type: emptyDir
+      advancedMounts:
+        neo4j:
+          main:
+            - path: /metrics
+    neo4j-run:
+      type: emptyDir
+      advancedMounts:
+        neo4j:
+          main:
+            - path: /var/lib/neo4j/run
+    neo4j-tmp:
+      type: emptyDir
+      advancedMounts:
+        neo4j:
+          main:
+            - path: /tmp
+    cp-tmp:
+      type: emptyDir
+      advancedMounts:
+        control-plane:
+          main:
+            - path: /tmp
+    web-tmp:
+      type: emptyDir
+      advancedMounts:
+        web:
+          main:
+            - path: /tmp
+    web-next-cache:
+      type: emptyDir
+      advancedMounts:
+        web:
+          main:
+            - path: /app/.next/cache
