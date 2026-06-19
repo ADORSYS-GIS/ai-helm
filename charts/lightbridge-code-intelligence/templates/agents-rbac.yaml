@@ -1,0 +1,72 @@
+{{- if .Values.agents.enabled }}
+{{- $wave := .Values.syncWave.secrets | quote }}
+{{- $ns := .Values.agents.namespace }}
+# Agent execution sandbox (ADR-0004): the dispatcher launches one Kubernetes Job per task in a
+# SEPARATE namespace from the control plane, so the untrusted per-task work is isolated. This file
+# creates that namespace, the Job's (permission-less) ServiceAccount, and the least-privilege RBAC
+# the dispatcher needs to create/reap Jobs there from the `converse` namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+  labels:
+    app.kubernetes.io/part-of: lightbridge-platform
+    app.kubernetes.io/managed-by: {{ .Release.Name }}
+---
+# Identity the agent Job pods run as. It needs NO cluster permissions — the runner only talks to the
+# control plane over HTTP (bearer-authenticated), never to the Kubernetes API (trust boundary).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.agents.serviceAccount }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+automountServiceAccountToken: false
+---
+# Identity the dispatcher runs as (release namespace). bjw uses the `default` SA otherwise, which is
+# shared cluster-wide — too broad to grant Job CRUD to. The dispatcher controller selects this SA via
+# `pod.serviceAccountName`.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-dispatcher
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+---
+# Least-privilege: the dispatcher may manage Jobs (create per task, adopt on 409, reap) and read
+# their pods/status — nothing else, scoped to the agents namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-agent-launcher
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-agent-launcher
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-agent-launcher
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-dispatcher
+    namespace: {{ .Release.Namespace }}
+{{- end }}
