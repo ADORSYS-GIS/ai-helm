@@ -1,0 +1,23 @@
+{{- /*
+One ImageUpdater CR per .Values.imageUpdaters entry, created in this release's
+namespace — which is the in-cluster `argocd` namespace because the charts/apps
+entry that deploys this chart is `controlPlane: true` (ADR-0017). The CRD-based
+image-updater controller watches argocd + argocd-image-updater, so the CR is
+reconciled there.
+*/ -}}
+{{- range .Values.imageUpdaters }}
+---
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .name }}
+    app.kubernetes.io/component: image-updater
+    app.kubernetes.io/part-of: lightbridge-code-intelligence
+    app.kubernetes.io/managed-by: {{ $.Release.Service | default "Helm" }}
+spec:
+  applicationRefs:
+    {{- toYaml .applicationRefs | nindent 4 }}
+{{- end }}
