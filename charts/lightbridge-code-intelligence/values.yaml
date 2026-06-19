@@ -53,6 +53,10 @@ agents:
     baseUrl: http://core-gateway-internal.envoy-gateway-system.svc.cluster.local
     model: text-embedding-3-small
   llm:
+    # OpenCode review (slice 5). OFF by default so the first rollout is indexing-only and does not
+    # depend on `agent_llm_model` existing in SM (a missing SM property fails the whole ExternalSecret,
+    # which would take embeddings down with it). Flip to true AFTER setting agent_llm_model in SM.
+    enabled: false
     # WITH /v1 (OpenCode posts to {baseURL}/chat/completions).
     baseUrl: http://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1
 
