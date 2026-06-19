@@ -48,20 +48,22 @@ agents:
   # The runner image the dispatcher launches per task. Pinned tag; bump on release (not
   # image-updater-managed — it isn't a pod in this chart, it's an env value the dispatcher reads).
   runnerImage: ghcr.io/vymalo/lightbridge-agent-runner:latest
-  # Use the HTTP LoadBalancer gateway Service (matches LibreChat's RAG_OPENAI_BASEURL) — the
-  # `core-gateway-internal` ClusterIP is HTTPS-only (443) and needs the internal CA, which the runner
-  # doesn't mount. This plain-HTTP gateway is the known-working in-cluster path.
+  # The gateway only serves embeddings/chat on the HTTPS `core-gateway-internal` ClusterIP (the HTTP
+  # LoadBalancer 308-redirects / 404s by Host). Its cert is from ClusterIssuer/self-signed-ca, so the
+  # runner mounts that CA (caSecret below) and trusts it — see k8s.rs AGENT_CA_SECRET + embeddings.rs.
+  caSecret: lightbridge-agent-ca
   embeddings:
-    # No trailing /v1 (the runner appends /v1/embeddings).
-    baseUrl: http://envoy-converse-gateway-core-gateway-c480b207.envoy-gateway-system.svc.cluster.local
-    model: text-embedding-3-small
+    # No trailing /v1 (the runner appends /v1/embeddings). The gateway serves qwen3-embedding-8b
+    # (4096-dim, matched by migration 0005); it does NOT serve text-embedding-3-small.
+    baseUrl: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local
+    model: qwen3-embedding-8b
   llm:
     # OpenCode review (slice 5). OFF by default so the first rollout is indexing-only and does not
     # depend on `agent_llm_model` existing in SM (a missing SM property fails the whole ExternalSecret,
     # which would take embeddings down with it). Flip to true AFTER setting agent_llm_model in SM.
     enabled: false
     # WITH /v1 (OpenCode posts to {baseURL}/chat/completions).
-    baseUrl: http://envoy-converse-gateway-core-gateway-c480b207.envoy-gateway-system.svc.cluster.local/v1
+    baseUrl: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1
 
 syncWave:
   secrets: "0"
@@ -378,6 +380,8 @@ lci:
             AGENT_NAMESPACE: "lightbridge-agents"
             AGENT_SERVICE_ACCOUNT: "lightbridge-agent"
             AGENT_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-runner:latest"
+            # Secret (agents ns) whose ca.crt the runner mounts to trust the HTTPS gateway.
+            AGENT_CA_SECRET: "lightbridge-agent-ca"
             # FQDN, not the bare Service name: the runner Jobs run in the lightbridge-agents
             # namespace, so a same-namespace short name would not resolve to the control-plane
             # Service in `converse`.
