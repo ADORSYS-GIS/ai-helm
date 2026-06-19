@@ -1,9 +1,6 @@
 # Envoy AI Gateway MCP Traffic Handling - Investigation Report
 
-> **Ticket:** #361
-> **Date:** 2026-06-18
-> **Status:** Complete 
-> **AIEG Version:** v0.6+ (validated through v0.7.0)
+
 
 ## Executive Summary
 
@@ -188,14 +185,68 @@ spec:
 
 ## 4. Transport Support (SSE vs Streamable-HTTP)
 
-### 4.1 Supported Transports
+### 4.1 The Problem: MCP Needs Long-Running Connections
 
-| Transport | Description | AIEG Support |
-|-----------|-------------|--------------|
-| **SSE** (Server-Sent Events) | Long-lived HTTP connection with event stream | ✅ Full support |
-| **Streamable-HTTP** | Stateful HTTP with `Mcp-Session-Id` header | ✅ Full support (stateless servers tolerated) |
+MCP (Model Context Protocol) is different from typical HTTP request-response. When an AI agent calls a tool, the response might:
 
-### 4.2 How mcpproxy Works
+- Come back immediately (simple tool call)
+- Stream back progressively (long-running operation)
+- Send multiple events over time (notifications, progress updates)
+
+This requires **transport mechanisms** that can handle long-lived, streaming connections.
+
+### 4.2 Supported Transports
+
+#### SSE (Server-Sent Events)
+
+**What it is:** A one-way server-to-client streaming mechanism over HTTP. The server keeps the connection open and sends events as they occur.
+
+**Key Characteristics:**
+
+| Characteristic | Description |
+|----------------|-------------|
+| **Direction** | One-way (server → client) |
+| **Connection** | Long-lived HTTP connection |
+| **Reconnection** | Client can reconnect with `Last-Event-ID` header |
+| **Content-Type** | `text/event-stream` |
+
+**SSE Format:**
+```
+event: message
+data: {"jsonrpc":"2.0","id":1,"result":{"tools":[...]}}
+
+event: message
+data: {"jsonrpc":"2.0","method":"notifications/progress"}
+```
+
+#### Streamable-HTTP
+
+**What it is:** A newer MCP transport (June 2025 spec) that uses standard HTTP with session management via the `Mcp-Session-Id` header.
+
+**How it works:**
+1. Client sends request with `Mcp-Session-Id` header
+2. Server maintains state between requests using the session ID
+3. Response can be JSON or SSE stream based on `Accept` header
+
+**Key Characteristics:**
+
+| Characteristic | Description |
+|----------------|-------------|
+| **Session ID** | `Mcp-Session-Id` header links requests to a session |
+| **Stateful** | Server maintains state between requests |
+| **Flexible Response** | Can return JSON or SSE stream based on `Accept` header |
+| **Stateless Servers** | AIEG can work with stateless backends |
+
+#### Why Both Transports?
+
+| Transport | Best For | Limitations |
+|-----------|----------|-------------|
+| **SSE** | Simple streaming, browser clients | One-way only, requires persistent connection |
+| **Streamable-HTTP** | Complex interactions, stateful sessions | Requires session management |
+
+MCP supports both because SSE is simpler for straightforward streaming, while Streamable-HTTP handles more complex scenarios (bi-directional, stateful).
+
+### 4.3 How mcpproxy Works
 
 The `mcpproxy` filter runs inside the `ai-gateway-controller` process (not a sidecar). It handles:
 
