@@ -1118,6 +1118,26 @@ applications:
     destination:
       namespace: converse
 
+  # --- Lightbridge Code Intelligence — image-updater activation (control object) ---
+  # The CRD-based argocd-image-updater controller only acts on an Application when
+  # an ImageUpdater CR selects it. That CR is an argocd control object (it must live
+  # in the in-cluster argocd namespace where the controller watches), so this entry
+  # is controlPlane: true (ADR-0017) — the CR lands in-cluster/argocd, not home-remote.
+  # GitOps-native replacement for the previously hand-applied CR in home-os
+  # charts/argocd-image-updater (that chart is a manual `helm upgrade`, not synced).
+  - name: lightbridge-code-intelligence-imageupdater
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    source:
+      repoURL: https://github.com/ADORSYS-GIS/ai-helm
+      targetRevision: release-2026.06.19-v07
+      path: charts/lightbridge-code-intelligence-imageupdater
+      helm:
+        releaseName: lightbridge-ci-imageupdater
+    destination:
+      namespace: argocd
+
   # --- Converse UI ---
   - name: converse-ui
     finalizers:
