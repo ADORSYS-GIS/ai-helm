@@ -204,10 +204,11 @@ resources:
   # managed `codeintel` role above, plus the role's basic-auth Secret
   # (username + password) consumed by BOTH CNPG (passwordSecret) and the
   # control plane. Mirrors the repoauth pattern (ADR-0047).
-  # NOTE(pgvector): semantic search needs the `vector` extension, which the
-  # current CNPG image does not ship — declare it on this Database once the
-  # cluster image bundles pgvector (see charts/lightbridge-code-intelligence).
-  # Double-escaped tpl braces leave `{{ .password }}` for ESO (CLAUDE.md trap).
+  # pgvector: semantic search (charts/lightbridge-code-intelligence migration 0004) needs the
+  # `vector` extension. The `codeintel` role is NOT a superuser, so its `CREATE EXTENSION` is
+  # permission-denied — CNPG creates it as superuser via the Database CRD's declarative
+  # `spec.extensions` (the image bundles pgvector). With it present, the migration's
+  # `CREATE EXTENSION IF NOT EXISTS vector` is a no-op.
   # ────────────────────────────────────────────────────────────────────
   - |
     apiVersion: postgresql.cnpg.io/v1
@@ -224,6 +225,9 @@ resources:
       name: codeintel
       owner: codeintel
       ensure: present
+      extensions:
+        - name: vector
+          ensure: present
   - |
     apiVersion: external-secrets.io/v1
     kind: ExternalSecret
