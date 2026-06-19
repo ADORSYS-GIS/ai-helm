@@ -1089,7 +1089,12 @@ applications:
       argocd-image-updater.argoproj.io/write-back-method: git
       argocd-image-updater.argoproj.io/git-branch: main
       argocd-image-updater.argoproj.io/git-repository: https://github.com/vymalo/lightbridge-code-intelligence.git
-      argocd-image-updater.argoproj.io/write-back-target: helmvalues:deploy/envs/production/values.yaml
+      # Leading slash = path absolute from the git repo ROOT. Without it a `helmvalues:`
+      # target resolves relative to the app's chart SOURCE path
+      # (charts/lightbridge-code-intelligence), so image-updater writes a wrong nested
+      # file (charts/lightbridge-code-intelligence/deploy/...). vymalo/opfs dodge this
+      # only because their chart is OCI (no source path); ours is path-based → slash required.
+      argocd-image-updater.argoproj.io/write-back-target: helmvalues:/deploy/envs/production/values.yaml
       argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--vymalo
       # ── argocd-notifications → GitHub Deployment status. `vymalo` is the
       # notifier service (GitHub App installation on the vymalo org); the
