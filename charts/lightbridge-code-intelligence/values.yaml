@@ -1,7 +1,7 @@
 # lightbridge-code-intelligence — Lightbridge Code Intelligence stack.
 #
-# Components: Rust control plane (authN + GitHub webhook trust boundary), Next.js
-# web console (better-auth), and a Neo4j knowledge graph. Postgres/pgvector is
+# Components: Rust control plane (OAuth2 resource server + GitHub webhook trust boundary),
+# Next.js web console (Keycloak OIDC client), and a Neo4j knowledge graph. Postgres/pgvector is
 # REUSED from the CloudNativePG cluster `lightbridge-main-db` (charts/lightbridge-db)
 # through a dedicated `codeintel` role + database (added there in this same change).
 #
@@ -17,8 +17,11 @@ secrets:
   refreshInterval: 1h
   remoteKey: ai/camer/digital/prod/env
   githubWebhookProperty: lightbridge_ci_github_webhook_secret
-  betterAuthProperty: lightbridge_ci_better_auth_secret
   neo4jPasswordProperty: lightbridge_ci_neo4j_password
+  # The OIDC web image needs NO client secret (PUBLIC client + PKCE, ADR-0014). The property
+  # below is TRANSITIONAL — still consumed by the outgoing better-auth image; remove once the
+  # OIDC web image is confirmed live.
+  betterAuthProperty: lightbridge_ci_better_auth_secret
 
 syncWave:
   secrets: "0"
@@ -38,7 +41,8 @@ lci:
         type: RuntimeDefault
 
   controllers:
-    # Rust control plane: webhook trust boundary + /auth/verify authN surface.
+    # Rust control plane: GitHub webhook trust boundary + OAuth2 resource server
+    # (validates Keycloak-issued JWTs; ADR-0014).
     control-plane:
       type: deployment
       # Single replica until delivery-id dedupe is durable: the control plane currently keeps
@@ -60,6 +64,12 @@ lci:
           env:
             BIND_ADDR: "0.0.0.0:8080"
             RUST_LOG: "info"
+            # OAuth2 resource server: validate Keycloak-issued RS256 JWTs (ADR-0014). Required —
+            # without OIDC_ISSUER the control plane fails readiness (fails closed).
+            OIDC_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
+            # Expected access-token audience. The Keycloak realm must emit this in the token `aud`
+            # (audience mapper / client scope on `code-intelligence`) or protected endpoints 401.
+            OIDC_AUDIENCE: "code-intelligence"
             GITHUB_WEBHOOK_SECRET:
               valueFrom:
                 secretKeyRef:
@@ -114,7 +124,7 @@ lci:
             capabilities:
               drop: [ALL]
 
-    # Next.js web console (better-auth → control-plane authN).
+    # Next.js web console: Keycloak OIDC client (Authorization-Code + PKCE; ADR-0014).
     web:
       type: deployment
       replicas: 2
@@ -133,6 +143,15 @@ lci:
             NODE_ENV: "production"
             PORT: "3000"
             HOSTNAME: "0.0.0.0"
+            # Keycloak OIDC client (ADR-0014). Public client + PKCE → NO client secret.
+            OIDC_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
+            OIDC_CLIENT_ID: "code-intelligence"
+            OIDC_REDIRECT_URI: "https://code-intelligence.ai.camer.digital/api/auth/callback"
+            OIDC_POST_LOGOUT_REDIRECT_URI: "https://code-intelligence.ai.camer.digital"
+            # TRANSITIONAL (remove once the OIDC web image is live — see chart bump notes):
+            # the chart config (Source A, ai-helm release) and the image tag (Source B,
+            # image-updater on app main) sync independently, so this chart must work with BOTH
+            # the old better-auth image AND the new OIDC image. The new image ignores these.
             AUTH_BACKEND_URL: "http://{{ .Release.Name }}-control-plane:8080"
             BETTER_AUTH_URL: "https://code-intelligence.ai.camer.digital"
             BETTER_AUTH_SECRET:

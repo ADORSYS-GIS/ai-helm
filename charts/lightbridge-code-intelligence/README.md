@@ -8,8 +8,8 @@ deployment pattern.
 
 | Component | Workload | Image | Notes |
 |---|---|---|---|
-| Control plane | Deployment (`*-control-plane`) | `ghcr.io/vymalo/lightbridge-control-plane` | Rust/Axum trust boundary + `/auth/verify` authN surface + GitHub webhook |
-| Web console | Deployment (`*-web`) | `ghcr.io/vymalo/lightbridge-web` | Next.js + better-auth; delegates authN to the control plane |
+| Control plane | Deployment (`*-control-plane`) | `ghcr.io/vymalo/lightbridge-control-plane` | Rust/Axum trust boundary + GitHub webhook + OAuth2 resource server (validates Keycloak JWTs) |
+| Web console | Deployment (`*-web`) | `ghcr.io/vymalo/lightbridge-web` | Next.js Keycloak OIDC client (Authorization-Code + PKCE) |
 | Knowledge graph | StatefulSet (`*-neo4j`) | `neo4j:5.26-community` | Single instance, emptyDir (non-persistent for now; see values comment) |
 | Postgres / pgvector | **reused** | — | Uses the existing CNPG cluster `lightbridge-main-db` via a dedicated `codeintel` role + database |
 
@@ -34,7 +34,7 @@ App-owned `ExternalSecret`s resolve against the `ssegning-aws` `ClusterSecretSto
 | Secret | Property | Consumed as |
 |---|---|---|
 | `lightbridge-ci-github` | `lightbridge_ci_github_webhook_secret` | `GITHUB_WEBHOOK_SECRET` |
-| `lightbridge-ci-auth` | `lightbridge_ci_better_auth_secret` | `BETTER_AUTH_SECRET` |
+| `lightbridge-ci-auth` | `lightbridge_ci_better_auth_secret` | `BETTER_AUTH_SECRET` — _transitional_, outgoing better-auth image; OIDC uses no secret |
 | `lightbridge-ci-neo4j-auth` | `lightbridge_ci_neo4j_password` | Neo4j password |
 | `lightbridge-codeintel-db-role` | `codeintel_db_password` | DB password (provisioned by `charts/lightbridge-db`) |
 
