@@ -206,14 +206,17 @@ lci:
             tag: "5.26-community"
             pullPolicy: IfNotPresent
           env:
-            NEO4J_PASSWORD:
+            # NOT prefixed `NEO4J_`: the neo4j image maps every NEO4J_* env var to a config
+            # setting, so a literal NEO4J_PASSWORD becomes the unknown setting `password` and
+            # fails strict_validation at startup. This is just the helper for NEO4J_AUTH.
+            LB_NEO4J_PASSWORD:
               valueFrom:
                 secretKeyRef:
                   name: '{{ .Release.Name }}-neo4j-auth'
                   key: password
             NEO4J_AUTH:
-              dependsOn: NEO4J_PASSWORD
-              value: "neo4j/$(NEO4J_PASSWORD)"
+              dependsOn: LB_NEO4J_PASSWORD
+              value: "neo4j/$(LB_NEO4J_PASSWORD)"
             NEO4J_server_memory_pagecache_size: "512M"
           probes:
             liveness:
