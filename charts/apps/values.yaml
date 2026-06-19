@@ -56,7 +56,7 @@ argocd:
   # this repo (this `selfTargetRevision`, the per-app self-Source revisions, and
   # the orchestrator children in charts/ai-models + charts/librechart +
   # charts/observability) pin an immutable release **tag**, currently
-  # `release-2026.06.19-v11`. `main` is NEVER a deploy target. To ship a new release:
+  # `release-2026.06.19-v12`. `main` is NEVER a deploy target. To ship a new release:
   # cut a new `release-YYYY.MM.DD` tag from the desired commit, bump these
   # self-referencing `targetRevision`s to it (in the same commit the tag points
   # at, so the tag is self-consistent), then repoint the root `ai-apps-v2`
@@ -64,7 +64,7 @@ argocd:
   # OTHER repos are unaffected.) History: deploys previously ran from the branch
   # `claude/magical-bohr-390242`; cut over to tags 2026-06-08.
   selfRepoURL: https://github.com/ADORSYS-GIS/ai-helm
-  selfTargetRevision: release-2026.06.19-v11
+  selfTargetRevision: release-2026.06.19-v12
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
     # `spec.destination.name`. This is the WORKLOAD destination.
@@ -104,7 +104,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/observability
       helm:
         releaseName: observability
@@ -519,7 +519,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/core-gateway
       helm:
         releaseName: core-gateway
@@ -578,7 +578,7 @@ applications:
     depsOverlay: environments/prod/deps/security-policies
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/kuadrant-policies
       helm:
         releaseName: security-policies
@@ -1006,7 +1006,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/lightbridge
       helm:
         releaseName: lightbridge
@@ -1114,7 +1114,7 @@ applications:
       # Source A — the chart. release-pinned like every ai-helm app; the release
       # script swaps this tag on each cut. Image tags come from Source B's $values.
       - repoURL: https://github.com/ADORSYS-GIS/ai-helm
-        targetRevision: release-2026.06.19-v11
+        targetRevision: release-2026.06.19-v12
         path: charts/lightbridge-code-intelligence
         helm:
           releaseName: lightbridge-ci
@@ -1141,7 +1141,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/lightbridge-code-intelligence-imageupdater
       helm:
         releaseName: lightbridge-ci-imageupdater
@@ -1199,7 +1199,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/librechart
       helm:
         releaseName: librechat
@@ -1216,7 +1216,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/mongodb-backup
       helm:
         releaseName: mongodb-backup
@@ -1248,7 +1248,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/ai-models
       helm:
         releaseName: models
@@ -1273,7 +1273,7 @@ applications:
     homeCluster: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/model-serving-qwen3-4b
       helm:
         releaseName: model-serving-qwen3-4b
@@ -1307,7 +1307,7 @@ applications:
     homeCluster: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/model-serving-qwen3-5
       helm:
         releaseName: model-serving-qwen3-5
@@ -1335,7 +1335,7 @@ applications:
     controlPlane: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.19-v11
+      targetRevision: release-2026.06.19-v12
       path: charts/mcps
       helm:
         releaseName: mcps
