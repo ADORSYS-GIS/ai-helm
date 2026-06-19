@@ -375,7 +375,10 @@ lci:
             AGENT_NAMESPACE: "lightbridge-agents"
             AGENT_SERVICE_ACCOUNT: "lightbridge-agent"
             AGENT_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-runner:latest"
-            CONTROL_PLANE_INTERNAL_URL: "http://{{ .Release.Name }}-control-plane:8080"
+            # FQDN, not the bare Service name: the runner Jobs run in the lightbridge-agents
+            # namespace, so a same-namespace short name would not resolve to the control-plane
+            # Service in `converse`.
+            CONTROL_PLANE_INTERNAL_URL: "http://{{ .Release.Name }}-control-plane.{{ .Release.Namespace }}.svc.cluster.local:8080"
           probes:
             liveness:
               enabled: true
