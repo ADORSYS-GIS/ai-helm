@@ -42,7 +42,7 @@ This method offers superior integration, including **visual code reviews**, **au
 
 1. Open IntelliJ IDEA.
 2. Go to **Settings** → **Plugins** → **Marketplace**.
-3. Search for **"OpenCode"** or **"OpenCode UI"**.
+3. Search for **"OpenCode UI"** (plugin ID: `opencode-ui`).
 4. Click **Install** and **Restart IDE**.
 
 > **Direct link:** [OpenCode UI on JetBrains Marketplace](https://plugins.jetbrains.com/plugin/29744-opencode-ui)
@@ -53,6 +53,21 @@ This method offers superior integration, including **visual code reviews**, **au
 2. In IntelliJ, go to **Settings** → **Plugins** → **Gear icon** → **Install Plugin from Disk...**
 3. Select the downloaded `.zip` file.
 4. Click **OK** and **Restart IDE**.
+
+> ⚠️ **Plugin compatibility note**
+>
+> There is an older **"OpenCode"** plugin (plugin version 1.0.0, not "OpenCode UI") that bundles OpenCode v1.2.26, which is outdated compared to the current v1.17.8. This older plugin:
+> - Bundles OpenCode v1.2.26 (outdated vs current v1.17.8)
+> - Has limited IntelliJ compatibility: **`2025.3 — 2025.3.6`** (does not support newer IntelliJ versions)
+> - May conflict with custom `.well-known/opencode` endpoints
+>
+> **Symptom:** If your `.well-known/opencode` configuration returns a plugin list as arrays, you may see:
+> ```
+> plugin.3: Invalid input: expected string, received array
+> ```
+> This error indicates the plugin expects string values but received arrays in the configuration.
+>
+> **Solution:** Use the **OpenCode UI** plugin instead, which is compatible with modern OpenCode versions and handles `.well-known/opencode` configuration correctly. If you encounter this error with an older plugin, uninstall it and install **OpenCode UI** instead.
 
 ### 2. Launch and Connect
 

@@ -1,39 +1,24 @@
-# OpenCode — GitHub Actions Integration
+# GitHub PR Reviews
 
-This setup enables OpenCode to automatically review pull requests and handle issue tasks in CI, authenticating to the AI gateway via GitHub OIDC (keyless — no shared secrets).
+This guide covers automated pull request reviews using the OpenCode reusable workflow. For foundational GitHub Actions setup (app installation, OIDC tokens, gateway authentication), see [GitHub Actions Integration](../github-actions/00-github-actions.md).
 
-## Architecture
+## Overview
 
-The integration uses a **reusable workflow** hosted in the ai-governance repository:
+The PR review integration uses a **reusable workflow** hosted in the ai-governance repository:
 
-- The reusable workflow contains all job logic, authentication, and agent configuration
+- The reusable workflow contains all review logic, authentication, and agent configuration
 - Your repository only needs a thin caller workflow that invokes it
-
-This means you only need to:
-
-1. Install the CAMER DIGITAL GitHub App
-2. Set the `OPENCODE_GATEWAY_AUDIENCE` variable
-3. Add a minimal caller workflow
+- Reviews are triggered automatically on PR open/sync or manually via `/oc` comments
 
 ## Prerequisites
 
-### 1. Install the CAMER DIGITAL GitHub App
+Before setting up PR reviews, ensure you have completed the [GitHub Actions Integration](../github-actions/00-github-actions.md) setup:
 
-Install the **[camer-digital-ai](https://github.com/apps/camer-digital-ai)** GitHub App on your repository or organization.
+1. **CAMER DIGITAL GitHub App** installed on your repository or organization
+2. **Organization approved** by platform admin
+3. **`OPENCODE_GATEWAY_AUDIENCE`** variable configured
 
-This enables the OIDC binding that allows the workflow to authenticate with the AI gateway using your repo's own GitHub Actions OIDC token — no shared secrets required.
-
-### 2. Configure the Gateway Audience
-
-Create an organization or repository variable:
-
-| Variable | Value |
-|----------|-------|
-| `OPENCODE_GATEWAY_AUDIENCE` | Your Source URL, e.g., `https://api.ai.camer.digital/sources/src-XXXXXXXXXXXX` |
-
-Contact the AI team to obtain your Source audience value after they configure your account.
-
-> **Note:** The workflow is a no-op if this variable is not set, keeping unprepared forks and CI green.
+> **Note:** The workflow is a no-op if `OPENCODE_GATEWAY_AUDIENCE` is not set, keeping unprepared forks' CI green.
 
 ## Setup
 
@@ -109,6 +94,41 @@ with:
   runs_on: self-hosted
 ```
 
+## Troubleshooting
+
+### Branch naming conflict: avoid naming your branch `opencode`
+
+If a pull request review is triggered on a branch named `opencode`, the workflow will fail with an error like:
+
+```
+Error: fatal: unable to read tree (8718f3161699ae03c8a970e1b4e3f6a20ad552bb)
+Error: Process completed with exit code 1.
+```
+
+**Cause:** The OpenCode agent uses the `opencode` branch name internally for its workflow. When the review target branch is also named `opencode`, it conflicts with this internal branch.
+
+**Solution:** Rename the branch before creating a pull request for review:
+
+```bash
+# Rename the branch locally
+git branch -m opencode opencode-backup
+
+# Push the renamed branch
+git push origin opencode-backup
+
+# Delete the old branch on remote
+git push origin --delete opencode
+
+# Update local tracking
+git fetch --prune
+```
+
+> **Note:** If you've already opened a pull request on a branch named `opencode`, rename the branch and update the PR before triggering a review.
+
+### Workflow triggers but produces no output
+
+Ensure `OPENCODE_GATEWAY_AUDIENCE` is set as a repository or organization variable. The workflow is a no-op if this variable is empty (by design, to keep unprepared forks' CI green).
+
 ## Security Model
 
 | Aspect | Implementation |
@@ -127,6 +147,6 @@ with:
 
 ## Related
 
-- [VSCode Integration](01-vscode.md) — Local development setup
-- [CLI Integration](03-cli.md) — Terminal and TUI usage
-- [OpenCode Overview](00-overview.md) — General integration guide
+- [GitHub Actions Integration](../github-actions/00-github-actions.md) — Foundational setup (app installation, OIDC tokens, gateway auth)
+- [VSCode Integration](01-vscode-integration.md) — Local development setup
+- [CLI Integration](03-cli-integration.md) — Terminal and TUI usage
