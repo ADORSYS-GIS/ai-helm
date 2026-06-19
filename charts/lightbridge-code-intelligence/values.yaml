@@ -170,19 +170,24 @@ lci:
     neo4j:
       type: statefulset
       replicas: 1
-      # Sync-wave 0 (NOT 2) so the StatefulSet applies in the SAME wave as its data PVC
-      # (bjw renders the PVC with no wave annotation → wave 0). Otherwise ArgoCD health-gates
-      # the WaitForFirstConsumer PVC (which can't bind until a pod mounts it) before applying
-      # the StatefulSet (the pod) → permanent deadlock. Same wave = both applied together →
-      # the pod schedules → the PVC binds.
       annotations:
-        argocd.argoproj.io/sync-wave: "0"
+        argocd.argoproj.io/sync-wave: "2"
       # Govern the StatefulSet with the neo4j Service (rather than the default fullname,
       # which has no matching Service). Single replica → the ClusterIP service is reached
       # at lightbridge-ci-neo4j:7687.
       statefulset:
         serviceName:
           identifier: neo4j
+        # /data via a StatefulSet volumeClaimTemplate (NOT a standalone PVC): the PVC is owned
+        # by the StatefulSet and created WITH the pod, so it binds on schedule (WaitForFirstConsumer)
+        # — no separately-ArgoCD-managed PVC to health-gate (sync-wave deadlock), no Replace churn,
+        # no orphaned Terminating PVC. bjw wires the mount from globalMounts below.
+        volumeClaimTemplates:
+          - name: data
+            accessMode: ReadWriteOnce
+            size: 10Gi
+            globalMounts:
+              - path: /data
       # The neo4j image runs as uid/gid 7474. Pin it + fsGroup so the non-root process can
       # write the /data PVC even on storage classes that provision root-owned volumes
       # (otherwise the pod CrashLoops). Overrides defaultPodOptions for this controller.
@@ -296,43 +301,11 @@ lci:
           hosts:
             - code-intelligence-api.ai.camer.digital
 
-  # Neo4j /data on a persistent PVC; the read-only-rootfs scratch dirs (below) are emptyDir.
-  # The standalone PVC binds fine on home-remote (WaitForFirstConsumer — slow to bind, ~minutes,
-  # but not a deadlock). advancedMounts scope each volume to one container.
+  # emptyDir scratch dirs for the read-only-rootfs containers (control-plane, web).
+  # Neo4j /data is NOT here — it's a StatefulSet volumeClaimTemplate on the neo4j controller
+  # (see `statefulset.volumeClaimTemplates` above); neo4j runs with a writable rootfs so it
+  # needs no scratch emptyDirs. advancedMounts scope each volume to one container.
   persistence:
-    data:
-      enabled: true
-      type: persistentVolumeClaim
-      accessMode: ReadWriteOnce
-      size: 10Gi
-      advancedMounts:
-        neo4j:
-          main:
-            - path: /data
-    neo4j-logs:
-      type: emptyDir
-      advancedMounts:
-        neo4j:
-          main:
-            - path: /logs
-    neo4j-metrics:
-      type: emptyDir
-      advancedMounts:
-        neo4j:
-          main:
-            - path: /metrics
-    neo4j-run:
-      type: emptyDir
-      advancedMounts:
-        neo4j:
-          main:
-            - path: /var/lib/neo4j/run
-    neo4j-tmp:
-      type: emptyDir
-      advancedMounts:
-        neo4j:
-          main:
-            - path: /tmp
     cp-tmp:
       type: emptyDir
       advancedMounts:
