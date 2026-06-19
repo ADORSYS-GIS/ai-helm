@@ -1091,6 +1091,15 @@ applications:
       argocd-image-updater.argoproj.io/git-repository: https://github.com/vymalo/lightbridge-code-intelligence.git
       argocd-image-updater.argoproj.io/write-back-target: helmvalues:deploy/envs/production/values.yaml
       argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--vymalo
+      # ── argocd-notifications → GitHub Deployment status. `vymalo` is the
+      # notifier service (GitHub App installation on the vymalo org); the
+      # on-deployed / on-deploy-failed triggers + ssegning.me annotation
+      # contract are defined in home-os charts/argocd. ──
+      notifications.argoproj.io/subscribe.on-deployed.vymalo: ""
+      notifications.argoproj.io/subscribe.on-deploy-failed.vymalo: ""
+      notifications.ssegning.me/github-repo-url: https://github.com/vymalo/lightbridge-code-intelligence
+      notifications.ssegning.me/github-revision: main
+      notifications.ssegning.me/environment-url: https://code-intelligence.ai.camer.digital
     sources:
       # Source A — the chart. release-pinned like every ai-helm app; the release
       # script swaps this tag on each cut. Image tags come from Source B's $values.
