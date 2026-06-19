@@ -48,9 +48,12 @@ agents:
   # The runner image the dispatcher launches per task. Pinned tag; bump on release (not
   # image-updater-managed — it isn't a pod in this chart, it's an env value the dispatcher reads).
   runnerImage: ghcr.io/vymalo/lightbridge-agent-runner:latest
+  # Use the HTTP LoadBalancer gateway Service (matches LibreChat's RAG_OPENAI_BASEURL) — the
+  # `core-gateway-internal` ClusterIP is HTTPS-only (443) and needs the internal CA, which the runner
+  # doesn't mount. This plain-HTTP gateway is the known-working in-cluster path.
   embeddings:
     # No trailing /v1 (the runner appends /v1/embeddings).
-    baseUrl: http://core-gateway-internal.envoy-gateway-system.svc.cluster.local
+    baseUrl: http://envoy-converse-gateway-core-gateway-c480b207.envoy-gateway-system.svc.cluster.local
     model: text-embedding-3-small
   llm:
     # OpenCode review (slice 5). OFF by default so the first rollout is indexing-only and does not
@@ -58,7 +61,7 @@ agents:
     # which would take embeddings down with it). Flip to true AFTER setting agent_llm_model in SM.
     enabled: false
     # WITH /v1 (OpenCode posts to {baseURL}/chat/completions).
-    baseUrl: http://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1
+    baseUrl: http://envoy-converse-gateway-core-gateway-c480b207.envoy-gateway-system.svc.cluster.local/v1
 
 syncWave:
   secrets: "0"
