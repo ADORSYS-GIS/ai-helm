@@ -1050,36 +1050,62 @@ applications:
   # vymalo/lightbridge-code-intelligence): Rust control plane + Next.js web console
   # + Neo4j. Postgres/pgvector is REUSED from the lightbridge-main-db CNPG cluster via
   # a dedicated `codeintel` role + database (charts/lightbridge-db). Plain workload →
-  # home-remote (default). ⚠️ App images (ghcr.io/vymalo/lightbridge-*) are placeholders
-  # until the app repo's CI publishes them; bump the tags here once they ship.
+  # home-remote (default).
+  #
+  # CONTINUOUS DEPLOY — argocd-image-updater + git write-back (vymalo-shop pattern).
+  # Multi-source: the chart is release-pinned (Source A), but the two image tags are
+  # read from the APP repo's main via a $values source (Source B). image-updater picks
+  # the newest *signed* sha-<gitsha> from GHCR and commits it back into that file, which
+  # ArgoCD then auto-syncs — so deploys don't need an ai-helm release. The selecting
+  # ImageUpdater CR lives in home-os (charts/argocd-image-updater). Image tags are
+  # therefore NOT set here; they live in the app repo at
+  # deploy/envs/production/values.yaml (image-updater owns them).
   - name: lightbridge-code-intelligence
-    # Enabled for sync: the pinned images now exist and are public —
-    # ghcr.io/vymalo/lightbridge-{control-plane,web}:0.1.0, published by
-    # vymalo/lightbridge-code-intelligence release v0.1.0.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      # Must track the current release tag (like sibling ai-helm apps) — the bare base
-      # tag predates this chart, so it would 404 the path. The release script swaps this
-      # on each cut along with selfTargetRevision.
-      targetRevision: release-2026.06.19-v06
-      path: charts/lightbridge-code-intelligence
-      helm:
-        releaseName: lightbridge-ci
-        valuesObject:
-          lci:
-            controllers:
-              control-plane:
-                containers:
-                  main:
-                    image:
-                      tag: "0.1.0"
-              web:
-                containers:
-                  main:
-                    image:
-                      tag: "0.1.0"
+    additionalAnnotations:
+      # Two images in one app, aliased `cp` (control-plane) + `web`.
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web
+      # ── control-plane ──
+      argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/cp.force-update: "true"
+      argocd-image-updater.argoproj.io/cp.helm.image-name: lci.controllers.control-plane.containers.main.image.repository
+      argocd-image-updater.argoproj.io/cp.helm.image-tag: lci.controllers.control-plane.containers.main.image.tag
+      argocd-image-updater.argoproj.io/cp.signature-type: cosign
+      argocd-image-updater.argoproj.io/cp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/cp.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── web ──
+      argocd-image-updater.argoproj.io/web.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/web.force-update: "true"
+      argocd-image-updater.argoproj.io/web.helm.image-name: lci.controllers.web.containers.main.image.repository
+      argocd-image-updater.argoproj.io/web.helm.image-tag: lci.controllers.web.containers.main.image.tag
+      argocd-image-updater.argoproj.io/web.signature-type: cosign
+      argocd-image-updater.argoproj.io/web.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/web.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── git write-back → the app repo's main (public repo, so only the commit
+      # needs creds: the shared vymalo GitHub App, same as vymalo-shop). ──
+      argocd-image-updater.argoproj.io/write-back-method: git
+      argocd-image-updater.argoproj.io/git-branch: main
+      argocd-image-updater.argoproj.io/git-repository: https://github.com/vymalo/lightbridge-code-intelligence.git
+      argocd-image-updater.argoproj.io/write-back-target: helmvalues:deploy/envs/production/values.yaml
+      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--vymalo
+    sources:
+      # Source A — the chart. release-pinned like every ai-helm app; the release
+      # script swaps this tag on each cut. Image tags come from Source B's $values.
+      - repoURL: https://github.com/ADORSYS-GIS/ai-helm
+        targetRevision: release-2026.06.19-v06
+        path: charts/lightbridge-code-intelligence
+        helm:
+          releaseName: lightbridge-ci
+          valueFiles:
+            - $values/deploy/envs/production/values.yaml
+          ignoreMissingValueFiles: true
+      # Source B — image tags from the app repo's main; image-updater commits here.
+      - repoURL: https://github.com/vymalo/lightbridge-code-intelligence.git
+        targetRevision: main
+        ref: values
     destination:
       namespace: converse
 
