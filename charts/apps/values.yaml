@@ -1064,6 +1064,11 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     additionalAnnotations:
+      # SSA dry-run diff: ESO and the CNPG/StatefulSet controllers stamp defaulted
+      # fields (on the ExternalSecrets + the Neo4j StatefulSet) that the chart never
+      # declares, which otherwise show a permanent cosmetic OutOfSync + selfHeal churn.
+      # ServerSideDiff ignores those server-owned fields so the app reads Synced.
+      argocd.argoproj.io/compare-options: ServerSideDiff=true
       # Two images in one app, aliased `cp` (control-plane) + `web`.
       argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web
       # ── control-plane ──
