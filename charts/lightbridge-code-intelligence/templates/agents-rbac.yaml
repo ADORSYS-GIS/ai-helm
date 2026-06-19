@@ -14,6 +14,33 @@ metadata:
   labels:
     app.kubernetes.io/part-of: lightbridge-platform
     app.kubernetes.io/managed-by: {{ .Release.Name }}
+{{- if .Values.agents.caSecret }}
+---
+# A throwaway leaf cert from the internal CA issuer — we only want its `ca.crt` (the self-signed-ca
+# root), which the runner mounts to trust the eaig gateway's HTTPS endpoint (same CA LibreChat uses).
+# Issued into the agents namespace so the Job can mount it without cross-namespace copying.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.agents.caSecret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+spec:
+  secretName: {{ .Values.agents.caSecret }}
+  commonName: {{ .Values.agents.caSecret }}
+  dnsNames:
+    - {{ .Values.agents.caSecret }}
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: self-signed-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+{{- end }}
 ---
 # Identity the agent Job pods run as. It needs NO cluster permissions — the runner only talks to the
 # control plane over HTTP (bearer-authenticated), never to the Kubernetes API (trust boundary).
