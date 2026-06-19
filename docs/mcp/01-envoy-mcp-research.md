@@ -17,12 +17,9 @@ This report documents how Envoy AI Gateway (AIEG) handles Model Context Protocol
 
 MCP is a protocol that allows AI agents (like opencode, Claude, Goose) to connect to external tools and data sources. It provides a standardized way for AI systems to discover and call tools.
 
-```
-┌─────────────────┐      MCP Protocol      ┌─────────────────┐
-│   AI Client     │◄──────────────────────►│   MCP Server    │
-│  (opencode)     │   tools/list            │  (brave-search) │
-│                 │   tools/call            │                 │
-└─────────────────┘   resources/list        └─────────────────┘
+```mermaid
+flowchart LR
+    A[AI Client<br/>opencode] <-->|MCP Protocol<br/>tools/list<br/>tools/call<br/>resources/list| B[MCP Server<br/>brave-search]
 ```
 
 The MCP specification (June 2025 revision) defines:
@@ -37,45 +34,33 @@ The MCP specification (June 2025 revision) defines:
 
 The Envoy AI Gateway acts as a **transparent proxy** between MCP clients and backend MCP servers, providing:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           MCP CLIENTS                                       │
-│                                                                             │
-│        ┌─────────────────┐              ┌─────────────────┐                │
-│        │  opencode CLI   │              │     MCP SDK     │                │
-│        └────────┬────────┘              └────────┬────────┘                │
-└─────────────────┼─────────────────────────────────┼─────────────────────────┘
-                  │                                 │
-                  │ POST /mcp/brave                 │ POST /mcp/context7
-                  │                                 │
-                  ▼                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ENVOY AI GATEWAY                                    │
-│                                                                             │
-│  ┌─────────────────────┐    ┌─────────────────────┐    ┌───────────────┐  │
-│  │   Gateway Listener  │    │    MCPRoute CRD     │    │  jwt_authn   │  │
-│  │     api-https       │───>│      /mcp/*         │───>│   filter     │  │
-│  │                     │    │                     │    │              │  │
-│  └─────────────────────┘    └─────────────────────┘    │   OAuth      │  │
-│                                                           verification  │  │
-│                                                           └───────┬─────┘  │
-└───────────────────────────────────────────────────────────┼─────────────────┘
-                                                            │
-                                        ┌───────────────────┼───────────────────┐
-                                        │ x-oidc-* headers │                   │
-                                        ▼                   ▼                   │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           MCP BACKENDS                                      │
-│                                                                             │
-│  ┌─────────────────────────────┐    ┌─────────────────────────────────────┐ │
-│  │       Self-hosted           │    │        Proxied External             │ │
-│  │                             │    │                                     │ │
-│  │  • brave                    │    │  • context7                         │ │
-│  │  • terraform                │    │  • refero                           │ │
-│  │                             │    │  • firecrawl                        │ │
-│  │  (plain HTTP)               │    │  (Caddy/openresty → TLS)            │ │
-│  └─────────────────────────────┘    └─────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Clients["MCP Clients"]
+        OPCODE["opencode CLI"]
+        SDK["MCP SDK"]
+    end
+    
+    subgraph Gateway["Envoy AI Gateway"]
+        GW["Gateway Listener<br/>api-https"]
+        MCPR["MCPRoute CRD<br/>/mcp/*"]
+        JWTAUTH["jwt_authn filter<br/>OAuth verification"]
+    end
+    
+    subgraph Backends["MCP Backends"]
+        SELF["Self-hosted<br/>brave, terraform<br/>plain HTTP"]
+        PROXY["Proxied External<br/>context7, refero, firecrawl<br/>Caddy/openresty → TLS"]
+    end
+    
+    OPCODE -->|"POST /mcp/brave"| GW
+    SDK -->|"POST /mcp/context7"| GW
+    GW --> MCPR
+    MCPR --> JWTAUTH
+    JWTAUTH -->|"x-oidc-* headers"| SELF
+    JWTAUTH -->|"x-oidc-* headers"| PROXY
+    
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    class SELF,PROXY own;
 ```
 
 ### Key Features (from official AIEG docs)
@@ -153,32 +138,31 @@ spec:
 
 ### 3.3 Routing Architecture
 
-```
-┌─────────────────┐      POST /mcp/<name>      ┌─────────────────────┐
-│   MCP Client    │ ──────────────────────────> │ Gateway Listener    │
-│   (SDK/opencode)│                             │ (api-https)         │
-└─────────────────┘                             └──────────┬──────────┘
-                                                           │
-                                                           ▼
-                                                   ┌───────────────┐
-                                                   │  MCPRoute    │
-                                                   │  /mcp/*      │
-                                                   └───────┬───────┘
-                                                           │
-                                                           ▼
-                                                   ┌───────────────┐
-                                                   │ jwt_authn    │
-                                                   │ (JWT verify) │
-                                                   └───────┬───────┘
-                                                           │
-                                    ┌──────────────────────┼──────────────────────┐
-                                    │  x-oidc-* headers    │                      │
-                                    ▼                      ▼                      ▼
-                          ┌─────────────────┐    ┌─────────────────────────────────┐
-                          │ Self‑hosted     │    │ Proxied External                │
-                          │ brave, terraform│    │ context7, refero, firecrawl     │
-                          │ plain HTTP      │    │ Caddy/openresty → TLS          │
-                          └─────────────────┘    └─────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Client["MCP Client"]
+        SDK["MCP SDK / opencode"]
+    end
+    
+    subgraph Gateway["Envoy AI Gateway"]
+        GW["Gateway Listener<br/>api-https"]
+        MCPR["MCPRoute<br/>/mcp/*"]
+        JWTAUTH["jwt_authn filter<br/>native Envoy"]
+    end
+    
+    subgraph Backends["MCP Backends"]
+        SELF["Self-hosted<br/>brave, terraform<br/>plain HTTP"]
+        PROXY["Proxied External<br/>context7, refero, firecrawl<br/>Caddy/openresty → TLS"]
+    end
+    
+    SDK -->|"POST /mcp/<name>"| GW
+    GW --> MCPR
+    MCPR --> JWTAUTH
+    JWTAUTH -->|"x-oidc-* headers"| SELF
+    JWTAUTH -->|"x-oidc-* headers"| PROXY
+    
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    class SELF,PROXY own;
 ```
 
 ---
@@ -255,36 +239,21 @@ The `mcpproxy` filter runs inside the `ai-gateway-controller` process (not a sid
 3. **Event Framing**: Parses SSE events (`event: message`, `data: ...`)
 4. **Reconnection**: Supports `Last-Event-ID` for SSE stream resumption
 
-```
-┌───────────────┐     ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-│  MCP Client   │     │ Envoy Gateway │     │ mcpproxy     │     │  MCP Server   │
-│               │     │               │     │ filter       │     │               │
-└───────┬───────┘     └───────┬───────┘     └───────┬───────┘     └───────┬───────┘
-        │                     │                     │                     │
-        │ POST /mcp/brave    │                     │                     │
-        │ Accept: text/event-stream                │                     │
-        │────────────────────>│                     │                     │
-        │                     │ Route to mcpproxy   │                     │
-        │                     │────────────────────>│                     │
-        │                     │                     │ Establish SSE      │
-        │                     │                     │ connection         │
-        │                     │                     │────────────────────>│
-        │                     │                     │                     │
-        │                     │                     │   SSE events stream│
-        │                     │                     │<────────────────────│
-        │                     │                     │                     │
-        │                     │                     │ ┌─────────────────┐│
-        │                     │                     │ │Encrypt session  ││
-        │                     │                     │ │IDs              ││
-        │                     │                     │ │Session mgmt     ││
-        │                     │                     │ │Event framing    ││
-        │                     │                     │ │Reconnection     ││
-        │                     │                     │ └─────────────────┘│
-        │                     │                     │                     │
-        │   Forwarded events  │                     │                     │
-        │<────────────────────│<────────────────────│                     │
-        │                     │                     │                     │
-└───────┴───────┘     └───────┴───────┘     └───────┴───────┘     └───────┴───────┘
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant GW as Envoy Gateway
+    participant Proxy as mcpproxy filter
+    participant Backend as MCP Server
+    
+    Client->>GW: POST /mcp/brave (Accept: text/event-stream)
+    GW->>Proxy: Route to mcpproxy
+    Proxy->>Backend: Establish SSE connection
+    Backend-->>Proxy: SSE events stream
+    Proxy->>Proxy: Encrypt session IDs
+    Proxy-->>Client: Forwarded events
+    
+    Note over Proxy: Session management<br/>Event framing<br/>Reconnection support
 ```
 
 ### 4.3 Known Issues (AIEG v0.6.0-v0.7.0)
@@ -340,58 +309,30 @@ This means:
 
 MCP routes implement the MCP authorization spec (2025-11-25 revision) via AIEG's native `securityPolicy.oauth`:
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ MCP Client      │     │ Envoy Gateway   │     │ Keycloak        │
-│ (opencode)      │     │                 │     │                 │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │
-         │  DISCOVERY PHASE - UNAUTHENTICATED            │
-         │                       │                       │
-         │ 1. GET /.well-known/  │                       │
-         │    oauth-protected-   │                       │
-         │    resource/mcp/<name>│                       │
-         │──────────────────────>│                       │
-         │                       │                       │
-         │ 2. 200 RFC 9728       │                       │
-         │    metadata           │                       │
-         │<──────────────────────│                       │
-         │                       │                       │
-         │ 3. POST /mcp/<name>   │                       │
-         │    (no token)         │                       │
-         │──────────────────────>│                       │
-         │                       │                       │
-         │ 4. 401 WWW-Authenticate:                       │
-         │    resource_metadata=...                      │
-         │<──────────────────────│                       │
-         │                       │                       │
-         │    OAUTH FLOW         │                       │
-         │                       │                       │
-         │ 5. OAuth authorization│                       │
-         │    code flow          │                       │
-         │───────────────────────┼──────────────────────>│
-         │                       │                       │
-         │ 6. Bearer JWT         │                       │
-         │<──────────────────────┼───────────────────────│
-         │                       │                       │
-         │    AUTHENTICATED REQUEST                     │
-         │                       │                       │
-         │ 7. POST /mcp/<name>   │                       │
-         │    (Bearer JWT)       │                       │
-         │──────────────────────>│                       │
-         │                       │                       │
-         │                       │ ┌─────────────────────┤
-         │                       │ │jwt_authn validates  │
-         │                       │ │token                │
-         │                       │ │claimToHeaders →     │
-         │                       │ │x-oidc-* headers     │
-         │                       │ │Route to backend     │
-         │                       │ └─────────────────────┤
-         │                       │                       │
-         │ 8. Tool result        │                       │
-         │<──────────────────────│                       │
-         │                       │                       │
-└────────┴────────┘     └────────┴────────┘     └────────┴────────┘
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as MCP Client (opencode)
+    participant GW as Envoy Gateway
+    participant KC as Keycloak
+    
+    Note over C,GW: Discovery Phase - UNAUTHENTICATED
+    C->>GW: GET /.well-known/oauth-protected-resource/mcp/<name>
+    GW-->>C: 200 RFC 9728 metadata (resource + AS aliases)
+    
+    C->>GW: POST /mcp/<name> (no token)
+    GW-->>C: 401 WWW-Authenticate: resource_metadata=...
+    
+    Note over C,KC: OAuth Flow
+    C->>KC: OAuth authorization code flow
+    KC-->>C: Bearer JWT
+    
+    Note over C,GW: Authenticated Request
+    C->>GW: POST /mcp/<name> (Bearer JWT)
+    GW->>GW: jwt_authn validates token
+    GW->>GW: claimToHeaders → x-oidc-* headers
+    GW->>GW: Route to backend
+    GW-->>C: Tool result
 ```
 
 ### 5.3 Discovery Endpoints
@@ -458,17 +399,12 @@ The ai-helm codebase supports **three backend modes**:
 
 ### 6.1 Mode 1: Self-Hosted (In-Cluster)
 
-```
-┌─────────────┐      plain HTTP      ┌─────────────────────┐
-│  MCPRoute   │ ───────────────────> │      Service        │
-│             │                      │    brave-search     │
-└─────────────┘                      └──────────┬──────────┘
-                                                │
-                                                ▼
-                                     ┌─────────────────────┐
-                                     │        Pod          │
-                                     │ brave-search image  │
-                                     └─────────────────────┘
+```mermaid
+flowchart LR
+    MCPR["MCPRoute"]:::own -->|"plain HTTP"| SVC["Service<br/>brave-search"]:::own
+    SVC --> POD["Pod<br/>brave-search image"]:::own
+    
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 **Use for:** MCP servers you run yourself (brave, terraform)
@@ -513,56 +449,40 @@ brave:
 
 ### 6.2 Mode 2: Proxied External (Recommended for External MCPs)
 
-```
-┌─────────────┐      plain HTTP      ┌─────────────────────┐      TLS + Bearer      ┌─────────────────────┐
-│  MCPRoute   │ ───────────────────> │  Caddy/openresty   │ ─────────────────────> │    External MCP     │
-│             │                      │  in-cluster proxy  │                        │  mcp.context7.com   │
-└─────────────┘                      └─────────────────────┘                        └─────────────────────┘
+```mermaid
+flowchart LR
+    MCPR["MCPRoute"]:::own -->|"plain HTTP"| PROXY["Caddy/openresty<br/>in-cluster proxy"]:::own
+    PROXY -->|"TLS + Bearer"| EXT["External MCP<br/>mcp.context7.com"]:::ext
+    
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 **Why proxiedExternal?** Direct external TLS backends failed due to three issues documented in [ADR-0040](../adr/0040-external-mcps-via-caddy-normalizing-proxy.md):
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     WHY DIRECT TLS FAILED                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────┐    ┌─────────────────────────────┐        │
-│  │        Empty SNI           │    │    ECDSA Cert Rejected      │        │
-│  │                             │    │                             │        │
-│  │  dummy.transport_socket     │    │  BoringSSL BAD_ECC_CERT    │        │
-│  │  BackendTLSPolicy           │    │  context7 handshake fails   │        │
-│  │  never applied              │    │                             │        │
-│  └─────────────────────────────┘    └─────────────────────────────┘        │
-│                                                                             │
-│  ┌─────────────────────────────┐    ┌─────────────────────────────┐        │
-│  │   Mislabeled Content-Type   │    │      Empty SSE Event        │        │
-│  │                             │    │                             │        │
-│  │  refero: JSON as            │    │  firecrawl: 2025-11-25      │        │
-│  │  text/event-stream          │    │  framing                    │        │
-│  │  mcpproxy parses empty       │    │  mcpproxy fails             │        │
-│  └─────────────────────────────┘    └─────────────────────────────┘        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                    │                    │
-                    │                    │
-                    ▼                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     proxiedExternal SOLUTION                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌───────────────────────────────────┐  ┌─────────────────────────────────┐│
-│  │          CADDY ENGINE             │  │      OPENRESTY ENGINE           ││
-│  │                                   │  │                                 ││
-│  │  • Go TLS handles ECDSA          │  │  • Lua rewrites request body   ││
-│  │  • header_up injects Bearer      │  │  • Pins protocolVersion        ││
-│  │  • header_down rewrites          │  │                                 ││
-│  │    Content-Type                   │  │  Used for: firecrawl           ││
-│  │                                   │  │                                 ││
-│  │  Used for: context7, refero       │  │                                 ││
-│  └───────────────────────────────────┘  └─────────────────────────────────┘│
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Problems["Why Direct TLS Failed"]
+        P1["Empty SNI<br/>dummy.transport_socket<br/>BackendTLSPolicy never applied"]
+        P2["ECDSA Cert Rejected<br/>BoringSSL BAD_ECC_CERT<br/>context7 handshake fails"]
+        P3["Mislabeled Content-Type<br/>refero: JSON as text/event-stream<br/>mcpproxy parses empty"]
+        P4["Empty SSE Event<br/>firecrawl: 2025-11-25 framing<br/>mcpproxy fails"]
+    end
+    
+    subgraph Solution["proxiedExternal Solution"]
+        CADDY["Caddy Engine<br/>Go TLS handles ECDSA<br/>header_up injects Bearer<br/>header_down rewrites Content-Type"]
+        OPENRESTY["openresty Engine<br/>Lua rewrites request body<br/>Pins protocolVersion"]
+    end
+    
+    P1 --> CADDY
+    P2 --> CADDY
+    P3 --> CADDY
+    P4 --> OPENRESTY
+    
+    classDef warn fill:#fbeaea,stroke:#a54a4a;
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    class P1,P2,P3,P4 warn;
+    class CADDY,OPENRESTY own;
 ```
 
 **Caddy Engine (default):**
@@ -657,47 +577,30 @@ Use `proxiedExternal` instead.
 
 From [`docs/architecture/10-mcp.md`](../architecture/10-mcp.md):
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Envoy AI Gateway                                        │
-│                    /mcp/* (native jwt_authn)                               │
-└───────────────────────────────┬─────────────────────────────────────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        │                       │                       │
-        ▼                       ▼                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              SELF-HOSTED (in-cluster, plain HTTP)                           │
-│                                                                             │
-│  ┌─────────────────────────────┐    ┌─────────────────────────────────────┐ │
-│  │          brave              │    │            terraform                │ │
-│  │    mcp/brave-search         │    │  hashicorp/terraform-mcp-server    │ │
-│  └─────────────────────────────┘    └─────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │                       │                       │
-        ▼                       ▼                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              PROXIEDEXTERNAL (in-cluster proxy → external TLS)              │
-│                                                                             │
-│  ┌─────────────────────────────┐    ┌─────────────────────────────────────┐ │
-│  │        context7             │    │            refero                    │ │
-│  │  → mcp.context7.com         │    │  → api.refero.design                │ │
-│  │  engine: caddy              │    │  caddy + Content-Type rewrite       │ │
-│  └─────────────────────────────┘    └─────────────────────────────────────┘ │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      firecrawl                                      │   │
-│  │  → mcp.firecrawl.dev                                               │   │
-│  │  engine: openresty + protocol pin                                   │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │                       │                       │
-        └───────────────────────┼───────────────────────┘
-                                │ TLS
-                                ▼
-                    ┌─────────────────────────────────────┐
-                    │      external MCP services         │
-                    └─────────────────────────────────────┘
+```mermaid
+flowchart TB
+    GW["Envoy AI Gateway<br/>/mcp/* (native jwt_authn)"]:::own
+
+    subgraph self["Self-hosted (in-cluster, plain HTTP)"]
+        BRAVE["brave<br/>mcp/brave-search"]:::own
+        TF["terraform<br/>hashicorp/terraform-mcp-server"]:::own
+    end
+    subgraph proxied["proxiedExternal (in-cluster proxy → external TLS)"]
+        CTX["context7 → mcp.context7.com<br/><i>engine: caddy</i>"]:::own
+        REF["refero → api.refero.design<br/><i>caddy + Content-Type rewrite</i>"]:::own
+        FC["firecrawl → mcp.firecrawl.dev<br/><i>engine: openresty + protocol pin</i>"]:::own
+    end
+
+    EXT["external MCP services"]:::ext
+
+    GW --> BRAVE & TF
+    GW --> CTX & REF & FC
+    CTX -.TLS.-> EXT
+    REF -.TLS.-> EXT
+    FC -.TLS.-> EXT
+
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 | MCP Server | Path | Backend Mode | Proxy Engine | Upstream |
@@ -716,32 +619,27 @@ From [`docs/architecture/10-mcp.md`](../architecture/10-mcp.md):
 
 The `charts/mcps` orchestrator uses an ApplicationSet to deploy multiple MCP servers:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        ArgoCD GitOps                                       │
-│                                                                             │
-│                    ┌─────────────────────────┐                            │
-│                    │    ApplicationSet       │                            │
-│                    │    charts/mcps         │                            │
-│                    └───────────┬────────────┘                            │
-└────────────────────────────────┼────────────────────────────────────────────┘
-                                 │
-         ┌───────────┬───────────┼───────────┬───────────┐
-         │           │           │           │           │
-         ▼           ▼           ▼           ▼           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Child Applications                                  │
-│                                                                             │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ │
-│  │  mcps-brave   │ │mcps-terraform │ │ mcps-context7 │ │  mcps-refero  │ │
-│  │  charts/mcp   │ │ charts/mcp    │ │ charts/mcp     │ │ charts/mcp    │ │
-│  └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘ │
-│                                                                             │
-│                      ┌───────────────┐                                    │
-│                      │ mcps-firecrawl│                                    │
-│                      │ charts/mcp    │                                    │
-│                      └───────────────┘                                    │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph GitOps["ArgoCD GitOps"]
+        APPSET["ApplicationSet<br/>charts/mcps"]:::own
+    end
+    
+    subgraph Children["Child Applications"]
+        APP1["mcps-brave<br/>charts/mcp"]:::own
+        APP2["mcps-terraform<br/>charts/mcp"]:::own
+        APP3["mcps-context7<br/>charts/mcp"]:::own
+        APP4["mcps-refero<br/>charts/mcp"]:::own
+        APP5["mcps-firecrawl<br/>charts/mcp"]:::own
+    end
+    
+    APPSET --> APP1
+    APPSET --> APP2
+    APPSET --> APP3
+    APPSET --> APP4
+    APPSET --> APP5
+    
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 ### 8.2 ApplicationSet Template
@@ -933,97 +831,70 @@ For MCP routes, timeouts are inherited from the Gateway's listener configuration
 
 ### 11.1 Full MCP Request Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        MCP CLIENT LAYER                                    │
-│                                                                             │
-│                      ┌───────────────────┐                                  │
-│                      │   opencode CLI    │                                  │
-│                      │     MCP SDK       │                                  │
-│                      └───────────────────┘                                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-        ┌───────────────────────────┼───────────────────────────┐
-        │                           │                           │
-        ▼                           ▼                           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     ENVOY AI GATEWAY LAYER                                 │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
-│  │  core-gateway   │  │   MCPRoute      │  │  jwt_authn      │             │
-│  │  HTTPS listener │  │   /mcp/*        │  │  filter         │             │
-│  │                 │  │                 │  │                 │             │
-│  │                 │  │                 │  │ Keycloak JWKS   │             │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘             │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────┐           │
-│  │              Discovery Endpoints (RFC 9728 PRM)             │           │
-│  └─────────────────────────────────────────────────────────────┘           │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │                           │                           │
-        │                           │                           ▼
-        │                           │           ┌─────────────────────────────┐
-        │                           │           │  AUTHENTICATION LAYER      │
-        │                           │           │                             │
-        │                           │           │  ┌───────────────────────┐  │
-        │                           │           │  │     Keycloak          │  │
-        │                           │           │  │ camer-digital realm   │  │
-        │                           │           │  └───────────────────────┘  │
-        │                           │           └─────────────────────────────┘
-        │                           │                           │
-        ▼                           ▼                           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              NORMALIZING PROXY LAYER (converse-mcp namespace)              │
-│                                                                             │
-│  ┌─────────────────────────────┐  ┌─────────────────────────────┐          │
-│  │         Caddy               │  │        openresty            │          │
-│  │                             │  │                             │          │
-│  │  • context7                 │  │  • firecrawl                │          │
-│  │  • refero                   │  │                             │          │
-│  │                             │  │  Rewrites request body     │          │
-│  │  Go TLS + header injection  │  │  Pins protocolVersion      │          │
-│  └─────────────────────────────┘  └─────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │                                   │
-        ▼                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              SELF-HOSTED LAYER (converse-mcp namespace)                    │
-│                                                                             │
-│  ┌─────────────────────────────┐  ┌─────────────────────────────┐          │
-│  │       brave-search          │  │      terraform-mcp           │          │
-│  │       (in-cluster)          │  │      (in-cluster)            │          │
-│  └─────────────────────────────┘  └─────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │                                   │
-        ▼                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        EXTERNAL SERVICES                                   │
-│                                                                             │
-│  ┌─────────────────────────────┐  ┌─────────────────────────────┐          │
-│  │     mcp.context7.com        │  │    api.refero.design        │          │
-│  │     (TLS + Bearer)          │  │    (TLS + Bearer)           │          │
-│  └─────────────────────────────┘  └─────────────────────────────┘          │
-│                                                                             │
-│  ┌─────────────────────────────┐                                            │
-│  │     mcp.firecrawl.dev       │                                            │
-│  │     (TLS + Bearer +         │                                            │
-│  │      protocol pin)         │                                            │
-│  └─────────────────────────────┘                                            │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-REQUEST FLOW:
-=============
-
-  1. DISCOVERY: opencode → GET /.well-known/oauth-protected-resource → 200 PRM JSON
-  
-  2. CHALLENGE: opencode → POST /mcp/brave (no token) → 401 WWW-Authenticate
-  
-  3. AUTH: opencode → Keycloak OAuth flow → JWT token
-  
-  4. REQUEST: opencode → POST /mcp/brave (Bearer JWT)
-              → jwt_authn validates + claimToHeaders
-              → x-oidc-* headers forwarded to backend
-              → Backend responds
+```mermaid
+flowchart TB
+    subgraph Client["MCP Client Layer"]
+        OPCODE["opencode CLI<br/>MCP SDK"]
+    end
+    
+    subgraph Gateway["Envoy AI Gateway Layer"]
+        GW["core-gateway<br/>HTTPS listener"]
+        MCPR["MCPRoute<br/>/mcp/*"]
+        JWTAUTH["jwt_authn filter<br/>Keycloak JWKS"]
+        DISC["Discovery Endpoints<br/>RFC 9728 PRM"]
+    end
+    
+    subgraph AuthN["Authentication Layer"]
+        KC["Keycloak<br/>camer-digital realm"]
+    end
+    
+    subgraph Proxy["Normalizing Proxy Layer<br/>converse-mcp namespace"]
+        CADDY["Caddy<br/>context7, refero"]
+        OPENRESTY["openresty<br/>firecrawl"]
+    end
+    
+    subgraph SelfHosted["Self-Hosted Layer<br/>converse-mcp namespace"]
+        BRAVE["brave-search<br/>in-cluster"]
+        TF["terraform-mcp<br/>in-cluster"]
+    end
+    
+    subgraph External["External Services"]
+        CTX["mcp.context7.com"]
+        REF["api.refero.design"]
+        FC["mcp.firecrawl.dev"]
+    end
+    
+    OPCODE -->|"1. GET /.well-known/oauth-..."| GW
+    GW --> DISC
+    DISC -->|"200 PRM JSON"| OPCODE
+    
+    OPCODE -->|"2. POST /mcp/brave (no token)"| GW
+    GW --> MCPR
+    MCPR -->|"401 WWW-Authenticate"| OPCODE
+    
+    OPCODE -->|"3. OAuth flow"| KC
+    KC -->|"JWT"| OPCODE
+    
+    OPCODE -->|"4. POST /mcp/brave (Bearer JWT)"| GW
+    GW --> MCPR
+    MCPR --> JWTAUTH
+    JWTAUTH -->|"validate + claimToHeaders"| MCPR
+    
+    MCPR -->|"x-oidc-* headers"| BRAVE
+    MCPR -->|"x-oidc-* headers"| TF
+    MCPR -->|"x-oidc-* headers"| CADDY
+    MCPR -->|"x-oidc-* headers"| OPENRESTY
+    
+    CADDY -->|"TLS + Bearer"| CTX
+    CADDY -->|"TLS + Bearer"| REF
+    OPENRESTY -->|"TLS + Bearer + protocol pin"| FC
+    
+    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+    classDef auth fill:#e3f2fd,stroke:#1976d2;
+    class BRAVE,TF,CADDY,OPENRESTY own;
+    class CTX,REF,FC ext;
+    class KC auth;
 ```
 
 ### 11.2 Component Responsibilities
