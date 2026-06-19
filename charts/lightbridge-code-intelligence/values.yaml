@@ -10,14 +10,21 @@
 # Namespace is `converse` (the lightbridge family namespace), matching the CNPG cluster.
 
 # ── App-owned ExternalSecrets (templates/externalsecret.yaml) ────────────────
-# Resolve against the ssegning-aws ClusterSecretStore. Properties live under
-# remoteRef key ai/camer/digital/prod/env.
+# Resolve against the ssegning-aws ClusterSecretStore. Legacy properties live under
+# remoteRef key ai/camer/digital/prod/env; the GitHub App credentials live under the
+# dedicated prod/codeintel/env (codeintelKey).
 secrets:
   secretStore: ssegning-aws
   refreshInterval: 1h
   remoteKey: ai/camer/digital/prod/env
-  githubWebhookProperty: lightbridge_ci_github_webhook_secret
   neo4jPasswordProperty: lightbridge_ci_neo4j_password
+  # GitHub App credentials (registered app for vymalo/lightbridge-code-intelligence). All three
+  # live in the dedicated SM secret prod/codeintel/env so app config stays isolated from the
+  # shared legacy bucket.
+  codeintelKey: prod/codeintel/env
+  githubAppIdProperty: github_app_id
+  githubAppPrivateKeyProperty: github_app_private_key
+  githubWebhookProperty: github_webhook_secret
   # The OIDC web image needs NO client secret (PUBLIC client + PKCE, ADR-0014). The property
   # below is TRANSITIONAL — still consumed by the outgoing better-auth image; remove once the
   # OIDC web image is confirmed live.
@@ -75,6 +82,19 @@ lci:
                 secretKeyRef:
                   name: '{{ .Release.Name }}-github'
                   key: webhook-secret
+            # GitHub App auth (mint installation tokens for the read API + posting reviews).
+            # Absent either, the control plane skips installation-token features but still
+            # serves webhooks/JWT-protected reads (github::GithubApp::from_env → None).
+            GITHUB_APP_ID:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-github'
+                  key: app-id
+            GITHUB_APP_PRIVATE_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-github'
+                  key: app-private-key
             # DATABASE_URL reuses the CNPG cluster; $(DB_PASSWORD) is interpolated by the
             # kubelet, and `dependsOn` makes bjw emit DB_PASSWORD first.
             DB_PASSWORD:

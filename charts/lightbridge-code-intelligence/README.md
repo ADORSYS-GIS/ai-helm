@@ -28,15 +28,18 @@ ESO-provisioned `lightbridge-codeintel-db-role` Secret.
 
 ## Secrets
 
-App-owned `ExternalSecret`s resolve against the `ssegning-aws` `ClusterSecretStore`
-(properties under `ai/camer/digital/prod/env`):
+App-owned `ExternalSecret`s resolve against the `ssegning-aws` `ClusterSecretStore`. The GitHub
+App credentials live in the dedicated SM secret `prod/codeintel/env`; the rest under the legacy
+`ai/camer/digital/prod/env`:
 
-| Secret | Property | Consumed as |
-|---|---|---|
-| `lightbridge-ci-github` | `lightbridge_ci_github_webhook_secret` | `GITHUB_WEBHOOK_SECRET` |
-| `lightbridge-ci-auth` | `lightbridge_ci_better_auth_secret` | `BETTER_AUTH_SECRET` — _transitional_, outgoing better-auth image; OIDC uses no secret |
-| `lightbridge-ci-neo4j-auth` | `lightbridge_ci_neo4j_password` | Neo4j password |
-| `lightbridge-codeintel-db-role` | `codeintel_db_password` | DB password (provisioned by `charts/lightbridge-db`) |
+| Secret | SM key | Property | Consumed as |
+|---|---|---|---|
+| `lightbridge-ci-github` | `prod/codeintel/env` | `github_webhook_secret` | `GITHUB_WEBHOOK_SECRET` |
+| `lightbridge-ci-github` | `prod/codeintel/env` | `github_app_id` | `GITHUB_APP_ID` |
+| `lightbridge-ci-github` | `prod/codeintel/env` | `github_app_private_key` | `GITHUB_APP_PRIVATE_KEY` |
+| `lightbridge-ci-auth` | `ai/camer/digital/prod/env` | `lightbridge_ci_better_auth_secret` | `BETTER_AUTH_SECRET` — _transitional_, outgoing better-auth image; OIDC uses no secret |
+| `lightbridge-ci-neo4j-auth` | `ai/camer/digital/prod/env` | `lightbridge_ci_neo4j_password` | Neo4j password |
+| `lightbridge-codeintel-db-role` | — | `codeintel_db_password` | DB password (provisioned by `charts/lightbridge-db`) |
 
 ## Ingress
 
