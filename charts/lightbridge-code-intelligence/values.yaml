@@ -33,11 +33,11 @@ secrets:
   # model live in the dedicated prod/codeintel/env SM secret; the embeddings/LLM API key reuses the
   # shared eaig gateway key in ai/camer/digital/prod/env.
   #
-  # OPERATOR TODO before agents work in prod — add to Secrets Manager:
-  #   prod/codeintel/env:  agent_runner_token  = <random 32+ char bearer>
-  #   prod/codeintel/env:  agent_llm_model     = <eaig chat model, e.g. qwen3-...>  (omit → review off)
+  # OPERATOR TODO (one-time): in Secrets Manager prod/codeintel/env set
+  #   agent_runner_token = <random 32+ char bearer>   (done — agents are live)
+  # The review chat model is NOT here — it's a plain chart literal (agents.llm.model); the LLM API
+  # key reuses the shared eaig gateway key (converse_openai_api_key in ai/camer/digital/prod/env).
   agentRunnerTokenProperty: agent_runner_token
-  agentLlmModelProperty: agent_llm_model
   openaiKeyProperty: converse_openai_api_key
 
 # ── Agent execution (epic #5): per-task Jobs in an isolated namespace ─────────
@@ -58,12 +58,13 @@ agents:
     baseUrl: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local
     model: qwen3-embedding-8b
   llm:
-    # OpenCode review (slice 5). OFF by default so the first rollout is indexing-only and does not
-    # depend on `agent_llm_model` existing in SM (a missing SM property fails the whole ExternalSecret,
-    # which would take embeddings down with it). Flip to true AFTER setting agent_llm_model in SM.
-    enabled: false
+    # OpenCode review (slice 5). ON — the agent posts automated PR reviews (ticket #48).
+    enabled: true
     # WITH /v1 (OpenCode posts to {baseURL}/chat/completions).
     baseUrl: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1
+    # The eaig chat model the reviewer uses. A plain literal (not a secret) — change it here, no SM.
+    # The gateway serves a purpose-named `adorsys-reviewer`/`-pro`.
+    model: adorsys-reviewer-pro
 
 syncWave:
   secrets: "0"
