@@ -80,6 +80,11 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "pods/log"]
     verbs: ["get", "list", "watch"]
+  # Read the agent ServiceAccount's UID so each Job can carry an ownerReference to it (k8s GC +
+  # traceability). `get` on the SA is enough — the launcher resolves it lazily and caches it.
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

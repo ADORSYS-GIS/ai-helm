@@ -66,6 +66,66 @@ agents:
     # The gateway serves a purpose-named `adorsys-reviewer`/`-pro`.
     model: adorsys-reviewer-pro
 
+# ── File-based configuration (ConfigMap-mounted; ADR-0021) ───────────────────
+# Rendered into two ConfigMaps by templates/config.yaml: control-plane.json (release ns, read by the
+# serve + dispatcher roles) and agent.json + review-system.md (agents ns, mounted into each runner
+# Job). Empty knobs are omitted from the JSON so the binaries fall back to their built-in defaults.
+# Secrets are NOT here — endpoints/keys stay in the agent secret and reach agent.json via `{env:…}`.
+config:
+  # Name of the agents-namespace ConfigMap holding agent.json (+ the prompt template). The dispatcher
+  # is told this via AGENT_CONFIG_CONFIGMAP and mounts it into each Job at /etc/lightbridge.
+  agentConfigMap: lightbridge-agent-config
+
+  # The @mention trigger handle (webhook.rs): an issue comment must start with `@<handle>` to launch a
+  # re-review. The first review per PR is still automatic (on `opened`).
+  appHandle: lightbridge-assistant
+
+  # Reviewer guidance — the mounted system-prompt template (env-substituted). Empty → the runner's
+  # built-in default guidance. The non-negotiable output-format contract is always appended.
+  reviewSystemPrompt: ""
+
+  # Review LLM generation params → the model's `options` in opencode.json. Empty → model/provider
+  # default. (max_diff_chars caps the diff pasted into the prompt.)
+  model:
+    temperature: ""
+    topP: ""
+    maxTokens: ""
+    maxDiffChars: ""
+
+  # PR feedback the control plane applies (FILE-ONLY knobs — no env equivalent).
+  review:
+    reactions: true        # 👀 started → 🎉 done / 😕 errored on the PR description
+    labelReviewed: ""      # label added on every posted review (e.g. lightbridge-reviewed)
+    labelFindings: needs-review  # ≥1 finding of any severity
+    labelError: bug        # ≥1 error-severity finding
+
+  # Embedding-store safety (ADR-0018). The live `code_chunks.embedding` column is vector(4096), set by
+  # migration 0005 to match qwen3-embedding-8b. Changing the embedding model's dimension is
+  # DESTRUCTIVE: on a mismatch the control plane either wipes + re-migrates the column (only when
+  # allowReindexOnDimChange is true) or fails startup loud. Keep the flag false in normal operation;
+  # flip it deliberately, in the same change that switches the embedding model, to reindex.
+  embeddings:
+    dimension: 4096
+    allowReindexOnDimChange: false
+
+  # Dispatcher tuning (RFC-0001). Empty → built-in defaults.
+  dispatcher:
+    claimLeaseSeconds: ""
+    pollFallbackSeconds: ""
+    launchBackoffSeconds: ""
+    reapIntervalSeconds: ""
+
+  # The runner Job's container resources (k8s requests/limits), set verbatim on the Job. Indexing
+  # (clone + tree-sitter + embed + Graphify) is CPU/memory-heavy on large repos, so the runner gets a
+  # bigger budget than the control-plane pods.
+  runnerResources:
+    requests:
+      cpu: "500m"
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
 syncWave:
   secrets: "0"
   app: "2"
@@ -107,6 +167,13 @@ lci:
           env:
             BIND_ADDR: "0.0.0.0:8080"
             RUST_LOG: "info"
+            # File config (ADR-0021): read control-plane.json from the mounted ConfigMap (review
+            # labels/reactions + the embedding-dimension guard). Absent the file the binary uses env.
+            CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
+            # The @mention trigger handle (webhook.rs). Comments must start with `@<handle>`. A literal
+            # (bjw renders env against the sub-chart scope where top-level `.Values` isn't visible);
+            # keep in sync with `config.appHandle`.
+            GITHUB_APP_HANDLE: "lightbridge-assistant"
             # OAuth2 resource server: validate Keycloak-issued RS256 JWTs (ADR-0014). Required —
             # without OIDC_ISSUER the control plane fails readiness (fails closed).
             OIDC_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
@@ -360,6 +427,13 @@ lci:
             CONTROL_PLANE_ROLE: "dispatcher"
             RUST_LOG: "info"
             METRICS_ADDR: "0.0.0.0:9090"
+            # File config (ADR-0021): control-plane.json drives the runner Job resources + dispatcher
+            # tuning; the binary falls back to the AGENT_*/defaults below when a field is absent.
+            CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
+            # ConfigMap (agents ns) the dispatcher mounts into each Job as agent.json (review model
+            # params + prompt template); k8s.rs sets AGENT_CONFIG=/etc/lightbridge/agent.json there.
+            # Literal (sub-chart env scope); keep in sync with `config.agentConfigMap`.
+            AGENT_CONFIG_CONFIGMAP: "lightbridge-agent-config"
             # Same Postgres queue the serve role + webhook write to (dispatcher requires it).
             DB_PASSWORD:
               valueFrom:
@@ -478,6 +552,20 @@ lci:
   # (see `statefulset.volumeClaimTemplates` above); neo4j runs with a writable rootfs so it
   # needs no scratch emptyDirs. advancedMounts scope each volume to one container.
   persistence:
+    # control-plane.json (ADR-0021), mounted read-only into the serve + dispatcher roles. `name`
+    # references the standalone ConfigMap from templates/config.yaml (not a bjw-created one).
+    control-plane-config:
+      type: configMap
+      name: lightbridge-ci-control-plane-config
+      advancedMounts:
+        control-plane:
+          main:
+            - path: /etc/lightbridge
+              readOnly: true
+        dispatcher:
+          main:
+            - path: /etc/lightbridge
+              readOnly: true
     cp-tmp:
       type: emptyDir
       advancedMounts:
