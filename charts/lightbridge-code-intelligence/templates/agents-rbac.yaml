@@ -101,4 +101,46 @@ subjects:
   - kind: ServiceAccount
     name: {{ .Release.Name }}-dispatcher
     namespace: {{ .Release.Namespace }}
+---
+# Identity the web console runs as (release namespace). The console streams a run's agent-Job logs
+# directly from the Kubernetes API (Epic #75, Milestone C), so it needs read access to pods + pod
+# logs in the agents namespace — nothing more. (Other web requests go through the control plane.)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-web
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-web-log-reader
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-web-log-reader
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-web-log-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-web
+    namespace: {{ .Release.Namespace }}
 {{- end }}

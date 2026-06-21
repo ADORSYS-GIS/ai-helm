@@ -261,6 +261,10 @@ lci:
       replicas: 2
       annotations:
         argocd.argoproj.io/sync-wave: "2"
+      # Run as the dedicated web SA (templates/agents-rbac.yaml) that holds read-only pods/log access
+      # in the agents namespace, so the console can stream a run's Job logs (Epic #75, Milestone C).
+      serviceAccount:
+        name: lightbridge-ci-web
       containers:
         main:
           image:
@@ -274,6 +278,12 @@ lci:
             NODE_ENV: "production"
             PORT: "3000"
             HOSTNAME: "0.0.0.0"
+            # Agents namespace the console reads Job logs from (Epic #75, Milestone C). Literal; keep
+            # in sync with `agents.namespace`.
+            AGENT_NAMESPACE: "lightbridge-agents"
+            # Admin gate (Epic #75): the realm role that reveals the approval screen. Keep in sync with
+            # the control plane's ADMIN_ROLE + `config.appHandle`-style convention.
+            ADMIN_ROLE: "lci-admin"
             # Keycloak OIDC client (ADR-0014). Public client + PKCE → NO client secret.
             OIDC_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
             OIDC_CLIENT_ID: "code-intelligence"
