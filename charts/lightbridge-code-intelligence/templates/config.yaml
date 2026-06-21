@@ -1,0 +1,71 @@
+{{- /*
+File-based configuration (ADR-0021): the control plane and the agent runner read JSON config files
+mounted from ConfigMaps instead of a sprawl of env vars. String values support `{env:VAR:-default}`
+substitution, so secrets stay in env (secret-injected) while the config stays declarative.
+
+Two ConfigMaps:
+  - <release>-control-plane-config (release ns): control-plane.json — read by the serve + dispatcher
+    roles (CONTROL_PLANE_CONFIG). Carries the FILE-ONLY knobs: runner Job resources, review
+    labels/reactions, the embedding-dimension guard, and dispatcher tuning.
+  - lightbridge-agent-config (agents ns): agent.json + review-system.md — mounted into each runner
+    Job by the dispatcher (AGENT_CONFIG_CONFIGMAP → k8s.rs). Carries the review model's generation
+    params + the reviewer system-prompt template; embeddings/LLM endpoints resolve from the
+    Job-injected secret env via `{env:…}`.
+
+Built with `toJson` so empty/omitted knobs simply don't appear (the binaries then use their built-in
+defaults / legacy env), and so the single-brace `{env:…}` markers pass through untouched (Helm only
+interprets `{{ }}`).
+*/}}
+{{- $wave := .Values.syncWave.app | quote }}
+{{- $cfg := .Values.config }}
+{{- /* ── control-plane.json (release namespace) ─────────────────────────────── */}}
+{{- $cp := dict }}
+{{- $agent := dict }}
+{{- if $cfg.runnerResources }}{{- $_ := set $agent "resources" $cfg.runnerResources }}{{- end }}
+{{- if $agent }}{{- $_ := set $cp "agent" $agent }}{{- end }}
+{{- $disp := dict }}
+{{- range $k, $v := $cfg.dispatcher }}{{- if ne (toString $v) "" }}{{- $_ := set $disp $k $v }}{{- end }}{{- end }}
+{{- if $disp }}{{- $_ := set $cp "dispatcher" $disp }}{{- end }}
+{{- $review := dict "reactions" $cfg.review.reactions }}
+{{- if ne (toString $cfg.review.labelReviewed) "" }}{{- $_ := set $review "label_reviewed" $cfg.review.labelReviewed }}{{- end }}
+{{- if ne (toString $cfg.review.labelFindings) "" }}{{- $_ := set $review "label_findings" $cfg.review.labelFindings }}{{- end }}
+{{- if ne (toString $cfg.review.labelError) "" }}{{- $_ := set $review "label_error" $cfg.review.labelError }}{{- end }}
+{{- $_ := set $cp "review" $review }}
+{{- if ne (toString $cfg.embeddings.dimension) "" }}
+{{- $_ := set $cp "embeddings" (dict "dimension" $cfg.embeddings.dimension "allow_reindex_on_dim_change" $cfg.embeddings.allowReindexOnDimChange) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-control-plane-config
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+data:
+  control-plane.json: {{ $cp | toJson | quote }}
+{{- if .Values.agents.enabled }}
+---
+{{- /* ── agent.json + review-system.md (agents namespace) ───────────────────── */}}
+{{- $ag := dict }}
+{{- $_ := set $ag "embeddings" (dict "base_url" "{env:EMBEDDINGS_BASE_URL}" "api_key" "{env:EMBEDDINGS_API_KEY}" "model" "{env:EMBEDDINGS_MODEL}") }}
+{{- $rev := dict "base_url" "{env:LLM_BASE_URL}" "api_key" "{env:LLM_API_KEY}" "model" "{env:LLM_MODEL}" }}
+{{- if ne (toString $cfg.reviewSystemPrompt) "" }}{{- $_ := set $rev "system_prompt_file" "/etc/lightbridge/review-system.md" }}{{- end }}
+{{- if ne (toString $cfg.model.maxDiffChars) "" }}{{- $_ := set $rev "max_diff_chars" $cfg.model.maxDiffChars }}{{- end }}
+{{- if ne (toString $cfg.model.temperature) "" }}{{- $_ := set $rev "temperature" $cfg.model.temperature }}{{- end }}
+{{- if ne (toString $cfg.model.topP) "" }}{{- $_ := set $rev "top_p" $cfg.model.topP }}{{- end }}
+{{- if ne (toString $cfg.model.maxTokens) "" }}{{- $_ := set $rev "max_tokens" $cfg.model.maxTokens }}{{- end }}
+{{- $_ := set $ag "review" $rev }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.config.agentConfigMap }}
+  namespace: {{ .Values.agents.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+data:
+  agent.json: {{ $ag | toJson | quote }}
+{{- if ne (toString $cfg.reviewSystemPrompt) "" }}
+  review-system.md: |
+{{ $cfg.reviewSystemPrompt | indent 4 }}
+{{- end }}
+{{- end }}
