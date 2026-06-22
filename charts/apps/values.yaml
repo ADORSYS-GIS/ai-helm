@@ -1397,17 +1397,17 @@ applications:
   # controlPlane: true — the ApplicationSet must land in-cluster/argocd where
   # the controller watches it; the children it generates deploy workloads to
   # home-remote (converse-mcp). See ADR-0017 + ADR-0027.
+  # OCI mode (ADR-0055): the mcps ORCHESTRATOR chart floats from OCI, so its
+  # ApplicationSet template + children config deploy continuously. The emitted
+  # children (one per MCP) also source the leaf chart from OCI (see
+  # charts/mcps/templates/applicationset.yaml + values argocd.chartRegistry).
+  # First orchestrator migrated to OCI — pattern for ai-models/librechart/etc.
   - name: mcps
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     controlPlane: true
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/mcps
-      helm:
-        releaseName: mcps
-        valuesObject: { }
+    chart: mcps
+    releaseName: mcps
     destination:
       namespace: converse-mcp
 
