@@ -1026,17 +1026,16 @@ applications:
   # control object (it emits Application CRs) this entry is controlPlane: true —
   # the children themselves target home-remote. Name kept `lightbridge-backend`
   # so the root app entry's identity is stable.
+  # OCI mode (ADR-0055): orchestrator chart floats from OCI so its App-of-Apps
+  # children config deploys continuously. Children: secrets + db leaf charts from
+  # OCI, the app's upstream chart by version + its cert overlay from ai-helm-values
+  # (see charts/lightbridge values).
   - name: lightbridge-backend
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     controlPlane: true
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/lightbridge
-      helm:
-        releaseName: lightbridge
-        valuesObject: {}
+    chart: lightbridge
+    releaseName: lightbridge
     destination:
       namespace: converse
 
