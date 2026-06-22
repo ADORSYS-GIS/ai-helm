@@ -1170,16 +1170,15 @@ applications:
   # The generic `imageupdater` chart renders ONE CR per app opted into write-back
   # (its imageUpdaters[] list); add an entry there + the write-back annotations on
   # the target app's entry to onboard a new continuous-delivery app.
+  # OCI mode (ADR-0055): the chart floats from oci://…/charts/imageupdater. Its
+  # imageUpdaters[] list is baked into the chart values, so adding an app = edit
+  # charts/imageupdater + merge (republish → float). Still controlPlane → argocd ns.
   - name: imageupdater
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     controlPlane: true
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/imageupdater
-      helm:
-        releaseName: imageupdater
+    chart: imageupdater
+    releaseName: imageupdater
     destination:
       namespace: argocd
 
