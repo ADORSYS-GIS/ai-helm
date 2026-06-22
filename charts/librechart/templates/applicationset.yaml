@@ -25,7 +25,7 @@ spec:
 {{- range $child := .Values.children }}
 {{- if not (eq $child.enabled false) }}
           - appName: {{ $child.name | quote }}
-            chartPath: {{ $child.chartPath | quote }}
+            chartName: {{ $child.chartName | quote }}
             syncWave: {{ $child.syncWave | quote }}
 {{- end }}
 {{- end }}
@@ -39,9 +39,10 @@ spec:
     spec:
       project: {{ .Values.argocd.project | quote }}
       source:
-        repoURL: {{ .Values.argocd.repoURL | quote }}
-        targetRevision: {{ .Values.argocd.targetRevision | quote }}
-        path: '{{ "{{ .chartPath }}" }}'
+        # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+        repoURL: '{{ .Values.argocd.chartRegistry }}/{{ "{{ .chartName }}" }}'
+        chart: "."
+        targetRevision: {{ .Values.argocd.chartVersionRange | quote }}
         helm:
           releaseName: '{{ "{{ .appName }}" }}'
       destination:

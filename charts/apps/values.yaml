@@ -1261,17 +1261,11 @@ applications:
     # object). The ApplicationSet must land in-cluster/argocd where the
     # controller watches it; its child Applications deploy workloads to
     # home-remote. See ADR-0017.
+    # OCI mode (ADR-0055): orchestrator chart floats from OCI so its ApplicationSet
+    # + children config deploy continuously; children also source leaf charts from OCI.
     controlPlane: true
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/librechart
-      helm:
-        releaseName: librechat
-        # No storageClass override — PVCs use the cluster's default
-        # StorageClass (the leaf charts default to null).
-        valuesObject: {}
-
+    chart: librechart
+    releaseName: librechat
     destination:
       namespace: converse-chat
 
@@ -1313,14 +1307,11 @@ applications:
     # object). The ApplicationSet must land in-cluster/argocd where the
     # controller watches it; its child Applications deploy workloads to
     # home-remote. See ADR-0017.
+    # OCI mode (ADR-0055): orchestrator chart floats from OCI so its ApplicationSet
+    # + children config deploy continuously; children also source leaf charts from OCI.
     controlPlane: true
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/ai-models
-      helm:
-        releaseName: models
-        valuesObject: { }
+    chart: ai-models
+    releaseName: models
     destination:
       namespace: converse
 

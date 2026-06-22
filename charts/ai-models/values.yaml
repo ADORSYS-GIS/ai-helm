@@ -16,11 +16,12 @@ argocd:
   namespace: argocd
   # ArgoCD project the children belong to.
   project: ai
-  # Source repo + branch for the leaf charts (ai-models-backends, ai-model).
-  # Deploys are tag-based: pinned to the immutable release tag below (main is
-  # never a deploy target). See the canonical note in charts/apps/values.yaml.
-  repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.22-v02
+  # OCI chart-float (ADR-0055): children source the leaf charts (ai-models-backends,
+  # ai-models-info, ai-model) from the OCI registry on a floating semver range —
+  # full chart path in repoURL + chart "." (the applicationset builds
+  # `<chartRegistry>/<chartName>`). Replaces the old tag-pinned ai-helm path source.
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
   destination:
     # The home-remote cluster every child Application targets. This repo's
     # invariant (ADR-0017) is that workloads NEVER deploy to the cluster

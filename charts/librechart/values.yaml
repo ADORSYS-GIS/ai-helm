@@ -15,11 +15,11 @@ argocd:
   namespace: argocd
   # ArgoCD project the children belong to.
   project: ai
-  # Source repo + branch for the leaf charts.
-  # Deploys are tag-based: pinned to the immutable release tag below (main is
-  # never a deploy target). See the canonical note in charts/apps/values.yaml.
-  repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.22-v02
+  # OCI chart-float (ADR-0055): children source the leaf charts from the OCI
+  # registry on a floating semver range — full chart path in repoURL + chart "."
+  # (the applicationset builds `<chartRegistry>/<chartName>`).
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
   destination:
     # The home-remote cluster every child Application targets. Repo
     # invariant (ADR-0017): workloads NEVER deploy to the cluster ArgoCD
@@ -43,17 +43,19 @@ argocd:
 # ordering), but keeping low-to-high here for readability.
 # ────────────────────────────────────────────────────────────────────────
 children:
+  # chartName = the OCI chart name (was chartPath: charts/<name>). The
+  # applicationset sources oci://<chartRegistry>/<chartName> @ range (ADR-0055).
   - name: librechat-search
-    chartPath: charts/librechat-search
+    chartName: librechat-search
     syncWave: "-1"
     enabled: true
 
   - name: librechat-app
-    chartPath: charts/librechat-app
+    chartName: librechat-app
     syncWave: "0"
     enabled: true
 
   - name: librechat-opencode-wellknown
-    chartPath: charts/librechat-opencode-wellknown
+    chartName: librechat-opencode-wellknown
     syncWave: "1"
     enabled: true
