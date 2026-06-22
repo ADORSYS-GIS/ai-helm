@@ -85,6 +85,8 @@ See ADR-0012 (`ai-models`) and ADR-0014 (`librechart`) for the canonical example
 
 ## Umbrella Applications + `environments/` overlays (ADR-0018)
 
+> ⚠️ **Amended by [ADR-0055](docs/adr/0055-oci-charts-and-image-updater-writeback-to-values-repo.md):** the multi-source umbrella shape below is the foundation the continuous-delivery model builds on, but two things move. (1) An app opting into OCI mode (`chart:` set) gets Source A = the **OCI chart** (`argocd.chartRegistry` @ `argocd.chartVersionRange`) and Source B = the `$values` ref to the **private `ai-helm-values` repo** (image tags written-back). (2) The `environments/` overlays themselves **migrate into `ai-helm-values`** at the cutover — the deps Source then resolves via `argocd.depsRepoURL`/`depsTargetRevision` (default = this repo until flipped). See `docs/continuous-delivery.md`.
+
 Flat leaf apps in `charts/apps/values.yaml` use a multi-source **umbrella** so a workload and its app-scoped prerequisites sync as one Application:
 
 - **Source A — workload**: the Helm chart (`path: charts/<x>` or an upstream `chart:`).
@@ -101,9 +103,19 @@ The umbrella needs **no ApplicationSet** — `applications.yaml` already passes 
 
 > ⚠️ The `applications.yaml` template's custom-`syncPolicy` branch previously omitted the `syncPolicy:` wrapper key (contents leaked into `destination:`), so ~13 apps that declared their own `syncPolicy` rendered with **no** `spec.syncPolicy` (manual sync, declared automation silently dropped). Fixed in the ADR-0018 work — those apps now get their declared `automated: {prune, selfHeal}`. Sanity-check sync behaviour on the live cluster after merge.
 
-## ai-helm ↔ ai-gitops separation (PLANNED, not realised)
+## ai-helm ↔ ai-gitops separation (PLANNED → realised as `ai-helm-values`, ADR-0055)
 
-⚠️ The `ai-gitops` repo described below was the *intended* design but **was never created**. In reality this one repo holds both the chart logic AND (under `environments/`, ADR-0018) the per-env overrides; the root `ai-apps-v2` Application's `targetRevision` is pinned in **`home-os`** `charts/cd/values.yaml` (GitOps-managed by ArgoCD's `cd` app, not applied by hand). Treat the table as design intent, not current state.
+> ✅ **Update (ADR-0055):** the long-absent "deployment-state repo" is finally being
+> built — as the PRIVATE **`adorsys-gis/ai-helm-values`**, scoped to **values +
+> image tags** (the written-back image-tag files + the migrated `environments/`
+> overlays). It does **not** hold the root Application (that stays in `home-os`).
+> So the "planned, absent" framing below is now half-true: chart logic + the
+> `charts/apps` umbrella stay here; per-env overrides + image tags move to
+> `ai-helm-values`. Image tags are no longer "default in chart values, never
+> overridden" — image-updater writes them into the values repo. See
+> `docs/continuous-delivery.md`.
+
+⚠️ The `ai-gitops` repo described below was the *intended* design but **was never created** (its values-only scope is now `ai-helm-values`, above). Until the ADR-0055 cutover completes, this one repo still holds both the chart logic AND (under `environments/`, ADR-0018) the per-env overrides; the root `ai-apps-v2` Application's `targetRevision` is pinned in **`home-os`** `charts/cd/values.yaml` (GitOps-managed by ArgoCD's `cd` app, not applied by hand). Treat the table as design intent, not current state.
 
 | | `ai-helm` (this repo) | `ai-gitops` (planned, absent) |
 |---|---|---|
@@ -113,6 +125,8 @@ The umbrella needs **no ApplicationSet** — `applications.yaml` already passes 
 **ADR-0010** proposed automated image-updater write-back to `ai-gitops`; **ADR-0013** deferred it (and `ai-gitops` was never stood up). See those for the reasoning.
 
 ## `targetRevision`: TAG-BASED deploys, **never `main`**
+
+> ⚠️ **Being superseded by [ADR-0055](docs/adr/0055-oci-charts-and-image-updater-writeback-to-values-repo.md)** (continuous delivery — OCI charts floated on a semver range + argocd-image-updater write-back to the private `adorsys-gis/ai-helm-values` repo; runbook: `docs/continuous-delivery.md`). The machinery has landed but is **inert until an app sets `chart:`** (OCI mode), so the **tag-based model below remains operationally true for every app still on a path-based source**. An app that has set `chart:` no longer rides a release tag — it floats on `argocd.chartVersionRange` and its image tag comes from the values repo via `$values`. `tools/release.sh` is retired at the end of the cutover (`docs/continuous-delivery.md` Phase F).
 
 Deploys are pinned to an **immutable release tag** — currently **`release-2026.06.21-v03`** (cut over from the branch `claude/magical-bohr-390242` on 2026-06-08). `main` is **never** a deploy target. Every self-referencing `targetRevision` pins the tag: `argocd.selfTargetRevision` + the per-app self-Source revisions in `charts/apps/values.yaml`, and the orchestrator children in `charts/ai-models/values.yaml`, `charts/librechart/values.yaml`, and `charts/observability/values.yaml`. The canonical note lives at `argocd.selfTargetRevision` in `charts/apps/values.yaml`. (`HEAD` revisions that point at *other* repos are unaffected.)
 
