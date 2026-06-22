@@ -36,8 +36,10 @@ which supersedes the tag-based release model ([ADR-0031](./adr/0031-tag-based-de
 
 ## Prerequisites (out-of-band — maintainer / cluster, NOT in this repo)
 
-1. **Create the private repo `adorsys-gis/ai-helm-values`.** Seed it from this repo's
-   `environments/` tree (copy `base/` + `prod/`), then add per-app value files (Phase B).
+1. **Create the private repo `adorsys-gis/ai-helm-values`.** ✅ Done (2026-06-22) —
+   created private and seeded from this repo's `environments/` tree (`base/` + `prod/`,
+   incl. `cluster.yaml` + `deps/`) plus the `environments/<env>/values/` dirs + READMEs.
+   Per-app `values/<app>.yaml` files are added as each app is flipped (Phase B / D).
 2. **OCI charts package visibility — NOT a required step.** Chart *pulls* need no
    special handling: this org defaults new GHCR packages to **public** (verified — the
    first `publish_all` run pushed 27/27 charts and `charts/core-gateway` came out
@@ -46,16 +48,18 @@ which supersedes the tag-based release model ([ADR-0031](./adr/0031-tag-based-de
    its existing registry creds (the `vymalo` / `vaam-store` Apps prove it). So there is
    no public-flip prerequisite and no new chart-pull credential. (Charts carry no secrets
    regardless — ESO injects at sync.)
-3. **Two credentials for the PRIVATE values repo** (provisioned via ESO, like every other
-   secret here — see CLAUDE.md "Where the cluster's actual state lives"):
-   - **Write** — a GitHub App with `contents:write` on `adorsys-gis/ai-helm-values`,
-     surfaced as the ArgoCD secret `argocd/github-app-creds--adorsys` (mirror of the
-     existing `…--vymalo`). Used by image-updater to commit the tag.
-   - **Read** — an **ArgoCD repository secret** (label `argocd.argoproj.io/secret-type:
-     repository`) for `https://github.com/adorsys-gis/ai-helm-values`, so ArgoCD can fetch
-     Source B. ⚠️ **This is the #1 forgettable step.** The lightbridge precedent never
-     needed it (its Source B repo is public); a private values repo does. Miss it → every
-     migrated app goes `ComparisonError` and stops syncing.
+3. **Credentials for the PRIVATE values repo — ALREADY SATISFIED.** ✅ Both read and
+   write are covered by the existing org-wide ArgoCD `repo-creds` secret
+   `argocd/github-app-creds--adorsys-gis` (the **`argocd-ssegning`** GitHub App, app_id
+   2926172, installation 112379420 — `repository_selection: all`, `contents: write`).
+   Because it is a `repo-creds` template scoped to the prefix `https://github.com/adorsys-gis`,
+   it applies to **every** repo under that org, including the private `ai-helm-values` —
+   so no per-repo secret is needed:
+   - **ArgoCD read** of Source B (`$values`) → the prefix match provides it.
+   - **image-updater write** → the same App has `contents: write` across all org repos;
+     reference it as `git-credentials: secret:argocd/github-app-creds--adorsys-gis`.
+   (Verified 2026-06-22. Nothing to provision. If the App were ever scoped to *selected*
+   repos, `ai-helm-values` would need adding to its installation — but it is `all` today.)
 
 ## Cutover order of operations
 
@@ -77,8 +81,9 @@ the current tag from the app's chart default / inline `valuesObject`. `ignoreMis
 true` (set by the template) means an app flipped before its file exists just uses chart
 defaults — so seeding can lag, but seed before enabling write-back to avoid a first-sync flap.
 
-**Phase C — credentials + activation.** Provision both creds (Prereq 3). Add an entry per app
-to `charts/imageupdater` `values.yaml` `imageUpdaters[]` (`namePattern: aii-<app>`,
+**Phase C — activation.** ✅ Credentials already exist (Prereq 3 — the org-wide
+`github-app-creds--adorsys-gis` repo-creds). Just add an entry per app to
+`charts/imageupdater` `values.yaml` `imageUpdaters[]` (`namePattern: aii-<app>`,
 `useAnnotations: true`).
 
 **Phase D — flip apps, one at a time.** For each app, add the write-back annotations + set
@@ -129,7 +134,7 @@ the `$values` source), and (2) add the image-updater annotations. Model on
       argocd-image-updater.argoproj.io/git-repository: https://github.com/adorsys-gis/ai-helm-values.git
       argocd-image-updater.argoproj.io/git-branch: main
       argocd-image-updater.argoproj.io/write-back-target: helmvalues:/environments/prod/values/<app>.yaml
-      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys
+      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys-gis
     destination:
       namespace: <ns>
 ```
@@ -159,7 +164,7 @@ Then add the matching `imageUpdaters[]` entry in `charts/imageupdater` and seed
 
 ## Gotchas (full list in ADR-0055 / the plan)
 
-1. **Private values repo needs BOTH creds** (write + ArgoCD read) — miss the read → mass `ComparisonError`.
+1. **Private values repo creds** (write + ArgoCD read) — both already provided by the org-wide `github-app-creds--adorsys-gis` repo-creds (prefix `https://github.com/adorsys-gis`, `repos=all`, `contents=write`). Nothing to provision; if that App were ever scoped to *selected* repos, add `ai-helm-values` to its installation or apps go `ComparisonError`.
 2. **`file://` library change fans out** — the OCI workflow republishes all dependents of `common`/`bjw-common`/`bjw-template`; a consumer pulling a chart that wasn't republished keeps the old vendored library.
 3. **Semver ranges skip pre-releases** unless written `-0` — the publish workflow emits clean `X.Y.Z`, so `>=0.0.0` matches.
 4. **`$values` requires plural `sources:` + exactly one `ref`** — the template owns the single `ref: values` source; never add another `ref`.
