@@ -1,0 +1,22 @@
+# ImageUpdater CRs to render (ADR-0055). Each entry activates the CRD-based
+# argocd-image-updater controller for the listed Application(s); the actual
+# per-image update config (image-list / update-strategy / cosign / git
+# write-back to the ai-helm-values repo) lives on the target Application's own
+# annotations in charts/apps/values.yaml, so `useAnnotations: true` is all the
+# CR needs.
+#
+# To opt a new continuous-delivery app in: add the write-back annotations to its
+# charts/apps entry (see lightbridge-code-intelligence for the canonical shape),
+# set `chart:` on it (OCI mode), then add an entry here:
+#
+#   - name: <app>
+#     applicationRefs:
+#       - namePattern: aii-<app>      # `aii-` = charts/apps argocd.appNamePrefix
+#         useAnnotations: true
+imageUpdaters:
+  - name: lightbridge-code-intelligence
+    applicationRefs:
+      # The `aii-` prefix is charts/apps `argocd.appNamePrefix`. A bare pattern
+      # is an exact match.
+      - namePattern: aii-lightbridge-code-intelligence
+        useAnnotations: true

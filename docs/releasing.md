@@ -1,5 +1,13 @@
 # Releasing (tag-based deploys)
 
+> ⚠️ **Superseded by [ADR-0055](./adr/0055-oci-charts-and-image-updater-writeback-to-values-repo.md)
+> / [`continuous-delivery.md`](./continuous-delivery.md).** The repo is moving to
+> continuous delivery (OCI charts floated on a semver range + argocd-image-updater
+> write-back to the private `ai-helm-values` repo); `tools/release.sh` is being
+> retired. **This tag-based procedure still applies until the cutover completes** —
+> follow it while apps remain on path-based, tag-pinned sources. Once an app sets
+> `chart:` it no longer rides a release tag.
+
 Deploys are **tag-based**: every self-referencing `targetRevision` in the charts
 pins an immutable release tag (e.g. `release-2026.06.08`), and the root
 `ai-apps-v2` ArgoCD Application points at that tag. `main` is **never** a deploy
