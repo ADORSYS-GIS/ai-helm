@@ -81,12 +81,16 @@ argocd:
   # image-updater a WRITE GitHub App — both provisioned externally (ESO).
   valuesRepoURL: https://github.com/adorsys-gis/ai-helm-values
   valuesTargetRevision: main
-  # `depsOverlay` source repo. Defaults (unset) to selfRepoURL/selfTargetRevision
-  # so the environments/ overlays resolve from THIS repo today. At the ADR-0055
-  # cutover (environments/ migrates to the values repo) set these to
-  # valuesRepoURL / main.
-  # depsRepoURL: https://github.com/adorsys-gis/ai-helm-values
-  # depsTargetRevision: main
+  # `depsOverlay` source repo. The environments/ overlays now live (mirrored) in
+  # the values repo, so flat charts/apps depsOverlay apps resolve them from there
+  # @ main (continuous) — NOT from this repo's frozen release tag. (Defaults, if
+  # unset, fall back to selfRepoURL/selfTargetRevision.)
+  # ⚠️ TRANSITION: environments/ still exists in BOTH repos — the orchestrators
+  # (charts/{observability,librechat,models,mcps,lightbridge}) still read deps
+  # from ai-helm @ their own tag via their own knobs, so ai-helm's environments/
+  # can't be deleted until those migrate. Keep the two copies IN SYNC meanwhile.
+  depsRepoURL: https://github.com/adorsys-gis/ai-helm-values
+  depsTargetRevision: main
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
     # `spec.destination.name`. This is the WORKLOAD destination.
