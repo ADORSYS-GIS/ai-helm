@@ -38,11 +38,14 @@ which supersedes the tag-based release model ([ADR-0031](./adr/0031-tag-based-de
 
 1. **Create the private repo `adorsys-gis/ai-helm-values`.** Seed it from this repo's
    `environments/` tree (copy `base/` + `prod/`), then add per-app value files (Phase B).
-2. **Make the OCI charts package public.** First `helm push` creates
-   `ghcr.io/adorsys-gis/charts` as **private**; flip it to public in the GHCR package
-   settings (`gh api -X PATCH /orgs/adorsys-gis/packages/container/charts/visibility ...`
-   or the UI). Charts carry no secrets (ESO injects at sync) → public means ArgoCD needs
-   **no** credential to pull charts.
+2. **OCI charts package visibility — NOT a required step.** Chart *pulls* need no
+   special handling: this org defaults new GHCR packages to **public** (verified — the
+   first `publish_all` run pushed 27/27 charts and `charts/core-gateway` came out
+   `visibility=public`, anonymous `helm show chart` works), **and** even a private
+   package is fine — ArgoCD on this cluster already pulls private GHCR/OCI packages with
+   its existing registry creds (the `vymalo` / `vaam-store` Apps prove it). So there is
+   no public-flip prerequisite and no new chart-pull credential. (Charts carry no secrets
+   regardless — ESO injects at sync.)
 3. **Two credentials for the PRIVATE values repo** (provisioned via ESO, like every other
    secret here — see CLAUDE.md "Where the cluster's actual state lives"):
    - **Write** — a GitHub App with `contents:write` on `adorsys-gis/ai-helm-values`,
@@ -58,10 +61,14 @@ which supersedes the tag-based release model ([ADR-0031](./adr/0031-tag-based-de
 
 Do these in order; each is safe because nothing references the new pieces until the flip.
 
-**Phase A — publish.** Merge this branch to `main`. Confirm the OCI workflow publishes:
+**Phase A — publish.** ✅ Done — the machinery merged (PR #447) and the first
+`publish_all` run pushed 27/27 charts. Confirm any time:
 `helm show chart oci://ghcr.io/adorsys-gis/charts/<chart> --version <v>` resolves, and the
 pulled `.tgz` contains the vendored subcharts (`charts/common*.tgz`, `charts/bjw-template*.tgz`).
-Make the package public (Prereq 2).
+No package-visibility step is needed (Prereq 2). ⚠️ Note: a brand-new workflow does
+not run on the push that introduces it — the first publish was a manual
+`workflow_dispatch` with `publish_all: true`; subsequent `charts/**` merges publish
+the changed charts automatically.
 
 **Phase B — seed values.** For each app you will migrate, create
 `environments/<env>/values/<app>.yaml` in `ai-helm-values` with **just the image-tag field**
