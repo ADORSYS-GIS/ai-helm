@@ -124,17 +124,16 @@ applications:
   # orchestrator. controlPlane: true — it emits Application CRs, so it targets
   # in-cluster/argocd; the children it renders target home-remote and carry
   # the privileged PodSecurity label. See ADR-0020.
+  # OCI mode (ADR-0055): orchestrator chart floats from OCI so its App-of-Apps
+  # children config deploys continuously. Children source upstream charts
+  # (grafana/prometheus) by version, the observability-dashboards leaf from OCI,
+  # and the secrets/deps overlays from ai-helm-values@main (see charts/observability).
   - name: observability
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     controlPlane: true
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/observability
-      helm:
-        releaseName: observability
-        valuesObject: {}
+    chart: observability
+    releaseName: observability
     destination:
       namespace: observability
 

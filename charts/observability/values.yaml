@@ -24,10 +24,12 @@ argocd:
   # Namespace the child Application CRs live in (where ArgoCD watches them).
   namespace: argocd
   project: ai
-  # This repo, source for the local leaf charts + the secrets overlay.
-  # Deploy branch now → release tag next, never main (see charts/apps note).
-  repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.22-v02
+  # depsOverlay source (ADR-0055) for the child deps overlays (alloy /
+  # kube-state-metrics / grafana-operator / grafana): the values repo @ main.
+  # Leaf charts come from OCI per-child (see each child's `source`); the
+  # observability-secrets overlay sets its own values-repo source too.
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
   destination:
     # home-remote cluster (ADR-0017 guard). Children may override .namespace
     # but all observability children use `observability`.
@@ -65,8 +67,10 @@ children:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
+      # Deps overlay (ExternalSecrets + the allow-same-namespace NetworkPolicy) —
+      # from the values repo @ main (ADR-0055), like the other environments/ deps.
+      repoURL: https://github.com/adorsys-gis/ai-helm-values
+      targetRevision: main
       path: environments/prod/deps/observability-secrets
     destination:
       namespace: observability
@@ -1925,9 +1929,10 @@ children:
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "1"
     source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/observability-dashboards
+      # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+      repoURL: oci://ghcr.io/adorsys-gis/charts/observability-dashboards
+      chart: "."
+      targetRevision: ">=0.0.0"
       helm:
         releaseName: observability-dashboards
     destination:
