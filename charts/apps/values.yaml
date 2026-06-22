@@ -1183,41 +1183,68 @@ applications:
     destination:
       namespace: argocd
 
-  # --- Converse UI ---
+  # --- Converse UI --- (ADR-0055 continuous-delivery pilot: image write-back)
+  # Multi-source (the lightbridge pattern, writing to ai-helm-values):
+  #   Source A — the external converse-frontends chart (unchanged pin).
+  #   Source B — a $values ref to ai-helm-values, where argocd-image-updater commits
+  #     the newest sha-<gitsha> build. Strategy: newest-build + allow-tags ^sha-…,
+  #     UNSIGNED (converse-frontends images are not cosign-signed — no .sig tags).
+  # The image block lives in the $values file (NOT inline) so write-back owns it —
+  # an inline tag in valuesObject would override the $values file and fight the
+  # writer. Activation CR: charts/imageupdater (imageUpdaters[]). Seed file:
+  # ai-helm-values:/environments/prod/values/converse-ui.yaml.
   - name: converse-ui
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/converse-frontends
-      # Pinned to a commit for a reproducible release (was HEAD). External repo —
-      # bump this SHA deliberately when you want a newer converse-ui, then re-release.
-      targetRevision: 500dba11e91d1385135802db5898c961debfe6e2
-      path: charts/converse-frontend
-      helm:
-        releaseName: converse-ui
-        valuesObject:
-          conversefrontend:
-            controllers:
-              main:
-                podDisruptionBudget:
-                  # User-facing frontend: PDB ensures uptime during automated node maintenance.
-                  maxUnavailable: 1
-                containers:
-                  frontend:
-                    image:
-                      repository: ghcr.io/adorsys-gis/converse-frontends
-                      tag: sha-500dba1
-                      pullPolicy: IfNotPresent
-                    env:
-                      EXPO_PUBLIC_BACKEND_URL: "https://self-service.ai.camer.digital"
-                      EXPO_PUBLIC_USAGE_URL: "https://self-service.ai.camer.digital"
-                      EXPO_PUBLIC_ANALYTICS_URL: "https://analytics.ai.camer.digital"
-                      EXPO_PUBLIC_KEYCLOAK_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
-                      EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: "converse-frontend"
-                      EXPO_PUBLIC_KEYCLOAK_SCHEME: "self-service"
-                      # JWT Audience validation - ensures tokens are intended for this API
-                      EXPO_PUBLIC_KEYCLOAK_EXPECTED_AUDIENCE: "converse-frontend"
-                      EXPO_PUBLIC_KEYCLOAK_AUDIENCE_REQUIRED: "true"
+    additionalAnnotations:
+      argocd-image-updater.argoproj.io/image-list: frontend=ghcr.io/adorsys-gis/converse-frontends
+      argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/frontend.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/frontend.force-update: "true"
+      argocd-image-updater.argoproj.io/frontend.helm.image-name: conversefrontend.controllers.main.containers.frontend.image.repository
+      argocd-image-updater.argoproj.io/frontend.helm.image-tag: conversefrontend.controllers.main.containers.frontend.image.tag
+      argocd-image-updater.argoproj.io/write-back-method: git
+      argocd-image-updater.argoproj.io/git-repository: https://github.com/adorsys-gis/ai-helm-values.git
+      argocd-image-updater.argoproj.io/git-branch: main
+      argocd-image-updater.argoproj.io/write-back-target: helmvalues:/environments/prod/values/converse-ui.yaml
+      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys-gis
+    sources:
+      # Source A — the external converse-frontends chart (unchanged pin).
+      - repoURL: https://github.com/ADORSYS-GIS/converse-frontends
+        # Pinned to a commit for a reproducible release (was HEAD). External repo —
+        # bump this SHA deliberately when you want a newer converse-ui, then re-release.
+        targetRevision: 500dba11e91d1385135802db5898c961debfe6e2
+        path: charts/converse-frontend
+        helm:
+          releaseName: converse-ui
+          # image.{repository,tag,pullPolicy} come from Source B's $values file
+          # (image-updater owns them). Keep static config (PDB, env) inline below.
+          valueFiles:
+            - $values/environments/prod/values/converse-ui.yaml
+          ignoreMissingValueFiles: true
+          valuesObject:
+            conversefrontend:
+              controllers:
+                main:
+                  podDisruptionBudget:
+                    # User-facing frontend: PDB ensures uptime during automated node maintenance.
+                    maxUnavailable: 1
+                  containers:
+                    frontend:
+                      env:
+                        EXPO_PUBLIC_BACKEND_URL: "https://self-service.ai.camer.digital"
+                        EXPO_PUBLIC_USAGE_URL: "https://self-service.ai.camer.digital"
+                        EXPO_PUBLIC_ANALYTICS_URL: "https://analytics.ai.camer.digital"
+                        EXPO_PUBLIC_KEYCLOAK_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
+                        EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: "converse-frontend"
+                        EXPO_PUBLIC_KEYCLOAK_SCHEME: "self-service"
+                        # JWT Audience validation - ensures tokens are intended for this API
+                        EXPO_PUBLIC_KEYCLOAK_EXPECTED_AUDIENCE: "converse-frontend"
+                        EXPO_PUBLIC_KEYCLOAK_AUDIENCE_REQUIRED: "true"
+      # Source B — image tag from ai-helm-values; image-updater commits here.
+      - repoURL: https://github.com/adorsys-gis/ai-helm-values
+        targetRevision: main
+        ref: values
     destination:
       namespace: converse
 
