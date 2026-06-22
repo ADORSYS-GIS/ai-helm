@@ -1154,9 +1154,11 @@ applications:
     sources:
       # Source A — the chart. release-pinned like every ai-helm app; the release
       # script swaps this tag on each cut. Image tags come from Source B's $values.
-      - repoURL: https://github.com/ADORSYS-GIS/ai-helm
-        targetRevision: release-2026.06.22-v02
-        path: charts/lightbridge-code-intelligence
+      # OCI chart-float (ADR-0055): Source A (the chart) floats from OCI; Source B
+      # (the vymalo $values + image write-back) is unchanged below.
+      - repoURL: oci://ghcr.io/adorsys-gis/charts/lightbridge-code-intelligence
+        chart: "."
+        targetRevision: ">=0.0.0"
         helm:
           releaseName: lightbridge-ci
           valueFiles:
@@ -1336,9 +1338,10 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
     source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/model-serving-qwen3-4b
+      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
+      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-qwen3-4b
+      chart: "."
+      targetRevision: ">=0.0.0"
       helm:
         releaseName: model-serving-qwen3-4b
         valuesObject: { }
@@ -1370,9 +1373,10 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
     source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/model-serving-qwen3-5
+      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
+      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-qwen3-5
+      chart: "."
+      targetRevision: ">=0.0.0"
       helm:
         releaseName: model-serving-qwen3-5
         valuesObject: { }
