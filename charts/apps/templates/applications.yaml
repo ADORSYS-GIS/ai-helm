@@ -32,8 +32,8 @@ spec:
     `depsOverlay: environments/<env>/deps/<app>` to attach a kustomize source
     that emits its app-scoped dependency CRs (ingress Certificate, app-scoped
     ExternalSecret). The deps source points at `argocd.depsRepoURL @
-    depsTargetRevision`, which DEFAULT to selfRepoURL/selfTargetRevision (THIS
-    repo) — flip them to the values repo at the ADR-0055 environments/ cutover.
+    depsTargetRevision` (the `ai-helm-values` repo @ main, where `environments/`
+    lives post-ADR-0055 cutover).
     When `depsOverlay` is set we MUST emit `sources:` (plural); the singular
     `source:` block is kept intact and folded in as the first element — so a
     workload's big `valuesObject` never needs re-indenting.
@@ -50,7 +50,7 @@ spec:
   */}}
   {{- $depsSource := dict }}
   {{- if .depsOverlay }}
-  {{- $depsSource = dict "repoURL" ($.Values.argocd.depsRepoURL | default $.Values.argocd.selfRepoURL) "targetRevision" ($.Values.argocd.depsTargetRevision | default $.Values.argocd.selfTargetRevision) "path" .depsOverlay }}
+  {{- $depsSource = dict "repoURL" $.Values.argocd.depsRepoURL "targetRevision" $.Values.argocd.depsTargetRevision "path" .depsOverlay }}
   {{- end }}
   {{- if .chart }}
   {{- /* ── OCI mode ── */}}

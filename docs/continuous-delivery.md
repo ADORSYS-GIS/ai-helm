@@ -4,10 +4,12 @@ This is the **how**. The **why** is [ADR-0055](./adr/0055-oci-charts-and-image-u
 which supersedes the tag-based release model ([ADR-0031](./adr/0031-tag-based-deploys.md),
 [`releasing.md`](./releasing.md)) and the deferred write-back ([ADR-0013](./adr/0013-defer-image-updater-writeback.md)).
 
-> **Status: in cutover.** The in-repo machinery has landed (it is **inert** until an
-> app opts in via `chart:`). Until the steps below complete on the live cluster,
-> deploys are still **tag-based** — `tools/release.sh` + [`releasing.md`](./releasing.md)
-> remain operationally true. Onboard apps one at a time; do not big-bang.
+> **Status: ✅ cutover complete (2026-06-22).** The entire fleet — flat apps, all
+> five orchestrators, and the gateway/auth — runs on continuous delivery. The root
+> `ai-apps-v2` tracks `main`; `tools/release.sh`, `docs/releasing.md`, the
+> `release-*` tags, and this repo's `environments/` tree are retired/removed. The
+> phase-by-phase steps below are kept as the reference for *how* it was done and
+> how to onboard any future app.
 
 ## The model in one picture
 

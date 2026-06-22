@@ -1,6 +1,6 @@
 # ADR-0055: OCI-published charts + argocd-image-updater write-back to a private `ai-helm-values` repo
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-06-22
 **Deciders:** @stephane-segning
 **Supersedes:** [ADR-0013](./0013-defer-image-updater-writeback.md), [ADR-0031](./0031-tag-based-deploys.md)

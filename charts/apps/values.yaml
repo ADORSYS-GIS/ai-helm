@@ -51,20 +51,17 @@ argocd:
   # app-scoped dependency CRs of umbrella Applications — ADR-0018). The deps
   # overlays live under `environments/<env>/deps/<app>` in this repo.
   #
-  # ── Deployment-revision strategy (canonical note) ───────────────────────
-  # Deploys are TAG-BASED. This and every self-referencing `targetRevision` in
-  # this repo (this `selfTargetRevision`, the per-app self-Source revisions, and
-  # the orchestrator children in charts/ai-models + charts/librechart +
-  # charts/observability) pin an immutable release **tag**, currently
-  # `release-2026.06.22-v02`. `main` is NEVER a deploy target. To ship a new release:
-  # cut a new `release-YYYY.MM.DD` tag from the desired commit, bump these
-  # self-referencing `targetRevision`s to it (in the same commit the tag points
-  # at, so the tag is self-consistent), then repoint the root `ai-apps-v2`
-  # Application's targetRevision to the new tag. (HEAD revisions that point at
-  # OTHER repos are unaffected.) History: deploys previously ran from the branch
-  # `claude/magical-bohr-390242`; cut over to tags 2026-06-08.
-  selfRepoURL: https://github.com/ADORSYS-GIS/ai-helm
-  selfTargetRevision: release-2026.06.22-v02
+  # ── Deployment-revision strategy (canonical note, ADR-0055) ─────────────
+  # CONTINUOUS DELIVERY — there is NO release tag and no `tools/release.sh`
+  # (both retired 2026-06-22). The root `ai-apps-v2` tracks `main` (pinned in
+  # home-os `charts/cd`); charts publish to OCI on merge to main and every app
+  # floats on a semver range (`chartRegistry` @ `chartVersionRange`). Image tags,
+  # per-env values, and the `environments/` overlays live in the PRIVATE
+  # `ai-helm-values` repo (argocd-image-updater write-back). A merge to main is a
+  # live deploy. Rollback = `git revert` in ai-helm-values and/or pin an app's
+  # chartVersionRange. External NON-OCI sources (converse-frontends,
+  # lightbridge-repo-auth, the upstream Lightbridge chart, etc.) pin their own
+  # SHAs/versions. Runbook: docs/continuous-delivery.md.
   # ── Continuous-delivery knobs (ADR-0055) ────────────────────────────────
   # Charts are published to OCI on merge to main and consumed by any app entry
   # that sets `chart: <name>`. Such an app floats on `chartVersionRange` (a
@@ -81,14 +78,9 @@ argocd:
   # image-updater a WRITE GitHub App — both provisioned externally (ESO).
   valuesRepoURL: https://github.com/adorsys-gis/ai-helm-values
   valuesTargetRevision: main
-  # `depsOverlay` source repo. The environments/ overlays now live (mirrored) in
-  # the values repo, so flat charts/apps depsOverlay apps resolve them from there
-  # @ main (continuous) — NOT from this repo's frozen release tag. (Defaults, if
-  # unset, fall back to selfRepoURL/selfTargetRevision.)
-  # ⚠️ TRANSITION: environments/ still exists in BOTH repos — the orchestrators
-  # (charts/{observability,librechat,models,mcps,lightbridge}) still read deps
-  # from ai-helm @ their own tag via their own knobs, so ai-helm's environments/
-  # can't be deleted until those migrate. Keep the two copies IN SYNC meanwhile.
+  # `depsOverlay` source repo: the `environments/` overlays live in the values
+  # repo (this repo's copy was deleted at the ADR-0055 cutover), so depsOverlay
+  # apps resolve them from there @ main (continuous).
   depsRepoURL: https://github.com/adorsys-gis/ai-helm-values
   depsTargetRevision: main
   destination:

@@ -144,13 +144,12 @@ flowchart LR
 > CiliumNetworkPolicy ships at wave -3 (before the Mimir stores) so the ring's
 > memberlist gossip isn't blocked at startup — see [06 Networking](06-networking-tls.md).
 
-## Release flow — tag-based, two repos (ADR-0031)
+## Release flow — tag-based, two repos (ADR-0031) — RETIRED
 
-> ⚠️ **Superseded by ADR-0055 (continuous delivery), in cutover.** The tag-based
-> flow below applies to every app still on a path-based source; the target model
-> is OCI charts floated on a semver range + argocd-image-updater write-back to the
-> private `ai-helm-values` repo (no `release.sh`, no manual root repoint per
-> change). See the next section + [`../continuous-delivery.md`](../continuous-delivery.md).
+> ⚠️ **Retired (2026-06-22), superseded by ADR-0055 (continuous delivery).** The
+> tag-based flow below (`release.sh` + `release-*` tags + manual root repoint) no
+> longer runs — `tools/release.sh` and `docs/releasing.md` were deleted. Kept here
+> as historical context; the live model is the next section + [`../continuous-delivery.md`](../continuous-delivery.md).
 
 Deploys pin an **immutable release tag** (`release-YYYY.MM.DD-vNN`), never `main`.
 
@@ -176,7 +175,7 @@ sequenceDiagram
 > ⚠️ Skip the **home-os** step and the root self-heals back to the OLD tag — an
 > effective rollback. The durable source of the root's pin is `home-os`
 > `charts/cd`, not a live `kubectl patch`. Rollback = bump the root to any prior
-> tag (immutable → exact prior state). See [`../releasing.md`](../releasing.md).
+> tag (immutable → exact prior state). _(Historical — `releasing.md` removed.)_
 
 ## Release flow — continuous delivery (ADR-0055, the target model)
 
