@@ -543,9 +543,12 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/core-gateway
+      # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+      # Minimal in-place .source swap — the large inline valuesObject below is
+      # untouched. No depsOverlay on this app, so it renders as a single source.
+      repoURL: oci://ghcr.io/adorsys-gis/charts/core-gateway
+      chart: "."
+      targetRevision: ">=0.0.0"
       helm:
         releaseName: core-gateway
         valuesObject:
@@ -602,9 +605,13 @@ applications:
     # metadata endpoint. Folded in as a second (kustomize) source.
     depsOverlay: environments/prod/deps/security-policies
     source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22-v02
-      path: charts/kuadrant-policies
+      # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+      # Minimal in-place .source swap — the large inline AuthConfig valuesObject
+      # below is untouched. depsOverlay still appends Source B from the values
+      # repo (argocd.depsRepoURL @ depsTargetRevision = ai-helm-values @ main).
+      repoURL: oci://ghcr.io/adorsys-gis/charts/kuadrant-policies
+      chart: "."
+      targetRevision: ">=0.0.0"
       helm:
         releaseName: security-policies
         valuesObject:
