@@ -26,7 +26,7 @@ spec:
 {{- if not (eq $mcpConfig.enabled false) }}
           # ── MCP: {{ $mcpName }} ──────────────────────────────────────────
           - appName: {{ printf "%s-%s" $.Release.Name $mcpName | quote }}
-            chartPath: charts/mcp
+            chartName: mcp
             valuesYaml: |-
 {{- $childValues := dict
       "mcp" $mcpConfig.mcp
@@ -45,9 +45,13 @@ spec:
     spec:
       project: {{ .Values.argocd.project | quote }}
       source:
-        repoURL: {{ .Values.argocd.repoURL | quote }}
-        targetRevision: {{ .Values.argocd.targetRevision | quote }}
-        path: '{{ "{{ .chartPath }}" }}'
+        # OCI chart-float (ADR-0055): the leaf chart's name is part of the repoURL
+        # PATH with chart: "." (full-path form — see ai-helm #453). chartRegistry is
+        # Helm-substituted here; {{ "{{ .chartName }}" }} is expanded per-element by
+        # the AppSet controller → oci://ghcr.io/adorsys-gis/charts/mcp.
+        repoURL: '{{ .Values.argocd.chartRegistry }}/{{ "{{ .chartName }}" }}'
+        chart: "."
+        targetRevision: {{ .Values.argocd.chartVersionRange | quote }}
         helm:
           releaseName: '{{ "{{ .appName }}" }}'
           values: |
