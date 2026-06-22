@@ -1144,13 +1144,17 @@ applications:
       notifications.ssegning.me/github-revision: main
       notifications.ssegning.me/environment-url: https://code-intelligence.ai.camer.digital
     sources:
-      # Source A — the chart. release-pinned like every ai-helm app; the release
-      # script swaps this tag on each cut. Image tags come from Source B's $values.
-      # OCI chart-float (ADR-0055): Source A (the chart) floats from OCI; Source B
-      # (the vymalo $values + image write-back) is unchanged below.
-      - repoURL: oci://ghcr.io/adorsys-gis/charts/lightbridge-code-intelligence
-        chart: "."
-        targetRevision: ">=0.0.0"
+      # Source A — the chart, as a GIT-PATH source tracking ai-helm `main`
+      # (continuous, like everything else — no tag). ⚠️ NOT OCI on purpose: this
+      # app has argocd-image-updater git write-back (Source B → the vymalo repo),
+      # and image-updater CANNOT introspect/update the image params on an OCI
+      # `chart: "."` source — migrating Source A to OCI (PR #461) silently froze
+      # write-back (stuck on an old sha while newer signed builds piled up).
+      # Keep it git-path so write-back works. (converse-ui is the same shape: a
+      # git chart source + write-back.) ADR-0055.
+      - repoURL: https://github.com/ADORSYS-GIS/ai-helm
+        targetRevision: main
+        path: charts/lightbridge-code-intelligence
         helm:
           releaseName: lightbridge-ci
           valueFiles:
