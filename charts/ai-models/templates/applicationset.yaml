@@ -23,7 +23,7 @@ spec:
         elements:
           # ── Backends (shared infra) — sync-wave -1 ────────────────────
           - appName: {{ printf "%s-backends" .Release.Name | quote }}
-            chartPath: charts/ai-models-backends
+            chartName: ai-models-backends
             syncWave: "-1"
             valuesYaml: |-
 {{ (dict "backends" .Values.backends "externalSecrets" .Values.externalSecrets) | toYaml | indent 14 }}
@@ -34,7 +34,7 @@ spec:
           # /v1/models/info). Per-env overrides should hit that leaf
           # chart directly via ai-gitops rather than this orchestrator.
           - appName: {{ printf "%s-info" .Release.Name | quote }}
-            chartPath: charts/ai-models-info
+            chartName: ai-models-info
             syncWave: "1"
             valuesYaml: |-
 {{- $infoValues := dict
@@ -47,7 +47,7 @@ spec:
 {{- if not (eq $modelConfig.enabled false) }}
           # ── Model: {{ $modelName }} — sync-wave 0 ───────────────────────
           - appName: {{ printf "%s-%s" $.Release.Name $modelName | quote }}
-            chartPath: charts/ai-model
+            chartName: ai-model
             syncWave: "0"
             valuesYaml: |-
 {{- $childValues := dict
@@ -75,9 +75,12 @@ spec:
     spec:
       project: {{ .Values.argocd.project | quote }}
       source:
-        repoURL: {{ .Values.argocd.repoURL | quote }}
-        targetRevision: {{ .Values.argocd.targetRevision | quote }}
-        path: '{{ "{{ .chartPath }}" }}'
+        # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+        # chartRegistry is Helm-substituted; {{ "{{ .chartName }}" }} is expanded
+        # per-element by the AppSet controller → oci://…/charts/<chartName>.
+        repoURL: '{{ .Values.argocd.chartRegistry }}/{{ "{{ .chartName }}" }}'
+        chart: "."
+        targetRevision: {{ .Values.argocd.chartVersionRange | quote }}
         helm:
           releaseName: '{{ "{{ .appName }}" }}'
           values: |
