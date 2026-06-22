@@ -1276,26 +1276,29 @@ applications:
   - name: mongodb-backup
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22
-      path: charts/mongodb-backup
-      helm:
-        releaseName: mongodb-backup
-        valuesObject:
-          mongodb-backup:
-            s3:
-              secretName: librechat-s3-config
-            controllers:
-              main:
-                cronjob:
-                  successfulJobsHistory: 3
-                  failedJobsHistory: 3
-                  startingDeadlineSeconds: 30
-                initContainers:
-                  exporter:
-                    env:
-                      MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017, #librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
+    # ADR-0055 OCI-chart-float pilot. Consume charts/mongodb-backup from the OCI
+    # registry on a floating semver range (Source A = argocd.chartRegistry @
+    # chartVersionRange), with per-env values from ai-helm-values via $values
+    # (Source B). No image write-back here (the backup image is static) — this
+    # validates the `chart:` OCI path that converse-ui's external chart couldn't.
+    # Once live, a merge that republishes charts/mongodb-backup auto-floats this
+    # app to the new version on the next reconcile (no release/repoint needed).
+    chart: mongodb-backup
+    releaseName: mongodb-backup
+    valuesObject:
+      mongodb-backup:
+        s3:
+          secretName: librechat-s3-config
+        controllers:
+          main:
+            cronjob:
+              successfulJobsHistory: 3
+              failedJobsHistory: 3
+              startingDeadlineSeconds: 30
+            initContainers:
+              exporter:
+                env:
+                  MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017, #librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
     destination:
       namespace: converse-chat
 
