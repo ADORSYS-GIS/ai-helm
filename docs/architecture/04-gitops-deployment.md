@@ -3,7 +3,9 @@
 How charts in this repo become running workloads — the ArgoCD machinery, the
 two-cluster split, the render patterns, the sync-wave ordering, and the
 release flow. Source ADRs: **0017** (destinations), **0018** (umbrellas +
-environments), **0031** (tag-based deploys).
+environments), **0031** (tag-based deploys), **0055** (continuous delivery —
+OCI charts + image-updater write-back; supersedes 0031, see the Release-flow
+section).
 
 ## Two clusters, two roles
 
@@ -144,6 +146,12 @@ flowchart LR
 
 ## Release flow — tag-based, two repos (ADR-0031)
 
+> ⚠️ **Superseded by ADR-0055 (continuous delivery), in cutover.** The tag-based
+> flow below applies to every app still on a path-based source; the target model
+> is OCI charts floated on a semver range + argocd-image-updater write-back to the
+> private `ai-helm-values` repo (no `release.sh`, no manual root repoint per
+> change). See the next section + [`../continuous-delivery.md`](../continuous-delivery.md).
+
 Deploys pin an **immutable release tag** (`release-YYYY.MM.DD-vNN`), never `main`.
 
 ```mermaid
@@ -169,5 +177,35 @@ sequenceDiagram
 > effective rollback. The durable source of the root's pin is `home-os`
 > `charts/cd`, not a live `kubectl patch`. Rollback = bump the root to any prior
 > tag (immutable → exact prior state). See [`../releasing.md`](../releasing.md).
+
+## Release flow — continuous delivery (ADR-0055, the target model)
+
+Per-app opt-in via `chart:` on the `charts/apps` entry. Two independent flows; no
+`release.sh`, no manual root repoint per change. Immutability is traded away —
+charts float on a semver range, image tags float via write-back.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Dev as Merge to ai-helm main
+    participant CI as publish-charts-oci
+    participant OCI as ghcr.io/adorsys-gis/charts
+    participant IMG as image registry
+    participant IU as argocd-image-updater
+    participant VAL as ai-helm-values (private)
+    participant AC as ArgoCD
+
+    Dev->>CI: chart files changed
+    CI->>OCI: helm push (auto-semver, libs vendored)
+    Note over OCI,AC: child Apps float on chartVersionRange → pull newest next reconcile
+    IMG-->>IU: new signed image (sha-*/semver)
+    IU->>VAL: commit tag into environments/<env>/values/<app>.yaml (cosign-gated)
+    VAL-->>AC: $values Source B updated
+    AC->>AC: sync (OCI chart + values + deps)
+```
+
+> Rollback: `git revert` in `ai-helm-values` (image tag) and/or pin an app's
+> `chartVersionRange` to a known-good version (chart). No immutable fleet snapshot.
+> Runbook + the TWO-credential prerequisite: [`../continuous-delivery.md`](../continuous-delivery.md).
 
 → Related: [06 Networking & TLS](06-networking-tls.md) · [07 Data & secrets](07-data-secrets.md)

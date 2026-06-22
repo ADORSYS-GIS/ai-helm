@@ -28,20 +28,43 @@ spec:
   # set their children to `argocd.project: ai`. Keep it that way.
   project: ai
   {{- /*
-    Multi-source "umbrella" assembly (ADR-0018). An app entry may set
+    Multi-source "umbrella" assembly (ADR-0018 + ADR-0055). An app entry may set
     `depsOverlay: environments/<env>/deps/<app>` to attach a kustomize source
     that emits its app-scoped dependency CRs (ingress Certificate, app-scoped
-    ExternalSecret). The deps source always points at THIS repo
-    (argocd.selfRepoURL @ argocd.selfTargetRevision). When `depsOverlay` is
-    set we MUST emit `sources:` (plural); the singular `source:` block is kept
-    intact and folded in as the first element — so a workload's big
-    `valuesObject` never needs re-indenting.
+    ExternalSecret). The deps source points at `argocd.depsRepoURL @
+    depsTargetRevision`, which DEFAULT to selfRepoURL/selfTargetRevision (THIS
+    repo) — flip them to the values repo at the ADR-0055 environments/ cutover.
+    When `depsOverlay` is set we MUST emit `sources:` (plural); the singular
+    `source:` block is kept intact and folded in as the first element — so a
+    workload's big `valuesObject` never needs re-indenting.
+
+    OCI mode (ADR-0055): an app entry sets `chart: <name>` to consume that chart
+    from the OCI registry (`argocd.chartRegistry` @ `argocd.chartVersionRange`,
+    a floating semver range — immutability is gone, the newest published chart
+    wins each reconcile) and pull its image-tag / per-env values from the values
+    repo via a `$values` ref source. argocd-image-updater write-back commits the
+    image tag into that values file. `$values` REQUIRES plural `sources:` and
+    exactly ONE `ref:` source (we own it here — an entry must not declare its
+    own `ref`). Apps WITHOUT `chart:` keep the legacy path/tag source verbatim,
+    so the OCI rollout is per-app and backward-compatible.
   */}}
   {{- $depsSource := dict }}
   {{- if .depsOverlay }}
-  {{- $depsSource = dict "repoURL" $.Values.argocd.selfRepoURL "targetRevision" $.Values.argocd.selfTargetRevision "path" .depsOverlay }}
+  {{- $depsSource = dict "repoURL" ($.Values.argocd.depsRepoURL | default $.Values.argocd.selfRepoURL) "targetRevision" ($.Values.argocd.depsTargetRevision | default $.Values.argocd.selfTargetRevision) "path" .depsOverlay }}
   {{- end }}
-  {{- if .sources }}
+  {{- if .chart }}
+  {{- /* ── OCI mode ── */}}
+  {{- $env := $.Values.argocd.env | default "prod" }}
+  {{- $valuesFile := .valuesFile | default (printf "environments/%s/values/%s.yaml" $env .name) }}
+  {{- $helm := dict "releaseName" (.releaseName | default .name) "valueFiles" (list (printf "$values/%s" $valuesFile)) "ignoreMissingValueFiles" true }}
+  {{- with .valuesObject }}{{- $_ := set $helm "valuesObject" . }}{{- end }}
+  {{- $chartSource := dict "repoURL" $.Values.argocd.chartRegistry "chart" .chart "targetRevision" ($.Values.argocd.chartVersionRange | default ">=0.0.0") "helm" $helm }}
+  {{- $valuesSource := dict "repoURL" $.Values.argocd.valuesRepoURL "targetRevision" ($.Values.argocd.valuesTargetRevision | default "main") "ref" "values" }}
+  {{- $ociSources := list $chartSource $valuesSource }}
+  {{- if .depsOverlay }}{{- $ociSources = append $ociSources $depsSource }}{{- end }}
+  sources:
+    {{- toYaml $ociSources | nindent 4 }}
+  {{- else if .sources }}
   sources:
     {{- if .depsOverlay }}
     {{- toYaml (append .sources $depsSource) | nindent 4 }}

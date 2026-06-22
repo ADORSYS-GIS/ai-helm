@@ -325,6 +325,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0048 | Global opencode-browser plugin + lean default primary agent |
 | 0053 | Vanity-domain redirects (`kivoyo.com` → `camer.digital`, temporary) |
 | 0054 | Adopt the k3s-bundled metrics-server; drop our GitOps copy (ends the ADR-0015 name collision) |
+| 0055 | Continuous delivery: OCI-published charts (float on a semver range) + argocd-image-updater write-back to the private `ai-helm-values` repo; retires tag-based deploys (supersedes 0013, 0031; amends 0018) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
@@ -352,9 +353,11 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Load test for 2000/5000 not yet re-run on Hetzner** | Capacity claims unvalidated | Envelope in `docs/gateway-capacity.md`; HPA right-sized; run `plans/artillery/` |
 | **Keycloak `billing_plan` / org mappers not landed** | Plan falls back to `free` | ADR-0021 external dependency |
 | **Cilium deny-egress fragility** | New egress needs a CiliumNetworkPolicy or silent crashloop | Overlay pattern established ([06](./architecture/06-networking-tls.md)) |
-| **`ai-gitops` referenced but never created** | Stale ADRs (0010/0013) mislead | CLAUDE.md flags it; env overrides in-repo |
+| **`ai-gitops` referenced but never created** | Stale ADRs (0010/0013) mislead | Realised as the private `ai-helm-values` (values-only) — ADR-0055 |
 | **Single env (`prod`) only** | No staging to validate before release | Second env is a drop-in `environments/<env>/` |
-| **Tag-based deploys = manual two-repo step** | Forget the home-os repoint → root self-heals to old tag | Release runbook (CLAUDE.md, `docs/releasing.md`) |
+| **Tag-based deploys = manual two-repo step** | Forget the home-os repoint → root self-heals to old tag | Being retired by continuous delivery (ADR-0055); runbook `docs/continuous-delivery.md` |
+| **CD: immutability abandoned (ADR-0055)** | A merge / in-range upstream tag is a live deploy; no frozen fleet snapshot | Accepted trade-off; cosign-gate first-party, keep `allow-tags` tight, rollback via `git revert` in `ai-helm-values` |
+| **CD: private `ai-helm-values` needs TWO creds** | Miss the ArgoCD read repo-secret → mass `ComparisonError` | Documented #1 prereq in `docs/continuous-delivery.md` |
 | **Mimir ring wedges if memberlist blocked at startup** | Metrics silently dropped | Guarded: wave -3 `allow-same-namespace` + `rejoin_interval: 1m` |
 | **External MCP proxy engines are interim** | openresty/Content-Type rewrites carried until AIEG #2218/#2219 land | Tracked in ADR-0040/0041 |
 | **MCP `MCP_TOKEN` token-bind race** | Empty-token proxy rejects all requests | Guarded: `optional: false` (waits for ESO) |

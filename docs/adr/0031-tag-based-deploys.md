@@ -1,8 +1,17 @@
 # ADR-0031: Tag-based deploys (`release-YYYY.MM.DD`), never `main`
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0055](./0055-oci-charts-and-image-updater-writeback-to-values-repo.md)
 **Date:** 2026-06-08
 **Deciders:** @stephane-segning
+
+> **Why superseded (2026-06-22):** ADR-0055 retires the tag-based model in favour
+> of continuous delivery — charts publish as OCI on merge and float on a semver
+> range, image tags flow via argocd-image-updater write-back to the private
+> `ai-helm-values` repo. Immutability (this ADR's core benefit) is **deliberately
+> abandoned**: a merge to `main` is now a live deploy, and rollback becomes
+> `git revert` in the values repo rather than repointing to a prior tag. The
+> `tools/release.sh` automation this ADR introduced is retired. Body preserved as
+> historical record.
 
 ## Context
 

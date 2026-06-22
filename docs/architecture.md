@@ -85,9 +85,15 @@ flowchart TB
 ## GitOps in one diagram
 
 Two clusters: ArgoCD runs on `admin@homeos`; workloads run on Hetzner
-`home-remote`. The root `ai-apps-v2` Application is **applied manually** and pins
-an **immutable release tag** (never `main` — ADR-0031). Detail:
+`home-remote`. The root `ai-apps-v2` Application is **applied from `home-os`** and
+pins an **immutable release tag** (never `main` — ADR-0031). Detail:
 [suite · 04 GitOps](architecture/04-gitops-deployment.md).
+
+> ⚠️ **Migrating to continuous delivery (ADR-0055):** tag-based deploys are being
+> replaced by OCI-published charts floated on a semver range + argocd-image-updater
+> write-back to the private `ai-helm-values` repo. Per-app opt-in (`chart:`); the
+> tag model applies until each app is cut over. Runbook:
+> [`continuous-delivery.md`](continuous-delivery.md).
 
 ```mermaid
 flowchart LR
@@ -143,8 +149,11 @@ by name (no Application here): **Traefik**, **CloudNativePG** + Barman,
 **cert-manager** + ClusterIssuers, **redis-ha**, the **External Secrets
 Operator** + the `ssegning-aws` store, and the **OpenTelemetry Operator**. There
 is also **no `ai-gitops` repo** — per-env config lives in `environments/` and the
-root Application is applied manually with its tag pinned in `home-os`
-`charts/cd`. Detail: [suite · 07 Data & secrets](architecture/07-data-secrets.md).
+root Application is applied from `home-os` with its tag pinned in `home-os`
+`charts/cd`. (ADR-0055 introduces a private **`ai-helm-values`** repo for the
+written-back image tags + the migrated `environments/` overlays — values-only;
+the root still lives in `home-os`.) Detail:
+[suite · 07 Data & secrets](architecture/07-data-secrets.md).
 
 ## Glossary
 

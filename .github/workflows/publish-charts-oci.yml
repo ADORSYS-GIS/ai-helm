@@ -1,0 +1,172 @@
+name: Publish Charts to OCI
+
+# Continuous delivery (ADR-0055): on every merge to main, publish each CHANGED
+# chart (and the transitive dependents of any changed local library) to the OCI
+# registry oci://ghcr.io/adorsys-gis/charts. Child Applications float on a semver
+# range and pick up the newest published version on the next reconcile.
+#
+# Versioning is monotonic + clean X.Y.Z, DERIVED AT PUBLISH TIME (never committed
+# back into Chart.yaml — so this workflow can't re-trigger itself):
+#   MAJOR.MINOR  ← the floor in charts/<name>/Chart.yaml `version:` (bump
+#                  deliberately in a PR for a notable change)
+#   PATCH        ← `git rev-list --count` of commits touching the chart's dir
+#                  (auto-increments on every merge that touches it; monotonic;
+#                  a MINOR bump always outranks any patch in the prior minor).
+# Pre-release suffixes are never emitted, so `>=0.0.0`-style ranges always match.
+
+on:
+  push:
+    branches: [main]
+    paths: ["charts/**"]
+  workflow_dispatch:
+    inputs:
+      publish_all:
+        description: "Publish ALL non-library charts (full resync), not just changed ones"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  # Serialise publishes on main so two merges can't race the registry / counts.
+  group: oci-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  OCI_REPO: oci://ghcr.io/adorsys-gis/charts
+  # Local library / template charts: built first (dependency-ordered) so their
+  # file:// deps are vendored into dependents, and NEVER published standalone
+  # (consumers vendor them at package time). `apps` is the root umbrella — the
+  # root Application renders it from git, never from OCI — so it is not published.
+  SKIP_PUBLISH: "common bjw-common bjw-template apps"
+  DEP_BUILD_ORDER: "common bjw-common bjw-template"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history: changed-chart detection + patch counting
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.15.4 # aligned with helm-lint.yaml / release-helm-charts.yml
+
+      - name: Set up yq
+        uses: mikefarah/yq@v4
+
+      - name: Determine charts to publish
+        id: select
+        run: |
+          set -euo pipefail
+          all_charts=()
+          for cf in charts/*/Chart.yaml; do all_charts+=("$(basename "$(dirname "$cf")")"); done
+
+          # ── reverse-dependency map: lib -> dependents (via file://../<lib>) ──
+          declare -A deps_of   # chart -> "lib1 lib2"
+          for c in "${all_charts[@]}"; do
+            libs=$(yq e '.dependencies[]?.repository | select(test("^file://"))' "charts/$c/Chart.yaml" \
+                    | sed -E 's#^file://\.\./##' | tr '\n' ' ')
+            deps_of[$c]="$libs"
+          done
+
+          changed=()
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish_all }}" == "true" ]]; then
+            changed=("${all_charts[@]}")
+          else
+            before="${{ github.event.before }}"
+            if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
+              before="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
+            fi
+            mapfile -t touched < <(git diff --name-only "$before" "${{ github.sha }}" -- 'charts/**' \
+                                    | sed -E 's#^charts/([^/]+)/.*#\1#' | sort -u)
+            changed=("${touched[@]}")
+          fi
+
+          # ── fan out: if a changed chart is a local lib, add its dependents ──
+          # (iterate to closure so bjw-common -> bjw-template -> leaves propagate)
+          to_set() { printf '%s\n' "$@" | sort -u | tr '\n' ' '; }
+          cur="$(to_set "${changed[@]:-}")"
+          for _ in 1 2 3; do
+            next="$cur"
+            for c in "${all_charts[@]}"; do
+              for lib in ${deps_of[$c]}; do
+                if [[ " $cur " == *" $lib "* ]]; then next="$next $c"; fi
+              done
+            done
+            next="$(to_set $next)"
+            [[ "$next" == "$cur" ]] && break
+            cur="$next"
+          done
+
+          # ── drop empties + the skip-list from the PUBLISH set ──
+          publish=()
+          for c in $cur; do
+            [[ -z "$c" ]] && continue
+            [[ -d "charts/$c" ]] || continue
+            case " $SKIP_PUBLISH " in *" $c "*) continue;; esac
+            [[ "$(yq e '.type // "application"' "charts/$c/Chart.yaml")" == "library" ]] && continue
+            publish+=("$c")
+          done
+          echo "charts=${publish[*]:-}" >> "$GITHUB_OUTPUT"
+          echo "Will publish: ${publish[*]:-<none>}"
+
+      - name: Add upstream chart repos
+        if: steps.select.outputs.charts != ''
+        run: |
+          set -euo pipefail
+          repos=$(find charts -name 'Chart.yaml' -exec yq e '.dependencies[]?.repository' {} \; | sort -u)
+          for repo in $repos; do
+            case "$repo" in
+              oci://*|file://*|"") continue;;
+            esac
+            name=$(basename "$repo" | tr -cd '[:alnum:]-')
+            [[ -n "$name" ]] && helm repo add "$name" "$repo" || true
+          done
+          helm repo update || true
+
+      - name: Build local library deps first (dependency-ordered)
+        if: steps.select.outputs.charts != ''
+        run: |
+          set -euo pipefail
+          for lib in $DEP_BUILD_ORDER; do
+            [[ -f "charts/$lib/Chart.yaml" ]] || continue
+            echo "helm dep build charts/$lib"
+            helm dependency build "charts/$lib"
+          done
+
+      - name: Log in to GHCR
+        if: steps.select.outputs.charts != ''
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Package & push changed charts
+        if: steps.select.outputs.charts != ''
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pkg
+          for c in ${{ steps.select.outputs.charts }}; do
+            # version = <major.minor from Chart.yaml>.<commits touching the chart>
+            base=$(yq e '.version' "charts/$c/Chart.yaml")
+            mm="${base%.*}"                     # strip the Chart.yaml patch → MAJOR.MINOR
+            patch=$(git rev-list --count HEAD -- "charts/$c")
+            ver="${mm}.${patch}"
+            echo "── $c → $ver ──"
+            # idempotent: skip if this exact version is already in the registry
+            if helm show chart "$OCI_REPO/$c" --version "$ver" >/dev/null 2>&1; then
+              echo "  already published, skipping"
+              continue
+            fi
+            helm dependency build "charts/$c"
+            helm package "charts/$c" --version "$ver" --app-version "$ver" -d /tmp/pkg
+            helm push "/tmp/pkg/${c}-${ver}.tgz" "$OCI_REPO"
+          done
+
+      - name: No charts to publish
+        if: steps.select.outputs.charts == ''
+        run: echo "No changed charts (after library fan-out) needed publishing."

@@ -1,9 +1,16 @@
 ## ADR-0013: Defer argocd-image-updater write-back; manual chart-version bumps stay
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0055](./0055-oci-charts-and-image-updater-writeback-to-values-repo.md)
 **Date:** 2026-05-24
 **Deciders:** @stephane-segning
 **Supersedes:** [ADR-0010](./0010-argocd-image-updater-writeback-to-ai-gitops.md)
+
+> **Why superseded (2026-06-22):** the two preconditions this ADR named for
+> revisiting have both materialised — a real deployment-state repo now exists
+> (`adorsys-gis/ai-helm-values`, the long-absent "ai-gitops"), and the full
+> write-back pattern proved itself in production on `charts/lightbridge-code-intelligence`.
+> ADR-0055 un-defers write-back and rolls it out fleet-wide. Body preserved as
+> historical record.
 
 ## Context
 
