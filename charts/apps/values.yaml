@@ -65,6 +65,28 @@ argocd:
   # `claude/magical-bohr-390242`; cut over to tags 2026-06-08.
   selfRepoURL: https://github.com/ADORSYS-GIS/ai-helm
   selfTargetRevision: release-2026.06.21-v03
+  # ── Continuous-delivery knobs (ADR-0055) ────────────────────────────────
+  # Charts are published to OCI on merge to main and consumed by any app entry
+  # that sets `chart: <name>`. Such an app floats on `chartVersionRange` (a
+  # semver range → newest published chart wins each reconcile; immutability is
+  # deliberately gone) and pulls its image-tag / per-env values from the values
+  # repo via a `$values` source at `environments/<env>/values/<app>.yaml`.
+  # argocd-image-updater commits the new image tag into that file (direct,
+  # cosign-gated). Apps that don't set `chart:` keep the legacy path/tag source.
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"   # see ADR-0055: keep published versions clean X.Y.Z (ranges skip pre-releases unless `-0`)
+  env: prod
+  # The PRIVATE deployment-state repo (image tags written-back + migrated
+  # environments/ overlays). ArgoCD needs a READ repo-secret for it and
+  # image-updater a WRITE GitHub App — both provisioned externally (ESO).
+  valuesRepoURL: https://github.com/adorsys-gis/ai-helm-values
+  valuesTargetRevision: main
+  # `depsOverlay` source repo. Defaults (unset) to selfRepoURL/selfTargetRevision
+  # so the environments/ overlays resolve from THIS repo today. At the ADR-0055
+  # cutover (environments/ migrates to the values repo) set these to
+  # valuesRepoURL / main.
+  # depsRepoURL: https://github.com/adorsys-gis/ai-helm-values
+  # depsTargetRevision: main
   destination:
     # Cluster context name registered in ArgoCD. Used verbatim as
     # `spec.destination.name`. This is the WORKLOAD destination.
