@@ -1,0 +1,26 @@
+apiVersion: v2
+name: imageupdater
+description: |
+  GitOps-managed argocd-image-updater `ImageUpdater` CRs that activate the
+  CRD-based controller for the repo's continuous-delivery Applications (ADR-0055).
+
+  One CR per `.Values.imageUpdaters` entry, each selecting one or more target
+  Applications by name pattern (e.g. `aii-<app>`). The per-image update config
+  (image-list, update-strategy, cosign, git write-back to the ai-helm-values
+  repo) lives on the TARGET Application's annotations in charts/apps/values.yaml;
+  these CRs just opt the app in via `useAnnotations: true`.
+
+  Deployed as a control-plane object (ADR-0017): the app entry in charts/apps
+  sets `controlPlane: true`, so this lands in the in-cluster `argocd` namespace
+  where the image-updater controller (watch.namespaces=argocd-image-updater,argocd)
+  reconciles it. The operator itself is installed by home-os
+  (charts/argocd-image-updater); this chart only ships the activation CRs.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - argocd-image-updater
+  - continuous-delivery
+  - control-plane
+maintainers:
+  - name: ai-helm

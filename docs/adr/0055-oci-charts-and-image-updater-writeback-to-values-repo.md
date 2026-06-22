@@ -137,8 +137,10 @@ bootstrap chicken-and-egg). OCI consumption is for leaf/workload charts only.
 - **Amends** [ADR-0018](./0018-umbrella-apps-and-env-overlays.md) (`environments/`
   moves to `ai-helm-values`; `depsOverlay` sources retarget).
 - **Generalizes** the live pattern in `charts/lightbridge-code-intelligence`
-  (image-updater + cosign + `$values` write-back) and
-  `charts/lightbridge-code-intelligence-imageupdater` (CRD `ImageUpdater` activation).
+  (image-updater + cosign + `$values` write-back) and the CRD `ImageUpdater`
+  activation chart `charts/imageupdater` (renamed from
+  `charts/lightbridge-code-intelligence-imageupdater`; its `imageUpdaters[]` list
+  now onboards every continuous-delivery app, not just lightbridge).
 - **Builds on** [ADR-0017](./0017-home-remote-destination-invariant.md) (destinations
   unchanged) and the deferred design in
   [ADR-0010](./0010-argocd-image-updater-writeback-to-ai-gitops.md).
