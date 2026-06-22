@@ -11,11 +11,12 @@
 argocd:
   namespace: argocd
   project: ai
-  # Source repo for the leaf chart (charts/mcp). Deploys are tag-based: pinned to
-  # the immutable release tag below (main is never a deploy target). See the
-  # canonical note in charts/apps/values.yaml.
-  repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.22-v02
+  # OCI chart-float (ADR-0055): children source the leaf chart (mcp) from the OCI
+  # registry on a floating semver range — full chart path in repoURL + chart "."
+  # (the applicationset template builds `<chartRegistry>/<chartName>`). Replaces
+  # the old tag-pinned ai-helm path source; the orchestrator now floats on main.
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
   destination:
     # Every child Application targets home-remote (ADR-0017). The destination
     # helper hard-fails the render if this resolves to in-cluster unless
