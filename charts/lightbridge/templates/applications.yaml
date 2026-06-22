@@ -28,9 +28,10 @@ metadata:
 spec:
   project: {{ $a.project | quote }}
   source:
-    repoURL: {{ $a.repoURL | quote }}
-    targetRevision: {{ $a.targetRevision | quote }}
-    path: {{ .Values.secrets.chartPath | quote }}
+    # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.secrets.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
     helm:
       releaseName: {{ .Values.secrets.releaseName | quote }}
   destination:
@@ -55,9 +56,10 @@ metadata:
 spec:
   project: {{ $a.project | quote }}
   source:
-    repoURL: {{ $a.repoURL | quote }}
-    targetRevision: {{ $a.targetRevision | quote }}
-    path: {{ .Values.db.chartPath | quote }}
+    # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.db.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
     helm:
       releaseName: {{ .Values.db.releaseName | quote }}
   destination:

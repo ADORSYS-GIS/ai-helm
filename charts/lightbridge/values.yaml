@@ -13,11 +13,16 @@
 argocd:
   # ArgoCD project the children belong to.
   project: ai
-  # This repo, source for the secrets + db leaf charts + the cert overlay.
-  # Deploys are tag-based: pinned to the immutable release tag below (main is
-  # never a deploy target). See the canonical note in charts/apps/values.yaml.
-  repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.22-v02
+  # OCI chart-float (ADR-0055). Two sources of truth now:
+  #  • chartRegistry/chartVersionRange — the secrets + db leaf charts float from
+  #    OCI (full chart path in repoURL + chart "."; template builds
+  #    `<chartRegistry>/<chartName>`).
+  #  • repoURL/targetRevision — the app child's cert/deps overlay (Source B), now
+  #    the values repo @ main (where environments/ lives).
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
   destination:
     # The home-remote cluster all children target. Repo invariant (ADR-0017):
     # workloads NEVER deploy to the cluster ArgoCD runs in. The destination
@@ -42,7 +47,7 @@ argocd:
 secrets:
   enabled: true
   appName: lightbridge-secrets
-  chartPath: charts/lightbridge-secrets
+  chartName: lightbridge-secrets   # OCI chart name (was chartPath: charts/<name>)
   releaseName: lightbridge-secrets
   syncWave: "0"
 
@@ -53,7 +58,7 @@ secrets:
 db:
   enabled: true
   appName: lightbridge-db
-  chartPath: charts/lightbridge-db
+  chartName: lightbridge-db   # OCI chart name (was chartPath: charts/<name>)
   releaseName: lightbridge-db
   syncWave: "1"
   # Ignore the CNPG operator's defaulted fields on the Cluster so it doesn't sit
