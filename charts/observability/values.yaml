@@ -27,7 +27,7 @@ argocd:
   # This repo, source for the local leaf charts + the secrets overlay.
   # Deploy branch now → release tag next, never main (see charts/apps note).
   repoURL: https://github.com/ADORSYS-GIS/ai-helm
-  targetRevision: release-2026.06.22
+  targetRevision: release-2026.06.22-v02
   destination:
     # home-remote cluster (ADR-0017 guard). Children may override .namespace
     # but all observability children use `observability`.
@@ -66,7 +66,7 @@ children:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22
+      targetRevision: release-2026.06.22-v02
       path: environments/prod/deps/observability-secrets
     destination:
       namespace: observability
@@ -1926,7 +1926,7 @@ children:
       argocd.argoproj.io/sync-wave: "1"
     source:
       repoURL: https://github.com/ADORSYS-GIS/ai-helm
-      targetRevision: release-2026.06.22
+      targetRevision: release-2026.06.22-v02
       path: charts/observability-dashboards
       helm:
         releaseName: observability-dashboards
