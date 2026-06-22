@@ -58,7 +58,14 @@ spec:
   {{- $valuesFile := .valuesFile | default (printf "environments/%s/values/%s.yaml" $env .name) }}
   {{- $helm := dict "releaseName" (.releaseName | default .name) "valueFiles" (list (printf "$values/%s" $valuesFile)) "ignoreMissingValueFiles" true }}
   {{- with .valuesObject }}{{- $_ := set $helm "valuesObject" . }}{{- end }}
-  {{- $chartSource := dict "repoURL" $.Values.argocd.chartRegistry "chart" .chart "targetRevision" ($.Values.argocd.chartVersionRange | default ">=0.0.0") "helm" $helm }}
+  {{- /* OCI Helm: the chart name is part of the repoURL PATH (chart: "."), not a
+         separate `chart:` field. With a registry repoURL + `chart:`, ArgoCD lists
+         tags at the registry path (`<registry>/tags/list`) — the wrong, non-existent
+         repo — and 403s on semver-range resolution. Full-path repoURL + `chart: "."`
+         is the form every working OCI app on the cluster uses (kserve, grafana-operator,
+         arc-runners) and the one verified to resolve a range. */}}
+  {{- $chartRepoURL := printf "%s/%s" (trimSuffix "/" $.Values.argocd.chartRegistry) .chart }}
+  {{- $chartSource := dict "repoURL" $chartRepoURL "chart" "." "targetRevision" ($.Values.argocd.chartVersionRange | default ">=0.0.0") "helm" $helm }}
   {{- $valuesSource := dict "repoURL" $.Values.argocd.valuesRepoURL "targetRevision" ($.Values.argocd.valuesTargetRevision | default "main") "ref" "values" }}
   {{- $ociSources := list $chartSource $valuesSource }}
   {{- if .depsOverlay }}{{- $ociSources = append $ociSources $depsSource }}{{- end }}
