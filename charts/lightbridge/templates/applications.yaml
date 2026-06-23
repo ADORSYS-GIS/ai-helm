@@ -96,19 +96,25 @@ spec:
   sources:
     # Source A — the upstream Lightbridge workload (Helm chart as an ArgoCD
     # source). releaseName stays `lightbridge` so workload resource names
-    # don't churn vs the old flat app.
+    # don't churn vs the old flat app. Values live in ai-helm-values (ADR-0056),
+    # read via the $values ref (Source C) — not inline.
     - repoURL: {{ .Values.app.chart.repoURL | quote }}
       chart: {{ .Values.app.chart.name | quote }}
       targetRevision: {{ .Values.app.chart.targetRevision | quote }}
       helm:
         releaseName: {{ .Values.app.releaseName | quote }}
-        valuesObject:
-          {{- toYaml .Values.app.values | nindent 10 }}
+        valueFiles:
+          - $values/environments/{{ $a.env | default "prod" }}/values/lightbridge-app.yaml
+        ignoreMissingValueFiles: true
     # Source B — app-scoped deps (ingress Certificates) via the per-env
     # kustomize overlay in this repo; issuer patched per environment.
     - repoURL: {{ $a.repoURL | quote }}
       targetRevision: {{ $a.targetRevision | quote }}
       path: {{ .Values.app.depsOverlay | quote }}
+    # Source C — $values ref: the workload values file (ai-helm-values, ADR-0056).
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      ref: values
   destination:
     {{- include "lightbridge.argocd.destinationClusterRef" $a.destination | nindent 4 }}
     namespace: {{ $a.destination.namespace | quote }}

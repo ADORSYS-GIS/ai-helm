@@ -56,6 +56,9 @@ benefit), leaving the small ones and the orchestrators for later.
   image-updater-owned values file, preserving the `image.tag` write-back path;
   `mongodb-backup`, being a top-level-`chart:` OCI app, already had the `$values`
   valueFiles ref injected, so it needed no flag — just the file + inline removal.)
+  Phase 3 — the `observability` (8 children) and `lightbridge` orchestrators (see
+  "Phase 3" below). The same `valuesFromRepo` injection was added to those two
+  App-of-Apps templates, applied per child.
 - **A render-check CI** in `ai-helm-values` (`render-check.yml`) YAML-validates
   every values file and `helm template`s the OCI-sourced charts (kuadrant-policies,
   gateway-helm, core-gateway, ai-gateway-helm, mongodb-backup) against their file —
@@ -85,8 +88,25 @@ benefit), leaving the small ones and the orchestrators for later.
 - The values files are not schema-validated against the chart beyond `helm template`
   succeeding; a key typo that renders (but is ignored by the chart) won't be caught.
 
+**Phase 3 — orchestrators (done)**
+- The App-of-Apps orchestrators `observability` (8 child configs incl. the ~230-line
+  Alloy River config) and `lightbridge` (the upstream gateway chart's values) held
+  their child config inline in the orchestrator chart's own `values.yaml`. Their
+  templates gained the same per-child `valuesFromRepo` injection ($values ref +
+  valueFiles + ignoreMissingValueFiles), and each child config moved to
+  `environments/prod/values/<child>.yaml`. observability `values.yaml` 1947→419 lines;
+  lightbridge `values.yaml` 435→95.
+- ⚠️ The observability children shared **YAML anchors** (`*s3-endpoint` / `*s3-region`
+  / `*s3-bucket` / `*grafana-domain`, defined in a `global:` block). Separate `$values`
+  files cannot share a YAML anchor, so the aliases were **inlined to literals** in each
+  file (verified structurally identical to the anchor-resolved original) and the now-dead
+  `global:` block was removed. The Alloy River config was moved free of any Go-template
+  double-brace sequence (the alloy chart `tpl`s it — CLAUDE.md).
+- `ai-models`, `librechart`, `mcps` have **no inline `valuesObject`** — their child config
+  is the leaf charts' own (per ADR-0012/0014), nothing to move. **Every inline
+  `valuesObject` in the repo with real config is now in `ai-helm-values`.**
+
 **Not done (future work)**
-- The **orchestrators** (`observability`, `ai-models`, `librechart`, `mcps`,
-  `lightbridge`) hold child config in their own chart `values.yaml`, baked into the
-  OCI chart; moving those needs a `$values` override on each orchestrator and is a
-  separate, larger effort.
+- Nothing outstanding for this decision. (The render-check helm-render matrix only
+  covers OCI-pullable charts; the observability children are upstream HTTP-repo charts,
+  so they're YAML-validated, not full-rendered, in `ai-helm-values` CI.)
