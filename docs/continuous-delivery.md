@@ -155,6 +155,36 @@ Then add the matching `imageUpdaters[]` entry in `charts/imageupdater` and seed
 > an OCI Source A there is no chart source path so it resolves cleanly against the values-repo
 > root, but the slash is still the correct, unambiguous form.
 
+## Moving workload values into `ai-helm-values` (ADR-0056)
+
+Beyond image tags, a singular-`source:` app can keep its whole Helm `valuesObject` in
+the values repo instead of inline in `charts/apps/values.yaml`:
+
+1. **Seed the file FIRST** at `ai-helm-values:/environments/<env>/values/<app>.yaml`
+   (the dedented `valuesObject` content), commit to `main`. The `render-check.yml`
+   workflow there YAML-validates it and (for OCI-sourced charts) `helm template`s it.
+2. **Then** in `charts/apps/values.yaml`: add `valuesFromRepo: true` to the app entry
+   and **delete** its inline `valuesObject`. The template injects the `$values`
+   valueFiles ref (+ `ignoreMissingValueFiles` + the `ref: values` source).
+
+```yaml
+  - name: <app>
+    valuesFromRepo: true             # ← inject $values/environments/<env>/values/<app>.yaml
+    depsOverlay: environments/<env>/deps/<app>   # optional, still works
+    source:
+      repoURL: oci://…/charts/<chart>   # or upstream OCI / git
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: <app>           # keep; valuesObject is gone
+```
+
+> ⚠️ **Ordering is load-bearing.** Because of `ignoreMissingValueFiles`, if the
+> `charts/apps` change merges *before* the values file exists on `ai-helm-values`
+> `main`, the app renders on **chart defaults** — for `security-policies` that drops
+> the entire Authorino AuthConfig. Always: values-repo PR/commit first, `charts/apps`
+> PR second. Migrated so far: `security-policies`, `eg`, `opencode-k8s-agent`.
+
 ## Rollback
 
 - **A bad image tag:** `git revert` the image-updater commit in `ai-helm-values` (or set the

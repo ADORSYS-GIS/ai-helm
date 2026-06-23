@@ -79,7 +79,27 @@ spec:
     {{- toYaml .sources | nindent 4 }}
     {{- end }}
   {{- else if .source }}
-  {{- if .depsOverlay }}
+  {{- if .valuesFromRepo }}
+  {{- /* valuesFromRepo (ADR-0056): the workload's Helm values live in the values
+         repo at environments/<env>/values/<app>.yaml (read via a $values ref),
+         NOT inline in this (public) chart repo. We inject the $values valueFiles
+         ref into the singular source's helm block and append the ref source, so an
+         app keeps its existing `source:` verbatim and just opts in with one flag.
+         ignoreMissingValueFiles → an un-seeded app still renders on chart defaults.
+         A leftover inline `valuesObject` (if any) still layers on top. */}}
+  {{- $env := $.Values.argocd.env | default "prod" }}
+  {{- $valuesFile := .valuesFile | default (printf "environments/%s/values/%s.yaml" $env .name) }}
+  {{- $src := deepCopy .source }}
+  {{- $h := deepCopy ($src.helm | default dict) }}
+  {{- $_ := set $h "valueFiles" (concat (list (printf "$values/%s" $valuesFile)) ($h.valueFiles | default list)) }}
+  {{- $_ := set $h "ignoreMissingValueFiles" true }}
+  {{- $_ := set $src "helm" $h }}
+  {{- $valuesSource := dict "repoURL" $.Values.argocd.valuesRepoURL "targetRevision" ($.Values.argocd.valuesTargetRevision | default "main") "ref" "values" }}
+  {{- $srcs := list $src $valuesSource }}
+  {{- if .depsOverlay }}{{- $srcs = append $srcs $depsSource }}{{- end }}
+  sources:
+    {{- toYaml $srcs | nindent 4 }}
+  {{- else if .depsOverlay }}
   sources:
     {{- toYaml (list .source $depsSource) | nindent 4 }}
   {{- else }}
