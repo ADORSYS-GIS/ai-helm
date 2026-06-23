@@ -768,17 +768,36 @@ applications:
                     # ADR-0047: GitHub CI tokens → the bound account + its plan
                     # (from the `repobinding` metadata, present only on the GitHub
                     # path); every other identity → the prior Keycloak-derived
-                    # values, unchanged. CEL short-circuits the ternary, so the
-                    # else-branch never touches the absent metadata.
+                    # values, unchanged.
+                    #
+                    # ⚠️ GATE ON THE ISSUER, NOT `has(auth.metadata.repobinding)`.
+                    # The `repobinding` metadata source is `when`-gated to the
+                    # GitHub issuer, so for a Keycloak token it never runs and
+                    # `auth.metadata` is UNSET. `has(auth.metadata.repobinding)`
+                    # does NOT return false — CEL `has()` only guards the LAST hop
+                    # (`repobinding` on `auth.metadata`); evaluating the absent
+                    # parent `auth.metadata` is a hard "no such key" error that
+                    # propagates and makes Authorino DROP the whole header. Result
+                    # (observed live): x-account-id / x-org-id / x-billing-plan were
+                    # absent ("-", NOT the sub fallback) on 100% of Keycloak traffic
+                    # since ADR-0047 — so per-user budget enforcement (the per-model
+                    # BackendTrafficPolicy keys on x-account-id, ADR-0021/0035)
+                    # silently ran on one unkeyed bucket for all human callers; only
+                    # GitHub CI (where the metadata runs) was ever keyed. Gating on
+                    # `auth.identity.iss` (always present) never touches
+                    # `auth.metadata` for non-GitHub tokens; GitHub tokens reaching
+                    # the response provably have `repobinding` (the
+                    # `repo-binding-allowed` authz step requires its account_id).
+                    # (Fix per ADR-0052 follow-up.)
                     "x-account-id":
                       plain:
-                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.account_id) : string(auth.identity.sub)'
+                        expression: 'auth.identity.iss == "https://token.actions.githubusercontent.com" ? string(auth.metadata.repobinding.account_id) : string(auth.identity.sub)'
                     "x-org-id":
                       plain:
-                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.account_id) : (has(auth.identity.organization) ? string(auth.identity.organization) : string(auth.identity.sub))'
+                        expression: 'auth.identity.iss == "https://token.actions.githubusercontent.com" ? string(auth.metadata.repobinding.account_id) : (has(auth.identity.organization) ? string(auth.identity.organization) : string(auth.identity.sub))'
                     "x-billing-plan":
                       plain:
-                        expression: 'has(auth.metadata.repobinding) ? string(auth.metadata.repobinding.billing_plan) : (has(auth.identity.billing_plan) ? string(auth.identity.billing_plan) : "free")'
+                        expression: 'auth.identity.iss == "https://token.actions.githubusercontent.com" ? string(auth.metadata.repobinding.billing_plan) : (has(auth.identity.billing_plan) ? string(auth.identity.billing_plan) : "free")'
                     # ── x-oidc-* downstream header contract (ADR-0011) ────
                     # Set on every successful auth, for both human and SA tokens.
                     # Envoy access-log JSON sink reads these via %REQ(...)%
