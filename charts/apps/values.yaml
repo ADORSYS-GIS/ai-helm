@@ -1075,14 +1075,21 @@ applications:
   # a dedicated `codeintel` role + database (charts/lightbridge-db). Plain workload →
   # home-remote (default).
   #
-  # CONTINUOUS DEPLOY — argocd-image-updater + git write-back (vymalo-shop pattern).
-  # Multi-source: the chart is release-pinned (Source A), but the two image tags are
-  # read from the APP repo's main via a $values source (Source B). image-updater picks
-  # the newest *signed* sha-<gitsha> from GHCR and commits it back into that file, which
-  # ArgoCD then auto-syncs — so deploys don't need an ai-helm release. The selecting
-  # ImageUpdater CR lives in home-os (charts/argocd-image-updater). Image tags are
-  # therefore NOT set here; they live in the app repo at
-  # deploy/envs/production/values.yaml (image-updater owns them).
+  # CONTINUOUS DEPLOY — argocd-image-updater + git write-back (converse-ui pattern).
+  # Multi-source: the chart is a git-path source on main (Source A), but the three
+  # image tags are read from ai-helm-values via a $values source (Source B).
+  # image-updater picks the newest *signed* sha-<gitsha> from GHCR and commits it back
+  # into that file, which ArgoCD then auto-syncs — so deploys don't need an ai-helm
+  # release. The selecting ImageUpdater CR is rendered by charts/imageupdater. Image
+  # tags are therefore NOT set here; they live in ai-helm-values at
+  # environments/prod/values/lightbridge-code-intelligence.yaml (image-updater owns them).
+  # ⚠️ Write-back moved OFF the vymalo repo (2026-06-23): vymalo `main` became
+  # PR-protected (1 review required), so the bot's direct push was rejected (GH006)
+  # and write-back silently FROZE (app stayed Synced/Healthy on a stale sha). The
+  # ai-helm-values repo's main is unprotected (the values repo exists for exactly
+  # this) → the bot direct-commits again, same as converse-ui. (PR #461's OCI
+  # migration was NOT the cause — Source A's form is independent of the Source B
+  # push; #463's git-path revert is kept since it matches converse-ui's proven shape.)
   - name: lightbridge-code-intelligence
     finalizers:
       - resources-finalizer.argocd.argoproj.io
@@ -1122,18 +1129,16 @@ applications:
       argocd-image-updater.argoproj.io/web.signature-type: cosign
       argocd-image-updater.argoproj.io/web.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/web.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
-      # ── git write-back → the app repo's main (public repo, so only the commit
-      # needs creds: the shared vymalo GitHub App, same as vymalo-shop). ──
+      # ── git write-back → ai-helm-values main (PRIVATE; the org-wide adorsys-gis
+      # GitHub App commits, and ArgoCD reads Source B via the same repo-creds —
+      # exactly like converse-ui). Unprotected branch → the bot can direct-commit. ──
       argocd-image-updater.argoproj.io/write-back-method: git
       argocd-image-updater.argoproj.io/git-branch: main
-      argocd-image-updater.argoproj.io/git-repository: https://github.com/vymalo/lightbridge-code-intelligence.git
-      # Leading slash = path absolute from the git repo ROOT. Without it a `helmvalues:`
-      # target resolves relative to the app's chart SOURCE path
-      # (charts/lightbridge-code-intelligence), so image-updater writes a wrong nested
-      # file (charts/lightbridge-code-intelligence/deploy/...). vymalo/opfs dodge this
-      # only because their chart is OCI (no source path); ours is path-based → slash required.
-      argocd-image-updater.argoproj.io/write-back-target: helmvalues:/deploy/envs/production/values.yaml
-      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--vymalo
+      argocd-image-updater.argoproj.io/git-repository: https://github.com/adorsys-gis/ai-helm-values.git
+      # Leading slash = path absolute from the git repo ROOT (without it a `helmvalues:`
+      # target resolves relative to the app's chart SOURCE path).
+      argocd-image-updater.argoproj.io/write-back-target: helmvalues:/environments/prod/values/lightbridge-code-intelligence.yaml
+      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys-gis
       # ── argocd-notifications → GitHub Deployment status. `vymalo` is the
       # notifier service (GitHub App installation on the vymalo org); the
       # on-deployed / on-deploy-failed triggers + ssegning.me annotation
@@ -1145,23 +1150,20 @@ applications:
       notifications.ssegning.me/environment-url: https://code-intelligence.ai.camer.digital
     sources:
       # Source A — the chart, as a GIT-PATH source tracking ai-helm `main`
-      # (continuous, like everything else — no tag). ⚠️ NOT OCI on purpose: this
-      # app has argocd-image-updater git write-back (Source B → the vymalo repo),
-      # and image-updater CANNOT introspect/update the image params on an OCI
-      # `chart: "."` source — migrating Source A to OCI (PR #461) silently froze
-      # write-back (stuck on an old sha while newer signed builds piled up).
-      # Keep it git-path so write-back works. (converse-ui is the same shape: a
-      # git chart source + write-back.) ADR-0055.
+      # (continuous, like everything else — no tag). Kept git-path to match the
+      # proven converse-ui write-back shape (a git chart source + a $values
+      # write-back source). OCI was never the write-back blocker — branch
+      # protection on the old vymalo target was (see the header note). ADR-0055.
       - repoURL: https://github.com/ADORSYS-GIS/ai-helm
         targetRevision: main
         path: charts/lightbridge-code-intelligence
         helm:
           releaseName: lightbridge-ci
           valueFiles:
-            - $values/deploy/envs/production/values.yaml
+            - $values/environments/prod/values/lightbridge-code-intelligence.yaml
           ignoreMissingValueFiles: true
-      # Source B — image tags from the app repo's main; image-updater commits here.
-      - repoURL: https://github.com/vymalo/lightbridge-code-intelligence.git
+      # Source B — image tags from ai-helm-values main; image-updater commits here.
+      - repoURL: https://github.com/adorsys-gis/ai-helm-values
         targetRevision: main
         ref: values
     destination:
