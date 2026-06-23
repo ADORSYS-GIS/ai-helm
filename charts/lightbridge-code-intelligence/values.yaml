@@ -624,6 +624,80 @@ lci:
             capabilities:
               drop: [ALL]
 
+    # Review-feedback poller (ADR-0035): a single replica that periodically reads reactions on the
+    # comments we posted and reconciles them into review_feedback. SAME image as control-plane/
+    # dispatcher (role-selected via CONTROL_PLANE_ROLE). Unlike the dispatcher it holds the GitHub App
+    # key (to mint installation tokens for reading reactions); ONE replica so reactions aren't
+    # double-polled (ADR-0002 keeps the credential off the multi-replica serve pods + the dispatcher).
+    poller:
+      type: deployment
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+      containers:
+        main:
+          image:
+            repository: ghcr.io/vymalo/lightbridge-control-plane
+            # Default/fallback; the deployed tag is overridden at sync time by ai-helm-values via the
+            # image-updater `poll` alias (charts/apps/values.yaml), in lockstep with control-plane.
+            tag: "0.1.0"
+            pullPolicy: IfNotPresent
+          env:
+            CONTROL_PLANE_ROLE: "poller"
+            RUST_LOG: "info"
+            METRICS_ADDR: "0.0.0.0:9090"
+            # Optional cadence knobs; absent → run_poller defaults (300s interval / 14-day window).
+            DB_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: lightbridge-codeintel-db-role
+                  key: password
+            DATABASE_URL:
+              dependsOn: DB_PASSWORD
+              value: "postgresql://codeintel:$(DB_PASSWORD)@lightbridge-main-db-rw.converse.svc.cluster.local:5432/codeintel"
+            # The poller mints installation tokens to read reactions, so it needs the GitHub App key
+            # (the dispatcher does not). Same secret the control-plane uses.
+            GITHUB_APP_ID:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-github'
+                  key: app-id
+            GITHUB_APP_PRIVATE_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-github'
+                  key: app-private-key
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 9090
+                initialDelaySeconds: 5
+                periodSeconds: 15
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 9090
+                initialDelaySeconds: 5
+                periodSeconds: 10
+            startup:
+              enabled: false
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1000
+            capabilities:
+              drop: [ALL]
+
   service:
     control-plane:
       controller: control-plane
