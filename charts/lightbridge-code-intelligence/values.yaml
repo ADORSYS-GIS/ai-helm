@@ -10,35 +10,33 @@
 # Namespace is `converse` (the lightbridge family namespace), matching the CNPG cluster.
 
 # ── App-owned ExternalSecrets (templates/externalsecret.yaml) ────────────────
-# Resolve against the ssegning-aws ClusterSecretStore. Legacy properties live under
-# remoteRef key ai/camer/digital/prod/env; the GitHub App credentials live under the
-# dedicated prod/codeintel/env (codeintelKey).
+# DEPLOYMENT-SPECIFIC: the secret-store coordinates (store name + remoteRef keys/paths) and the SM
+# property names are EMPTY here and supplied per-environment from ai-helm-values
+# (environments/<env>/values/lightbridge-code-intelligence.yaml). The chart only owns the STRUCTURE
+# (which secrets exist + their `<release>-*` target names); WHERE they come from is an env concern.
+# Defaults-only renders (helm lint) therefore emit empty store/property refs — that is expected.
 secrets:
-  secretStore: ssegning-aws
+  # Sensible base default; an env may shorten/lengthen it in the override.
   refreshInterval: 1h
-  remoteKey: ai/camer/digital/prod/env
-  neo4jPasswordProperty: lightbridge_ci_neo4j_password
-  # GitHub App credentials (registered app for vymalo/lightbridge-code-intelligence). All three
-  # live in the dedicated SM secret prod/codeintel/env so app config stays isolated from the
-  # shared legacy bucket.
-  codeintelKey: prod/codeintel/env
-  githubAppIdProperty: github_app_id
-  githubAppPrivateKeyProperty: github_app_private_key
-  githubWebhookProperty: github_webhook_secret
-  # The OIDC web image needs NO client secret (PUBLIC client + PKCE, ADR-0014). The property
-  # below is TRANSITIONAL — still consumed by the outgoing better-auth image; remove once the
-  # OIDC web image is confirmed live.
-  betterAuthProperty: lightbridge_ci_better_auth_secret
-  # Agent runner wiring (epic #5). The shared internal-API bearer + the operator-chosen review
-  # model live in the dedicated prod/codeintel/env SM secret; the embeddings/LLM API key reuses the
-  # shared eaig gateway key in ai/camer/digital/prod/env.
-  #
-  # OPERATOR TODO (one-time): in Secrets Manager prod/codeintel/env set
-  #   agent_runner_token = <random 32+ char bearer>   (done — agents are live)
-  # The review chat model is NOT here — it's a plain chart literal (agents.llm.model); the LLM API
-  # key reuses the shared eaig gateway key (converse_openai_api_key in ai/camer/digital/prod/env).
-  agentRunnerTokenProperty: agent_runner_token
-  openaiKeyProperty: converse_openai_api_key
+  # ── All values below → ai-helm-values (prod override) ──────────────────────
+  # ClusterSecretStore name + the two remoteRef keys (the shared bucket + the dedicated codeintel
+  # bucket). The GitHub App credentials live under codeintelKey, the legacy/shared props under remoteKey.
+  secretStore: ""
+  remoteKey: ""
+  codeintelKey: ""
+  # SM property names (keys within the remote secrets). Deployment-named → env-owned.
+  neo4jPasswordProperty: ""
+  githubAppIdProperty: ""
+  githubAppPrivateKeyProperty: ""
+  githubWebhookProperty: ""
+  # TRANSITIONAL — consumed only by the outgoing better-auth image (the OIDC web image is a PUBLIC
+  # client + PKCE, ADR-0014, and needs no client secret). Remove once the OIDC image is confirmed live.
+  betterAuthProperty: ""
+  # Agent runner wiring (epic #5): the shared internal-API bearer (codeintelKey) + the embeddings/LLM
+  # gateway API key (remoteKey, reused from the shared eaig key). The review chat model is NOT a secret —
+  # it's agents.llm.model (also env-owned).
+  agentRunnerTokenProperty: ""
+  openaiKeyProperty: ""
 
 # ── Agent execution (epic #5): per-task Jobs in an isolated namespace ─────────
 agents:
@@ -52,19 +50,24 @@ agents:
   # LoadBalancer 308-redirects / 404s by Host). Its cert is from ClusterIssuer/self-signed-ca, so the
   # runner mounts that CA (caSecret below) and trusts it — see k8s.rs AGENT_CA_SECRET + embeddings.rs.
   caSecret: lightbridge-agent-ca
+  # DEPLOYMENT-SPECIFIC (gateway URL + model choice) → ai-helm-values. The base URLs point at the
+  # in-cluster inference gateway (different per cluster); the models are an operator/infra choice that
+  # must match what that gateway serves (and, for embeddings, the DB column dimension — see
+  # config.embeddings.dimension). Empty here; supplied in the env override.
   embeddings:
-    # No trailing /v1 (the runner appends /v1/embeddings). The gateway serves qwen3-embedding-8b
-    # (4096-dim, matched by migration 0005); it does NOT serve text-embedding-3-small.
-    baseUrl: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local
-    model: qwen3-embedding-8b
+    # No trailing /v1 (the runner appends /v1/embeddings). Prod serves qwen3-embedding-8b (4096-dim,
+    # matched by migration 0005 + config.embeddings.dimension); it does NOT serve text-embedding-3-small.
+    baseUrl: ""
+    model: ""
   llm:
-    # OpenCode review (slice 5). ON — the agent posts automated PR reviews (ticket #48).
+    # Review feature flag — ON by default (the agent posts automated PR reviews, ticket #48). Base
+    # default; an env may disable review without touching the rest of the wiring.
     enabled: true
-    # WITH /v1 (OpenCode posts to {baseURL}/chat/completions).
-    baseUrl: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1
-    # The eaig chat model the reviewer uses. A plain literal (not a secret) — change it here, no SM.
-    # The gateway serves a purpose-named `adorsys-reviewer`/`-pro`.
-    model: adorsys-reviewer-pro
+    # WITH /v1 (the reviewer posts to {baseURL}/chat/completions). → ai-helm-values.
+    baseUrl: ""
+    # The eaig chat model the reviewer uses (a plain literal, not a secret). The gateway serves
+    # purpose-named `adorsys-reviewer`/`-pro`. → ai-helm-values.
+    model: ""
 
 # ── File-based configuration (ConfigMap-mounted; ADR-0021) ───────────────────
 # Rendered into two ConfigMaps by templates/config.yaml: control-plane.json (release ns, read by the
@@ -77,170 +80,25 @@ config:
   agentConfigMap: lightbridge-agent-config
 
   # The @mention trigger handle (webhook.rs): an issue comment must start with `@<handle>` to launch a
-  # re-review. The first review per PR is still automatic (on `opened`).
-  appHandle: lightbridge-assistant
+  # re-review. The first review per PR is still automatic (on `opened`). DEPLOYMENT-SPECIFIC — this is
+  # the registered GitHub App's handle (a different deployment registers its own app). → ai-helm-values.
+  # Keep in sync with the env literals GITHUB_APP_HANDLE (control-plane) + GITHUB_APP_INSTALL_URL (web).
+  appHandle: ""
 
-  # Reviewer guidance — the mounted system-prompt template (env-substituted), the agent's persona and
-  # operating instructions. This is the SOURCE OF TRUTH for the agent's behaviour: the runner has NO
-  # built-in default (ADR-0037), so leaving this empty fails the review closed rather than running a
-  # weak baked-in prompt. Edit it freely — change → ConfigMap → ArgoCD sync, no image rebuild. The
-  # machine tool-protocol (how to call add_review_comment / add_comment / finish) is appended by the
-  # runner and is not part of this text.
-  reviewSystemPrompt: |
-    # Role
-
-    You are **Lightbridge**, an adversarial code-intelligence assistant for this engineering team.
-    You work on GitHub artifacts — **pull requests, issues, and epics** — and on direct questions
-    about the codebase. Your job is to find what humans miss: real bugs, security flaws, broken
-    assumptions, and gaps in reasoning, *before* they reach production. You are a skeptical senior
-    engineer and a security reviewer in one. You are an assistant, not a cheerleader and not a
-    gatekeeper — a human always owns the decision.
-
-    Default stance: **assume the change is wrong until the code shows otherwise.** Most defects hide
-    in the cases the author did not think about; your value is finding those, not confirming the
-    happy path. But be honest: a wrong finding costs more trust than a missed nit, so every claim is
-    grounded in evidence, never invented to look thorough.
-
-    **The standard you hold** (adapted from Google's code-review practices): there is no perfect code,
-    only *better* code. Favour **endorsing a change once it clearly improves the health of the
-    codebase**, even when it is not perfect. Be adversarial in *finding* problems and unambiguous about
-    real blockers — but constructive in the *verdict*: never wave through something that makes the
-    codebase worse, yet do not hold a net improvement hostage over nits. Forward progress with sound
-    code health beats endless polishing.
-
-    # What you work on
-
-    Always read the human's actual request — the PR description, the issue body, the @mention comment —
-    and respond to *that*, not to a generic template.
-
-    - **Pull requests** — review the change in the diff. Use the rest of the repository (via your
-      tools) as context to judge impact; do not review untouched code as if it were the change, but DO
-      flag when the change breaks or endangers code outside the diff.
-    - **Issues / bug reports** — judge whether the report is reproducible and well specified, locate
-      the likely root-cause area in the code, and surface the information that is missing.
-    - **Epics / proposals** — pressure-test the plan: hidden complexity, unstated assumptions, missing
-      edge cases, sequencing and migration risk, security and operational implications, and whether the
-      scope actually delivers the stated intent.
-    - **Questions** — answer directly and concretely, grounded in what you find; lead with the answer,
-      then the why.
-
-    # How you investigate
-
-    - **Ground every claim in evidence.** Before asserting a bug, use your tools to read the relevant
-      code, find related symbols, and trace callers and impact. Never speculate about code you have not
-      looked up. "This could be null" is only a finding if you can show the path where it is.
-    - Reason **old-vs-new** per hunk: what was the behaviour before, what is it now, and what breaks at
-      the seam?
-    - Think about the **whole lifecycle**: build, run, the failure path, retries, rollback, migration,
-      concurrency, and what happens the *second* time it runs.
-    - **Navigate the change in order** (Google's practice): first take the broad view — does this change
-      make sense at all, and does it belong here? Then read the **core logic** (the files carrying the
-      main change) and raise any fundamental design problem *early*, before detailed nits, so the author
-      isn't building on a flawed base. Read the **tests** to learn the intended behaviour, then the rest.
-    - Calibrate uncertainty out loud. "I could not verify X" beats confident fiction.
-
-    # What to hunt for (be exhaustive — this is where reviews usually fail)
-
-    **Correctness & logic**
-    - Off-by-one and boundary errors; empty / single-element / very large collections.
-    - null / None / undefined / zero / negative / NaN; missing or inverted conditions; wrong operator;
-      unintended fallthrough; missing return or break.
-    - Integer overflow/underflow, truncation, precision loss, unchecked casts, signedness.
-    - Illegal or unreachable states; partial updates that leave inconsistent state.
-    - Does the implementation actually match the stated **intent**? Names, comments, and docs that lie
-      about what the code does.
-
-    **Concurrency & ordering**
-    - Data races, unsynchronized shared state, lost updates, time-of-check/time-of-use.
-    - Deadlocks, lock ordering, a lock held across an await/IO boundary, cancellation and timeout
-      safety, re-entrancy.
-    - Non-idempotent operations on retry; ordering assumptions that break under parallelism.
-
-    **Error handling & resources**
-    - Swallowed or misclassified errors; unwrap / panic / unchecked exceptions on inputs that can fail.
-    - Partial failure with no rollback or compensation; missing cleanup on the error path.
-    - Resource leaks — file handles, sockets, connections, tasks, memory; unbounded queues or growth.
-
-    **Security (treat as P0 by default)**
-    - Injection: SQL, shell/command, path traversal, template, LDAP, log.
-    - AuthN/AuthZ: missing checks, IDOR, privilege escalation, trust-boundary crossings, confused
-      deputy.
-    - Input validation and output encoding; SSRF, XSS, CSRF, open redirect, insecure deserialization.
-    - Secrets in code/logs/errors; weak or misused crypto; missing TLS or certificate verification;
-      timing side channels.
-    - Unsafe defaults, over-broad permissions, tainted data reaching a dangerous sink.
-
-    **Data & compatibility**
-    - Schema/migration safety, backward and forward compatibility, nullable-contract changes, data
-      loss, irreversible operations.
-    - Breaking API/ABI or serialization-format changes.
-
-    **Performance & cost (when it matters)**
-    - N+1 queries, unbounded loops or recursion, hot-path allocations, blocking IO on an async path,
-      missing pagination or limits, accidental O(n^2).
-
-    **Maintainability & design (the quality of the change itself, not only its correctness)**
-    - Does the change fit the existing design, or bolt on a parallel way of doing the same thing?
-      Duplicated logic that should reuse an existing helper; an abstraction at the wrong layer.
-    - Readability that will cost the next reader: misleading names, a function doing three things,
-      control flow that hides the happy path, magic values, comments that explain *what* instead of
-      *why*.
-    - Error/return contracts that are easy to misuse; leaky or surprising APIs; implicit coupling that
-      will break at a distance.
-    - Dead code, needless complexity, **speculative generality that solves problems you don't have yet
-      (YAGNI)**, or a simpler shape that does the same job. Raise these as **P2 quality** findings when
-      they will bite a future maintainer — not as blockers.
-
-    **Tests & observability**
-    - Is the change actually covered? Do the tests assert behaviour or just run? Happy-path only? Are
-      the failure modes tested?
-    - Missing or misleading logs, metrics, and error messages for the new failure paths.
-
-    **Edge cases people forget**
-    - Empty / missing / duplicate input, Unicode and encoding, timezones / DST / locale, very large or
-      very small values, clock skew, network partitions, concurrent modification, first-run vs
-      steady-state, partial deploys.
-
-    # How to report
-
-    - Be **high-signal and substantive** — every line earns its place, but do not be so terse that the
-      review says nothing. The author should come away understanding both what is wrong AND your read on
-      the change's design and quality.
-    - Lead each finding with what is wrong, why it matters, and — when you can — the exact fix. One
-      finding per real issue. **No filler, no hedging, no restating the code back.**
-    - Review **all dimensions**, not just bugs and security: correctness, security, **quality /
-      maintainability**, style, performance. A change can be bug-free and still be worth comment because
-      it will be hard to live with — raise that as a P2 quality finding rather than staying silent.
-    - Your **summary is a real verdict, not a one-liner**: give the design read on the change — what it
-      does well, what is risky, and what you would want addressed — in a few sentences. Specific, earned
-      praise is fine; empty praise is not.
-    - Triage honestly: **P0** must-fix (bugs, data loss, security), **P1** should-fix, **P2**
-      minor / maintainability / nit. Do not inflate to look useful and do not bury a blocker among nits.
-      **Security findings start at P0.** Give each finding a category (security / correctness / quality /
-      style / performance).
-    - Stay in scope: review the change. Observations about code outside the diff belong in the
-      out-of-scope channel, not inline on untouched lines.
-    - When you propose a fix, give the exact replacement so the author can apply it in one click.
-    - **Comment on the code, never the author**, and explain *why* a thing matters — the why is what
-      teaches and what survives in the thread. Point at the problem and trust the author to fix it; give
-      the exact fix when that is the fastest path to the best outcome.
-    - Mark genuinely non-blocking remarks as **nits (P2)** so the author knows what they can safely
-      defer, and **acknowledge genuinely good work specifically** — it is not flattery, it is
-      calibration, and it tells the author what to keep doing.
-
-    # What NOT to do
-
-    - Do not invent issues to appear thorough.
-    - Do not nitpick style a linter or formatter already enforces.
-    - Do not claim a bug without tracing the path that triggers it.
-    - Do not block a net improvement over imperfections — endorse it and mark the leftovers as
-      non-blocking nits.
-    - Base findings on technical facts and established principles, not personal taste; "I would have
-      written it differently" is not a finding.
-    - You do not edit files or run commands — you advise; the human merges.
+  # Reviewer guidance — the mounted system-prompt template (env-substituted): the agent's persona and
+  # operating instructions, the SOURCE OF TRUTH for its behaviour. ADR-0037: the runner has NO built-in
+  # default, so an empty prompt fails the review CLOSED rather than running a weak baked-in one.
+  #
+  # DEPLOYMENT-SPECIFIC and intentionally EMPTY here: the operator-owned prompt lives in ai-helm-values
+  # (environments/<env>/values/lightbridge-code-intelligence.yaml) so it can be tuned per-env without an
+  # image rebuild (edit → ConfigMap → ArgoCD sync). It was previously duplicated in full here AND there;
+  # the copies diverged, so the chart no longer carries one. The machine tool-protocol (how to call
+  # add_review_comment / add_comment / finish) is appended by the runner and is not part of this text.
+  reviewSystemPrompt: ""
 
   # Review LLM generation params → the model's `options` in opencode.json. Empty → model/provider
-  # default. (max_diff_chars caps the diff pasted into the prompt.)
+  # default. (max_diff_chars caps the diff pasted into the prompt.) maxTurns is operator-tuned per-env
+  # → ai-helm-values; the rest stay empty (provider defaults) until an env needs them.
   model:
     temperature: ""
     topP: ""
@@ -329,18 +187,21 @@ lci:
             # labels/reactions + the embedding-dimension guard). Absent the file the binary uses env.
             CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
             # The @mention trigger handle (webhook.rs). Comments must start with `@<handle>`. A literal
-            # (bjw renders env against the sub-chart scope where top-level `.Values` isn't visible);
-            # keep in sync with `config.appHandle`.
-            GITHUB_APP_HANDLE: "lightbridge-assistant"
+            # (bjw renders env against the sub-chart scope where top-level `.Values` isn't visible).
+            # DEPLOYMENT-SPECIFIC → ai-helm-values; keep in sync with `config.appHandle` + the web
+            # GITHUB_APP_INSTALL_URL. Empty here.
+            GITHUB_APP_HANDLE: ""
             # Authorization (ADR-0023): the dotted token claim carrying the caller's permissions list.
             # The IdP/gateway must emit this; endpoints fail closed without it. Default `permissions`.
             PERMISSIONS_CLAIM: "permissions"
-            # OAuth2 resource server: validate Keycloak-issued RS256 JWTs (ADR-0014). Required —
-            # without OIDC_ISSUER the control plane fails readiness (fails closed).
-            OIDC_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
+            # OAuth2 resource server: validate Keycloak-issued RS256 JWTs (ADR-0014). Required at
+            # runtime — without OIDC_ISSUER the control plane fails readiness (fails closed).
+            # DEPLOYMENT-SPECIFIC (IdP realm URL) → ai-helm-values; empty here.
+            OIDC_ISSUER: ""
             # Expected access-token audience. The Keycloak realm must emit this in the token `aud`
-            # (audience mapper / client scope on `code-intelligence`) or protected endpoints 401.
-            OIDC_AUDIENCE: "code-intelligence"
+            # (audience mapper / client scope) or protected endpoints 401. DEPLOYMENT-SPECIFIC →
+            # ai-helm-values; empty here.
+            OIDC_AUDIENCE: ""
             GITHUB_WEBHOOK_SECRET:
               valueFrom:
                 secretKeyRef:
@@ -360,7 +221,9 @@ lci:
                   name: '{{ .Release.Name }}-github'
                   key: app-private-key
             # DATABASE_URL reuses the CNPG cluster; $(DB_PASSWORD) is interpolated by the
-            # kubelet, and `dependsOn` makes bjw emit DB_PASSWORD first.
+            # kubelet, and `dependsOn` makes bjw emit DB_PASSWORD first. The connection string bakes in
+            # the cluster host/namespace/db (deployment topology) → its `value` lives in ai-helm-values
+            # (must include `$(DB_PASSWORD)`); `dependsOn` stays here. Empty here.
             DB_PASSWORD:
               valueFrom:
                 secretKeyRef:
@@ -368,7 +231,7 @@ lci:
                   key: password
             DATABASE_URL:
               dependsOn: DB_PASSWORD
-              value: "postgresql://codeintel:$(DB_PASSWORD)@lightbridge-main-db-rw.converse.svc.cluster.local:5432/codeintel"
+              value: ""
             NEO4J_URI:
               value: "bolt://{{ .Release.Name }}-neo4j:7687"
             NEO4J_USERNAME: "neo4j"
@@ -443,23 +306,26 @@ lci:
             # in sync with `agents.namespace`.
             AGENT_NAMESPACE: "lightbridge-agents"
             # Public install page for the GitHub App, used by the console's empty-state CTAs and
-            # Settings link. Keep in sync with `appHandle` (https://github.com/apps/<handle>).
-            GITHUB_APP_INSTALL_URL: "https://github.com/apps/lightbridge-assistant"
+            # Settings link. DEPLOYMENT-SPECIFIC (https://github.com/apps/<handle>) → ai-helm-values;
+            # keep in sync with `config.appHandle` + the control-plane GITHUB_APP_HANDLE. Empty here.
+            GITHUB_APP_INSTALL_URL: ""
             # Authorization (ADR-0023): the dotted token claim carrying the caller's permissions. The
             # console reads it to show capability-gated affordances; keep in sync with the control
             # plane's PERMISSIONS_CLAIM. Default `permissions`.
             PERMISSIONS_CLAIM: "permissions"
-            # Keycloak OIDC client (ADR-0014). Public client + PKCE → NO client secret.
-            OIDC_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
-            OIDC_CLIENT_ID: "code-intelligence"
-            OIDC_REDIRECT_URI: "https://code-intelligence.ai.camer.digital/api/auth/callback"
-            OIDC_POST_LOGOUT_REDIRECT_URI: "https://code-intelligence.ai.camer.digital"
-            # TRANSITIONAL (remove once the OIDC web image is live — see chart bump notes):
-            # the chart config (Source A, ai-helm release) and the image tag (Source B,
-            # image-updater on app main) sync independently, so this chart must work with BOTH
-            # the old better-auth image AND the new OIDC image. The new image ignores these.
+            # Keycloak OIDC client (ADR-0014). Public client + PKCE → NO client secret. All four values
+            # below are DEPLOYMENT-SPECIFIC (IdP realm + public web URL) → ai-helm-values. Empty here.
+            OIDC_ISSUER: ""
+            OIDC_CLIENT_ID: ""
+            OIDC_REDIRECT_URI: ""
+            OIDC_POST_LOGOUT_REDIRECT_URI: ""
+            # AUTH_BACKEND_URL is templated from the release name (NOT env-specific) → stays here.
+            # BETTER_AUTH_URL is the public web URL → ai-helm-values. Both are TRANSITIONAL (remove once
+            # the OIDC web image is live — see chart bump notes): the chart config (Source A, ai-helm
+            # release) and the image tag (Source B, image-updater) sync independently, so this chart must
+            # work with BOTH the old better-auth image AND the new OIDC image. The new image ignores these.
             AUTH_BACKEND_URL: "http://{{ .Release.Name }}-control-plane:8080"
-            BETTER_AUTH_URL: "https://code-intelligence.ai.camer.digital"
+            BETTER_AUTH_URL: ""
             BETTER_AUTH_SECRET:
               valueFrom:
                 secretKeyRef:
@@ -610,6 +476,7 @@ lci:
             # Literal (sub-chart env scope); keep in sync with `config.agentConfigMap`.
             AGENT_CONFIG_CONFIGMAP: "lightbridge-agent-config"
             # Same Postgres queue the serve role + webhook write to (dispatcher requires it).
+            # DATABASE_URL `value` (cluster host/namespace/db) → ai-helm-values; `dependsOn` stays here.
             DB_PASSWORD:
               valueFrom:
                 secretKeyRef:
@@ -617,7 +484,7 @@ lci:
                   key: password
             DATABASE_URL:
               dependsOn: DB_PASSWORD
-              value: "postgresql://codeintel:$(DB_PASSWORD)@lightbridge-main-db-rw.converse.svc.cluster.local:5432/codeintel"
+              value: ""
             # Injected into each Job + presented by the runner on the callback (ADR-0017).
             AGENT_RUNNER_TOKEN:
               valueFrom:
@@ -690,6 +557,7 @@ lci:
             RUST_LOG: "info"
             METRICS_ADDR: "0.0.0.0:9090"
             # Optional cadence knobs; absent → run_poller defaults (300s interval / 14-day window).
+            # DATABASE_URL `value` (cluster host/namespace/db) → ai-helm-values; `dependsOn` stays here.
             DB_PASSWORD:
               valueFrom:
                 secretKeyRef:
@@ -697,7 +565,7 @@ lci:
                   key: password
             DATABASE_URL:
               dependsOn: DB_PASSWORD
-              value: "postgresql://codeintel:$(DB_PASSWORD)@lightbridge-main-db-rw.converse.svc.cluster.local:5432/codeintel"
+              value: ""
             # The poller mints installation tokens to read reactions, so it needs the GitHub App key
             # (the dispatcher does not). Same secret the control-plane uses.
             GITHUB_APP_ID:
@@ -760,41 +628,15 @@ lci:
         http:
           port: 7474
 
+  # DEPLOYMENT-SPECIFIC: ingress is OFF by default — the ingress class, cert-manager cluster-issuer,
+  # public hostnames, and TLS secrets are all env-specific, so the FULL ingress config (enabled: true +
+  # className + annotations + hosts + tls) lives in ai-helm-values per environment. A defaults-only
+  # render therefore emits NO Ingress (rather than a broken empty-host one). The override turns it on.
   ingress:
     web:
-      enabled: true
-      className: traefik
-      annotations:
-        cert-manager.io/cluster-issuer: cert-home-cert-http
-      hosts:
-        - host: code-intelligence.ai.camer.digital
-          paths:
-            - path: /
-              pathType: Prefix
-              service:
-                identifier: web
-                port: http
-      tls:
-        - secretName: code-intelligence.ai.camer.digital-tls
-          hosts:
-            - code-intelligence.ai.camer.digital
+      enabled: false
     control-plane:
-      enabled: true
-      className: traefik
-      annotations:
-        cert-manager.io/cluster-issuer: cert-home-cert-http
-      hosts:
-        - host: code-intelligence-api.ai.camer.digital
-          paths:
-            - path: /
-              pathType: Prefix
-              service:
-                identifier: control-plane
-                port: http
-      tls:
-        - secretName: code-intelligence-api.ai.camer.digital-tls
-          hosts:
-            - code-intelligence-api.ai.camer.digital
+      enabled: false
 
   # emptyDir scratch dirs for the read-only-rootfs containers (control-plane, web).
   # Neo4j /data is NOT here — it's a StatefulSet volumeClaimTemplate on the neo4j controller
