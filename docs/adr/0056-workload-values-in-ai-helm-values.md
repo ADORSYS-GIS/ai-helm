@@ -49,10 +49,17 @@ benefit), leaving the small ones and the orchestrators for later.
 - **The inline `valuesObject` is removed** for migrated apps; the file in
   `ai-helm-values` is the single source of truth. (A leftover inline `valuesObject`
   would still layer on top, so removal is required to avoid a stale override.)
-- **First migrated:** `security-policies`, `eg`, `opencode-k8s-agent`.
+- **Migrated:** phase 1 — `security-policies`, `eg`, `opencode-k8s-agent` (the
+  heaviest); phase 2 — `apprise-api`, `aieg`, `core-gateway`, `lightbridge-repo-auth`,
+  `mongodb-backup`, `converse-ui`. That is **every** flat `charts/apps` app that
+  carried a `valuesObject`. (`converse-ui`'s config was deep-merged into its existing
+  image-updater-owned values file, preserving the `image.tag` write-back path;
+  `mongodb-backup`, being a top-level-`chart:` OCI app, already had the `$values`
+  valueFiles ref injected, so it needed no flag — just the file + inline removal.)
 - **A render-check CI** in `ai-helm-values` (`render-check.yml`) YAML-validates
   every values file and `helm template`s the OCI-sourced charts (kuadrant-policies,
-  gateway-helm) against their file — because `ignoreMissingValueFiles` means a
+  gateway-helm, core-gateway, ai-gateway-helm, mongodb-backup) against their file —
+  because `ignoreMissingValueFiles` means a
   malformed file does **not** fail loudly; it silently falls back to chart defaults
   (which for `security-policies` would drop the gateway auth policy entirely).
 - **Ordering invariant:** the `ai-helm-values` file MUST exist on `main` before the
@@ -79,8 +86,6 @@ benefit), leaving the small ones and the orchestrators for later.
   succeeding; a key typo that renders (but is ignored by the chart) won't be caught.
 
 **Not done (future work)**
-- The remaining small `valuesObject` blocks (apprise-api, aieg, core-gateway,
-  mongodb-backup, lightbridge-repo-auth, the GPU models) — same mechanism, deferred.
 - The **orchestrators** (`observability`, `ai-models`, `librechart`, `mcps`,
   `lightbridge`) hold child config in their own chart `values.yaml`, baked into the
   OCI chart; moving those needs a `$values` override on each orchestrator and is a
