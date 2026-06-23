@@ -13,7 +13,7 @@ Helm charts + ArgoCD GitOps for the Camer Digital AI platform. **Not an applicat
 
 > **Maintainer:** @stephane-segning. Use this handle in ADR `Deciders:` lines and any maintainer-attribution context. Don't substitute branch names.
 
-> **Companion repos:** `home-os` (shared cluster infra ai-helm only *consumes* — cert-manager + ClusterIssuers, redis-ha, CNPG + Barman, Traefik, ESO; local `/Users/selast/dev/personal/home-os`) and `hetzner-k8s` (Terraform nodes/network/CNI/LB + the platform bootstrap; local `/Users/selast/dev/personal/hetzner-k8s`). ⚠️ **`ai-gitops` does NOT exist** — older notes/ADRs reference it as the planned "deployment state" repo, but it was never created. Per-env overrides live **in this repo** under `environments/` (ADR-0018); the root `ai-apps-v2` Application is applied **manually**. Still don't put image-tag overrides in chart logic (ADR-0013).
+> **Companion repos:** `home-os` (shared cluster infra ai-helm only *consumes* — cert-manager + ClusterIssuers, redis-ha, CNPG + Barman, Traefik, ESO; local `/Users/selast/dev/personal/home-os`) and `hetzner-k8s` (Terraform nodes/network/CNI/LB + the platform bootstrap; local `/Users/selast/dev/personal/hetzner-k8s`). The old "ai-gitops" deployment-state repo was never built under that name — it exists now as the PRIVATE **`adorsys-gis/ai-helm-values`** (ADR-0055/0056), which holds per-app workload values + image tags + the `environments/` deps overlays. **Chart logic + templates live here in `ai-helm`; everything that is *deployed* (values, tags, per-env CRs) lives in `ai-helm-values`** (see the "ai-helm ↔ ai-helm-values" section below + `ai-helm-values/README.md`). The root `ai-apps-v2` Application is pinned in **`home-os`** `charts/cd`.
 
 ## Read these first when changing anything architectural
 
@@ -105,26 +105,33 @@ The umbrella needs **no ApplicationSet** — `applications.yaml` already passes 
 
 > ⚠️ The `applications.yaml` template's custom-`syncPolicy` branch previously omitted the `syncPolicy:` wrapper key (contents leaked into `destination:`), so ~13 apps that declared their own `syncPolicy` rendered with **no** `spec.syncPolicy` (manual sync, declared automation silently dropped). Fixed in the ADR-0018 work — those apps now get their declared `automated: {prune, selfHeal}`. Sanity-check sync behaviour on the live cluster after merge.
 
-## ai-helm ↔ ai-gitops separation (PLANNED → realised as `ai-helm-values`, ADR-0055)
+## ai-helm ↔ ai-helm-values: what lives where (ADR-0055 + ADR-0056)
 
-> ✅ **Update (ADR-0055):** the long-absent "deployment-state repo" is finally being
-> built — as the PRIVATE **`adorsys-gis/ai-helm-values`**, scoped to **values +
-> image tags** (the written-back image-tag files + the migrated `environments/`
-> overlays). It does **not** hold the root Application (that stays in `home-os`).
-> So the "planned, absent" framing below is now half-true: chart logic + the
-> `charts/apps` umbrella stay here; per-env overrides + image tags move to
-> `ai-helm-values`. Image tags are no longer "default in chart values, never
-> overridden" — image-updater writes them into the values repo. See
-> `docs/continuous-delivery.md`.
+The deployment-state repo older ADRs called "ai-gitops" exists now as the PRIVATE
+**`adorsys-gis/ai-helm-values`** (ADR-0055). The split is **complete and is a hard
+contract** — its full inventory + consumption model live in **`ai-helm-values/README.md`**;
+the summary:
 
-⚠️ The `ai-gitops` repo described below was the *intended* design but **was never created** (its values-only scope is now `ai-helm-values`, above). Until the ADR-0055 cutover completes, this one repo still holds both the chart logic AND (under `environments/`, ADR-0018) the per-env overrides; the root `ai-apps-v2` Application's `targetRevision` is pinned in **`home-os`** `charts/cd/values.yaml` (GitOps-managed by ArgoCD's `cd` app, not applied by hand). Treat the table as design intent, not current state.
-
-| | `ai-helm` (this repo) | `ai-gitops` (planned, absent) |
+| Concern | `ai-helm` (this repo) | `ai-helm-values` (private) |
 |---|---|---|
-| Holds | Helm charts + `environments/` overlays + `charts/apps` root chart | (would hold) ArgoCD root Application + per-env overrides |
-| Image tags | Default in `charts/<x>/values.yaml` (not overridden — ADR-0013) | — |
+| Helm **chart logic / templates** | ✅ `charts/<x>/templates/`, the `charts/apps` umbrella + orchestrator templates | — |
+| Chart **defaults** (structural only) | ✅ `charts/<x>/values.yaml` | — |
+| **Workload config** (per-app `valuesObject`) | ❌ moved out (ADR-0056) | ✅ `environments/<env>/values/<app>.yaml` |
+| **Image tags** | ❌ | ✅ same files, written back by argocd-image-updater |
+| **Per-env deps overlays** (Certificate / ExternalSecret / CiliumNetworkPolicy) + `cluster.yaml` | ❌ moved out (ADR-0055) | ✅ `environments/<env>/deps/<app>/` |
+| ArgoCD **root** `ai-apps-v2` | — | ❌ — pinned in **`home-os`** `charts/cd` |
 
-**ADR-0010** proposed automated image-updater write-back to `ai-gitops`; **ADR-0013** deferred it (and `ai-gitops` was never stood up). See those for the reasoning.
+**Rule of thumb:** if you're about to add or edit a Helm `valuesObject`, an image tag, or a
+per-env CR in `ai-helm`, stop — it belongs in `ai-helm-values`. ai-helm holds *how to render*;
+ai-helm-values holds *what is deployed*. ⚠️ Always cut over **values-repo-first**: the file
+must exist on `ai-helm-values` `main` before the ai-helm chart change merges, or
+`ignoreMissingValueFiles` silently falls back to chart defaults. Charts publish to OCI and
+float; image tags + per-env overrides live in the values repo; the root stays in `home-os`.
+
+**ADR-0010** proposed image-updater write-back (to the then-named "ai-gitops"); **ADR-0013**
+deferred it; **ADR-0055** realised it as `ai-helm-values` (charts→OCI float + image-tag
+write-back); **ADR-0056** extended its scope from image-tags to **all workload config** (every
+flat `charts/apps` app + the `observability`/`lightbridge` orchestrator children).
 
 ## Deploys: CONTINUOUS DELIVERY (ADR-0055) — root tracks `main`, no release tag
 

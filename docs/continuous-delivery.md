@@ -3,6 +3,13 @@
 This is the **how**. The **why** is [ADR-0055](./adr/0055-oci-charts-and-image-updater-writeback-to-values-repo.md),
 which supersedes the tag-based release model ([ADR-0031](./adr/0031-tag-based-deploys.md),
 [`releasing.md`](./releasing.md)) and the deferred write-back ([ADR-0013](./adr/0013-defer-image-updater-writeback.md)).
+Workload **config** moved to the values repo too ([ADR-0056](./adr/0056-workload-values-in-ai-helm-values.md)).
+
+> **What lives where:** `ai-helm` holds chart logic + templates; the PRIVATE
+> **`adorsys-gis/ai-helm-values`** holds everything *deployed* — per-app values,
+> image tags, and per-env deps overlays. That repo documents its own layout, full
+> per-app inventory, and the values-repo-first rule in **`ai-helm-values/README.md`**;
+> the boundary contract is in [`CLAUDE.md`](../CLAUDE.md) ("ai-helm ↔ ai-helm-values").
 
 > **Status: ✅ cutover complete (2026-06-22).** The entire fleet — flat apps, all
 > five orchestrators, and the gateway/auth — runs on continuous delivery. The root
