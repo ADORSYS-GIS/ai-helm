@@ -43,7 +43,25 @@ spec:
     {{- toYaml .sources | nindent 4 }}
     {{- end }}
   {{- else if .source }}
-  {{- if .depsOverlay }}
+  {{- if .valuesFromRepo }}
+  {{- /* ADR-0056: this child's Helm values live in the values repo at
+         environments/<env>/values/<name>.yaml, read via a $values ref, instead of
+         an inline valuesObject. Inject the valueFiles ref + ignoreMissingValueFiles
+         into the source's helm and append the ref source (reusing $a.repoURL, which
+         is already the ai-helm-values repo). */}}
+  {{- $env := $a.env | default "prod" }}
+  {{- $valuesFile := .valuesFile | default (printf "environments/%s/values/%s.yaml" $env .name) }}
+  {{- $src := deepCopy .source }}
+  {{- $h := deepCopy ($src.helm | default dict) }}
+  {{- $_ := set $h "valueFiles" (concat (list (printf "$values/%s" $valuesFile)) ($h.valueFiles | default list)) }}
+  {{- $_ := set $h "ignoreMissingValueFiles" true }}
+  {{- $_ := set $src "helm" $h }}
+  {{- $valuesSource := dict "repoURL" $a.repoURL "targetRevision" $a.targetRevision "ref" "values" }}
+  {{- $srcs := list $src $valuesSource }}
+  {{- if .depsOverlay }}{{- $srcs = append $srcs $depsSource }}{{- end }}
+  sources:
+    {{- toYaml $srcs | nindent 4 }}
+  {{- else if .depsOverlay }}
   sources:
     {{- toYaml (list .source $depsSource) | nindent 4 }}
   {{- else }}
