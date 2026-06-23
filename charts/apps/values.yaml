@@ -520,7 +520,7 @@ applications:
       # ServerSideDiff ignores those server-owned fields so the app reads Synced.
       argocd.argoproj.io/compare-options: ServerSideDiff=true
       # Two images in one app, aliased `cp` (control-plane) + `web`.
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,poll=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -540,6 +540,16 @@ applications:
       argocd-image-updater.argoproj.io/disp.signature-type: cosign
       argocd-image-updater.argoproj.io/disp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/disp.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── poller (SAME image as control-plane, role-selected) — keeps its tag in lockstep so the
+      #    feedback reconcile loop never lags the control-plane on a build. ──
+      argocd-image-updater.argoproj.io/poll.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/poll.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/poll.force-update: "true"
+      argocd-image-updater.argoproj.io/poll.helm.image-name: lci.controllers.poller.containers.main.image.repository
+      argocd-image-updater.argoproj.io/poll.helm.image-tag: lci.controllers.poller.containers.main.image.tag
+      argocd-image-updater.argoproj.io/poll.signature-type: cosign
+      argocd-image-updater.argoproj.io/poll.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/poll.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── web ──
       argocd-image-updater.argoproj.io/web.update-strategy: newest-build
       argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$
