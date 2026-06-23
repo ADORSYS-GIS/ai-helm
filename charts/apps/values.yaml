@@ -142,6 +142,9 @@ applications:
   - name: apprise-api
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Workload values live in ai-helm-values (ADR-0056); template injects the
+    # $values ref + valueFiles (ignoreMissingValueFiles) + the ref source.
+    valuesFromRepo: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/opencode-k8s-agent.git
       # EXTERNAL repo — doesn't ride the ai-helm release tag; bump the SHA
@@ -150,26 +153,6 @@ applications:
       path: helm/apprise-api
       helm:
         releaseName: apprise-api
-        valuesObject:
-          apprise-api:
-            controllers:
-              main:
-                replicas: 1
-                containers:
-                  main:
-                    env:
-                      # Stateless: only the /notify endpoint (urls supplied per
-                      # request by the agent). No persistent stored configs.
-                      APPRISE_STATEFUL_MODE: disabled
-                    resources:
-                      requests: { cpu: 100m, memory: 128Mi }
-                      limits:   { cpu: 500m, memory: 512Mi }
-            service:
-              main:
-                controller: main
-                ports:
-                  http:
-                    port: 8000
     destination:
       namespace: monitoring
     syncPolicy:
@@ -317,6 +300,9 @@ applications:
   - name: aieg
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Workload values live in ai-helm-values (ADR-0056); template injects the
+    # $values ref + valueFiles (ignoreMissingValueFiles) + the ref source.
+    valuesFromRepo: true
     source:
       repoURL: oci://docker.io/envoyproxy/ai-gateway-helm
       # v0.7.0 — keep in lockstep with ai-gateway-crds-helm above (see its note
@@ -329,16 +315,6 @@ applications:
       path: .
       helm:
         releaseName: aieg
-        valuesObject:
-          controller:
-            maxRecvMsgSize: "52428800"
-            mutatingWebhook:
-              certManager:
-                enable: true
-                issuerName: self-signed-ca
-                certificateName: self-signed-cert-for-mutating-webhook-managed
-          extProc:
-            logLevel: info
     destination:
       namespace: envoy-ai-gateway-system
 
@@ -356,6 +332,9 @@ applications:
   - name: core-gateway
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    # Workload values live in ai-helm-values (ADR-0056); template injects the
+    # $values ref + valueFiles (ignoreMissingValueFiles) + the ref source.
+    valuesFromRepo: true
     source:
       # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
       # Minimal in-place .source swap — the large inline valuesObject below is
@@ -365,32 +344,6 @@ applications:
       targetRevision: ">=0.0.0"
       helm:
         releaseName: core-gateway
-        valuesObject:
-          gateway:
-            apiHostname: api.ai.camer.digital
-            # api-https TLS via an in-chart ns-scoped ACME Issuer that solves
-            # HTTP-01 THROUGH this Gateway (no DNS token, fully self-contained).
-            # The challenge is reachable because api.<domain> resolves to the
-            # Envoy LB whose :80 listener is up while api-https is certless.
-            # Requires cert-manager `--enable-gateway-api` (enabled in home-os).
-            acmeHttp01:
-              enabled: true
-              email: selastlambou@protonmail.com
-            # (fallback when acmeHttp01.enabled=false: external issuer by name/kind,
-            #  e.g. issuer: cert-cloudflare / issuerKind: ClusterIssuer for DNS-01.)
-            # Vanity/alias domain redirects (ADR-0053): we own kivoyo.com and its
-            # api.ai.kivoyo.com DNS already points at this Gateway's LB, so we
-            # 307-redirect it (temporary, method-preserving, path+query kept) to
-            # the canonical api.ai.camer.digital. Each entry gets its own HTTPS
-            # listener + ACME cert (reusing the acmeHttp01 issuer above) — see
-            # charts/core-gateway/templates/redirect-hosts.yaml. (The web UI
-            # ai.kivoyo.com is redirected separately via Traefik in
-            # charts/librechat-app.)
-            redirectHosts:
-              - name: kivoyo-api
-                from: api.ai.kivoyo.com
-                to: api.ai.camer.digital
-                statusCode: 307
     destination:
       namespace: converse-gateway
 
@@ -471,20 +424,15 @@ applications:
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     depsOverlay: environments/prod/deps/lightbridge-repo-auth
+    # Workload values live in ai-helm-values (ADR-0056); template injects the
+    # $values ref + valueFiles (ignoreMissingValueFiles) + the ref source.
+    valuesFromRepo: true
     source:
       repoURL: https://github.com/ADORSYS-GIS/lightbridge-repo-auth
       targetRevision: f45cf0ee38cc0a16aaa57a903f9e900d8a6bc22a
       path: charts/lightbridge-repo-auth
       helm:
         releaseName: lightbridge-repo-auth
-        valuesObject:
-          image:
-            tag: sha-f45cf0e
-          ingress:
-            enabled: true
-          env:
-            # Numeric App id from the registered GitHub App (public, not secret).
-            RA__GITHUB__APP_ID: "3253522"
     destination:
       namespace: converse
 
@@ -660,25 +608,6 @@ applications:
           valueFiles:
             - $values/environments/prod/values/converse-ui.yaml
           ignoreMissingValueFiles: true
-          valuesObject:
-            conversefrontend:
-              controllers:
-                main:
-                  podDisruptionBudget:
-                    # User-facing frontend: PDB ensures uptime during automated node maintenance.
-                    maxUnavailable: 1
-                  containers:
-                    frontend:
-                      env:
-                        EXPO_PUBLIC_BACKEND_URL: "https://self-service.ai.camer.digital"
-                        EXPO_PUBLIC_USAGE_URL: "https://self-service.ai.camer.digital"
-                        EXPO_PUBLIC_ANALYTICS_URL: "https://analytics.ai.camer.digital"
-                        EXPO_PUBLIC_KEYCLOAK_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
-                        EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: "converse-frontend"
-                        EXPO_PUBLIC_KEYCLOAK_SCHEME: "self-service"
-                        # JWT Audience validation - ensures tokens are intended for this API
-                        EXPO_PUBLIC_KEYCLOAK_EXPECTED_AUDIENCE: "converse-frontend"
-                        EXPO_PUBLIC_KEYCLOAK_AUDIENCE_REQUIRED: "true"
       # Source B — image tag from ai-helm-values; image-updater commits here.
       - repoURL: https://github.com/adorsys-gis/ai-helm-values
         targetRevision: main
@@ -717,20 +646,6 @@ applications:
     # app to the new version on the next reconcile (no release/repoint needed).
     chart: mongodb-backup
     releaseName: mongodb-backup
-    valuesObject:
-      mongodb-backup:
-        s3:
-          secretName: librechat-s3-config
-        controllers:
-          main:
-            cronjob:
-              successfulJobsHistory: 3
-              failedJobsHistory: 3
-              startingDeadlineSeconds: 30
-            initContainers:
-              exporter:
-                env:
-                  MONGODB_URI: mongodb://librechat-db-0.librechat-db-headless:27017, #librechat-db-1.librechat-db-headless:27017/?replicaSet=rs0
     destination:
       namespace: converse-chat
 
