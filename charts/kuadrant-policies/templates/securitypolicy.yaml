@@ -9,11 +9,23 @@ metadata:
   labels:
     {{ include "common.labels.standard" $ | nindent 4 }}
 spec:
+  # Attach the ext_authz (Authorino) filter to one targetRef PER listener
+  # section. Historically hardcoded to `api-https` only, which left the
+  # `api-internal` listener with NO ext_authz — so LibreChat (and every other
+  # in-cluster caller on core-gateway-internal) bypassed Authorino entirely:
+  # the `internal` AuthConfig never ran, no x-oidc-*/x-account-id were stamped,
+  # and all internal traffic showed up `unstamped:*` on the per-user board (and
+  # the internal apiKey was not actually enforced). Drive the listener list from
+  # `$config.sectionNames` (default ["api-https"] for back-compat) so `main`
+  # can cover both listeners with one policy — one Authorino selects the
+  # main/internal/catch-all AuthConfig by Host.
   targetRefs:
+  {{- range $sectionName := ($config.sectionNames | default (list "api-https")) }}
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: {{ $config.gatewayName }}
-      sectionName: api-https
+      sectionName: {{ $sectionName }}
+  {{- end }}
   extAuth:
     grpc:
       backendRefs:
