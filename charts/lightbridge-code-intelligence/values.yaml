@@ -107,6 +107,10 @@ config:
     # Max agent turns per review (ADR-0037 loop). Empty → the runner's built-in default (40).
     # → agent.json `review.max_turns`.
     maxTurns: ""
+    # Secondary review model to fail over to when the primary times out / errs out a turn (ADR-0039).
+    # Empty → single-model (no failover). → agent.json `review.fallback_model`. Set per-env in
+    # ai-helm-values to a DIFFERENT alias than the primary so a primary-path outage actually fails over.
+    fallbackModel: ""
 
   # PR feedback the control plane applies (FILE-ONLY knobs — no env equivalent).
   review:
