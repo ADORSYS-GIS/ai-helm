@@ -69,6 +69,17 @@ resources:
             login: true
             passwordSecret:
               name: lightbridge-codeintel-db-role
+          # Read-only login role for Grafana (the lightbridge-observability dashboards query Postgres
+          # directly — agent runs are one-shot Jobs and can't be scraped, ADR-0046). Member of the
+          # built-in `pg_read_all_data` role (PG14+) so it gets SELECT on every table with NO writes
+          # and no per-table grants to maintain. Password from the basic-auth Secret below.
+          - name: grafana_ro
+            ensure: present
+            login: true
+            inRoles:
+              - pg_read_all_data
+            passwordSecret:
+              name: lightbridge-grafana-ro-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -254,3 +265,38 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: codeintel_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # grafana_ro role password (read-only DB user for the Grafana dashboards).
+  # basic-auth Secret consumed by CNPG (passwordSecret on the managed role above)
+  # to SET the role's password. The SAME password is also surfaced into the
+  # `observability` namespace for the GrafanaDatasource (see ai-helm-values
+  # environments/prod/deps/observability-secrets) — both read this one SM property.
+  # ⚠️ Requires a new `codeintel_grafana_ro_db_password` property in the
+  # ai/camer/digital/prod/env Secrets Manager bucket.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lightbridge-grafana-ro-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lightbridge-grafana-ro-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "grafana_ro"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: codeintel_grafana_ro_db_password
