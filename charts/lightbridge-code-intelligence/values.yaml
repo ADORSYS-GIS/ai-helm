@@ -111,6 +111,11 @@ config:
     # Empty → single-model (no failover). → agent.json `review.fallback_model`. Set per-env in
     # ai-helm-values to a DIFFERENT alias than the primary so a primary-path outage actually fails over.
     fallbackModel: ""
+    # Model context window in tokens (ADR-0045). → agent.json `review.context_window`. Empty → no
+    # budgeting (the agent sends the full history and would fail a 400 on overflow). Set per-env in
+    # ai-helm-values to the serving model's real window so the agent winds down + trims before overflow
+    # and finalizes (never discards findings) if it still overruns.
+    contextWindow: ""
 
   # PR feedback the control plane applies (FILE-ONLY knobs — no env equivalent).
   review:
