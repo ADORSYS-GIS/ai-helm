@@ -103,6 +103,19 @@ flowchart LR
 - The dashboard Python is the **only runnable code** in the repo; after editing
   `.py` you must `dashboards build` + commit the JSON (CI fails otherwise).
 
+## In-Grafana AI assistant (ADR-0058)
+
+The `grafana-llm-app` plugin gives operators AI help *inside* Grafana, but its
+LLM backend is **our own Envoy AI Gateway** (OpenAI-compatible) — not an external
+provider — so the same governance + per-account cost attribution apply. Because
+the plugin sends a *static* bearer key it must use the gateway's **internal
+plane** (`core-gateway-internal…svc`, ADR-0021); a dedicated `internal-key-grafana`
+apiKey gives Grafana its own `x-account-id` spend bucket. Config is fully
+declarative (it survives the stateless pod roll): plugin install + provisioning
+ConfigMap live in `ai-helm-values` `environments/prod/values/grafana.yaml`, the
+gateway-key ExternalSecret + a `self-signed-ca` CA-trust mount + Cilium egress to
+`envoy-gateway-system:443` in the `deps/grafana` overlay.
+
 ## Why the sync-wave order is load-bearing
 
 ```mermaid

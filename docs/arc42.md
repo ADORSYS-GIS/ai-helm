@@ -326,6 +326,8 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0053 | Vanity-domain redirects (`kivoyo.com` → `camer.digital`, temporary) |
 | 0054 | Adopt the k3s-bundled metrics-server; drop our GitOps copy (ends the ADR-0015 name collision) |
 | 0055 | Continuous delivery: OCI-published charts (float on a semver range) + argocd-image-updater write-back to the private `ai-helm-values` repo; retires tag-based deploys (supersedes 0013, 0031; amends 0018) |
+| 0056/0057 | Workload values (and a leaf chart's own deployment literals) move to `ai-helm-values`; charts ship environment-agnostic structure only |
+| 0058 | Grafana AI assistant (`grafana-llm-app`) on the internal gateway plane — dedicated apiKey for cost attribution, internal-CA trust, declarative (survives pod rolls) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
