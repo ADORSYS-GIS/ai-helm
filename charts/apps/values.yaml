@@ -547,6 +547,34 @@ applications:
     destination:
       namespace: converse
 
+  # ── Lightbridge observability — Grafana dashboards-as-code (ADR-0043) ──
+  # Deploys the dashboards-as-code chart that lives in the APPLICATION repo
+  # (vymalo/lightbridge-code-intelligence, PUBLIC → no repo-creds needed), NOT in
+  # ai-helm: a GrafanaFolder + GrafanaDashboard CRs (imported by the grafana
+  # operator) + a read-only Postgres GrafanaDatasource. Lands in `observability`
+  # where the operator watches. No images → no image-updater. The metrics
+  # scraping (ServiceMonitors) + the grafana_ro DB role live with the workload
+  # (lightbridge-code-intelligence / lightbridge-db); this app is dashboards only.
+  - name: lightbridge-observability
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    sources:
+      # Source A — the dashboards chart from the app repo @ main (continuous).
+      - repoURL: https://github.com/vymalo/lightbridge-code-intelligence
+        targetRevision: main
+        path: deploy/observability
+        helm:
+          releaseName: lightbridge-observability
+          valueFiles:
+            - $values/environments/prod/values/lightbridge-observability.yaml
+          ignoreMissingValueFiles: true
+      # Source B — env-specific values from ai-helm-values main.
+      - repoURL: https://github.com/adorsys-gis/ai-helm-values
+        targetRevision: main
+        ref: values
+    destination:
+      namespace: observability
+
   # --- argocd-image-updater activation (control object, ADR-0055) ---
   # The CRD-based argocd-image-updater controller only acts on an Application when
   # an ImageUpdater CR selects it. Those CRs are argocd control objects (they must

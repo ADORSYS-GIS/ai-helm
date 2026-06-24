@@ -150,6 +150,16 @@ syncWave:
   secrets: "0"
   app: "2"
 
+# ── metrics scraping ─────────────────────────────────────────────────────────
+# ServiceMonitors that point Alloy (prometheus.operator.servicemonitors) at the control-plane's
+# /metrics (serve role :8080) and the dispatcher's (:9090). OFF in chart defaults so a defaults-only
+# render (helm lint / chart CI, no monitoring.coreos.com CRDs) emits nothing; the prod values turn it
+# on. Powers the Operations dashboard (deploy/observability, lightbridge-code-intelligence repo).
+metrics:
+  serviceMonitors:
+    enabled: false
+    interval: 30s
+
 # ── bjw-s app-template (v4) instance ─────────────────────────────────────────
 lci:
   # Force the fullname so resource/service names are deterministic `lightbridge-ci-*`
@@ -631,6 +641,15 @@ lci:
           port: 7687
         http:
           port: 7474
+    # Metrics-only Service for the dispatcher role (METRICS_ADDR :9090). The serve role's /metrics is
+    # already on the control-plane Service (:8080); the dispatcher/poller have no Service otherwise, so
+    # this gives the ServiceMonitor (templates/servicemonitor.yaml) a stable Endpoints target. The
+    # dispatcher pod declares no containerPort, but a Service routes by numeric targetPort regardless.
+    dispatcher:
+      controller: dispatcher
+      ports:
+        metrics:
+          port: 9090
 
   # DEPLOYMENT-SPECIFIC: ingress is OFF by default — the ingress class, cert-manager cluster-issuer,
   # public hostnames, and TLS secrets are all env-specific, so the FULL ingress config (enabled: true +
