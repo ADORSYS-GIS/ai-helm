@@ -7,10 +7,10 @@
         "name": "azp",
         "label": "Client (azp)",
         "skipUrlSync": false,
-        "query": "label_values({service_name=\"envoy-ai-gateway\"}, azp)",
+        "query": "label_values(loki_process_custom_gen_ai_requests, azp)",
         "datasource": {
-          "type": "loki",
-          "uid": "loki"
+          "type": "prometheus",
+          "uid": "mimir"
         },
         "current": {
           "text": [
@@ -36,10 +36,10 @@
         "name": "model",
         "label": "Model",
         "skipUrlSync": false,
-        "query": "label_values({service_name=\"envoy-ai-gateway\"}, model)",
+        "query": "label_values(loki_process_custom_gen_ai_requests, model)",
         "datasource": {
-          "type": "loki",
-          "uid": "loki"
+          "type": "prometheus",
+          "uid": "mimir"
         },
         "current": {
           "text": [
@@ -65,22 +65,22 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-cost-by-model",
   "title": "AI Gateway — cost by model (monthly)",
-  "description": "Cost per model for the Envoy AI Gateway, daily granularity. The headline panel stacks one bar per day per model (resolution pinned to 1d). Default window is 30 days — set the range to a calendar month for monthly totals. Cost = gen_ai.usage.custom_total_cost (micro-USD ÷ 1e6; ADR-0028/0051). Spans all attributed traffic incl. service accounts. See docs/per-user-observability.md. GENERATED — source: tools/dashboards/envoy_ai_gateway/cost_by_model.py.",
+  "description": "Cost per model for the Envoy AI Gateway, daily granularity, from the precomputed Mimir metrics (ADR-0058) — PromQL increase() over the loki_process_custom_gen_ai_usage_cost_micro_usd counter (÷1e6 for USD; ADR-0028/0051), NOT a Loki log-scan. Default 30 days; set the range to a calendar month for monthly totals. Spans all attributed traffic incl. service accounts. ⚠️ Forward-only history (began at ADR-0058 part A). GENERATED — source: tools/dashboards/envoy_ai_gateway/cost_by_model.py.",
   "tags": [
     "ai-gateway",
     "cost",
     "model",
-    "loki"
+    "mimir"
   ],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
   "time": {
-    "from": "now-7d",
+    "from": "now-30d",
     "to": "now"
   },
   "fiscalYearStartMonth": 0,
-  "refresh": "",
+  "refresh": "5m",
   "panels": [
     {
       "type": "row",
@@ -99,20 +99,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "((sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6)",
+          "expr": "((sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Total cost (selected range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -158,20 +160,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range]))",
+          "expr": "sum(increase(loki_process_custom_gen_ai_usage_tokens{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Total tokens (selected range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -217,20 +221,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} [$__range]))",
+          "expr": "sum(increase(loki_process_custom_gen_ai_requests{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Total requests (selected range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -276,22 +282,24 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "((sum by (model) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [1d]))) / 1e6)",
+          "expr": "((sum by (model) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[1d]))) / 1e6)",
           "refId": "A",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
           "legendFormat": "{{model}}",
-          "step": "1d",
-          "queryType": "range",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          }
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "interval": "1d"
         }
       ],
       "title": "Cost per day, by model",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 11,
@@ -335,21 +343,23 @@
       "type": "bargauge",
       "targets": [
         {
-          "expr": "sort_desc(sum by (model) (((sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range])) / 1e6)))",
+          "expr": "topk(30, ((sum by (model) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6))",
           "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "legendFormat": "{{model}}",
-          "queryType": "range",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Cost by model — total (selected range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 11,
@@ -402,21 +412,23 @@
       "type": "piechart",
       "targets": [
         {
-          "expr": "((sum by (model) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6)",
+          "expr": "((sum by (model) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
           "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "legendFormat": "{{model}}",
-          "queryType": "range",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Cost share by model (selected range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 11,
