@@ -140,6 +140,12 @@ def daily_bars_panel(
     """Stacked daily BARS timeseries — the canonical "X per day, stacked by
     series" cost viz. Pairs with an `expr` that uses a `[1d]` window and a
     `step="1d"` target (set by the caller) so each bar is exactly one day.
+
+    Legend calcs default to mean/max, NOT sum: with a relative range
+    (now-30d) Grafana evaluates the `[1d]` range-vector at the range start
+    too, so the leading bucket sums the 24h BEFORE the window — a legend
+    `sum` would overstate the range by up to a day. Authoritative totals
+    live in the stat / table / bargauge panels (which use `[$__range]`).
     """
     h, w, x, y = grid
     return (
@@ -157,7 +163,7 @@ def daily_bars_panel(
             cb.VizLegendOptions()
             .display_mode(cm.LegendDisplayMode.TABLE)
             .placement(cm.LegendPlacement.RIGHT)
-            .calcs(legend_calcs if legend_calcs is not None else ["sum"])
+            .calcs(legend_calcs if legend_calcs is not None else ["mean", "max"])
         )
         .tooltip(
             cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI).sort(cm.SortOrder.DESCENDING)

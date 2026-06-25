@@ -108,10 +108,18 @@ def _panel_cost_per_1k_tokens() -> object:
 
 
 def _panel_user_table() -> table.Panel:
-    # Three range queries (refIds A/B/C) grouped by display_name, merged into one
-    # row-per-user table by `timeSeriesTable` (reduces each series with
-    # lastNotNull → its per-range total). `organize` renames the auto "Trend #X"
-    # columns; `sortBy` ranks by cost. Cost column carries the USD unit override.
+    # Three range queries (refIds A/B/C) grouped by display_name. The transform
+    # chain is order-critical:
+    #   1. timeSeriesTable — reduce each series to its per-range total
+    #      (lastNotNull on the [$__range] running sum), one frame per refId with
+    #      columns [display_name, "Trend #A"|"#B"|"#C"].
+    #   2. merge — collapse the three frames into ONE row per display_name
+    #      (Grafana merges rows sharing identical values in shared fields, i.e.
+    #      display_name). WITHOUT this, the three frames stay separate and the
+    #      table can't show Cost/Tokens/Requests side by side or sort across
+    #      them (Grafana "Merge series/tables"; PR #485 review).
+    #   3. organize — rename the auto "Trend #X" columns + display_name.
+    #   4. sortBy — rank by cost. Cost column carries the USD unit override.
     panel = (
         table.Panel()
         .title("Per actor — requests · tokens · cost (selected range)")
@@ -131,6 +139,7 @@ def _panel_user_table() -> table.Panel:
                 },
             )
         )
+        .with_transformation(dm.DataTransformerConfig(id_val="merge", options={}))
         .with_transformation(
             dm.DataTransformerConfig(
                 id_val="organize",
@@ -178,7 +187,6 @@ def _panel_cost_per_day_by_user() -> object:
         legend=_LEGEND_USER,
         unit="currencyUSD",
         grid=(10, 12, 0, 17),
-        legend_calcs=["sum"],
     )
 
 
@@ -190,7 +198,6 @@ def _panel_tokens_per_day_by_user() -> object:
         legend=_LEGEND_USER,
         unit="short",
         grid=(10, 12, 12, 17),
-        legend_calcs=["sum"],
     )
 
 

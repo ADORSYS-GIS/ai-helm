@@ -78,7 +78,6 @@ def _panel_cost_per_day_by_model() -> object:
         legend=_LEGEND_MODEL,
         unit="currencyUSD",
         grid=(11, 24, 0, 5),
-        legend_calcs=["sum", "max"],
     )
 
 
