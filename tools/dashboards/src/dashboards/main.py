@@ -30,6 +30,7 @@ _DASHBOARD_MODULES: tuple[str, ...] = (
     "dashboards.envoy_ai_gateway.per_user",
     "dashboards.envoy_ai_gateway.cost_by_model",
     "dashboards.envoy_ai_gateway.actor_consumption",
+    "dashboards.envoy_ai_gateway.user_tokens_cost",
 )
 
 

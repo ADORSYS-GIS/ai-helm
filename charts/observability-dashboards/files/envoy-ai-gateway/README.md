@@ -77,6 +77,7 @@ same Loki data path (above) and the helpers in
 | `per-user.json` · `envoy-ai-gateway-per-user` | `per_user.py` | Real-time per-user activity (requests, tokens, latency, status, cost-by-channel). Default `now-1h`. |
 | `cost-by-model.json` · `envoy-ai-gateway-cost-by-model` | `cost_by_model.py` | **Cost × model, daily granularity** — stacked one-bar-per-day-per-model timeseries + per-model totals + share pie. Default `now-30d`; set the range to a month for monthly totals. Filters: `azp`, `model`. |
 | `actor-consumption.json` · `envoy-ai-gateway-actor-consumption` | `actor_consumption.py` | **Per-actor consumption** — pick one `actor` (the `display_name` label = a person's name for humans, the **repository** for CI), see cost over the range (≈ per month) + cost-per-day-by-model bars + which-models pie + cost-by-channel. Filters: `actor`, `azp`, `model`. |
+| `user-tokens-cost.json` · `envoy-ai-gateway-user-tokens-cost` | `user_tokens_cost.py` | **Users x tokens x cost** — one table row per actor (requests · tokens · cost, via the `timeSeriesTable`+`organize`+`sortBy` transform chain) + per-day stacked cost/tokens-by-actor bars + cost/tokens leaderboards + a blended cost/1k-tokens stat. Filters: `azp`, `model`. |
 
 > **Daily granularity contract:** the cost-per-day panels pin the Loki query
 > `step` to `1d` with a `[1d]` window, so each bar is exactly one non-overlapping

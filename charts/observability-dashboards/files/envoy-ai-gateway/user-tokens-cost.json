@@ -1,0 +1,702 @@
+{
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "azp",
+        "label": "Client (azp)",
+        "skipUrlSync": false,
+        "query": "label_values({service_name=\"envoy-ai-gateway\"}, azp)",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "model",
+        "label": "Model",
+        "skipUrlSync": false,
+        "query": "label_values({service_name=\"envoy-ai-gateway\"}, model)",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      }
+    ]
+  },
+  "annotations": {},
+  "uid": "envoy-ai-gateway-user-tokens-cost",
+  "title": "AI Gateway — users: tokens & cost",
+  "description": "Users x tokens x cost for the Envoy AI Gateway. The table gives one row per actor (display_name = a person for humans, the repository for CI) with requests / tokens / cost side by side over the selected range (default 30d ≈ monthly); per-day stacked panels add daily granularity, and the leaderboards rank by cost and by tokens. Cost = gen_ai.usage.custom_total_cost (micro-USD ÷ 1e6; ADR-0028/0051). Filters: azp, model. ⚠️ LibreChat agent runs + RAG embeddings fall back to azp=internal-key-librechat (not the human) — docs/per-user-observability.md. GENERATED — source: tools/dashboards/envoy_ai_gateway/user_tokens_cost.py.",
+  "tags": [
+    "ai-gateway",
+    "cost",
+    "tokens",
+    "per-user",
+    "loki"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "5m",
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Users — tokens & cost",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "((sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6)",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Total cost (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "orange"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range]))",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Total tokens (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(sum by (display_name) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} [$__range])))",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Unique actors (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "purple"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "(sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range])) / 1e6) / ((sum(sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range])) / 1000))",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Blended cost / 1k tokens (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
+      "targets": [
+        {
+          "expr": "((sum by (display_name) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6)",
+          "refId": "A",
+          "legendFormat": "{{display_name}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        },
+        {
+          "expr": "sum by (display_name) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range]))",
+          "refId": "B",
+          "legendFormat": "{{display_name}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        },
+        {
+          "expr": "sum by (display_name) (count_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} [$__range]))",
+          "refId": "C",
+          "legendFormat": "{{display_name}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Per actor — requests · tokens · cost (selected range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "repeatDirection": "h",
+      "transformations": [
+        {
+          "id": "timeSeriesTable",
+          "options": {
+            "A": {
+              "stat": "lastNotNull"
+            },
+            "B": {
+              "stat": "lastNotNull"
+            },
+            "C": {
+              "stat": "lastNotNull"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "display_name": "Actor",
+              "Trend #A": "Cost ($)",
+              "Trend #B": "Tokens",
+              "Trend #C": "Requests"
+            },
+            "excludeByName": {},
+            "indexByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Cost ($)",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "inspect": false,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cost ($)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "((sum by (display_name) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [1d]))) / 1e6)",
+          "refId": "A",
+          "legendFormat": "{{display_name}}",
+          "step": "1d",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Cost per day, by actor",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1.0,
+            "fillOpacity": 70.0,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (display_name) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [1d]))",
+          "refId": "A",
+          "legendFormat": "{{display_name}}",
+          "step": "1d",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Tokens per day, by actor",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1.0,
+            "fillOpacity": 70.0,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "topk(20, ((sum by (display_name) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range]))) / 1e6))",
+          "refId": "A",
+          "legendFormat": "{{display_name}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Top actors by cost (selected range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "repeatDirection": "h",
+      "options": {
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "maxVizHeight": 300,
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "orange"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "topk(20, sum by (display_name) (sum_over_time({service_name=\"envoy-ai-gateway\", azp=~\"$azp\", user_id=~\".+\", model=~\"$model\"} | json gen_ai_usage_total_tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap gen_ai_usage_total_tokens | __error__=\"\" [$__range])))",
+          "refId": "A",
+          "legendFormat": "{{display_name}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Top actors by tokens (selected range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "repeatDirection": "h",
+      "options": {
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "maxVizHeight": 300,
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
