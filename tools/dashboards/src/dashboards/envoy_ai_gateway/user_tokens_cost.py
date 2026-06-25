@@ -252,8 +252,11 @@ def _dashboard() -> db.Dashboard:
         .timezone("browser")
         .editable()
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
-        .refresh("5m")
-        .time("now-30d", "now")
+        # Auto-refresh OFF + 7d default — see cost_by_model for the rationale
+        # (cold 30d log-scans on the rate-limited store self-DoS Loki). Expand
+        # the range manually; Phase 2 (Mimir recording rules) restores fast 30d.
+        .refresh("")
+        .time("now-7d", "now")
         .with_variable(
             sh.multi_var(
                 name="azp",

@@ -128,8 +128,13 @@ def _dashboard() -> db.Dashboard:
         .timezone("browser")
         .editable()
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
-        .refresh("5m")
-        .time("now-30d", "now")
+        # Auto-refresh OFF + 7d default: a cold 30d log-scan over the
+        # rate-limited object store can't return within Grafana's timeout, and a
+        # 30d + 5m-refresh board saturated Loki (self-DoS → "No data"). 7d loads
+        # off the warm chunk cache; expand the range manually for longer windows.
+        # Phase 2 (Mimir recording rules) restores a fast 30d default.
+        .refresh("")
+        .time("now-7d", "now")
         .with_variable(
             sh.multi_var(
                 name="azp",
