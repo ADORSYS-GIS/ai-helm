@@ -40,6 +40,21 @@ GATEWAY_SERVICE_NAME = "envoy-ai-gateway"
 
 
 # ---------------------------------------------------------------------------
+# Precomputed AI Gateway usage METRICS in Mimir (ADR-0058). Emitted by Alloy
+# `loki.process` `stage.metrics` (default `loki_process_custom_` prefix) at
+# ingest and scraped to Mimir, so the cost dashboards read cheap PromQL
+# time-series instead of unwrap-scanning a month of Loki logs from the
+# rate-limited object store. All three carry the ADR-0046 attribution labels
+# (model / azp / display_name / user_id / email / billing_plan / service_name).
+# Counters → use PromQL `increase(...[window])`. Cost is micro-USD (÷1e6).
+# ---------------------------------------------------------------------------
+_METRIC_PREFIX = "loki_process_custom_"
+METRIC_COST_MICRO_USD = _METRIC_PREFIX + "gen_ai_usage_cost_micro_usd"
+METRIC_TOKENS = _METRIC_PREFIX + "gen_ai_usage_tokens"
+METRIC_REQUESTS = _METRIC_PREFIX + "gen_ai_requests"
+
+
+# ---------------------------------------------------------------------------
 # Service-account client IDs — keep in sync with
 # `charts/apps/values.yaml` `security-policies.authConfigs.main.serviceAccountClients`.
 # Used by dashboards that want to split human vs SA traffic.
