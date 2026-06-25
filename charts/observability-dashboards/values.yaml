@@ -162,10 +162,10 @@ alerting:
           expr: 'quantile_over_time(0.95, {service_name="envoy-ai-gateway"} | json | unwrap duration | __error__="" [5m]) by ()'
           fromSeconds: 600
           op: gt
-          threshold: 5000
+          threshold: 120000
           for: 10m
           severity: warning
-          summary: "AI Gateway p95 latency > 5s for 10m."
+          summary: "AI Gateway p95 latency > 120s for 10m (LLM streaming is slow; ~40s is normal here — this catches genuinely stuck/timeout requests)."
 
     - name: ai-gateway-cost
       folderRef: ai-gateway
@@ -187,10 +187,10 @@ alerting:
           expr: sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[30d]))/1e6
           fromSeconds: 2592000
           op: gt
-          threshold: 4000
+          threshold: 6000
           for: 1h
           severity: warning
-          summary: "AI Gateway 30-day spend exceeded $4000."
+          summary: "AI Gateway 30-day spend exceeded $6000 (budget knob — set to your actual monthly budget; run-rate ~$5k)."
 
     - name: stack-health
       folderRef: collectors
@@ -237,7 +237,7 @@ alerting:
           expr: max(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
           fromSeconds: 600
           op: gt
-          threshold: 0.9
+          threshold: 0.92
           for: 10m
           severity: warning
-          summary: "A node is using >90% of memory for 10m."
+          summary: "A node is using >92% of memory for 10m (baseline runs ~87%)."
