@@ -120,6 +120,17 @@ resources:
       configuration:
         destinationPath: s3://ssegning-k8s-state/lightbridge-main-db
         endpointURL: https://nbg1.your-objectstorage.com
+        # ⚠️ Throttle the backup UPLOAD. The retention prune above was one symptom;
+        # the backup itself ALSO failed — Hetzner Object Storage returns `SlowDown`
+        # on the parallel multipart UploadPart calls and barman gives up after 4
+        # retries ("Backup failed uploading data ... UploadPart ... reached max
+        # retries: 4"). WAL archiving (single PUTs) and Keycloak's backups to the
+        # SAME bucket succeed, so it's lightbridge's parallel upload tripping the
+        # per-request-rate limit, not a bucket outage. jobs:1 serialises the upload
+        # (one UploadPart stream) and gzip shrinks it (fewer parts) → under the limit.
+        data:
+          jobs: 1
+          compression: gzip
         s3Credentials:
           accessKeyId:
             name: lightbridge-cnpg-s3
