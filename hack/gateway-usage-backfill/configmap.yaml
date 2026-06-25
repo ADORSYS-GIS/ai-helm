@@ -1,0 +1,95 @@
+# Extract script for the ADR-0058 historical backfill (one-off).
+# Not GitOps-managed — applied manually with the sibling job.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-usage-backfill-script
+  namespace: observability
+data:
+  extract.py: |
+    """Read historical AI-Gateway usage from Loki and emit an OpenMetrics file
+    of CUMULATIVE per-day samples, so `promtool tsdb create-blocks-from
+    openmetrics` can turn it into TSDB blocks that `mimirtool backfill` uploads
+    to Mimir. Cumulative (monotonic) values make the dashboards' increase(...[1d])
+    yield each day's total. Emitted as gauge (exact metric name, no _total rule);
+    increase() ignores type metadata. See ADR-0058 + hack/gateway-usage-backfill.
+    """
+    import json, os, sys, time, urllib.parse, urllib.request
+    from datetime import datetime, timezone, timedelta
+
+    LOKI = os.environ.get("LOKI_URL", "http://loki-gateway.observability.svc.cluster.local")
+    DAYS = int(os.environ.get("DAYS", "30"))
+    OUT = os.environ.get("OUT", "/work/usage.om")
+    SEL = '{service_name="envoy-ai-gateway"}'
+    GROUP = "model, azp, display_name, billing_plan"
+    LABELS = ["model", "azp", "display_name", "billing_plan"]
+
+    METRICS = {
+        "loki_process_custom_gen_ai_usage_cost_micro_usd":
+            f'sum by ({GROUP}) (sum_over_time({SEL} | json v=`["gen_ai.usage.custom_total_cost"]` | unwrap v | __error__="" [1d]))',
+        "loki_process_custom_gen_ai_usage_tokens":
+            f'sum by ({GROUP}) (sum_over_time({SEL} | json v=`["gen_ai.usage.total_tokens"]` | unwrap v | __error__="" [1d]))',
+        "loki_process_custom_gen_ai_requests":
+            f'sum by ({GROUP}) (count_over_time({SEL} [1d]))',
+    }
+
+
+    def query(expr, t):
+        params = urllib.parse.urlencode({"query": expr, "time": str(t)})
+        url = f"{LOKI}/loki/api/v1/query?{params}"
+        for attempt in range(6):
+            try:
+                with urllib.request.urlopen(url, timeout=150) as r:
+                    return json.load(r)["data"]["result"]
+            except Exception as e:
+                wait = 8 * (attempt + 1)
+                print(f"    retry {attempt + 1}/6 in {wait}s: {e}", file=sys.stderr)
+                time.sleep(wait)
+        raise SystemExit(f"FAILED after retries: {expr[:70]}")
+
+
+    midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    # boundaries[0]=oldest .. boundaries[DAYS]=today; day d covers [b[d], b[d+1]).
+    boundaries = [midnight - timedelta(days=DAYS - i) for i in range(DAYS + 1)]
+
+    data = {m: {} for m in METRICS}        # m -> {labelset -> {day -> total}}
+    allsets = {m: set() for m in METRICS}
+    for m, expr in METRICS.items():
+        for d in range(DAYS):
+            t = int(boundaries[d + 1].timestamp())   # instant = end of day d
+            res = query(expr, t)
+            n = 0
+            for s in res:
+                ls = tuple(s["metric"].get(k, "") for k in LABELS)
+                val = float(s["value"][1])
+                if val <= 0:
+                    continue
+                data[m].setdefault(ls, {})[d] = val
+                allsets[m].add(ls)
+                n += 1
+            print(f"  {m} {boundaries[d].date()}: {n} series", file=sys.stderr)
+
+
+    def esc(v):
+        return v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+    total_samples = 0
+    with open(OUT, "w") as f:
+        for m in METRICS:
+            f.write(f"# HELP {m} ADR-0058 historical backfill from Loki logs (cumulative).\n")
+            f.write(f"# TYPE {m} gauge\n")
+            for ls in sorted(allsets[m]):
+                labels = ",".join(f'{k}="{esc(v)}"' for k, v in zip(LABELS, ls))
+                labels += ',service_name="envoy-ai-gateway",source="backfill"'
+                # 0 at the window start, then cumulative at each day boundary
+                # (every day, even idle ones, so increase[1d] always has 2 points).
+                f.write(f"{m}{{{labels}}} 0 {int(boundaries[0].timestamp())}\n")
+                cum = 0.0
+                for d in range(DAYS):
+                    cum += data[m].get(ls, {}).get(d, 0.0)
+                    f.write(f"{m}{{{labels}}} {cum!r} {int(boundaries[d + 1].timestamp())}\n")
+                    total_samples += 1
+        f.write("# EOF\n")
+    print(f"wrote {OUT}: {total_samples} samples across "
+          f"{sum(len(s) for s in allsets.values())} series", file=sys.stderr)
