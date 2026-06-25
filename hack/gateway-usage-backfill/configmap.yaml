@@ -74,6 +74,16 @@ data:
         return v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
+    # Emit the cumulative value every STEP_H hours (NOT only at day boundaries).
+    # Grafana's 1d steps align to UTC midnight = our day boundaries, so
+    # boundary-only samples leave each `increase(...[1d])` window with a single
+    # point → EMPTY daily bars (verified: increase[1d] empty, [2d] non-empty).
+    # A 6h cadence puts >=4 samples in every [1d] window with exactly one
+    # midnight jump = that day's total. The value at time t is the cumulative
+    # through days fully COMPLETED before t (a step function jumping at each
+    # midnight). Cumulative + consistent at shared timestamps ⇒ re-running never
+    # double-counts (Mimir dedups same-series/same-ts; increase reads deltas).
+    STEP_H = 6
     total_samples = 0
     with open(OUT, "w") as f:
         for m in METRICS:
@@ -82,13 +92,16 @@ data:
             for ls in sorted(allsets[m]):
                 labels = ",".join(f'{k}="{esc(v)}"' for k, v in zip(LABELS, ls))
                 labels += ',service_name="envoy-ai-gateway",source="backfill"'
-                # 0 at the window start, then cumulative at each day boundary
-                # (every day, even idle ones, so increase[1d] always has 2 points).
-                f.write(f"{m}{{{labels}}} 0 {int(boundaries[0].timestamp())}\n")
-                cum = 0.0
+                cum_by_day = []          # cum_by_day[d] = cumulative through day d
+                running = 0.0
                 for d in range(DAYS):
-                    cum += data[m].get(ls, {}).get(d, 0.0)
-                    f.write(f"{m}{{{labels}}} {cum!r} {int(boundaries[d + 1].timestamp())}\n")
+                    running += data[m].get(ls, {}).get(d, 0.0)
+                    cum_by_day.append(running)
+                for h in range(0, DAYS * 24 + 1, STEP_H):
+                    t = boundaries[0] + timedelta(hours=h)
+                    dd = h // 24         # day index this timestamp falls in (0..DAYS)
+                    val = cum_by_day[dd - 1] if dd >= 1 else 0.0
+                    f.write(f"{m}{{{labels}}} {val!r} {int(t.timestamp())}\n")
                     total_samples += 1
         f.write("# EOF\n")
     print(f"wrote {OUT}: {total_samples} samples across "
