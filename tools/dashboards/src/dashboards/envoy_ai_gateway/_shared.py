@@ -1,93 +1,65 @@
-"""Shared SDK panel/query helpers for the Envoy AI Gateway dashboards.
+"""Shared SDK panel/query helpers for the Envoy AI Gateway COST dashboards.
 
-`_common.py` is intentionally SDK-free (pure data). This module is the
-SDK-aware sibling: the query-builder gotchas the gateway dashboards all
-share (the µ$→USD divide, the `| json ["dotted.key"] | unwrap` form, the
-range-not-instant rule, daily-step buckets) live here ONCE so cost/actor
-dashboards stay consistent with each other.
+These dashboards read the **precomputed Mimir metrics** (ADR-0058) — Alloy
+`stage.metrics` counters (`loki_process_custom_gen_ai_*`) scraped to Mimir — via
+**PromQL**, NOT Loki log-scans. That's what makes a 30-day view instant on a
+rate-limited object store. Counters → `increase(metric[window])`; cost is
+micro-USD (÷1e6 via `usd()`).
 
-NOTE: `per_user.py` predates this module and keeps its own private copies of
-these helpers on purpose — refactoring it would change its generated JSON and
-trip the `dashboards check` drift guard. New dashboards import from here.
+`_common.py` stays SDK-free (pure data); this is its SDK-aware sibling.
+`per_user.py` is a separate, Loki-backed dashboard and keeps its own helpers.
 """
 
 from __future__ import annotations
 
-from grafana_foundation_sdk.builders import bargauge, loki, piechart, stat, timeseries
+from grafana_foundation_sdk.builders import bargauge, piechart, prometheus, stat, timeseries
 from grafana_foundation_sdk.builders import common as cb
 from grafana_foundation_sdk.builders import dashboard as db
 from grafana_foundation_sdk.models import common as cm
 from grafana_foundation_sdk.models import dashboard as dm
 from grafana_foundation_sdk.models import piechart as pm
 
-from dashboards._common import GATEWAY_SERVICE_NAME, LOKI_UID
+from dashboards._common import GATEWAY_SERVICE_NAME, MIMIR_UID
 
-LOKI_DS = dm.DataSourceRef(type_val="loki", uid=LOKI_UID)
-
-# Envoy's access-log format.json declares the GenAI usage fields with LITERAL
-# dots in the key name (`gen_ai.usage.total_tokens`), so the explicit
-# `| json <name>` path-lookup form must bracket+quote the dotted key
-# (`["dotted.key"]`) — a bare name doesn't match. See per_user._unwrap for the
-# full archaeology (ADR-0046).
-_JSON_PATHS = {
-    "gen_ai_usage_total_tokens": "gen_ai.usage.total_tokens",
-    "gen_ai_usage_custom_total_cost": "gen_ai.usage.custom_total_cost",
-}
-
-
-def unwrap(field: str) -> str:
-    """`| json <field> | unwrap <field> | __error__=""` — extract ONLY `field`.
-
-    Extracting one field (not a bare `| json`) keeps the per-line label set
-    down to the genuine stream labels, so `sum_over_time`'s implicit grouping
-    can't blow past Loki's 500-series cap. `__error__=""` drops samples that
-    fail the string→float conversion (absent fields arrive as "-").
-    """
-    path = _JSON_PATHS.get(field)
-    extract = f'{field}=`["{path}"]`' if path else field
-    return f'| json {extract} | unwrap {field} | __error__=""'
+# Mimir is a Prometheus-compatible datasource.
+MIMIR_DS = dm.DataSourceRef(type_val="prometheus", uid=MIMIR_UID)
 
 
 def usd(expr: str) -> str:
-    """Convert a raw micro-USD LogQL aggregation to USD (pricing CEL emits µ$)."""
+    """Convert a micro-USD PromQL expression to USD (the cost counter is µ$)."""
     return f"(({expr}) / 1e6)"
 
 
 def selector(*matchers: str) -> str:
-    """`{service_name="envoy-ai-gateway", <extra matchers...>}`.
-
-    Pass extra label matchers as raw LogQL fragments, e.g.
-    `selector('display_name=~"$actor"', 'model=~"$model"')`.
-    """
+    """`{service_name="envoy-ai-gateway", <extra PromQL label matchers...>}`."""
     parts = [f'service_name="{GATEWAY_SERVICE_NAME}"', *matchers]
     return "{" + ", ".join(parts) + "}"
 
 
-def loki_target(
+def prom_target(
     expr: str,
     *,
     legend: str = "",
     ref_id: str = "A",
-    instant: bool = False,
-    step: str = "",
-) -> loki.Dataquery:
-    """A Loki query target. Range mode by default — the Loki Grafana plugin does
-    NOT substitute `$__range`/`$__interval` in instant queries (silent no-data).
+    instant: bool = True,
+    fmt: str = "time_series",
+    interval: str = "",
+) -> prometheus.Dataquery:
+    """A Mimir/PromQL query target.
 
-    `step="1d"` pins the query resolution so cost panels can't bucket finer than
-    a day (the "minimum granularity of days" contract).
+    Totals/leaderboards/pies use `instant=True` (one value per series at the
+    range end — `$__range` substitutes in Prometheus instant queries, unlike
+    Loki). Daily-bar timeseries pass `instant=False` + `interval="1d"` so each
+    bar is one day. `fmt="table"` is used for the per-actor table.
     """
-    q = (
-        loki.Dataquery()
-        .expr(expr)
-        .ref_id(ref_id)
-        .query_type("instant" if instant else "range")
-        .datasource(LOKI_DS)
-    )
+    q = prometheus.Dataquery().expr(expr).ref_id(ref_id).datasource(MIMIR_DS)
+    q = q.instant() if instant else q.range()
+    if fmt:
+        q = q.format(fmt)
     if legend:
         q = q.legend_format(legend)
-    if step:
-        q = q.step(step)
+    if interval:
+        q = q.interval(interval)
     return q
 
 
@@ -102,19 +74,13 @@ def stat_panel(
     unit: str,
     color: str,
     grid: tuple[int, int, int, int],
-    step: str = "",
 ) -> stat.Panel:
-    """Single-value stat with sparkline. `grid` is (h, w, x, y).
-
-    `[$__range]` + the default lastNotNull calc reads the per-range total at the
-    last evaluated point (a [1m]+sum form double-counts via overlapping
-    auto-step windows — see per_user._panel_user_total_cost).
-    """
+    """Single-value stat. `grid` is (h, w, x, y). Instant `sum(increase(...[$__range]))`."""
     h, w, x, y = grid
     return (
         stat.Panel()
         .title(title)
-        .datasource(LOKI_DS)
+        .datasource(MIMIR_DS)
         .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
         .unit(unit)
         .thresholds(single_color_thresholds(color))
@@ -124,7 +90,7 @@ def stat_panel(
         .color_mode(cm.BigValueColorMode.VALUE)
         .graph_mode(cm.BigValueGraphMode.AREA)
         .justify_mode(cm.BigValueJustifyMode.AUTO)
-        .with_target(loki_target(expr, step=step))
+        .with_target(prom_target(expr, instant=True))
     )
 
 
@@ -137,21 +103,19 @@ def daily_bars_panel(
     grid: tuple[int, int, int, int],
     legend_calcs: list[str] | None = None,
 ) -> timeseries.Panel:
-    """Stacked daily BARS timeseries — the canonical "X per day, stacked by
-    series" cost viz. Pairs with an `expr` that uses a `[1d]` window and a
-    `step="1d"` target (set by the caller) so each bar is exactly one day.
+    """Stacked daily BARS — pass an `increase(metric[1d])` expr; this pins the
+    step to 1d (`interval`) so each bar is one day.
 
-    Legend calcs default to mean/max, NOT sum: with a relative range
-    (now-30d) Grafana evaluates the `[1d]` range-vector at the range start
-    too, so the leading bucket sums the 24h BEFORE the window — a legend
-    `sum` would overstate the range by up to a day. Authoritative totals
-    live in the stat / table / bargauge panels (which use `[$__range]`).
+    Legend calcs default to mean/max, NOT sum: `increase` over a relative range
+    evaluates a leading partial/lookback bucket at the range start, so a legend
+    `sum` would mislead. Authoritative totals live in the stat/table/bargauge
+    panels (instant `increase[$__range]`).
     """
     h, w, x, y = grid
     return (
         timeseries.Panel()
         .title(title)
-        .datasource(LOKI_DS)
+        .datasource(MIMIR_DS)
         .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
         .unit(unit)
         .draw_style(cm.GraphDrawStyle.BARS)
@@ -168,7 +132,7 @@ def daily_bars_panel(
         .tooltip(
             cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI).sort(cm.SortOrder.DESCENDING)
         )
-        .with_target(loki_target(expr, legend=legend, step="1d"))
+        .with_target(prom_target(expr, legend=legend, instant=False, interval="1d"))
     )
 
 
@@ -183,7 +147,7 @@ def pie_panel(
     return (
         piechart.Panel()
         .title(title)
-        .datasource(LOKI_DS)
+        .datasource(MIMIR_DS)
         .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
         .pie_type(pm.PieChartType.DONUT)
         .legend(
@@ -193,7 +157,7 @@ def pie_panel(
             .values([pm.PieChartLegendValues.VALUE, pm.PieChartLegendValues.PERCENT])
         )
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.SINGLE))
-        .with_target(loki_target(expr, legend=legend_label, instant=False))
+        .with_target(prom_target(expr, legend=legend_label, instant=True))
     )
 
 
@@ -206,26 +170,24 @@ def bargauge_panel(
     color: str,
     grid: tuple[int, int, int, int],
 ) -> bargauge.Panel:
-    """Horizontal bargauge — ranked totals (one bar per series). Range query so
-    `$__range` substitutes; the bar uses the series' last value."""
+    """Horizontal bargauge — ranked totals (one bar per series), instant query."""
     h, w, x, y = grid
     return (
         bargauge.Panel()
         .title(title)
-        .datasource(LOKI_DS)
+        .datasource(MIMIR_DS)
         .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
         .unit(unit)
         .orientation(cm.VizOrientation.HORIZONTAL)
         .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
         .display_mode(cm.BarGaugeDisplayMode.BASIC)
         .thresholds(single_color_thresholds(color))
-        .with_target(loki_target(expr, legend=legend, instant=False))
+        .with_target(prom_target(expr, legend=legend, instant=True))
     )
 
 
 class _RowBuilder:
-    """Tiny adapter so a RowPanel can be passed to Dashboard.with_panel (the SDK
-    ships a RowPanel model but no row *builder*)."""
+    """Tiny adapter so a RowPanel can be passed to Dashboard.with_panel."""
 
     def __init__(self, row: dm.RowPanel) -> None:
         self._row = row
@@ -239,12 +201,11 @@ def row(title: str, *, y: int) -> _RowBuilder:
 
 
 def actor_var(*, name: str, label: str, definition: str) -> db.QueryVariable:
-    """Single-select query variable (for the actor picker — one user/repo at a
-    time). All-value `.+` so 'All' still renders a valid regex matcher."""
+    """Single-select query variable (the actor picker — one user/repo at a time)."""
     return (
         db.QueryVariable(name)
         .label(label)
-        .datasource(LOKI_DS)
+        .datasource(MIMIR_DS)
         .query(definition)
         .refresh(dm.VariableRefresh.ON_TIME_RANGE_CHANGED)
         .sort(dm.VariableSort.ALPHABETICAL_ASC)
@@ -260,7 +221,7 @@ def multi_var(*, name: str, label: str, definition: str) -> db.QueryVariable:
     return (
         db.QueryVariable(name)
         .label(label)
-        .datasource(LOKI_DS)
+        .datasource(MIMIR_DS)
         .query(definition)
         .refresh(dm.VariableRefresh.ON_TIME_RANGE_CHANGED)
         .sort(dm.VariableSort.ALPHABETICAL_ASC)
@@ -269,3 +230,8 @@ def multi_var(*, name: str, label: str, definition: str) -> db.QueryVariable:
         .all_value(".+")
         .current(dm.VariableOption(selected=True, text=["All"], value=["$__all"]))
     )
+
+
+def label_values(metric: str, label: str) -> str:
+    """PromQL template-variable query: distinct values of `label` on `metric`."""
+    return f"label_values({metric}, {label})"
