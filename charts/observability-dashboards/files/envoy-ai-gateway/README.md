@@ -64,3 +64,24 @@ uv run dashboards check       # what CI runs; fails on drift
 Keep `uid: envoy-ai-gateway-per-user` stable — changing it breaks bookmarks
 (and the epic's source-of-truth link). To prototype in Grafana, edit a *copy*
 in the UI, then port the change back into the generator module.
+
+## Sibling dashboards in this folder
+
+The `AI Gateway` folder now holds three cost/usage dashboards. They share the
+same Loki data path (above) and the helpers in
+`tools/dashboards/src/dashboards/envoy_ai_gateway/_shared.py`. All are GENERATED
+— edit the `.py`, then `uv run dashboards build` (commit the JSON).
+
+| File / UID | Source module | What it shows |
+|---|---|---|
+| `per-user.json` · `envoy-ai-gateway-per-user` | `per_user.py` | Real-time per-user activity (requests, tokens, latency, status, cost-by-channel). Default `now-1h`. |
+| `cost-by-model.json` · `envoy-ai-gateway-cost-by-model` | `cost_by_model.py` | **Cost × model, daily granularity** — stacked one-bar-per-day-per-model timeseries + per-model totals + share pie. Default `now-30d`; set the range to a month for monthly totals. Filters: `azp`, `model`. |
+| `actor-consumption.json` · `envoy-ai-gateway-actor-consumption` | `actor_consumption.py` | **Per-actor consumption** — pick one `actor` (the `display_name` label = a person's name for humans, the **repository** for CI), see cost over the range (≈ per month) + cost-per-day-by-model bars + which-models pie + cost-by-channel. Filters: `actor`, `azp`, `model`. |
+
+> **Daily granularity contract:** the cost-per-day panels pin the Loki query
+> `step` to `1d` with a `[1d]` window, so each bar is exactly one non-overlapping
+> calendar day — the resolution can't go finer (the "minimum granularity of
+> days" ask). ⚠️ A full 30-day cost query reads historical chunks from Hetzner
+> Object Storage; if that store is rate-limiting (`SlowDown`), the monthly view
+> can be slow or empty even though recent ranges are instant — see the Loki
+> read-path note in the cluster runbook.

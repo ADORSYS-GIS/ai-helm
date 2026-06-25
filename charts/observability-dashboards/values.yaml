@@ -51,6 +51,17 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/per-user.json
     resyncPeriod: 5m
+  # Cost × model with daily granularity (stacked daily bars), default 30d window.
+  - name: envoy-ai-gateway-cost-by-model
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/cost-by-model.json
+    resyncPeriod: 5m
+  # Per-actor (user OR repo via display_name) consumption: cost per month/day +
+  # which models + which channels. Input variables: actor / azp / model.
+  - name: envoy-ai-gateway-actor-consumption
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/actor-consumption.json
+    resyncPeriod: 5m
   # Alloy collector health (metrics/logs/traces pipelines, OTLP receiver,
   # clustering). Targets confirmed alloy_*/prometheus_remote_storage_*/
   # loki_write_*/otelcol_receiver_* series; datasource UID hardcoded to `mimir`.
