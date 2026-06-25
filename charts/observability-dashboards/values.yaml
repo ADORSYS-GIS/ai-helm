@@ -128,7 +128,11 @@ alerting:
         - uid: aigw-no-traffic
           title: AI Gateway — no attributed traffic (15m)
           datasourceUid: mimir
-          expr: sum(rate(loki_process_custom_gen_ai_requests[15m]))
+          # `or vector(0)`: if the metric has NO series (pipeline dead / fresh
+          # rollout), bare rate() returns no data → noDataState OK → the alert
+          # meant to catch exactly that would stay green. Default to 0 so the
+          # `< threshold` condition actually trips.
+          expr: sum(rate(loki_process_custom_gen_ai_requests[15m])) or vector(0)
           fromSeconds: 1200
           op: lt
           threshold: 0.0001

@@ -33,20 +33,24 @@ spec:
   resyncPeriod: {{ . | quote }}
   {{- end }}
   name: {{ $a.contactPoint.name }}
-  type: {{ $a.contactPoint.type | default "discord" }}
-  disableResolveMessage: false
-  settings:
-    # Replaced at reconcile time by spec.valuesFrom (the ESO-synced webhook).
-    url: "PLACEHOLDER_REPLACED_BY_VALUESFROM"
-    {{- with $a.contactPoint.settings }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-  valuesFrom:
-    - targetPath: settings.url
-      valueFrom:
-        secretKeyRef:
-          name: {{ $a.webhookSecret.secretName }}
-          key: {{ $a.webhookSecret.key | default "url" }}
+  # Modern receivers[] form (the top-level type/settings/valuesFrom are
+  # deprecated). The webhook is injected into settings.url via valuesFrom —
+  # targetPath is relative to the receiver's `settings`, so it's "url" (NOT
+  # "settings.url", which would write settings.settings.url and never deliver).
+  receivers:
+    - type: {{ $a.contactPoint.type | default "discord" }}
+      disableResolveMessage: false
+      settings:
+        url: "${url}"   # placeholder; replaced at reconcile by valuesFrom below
+        {{- with $a.contactPoint.settings }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      valuesFrom:
+        - targetPath: url
+          valueFrom:
+            secretKeyRef:
+              name: {{ $a.webhookSecret.secretName }}
+              key: {{ $a.webhookSecret.key | default "url" }}
 ---
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaNotificationPolicy
