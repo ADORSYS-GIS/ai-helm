@@ -84,3 +84,160 @@ dashboards:
 
 # Future: datasources, contactPoints, alertRules can land here.
 datasources: []
+
+# ---------------------------------------------------------------------------
+# Unified alerting → Discord (ADR-0059). Provisioned via grafana-operator CRs
+# (templates/alerting*.yaml) so it survives stateless-Grafana rolls. The
+# webhook URL comes from ESO (populate the SM property below); until then the
+# contact point keeps a placeholder url (rules evaluate, delivery is a no-op).
+# Rules use the compact shape {datasourceUid, expr, op, threshold, ...}; the
+# template expands each into Grafana's A=query / B=reduce / C=threshold model.
+# Thresholds are first-pass — tune live once alerts are firing.
+# ---------------------------------------------------------------------------
+alerting:
+  enabled: true
+  resyncPeriod: 5m
+
+  contactPoint:
+    name: discord
+    type: discord
+    settings:
+      title: "{{ .CommonLabels.alertname }} [{{ .Status }}]"
+      message: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}"
+
+  webhookSecret:
+    enabled: true
+    secretName: grafana-discord-webhook
+    key: url
+    secretStore: ssegning-aws
+    remoteKey: ai/camer/digital/prod/env
+    property: grafana_discord_webhook_url
+    refreshInterval: 1h
+
+  notificationPolicy:
+    groupBy: [grafana_folder, alertname]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+
+  ruleGroups:
+    - name: ai-gateway-health
+      folderRef: ai-gateway
+      interval: 1m
+      rules:
+        - uid: aigw-no-traffic
+          title: AI Gateway — no attributed traffic (15m)
+          datasourceUid: mimir
+          # `or vector(0)`: if the metric has NO series (pipeline dead / fresh
+          # rollout), bare rate() returns no data → noDataState OK → the alert
+          # meant to catch exactly that would stay green. Default to 0 so the
+          # `< threshold` condition actually trips.
+          expr: sum(rate(loki_process_custom_gen_ai_requests[15m])) or vector(0)
+          fromSeconds: 1200
+          op: lt
+          threshold: 0.0001
+          for: 15m
+          severity: critical
+          summary: "No AI Gateway requests recorded in 15m — gateway down or the attribution/metrics pipeline is broken."
+
+    - name: ai-gateway-errors
+      folderRef: ai-gateway
+      interval: 1m
+      rules:
+        - uid: aigw-5xx-surge
+          title: AI Gateway — 5xx surge (5m)
+          datasourceUid: loki
+          datasourceType: loki
+          expr: 'sum(rate({service_name="envoy-ai-gateway"} | json | response_code=~"5.."[5m]))'
+          fromSeconds: 600
+          op: gt
+          threshold: 0.2
+          for: 10m
+          severity: warning
+          summary: "AI Gateway 5xx rate > 0.2/s for 10m."
+        - uid: aigw-p95-latency
+          title: AI Gateway — p95 latency high (5m)
+          datasourceUid: loki
+          datasourceType: loki
+          expr: 'quantile_over_time(0.95, {service_name="envoy-ai-gateway"} | json | unwrap duration | __error__="" [5m]) by ()'
+          fromSeconds: 600
+          op: gt
+          threshold: 5000
+          for: 10m
+          severity: warning
+          summary: "AI Gateway p95 latency > 5s for 10m."
+
+    - name: ai-gateway-cost
+      folderRef: ai-gateway
+      interval: 5m
+      rules:
+        - uid: cost-daily-high
+          title: AI Gateway — daily spend high
+          datasourceUid: mimir
+          expr: sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[24h]))/1e6
+          fromSeconds: 86400
+          op: gt
+          threshold: 300
+          for: 30m
+          severity: warning
+          summary: "AI Gateway spend over the last 24h exceeded $300."
+        - uid: cost-monthly-burn
+          title: AI Gateway — monthly burn high
+          datasourceUid: mimir
+          expr: sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[30d]))/1e6
+          fromSeconds: 2592000
+          op: gt
+          threshold: 4000
+          for: 1h
+          severity: warning
+          summary: "AI Gateway 30-day spend exceeded $4000."
+
+    - name: stack-health
+      folderRef: collectors
+      interval: 1m
+      rules:
+        - uid: observability-component-down
+          title: Observability component down
+          datasourceUid: mimir
+          expr: count(up{namespace="observability"} == 0) or vector(0)
+          fromSeconds: 600
+          op: gt
+          threshold: 0
+          for: 5m
+          severity: critical
+          summary: "One or more observability scrape targets are down (up==0)."
+
+    - name: cluster-health
+      folderRef: collectors
+      interval: 1m
+      rules:
+        - uid: pod-crashlooping
+          title: Pod crashlooping
+          datasourceUid: mimir
+          expr: sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total{namespace=~"observability|converse|envoy-gateway-system|apps|lightbridge-agents"}[15m]))
+          fromSeconds: 900
+          op: gt
+          threshold: 3
+          for: 10m
+          severity: warning
+          summary: "A pod restarted >3 times in 15m (crashloop)."
+        - uid: node-not-ready
+          title: Node not ready
+          datasourceUid: mimir
+          expr: min(kube_node_status_condition{condition="Ready",status="true"})
+          fromSeconds: 600
+          op: lt
+          threshold: 1
+          for: 5m
+          severity: critical
+          summary: "A Kubernetes node is not Ready."
+        - uid: node-memory-high
+          title: Node memory pressure
+          datasourceUid: mimir
+          expr: max(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+          fromSeconds: 600
+          op: gt
+          threshold: 0.9
+          for: 10m
+          severity: warning
+          summary: "A node is using >90% of memory for 10m."
