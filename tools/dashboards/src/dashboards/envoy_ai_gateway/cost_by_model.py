@@ -1,15 +1,18 @@
 """Envoy AI Gateway — cost by model, monthly (GENERATED SOURCE).
 
-Answers "what did each model cost this month?" with a minimum granularity of
-days: the headline panel is a stacked daily-bars timeseries, one series per
-model, defaulting to a 30-day window. Optional Client (azp) / Model filters.
+Cost x model with a minimum granularity of days. Reads the precomputed Mimir
+metrics (ADR-0058) via PromQL — NOT Loki log-scans — so a 30-day view is instant
+on the rate-limited object store. The headline panel stacks one bar per day per
+model. Optional Client (azp) / Model filters.
+
+⚠️ Metrics are forward-only (they began when ADR-0058 part A deployed); the 30d
+view fills in over ~30 days.
 
 The JSON file is regenerated from this module — do **not** hand-edit it.
 
     uv run dashboards build
 
-Architecture decision: docs/adr/0008-python-dashboard-generation.md.
-Data path the dashboard consumes: docs/per-user-observability.md.
+ADR: docs/adr/0058-precompute-gateway-usage-metrics-to-mimir.md (+ ADR-0008).
 """
 
 from __future__ import annotations
@@ -20,19 +23,20 @@ from grafana_foundation_sdk.builders import dashboard as db
 from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import dashboard as dm
 
-from dashboards._common import GATEWAY_SERVICE_NAME, LABEL_AZP, LABEL_MODEL
+from dashboards._common import (
+    LABEL_AZP,
+    LABEL_MODEL,
+    METRIC_COST_MICRO_USD,
+    METRIC_REQUESTS,
+    METRIC_TOKENS,
+)
 from dashboards.envoy_ai_gateway import _shared as sh
 
 OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/cost-by-model.json"
 
-# Spans ALL attributed traffic (humans + service accounts) regardless of the
-# filter variables' defaults — every gateway stream carries a user_id label
-# (a real sub or an "unstamped:*"/"missing:*" sentinel), so `user_id=~".+"`
-# matches everything while staying a valid selector.
-_SELECTOR = sh.selector('azp=~"$azp"', 'user_id=~".+"', 'model=~"$model"')
-
-_COST = "gen_ai_usage_custom_total_cost"
-_TOKENS = "gen_ai_usage_total_tokens"
+# Spans all attributed gateway traffic (the metrics exist only for gateway
+# requests); azp/model filters refine it.
+_SEL = sh.selector('azp=~"$azp"', 'model=~"$model"')
 
 _LEGEND_MODEL = "{{" + LABEL_MODEL + "}}"
 
@@ -40,7 +44,7 @@ _LEGEND_MODEL = "{{" + LABEL_MODEL + "}}"
 def _panel_total_cost() -> object:
     return sh.stat_panel(
         title="Total cost (selected range)",
-        expr=sh.usd(f"sum(sum_over_time({_SELECTOR} {sh.unwrap(_COST)} [$__range]))"),
+        expr=sh.usd(f"sum(increase({METRIC_COST_MICRO_USD}{_SEL}[$__range]))"),
         unit="currencyUSD",
         color="orange",
         grid=(4, 8, 0, 1),
@@ -50,7 +54,7 @@ def _panel_total_cost() -> object:
 def _panel_total_tokens() -> object:
     return sh.stat_panel(
         title="Total tokens (selected range)",
-        expr=f"sum(sum_over_time({_SELECTOR} {sh.unwrap(_TOKENS)} [$__range]))",
+        expr=f"sum(increase({METRIC_TOKENS}{_SEL}[$__range]))",
         unit="short",
         color="green",
         grid=(4, 8, 8, 1),
@@ -60,7 +64,7 @@ def _panel_total_tokens() -> object:
 def _panel_total_requests() -> object:
     return sh.stat_panel(
         title="Total requests (selected range)",
-        expr=f"sum(count_over_time({_SELECTOR} [$__range]))",
+        expr=f"sum(increase({METRIC_REQUESTS}{_SEL}[$__range]))",
         unit="short",
         color="blue",
         grid=(4, 8, 16, 1),
@@ -68,10 +72,9 @@ def _panel_total_requests() -> object:
 
 
 def _panel_cost_per_day_by_model() -> object:
-    # [1d] window + step="1d" (set by daily_bars_panel) → one non-overlapping
-    # bar per calendar day, stacked by model. This is the "min granularity of
-    # days" contract: the resolution is pinned to a day and can't go finer.
-    expr = sh.usd(f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {sh.unwrap(_COST)} [1d]))")
+    # increase(...[1d]) at step 1d (set by daily_bars_panel) → one bar per day,
+    # stacked by model. The "minimum granularity of days" contract.
+    expr = sh.usd(f"sum by ({LABEL_MODEL}) (increase({METRIC_COST_MICRO_USD}{_SEL}[1d]))")
     return sh.daily_bars_panel(
         title="Cost per day, by model",
         expr=expr,
@@ -82,13 +85,10 @@ def _panel_cost_per_day_by_model() -> object:
 
 
 def _panel_cost_by_model_totals() -> object:
-    # sum_over_time can't take an inline by() (Loki) — group via the outer
-    # sum by; unwrap extracts only the cost field so cardinality stays bounded.
-    cost_sum = f"sum_over_time({_SELECTOR} {sh.unwrap(_COST)} [$__range])"
-    expr = f"sort_desc(sum by ({LABEL_MODEL}) ({sh.usd(cost_sum)}))"
+    inner = f"sum by ({LABEL_MODEL}) (increase({METRIC_COST_MICRO_USD}{_SEL}[$__range]))"
     return sh.bargauge_panel(
         title="Cost by model — total (selected range)",
-        expr=expr,
+        expr=f"topk(30, {sh.usd(inner)})",
         legend=_LEGEND_MODEL,
         unit="currencyUSD",
         color="orange",
@@ -97,9 +97,7 @@ def _panel_cost_by_model_totals() -> object:
 
 
 def _panel_cost_by_model_pie() -> object:
-    expr = sh.usd(
-        f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {sh.unwrap(_COST)} [$__range]))"
-    )
+    expr = sh.usd(f"sum by ({LABEL_MODEL}) (increase({METRIC_COST_MICRO_USD}{_SEL}[$__range]))")
     return sh.pie_panel(
         title="Cost share by model (selected range)",
         expr=expr,
@@ -109,12 +107,12 @@ def _panel_cost_by_model_pie() -> object:
 
 
 _DESCRIPTION = (
-    "Cost per model for the Envoy AI Gateway, daily granularity. The headline "
-    "panel stacks one bar per day per model (resolution pinned to 1d). Default "
-    "window is 30 days — set the range to a calendar month for monthly totals. "
-    "Cost = gen_ai.usage.custom_total_cost (micro-USD ÷ 1e6; ADR-0028/0051). "
-    "Spans all attributed traffic incl. service accounts. "
-    "See docs/per-user-observability.md. "
+    "Cost per model for the Envoy AI Gateway, daily granularity, from the "
+    "precomputed Mimir metrics (ADR-0058) — PromQL increase() over the "
+    "loki_process_custom_gen_ai_usage_cost_micro_usd counter (÷1e6 for USD; "
+    "ADR-0028/0051), NOT a Loki log-scan. Default 30 days; set the range to a "
+    "calendar month for monthly totals. Spans all attributed traffic incl. "
+    "service accounts. ⚠️ Forward-only history (began at ADR-0058 part A). "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/cost_by_model.py."
 )
 
@@ -123,30 +121,25 @@ def _dashboard() -> db.Dashboard:
     return (
         db.Dashboard("AI Gateway — cost by model (monthly)")
         .uid("envoy-ai-gateway-cost-by-model")
-        .tags(["ai-gateway", "cost", "model", "loki"])
+        .tags(["ai-gateway", "cost", "model", "mimir"])
         .description(_DESCRIPTION)
         .timezone("browser")
         .editable()
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
-        # Auto-refresh OFF + 7d default: a cold 30d log-scan over the
-        # rate-limited object store can't return within Grafana's timeout, and a
-        # 30d + 5m-refresh board saturated Loki (self-DoS → "No data"). 7d loads
-        # off the warm chunk cache; expand the range manually for longer windows.
-        # Phase 2 (Mimir recording rules) restores a fast 30d default.
-        .refresh("")
-        .time("now-7d", "now")
+        .refresh("5m")
+        .time("now-30d", "now")
         .with_variable(
             sh.multi_var(
                 name="azp",
                 label="Client (azp)",
-                definition=f'label_values({{service_name="{GATEWAY_SERVICE_NAME}"}}, {LABEL_AZP})',
+                definition=sh.label_values(METRIC_REQUESTS, LABEL_AZP),
             )
         )
         .with_variable(
             sh.multi_var(
                 name="model",
                 label="Model",
-                definition=f'label_values({{service_name="{GATEWAY_SERVICE_NAME}"}}, {LABEL_MODEL})',
+                definition=sh.label_values(METRIC_REQUESTS, LABEL_MODEL),
             )
         )
         .with_panel(sh.row("Cost by model", y=0))

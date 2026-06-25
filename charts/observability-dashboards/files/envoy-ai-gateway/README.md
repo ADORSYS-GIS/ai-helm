@@ -67,22 +67,24 @@ in the UI, then port the change back into the generator module.
 
 ## Sibling dashboards in this folder
 
-The `AI Gateway` folder now holds three cost/usage dashboards. They share the
-same Loki data path (above) and the helpers in
-`tools/dashboards/src/dashboards/envoy_ai_gateway/_shared.py`. All are GENERATED
-— edit the `.py`, then `uv run dashboards build` (commit the JSON).
+The `AI Gateway` folder holds four dashboards. `per-user.json` is **Loki-backed**
+(raw log activity); the three **cost** boards read the **precomputed Mimir
+metrics** (ADR-0058) via PromQL — NOT Loki log-scans — so they're instant at any
+range and don't touch the rate-limited object store. The cost boards share the
+PromQL helpers in `tools/dashboards/src/dashboards/envoy_ai_gateway/_shared.py`.
+All are GENERATED — edit the `.py`, then `uv run dashboards build` (commit JSON).
 
-| File / UID | Source module | What it shows |
-|---|---|---|
-| `per-user.json` · `envoy-ai-gateway-per-user` | `per_user.py` | Real-time per-user activity (requests, tokens, latency, status, cost-by-channel). Default `now-1h`. |
-| `cost-by-model.json` · `envoy-ai-gateway-cost-by-model` | `cost_by_model.py` | **Cost × model, daily granularity** — stacked one-bar-per-day-per-model timeseries + per-model totals + share pie. Default `now-30d`; set the range to a month for monthly totals. Filters: `azp`, `model`. |
-| `actor-consumption.json` · `envoy-ai-gateway-actor-consumption` | `actor_consumption.py` | **Per-actor consumption** — pick one `actor` (the `display_name` label = a person's name for humans, the **repository** for CI), see cost over the range (≈ per month) + cost-per-day-by-model bars + which-models pie + cost-by-channel. Filters: `actor`, `azp`, `model`. |
-| `user-tokens-cost.json` · `envoy-ai-gateway-user-tokens-cost` | `user_tokens_cost.py` | **Users x tokens x cost** — one table row per actor (requests · tokens · cost, via the `timeSeriesTable`+`organize`+`sortBy` transform chain) + per-day stacked cost/tokens-by-actor bars + cost/tokens leaderboards + a blended cost/1k-tokens stat. Filters: `azp`, `model`. |
+| File / UID | Source module | Backend | What it shows |
+|---|---|---|---|
+| `per-user.json` · `envoy-ai-gateway-per-user` | `per_user.py` | Loki | Real-time per-user activity (requests, tokens, latency, status, cost-by-channel). Default `now-1h`. |
+| `cost-by-model.json` · `envoy-ai-gateway-cost-by-model` | `cost_by_model.py` | Mimir | **Cost × model, daily granularity** — stacked one-bar-per-day-per-model + per-model totals + share pie. Default `now-30d`. Filters: `azp`, `model`. |
+| `actor-consumption.json` · `envoy-ai-gateway-actor-consumption` | `actor_consumption.py` | Mimir | **Per-actor consumption** — pick one `actor` (`display_name` = a person for humans, the **repository** for CI), cost over range (≈ per month) + cost-per-day-by-model + which-models pie + cost-by-channel. Filters: `actor`, `azp`, `model`. |
+| `user-tokens-cost.json` · `envoy-ai-gateway-user-tokens-cost` | `user_tokens_cost.py` | Mimir | **Users x tokens x cost** — one table row per actor (requests · tokens · cost, via 3 instant table queries + `merge`+`organize`+`sortBy`) + per-day stacked cost/tokens bars + leaderboards + blended cost/1k-tokens. Filters: `azp`, `model`. |
 
-> **Daily granularity contract:** the cost-per-day panels pin the Loki query
-> `step` to `1d` with a `[1d]` window, so each bar is exactly one non-overlapping
-> calendar day — the resolution can't go finer (the "minimum granularity of
-> days" ask). ⚠️ A full 30-day cost query reads historical chunks from Hetzner
-> Object Storage; if that store is rate-limiting (`SlowDown`), the monthly view
-> can be slow or empty even though recent ranges are instant — see the Loki
-> read-path note in the cluster runbook.
+> **Data source (cost boards):** PromQL `increase()` over the Alloy-emitted
+> counters `loki_process_custom_gen_ai_{usage_cost_micro_usd,usage_tokens,requests}`
+> in Mimir (cost ÷1e6 for USD). **Daily granularity:** the per-day panels use a
+> `[1d]` window pinned to a 1d step (`interval`) — one bar per day, can't go
+> finer. ⚠️ **Forward-only history** — the metrics began at ADR-0058 part A, so
+> the 30d view fills in over ~30 days. The old Loki/`unwrap` path remains in
+> `per_user.py` for raw log inspection.
