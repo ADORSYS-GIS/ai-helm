@@ -43,8 +43,11 @@ agents:
   enabled: true
   namespace: lightbridge-agents
   serviceAccount: lightbridge-agent
-  # The runner image the dispatcher launches per task. Pinned tag; bump on release (not
-  # image-updater-managed — it isn't a pod in this chart, it's an env value the dispatcher reads).
+  # NOTE: unused/vestigial — bjw renders the dispatcher env against the sub-chart scope where
+  # top-level `agents.*` isn't visible, so the LIVE runner image is the dispatcher's
+  # AGENT_RUNNER_IMAGE env literal (controllers.dispatcher) below, NOT this. That env value IS
+  # image-updater-managed now (charts/apps `runner` alias, helm.image-spec) → pinned to a sha- tag
+  # in ai-helm-values and bumped per build. Kept here only as documentation; keep in sync.
   runnerImage: ghcr.io/vymalo/lightbridge-agent-runner:latest
   # The gateway only serves embeddings/chat on the HTTPS `core-gateway-internal` ClusterIP (the HTTP
   # LoadBalancer 308-redirects / 404s by Host). Its cert is from ClusterIssuer/self-signed-ca, so the
@@ -515,6 +518,9 @@ lci:
             # the top-level `agents` values aren't visible. Keep in sync with the `agents:` block.
             AGENT_NAMESPACE: "lightbridge-agents"
             AGENT_SERVICE_ACCOUNT: "lightbridge-agent"
+            # image-updater-managed (charts/apps `runner` alias via helm.image-spec): prod pins this
+            # to a sha- tag in ai-helm-values and bumps it per signed build. `:latest` is only the
+            # defaults-render fallback.
             AGENT_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-runner:latest"
             # Secret (agents ns) whose ca.crt the runner mounts to trust the HTTPS gateway.
             AGENT_CA_SECRET: "lightbridge-agent-ca"
