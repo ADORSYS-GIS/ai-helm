@@ -136,19 +136,17 @@ applications:
   # First route: the AI-governance GitHub Atom feed at /_governance.atom on the
   # Grafana host, for the scoreboard's news panel (Grafana's news panel fetches
   # client-side, and GitHub's .atom has no CORS header → a direct fetch is blocked).
-  # Self-contained: the chart renders its OWN CiliumNetworkPolicy (egress derived
-  # from the routes' upstream hosts), so NO depsOverlay is needed. Add routes here
-  # via ai-helm-values (valuesFromRepo) when reused for other feeds.
+  # OCI mode (`chart:`) → the template builds the OCI chart source AND injects the
+  # $values ref reading environments/<env>/values/same-origin-proxy.yaml, so the
+  # host + routes (deployment-specifics, ADR-0056/0057) come from ai-helm-values,
+  # not chart defaults. The chart renders its OWN CiliumNetworkPolicy (egress
+  # derived from the routes' upstream hosts), so NO depsOverlay is needed. Reuse
+  # for other feeds = add a route to the values-repo file.
   # ─────────────────────────────────────────────────────────────────────────────
   - name: same-origin-proxy
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    source:
-      repoURL: oci://ghcr.io/adorsys-gis/charts/same-origin-proxy
-      chart: "."
-      targetRevision: ">=0.0.0"
-      helm:
-        releaseName: same-origin-proxy
+    chart: same-origin-proxy
     destination:
       namespace: observability
     syncPolicy:

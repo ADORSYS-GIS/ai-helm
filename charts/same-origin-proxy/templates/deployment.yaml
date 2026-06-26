@@ -17,6 +17,8 @@ spec:
         # ConfigMap edits don't reload Caddy — roll the pod when the Caddyfile changes.
         checksum/caddyfile: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      # The proxy needs no Kubernetes API access — don't mount a SA token.
+      automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:

@@ -43,6 +43,7 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
+    {{- if $hosts }}
     # The upstream hosts these routes proxy (and nothing else), over HTTPS.
     - toFQDNs:
         {{- range $hosts }}
@@ -53,3 +54,4 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    {{- end }}

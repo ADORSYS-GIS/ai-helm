@@ -13,15 +13,18 @@ port: 8080
 
 # The host these routes are exposed under. Pick the host whose browser pages need
 # the resource same-origin (so the fetch has no cross-origin) — e.g. Grafana's.
-# Routes reuse this host's existing TLS secret; no new hostname/cert.
-# ⚠️ env-specific (prod host); override per-env if the domain differs.
+# ⚠️ DEPLOYMENT-SPECIFIC (ADR-0057): `host`, `tlsSecret` and `routes` are left
+# EMPTY here and supplied per-env from ai-helm-values
+# (environments/<env>/values/same-origin-proxy.yaml, via the OCI app's $values
+# ref). With empty defaults the chart renders a no-op (no Ingress, no egress
+# FQDNs) — see ci/lint-values.yaml for a representative render.
 ingress:
   enabled: true
   className: traefik
-  host: grafana.ai.camer.digital
-  # Reuse the host's TLS secret (provisioned by that app's umbrella). Set to ""
-  # to omit the TLS block (Traefik already serves the host over the first cert).
-  tlsSecret: grafana.ai.camer.digital-tls
+  host: ""
+  # Reuse the host's existing TLS secret (provisioned by that app's umbrella).
+  # Empty → no TLS block (Traefik already serves the host over its first cert).
+  tlsSecret: ""
 
 # Each route maps a path on `ingress.host` to one upstream URL. `rewrite *` pins
 # every incoming request on that path to the upstream's single path, so a route
@@ -34,13 +37,8 @@ ingress:
 #   - upstream.path   : the single upstream path this route fetches
 #   - cors        : (optional) value for Access-Control-Allow-Origin, ONLY if a
 #                   route is consumed cross-origin; omit for same-origin (default)
-routes:
-  - path: /_governance.atom
-    pathType: Exact
-    upstream:
-      scheme: https
-      host: github.com
-      path: /ADORSYS-GIS/ai-governance/commits/main.atom
+# Empty by default (ADR-0057) — real routes come from ai-helm-values per env.
+routes: []
 
 resources:
   requests:

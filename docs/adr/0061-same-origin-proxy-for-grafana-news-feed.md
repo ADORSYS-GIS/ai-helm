@@ -61,6 +61,16 @@ custom image):
   ingress is allowed from the Traefik namespace — since `observability` is
   default-deny both ways. Keeping it in-chart means adding a route opens its
   egress automatically, with no separate netpol file to keep in sync.
+- **Config lives in ai-helm-values, not chart defaults** (ADR-0056/0057). The
+  `charts/apps` entry uses OCI mode (`chart: same-origin-proxy`), so the template
+  injects the `$values` ref reading
+  `environments/<env>/values/same-origin-proxy.yaml` — the deployment-specific
+  `ingress.host` / `tlsSecret` / `routes` come from there. Chart defaults are
+  **empty** (a no-op render: no Ingress, no egress FQDNs); a `ci/lint-values.yaml`
+  fixture (`lint-mode: ci-values`) gives CI a representative render. A second env
+  is a sibling values file. The Pod runs hardened: non-root, `drop ALL`,
+  read-only root FS (writable `emptyDir`s for Caddy `/data`,`/config`,`/tmp`),
+  `automountServiceAccountToken: false`.
 
 ## Consequences
 
@@ -72,9 +82,10 @@ custom image):
   not worth the upkeep.
 - The proxy is locked to one upstream path **and** one egress FQDN (defence in
   depth) — it cannot be repurposed as an open proxy.
-- ⚠️ The feed URL baked into the generated dashboard JSON is the **prod Grafana
-  host** (env-specific, like the datasource UIDs). A second environment overrides
-  `ingress.host` (chart value) and the `GOVERNANCE_NEWS_FEED` generator constant.
+- ⚠️ Two env-specific spots a second environment must set: the `ingress.host` /
+  `routes` in `ai-helm-values` (`environments/<env>/values/same-origin-proxy.yaml`)
+  and the `GOVERNANCE_NEWS_FEED` generator constant baked into the dashboard JSON
+  (env-specific, like the datasource UIDs).
 - The `github.com` egress on **Grafana's** own `CiliumNetworkPolicy` was removed
   (it was never used — the fetch is client-side, then proxied via Traefik→Caddy;
   Grafana itself never calls GitHub).
