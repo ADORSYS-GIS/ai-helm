@@ -1,9 +1,9 @@
 {{- if .Values.ingress.enabled }}
 {{- /*
-A SECOND Ingress on the EXISTING Grafana host, matching only the feed path, so
-the browser fetch of the feed is same-origin with the Grafana app (no CORS).
-Traefik routes the more-specific path here and everything else to Grafana. TLS
-reuses the Grafana host's cert (terminated by Traefik for the host).
+A SECOND Ingress on the EXISTING host, matching only the route paths, so the
+browser fetch of each resource is same-origin with that app (no CORS). Traefik
+routes the more-specific paths here and everything else to the host's main app.
+TLS reuses the host's existing cert (terminated by Traefik for the host).
 */}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -17,13 +17,15 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          - path: {{ .Values.ingress.path }}
-            pathType: {{ .Values.ingress.pathType }}
+        {{- range .Values.routes }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Exact" }}
             backend:
               service:
-                name: {{ .Values.name }}
+                name: {{ $.Values.name }}
                 port:
-                  number: {{ .Values.port }}
+                  number: {{ $.Values.port }}
+        {{- end }}
   {{- with .Values.ingress.tlsSecret }}
   tls:
     - hosts:

@@ -14,7 +14,7 @@
 > — it was never a server-side fetch, so the `github.com` pod-egress was both
 > unnecessary and ineffective (and has been removed from Grafana's policy). The
 > feed is now served **same-origin** under the Grafana host by a small Caddy
-> proxy (`charts/governance-feed-proxy`, ADR-0061), so the panel loads with no
+> proxy (`charts/same-origin-proxy`, ADR-0061), so the panel loads with no
 > CORS. The *decision* (a governance panel on the scoreboard) stands; only the
 > delivery mechanism changed. The original body is left intact as the record.
 

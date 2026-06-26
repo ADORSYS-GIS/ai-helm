@@ -130,23 +130,25 @@ applications:
       namespace: observability
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Governance feed proxy (ADR-0061): a tiny Caddy that serves the AI-governance
-  # GitHub Atom feed SAME-ORIGIN under the Grafana host (path /_governance.atom),
-  # so the scoreboard's Grafana *news* panel can load it (the news panel fetches
-  # client-side and GitHub's .atom has no CORS header → a direct fetch is blocked).
-  # depsOverlay = the CiliumNetworkPolicy (egress→github.com, ingress←traefik),
-  # since the observability ns is default-deny both ways.
+  # Same-origin proxy (ADR-0061): a generic Caddy that serves external resources
+  # SAME-ORIGIN under an app's host, to dodge browser CORS. Each `routes[]` entry
+  # maps a path on the host to one upstream (rewrite-pinned, not an open proxy).
+  # First route: the AI-governance GitHub Atom feed at /_governance.atom on the
+  # Grafana host, for the scoreboard's news panel (Grafana's news panel fetches
+  # client-side, and GitHub's .atom has no CORS header → a direct fetch is blocked).
+  # Self-contained: the chart renders its OWN CiliumNetworkPolicy (egress derived
+  # from the routes' upstream hosts), so NO depsOverlay is needed. Add routes here
+  # via ai-helm-values (valuesFromRepo) when reused for other feeds.
   # ─────────────────────────────────────────────────────────────────────────────
-  - name: governance-feed-proxy
+  - name: same-origin-proxy
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    depsOverlay: environments/prod/deps/governance-feed-proxy
     source:
-      repoURL: oci://ghcr.io/adorsys-gis/charts/governance-feed-proxy
+      repoURL: oci://ghcr.io/adorsys-gis/charts/same-origin-proxy
       chart: "."
       targetRevision: ">=0.0.0"
       helm:
-        releaseName: governance-feed-proxy
+        releaseName: same-origin-proxy
     destination:
       namespace: observability
     syncPolicy:

@@ -1,0 +1,68 @@
+# Generic same-origin Caddy proxy (ADR-0061). Self-contained: a Caddy Deployment
+# + Service + Caddyfile ConfigMap + a Traefik Ingress + an in-chart
+# CiliumNetworkPolicy whose egress is DERIVED from the routes below. Add a route
+# and its upstream egress is opened automatically — no separate netpol to edit.
+
+name: same-origin-proxy
+
+# Off-the-shelf Caddy (no custom image — house rule, ADR-0040).
+image: docker.io/library/caddy:2-alpine
+
+# Caddy listen / Service / container port.
+port: 8080
+
+# The host these routes are exposed under. Pick the host whose browser pages need
+# the resource same-origin (so the fetch has no cross-origin) — e.g. Grafana's.
+# Routes reuse this host's existing TLS secret; no new hostname/cert.
+# ⚠️ env-specific (prod host); override per-env if the domain differs.
+ingress:
+  enabled: true
+  className: traefik
+  host: grafana.ai.camer.digital
+  # Reuse the host's TLS secret (provisioned by that app's umbrella). Set to ""
+  # to omit the TLS block (Traefik already serves the host over the first cert).
+  tlsSecret: grafana.ai.camer.digital-tls
+
+# Each route maps a path on `ingress.host` to one upstream URL. `rewrite *` pins
+# every incoming request on that path to the upstream's single path, so a route
+# can ONLY ever return that one resource — never an open proxy. The set of
+# distinct `upstream.host` values is rendered into the in-chart egress policy.
+#   - path        : path served under ingress.host (e.g. /_governance.atom)
+#   - pathType    : Ingress pathType (Exact | Prefix); default Exact
+#   - upstream.scheme : https (default) | http
+#   - upstream.host   : upstream hostname (also the egress FQDN)
+#   - upstream.path   : the single upstream path this route fetches
+#   - cors        : (optional) value for Access-Control-Allow-Origin, ONLY if a
+#                   route is consumed cross-origin; omit for same-origin (default)
+routes:
+  - path: /_governance.atom
+    pathType: Exact
+    upstream:
+      scheme: https
+      host: github.com
+      path: /ADORSYS-GIS/ai-governance/commits/main.atom
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 48Mi
+
+# Pod Security: observability ns is enforced `privileged` by the orchestrator,
+# but Caddy runs fine restricted. Drop all caps, run as non-root.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+# Ingress (Traefik) namespace — for the in-chart CiliumNetworkPolicy ingress rule
+# (the observability ns is default-deny-ingress).
+ingressControllerNamespace: traefik

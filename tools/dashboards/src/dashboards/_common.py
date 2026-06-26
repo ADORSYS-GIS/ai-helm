@@ -69,9 +69,9 @@ DEFAULT_MONTHLY_BUDGET = 3000
 # feed — BUT Grafana's news panel fetches CLIENT-side and GitHub's `.atom` sends
 # no Access-Control-Allow-Origin header, so a direct browser fetch is CORS-blocked
 # (it is NOT a pod-egress issue). So the feed is served SAME-ORIGIN, under the
-# Grafana host, by the `governance-feed-proxy` Caddy (ADR-0061) — the browser
-# then fetches it from grafana.<domain> with no cross-origin at all. This URL is
-# that same-origin path (env-specific: the prod Grafana host).
+# Grafana host, by the generic `same-origin-proxy` Caddy (ADR-0061, a `routes[]`
+# entry) — the browser then fetches it from grafana.<domain> with no cross-origin
+# at all. This URL is that same-origin path (env-specific: the prod Grafana host).
 GOVERNANCE_URL = "https://adorsys-gis.github.io/ai-governance/"
 GOVERNANCE_NEWS_FEED = "https://grafana.ai.camer.digital/_governance.atom"
 

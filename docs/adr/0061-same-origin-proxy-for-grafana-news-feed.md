@@ -1,4 +1,4 @@
-# ADR-0061: Same-origin Caddy proxy for the scoreboard's Grafana news feed
+# ADR-0061: Generic same-origin Caddy proxy (`same-origin-proxy`)
 
 **Status:** Accepted
 **Date:** 2026-06-26
@@ -32,29 +32,35 @@ considered for the panel and one was rejected outright:
 
 ## Decision
 
-Serve the Atom feed **same-origin with Grafana** via a tiny in-cluster **Caddy**
-reverse-proxy (`charts/governance-feed-proxy`), exposed at a path on the existing
-Grafana host (`https://grafana.<domain>/_governance.atom`) by a second Traefik
-Ingress. The browser then fetches the feed from the **same origin** as the
-Grafana app — **no CORS at all**, and it reuses Grafana's TLS (no new
-hostname/cert). The news panel's `feedUrl` points at that path.
+Serve external resources **same-origin** via a small, **generic** in-cluster
+**Caddy** reverse-proxy chart — **`charts/same-origin-proxy`** — exposed at paths
+on an existing app's host by a second Traefik Ingress. The browser then fetches
+each resource from the **same origin** as that app — **no CORS at all**, reusing
+the host's TLS (no new hostname/cert). It is a reusable building block, not a
+one-off: each `routes[]` entry maps a path to one upstream URL. First consumer:
+the governance Atom feed at `https://grafana.<domain>/_governance.atom`, which the
+scoreboard news panel's `feedUrl` points at.
 
 Shape (reuses the ADR-0040 Caddy pattern — off-the-shelf `caddy:2-alpine`, no
 custom image):
 
-- **Caddy Deployment + Service + Caddyfile ConfigMap** in `observability`. The
-  Caddyfile `reverse_proxy https://github.com` with `header_up Host github.com`;
-  Caddy's Go TLS handles the upstream.
-- **`rewrite * <fixed feed path>`** — every incoming request, whatever its URL, is
-  rewritten to the one governance feed path. So this is **not an open proxy**: it
-  can only ever return that single feed. Egress is *additionally* pinned to
-  `github.com` by the deps-overlay `CiliumNetworkPolicy`.
-- **Second Traefik Ingress** on `grafana.<domain>`, path `/_governance.atom` →
-  the Caddy Service. Traefik routes the more-specific path to Caddy and
-  everything else to Grafana; TLS reuses the host's existing cert.
-- **deps overlay** (`environments/prod/deps/governance-feed-proxy`, ai-helm-values):
-  the `CiliumNetworkPolicy` — egress to `github.com:443` (+ L7 DNS) and ingress
-  from the `traefik` namespace — since `observability` is default-deny both ways.
+- **Caddy Deployment + Service + Caddyfile ConfigMap** (in `observability` for
+  the first consumer). The Caddyfile renders **one `handle <path>` block per
+  route** — `rewrite * <upstream.path>` then `reverse_proxy <scheme>://<host>`
+  with `header_up Host <host>`; Caddy's Go TLS handles each upstream. An optional
+  per-route `cors` adds `Access-Control-Allow-Origin` for the rare cross-origin
+  reuse (same-origin routes need none).
+- **`rewrite *`** pins every route to its one upstream path, so a route can only
+  ever return that single resource — **not an open proxy**, regardless of request
+  URL.
+- **Second Traefik Ingress** on `ingress.host` with one path per route. Traefik
+  routes the more-specific paths to Caddy and everything else to the host's main
+  app; TLS reuses the host's existing cert.
+- **In-chart `CiliumNetworkPolicy`** (NOT a deps overlay): egress `toFQDNs` is
+  **derived from the distinct `routes[].upstream.host`** values (+ L7 DNS), and
+  ingress is allowed from the Traefik namespace — since `observability` is
+  default-deny both ways. Keeping it in-chart means adding a route opens its
+  egress automatically, with no separate netpol file to keep in sync.
 
 ## Consequences
 

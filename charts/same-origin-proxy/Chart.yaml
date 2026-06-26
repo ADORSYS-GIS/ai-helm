@@ -1,0 +1,14 @@
+apiVersion: v2
+name: same-origin-proxy
+description: >-
+  A small, generic Caddy reverse-proxy that serves external HTTP resources
+  SAME-ORIGIN under an app's host, to sidestep browser CORS. Each `routes[]`
+  entry maps a path on the host to an upstream URL; the browser then fetches it
+  from the same origin (no CORS), reusing the host's TLS. First consumer: the AI
+  Gateway scoreboard's Grafana news panel (the GitHub Atom feed has no CORS
+  header). Reuses the ADR-0040 Caddy pattern. Each route's egress FQDN is derived
+  into an in-chart CiliumNetworkPolicy, and `rewrite *` pins every route to its
+  one upstream path — so it is never an open proxy. See ADR-0061.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

@@ -169,7 +169,7 @@ flowchart TB
 | `mcps` → `mcp` | MCP tool servers (self-hosted + proxiedExternal) | Orchestrator + leaves (ADR-0038/0040/0041) |
 | `lightbridge-repo-auth` | GitHub org→account binding for CI OIDC auth | Direct (ADR-0047/0049) |
 | `observability` | LGTM + Alloy + grafana-operator + dashboards | App-of-Apps (ADR-0020) |
-| `governance-feed-proxy` | Caddy serving the AI-governance Atom feed same-origin under the Grafana host (scoreboard news panel) | Direct (ADR-0061) |
+| `same-origin-proxy` | Generic Caddy serving external resources same-origin under an app's host to dodge browser CORS (`routes[]`; 1st route: the scoreboard governance feed under Grafana) | Direct (ADR-0061) |
 | `apps` | Root chart: emits one Application per workload (umbrella multi-source) | Root (ADR-0018) |
 | `bjw-common` / `bjw-template` | Forked bjw-s common library | Library (ADR-0016) |
 
@@ -330,7 +330,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0058 | Precompute AI Gateway usage (cost/tokens/requests) as Mimir metrics via Alloy `stage.metrics`, not live Loki log-scans of a rate-limited object store |
 | 0059 | Grafana unified alerting → Discord, provisioned as grafana-operator CRs (survives stateless-Grafana rolls) |
 | 0060 | Gamified "App Scoreboard" dashboard (Phase 3): gauge/heatmap/histogram/traces/alertlist/news/hub on the ADR-0058 metrics; candlestick + flame-graph deferred (no tick/profile data) |
-| 0061 | Same-origin Caddy proxy (`governance-feed-proxy`) for the scoreboard's Grafana news feed — the news panel fetches client-side, GitHub's Atom is CORS-blocked; serve it under the Grafana host instead |
+| 0061 | Generic same-origin Caddy proxy (`same-origin-proxy`, `routes[]`) — serve external resources under an app's host to dodge browser CORS; in-chart netpol egress derived from routes. 1st use: the scoreboard news feed (Grafana news panel fetches client-side, GitHub Atom is CORS-blocked) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 

@@ -161,7 +161,7 @@ viz the cost boards don't:
 > not fetched directly.** Grafana's news panel fetches its feed **client-side**,
 > and GitHub's `.atom` sends no `Access-Control-Allow-Origin` header → a direct
 > fetch is CORS-blocked ("Error loading RSS feed"). It is **not** a pod-egress
-> issue (the Grafana pod reaches github.com fine). So `charts/governance-feed-proxy`
+> issue (the Grafana pod reaches github.com fine). So `charts/same-origin-proxy`
 > (a tiny Caddy) serves the feed at `https://grafana.<domain>/_governance.atom` —
 > **same origin** as Grafana → no CORS, reusing Grafana's TLS. The proxy only ever
 > serves that one fixed upstream path (`rewrite *`) and its egress is FQDN-pinned
