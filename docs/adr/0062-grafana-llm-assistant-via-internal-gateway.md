@@ -1,4 +1,4 @@
-# ADR-0058: Grafana AI assistant (grafana-llm-app) on our internal AI-gateway plane
+# ADR-0062: Grafana AI assistant (grafana-llm-app) on our internal AI-gateway plane
 
 **Status:** Accepted
 **Date:** 2026-06-24

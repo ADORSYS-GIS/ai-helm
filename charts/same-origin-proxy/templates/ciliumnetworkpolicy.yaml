@@ -1,0 +1,57 @@
+{{- /*
+In-chart egress/ingress policy. The observability ns is default-deny BOTH ways,
+so the proxy needs: DNS (L7, so toFQDNs can resolve), egress to each DISTINCT
+route upstream host over 443, and ingress from the Traefik namespace. Egress is
+DERIVED from `routes[].upstream.host` — add a route and its FQDN opens
+automatically; the proxy can reach nothing else.
+*/}}
+{{- $hosts := list }}
+{{- range .Values.routes }}
+{{- $hosts = append $hosts .upstream.host }}
+{{- end }}
+{{- $hosts = $hosts | uniq | sortAlpha }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ .Values.name }}-allow
+  labels:
+    app: {{ .Values.name }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app: {{ .Values.name }}
+  ingress:
+    # Traefik (ingress controller) → the proxy.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.ingressControllerNamespace }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.port | quote }}
+              protocol: TCP
+  egress:
+    # DNS (with L7 visibility so toFQDNs can resolve the upstream hosts).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    {{- if $hosts }}
+    # The upstream hosts these routes proxy (and nothing else), over HTTPS.
+    - toFQDNs:
+        {{- range $hosts }}
+        - matchName: {{ . | quote }}
+        - matchPattern: {{ printf "*.%s" . | quote }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- end }}

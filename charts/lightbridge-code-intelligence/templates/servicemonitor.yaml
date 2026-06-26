@@ -1,0 +1,50 @@
+{{- /*
+ServiceMonitors for the control-plane /metrics endpoints, discovered by Alloy
+(prometheus.operator.servicemonitors "cluster"). We use ServiceMonitors rather than PodMonitors
+because the bjw-s pods declare no containerPort — a PodMonitor would have no port to match, whereas a
+Service routes by numeric targetPort and its Endpoints give the ServiceMonitor a concrete target.
+
+  - serve role  → the control-plane Service (:8080, port name `http`); /metrics shares that port.
+  - dispatcher  → the dispatcher metrics Service (:9090, port name `metrics`) added in values.
+
+OFF by default (chart CI has no monitoring.coreos.com CRDs); the prod values enable it. Powers the
+Operations dashboard (deploy/observability in the lightbridge-code-intelligence repo).
+*/}}
+{{- if .Values.metrics.serviceMonitors.enabled }}
+{{- $fullname := .Values.lci.fullnameOverride }}
+{{- $wave := .Values.syncWave.app | quote }}
+{{- $interval := .Values.metrics.serviceMonitors.interval | default "30s" }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $fullname }}-control-plane
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $fullname }}
+      app.kubernetes.io/service: {{ $fullname }}-control-plane
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ $interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $fullname }}-dispatcher
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $fullname }}
+      app.kubernetes.io/service: {{ $fullname }}-dispatcher
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ $interval }}
+{{- end }}

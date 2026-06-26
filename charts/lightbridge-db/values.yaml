@@ -69,6 +69,17 @@ resources:
             login: true
             passwordSecret:
               name: lightbridge-codeintel-db-role
+          # Read-only login role for Grafana (the lightbridge-observability dashboards query Postgres
+          # directly — agent runs are one-shot Jobs and can't be scraped, ADR-0046). Member of the
+          # built-in `pg_read_all_data` role (PG14+) so it gets SELECT on every table with NO writes
+          # and no per-table grants to maintain. Password from the basic-auth Secret below.
+          - name: grafana_ro
+            ensure: present
+            login: true
+            inRoles:
+              - pg_read_all_data
+            passwordSecret:
+              name: lightbridge-grafana-ro-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -97,10 +108,29 @@ resources:
         argocd.argoproj.io/sync-wave: "1"
         argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
     spec:
-      retentionPolicy: "180d"
+      # 7-day recovery window. Was 180d, but the barman retention step
+      # (barman-cloud-backup-delete / -list) scans the WHOLE catalog, and a
+      # 180d catalog on Hetzner Object Storage grew big enough that Hetzner
+      # rate-limited the ListObjectsV2/GetObject calls (SlowDown / GatewayTimeout
+      # / 400, "reached max retries: 4") → "Unsafe to proceed with deletion due
+      # to failure reading backup catalog" → every scheduled backup failed (since
+      # ~2026-06-24). A 7d window keeps the catalog small → far fewer S3 calls per
+      # prune → no throttling. (Paired with the 6h schedule below.)
+      retentionPolicy: "7d"
       configuration:
         destinationPath: s3://ssegning-k8s-state/lightbridge-main-db
         endpointURL: https://nbg1.your-objectstorage.com
+        # ⚠️ Throttle the backup UPLOAD. The retention prune above was one symptom;
+        # the backup itself ALSO failed — Hetzner Object Storage returns `SlowDown`
+        # on the parallel multipart UploadPart calls and barman gives up after 4
+        # retries ("Backup failed uploading data ... UploadPart ... reached max
+        # retries: 4"). WAL archiving (single PUTs) and Keycloak's backups to the
+        # SAME bucket succeed, so it's lightbridge's parallel upload tripping the
+        # per-request-rate limit, not a bucket outage. jobs:1 serialises the upload
+        # (one UploadPart stream) and gzip shrinks it (fewer parts) → under the limit.
+        data:
+          jobs: 1
+          compression: gzip
         s3Credentials:
           accessKeyId:
             name: lightbridge-cnpg-s3
@@ -109,7 +139,10 @@ resources:
             name: lightbridge-cnpg-s3
             key: s3_secret_access_key
   # ────────────────────────────────────────────────────────────────────
-  # Daily scheduled backup (verbatim from the old flat app).
+  # Scheduled backup — every 6h (was daily). CNPG cron is 6-field
+  # (sec min hour dom mon dow); "0 0 */6 * * *" = 00:00 / 06:00 / 12:00 / 18:00.
+  # With the 7d retention above the catalog stays small enough that the
+  # post-backup retention prune doesn't get rate-limited by Hetzner S3.
   # ────────────────────────────────────────────────────────────────────
   - |
     apiVersion: postgresql.cnpg.io/v1
@@ -122,7 +155,7 @@ resources:
         argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
     spec:
       immediate: true
-      schedule: "0 0 2 * * *"
+      schedule: "0 0 */6 * * *"
       backupOwnerReference: self
       cluster:
         name: lightbridge-main-db
@@ -254,3 +287,38 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: codeintel_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # grafana_ro role password (read-only DB user for the Grafana dashboards).
+  # basic-auth Secret consumed by CNPG (passwordSecret on the managed role above)
+  # to SET the role's password. The SAME password is also surfaced into the
+  # `observability` namespace for the GrafanaDatasource (see ai-helm-values
+  # environments/prod/deps/observability-secrets) — both read this one SM property.
+  # ⚠️ Requires a new `codeintel_grafana_ro_db_password` property in the
+  # ai/camer/digital/prod/env Secrets Manager bucket.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lightbridge-grafana-ro-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lightbridge-grafana-ro-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "grafana_ro"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: codeintel_grafana_ro_db_password

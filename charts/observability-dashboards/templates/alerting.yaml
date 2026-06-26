@@ -1,0 +1,155 @@
+{{- /*
+Grafana unified-alerting, provisioned as code via grafana-operator CRs
+(consistent with the dashboards/folders here) so it survives the stateless
+Grafana pod rolls (ADR-0023). Routes everything to Discord (ADR-0059).
+
+Pieces:
+  - GrafanaContactPoint  "discord"  — webhook URL injected from a Secret
+    (ESO, see alerting-secret.yaml) via spec.valuesFrom, never in git.
+  - GrafanaNotificationPolicy        — default route → the Discord contact point.
+  - GrafanaAlertRuleGroup (per group)— the alert rules. Each rule is the
+    standard Grafana 3-node model: A=query (mimir/loki), B=reduce(last),
+    C=threshold(op,threshold); condition=C. Authored from the compact
+    values shape (expr/op/threshold/...); tune thresholds live once firing.
+
+Gated on .Values.alerting.enabled.
+*/ -}}
+{{- if .Values.alerting.enabled }}
+{{- $a := .Values.alerting }}
+{{- $sel := include "observability-dashboards.instanceSelectorYaml" . }}
+{{- $labels := include "observability-dashboards.labels" . }}
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaContactPoint
+metadata:
+  name: {{ $a.contactPoint.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  instanceSelector:
+    {{- $sel | nindent 4 }}
+  {{- with $a.resyncPeriod }}
+  resyncPeriod: {{ . | quote }}
+  {{- end }}
+  name: {{ $a.contactPoint.name }}
+  # Modern receivers[] form (the top-level type/settings/valuesFrom are
+  # deprecated). The webhook is injected into settings.url via valuesFrom —
+  # targetPath is relative to the receiver's `settings`, so it's "url" (NOT
+  # "settings.url", which would write settings.settings.url and never deliver).
+  receivers:
+    - type: {{ $a.contactPoint.type | default "discord" }}
+      disableResolveMessage: false
+      settings:
+        url: "${url}"   # placeholder; replaced at reconcile by valuesFrom below
+        {{- with $a.contactPoint.settings }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      valuesFrom:
+        - targetPath: url
+          valueFrom:
+            secretKeyRef:
+              name: {{ $a.webhookSecret.secretName }}
+              key: {{ $a.webhookSecret.key | default "url" }}
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaNotificationPolicy
+metadata:
+  name: {{ .Chart.Name }}-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  instanceSelector:
+    {{- $sel | nindent 4 }}
+  {{- with $a.resyncPeriod }}
+  resyncPeriod: {{ . | quote }}
+  {{- end }}
+  route:
+    receiver: {{ $a.contactPoint.name }}
+    group_by: {{ toYaml ($a.notificationPolicy.groupBy | default (list "grafana_folder" "alertname")) | nindent 6 }}
+    group_wait: {{ $a.notificationPolicy.groupWait | default "30s" | quote }}
+    group_interval: {{ $a.notificationPolicy.groupInterval | default "5m" | quote }}
+    repeat_interval: {{ $a.notificationPolicy.repeatInterval | default "4h" | quote }}
+{{- range $g := $a.ruleGroups }}
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: {{ $g.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  instanceSelector:
+    {{- $sel | nindent 4 }}
+  folderRef: {{ $g.folderRef | quote }}
+  interval: {{ $g.interval | default "1m" | quote }}
+  {{- with $.Values.alerting.resyncPeriod }}
+  resyncPeriod: {{ . | quote }}
+  {{- end }}
+  rules:
+    {{- range $r := $g.rules }}
+    - uid: {{ $r.uid }}
+      title: {{ $r.title | quote }}
+      condition: C
+      for: {{ $r.for | default "5m" | quote }}
+      execErrState: {{ $r.execErrState | default "Error" }}
+      noDataState: {{ $r.noDataState | default "OK" }}
+      labels:
+        severity: {{ $r.severity | default "warning" | quote }}
+        {{- with $r.labels }}{{ toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        summary: {{ $r.summary | quote }}
+        {{- with $r.description }}
+        description: {{ . | quote }}
+        {{- end }}
+      data:
+        - refId: A
+          datasourceUid: {{ $r.datasourceUid | quote }}
+          relativeTimeRange:
+            from: {{ $r.fromSeconds | default 600 }}
+            to: 0
+          model:
+            refId: A
+            datasource:
+              type: {{ $r.datasourceType | default "prometheus" }}
+              uid: {{ $r.datasourceUid | quote }}
+            expr: {{ $r.expr | quote }}
+            {{- if eq ($r.datasourceType | default "prometheus") "loki" }}
+            queryType: instant
+            {{- else }}
+            instant: true
+            range: false
+            {{- end }}
+            intervalMs: 60000
+            maxDataPoints: 43200
+        - refId: B
+          datasourceUid: __expr__
+          relativeTimeRange:
+            from: {{ $r.fromSeconds | default 600 }}
+            to: 0
+          model:
+            refId: B
+            datasource: { type: __expr__, uid: __expr__ }
+            type: reduce
+            expression: A
+            reducer: {{ $r.reducer | default "last" }}
+        - refId: C
+          datasourceUid: __expr__
+          relativeTimeRange:
+            from: {{ $r.fromSeconds | default 600 }}
+            to: 0
+          model:
+            refId: C
+            datasource: { type: __expr__, uid: __expr__ }
+            type: threshold
+            expression: B
+            conditions:
+              - type: query
+                evaluator:
+                  type: {{ $r.op }}
+                  params: [{{ $r.threshold }}]
+    {{- end }}
+{{- end }}
+{{- end }}

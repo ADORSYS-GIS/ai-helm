@@ -55,7 +55,24 @@ data:
 {{- if ne (toString $cfg.model.topP) "" }}{{- $_ := set $rev "top_p" $cfg.model.topP }}{{- end }}
 {{- if ne (toString $cfg.model.maxTokens) "" }}{{- $_ := set $rev "max_tokens" $cfg.model.maxTokens }}{{- end }}
 {{- if ne (toString $cfg.model.maxTurns) "" }}{{- $_ := set $rev "max_turns" $cfg.model.maxTurns }}{{- end }}
-{{- if ne (toString $cfg.model.fallbackModel) "" }}{{- $_ := set $rev "fallback_model" $cfg.model.fallbackModel }}{{- end }}
+{{- if ne (toString $cfg.model.contextWindow) "" }}{{- $_ := set $rev "context_window" $cfg.model.contextWindow }}{{- end }}
+{{- /* Risk-first read budgets (lightbridge-ci ADR-0042): max read-only tool calls run concurrently per
+       turn (max_batch_size), and the cumulative caps before the loop winds down. Empty → the runner's
+       built-in defaults (batch 8, files 30, searches 15, batches 6). The runner clamps each to ≥1. */}}
+{{- if ne (toString $cfg.model.maxBatchSize) "" }}{{- $_ := set $rev "max_batch_size" $cfg.model.maxBatchSize }}{{- end }}
+{{- if ne (toString $cfg.model.maxFilesRead) "" }}{{- $_ := set $rev "max_files_read" $cfg.model.maxFilesRead }}{{- end }}
+{{- if ne (toString $cfg.model.maxSearches) "" }}{{- $_ := set $rev "max_searches" $cfg.model.maxSearches }}{{- end }}
+{{- if ne (toString $cfg.model.maxBatches) "" }}{{- $_ := set $rev "max_batches" $cfg.model.maxBatches }}{{- end }}
+{{- /* SSE streaming toggle (#206) → agent.json review.stream. A bool; empty → omitted (runner default
+       off). Needs a runner image carrying the review.stream field (lightbridge-ci #211) before it's set
+       to true, else deny_unknown_fields fails the Job. */}}
+{{- if ne (toString $cfg.model.stream) "" }}{{- $_ := set $rev "stream" $cfg.model.stream }}{{- end }}
+{{- /* Provider-specific passthrough generation params (lightbridge-ci #205) — an OBJECT, not a scalar,
+       so it's truthiness-guarded (an empty map is falsy). Merged verbatim into the chat body by the
+       runner (review.extra), e.g. a reasoning budget like {"thinking":{"type":"disabled"}} for GLM. */}}
+{{- if $cfg.model.extra }}{{- $_ := set $rev "extra" $cfg.model.extra }}{{- end }}
+{{- /* NB: review.fallback_model is intentionally NOT mapped — the review failover model was removed
+       (lightbridge-ci ADR-0053 / #208); a single model + retry/backoff + circuit breaker replaces it. */}}
 {{- $_ := set $ag "review" $rev }}
 apiVersion: v1
 kind: ConfigMap

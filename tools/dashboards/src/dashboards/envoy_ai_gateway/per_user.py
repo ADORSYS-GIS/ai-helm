@@ -576,6 +576,99 @@ def _panel_overall_total_requests() -> stat.Panel:
 
 
 # ---------------------------------------------------------------------------
+# Cost by channel  (y=53)
+#
+# "How is each account consuming its spend across CONSUMPTION CHANNELS?" The
+# channel is the `azp` label = the authenticated client/service that made the
+# call (ADR-0011/0021): e.g. opencode-cli / lightbridge-api-key / converse-frontend
+# = direct API, internal-key-librechat = LibreChat, lightbridge-code-intelligence
+# = code-intel, github-actions = CI runners. Grouping cost by (display_name, azp)
+# gives the per-person / per-repo split the maintainer asked for, e.g.
+#   "stephane · lightbridge-api-key = $20  /  stephane · internal-key-librechat = $10"
+#   "adorsys-gis/ai-helm · github-actions = $30 / · lightbridge-code-intelligence = $10"
+# Uses _OVERALL_SELECTOR so SERVICE traffic (azp != a human) is included — the
+# whole point is to see every channel, not just human-attributed rows.
+# ⚠️ KNOWN GAP: LibreChat AGENT runs + RAG embeddings don't forward the end-user
+# (they fall back to azp=internal-key-librechat with user_id=internal-key-librechat),
+# so LibreChat's per-USER split is currently only its DIRECT chats. See
+# docs/per-user-observability.md / the librechat-app header-forwarding note.
+# ---------------------------------------------------------------------------
+
+
+def _panel_cost_by_channel_pie() -> piechart.Panel:
+    return _pie_panel(
+        title="Cost by channel (azp)",
+        expr=_usd(
+            f"sum by ({LABEL_AZP}) (sum_over_time({_OVERALL_SELECTOR} "
+            f"{_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+        ),
+        legend_label=f"{{{{{LABEL_AZP}}}}}",
+        grid=(10, 8, 0, 54),
+    )
+
+
+def _panel_cost_user_by_channel_bar() -> bargauge.Panel:
+    # topk over (display_name, azp) pairs → one bar per account-per-channel.
+    # Legend "<user> · <channel>" is the literal answer to the breakdown ask.
+    # sum_over_time can't take an inline by() (Loki limitation) — group via the
+    # outer sum by; _unwrap extracts only the cost field so cardinality stays
+    # bounded (same pattern as _panel_top_users_bar).
+    _cost_sum = (
+        f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range])"
+    )
+    expr = f"topk(20, sum by ({LABEL_DISPLAY_NAME}, {LABEL_AZP}) ({_usd(_cost_sum)}))"
+    return (
+        bargauge.Panel()
+        .title("Top 20 — cost by user per channel (selected range)")
+        .datasource(_LOKI_DS)
+        .grid_pos(dm.GridPos(h=10, w=16, x=8, y=54))
+        .unit("currencyUSD")
+        .orientation(cm.VizOrientation.HORIZONTAL)
+        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
+        .display_mode(cm.BarGaugeDisplayMode.BASIC)
+        .thresholds(_single_color_thresholds("green"))
+        .with_target(
+            _loki_target(
+                expr,
+                legend=f"{{{{{LABEL_DISPLAY_NAME}}}}} · {{{{{LABEL_AZP}}}}}",
+                instant=False,
+            )
+        )
+    )
+
+
+def _panel_cost_per_channel_ts() -> timeseries.Panel:
+    return (
+        timeseries.Panel()
+        .title("Cost per channel over time")
+        .datasource(_LOKI_DS)
+        .grid_pos(dm.GridPos(h=8, w=24, x=0, y=64))
+        .unit("currencyUSD")
+        .draw_style(cm.GraphDrawStyle.LINE)
+        .line_interpolation(cm.LineInterpolation.SMOOTH)
+        .fill_opacity(10.0)
+        .show_points(cm.VisibilityMode.NEVER)
+        .stacking(cb.StackingConfig().mode(cm.StackingMode.NORMAL))
+        .legend(
+            cb.VizLegendOptions()
+            .display_mode(cm.LegendDisplayMode.TABLE)
+            .placement(cm.LegendPlacement.RIGHT)
+            .calcs(["sum", "max"])
+        )
+        .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
+        .with_target(
+            _loki_target(
+                _usd(
+                    f"sum by ({LABEL_AZP}) (sum_over_time({_OVERALL_SELECTOR} "
+                    f"{_unwrap('gen_ai_usage_custom_total_cost')} [1m]))"
+                ),
+                legend=f"{{{{{LABEL_AZP}}}}}",
+            )
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
 # Top-level builder
 # ---------------------------------------------------------------------------
 
@@ -654,6 +747,11 @@ def _dashboard() -> db.Dashboard:
         .with_panel(_panel_overall_total_cost())
         .with_panel(_panel_overall_total_tokens())
         .with_panel(_panel_overall_total_requests())
+        # Cost by channel row
+        .with_panel(_row("Cost by Channel", y=53))
+        .with_panel(_panel_cost_by_channel_pie())
+        .with_panel(_panel_cost_user_by_channel_bar())
+        .with_panel(_panel_cost_per_channel_ts())
     )
 
 

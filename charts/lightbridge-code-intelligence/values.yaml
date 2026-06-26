@@ -43,8 +43,11 @@ agents:
   enabled: true
   namespace: lightbridge-agents
   serviceAccount: lightbridge-agent
-  # The runner image the dispatcher launches per task. Pinned tag; bump on release (not
-  # image-updater-managed — it isn't a pod in this chart, it's an env value the dispatcher reads).
+  # NOTE: unused/vestigial — bjw renders the dispatcher env against the sub-chart scope where
+  # top-level `agents.*` isn't visible, so the LIVE runner image is the dispatcher's
+  # AGENT_RUNNER_IMAGE env literal (controllers.dispatcher) below, NOT this. That env value IS
+  # image-updater-managed now (charts/apps `runner` alias, helm.image-spec) → pinned to a sha- tag
+  # in ai-helm-values and bumped per build. Kept here only as documentation; keep in sync.
   runnerImage: ghcr.io/vymalo/lightbridge-agent-runner:latest
   # The gateway only serves embeddings/chat on the HTTPS `core-gateway-internal` ClusterIP (the HTTP
   # LoadBalancer 308-redirects / 404s by Host). Its cert is from ClusterIssuer/self-signed-ca, so the
@@ -107,10 +110,31 @@ config:
     # Max agent turns per review (ADR-0037 loop). Empty → the runner's built-in default (40).
     # → agent.json `review.max_turns`.
     maxTurns: ""
-    # Secondary review model to fail over to when the primary times out / errs out a turn (ADR-0039).
-    # Empty → single-model (no failover). → agent.json `review.fallback_model`. Set per-env in
-    # ai-helm-values to a DIFFERENT alias than the primary so a primary-path outage actually fails over.
-    fallbackModel: ""
+    # Risk-first read budgets (lightbridge-ci ADR-0042) → agent.json `review.*`. Empty → the runner's
+    # built-in defaults. maxBatchSize = max read-only tool calls run CONCURRENTLY per turn (default 8);
+    # the other three are cumulative caps before the loop winds down (default files 30 / searches 15 /
+    # batches 6). The runner clamps each to ≥1. Set per-env in ai-helm-values.
+    maxBatchSize: ""    # → review.max_batch_size (concurrent read-only tool calls per turn)
+    maxFilesRead: ""    # → review.max_files_read   (cumulative read_file cap)
+    maxSearches: ""     # → review.max_searches     (cumulative vector+graph search cap)
+    maxBatches: ""      # → review.max_batches      (cumulative investigation-round cap)
+    # NB: there is no `fallbackModel` knob — the review failover model was removed (lightbridge-ci
+    # ADR-0053 / #208), replaced by a single model + retry/backoff + circuit breaker. (Any ADR-NNNN
+    # below refers to the lightbridge-ci repo's ADRs, not this chart's own ADR index.)
+    # Provider-specific passthrough generation params (lightbridge-ci #205) → agent.json `review.extra`,
+    # merged verbatim into the chat request body. An OBJECT (not a scalar); empty `{}` → omitted. Use it
+    # for knobs the typed fields don't cover — notably a reasoning budget to stop a reasoning model
+    # over-thinking, e.g. for GLM: `extra: { thinking: { type: disabled } }`. Set per-env in ai-helm-values.
+    extra: {}
+    # SSE streaming toggle (#206) → agent.json `review.stream`. Empty → off (runner default). Set `true`
+    # per-env to collect a streamed response under a per-chunk idle timeout (helps a heavy-reasoning
+    # model's long turns). REQUIRES a runner image with the `review.stream` field (lightbridge-ci #211).
+    stream: ""
+    # Model context window in tokens (ADR-0045). → agent.json `review.context_window`. Empty → no
+    # budgeting (the agent sends the full history and would fail a 400 on overflow). Set per-env in
+    # ai-helm-values to the serving model's real window so the agent winds down + trims before overflow
+    # and finalizes (never discards findings) if it still overruns.
+    contextWindow: ""
 
   # PR feedback the control plane applies (FILE-ONLY knobs — no env equivalent).
   review:
@@ -149,6 +173,16 @@ config:
 syncWave:
   secrets: "0"
   app: "2"
+
+# ── metrics scraping ─────────────────────────────────────────────────────────
+# ServiceMonitors that point Alloy (prometheus.operator.servicemonitors) at the control-plane's
+# /metrics (serve role :8080) and the dispatcher's (:9090). OFF in chart defaults so a defaults-only
+# render (helm lint / chart CI, no monitoring.coreos.com CRDs) emits nothing; the prod values turn it
+# on. Powers the Operations dashboard (deploy/observability, lightbridge-code-intelligence repo).
+metrics:
+  serviceMonitors:
+    enabled: false
+    interval: 30s
 
 # ── bjw-s app-template (v4) instance ─────────────────────────────────────────
 lci:
@@ -500,7 +534,15 @@ lci:
             # the top-level `agents` values aren't visible. Keep in sync with the `agents:` block.
             AGENT_NAMESPACE: "lightbridge-agents"
             AGENT_SERVICE_ACCOUNT: "lightbridge-agent"
+            # image-updater-managed (charts/apps `runner` alias via helm.image-spec): prod pins this
+            # to a sha- tag in ai-helm-values and bumps it per signed build. `:latest` is only the
+            # defaults-render fallback. Used for index tasks (and as the fallback for review).
             AGENT_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-runner:latest"
+            # The slimmer review-only Job image (no Python/Graphify; #207). The control plane's
+            # image_for() picks it for REVIEW tasks and falls back to AGENT_RUNNER_IMAGE when unset, so a
+            # cluster that hasn't seeded it keeps working on the combined image. image-updater-managed
+            # (charts/apps `review` alias via helm.image-spec) → pinned to a sha- tag in ai-helm-values.
+            AGENT_REVIEW_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-review:latest"
             # Secret (agents ns) whose ca.crt the runner mounts to trust the HTTPS gateway.
             AGENT_CA_SECRET: "lightbridge-agent-ca"
             # FQDN, not the bare Service name: the runner Jobs run in the lightbridge-agents
@@ -631,6 +673,15 @@ lci:
           port: 7687
         http:
           port: 7474
+    # Metrics-only Service for the dispatcher role (METRICS_ADDR :9090). The serve role's /metrics is
+    # already on the control-plane Service (:8080); the dispatcher/poller have no Service otherwise, so
+    # this gives the ServiceMonitor (templates/servicemonitor.yaml) a stable Endpoints target. The
+    # dispatcher pod declares no containerPort, but a Service routes by numeric targetPort regardless.
+    dispatcher:
+      controller: dispatcher
+      ports:
+        metrics:
+          port: 9090
 
   # DEPLOYMENT-SPECIFIC: ingress is OFF by default — the ingress class, cert-manager cluster-issuer,
   # public hostnames, and TLS secrets are all env-specific, so the FULL ingress config (enabled: true +

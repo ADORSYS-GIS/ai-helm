@@ -1,0 +1,39 @@
+{{- /*
+Caddyfile: a leading GLOBAL OPTIONS block `{ admin off; auto_https off;
+persist_config off }` (these are global directives — they are NOT valid inside a
+site block, or Caddy aborts with "unrecognized directive: admin"), then a `:PORT`
+site block with one `handle <path>` per route. `rewrite * <upstream.path>` forces
+that path to the one upstream resource, so a route can never be abused as an open
+proxy regardless of the request URL. TLS to the upstream is handled by Caddy (Go
+TLS); auto_https off since Traefik terminates TLS at the ingress.
+⚠️ helm/lint/trivy do NOT validate Caddyfile syntax — only the running pod does.
+Validate changes: render this ConfigMap's Caddyfile and
+`docker run --rm -v <file>:/c/Caddyfile caddy:2-alpine caddy validate --config /c/Caddyfile --adapter caddyfile`.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-caddy
+  labels:
+    app: {{ .Values.name }}
+data:
+  Caddyfile: |-
+    {
+      admin off
+      auto_https off
+      persist_config off
+    }
+    :{{ .Values.port }} {
+    {{- range .Values.routes }}
+    {{- $scheme := .upstream.scheme | default "https" }}
+      handle {{ .path }} {
+    {{- with .cors }}
+        header Access-Control-Allow-Origin {{ . | quote }}
+    {{- end }}
+        rewrite * {{ .upstream.path }}
+        reverse_proxy {{ $scheme }}://{{ .upstream.host }} {
+          header_up Host {{ .upstream.host }}
+        }
+      }
+    {{- end }}
+    }

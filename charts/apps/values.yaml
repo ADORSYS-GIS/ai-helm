@@ -130,6 +130,34 @@ applications:
       namespace: observability
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # Same-origin proxy (ADR-0061): a generic Caddy that serves external resources
+  # SAME-ORIGIN under an app's host, to dodge browser CORS. Each `routes[]` entry
+  # maps a path on the host to one upstream (rewrite-pinned, not an open proxy).
+  # First route: the AI-governance GitHub Atom feed at /_governance.atom on the
+  # Grafana host, for the scoreboard's news panel (Grafana's news panel fetches
+  # client-side, and GitHub's .atom has no CORS header → a direct fetch is blocked).
+  # OCI mode (`chart:`) → the template builds the OCI chart source AND injects the
+  # $values ref reading environments/<env>/values/same-origin-proxy.yaml, so the
+  # host + routes (deployment-specifics, ADR-0056/0057) come from ai-helm-values,
+  # not chart defaults. The chart renders its OWN CiliumNetworkPolicy (egress
+  # derived from the routes' upstream hosts), so NO depsOverlay is needed. Reuse
+  # for other feeds = add a route to the values-repo file.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: same-origin-proxy
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: same-origin-proxy
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # Notifications: Apprise API — STATELESS notify gateway for opencode-k8s-agent.
   # The agent (below) POSTs its report to this service's /notify with the channel
   # URLs in the request body (APPRISE_URLS), so this needs NO stored channel
@@ -467,8 +495,10 @@ applications:
       # declares, which otherwise show a permanent cosmetic OutOfSync + selfHeal churn.
       # ServerSideDiff ignores those server-owned fields so the app reads Synced.
       argocd.argoproj.io/compare-options: ServerSideDiff=true
-      # Two images in one app, aliased `cp` (control-plane) + `web`.
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,poll=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web
+      # Images aliased: cp/disp/poll (control-plane, role-selected), web, runner (the one-shot
+      # agent-runner/indexer image the dispatcher launches), and review (the slimmer review-only Job
+      # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,poll=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -507,6 +537,29 @@ applications:
       argocd-image-updater.argoproj.io/web.signature-type: cosign
       argocd-image-updater.argoproj.io/web.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/web.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── agent-runner (the one-shot Job image the dispatcher launches; NOT a pod in
+      #    this chart, so it's a single combined `repo:tag` env value, not a split
+      #    image.repository/.tag). Uses `helm.image-spec` to write the whole ref into
+      #    the dispatcher's AGENT_RUNNER_IMAGE env. Same cosign identity (one build
+      #    workflow signs every image). Keeps the runner in lockstep with the
+      #    control-plane instead of floating on `:latest`. ──
+      argocd-image-updater.argoproj.io/runner.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/runner.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/runner.force-update: "true"
+      argocd-image-updater.argoproj.io/runner.helm.image-spec: lci.controllers.dispatcher.containers.main.env.AGENT_RUNNER_IMAGE
+      argocd-image-updater.argoproj.io/runner.signature-type: cosign
+      argocd-image-updater.argoproj.io/runner.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/runner.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── review (the review-only Job image — drops Python/Graphify, ~44% smaller; #207). The
+      #    dispatcher's image_for() picks it for review tasks (control_plane env AGENT_REVIEW_RUNNER_IMAGE;
+      #    falls back to AGENT_RUNNER_IMAGE when unset). Same cosign identity / build workflow as runner. ──
+      argocd-image-updater.argoproj.io/review.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/review.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/review.force-update: "true"
+      argocd-image-updater.argoproj.io/review.helm.image-spec: lci.controllers.dispatcher.containers.main.env.AGENT_REVIEW_RUNNER_IMAGE
+      argocd-image-updater.argoproj.io/review.signature-type: cosign
+      argocd-image-updater.argoproj.io/review.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/review.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── git write-back → ai-helm-values main (PRIVATE; the org-wide adorsys-gis
       # GitHub App commits, and ArgoCD reads Source B via the same repo-creds —
       # exactly like converse-ui). Unprotected branch → the bot can direct-commit. ──
@@ -546,6 +599,34 @@ applications:
         ref: values
     destination:
       namespace: converse
+
+  # ── Lightbridge observability — Grafana dashboards-as-code (ADR-0046) ──
+  # Deploys the dashboards-as-code chart that lives in the APPLICATION repo
+  # (vymalo/lightbridge-code-intelligence, PUBLIC → no repo-creds needed), NOT in
+  # ai-helm: a GrafanaFolder + GrafanaDashboard CRs (imported by the grafana
+  # operator) + a read-only Postgres GrafanaDatasource. Lands in `observability`
+  # where the operator watches. No images → no image-updater. The metrics
+  # scraping (ServiceMonitors) + the grafana_ro DB role live with the workload
+  # (lightbridge-code-intelligence / lightbridge-db); this app is dashboards only.
+  - name: lightbridge-observability
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    sources:
+      # Source A — the dashboards chart from the app repo @ main (continuous).
+      - repoURL: https://github.com/vymalo/lightbridge-code-intelligence
+        targetRevision: main
+        path: deploy/observability
+        helm:
+          releaseName: lightbridge-observability
+          valueFiles:
+            - $values/environments/prod/values/lightbridge-observability.yaml
+          ignoreMissingValueFiles: true
+      # Source B — env-specific values from ai-helm-values main.
+      - repoURL: https://github.com/adorsys-gis/ai-helm-values
+        targetRevision: main
+        ref: values
+    destination:
+      namespace: observability
 
   # --- argocd-image-updater activation (control object, ADR-0055) ---
   # The CRD-based argocd-image-updater controller only acts on an Application when
