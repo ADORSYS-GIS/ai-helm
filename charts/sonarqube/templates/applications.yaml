@@ -1,0 +1,124 @@
+{{- /*
+sonarqube App-of-Apps orchestrator — renders three child Application CRs:
+  • sonarqube-secrets — local ExternalSecrets leaf chart (single source).
+  • sonarqube-db      — local CNPG leaf chart (single source).
+  • sonarqube-app     — upstream SonarSource `sonarqube` chart (deployed as an
+                        ArgoCD source) + the ingress Certificate + Cilium policy
+                        via the per-env kustomize overlay (second source), with
+                        the workload values pulled from ai-helm-values ($values,
+                        third source — ADR-0056).
+All target home-remote (ADR-0017 guard via
+sonarqube.argocd.destinationClusterRef). Direct Application CRs rather than an
+ApplicationSet because the children are fixed + heterogeneous — ADR-0019/0065.
+*/ -}}
+{{- $a := .Values.argocd -}}
+{{- if .Values.secrets.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.secrets.appName }}
+  namespace: {{ $a.namespace | default "argocd" }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.secrets.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    # OCI chart-float (ADR-0055): full chart path in repoURL + chart ".".
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.secrets.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
+    helm:
+      releaseName: {{ .Values.secrets.releaseName | quote }}
+  destination:
+    {{- include "sonarqube.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.db.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.db.appName }}
+  namespace: {{ $a.namespace | default "argocd" }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.db.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.db.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
+    helm:
+      releaseName: {{ .Values.db.releaseName | quote }}
+  destination:
+    {{- include "sonarqube.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  {{- /*
+    The CNPG operator (field manager `manager`) stamps dozens of default fields
+    onto the Cluster (affinity, bootstrap, probes, …) the chart doesn't declare →
+    permanent cosmetic OutOfSync. Ignore fields owned by that field manager. */}}
+  {{- with .Values.db.ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.app.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.app.appName }}
+  namespace: {{ $a.namespace | default "argocd" }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.app.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  sources:
+    # Source A — the upstream SonarSource workload (Helm chart as an ArgoCD
+    # source). The chart's default image is the paid Server line; the Community
+    # Build image override + the community-branch-plugin install + the SAML/JDBC
+    # config all live in the values file (Source C), NOT inline (ADR-0056).
+    - repoURL: {{ .Values.app.chart.repoURL | quote }}
+      chart: {{ .Values.app.chart.name | quote }}
+      targetRevision: {{ .Values.app.chart.targetRevision | quote }}
+      helm:
+        releaseName: {{ .Values.app.releaseName | quote }}
+        valueFiles:
+          # `sonarqube-app.yaml` (NOT `sonarqube.yaml`): the charts/apps umbrella
+          # auto-injects `$values/.../values/sonarqube.yaml` into the ORCHESTRATOR
+          # Application (its own config). The workload child must read a DISTINCT
+          # file or the two releases collide — same convention as lightbridge-app.
+          - $values/environments/{{ $a.env | default "prod" }}/values/sonarqube-app.yaml
+        ignoreMissingValueFiles: true
+    # Source B — app-scoped deps (ingress Certificate + CiliumNetworkPolicy) via
+    # the per-env kustomize overlay in ai-helm-values; issuer patched per env.
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      path: {{ .Values.app.depsOverlay | quote }}
+    # Source C — $values ref: the workload values file (ai-helm-values, ADR-0056).
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      ref: values
+  destination:
+    {{- include "sonarqube.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}

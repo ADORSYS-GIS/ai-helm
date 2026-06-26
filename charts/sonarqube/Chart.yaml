@@ -1,0 +1,39 @@
+apiVersion: v2
+name: sonarqube
+description: |
+  App-of-Apps orchestrator for SonarQube Community Build (ADR-0065). Renders
+  THREE ArgoCD Application CRs:
+
+    1. sonarqube-secrets — ExternalSecrets (CNPG S3 backup creds, the GitHub App
+                           credentials for PR decoration, the web monitoring
+                           passcode) the DB + app depend on (leaf chart, wave 0)
+    2. sonarqube-db      — CloudNativePG Cluster (sonarqube-db) + barman
+                           ObjectStore + ScheduledBackup + PodMonitor + the
+                           `sonarqube` Database (leaf chart, wave 1)
+    3. sonarqube-app     — the upstream SonarSource `sonarqube` Helm chart
+                           (deployed as an ArgoCD source) pinned to a Community
+                           Build image + the community-branch-plugin, with its
+                           ingress Certificate + CiliumNetworkPolicy via the
+                           per-env kustomize overlay (wave 2)
+
+  Same orchestrator-plus-leaves intent as lightbridge (ADR-0019/0026) — rendered
+  as direct Application CRs rather than an ApplicationSet because the children
+  are fixed + heterogeneous (two local Helm charts + one upstream chart + a deps
+  overlay). The chart owns NO workload resources directly. Namespace `sonarqube`.
+type: application
+version: 0.1.0
+appVersion: "26.5.0"
+keywords:
+  - sonarqube
+  - code-quality
+  - static-analysis
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

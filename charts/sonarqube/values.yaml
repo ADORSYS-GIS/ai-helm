@@ -1,0 +1,88 @@
+# sonarqube App-of-Apps orchestrator — renders three child Application CRs
+# (sonarqube-secrets + sonarqube-db + sonarqube-app). See ADR-0065 (lightbridge
+# is the canonical example, ADR-0019/0026). The chart owns no workload
+# resources; it owns the three child Applications. Namespace `sonarqube`.
+
+# ────────────────────────────────────────────────────────────────────────
+# Shared ArgoCD wiring for all child Applications.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  project: ai
+  # OCI chart-float (ADR-0055): the secrets + db leaf charts float from OCI
+  # (<chartRegistry>/<chartName> + chart "."). repoURL/targetRevision is the
+  # values repo @ main, where the app child's deps overlay + values file live.
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  env: prod
+  destination:
+    # home-remote — the workload cluster (ADR-0017 guard hard-fails in-cluster).
+    name: home-remote
+    allowInCluster: false
+    namespace: sonarqube
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# ────────────────────────────────────────────────────────────────────────
+# sonarqube-secrets child — ExternalSecrets leaf (this repo). Lowest wave: the
+# S3 backup creds + GitHub App creds + monitoring passcode must exist before the
+# DB (barman) and the app start.
+# ────────────────────────────────────────────────────────────────────────
+secrets:
+  enabled: true
+  appName: sonarqube-secrets
+  chartName: sonarqube-secrets
+  releaseName: sonarqube-secrets
+  syncWave: "0"
+
+# ────────────────────────────────────────────────────────────────────────
+# sonarqube-db child — the CloudNativePG database leaf (this repo). Lower wave
+# than the app so Postgres is up before SonarQube starts.
+# ────────────────────────────────────────────────────────────────────────
+db:
+  enabled: true
+  appName: sonarqube-db
+  chartName: sonarqube-db
+  releaseName: sonarqube-db
+  syncWave: "1"
+  # Ignore the CNPG operator's defaulted Cluster fields (field manager `manager`)
+  # so it doesn't sit permanently OutOfSync.
+  ignoreDifferences:
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      managedFieldsManagers:
+        - manager
+
+# ────────────────────────────────────────────────────────────────────────
+# sonarqube-app child — the upstream SonarSource workload (Helm chart, deployed
+# as an ArgoCD source). ⚠️ ADR-0065 version contract: the chart's default image
+# is the PAID Server line; the values file (ai-helm-values
+# environments/prod/values/sonarqube.yaml) overrides `image` to a Community
+# Build `…-community` tag AND installs the community-branch-plugin at the
+# MATCHING major.minor. Bump targetRevision (chart) and the image/plugin
+# (values) in LOCKSTEP — SonarQube is excluded from argocd-image-updater
+# auto-bump for exactly this reason.
+# ────────────────────────────────────────────────────────────────────────
+app:
+  enabled: true
+  appName: sonarqube-app
+  releaseName: sonarqube
+  syncWave: "2"
+  chart:
+    repoURL: https://SonarSource.github.io/helm-chart-sonarqube
+    name: sonarqube
+    targetRevision: "2026.3.1"
+  # App-scoped deps (ingress Certificate + CiliumNetworkPolicy: egress to
+  # api.github.com for decoration + the CNPG DB + DNS; ingress from traefik) —
+  # kustomize overlay in ai-helm-values; issuer patched per env. ADR-0018.
+  depsOverlay: environments/prod/deps/sonarqube
+  # Workload values (image override, plugins.install, javaagent opts, SAML, JDBC,
+  # ingress) live in ai-helm-values environments/prod/values/sonarqube-app.yaml
+  # (distinct from the orchestrator's own auto-injected sonarqube.yaml — see the
+  # applications.yaml comment), read via the $values ref — not inline (ADR-0056).

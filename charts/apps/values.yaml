@@ -438,6 +438,26 @@ applications:
     destination:
       namespace: converse
 
+  # --- sonarqube (ADR-0065) ---
+  # SonarQube Community Build (free) with the community-branch-plugin for inline
+  # GitHub PR decoration, behind Keycloak SAML. App-of-Apps orchestrator
+  # (charts/sonarqube) mirroring lightbridge: it emits 3 child Application CRs
+  # (sonarqube-secrets + sonarqube-db CNPG + the upstream SonarSource app), so as
+  # a control object this entry is controlPlane: true — the children target
+  # home-remote. OCI mode (ADR-0055): the orchestrator chart floats from OCI.
+  # ⚠️ Version contract (ADR-0065): SonarQube is NOT a float-from-OCI workload —
+  # the Community Build image ↔ branch-plugin must be bumped in lockstep
+  # (26.5.0.x ↔ 26.5.0) in ai-helm-values, and it is excluded from
+  # argocd-image-updater auto-bump.
+  - name: sonarqube
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: sonarqube
+    releaseName: sonarqube
+    destination:
+      namespace: sonarqube
+
   # --- lightbridge-repo-auth (ADR-0047) ---
   # GitHub-App webhook control plane + the /v1/resolve binding the gateway's
   # Authorino calls. Plain workload → home-remote (default). EXTERNAL private

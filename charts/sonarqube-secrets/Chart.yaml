@@ -1,0 +1,26 @@
+apiVersion: v2
+name: sonarqube-secrets
+description: |
+  ExternalSecrets for SonarQube Community Build — the CNPG barman S3 backup
+  credentials, the custom GitHub App credentials (App ID + private-key PEM) the
+  server uses for pull-request decoration (ADR-0065), and the web monitoring
+  passcode. Leaf chart of the sonarqube App-of-Apps orchestrator, lowest
+  sync-wave so the Secrets exist before the DB (barman) and the app start. All
+  reference the `ssegning-aws` ClusterSecretStore (ADR-0018 in-chart ownership).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - sonarqube
+  - secrets
+  - external-secrets
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

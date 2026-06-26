@@ -1,0 +1,59 @@
+# sonarqube-secrets — ExternalSecrets for SonarQube Community Build.
+# Leaf chart of the sonarqube orchestrator (ADR-0065). All ExternalSecrets
+# resolve against the cluster-scoped `ssegning-aws` ClusterSecretStore.
+
+secretStore: ssegning-aws
+refreshInterval: 1h
+
+# Values-driven ExternalSecrets. Key = target Secret name. Each `data` entry
+# maps a target secretKey ← a remoteRef {key, property} in the store.
+externalSecrets:
+  # ── CNPG barman backup credentials (Hetzner Object Storage) ──────────────
+  # Same platform creds Keycloak/lightbridge CNPG backups use (prod/meta/test-app).
+  # `s3_region_name` is a STATIC literal (not in the store): the barman-cloud
+  # ObjectStore's defaulting webhook injects an `s3Credentials.region` ref →
+  # {name: sonarqube-cnpg-s3, key: s3_region_name} that the chart never declares,
+  # and reads it at backup time. Without it every ScheduledBackup fails
+  # `missing key s3_region_name`. us-east-1 is the Ceph-RGW convention used
+  # repo-wide. Merged via target.template (mergePolicy: Merge).
+  sonarqube-cnpg-s3:
+    literals:
+      s3_region_name: us-east-1
+    data:
+      - secretKey: s3_access_key_id
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_client_id
+      - secretKey: s3_secret_access_key
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_secret
+
+  # ── Custom GitHub App credentials (PR decoration, ADR-0065) ──────────────
+  # The SonarQube server's DevOps-Platform (GitHub) integration mints
+  # installation tokens to post the quality-gate decoration onto PRs. The
+  # community-branch-plugin uses these same ALM settings. Two REQUIRED keys:
+  #   • app-id      — the GitHub App's numeric App ID
+  #   • private-key — the App's RSA private key (full PEM, multi-line)
+  # Surfaced to the SonarQube pod as files / env per the workload values
+  # (ai-helm-values environments/prod/values/sonarqube.yaml). Populate the
+  # properties below under ai/camer/digital/prod/env BEFORE first sync.
+  # (clientId/clientSecret are only needed for the GitHub *import/login* flow —
+  # we use Keycloak SAML for login — so they're intentionally omitted. Add them
+  # here if you later enable GitHub repo import.)
+  sonarqube-github:
+    data:
+      - secretKey: app-id
+        key: ai/camer/digital/prod/env
+        property: sonarqube_github_app_id
+      - secretKey: private-key
+        key: ai/camer/digital/prod/env
+        property: sonarqube_github_app_private_key
+
+  # ── Web monitoring passcode ──────────────────────────────────────────────
+  # SonarQube requires a monitoring passcode (SONAR_WEB_SYSTEMPASSCODE) to expose
+  # /api/system/health & /api/monitoring/metrics. The workload references this
+  # Secret via monitoringPasscodeSecretName. Populate `sonarqube_monitoring_passcode`.
+  sonarqube-monitoring:
+    data:
+      - secretKey: passcode
+        key: ai/camer/digital/prod/env
+        property: sonarqube_monitoring_passcode
