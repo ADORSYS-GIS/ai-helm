@@ -1,0 +1,653 @@
+{
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "azp",
+        "label": "Client (azp)",
+        "skipUrlSync": false,
+        "query": "label_values(loki_process_custom_gen_ai_requests, azp)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "model",
+        "label": "Model",
+        "skipUrlSync": false,
+        "query": "label_values(loki_process_custom_gen_ai_requests, model)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      }
+    ]
+  },
+  "annotations": {},
+  "uid": "envoy-ai-gateway-sessions-grants",
+  "title": "AI Gateway — sessions & grants",
+  "description": "Keycloak OFFLINE grants (long-lived refresh-token sessions — opencode auth login caches, LibreChat remember-me, service accounts) resolved to people + client names via the read-only Keycloak datasource (ADR-0063), cross-referenced with gateway spend. NB: access tokens (stateless) and online sessions (in-memory) are NOT in the DB — only offline grants are. Revocation deletes the row (no tombstone), so a missing grant = revoked/expired/never. Budget is per-user and per-client (azp), NOT per individual token. Filters: azp, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/sessions_grants.py.",
+  "tags": [
+    "ai-gateway",
+    "per-user",
+    "identity",
+    "keycloak",
+    "sessions"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "5m",
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Offline grants (Keycloak)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS grants FROM offline_client_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97'"
+        }
+      ],
+      "title": "Active offline grants",
+      "transparent": false,
+      "datasource": {
+        "type": "postgres",
+        "uid": "keycloak"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT user_id) AS users FROM offline_user_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97'"
+        }
+      ],
+      "title": "Users with a grant",
+      "transparent": false,
+      "datasource": {
+        "type": "postgres",
+        "uid": "keycloak"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "purple"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT client_id) AS clients FROM offline_client_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97'"
+        }
+      ],
+      "title": "Clients holding grants",
+      "transparent": false,
+      "datasource": {
+        "type": "postgres",
+        "uid": "keycloak"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ue.username, NULLIF(TRIM(COALESCE(ue.first_name, '') || ' ' || COALESCE(ue.last_name, '')), '') AS name, c.client_id AS client, to_timestamp(ous.created_on) AS created, to_timestamp(ous.last_session_refresh) AS last_active, round(EXTRACT(EPOCH FROM (now() - to_timestamp(ous.last_session_refresh))) / 86400, 1) AS idle_days FROM offline_user_session ous JOIN user_entity ue ON ue.id = ous.user_id JOIN offline_client_session ocs ON ocs.user_session_id = ous.user_session_id JOIN client c ON c.id = ocs.client_id WHERE ous.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' ORDER BY ous.last_session_refresh DESC"
+        }
+      ],
+      "title": "Offline grants — who · which client · last active",
+      "transparent": false,
+      "datasource": {
+        "type": "postgres",
+        "uid": "keycloak"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "repeatDirection": "h",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "name": "Name",
+              "username": "Username",
+              "client": "Client (azp)",
+              "created": "Granted",
+              "last_active": "Last active",
+              "idle_days": "Idle (days)"
+            },
+            "excludeByName": {},
+            "indexByName": {
+              "name": 0,
+              "username": 1,
+              "client": 2,
+              "last_active": 3,
+              "idle_days": 4,
+              "created": 5
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "inspect": false,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Idle (days)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "d"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "bargauge",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT c.client_id AS client, count(*) AS grants FROM offline_client_session ocs JOIN client c ON c.id = ocs.client_id WHERE ocs.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' GROUP BY c.client_id ORDER BY grants DESC"
+        }
+      ],
+      "title": "Offline grants by client",
+      "transparent": false,
+      "datasource": {
+        "type": "postgres",
+        "uid": "keycloak"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "repeatDirection": "h",
+      "options": {
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": "/^grants$/"
+        },
+        "maxVizHeight": 300,
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Grants x budget",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      }
+    },
+    {
+      "type": "table",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT c.client_id AS azp, count(*) AS offline_grants, count(DISTINCT ous.user_id) AS users FROM offline_client_session ocs JOIN client c ON c.id = ocs.client_id JOIN offline_user_session ous ON ous.user_session_id = ocs.user_session_id WHERE ocs.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' GROUP BY c.client_id"
+        },
+        {
+          "expr": "((sum by (azp) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
+          "refId": "B",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Per client channel — grants x spend (selected range)",
+      "transparent": false,
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "repeatDirection": "h",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "azp",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "azp": "Client (azp)",
+              "offline_grants": "Offline grants",
+              "users": "Users",
+              "Value #B": "Spend ($)"
+            },
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "azp": 0,
+              "offline_grants": 1,
+              "users": 2,
+              "Value #B": 3
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Spend ($)",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "inspect": false,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Spend ($)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ous.user_id, ue.username, NULLIF(TRIM(COALESCE(ue.first_name, '') || ' ' || COALESCE(ue.last_name, '')), '') AS name, count(*) AS offline_grants, max(to_timestamp(ous.last_session_refresh)) AS last_active FROM offline_user_session ous JOIN user_entity ue ON ue.id = ous.user_id WHERE ous.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' GROUP BY ous.user_id, ue.username, ue.first_name, ue.last_name"
+        },
+        {
+          "expr": "((sum by (user_id) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
+          "refId": "B",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Per user — grants x spend (selected range)",
+      "transparent": false,
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "repeatDirection": "h",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "user_id",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "name": "Name",
+              "username": "Username",
+              "offline_grants": "Offline grants",
+              "last_active": "Last active",
+              "Value #B": "Spend ($)",
+              "user_id": "User ID (sub)"
+            },
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "name": 0,
+              "username": 1,
+              "offline_grants": 2,
+              "last_active": 3,
+              "Value #B": 4,
+              "user_id": 5
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Spend ($)",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "inspect": false,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Spend ($)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
