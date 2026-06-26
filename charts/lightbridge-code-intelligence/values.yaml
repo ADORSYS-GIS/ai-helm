@@ -115,6 +115,10 @@ config:
     # for knobs the typed fields don't cover — notably a reasoning budget to stop a reasoning model
     # over-thinking, e.g. for GLM: `extra: { thinking: { type: disabled } }`. Set per-env in ai-helm-values.
     extra: {}
+    # SSE streaming toggle (#206) → agent.json `review.stream`. Empty → off (runner default). Set `true`
+    # per-env to collect a streamed response under a per-chunk idle timeout (helps a heavy-reasoning
+    # model's long turns). REQUIRES a runner image with the `review.stream` field (lightbridge-ci #211).
+    stream: ""
     # Model context window in tokens (ADR-0045). → agent.json `review.context_window`. Empty → no
     # budgeting (the agent sends the full history and would fail a 400 on overflow). Set per-env in
     # ai-helm-values to the serving model's real window so the agent winds down + trims before overflow

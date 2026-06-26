@@ -56,6 +56,10 @@ data:
 {{- if ne (toString $cfg.model.maxTokens) "" }}{{- $_ := set $rev "max_tokens" $cfg.model.maxTokens }}{{- end }}
 {{- if ne (toString $cfg.model.maxTurns) "" }}{{- $_ := set $rev "max_turns" $cfg.model.maxTurns }}{{- end }}
 {{- if ne (toString $cfg.model.contextWindow) "" }}{{- $_ := set $rev "context_window" $cfg.model.contextWindow }}{{- end }}
+{{- /* SSE streaming toggle (#206) → agent.json review.stream. A bool; empty → omitted (runner default
+       off). Needs a runner image carrying the review.stream field (lightbridge-ci #211) before it's set
+       to true, else deny_unknown_fields fails the Job. */}}
+{{- if ne (toString $cfg.model.stream) "" }}{{- $_ := set $rev "stream" $cfg.model.stream }}{{- end }}
 {{- /* Provider-specific passthrough generation params (ADR-0051 ext, #205) — an OBJECT, not a scalar,
        so it's truthiness-guarded (an empty map is falsy). Merged verbatim into the chat body by the
        runner (review.extra), e.g. a reasoning budget like {"thinking":{"type":"disabled"}} for GLM. */}}
