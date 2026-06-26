@@ -159,6 +159,7 @@ the root still lives in `home-os`.) Detail:
 
 - **AI Gateway** — Envoy AI Gateway (`aieg`); the OpenAI-compatible reverse proxy fronting upstream LLM providers.
 - **lightbridge-repo-auth** — the GitHub-OIDC → billing-account binding for CI (ADR-0047).
+- **SonarQube** — code-quality gate (`sonarqube` App-of-Apps, ADR-0065): free Community Build + the community-branch-plugin for inline GitHub PR decoration via a custom GitHub App, Keycloak SAML SSO, CNPG db. Version-lockstep-pinned (the one app excluded from OCI-float / image-updater). See `docs/sonarqube.md`.
 - **LGTM stack** — Loki + Grafana + Tempo + Mimir.
 - **MCP** — Model Context Protocol; the tool-server protocol exposed at `/mcp/*`.
 - **ESO** — External Secrets Operator. **CNPG** — CloudNativePG. **Authorino** — Kuadrant ext_authz enforcing our AuthConfig.

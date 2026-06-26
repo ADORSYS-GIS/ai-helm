@@ -168,6 +168,7 @@ flowchart TB
 | `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI + Mongo + Meili + opencode discovery | Orchestrator + leaves (ADR-0014) |
 | `mcps` → `mcp` | MCP tool servers (self-hosted + proxiedExternal) | Orchestrator + leaves (ADR-0038/0040/0041) |
 | `lightbridge-repo-auth` | GitHub org→account binding for CI OIDC auth | Direct (ADR-0047/0049) |
+| `sonarqube` → `sonarqube-secrets` / `sonarqube-db` / `sonarqube-app` | SonarQube Community Build + community-branch-plugin (inline PR decoration via a custom GitHub App), Keycloak SAML SSO, CNPG db; version-LOCKSTEP-pinned (not OCI-float, excluded from image-updater) | App-of-Apps (ADR-0065) |
 | `observability` | LGTM + Alloy + grafana-operator + dashboards | App-of-Apps (ADR-0020) |
 | `same-origin-proxy` | Generic Caddy serving external resources same-origin under an app's host to dodge browser CORS (`routes[]`; 1st route: the scoreboard governance feed under Grafana) | Direct (ADR-0061) |
 | `apps` | Root chart: emits one Application per workload (umbrella multi-source) | Root (ADR-0018) |
@@ -334,6 +335,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0060 | Gamified "App Scoreboard" dashboard (Phase 3): gauge/heatmap/histogram/traces/alertlist/news/hub on the ADR-0058 metrics; candlestick + flame-graph deferred (no tick/profile data) |
 | 0061 | Generic same-origin Caddy proxy (`same-origin-proxy`, `routes[]`) — serve external resources under an app's host to dodge browser CORS; in-chart netpol egress derived from routes. 1st use: the scoreboard news feed (Grafana news panel fetches client-side, GitHub Atom is CORS-blocked) |
 | 0062 | Grafana AI assistant (`grafana-llm-app`) on the internal gateway plane — dedicated apiKey for cost attribution, internal-CA trust, declarative (survives pod rolls) |
+| 0065 | SonarQube Community Build + community-branch-plugin for free inline PR decoration (custom GitHub App); Keycloak SAML SSO; App-of-Apps + CNPG; version-LOCKSTEP-pinned (excluded from image-updater) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
