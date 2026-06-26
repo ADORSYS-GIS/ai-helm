@@ -85,11 +85,12 @@ Repointing to Mimir is necessary but not sufficient — two enablers shipped in
 `ai-helm-values`:
 
 - **Memcached caches, previously OFF** ("not needed at small scale" — wrong on a
-  rate-limited store). Now on: Loki `chunksCache`/`resultsCache`; Mimir
-  `chunks-cache`/`index-cache`/`metadata-cache`/`results-cache`. In-memory → **no
-  PVC** (~200Mi total). Mimir's store-gateway reads metric blocks from the same
-  bucket, so these matter for the 30d metric queries too (esp. `metadata-cache`
-  cuts S3 LIST).
+  rate-limited store). Now on: Loki `chunksCache` (512) / `resultsCache` (256);
+  Mimir `chunks-cache` (256) / `index-cache` (256) / `metadata-cache` (64) /
+  `results-cache` (256) — `allocatedMemory` in MB, **~1.6 GB total** (Loki 768 +
+  Mimir 832; pod memory is somewhat higher with overhead). In-memory → **no PVC**.
+  Mimir's store-gateway reads metric blocks from the same bucket, so these matter
+  for the 30d metric queries too (esp. `metadata-cache` cuts S3 LIST).
 - **Log-noise drops at Alloy `discovery.relabel "pod_logs"`.** GitHub ARC runners
   were ~48% of ingest and the `observability` namespace ~28% (Loki/Alloy logging
   their *own* SlowDown — a self-amplifying loop). Dropped at discovery (files
@@ -140,6 +141,10 @@ viz the cost boards don't:
   `100 × sum(increase(cost[30d]))/1e6 / $budget` is valid. Window fixed at `30d`
   (a monthly budget), independent of the dashboard range. Edit it in the UI to
   retune live. Reads >100% until usage settles (run-rate ~$5k) — that's the point.
+  ⚠️ Enter a **positive number** — Grafana textbox variables have no input
+  validation, so a blank / `0` / non-numeric `$budget` makes the gauge divide by
+  it and render NaN/±Inf with no error. (No code guard is possible on a textbox
+  var; this is the documented contract.)
 - **stats** (spend / budget remaining / requests / active actors), **bargauge**
   leaderboards (top actors, top models), **histogram** (per-actor spend
   distribution), **pie** (spend share by billing plan), **heatmap** (hourly
