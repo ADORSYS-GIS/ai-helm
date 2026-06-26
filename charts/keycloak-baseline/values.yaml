@@ -301,6 +301,72 @@ keycloak-config:
         - offline_access
         - microprofile-jwt
 
+    # SonarQube Community Build SSO via SAML (ADR-0065). SonarQube CE's native
+    # SSO is SAML (not OIDC), so this is a `protocol: saml` client. The SP entity
+    # ID (clientId here) must equal SonarQube's `sonar.auth.saml.applicationId`,
+    # and the ACS redirect URI must match `<base>/oauth2/callback/saml`. The four
+    # protocolMappers below emit SAML attributes named login/name/email/groups —
+    # SonarQube's `sonar.auth.saml.user.{login,name,email}` + `.group.name` must
+    # reference these SAME names (the two halves are one contract; reconcile them
+    # with the workload values in ai-helm-values). saml.client.signature=false:
+    # SonarQube does not sign AuthnRequests by default.
+    sonarqube:
+      enabled: true
+      clientId: "sonarqube"
+      name: "SonarQube"
+      description: "Code quality (SonarQube Community Build) SSO"
+      protocol: saml
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      rootUrl: "https://sonarqube.camer.digital"
+      baseUrl: "/"
+      redirectUris:
+        - "https://sonarqube.camer.digital/oauth2/callback/saml"
+      webOrigins:
+        - "https://sonarqube.camer.digital"
+      frontchannelLogout: true
+      attributes:
+        saml.assertion.signature: "true"
+        saml.server.signature: "true"
+        saml.client.signature: "false"
+        saml.force.post.binding: "true"
+        saml.authnstatement: "true"
+        saml_name_id_format: "username"
+        saml_force_name_id_format: "true"
+      protocolMappers:
+        - name: "login"
+          protocol: saml
+          protocolMapper: "saml-user-property-mapper"
+          config:
+            user.attribute: "username"
+            attribute.name: "login"
+            attribute.nameformat: "Basic"
+        - name: "name"
+          protocol: saml
+          protocolMapper: "saml-user-property-mapper"
+          config:
+            user.attribute: "username"
+            attribute.name: "name"
+            attribute.nameformat: "Basic"
+        - name: "email"
+          protocol: saml
+          protocolMapper: "saml-user-property-mapper"
+          config:
+            user.attribute: "email"
+            attribute.name: "email"
+            attribute.nameformat: "Basic"
+        - name: "groups"
+          protocol: saml
+          protocolMapper: "saml-group-membership-mapper"
+          config:
+            attribute.name: "groups"
+            attribute.nameformat: "Basic"
+            single: "true"
+            full.path: "false"
+
   # Groups with client role mappings
   groups:
     cdAdmins:

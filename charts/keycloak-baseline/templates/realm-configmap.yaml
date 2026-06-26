@@ -171,10 +171,34 @@ data:
           {{- range $client.webOrigins }}
           - {{ . | quote }}
           {{- end }}
-        protocol: openid-connect
-        {{- if $client.pkce }}
+        protocol: {{ $client.protocol | default "openid-connect" }}
+        {{- /* Client attributes — the pkce shorthand (back-compat) plus an
+               arbitrary passthrough map (e.g. SAML's saml.* signing/binding
+               flags). Renders only when one is present. */}}
+        {{- if or $client.pkce $client.attributes }}
         attributes:
-          pkce.code.challenge.method: {{ $client.pkce }}
+          {{- if $client.pkce }}
+          pkce.code.challenge.method: {{ $client.pkce | quote }}
+          {{- end }}
+          {{- range $key, $value := $client.attributes }}
+          {{ $key }}: {{ $value | quote }}
+          {{- end }}
+        {{- end }}
+        {{- /* Per-client protocol mappers (SAML attribute mappers map the
+               user's login/name/email/groups onto the SAML assertion that
+               SonarQube reads via its sonar.auth.saml.* attribute names). */}}
+        {{- if $client.protocolMappers }}
+        protocolMappers:
+        {{- range $mapper := $client.protocolMappers }}
+          - name: {{ $mapper.name }}
+            protocol: {{ $mapper.protocol | default ($client.protocol | default "openid-connect") }}
+            protocolMapper: {{ $mapper.protocolMapper }}
+            consentRequired: {{ $mapper.consentRequired | default false }}
+            config:
+            {{- range $key, $value := $mapper.config }}
+              {{ $key }}: {{ $value | quote }}
+            {{- end }}
+        {{- end }}
         {{- end }}
         {{- if $client.defaultClientScopes }}
         defaultClientScopes:
