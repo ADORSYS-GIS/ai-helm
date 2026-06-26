@@ -117,6 +117,7 @@ dashboards, and all the GitOps glue.
 |---|---|---|
 | Scale to 2000/5000 clients | HTTP/2 multiplexing + data-plane HPA + circuit breaking | `core-gateway` ClientTrafficPolicy / EnvoyProxy HPA / BackendTrafficPolicy (ADR-0021) |
 | Attribution | JWT → Authorino `x-oidc-*` headers → Envoy access log → Alloy → Loki labels | ADR-0005/0011/0046, `per-user-observability.md` |
+| Identity resolution | Read-only Keycloak Postgres datasource resolves `user_id` (sub UUID) → person + offline grants × spend | ADR-0063/0064, `keycloak-identity-datasource.md` |
 | Authorization | Keycloak JWT as the boundary; per-host AuthConfig differentiation | ADR-0021 |
 | CI without shared keys | GitHub Actions OIDC → `lightbridge-repo-auth` org→account binding | ADR-0047/0049 |
 | Quota & billing | Per-plan burst + per-person monthly budget in `BackendTrafficPolicy` | ADR-0021/0035 |
@@ -334,6 +335,8 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0060 | Gamified "App Scoreboard" dashboard (Phase 3): gauge/heatmap/histogram/traces/alertlist/news/hub on the ADR-0058 metrics; candlestick + flame-graph deferred (no tick/profile data) |
 | 0061 | Generic same-origin Caddy proxy (`same-origin-proxy`, `routes[]`) — serve external resources under an app's host to dodge browser CORS; in-chart netpol egress derived from routes. 1st use: the scoreboard news feed (Grafana news panel fetches client-side, GitHub Atom is CORS-blocked) |
 | 0062 | Grafana AI assistant (`grafana-llm-app`) on the internal gateway plane — dedicated apiKey for cost attribution, internal-CA trust, declarative (survives pod rolls) |
+| 0063 | Read-only Keycloak Postgres `GrafanaDatasource` (`-ro` replica, least-privilege role) resolves the opaque per-user `user_id` (sub UUID) → person; realm filtered by literal id (role can't read `realm`); role/GRANT in home-os, datasource in ai-helm-values, dashboard in ai-helm |
+| 0064 | Keycloak sessions & grants visibility (extends 0063): surface offline grants × spend; column-level `client(id,client_id,name)` grant (no `client.secret`); KC 26 persistent-sessions → filter `offline_flag='1'`; per-token budget rejected (no `jti`, unbounded cardinality) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
@@ -369,6 +372,8 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Mimir ring wedges if memberlist blocked at startup** | Metrics silently dropped | Guarded: wave -3 `allow-same-namespace` + `rejoin_interval: 1m` |
 | **External MCP proxy engines are interim** | openresty/Content-Type rewrites carried until AIEG #2218/#2219 land | Tracked in ADR-0040/0041 |
 | **MCP `MCP_TOKEN` token-bind race** | Empty-token proxy rejects all requests | Guarded: `optional: false` (waits for ESO) |
+| **Grafana has read access to the Keycloak auth DB** (ADR-0063/0064) | A leaked `grafana_ro` credential reads usernames/emails/sessions | Bounded by design: least-privilege role (no `pg_read_all_data`, no `credential`/`client.secret`/federated tokens), column-level `client` grant, `-ro` replica; blast radius = identity data only |
+| **KC 26 persistent-sessions: online sessions live in the `offline_*` tables** | Session/grant queries miscount online logins as offline grants | Filter `offline_flag='1'`; documented in `keycloak-identity-datasource.md` + ADR-0064 |
 
 ---
 
