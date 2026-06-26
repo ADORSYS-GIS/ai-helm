@@ -110,6 +110,14 @@ config:
     # Max agent turns per review (ADR-0037 loop). Empty → the runner's built-in default (40).
     # → agent.json `review.max_turns`.
     maxTurns: ""
+    # Risk-first read budgets (lightbridge-ci ADR-0042) → agent.json `review.*`. Empty → the runner's
+    # built-in defaults. maxBatchSize = max read-only tool calls run CONCURRENTLY per turn (default 8);
+    # the other three are cumulative caps before the loop winds down (default files 30 / searches 15 /
+    # batches 6). The runner clamps each to ≥1. Set per-env in ai-helm-values.
+    maxBatchSize: ""    # → review.max_batch_size (concurrent read-only tool calls per turn)
+    maxFilesRead: ""    # → review.max_files_read   (cumulative read_file cap)
+    maxSearches: ""     # → review.max_searches     (cumulative vector+graph search cap)
+    maxBatches: ""      # → review.max_batches      (cumulative investigation-round cap)
     # NB: there is no `fallbackModel` knob — the review failover model was removed (lightbridge-ci
     # ADR-0053 / #208), replaced by a single model + retry/backoff + circuit breaker. (Any ADR-NNNN
     # below refers to the lightbridge-ci repo's ADRs, not this chart's own ADR index.)
