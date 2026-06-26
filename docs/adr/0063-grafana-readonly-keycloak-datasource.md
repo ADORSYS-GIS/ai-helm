@@ -55,14 +55,19 @@ In `home-os` `charts/home-apps/keycloak-ha` (the Keycloak CNPG cluster):
 - An `ExternalSecret` materialising that basic-auth Secret from `ssegning-aws`
   `prod/meta/test-app` → **`keycloak_grafana_ro_db_password`** (a new property).
 - An idempotent **GRANT Job** (ArgoCD `Sync` hook, `BeforeHookCreation` delete)
-  that, once CNPG has created the role, grants `SELECT` on the **user + token
-  tables only**:
-  `user_entity`, `user_attribute`, `user_group_membership`, `user_role_mapping`,
-  `user_required_action`, `user_consent`, `user_consent_client_scope`,
-  `offline_user_session`, `offline_client_session`.
-  CNPG managed roles can't express per-table grants, so the scoping runs as SQL
-  by the `app` table owner. **Deliberately NOT granted:** `credential`,
-  `federated_identity`, `client`, `component_config`, `realm`, `user_federation_*`.
+  that, once CNPG has created the role, grants `SELECT` on the **user-identity +
+  token tables only**: `user_entity`, `user_attribute`, `offline_user_session`,
+  `offline_client_session`. CNPG managed roles can't express per-table grants, so
+  the scoping runs as SQL by the `app` table owner. The Job has a bounded wait
+  loop + `activeDeadlineSeconds` backstop so a never-created role (e.g. the
+  password ExternalSecret never synced) fails the hook fast instead of hanging
+  the ArgoCD Sync. **Deliberately NOT granted:** `credential`,
+  `federated_identity`, `client`, `component_config`, `realm`,
+  `user_federation_*` — and also the **authz/consent** tables
+  (`user_role_mapping`, `user_group_membership`, `user_consent*`,
+  `user_required_action`): they are neither identity nor tokens, the dashboard
+  never queries them, and granting them would only widen the blast radius if the
+  datasource credential leaked.
 
 The grant scope is "users and tokens, only" — chosen over `pg_read_all_data`
 because this is the auth DB.
