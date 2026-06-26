@@ -85,7 +85,7 @@ the authz/consent tables (`user_role_mapping`, `user_group_membership`,
 Because the `realm` table isn't readable, queries filter `user_entity.realm_id`
 (and `offline_*.realm_id`) by the **literal** internal id of the trusted realm —
 `camer-digital` = `04793949-13aa-48ef-9d4d-1c60761f0c97`
-(`tools/dashboards/_common.py:CAMER_DIGITAL_REALM_ID`), not by name. Re-confirm
+(`tools/dashboards/src/dashboards/_common.py:CAMER_DIGITAL_REALM_ID`), not by name. Re-confirm
 that id only if the realm is ever recreated.
 
 The GRANT Job is an ArgoCD `Sync` hook with a **bounded** wait loop +
@@ -152,12 +152,16 @@ ai-helm-values, then ai-helm):
 
 ```bash
 export KUBECONFIG=/path/to/hetzner-k8s/kubeconfig
+# Resolve a CNPG pod by label (the StatefulSet ordinal is not stable across
+# restores) — any instance can run psql; -ro/-rw Services route to the role.
+KCPOD=$(kubectl -n keycloak get pod -l cnpg.io/cluster=keycloak-ha-cluster \
+  -o jsonpath='{.items[0].metadata.name}')
 # role + scoped grants
-kubectl -n keycloak exec keycloak-ha-cluster-1 -c postgres -- psql -U postgres -d app -tAc \
+kubectl -n keycloak exec "$KCPOD" -c postgres -- psql -U postgres -d app -tAc \
   "SELECT table_name, privilege_type FROM information_schema.role_table_grants WHERE grantee='grafana_ro' ORDER BY 1;"
 # least-privilege holds: client name readable, secret denied
 PW=$(kubectl -n keycloak get secret keycloak-ha-grafana-ro -o jsonpath='{.data.password}' | base64 -d)
-kubectl -n keycloak exec keycloak-ha-cluster-1 -c postgres -- env PGPASSWORD="$PW" \
+kubectl -n keycloak exec "$KCPOD" -c postgres -- env PGPASSWORD="$PW" \
   psql "host=keycloak-ha-cluster-ro.keycloak.svc.cluster.local dbname=app user=grafana_ro sslmode=require" \
   -tAc "SELECT secret FROM client LIMIT 1;"   # -> permission denied for table client
 # datasource health through Grafana
