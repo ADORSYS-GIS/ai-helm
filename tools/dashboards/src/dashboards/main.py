@@ -24,6 +24,8 @@ import tempfile
 from pathlib import Path
 from types import ModuleType
 
+from dashboards._common import SCHEMA_VERSION
+
 # Registry of every generated dashboard. Import-by-string so Python's
 # import-time errors don't blow up unrelated `--help`.
 _DASHBOARD_MODULES: tuple[str, ...] = (
@@ -59,6 +61,11 @@ def _repo_root() -> Path:
 
 def _emit(mod: ModuleType, target_dir: Path) -> Path:
     dashboard = mod.build()  # type: ignore[attr-defined]
+    # Pin the schema version explicitly. The grafana-foundation-sdk builder has
+    # no fluent `.schema_version()` setter, so we stamp it here — one place,
+    # every generated dashboard — instead of relying on the SDK's internal
+    # default. See `_common.SCHEMA_VERSION`.
+    dashboard["schemaVersion"] = SCHEMA_VERSION
     out_path = target_dir / mod.OUTPUT_PATH  # type: ignore[attr-defined]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
