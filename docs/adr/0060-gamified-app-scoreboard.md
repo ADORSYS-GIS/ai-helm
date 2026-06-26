@@ -6,6 +6,19 @@
 **Builds on:** [ADR-0058](./0058-precompute-gateway-usage-metrics-to-mimir.md) (the Mimir metrics backbone), [ADR-0059](./0059-grafana-unified-alerting-to-discord.md) (unified alerting), [ADR-0008](./0008-python-dashboard-generation.md) (dashboards-as-code), [ADR-0046](./0046-per-user-attribution-otlp-envelope-repair.md) (attribution labels), [ADR-0023](./0023-stateless-grafana.md) (stateless Grafana → operator CRs)
 **Relates to:** [ADR-0028](./0028-self-hosted-model-pricing.md)/ADR-0051 (cost is µ$ ÷1e6)
 
+> ⚠️ **Correction (2026-06-26), implementation only — decision unchanged.** The
+> "news panel reads the governance repo's GitHub Atom feed" section below is
+> **wrong about the mechanism**: Grafana's news panel fetches its feed
+> **client-side**, and GitHub's `.atom` sends no `Access-Control-Allow-Origin`
+> header, so the browser CORS-blocks it ("Error loading RSS feed") — it was never
+> a server-side fetch, so the `github.com` pod-egress allow was both unnecessary
+> and ineffective (verified: the pod reaches github.com `HTTP 200`; the failure is
+> CORS). The governance panel is therefore a plain **text/links** panel (doctrine
+> + the live "latest changes" commits page), and the `github.com` egress was
+> removed from the Grafana `CiliumNetworkPolicy`. The *decision* (a governance
+> panel on the scoreboard) stands; only the panel type changed. The original body
+> is left intact as the record.
+
 ## Context
 
 ADR-0058 built the metrics backbone (Alloy `stage.metrics` →

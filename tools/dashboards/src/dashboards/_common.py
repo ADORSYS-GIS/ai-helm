@@ -64,13 +64,15 @@ METRIC_REQUESTS = _METRIC_PREFIX + "gen_ai_requests"
 # will read >100% until usage settles — that's the point of the gamified view).
 DEFAULT_MONTHLY_BUDGET = 3000
 
-# AI-governance doctrine (referenced by the scoreboard's text + news panels).
-# The site itself (MkDocs) exposes no RSS feed, so the news panel reads the
-# GitHub repo's commits Atom feed — real "governance updates" that actually
-# render. Grafana fetches it server-side, so the Grafana pod needs egress to
-# github.com (added to the prod deps CiliumNetworkPolicy in ai-helm-values).
+# AI-governance doctrine (referenced by the scoreboard's text panels).
+# ⚠️ A Grafana *news* panel was tried first (GitHub commits Atom feed) but
+# Grafana's news panel fetches the feed **client-side**, and GitHub's `.atom`
+# sends no `Access-Control-Allow-Origin` header → the browser CORS-blocks it
+# ("Error loading RSS feed"). It is NOT a pod-egress issue (the pod reaches
+# github.com fine). So governance is surfaced via a plain text/links panel
+# instead — `GOVERNANCE_COMMITS_URL` is the human "latest changes" page.
 GOVERNANCE_URL = "https://adorsys-gis.github.io/ai-governance/"
-GOVERNANCE_NEWS_FEED = "https://github.com/ADORSYS-GIS/ai-governance/commits.atom"
+GOVERNANCE_COMMITS_URL = "https://github.com/ADORSYS-GIS/ai-governance/commits/main"
 
 
 # ---------------------------------------------------------------------------

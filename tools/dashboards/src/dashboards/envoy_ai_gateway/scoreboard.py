@@ -4,7 +4,7 @@ Phase 3 of the cost-observability work (ADR-0058 captured the intent). A single
 multi-panel "scoreboard for our apps" built on the SAME precomputed Mimir
 metrics (ADR-0058 `loki_process_custom_gen_ai_*` counters) plus Tempo traces and
 unified alerting — using Grafana visualizations the cost dashboards don't:
-gauge, heatmap, histogram, alert-list, traces, news, text + a dashboard-list hub.
+gauge, heatmap, histogram, alert-list, traces, text + a dashboard-list hub.
 
 Design notes / deliberate omissions (see ADR-0060):
   - candlestick + flame-graph are DEFERRED: candlestick needs intra-day OHLC tick
@@ -12,9 +12,10 @@ Design notes / deliberate omissions (see ADR-0060):
     daily counter aggregates in Mimir, so both would be synthetic. Not built.
   - the budget gauge measures against an editable `$budget` textbox variable
     (default DEFAULT_MONTHLY_BUDGET) so the "% of budget" framing is tunable live.
-  - the news panel reads the AI-governance repo's GitHub commits Atom feed (the
-    MkDocs site has no RSS); Grafana fetches it server-side → the Grafana pod
-    needs github.com egress (added to the prod CiliumNetworkPolicy).
+  - governance is a text/links panel, NOT a Grafana *news* panel: the news panel
+    fetches its feed client-side and GitHub's `.atom` sends no CORS header, so the
+    browser blocks it ("Error loading RSS feed"). Not a pod-egress issue. The
+    text panel links to the doctrine + the live "latest changes" commits page.
 
 The JSON file is regenerated from this module — do **not** hand-edit it.
 
@@ -36,7 +37,6 @@ from grafana_foundation_sdk.builders import (
     gauge,
     heatmap,
     histogram,
-    news,
     tempo,
     text,
 )
@@ -48,7 +48,7 @@ from grafana_foundation_sdk.models import text as tm
 
 from dashboards._common import (
     DEFAULT_MONTHLY_BUDGET,
-    GOVERNANCE_NEWS_FEED,
+    GOVERNANCE_COMMITS_URL,
     GOVERNANCE_URL,
     LABEL_AZP,
     LABEL_BILLING_PLAN,
@@ -229,14 +229,25 @@ def _dashboardlist_hub() -> dashboardlist.Panel:
     )
 
 
-def _news_governance() -> news.Panel:
+# A Grafana *news* panel was tried first but its feed fetch is client-side and
+# GitHub's Atom feed sends no CORS header → the browser blocks it. A text/links
+# panel always renders and still points at the live "latest changes" page.
+_GOVERNANCE_LINKS_MD = (
+    "### 📰 AI governance\n\n"
+    "Stay current with the doctrine:\n\n"
+    f"- 📖 [Doctrine & principles]({GOVERNANCE_URL})\n"
+    f"- 🔁 [Latest changes]({GOVERNANCE_COMMITS_URL}) — recent governance commits\n"
+    f"- 📋 [PR template]({GOVERNANCE_URL}04-pull-request-template)\n"
+)
+
+
+def _governance_links() -> text.Panel:
     return (
-        news.Panel()
+        text.Panel()
         .title("AI governance — latest")
-        .description("Recent commits to the AI-governance doctrine repo.")
         .grid_pos(dm.GridPos(h=10, w=8, x=8, y=60))
-        .feed_url(GOVERNANCE_NEWS_FEED)
-        .show_image(False)
+        .mode(tm.TextMode.MARKDOWN)
+        .content(_GOVERNANCE_LINKS_MD)
     )
 
 
@@ -394,7 +405,7 @@ _DESCRIPTION = (
     "The gamified 'App Scoreboard' for the Envoy AI Gateway (ADR-0060, Phase 3): "
     "budget-burn gauge, leaderboards, token-intensity heatmap, per-actor spend "
     "histogram, daily-spend heartbeat, plan-share pie, firing-alerts list, Tempo "
-    "request traces, a dashboard-list hub, and AI-governance news/narration — all "
+    "request traces, a dashboard-list hub, and AI-governance links/narration — all "
     "on the precomputed Mimir metrics (ADR-0058) + Tempo + unified alerting. "
     "Budget is the editable $budget variable (default $3000/mo). candlestick + "
     "flame-graph are deferred (need OHLC tick / profile-frame data we don't have). "
@@ -455,7 +466,7 @@ def _dashboard() -> db.Dashboard:
         # Hub & governance
         .with_panel(sh.row("Hub & governance", y=59))
         .with_panel(_dashboardlist_hub())
-        .with_panel(_news_governance())
+        .with_panel(_governance_links())
         .with_panel(_text_governance())
     )
 

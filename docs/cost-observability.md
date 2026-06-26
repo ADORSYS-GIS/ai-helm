@@ -152,16 +152,20 @@ viz the cost boards don't:
   (daily-spend heartbeat).
 - **traces** (Tempo, TraceQL `{}`) — click a trace for the LibreChat → Envoy →
   Authorino → model flow; **alertlist** (firing/pending, ADR-0059);
-  **dashlist** hub (tag `ai-gateway`); **news** + **text** (AI governance).
+  **dashlist** hub (tag `ai-gateway`); **text/links** panels (AI governance).
 
 `alertlist` and `traces` have no dedicated SDK builder → built via the base
 `dashboard.Panel` with `.type()` + `.options()`.
 
-> ⚠️ **The news panel needs `github.com` egress.** The governance MkDocs site has
-> no RSS, so the panel reads `github.com/ADORSYS-GIS/ai-governance/commits.atom`;
-> Grafana fetches RSS **server-side**, so under the deny-egress baseline the
-> Grafana pod needs `github.com` in its deps `CiliumNetworkPolicy` (ai-helm-values)
-> or the panel stays empty (same pattern as the ADR-0059 `discord.com` allow).
+> ⚠️ **Governance is a text/links panel, NOT a Grafana _news_ panel.** A news
+> panel was tried first (GitHub commits Atom feed), but **Grafana's news panel
+> fetches its feed client-side**, and GitHub's `.atom` sends no
+> `Access-Control-Allow-Origin` header → the browser CORS-blocks it ("Error
+> loading RSS feed"). This is **not** a pod-egress issue (the Grafana pod reaches
+> github.com fine — verified `HTTP 200`); a server-side fetch would have worked,
+> but the news panel doesn't do that. So governance is a plain markdown panel
+> linking to the doctrine + the live "latest changes" commits page. (The briefly
+> added `github.com` egress was removed from the Grafana `CiliumNetworkPolicy`.)
 
 **Deferred (documented in ADR-0060): candlestick + flame-graph.** They need
 intra-day OHLC *tick* data / Pyroscope *profile-frame* data we don't collect;
