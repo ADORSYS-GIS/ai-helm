@@ -129,8 +129,10 @@ flowchart LR
 
 ## Observability in one diagram
 
-LGTM + Alloy, per-user attribution from JWT → Loki labels. Detail:
-[suite · 08 Observability](architecture/08-observability.md).
+LGTM + Alloy, per-user attribution from JWT → Loki labels; opaque `user_id`
+UUIDs + offline grants resolved via a read-only Keycloak datasource
+([`keycloak-identity-datasource.md`](keycloak-identity-datasource.md),
+ADR-0063/0064). Detail: [suite · 08 Observability](architecture/08-observability.md).
 
 ```mermaid
 flowchart BT

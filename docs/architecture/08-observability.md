@@ -120,6 +120,34 @@ ConfigMap live in `ai-helm-values` `environments/prod/values/grafana.yaml`, the
 gateway-key ExternalSecret + a `self-signed-ca` CA-trust mount + Cilium egress to
 `envoy-gateway-system:443` in the `deps/grafana` overlay.
 
+## Identity resolution & sessions (ADR-0063 / ADR-0064)
+
+Per-user attribution (above) gets a `user_id` *label* onto a log line — but for a
+Keycloak token that `user_id` is the `sub`, a **UUID**, and a thin token (no
+email/name claim) leaves only that opaque UUID. A **read-only Postgres
+`GrafanaDatasource`** (`uid: keycloak`) onto the Keycloak CNPG **`-ro` replica**
+resolves it to a person at query time, and surfaces the standing offline grants
+behind it.
+
+- **Least-privilege** on the auth DB: the `grafana_ro` role is NOT
+  `pg_read_all_data` — SELECT on `user_entity`/`user_attribute`,
+  `offline_{user,client}_session`, and **column-level** `client(id, client_id,
+  name)` only (never `credential`, `client.secret`, federated tokens). The role +
+  GRANT live in **home-os** (it owns the cluster); the datasource + egress in
+  **ai-helm-values**.
+- Two generated dashboards (ADR-0008): **user-directory** (Mixed `joinByField` on
+  `user_id` → spend resolved to names; empty Name ⇒ non-human CI/internal
+  subject) and **sessions-grants** (offline grants by user/client + idle-days,
+  joined to per-user/per-`azp` spend).
+- ⚠️ **Realm filtered by literal `realm_id`** (the role can't read `realm`).
+- ⚠️ **KC 26 persistent-sessions:** online + offline sessions share the
+  `offline_*_session` tables, told apart by `offline_flag` — grant queries filter
+  `'1'` so online logins aren't miscounted.
+- Bounded by what KC stores: access tokens are stateless (never in the DB),
+  revocation deletes the row (no enumerable "revoked" list), and budget is
+  per-user/per-`azp`, **not** per individual token. Full guide:
+  [`keycloak-identity-datasource.md`](../keycloak-identity-datasource.md).
+
 ## Why the sync-wave order is load-bearing
 
 ```mermaid
