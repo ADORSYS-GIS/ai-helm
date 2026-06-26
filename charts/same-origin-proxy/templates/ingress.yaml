@@ -1,0 +1,35 @@
+{{- if and .Values.ingress.enabled .Values.ingress.host .Values.routes }}
+{{- /*
+A SECOND Ingress on the EXISTING host, matching only the route paths, so the
+browser fetch of each resource is same-origin with that app (no CORS). Traefik
+routes the more-specific paths here and everything else to the host's main app.
+TLS reuses the host's existing cert (terminated by Traefik for the host).
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    app: {{ .Values.name }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+        {{- range .Values.routes }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Exact" }}
+            backend:
+              service:
+                name: {{ $.Values.name }}
+                port:
+                  number: {{ $.Values.port }}
+        {{- end }}
+  {{- with .Values.ingress.tlsSecret }}
+  tls:
+    - hosts:
+        - {{ $.Values.ingress.host | quote }}
+      secretName: {{ . | quote }}
+  {{- end }}
+{{- end }}
