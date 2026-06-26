@@ -19,12 +19,18 @@ Answering that honestly requires respecting what Keycloak actually persists
 - **Access tokens** — the credentials that actually hit the AI gateway — are
   **stateless signed JWTs**. They are **never stored** in the DB. There is no row
   to enumerate, "still in use", or attribute per-token.
-- **Online sessions** are held in Infinispan memory; there is **no `user_session`
-  table** in this deployment. Not visible to the datasource.
-- **Offline sessions** (`offline_user_session` / `offline_client_session`) — the
+- **Persistent sessions (KC 26).** There is no `user_session` table — instead,
+  this Keycloak persists **both online and offline** sessions into the **same**
+  `offline_{user,client}_session` tables, distinguished by **`offline_flag`**
+  (`'1'` = offline grant, `'0'` = online login). So online sessions *are* in the
+  DB here (an earlier "online sessions are in-memory" reading was wrong for this
+  version) — every grant query must filter `offline_flag = '1'` or it
+  miscounts online web/CLI logins (e.g. the grafana/argocd console sessions) as
+  offline grants.
+- **Offline sessions** (`offline_*_session` with `offline_flag='1'`) — the
   long-lived refresh-token grants from `offline_access` (opencode CLI caches,
-  LibreChat "remember me", service accounts) — **are persisted**. Live: 127
-  user-sessions, dominated by `opencode-cli` (109).
+  LibreChat "remember me", service accounts) — are the dashboard's subject. Live:
+  127 offline client-sessions, dominated by `opencode-cli` (109).
 - **Revocation deletes the row** (no tombstone). Keycloak's `revoked_token` table
   is the live revocation list (currently 0 rows); `not_before` covers bulk
   invalidation. So you observe *present (active)* vs *gone* — you cannot list

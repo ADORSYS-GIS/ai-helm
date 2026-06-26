@@ -7,9 +7,11 @@ cross-referenced with gateway spend.
 
 ⚠️ Scope is bounded by what Keycloak actually stores:
   * Access tokens (what hits the gateway) are STATELESS JWTs — never in the DB.
-  * Online sessions are in-memory (no `user_session` table) — not here either.
-  * Only OFFLINE sessions (`offline_{user,client}_session`) are persisted, so this
-    is "who holds a standing long-lived grant, on which client, last used when".
+  * This Keycloak (26.x) runs PERSISTENT SESSIONS, so BOTH online and offline
+    sessions live in `offline_{user,client}_session`, told apart by `offline_flag`
+    ('1' = offline grant, '0' = online login). This dashboard filters to the
+    OFFLINE grants ('1') — standing long-lived grants — so online web/CLI logins
+    aren't miscounted. (Online-session visibility would be a flag-'0' variant.)
   * Revocation DELETES the row (no tombstone) — you see active vs gone, not a
     list of "revoked"; Keycloak's `revoked_token` table is the live revocation
     list. So a missing grant = revoked OR expired OR never existed.
@@ -63,25 +65,36 @@ _COST_BY_USER = sh.usd(
 )
 
 # --- Keycloak SQL (validated live against the camer-digital realm) ----------
+# A "grant" = one OFFLINE client-session row (a (user, client) tuple). ⚠️ This
+# Keycloak (26.x) runs PERSISTENT SESSIONS, so ONLINE sessions are stored in the
+# SAME offline_{user,client}_session tables, distinguished by `offline_flag`
+# ('1' = offline grant, '0' = online login). Every query therefore filters
+# `offline_flag = '1'` so online web/CLI logins (e.g. the grafana/argocd console
+# sessions) aren't miscounted as offline grants. Counts/joins all key on the
+# CLIENT-session table so the per-user / per-azp / total numbers stay consistent;
+# activity is the per-client `offline_client_session.timestamp` (not the shared
+# user-session refresh), so two clients on one user-session don't show identical
+# last-active.
 _NAME = "NULLIF(TRIM(COALESCE(ue.first_name, '') || ' ' || COALESCE(ue.last_name, '')), '')"
+_OFF = "offline_flag = '1'"
 
 _SQL_DETAIL = (
     f"SELECT ue.username, {_NAME} AS name, c.client_id AS client, "
     "to_timestamp(ous.created_on) AS created, "
-    "to_timestamp(ous.last_session_refresh) AS last_active, "
-    "round(EXTRACT(EPOCH FROM (now() - to_timestamp(ous.last_session_refresh))) / 86400, 1) AS idle_days "
+    "to_timestamp(ocs.timestamp) AS last_active, "
+    "round(EXTRACT(EPOCH FROM (now() - to_timestamp(ocs.timestamp))) / 86400, 1) AS idle_days "
     "FROM offline_user_session ous "
     "JOIN user_entity ue ON ue.id = ous.user_id "
-    "JOIN offline_client_session ocs ON ocs.user_session_id = ous.user_session_id "
+    f"JOIN offline_client_session ocs ON ocs.user_session_id = ous.user_session_id AND ocs.{_OFF} "
     "JOIN client c ON c.id = ocs.client_id "
-    f"WHERE ous.realm_id = '{_R}' "
-    "ORDER BY ous.last_session_refresh DESC"
+    f"WHERE ous.realm_id = '{_R}' AND ous.{_OFF} "
+    "ORDER BY ocs.timestamp DESC"
 )
 
 _SQL_BY_CLIENT = (
     "SELECT c.client_id AS client, count(*) AS grants "
     "FROM offline_client_session ocs JOIN client c ON c.id = ocs.client_id "
-    f"WHERE ocs.realm_id = '{_R}' GROUP BY c.client_id ORDER BY grants DESC"
+    f"WHERE ocs.realm_id = '{_R}' AND ocs.{_OFF} GROUP BY c.client_id ORDER BY grants DESC"
 )
 
 # Per-azp summary — joins to Mimir cost-by-azp on `azp`.
@@ -90,24 +103,31 @@ _SQL_BY_AZP = (
     "count(DISTINCT ous.user_id) AS users "
     "FROM offline_client_session ocs "
     "JOIN client c ON c.id = ocs.client_id "
-    "JOIN offline_user_session ous ON ous.user_session_id = ocs.user_session_id "
-    f"WHERE ocs.realm_id = '{_R}' GROUP BY c.client_id"
+    f"JOIN offline_user_session ous ON ous.user_session_id = ocs.user_session_id AND ous.{_OFF} "
+    f"WHERE ocs.realm_id = '{_R}' AND ocs.{_OFF} GROUP BY c.client_id"
 )
 
-# Per-user summary — joins to Mimir cost-by-user_id on `user_id`.
+# Per-user summary — joins to Mimir cost-by-user_id on `user_id`. Counts CLIENT
+# sessions (matching the total/per-azp), so the column sums to the grants stat.
 _SQL_BY_USER = (
     f"SELECT ous.user_id, ue.username, {_NAME} AS name, "
-    "count(*) AS offline_grants, "
-    "max(to_timestamp(ous.last_session_refresh)) AS last_active "
-    "FROM offline_user_session ous JOIN user_entity ue ON ue.id = ous.user_id "
-    f"WHERE ous.realm_id = '{_R}' GROUP BY ous.user_id, ue.username, ue.first_name, ue.last_name"
+    "count(ocs.user_session_id) AS offline_grants, "
+    "max(to_timestamp(ocs.timestamp)) AS last_active "
+    "FROM offline_user_session ous "
+    "JOIN user_entity ue ON ue.id = ous.user_id "
+    f"JOIN offline_client_session ocs ON ocs.user_session_id = ous.user_session_id AND ocs.{_OFF} "
+    f"WHERE ous.realm_id = '{_R}' AND ous.{_OFF} "
+    "GROUP BY ous.user_id, ue.username, ue.first_name, ue.last_name"
 )
 
-_SQL_COUNT_GRANTS = f"SELECT count(*) AS grants FROM offline_client_session WHERE realm_id = '{_R}'"
-_SQL_COUNT_USERS = (
-    f"SELECT count(DISTINCT user_id) AS users FROM offline_user_session WHERE realm_id = '{_R}'"
+_SQL_COUNT_GRANTS = (
+    f"SELECT count(*) AS grants FROM offline_client_session WHERE realm_id = '{_R}' AND {_OFF}"
 )
-_SQL_COUNT_CLIENTS = f"SELECT count(DISTINCT client_id) AS clients FROM offline_client_session WHERE realm_id = '{_R}'"
+_SQL_COUNT_USERS = f"SELECT count(DISTINCT user_id) AS users FROM offline_user_session WHERE realm_id = '{_R}' AND {_OFF}"
+_SQL_COUNT_CLIENTS = (
+    f"SELECT count(DISTINCT client_id) AS clients FROM offline_client_session "
+    f"WHERE realm_id = '{_R}' AND {_OFF}"
+)
 
 
 class _SqlTarget:
@@ -209,9 +229,10 @@ def _panel_by_client() -> bargauge.Panel:
         .grid_pos(dm.GridPos(h=8, w=24, x=0, y=17))
         .unit("short")
         .orientation(cm.VizOrientation.HORIZONTAL)
-        .reduce_options(
-            cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("/^grants$/").values(False)
-        )
+        # values(True): the SQL frame has one row per client, so render one bar
+        # PER ROW (named by the client field) rather than reducing the whole
+        # `grants` column to a single bar.
+        .reduce_options(cb.ReduceDataOptions().fields("/^grants$/").values(True))
         .display_mode(cm.BarGaugeDisplayMode.BASIC)
         .thresholds(
             db.ThresholdsConfig()
@@ -328,10 +349,11 @@ _DESCRIPTION = (
     "Keycloak OFFLINE grants (long-lived refresh-token sessions — opencode auth "
     "login caches, LibreChat remember-me, service accounts) resolved to people + "
     "client names via the read-only Keycloak datasource (ADR-0063), cross-referenced "
-    "with gateway spend. NB: access tokens (stateless) and online sessions (in-memory) "
-    "are NOT in the DB — only offline grants are. Revocation deletes the row (no "
-    "tombstone), so a missing grant = revoked/expired/never. Budget is per-user and "
-    "per-client (azp), NOT per individual token. Filters: azp, model. "
+    "with gateway spend. NB: access tokens are stateless (never in the DB); KC 26 "
+    "persistent-sessions keeps online AND offline sessions in offline_*_session, so "
+    "this filters offline_flag='1' (offline grants only). Revocation deletes the row "
+    "(no tombstone), so a missing grant = revoked/expired/never. Budget is per-user "
+    "and per-client (azp), NOT per individual token. Filters: azp, model. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/sessions_grants.py."
 )
 

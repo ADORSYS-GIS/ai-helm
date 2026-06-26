@@ -65,7 +65,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-sessions-grants",
   "title": "AI Gateway — sessions & grants",
-  "description": "Keycloak OFFLINE grants (long-lived refresh-token sessions — opencode auth login caches, LibreChat remember-me, service accounts) resolved to people + client names via the read-only Keycloak datasource (ADR-0063), cross-referenced with gateway spend. NB: access tokens (stateless) and online sessions (in-memory) are NOT in the DB — only offline grants are. Revocation deletes the row (no tombstone), so a missing grant = revoked/expired/never. Budget is per-user and per-client (azp), NOT per individual token. Filters: azp, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/sessions_grants.py.",
+  "description": "Keycloak OFFLINE grants (long-lived refresh-token sessions — opencode auth login caches, LibreChat remember-me, service accounts) resolved to people + client names via the read-only Keycloak datasource (ADR-0063), cross-referenced with gateway spend. NB: access tokens are stateless (never in the DB); KC 26 persistent-sessions keeps online AND offline sessions in offline_*_session, so this filters offline_flag='1' (offline grants only). Revocation deletes the row (no tombstone), so a missing grant = revoked/expired/never. Budget is per-user and per-client (azp), NOT per individual token. Filters: azp, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/sessions_grants.py.",
   "tags": [
     "ai-gateway",
     "per-user",
@@ -107,7 +107,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) AS grants FROM offline_client_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97'"
+          "rawSql": "SELECT count(*) AS grants FROM offline_client_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND offline_flag = '1'"
         }
       ],
       "title": "Active offline grants",
@@ -167,7 +167,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(DISTINCT user_id) AS users FROM offline_user_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97'"
+          "rawSql": "SELECT count(DISTINCT user_id) AS users FROM offline_user_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND offline_flag = '1'"
         }
       ],
       "title": "Users with a grant",
@@ -227,7 +227,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(DISTINCT client_id) AS clients FROM offline_client_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97'"
+          "rawSql": "SELECT count(DISTINCT client_id) AS clients FROM offline_client_session WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND offline_flag = '1'"
         }
       ],
       "title": "Clients holding grants",
@@ -287,7 +287,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ue.username, NULLIF(TRIM(COALESCE(ue.first_name, '') || ' ' || COALESCE(ue.last_name, '')), '') AS name, c.client_id AS client, to_timestamp(ous.created_on) AS created, to_timestamp(ous.last_session_refresh) AS last_active, round(EXTRACT(EPOCH FROM (now() - to_timestamp(ous.last_session_refresh))) / 86400, 1) AS idle_days FROM offline_user_session ous JOIN user_entity ue ON ue.id = ous.user_id JOIN offline_client_session ocs ON ocs.user_session_id = ous.user_session_id JOIN client c ON c.id = ocs.client_id WHERE ous.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' ORDER BY ous.last_session_refresh DESC"
+          "rawSql": "SELECT ue.username, NULLIF(TRIM(COALESCE(ue.first_name, '') || ' ' || COALESCE(ue.last_name, '')), '') AS name, c.client_id AS client, to_timestamp(ous.created_on) AS created, to_timestamp(ocs.timestamp) AS last_active, round(EXTRACT(EPOCH FROM (now() - to_timestamp(ocs.timestamp))) / 86400, 1) AS idle_days FROM offline_user_session ous JOIN user_entity ue ON ue.id = ous.user_id JOIN offline_client_session ocs ON ocs.user_session_id = ous.user_session_id AND ocs.offline_flag = '1' JOIN client c ON c.id = ocs.client_id WHERE ous.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND ous.offline_flag = '1' ORDER BY ocs.timestamp DESC"
         }
       ],
       "title": "Offline grants — who · which client · last active",
@@ -362,7 +362,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT c.client_id AS client, count(*) AS grants FROM offline_client_session ocs JOIN client c ON c.id = ocs.client_id WHERE ocs.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' GROUP BY c.client_id ORDER BY grants DESC"
+          "rawSql": "SELECT c.client_id AS client, count(*) AS grants FROM offline_client_session ocs JOIN client c ON c.id = ocs.client_id WHERE ocs.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND ocs.offline_flag = '1' GROUP BY c.client_id ORDER BY grants DESC"
         }
       ],
       "title": "Offline grants by client",
@@ -393,10 +393,8 @@
           "calcs": []
         },
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false,
+          "calcs": [],
+          "values": true,
           "fields": "/^grants$/"
         },
         "maxVizHeight": 300,
@@ -442,7 +440,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT c.client_id AS azp, count(*) AS offline_grants, count(DISTINCT ous.user_id) AS users FROM offline_client_session ocs JOIN client c ON c.id = ocs.client_id JOIN offline_user_session ous ON ous.user_session_id = ocs.user_session_id WHERE ocs.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' GROUP BY c.client_id"
+          "rawSql": "SELECT c.client_id AS azp, count(*) AS offline_grants, count(DISTINCT ous.user_id) AS users FROM offline_client_session ocs JOIN client c ON c.id = ocs.client_id JOIN offline_user_session ous ON ous.user_session_id = ocs.user_session_id AND ous.offline_flag = '1' WHERE ocs.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND ocs.offline_flag = '1' GROUP BY c.client_id"
         },
         {
           "expr": "((sum by (azp) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
@@ -549,7 +547,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ous.user_id, ue.username, NULLIF(TRIM(COALESCE(ue.first_name, '') || ' ' || COALESCE(ue.last_name, '')), '') AS name, count(*) AS offline_grants, max(to_timestamp(ous.last_session_refresh)) AS last_active FROM offline_user_session ous JOIN user_entity ue ON ue.id = ous.user_id WHERE ous.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' GROUP BY ous.user_id, ue.username, ue.first_name, ue.last_name"
+          "rawSql": "SELECT ous.user_id, ue.username, NULLIF(TRIM(COALESCE(ue.first_name, '') || ' ' || COALESCE(ue.last_name, '')), '') AS name, count(ocs.user_session_id) AS offline_grants, max(to_timestamp(ocs.timestamp)) AS last_active FROM offline_user_session ous JOIN user_entity ue ON ue.id = ous.user_id JOIN offline_client_session ocs ON ocs.user_session_id = ous.user_session_id AND ocs.offline_flag = '1' WHERE ous.realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND ous.offline_flag = '1' GROUP BY ous.user_id, ue.username, ue.first_name, ue.last_name"
         },
         {
           "expr": "((sum by (user_id) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
