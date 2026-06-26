@@ -60,10 +60,12 @@ data:
        off). Needs a runner image carrying the review.stream field (lightbridge-ci #211) before it's set
        to true, else deny_unknown_fields fails the Job. */}}
 {{- if ne (toString $cfg.model.stream) "" }}{{- $_ := set $rev "stream" $cfg.model.stream }}{{- end }}
-{{- /* Provider-specific passthrough generation params (ADR-0051 ext, #205) — an OBJECT, not a scalar,
+{{- /* Provider-specific passthrough generation params (lightbridge-ci #205) — an OBJECT, not a scalar,
        so it's truthiness-guarded (an empty map is falsy). Merged verbatim into the chat body by the
        runner (review.extra), e.g. a reasoning budget like {"thinking":{"type":"disabled"}} for GLM. */}}
 {{- if $cfg.model.extra }}{{- $_ := set $rev "extra" $cfg.model.extra }}{{- end }}
+{{- /* NB: review.fallback_model is intentionally NOT mapped — the review failover model was removed
+       (lightbridge-ci ADR-0053 / #208); a single model + retry/backoff + circuit breaker replaces it. */}}
 {{- $_ := set $ag "review" $rev }}
 apiVersion: v1
 kind: ConfigMap
