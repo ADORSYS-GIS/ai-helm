@@ -273,6 +273,34 @@ sum by (response_code) (
 {service_name="envoy-ai-gateway", email="abonghoderick@gmail.com"}
 ```
 
+## Resolving opaque `user_id` UUIDs → people (Keycloak datasource, ADR-0063)
+
+The `email` / `display_name` labels only exist when the JWT carried the `email` /
+`name` claims. A thin access token (no email/name) falls back to the
+`missing:`/`unstamped:` sentinels, leaving the `user_id` UUID (the Keycloak
+`sub`) as the only stable identifier — opaque on a dashboard.
+
+To resolve those at query time, Grafana has a **read-only Postgres datasource
+(`uid: keycloak`)** onto the Keycloak CNPG DB (ADR-0063). The generated
+**`AI Gateway — user directory (identity attribution)`** dashboard
+(`tools/dashboards/envoy_ai_gateway/user_directory.py`) uses it two ways:
+
+- **Spend by user — resolved to identity** — a `-- Mixed --` table that
+  OUTER-joins (`joinByField` on `user_id`) the Mimir `sum by (user_id)` spend to
+  the Keycloak directory. A row with an **empty Name** is a non-human subject (a
+  CI repo subject like `repo:ADORSYS-GIS/…:pull_request`, or an `internal-key-*`
+  service) — those never resolve because they aren't Keycloak users.
+- **Keycloak user directory** — the raw `user_id` → username/email/name lookup.
+
+The datasource role (`grafana_ro`) is **least-privilege**: SELECT on the user +
+token tables only (never `credential` hashes, client secrets, or federated
+tokens — it is the auth DB). It also can't read the `realm` table, so queries
+filter `user_entity.realm_id` by the **literal** internal id of the trusted
+realm (`camer-digital` = `04793949-13aa-48ef-9d4d-1c60761f0c97`). The role +
+GRANT live in **home-os** `charts/home-apps/keycloak-ha`; the datasource + egress
+in **ai-helm-values**. This is a read-time resolver — it complements, but does
+not replace, fixing thin tokens to carry the email/name claims.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -291,6 +319,9 @@ sum by (response_code) (
 
 - `docs/adr/0046-per-user-attribution-otlp-envelope-repair.md` — the
   repair decision (flatten + label promotion + stream anchor)
+- `docs/adr/0063-grafana-readonly-keycloak-datasource.md` — the read-only
+  Keycloak Postgres datasource that resolves opaque `user_id` UUIDs → people
+  (`tools/dashboards/envoy_ai_gateway/user_directory.py`)
 - `docs/adr/0005-per-user-attribution-via-authorino-headers.md` — the original
   design this implements
 - `docs/observability-dashboard-research.md` — the audit that found the break

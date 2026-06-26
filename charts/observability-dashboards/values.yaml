@@ -68,6 +68,14 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/user-tokens-cost.json
     resyncPeriod: 5m
+  # User directory / identity attribution (ADR-0063): resolves the opaque per-user
+  # user_id (Keycloak sub UUID) to a real person via the read-only `keycloak`
+  # Postgres datasource — a Mixed-datasource table OUTER-joining the Mimir spend
+  # to user_entity, plus the raw directory lookup. Empty Name ⇒ non-human subject.
+  - name: envoy-ai-gateway-user-directory
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/user-directory.json
+    resyncPeriod: 5m
   # The gamified "App Scoreboard" (ADR-0060, Phase 3): budget-burn gauge,
   # leaderboards, token-intensity heatmap, per-actor spend histogram, daily-spend
   # heartbeat, plan-share pie, firing-alerts list, Tempo request traces, a
