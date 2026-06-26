@@ -130,6 +130,34 @@ applications:
       namespace: observability
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # Governance feed proxy (ADR-0061): a tiny Caddy that serves the AI-governance
+  # GitHub Atom feed SAME-ORIGIN under the Grafana host (path /_governance.atom),
+  # so the scoreboard's Grafana *news* panel can load it (the news panel fetches
+  # client-side and GitHub's .atom has no CORS header → a direct fetch is blocked).
+  # depsOverlay = the CiliumNetworkPolicy (egress→github.com, ingress←traefik),
+  # since the observability ns is default-deny both ways.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: governance-feed-proxy
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    depsOverlay: environments/prod/deps/governance-feed-proxy
+    source:
+      repoURL: oci://ghcr.io/adorsys-gis/charts/governance-feed-proxy
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: governance-feed-proxy
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # Notifications: Apprise API — STATELESS notify gateway for opencode-k8s-agent.
   # The agent (below) POSTs its report to this service's /notify with the channel
   # URLs in the request body (APPRISE_URLS), so this needs NO stored channel

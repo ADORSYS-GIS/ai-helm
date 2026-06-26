@@ -1,0 +1,13 @@
+apiVersion: v2
+name: governance-feed-proxy
+description: >-
+  Same-origin Caddy reverse-proxy for the AI-governance GitHub Atom feed, so the
+  AI Gateway scoreboard's Grafana *news* panel can load it. Grafana's news panel
+  fetches its feed client-side (browser), and GitHub's `.atom` sends no
+  Access-Control-Allow-Origin header, so a direct fetch is CORS-blocked. Exposing
+  the feed under the Grafana host (a path on grafana.<domain>) makes the browser
+  fetch same-origin → no CORS. The proxy only ever serves that one fixed upstream
+  path, so it is not an open proxy. See ADR-0061.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

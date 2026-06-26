@@ -157,11 +157,16 @@ viz the cost boards don't:
 `alertlist` and `traces` have no dedicated SDK builder → built via the base
 `dashboard.Panel` with `.type()` + `.options()`.
 
-> ⚠️ **The news panel needs `github.com` egress.** The governance MkDocs site has
-> no RSS, so the panel reads `github.com/ADORSYS-GIS/ai-governance/commits.atom`;
-> Grafana fetches RSS **server-side**, so under the deny-egress baseline the
-> Grafana pod needs `github.com` in its deps `CiliumNetworkPolicy` (ai-helm-values)
-> or the panel stays empty (same pattern as the ADR-0059 `discord.com` allow).
+> ⚠️ **The governance news feed is served via a same-origin Caddy proxy (ADR-0061),
+> not fetched directly.** Grafana's news panel fetches its feed **client-side**,
+> and GitHub's `.atom` sends no `Access-Control-Allow-Origin` header → a direct
+> fetch is CORS-blocked ("Error loading RSS feed"). It is **not** a pod-egress
+> issue (the Grafana pod reaches github.com fine). So `charts/governance-feed-proxy`
+> (a tiny Caddy) serves the feed at `https://grafana.<domain>/_governance.atom` —
+> **same origin** as Grafana → no CORS, reusing Grafana's TLS. The proxy only ever
+> serves that one fixed upstream path (`rewrite *`) and its egress is FQDN-pinned
+> to github.com (deps overlay), so it's not an open proxy. The news panel's
+> `feedUrl` points at that same-origin path.
 
 **Deferred (documented in ADR-0060): candlestick + flame-graph.** They need
 intra-day OHLC *tick* data / Pyroscope *profile-frame* data we don't collect;

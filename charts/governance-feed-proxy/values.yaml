@@ -1,0 +1,52 @@
+# Same-origin Caddy proxy for the AI-governance Atom feed (ADR-0061).
+# Self-contained: a Caddy Deployment + Service + Caddyfile ConfigMap + a Traefik
+# Ingress on the Grafana host path. No secrets, no per-env state beyond the host.
+
+name: governance-feed-proxy
+
+# Off-the-shelf Caddy (no custom image — house rule, ADR-0040).
+image: docker.io/library/caddy:2-alpine
+
+# Caddy listen / Service / container port.
+port: 8080
+
+# The single upstream this proxy is allowed to serve. Any incoming request path
+# is rewritten to `upstream.path`, so the proxy can ONLY ever fetch this one feed
+# (not an open proxy). Egress is additionally pinned to `upstream.host` by the
+# deps-overlay CiliumNetworkPolicy.
+upstream:
+  host: github.com
+  path: /ADORSYS-GIS/ai-governance/commits/main.atom
+
+# Exposed at a path on the EXISTING Grafana host so the browser fetch is
+# same-origin (no CORS) and reuses Grafana's TLS — no new hostname/cert.
+# ⚠️ `host` is the prod Grafana host; override per-env if the domain differs.
+ingress:
+  enabled: true
+  className: traefik
+  host: grafana.ai.camer.digital
+  path: /_governance.atom
+  pathType: Exact
+  # Reuse the Grafana host's TLS secret (provisioned by the grafana umbrella).
+  tlsSecret: grafana.ai.camer.digital-tls
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 48Mi
+
+# Pod Security: observability ns is enforced `privileged` by the orchestrator,
+# but Caddy runs fine restricted. Drop all caps, run as non-root.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
