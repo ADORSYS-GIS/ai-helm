@@ -64,6 +64,15 @@ containerSecurityContext:
   capabilities:
     drop:
       - ALL
+    # The caddy:2-alpine binary carries the `cap_net_bind_service` file
+    # capability (setcap +ep). With drop:ALL + allowPrivilegeEscalation:false
+    # (no_new_privs) the kernel refuses to exec a setcap binary whose cap isn't
+    # in the bounding set → "exec /usr/bin/caddy: operation not permitted" /
+    # CrashLoopBackOff. Granting exactly NET_BIND_SERVICE (the one add the
+    # restricted PSS allows) puts it in the bounding set so the exec is permitted.
+    # We bind :8080 (unprivileged), so it's never actually used at runtime.
+    add:
+      - NET_BIND_SERVICE
 
 # Ingress (Traefik) namespace — for the in-chart CiliumNetworkPolicy ingress rule
 # (the observability ns is default-deny-ingress).
