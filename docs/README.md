@@ -47,6 +47,7 @@ How the system is wired and how to integrate against it.
 | [`observability-stack.md`](./observability-stack.md) | Mimir / Loki / Tempo / Alloy / Grafana topology, sync-wave ordering, data flow |
 | [`observability-dashboards.md`](./observability-dashboards.md) | Per-subsystem dashboard inventory and instrumentation plan |
 | [`observability-storage-retention.md`](./observability-storage-retention.md) | Retention windows, S3 bucket layout, cost trade-offs |
+| [`cost-observability.md`](./cost-observability.md) | **AI-gateway cost observability** (ADR-0058/0059/0060): the Mimir metrics backbone (Alloy `stage.metrics`, why not the Loki ruler), the cost dashboards + gamified scoreboard (`$budget` gauge, deferred candlestick/flamegraph), Discord alerting, the one-off backfill, and the operator runbook. The "how it works + how to run it" for `retained ≠ queryable` on a rate-limited object store. |
 | [`alloy-servicemonitor-guide.md`](./alloy-servicemonitor-guide.md) | How Alloy discovers ServiceMonitors and PodMonitors; clustering gotchas |
 | [`grafana-operator-and-dashboards.md`](./grafana-operator-and-dashboards.md) | Grafana Operator install, dashboards-as-code, where dashboard JSON lives |
 | [`keycloak-audience-operations.md`](./keycloak-audience-operations.md) | OIDC audience claim management; full-scope-allowed implications |
