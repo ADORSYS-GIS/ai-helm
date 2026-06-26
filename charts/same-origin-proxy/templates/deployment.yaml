@@ -30,9 +30,22 @@ spec:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            # Pin Caddy's data/config dirs to the writable emptyDir mounts below,
+            # so the read-only root FS doesn't block any stray Caddy write.
+            - name: XDG_DATA_HOME
+              value: /data
+            - name: XDG_CONFIG_HOME
+              value: /config
           volumeMounts:
             - name: caddyfile
               mountPath: /etc/caddy
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             tcpSocket:
               port: {{ .Values.port }}
@@ -47,3 +60,9 @@ spec:
         - name: caddyfile
           configMap:
             name: {{ .Values.name }}-caddy
+        - name: data
+          emptyDir: {}
+        - name: config
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

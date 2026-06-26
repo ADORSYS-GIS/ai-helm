@@ -50,15 +50,19 @@ resources:
     memory: 48Mi
 
 # Pod Security: observability ns is enforced `privileged` by the orchestrator,
-# but Caddy runs fine restricted. Drop all caps, run as non-root.
+# but Caddy runs fully restricted. Non-root, drop all caps, READ-ONLY root FS —
+# Caddy's writable dirs (/data, /config, /tmp) are emptyDir mounts (see the
+# Deployment), and `persist_config off` in the Caddyfile avoids the /config
+# autosave write. fsGroup makes the emptyDirs writable by the non-root user.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
+  fsGroup: 1000
   seccompProfile:
     type: RuntimeDefault
 containerSecurityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL
