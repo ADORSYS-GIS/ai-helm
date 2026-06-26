@@ -467,9 +467,10 @@ applications:
       # declares, which otherwise show a permanent cosmetic OutOfSync + selfHeal churn.
       # ServerSideDiff ignores those server-owned fields so the app reads Synced.
       argocd.argoproj.io/compare-options: ServerSideDiff=true
-      # Images aliased: cp/disp/poll (control-plane, role-selected), web, and runner
-      # (the one-shot agent-runner image the dispatcher launches per task).
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,poll=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner
+      # Images aliased: cp/disp/poll (control-plane, role-selected), web, runner (the one-shot
+      # agent-runner/indexer image the dispatcher launches), and review (the slimmer review-only Job
+      # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,poll=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -521,6 +522,16 @@ applications:
       argocd-image-updater.argoproj.io/runner.signature-type: cosign
       argocd-image-updater.argoproj.io/runner.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/runner.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── review (the review-only Job image — drops Python/Graphify, ~44% smaller; #207). The
+      #    dispatcher's image_for() picks it for review tasks (control_plane env AGENT_REVIEW_RUNNER_IMAGE;
+      #    falls back to AGENT_RUNNER_IMAGE when unset). Same cosign identity / build workflow as runner. ──
+      argocd-image-updater.argoproj.io/review.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/review.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/review.force-update: "true"
+      argocd-image-updater.argoproj.io/review.helm.image-spec: lci.controllers.dispatcher.containers.main.env.AGENT_REVIEW_RUNNER_IMAGE
+      argocd-image-updater.argoproj.io/review.signature-type: cosign
+      argocd-image-updater.argoproj.io/review.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/review.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── git write-back → ai-helm-values main (PRIVATE; the org-wide adorsys-gis
       # GitHub App commits, and ArgoCD reads Source B via the same repo-creds —
       # exactly like converse-ui). Unprotected branch → the bot can direct-commit. ──

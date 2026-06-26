@@ -520,8 +520,13 @@ lci:
             AGENT_SERVICE_ACCOUNT: "lightbridge-agent"
             # image-updater-managed (charts/apps `runner` alias via helm.image-spec): prod pins this
             # to a sha- tag in ai-helm-values and bumps it per signed build. `:latest` is only the
-            # defaults-render fallback.
+            # defaults-render fallback. Used for index tasks (and as the fallback for review).
             AGENT_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-runner:latest"
+            # The slimmer review-only Job image (no Python/Graphify; #207). The control plane's
+            # image_for() picks it for REVIEW tasks and falls back to AGENT_RUNNER_IMAGE when unset, so a
+            # cluster that hasn't seeded it keeps working on the combined image. image-updater-managed
+            # (charts/apps `review` alias via helm.image-spec) → pinned to a sha- tag in ai-helm-values.
+            AGENT_REVIEW_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-review:latest"
             # Secret (agents ns) whose ca.crt the runner mounts to trust the HTTPS gateway.
             AGENT_CA_SECRET: "lightbridge-agent-ca"
             # FQDN, not the bare Service name: the runner Jobs run in the lightbridge-agents
