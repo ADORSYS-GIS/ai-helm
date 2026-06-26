@@ -1,0 +1,15 @@
+# CI fixture (ADR-0012 lint-mode: ci-values): the real config lives in
+# ai-helm-values (ADR-0056/0057), so the chart's own defaults render a no-op.
+# This representative route lets CI lint + render the full shape (Ingress path,
+# Caddy handle block, derived egress FQDN).
+ingress:
+  host: grafana.ai.camer.digital
+  tlsSecret: grafana.ai.camer.digital-tls
+
+routes:
+  - path: /_governance.atom
+    pathType: Exact
+    upstream:
+      scheme: https
+      host: github.com
+      path: /ADORSYS-GIS/ai-governance/commits/main.atom

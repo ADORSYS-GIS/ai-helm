@@ -1,0 +1,31 @@
+{{- /*
+Caddyfile: one `handle <path>` block per route. `rewrite * <upstream.path>`
+forces that path to the one upstream resource, so a route can never be abused as
+an open proxy regardless of the request URL. TLS to the upstream is handled by
+Caddy (Go TLS); admin/auto_https off since Traefik terminates TLS at the ingress.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-caddy
+  labels:
+    app: {{ .Values.name }}
+data:
+  Caddyfile: |-
+    :{{ .Values.port }} {
+      admin off
+      auto_https off
+      persist_config off
+    {{- range .Values.routes }}
+    {{- $scheme := .upstream.scheme | default "https" }}
+      handle {{ .path }} {
+    {{- with .cors }}
+        header Access-Control-Allow-Origin {{ . | quote }}
+    {{- end }}
+        rewrite * {{ .upstream.path }}
+        reverse_proxy {{ $scheme }}://{{ .upstream.host }} {
+          header_up Host {{ .upstream.host }}
+        }
+      }
+    {{- end }}
+    }

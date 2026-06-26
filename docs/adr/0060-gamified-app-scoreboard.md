@@ -6,6 +6,18 @@
 **Builds on:** [ADR-0058](./0058-precompute-gateway-usage-metrics-to-mimir.md) (the Mimir metrics backbone), [ADR-0059](./0059-grafana-unified-alerting-to-discord.md) (unified alerting), [ADR-0008](./0008-python-dashboard-generation.md) (dashboards-as-code), [ADR-0046](./0046-per-user-attribution-otlp-envelope-repair.md) (attribution labels), [ADR-0023](./0023-stateless-grafana.md) (stateless Grafana → operator CRs)
 **Relates to:** [ADR-0028](./0028-self-hosted-model-pricing.md)/ADR-0051 (cost is µ$ ÷1e6)
 
+> ⚠️ **Correction (2026-06-26) — see [ADR-0061](./0061-same-origin-proxy-for-grafana-news-feed.md).** The
+> "news panel reads the governance repo's GitHub Atom feed … needs `github.com`
+> egress" claim below is **wrong about the mechanism**: Grafana's news panel
+> fetches its feed **client-side**, and GitHub's `.atom` sends no
+> `Access-Control-Allow-Origin` header, so a direct browser fetch is CORS-blocked
+> — it was never a server-side fetch, so the `github.com` pod-egress was both
+> unnecessary and ineffective (and has been removed from Grafana's policy). The
+> feed is now served **same-origin** under the Grafana host by a small Caddy
+> proxy (`charts/same-origin-proxy`, ADR-0061), so the panel loads with no
+> CORS. The *decision* (a governance panel on the scoreboard) stands; only the
+> delivery mechanism changed. The original body is left intact as the record.
+
 ## Context
 
 ADR-0058 built the metrics backbone (Alloy `stage.metrics` →
