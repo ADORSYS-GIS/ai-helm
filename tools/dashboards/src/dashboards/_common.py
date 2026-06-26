@@ -18,6 +18,22 @@ MIMIR_UID = "mimir"
 LOKI_UID = "loki"
 TEMPO_UID = "tempo"
 ALERTMANAGER_UID = "alertmanager"
+# Read-only Postgres datasource onto the Keycloak DB — resolves the per-user
+# gateway `user_id` (a Keycloak `sub` UUID) to a real person. Provisioned in
+# ai-helm-values environments/prod/values/grafana.yaml; see ADR-0063.
+KEYCLOAK_UID = "keycloak"
+
+
+# ---------------------------------------------------------------------------
+# Keycloak realm internal id for `camer-digital` — the ONLY realm the AI
+# gateway trusts (Authorino issuerUrl, ADR-0011/0021). The read-only datasource
+# role (grafana_ro) is deliberately NOT granted SELECT on the `realm` table, so
+# the directory/attribution queries can't resolve the realm by NAME — they must
+# filter `user_entity.realm_id` by this literal id. Stable for the life of the
+# realm; re-confirm with `SELECT id FROM realm WHERE name='camer-digital'` only
+# if the realm is ever recreated. See ADR-0063.
+# ---------------------------------------------------------------------------
+CAMER_DIGITAL_REALM_ID = "04793949-13aa-48ef-9d4d-1c60761f0c97"
 
 
 # ---------------------------------------------------------------------------

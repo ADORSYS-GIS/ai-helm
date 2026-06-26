@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "azp",
+        "label": "Client (azp)",
+        "skipUrlSync": false,
+        "query": "label_values(loki_process_custom_gen_ai_requests, azp)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "model",
+        "label": "Model",
+        "skipUrlSync": false,
+        "query": "label_values(loki_process_custom_gen_ai_requests, model)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      }
+    ]
+  },
+  "annotations": {},
+  "uid": "envoy-ai-gateway-user-directory",
+  "title": "AI Gateway — user directory (identity attribution)",
+  "description": "Resolves the Envoy AI Gateway per-user `user_id` (a Keycloak `sub` UUID) to a real person by joining the Mimir per-user spend (ADR-0058) against a read-only Postgres datasource onto the Keycloak DB (ADR-0063). Use this when the per-user/cost dashboards show opaque UUIDs because the access token lacked the email/name claims. Rows with an empty Name are non-human subjects (CI repo subjects, internal-key-* services). Realm filtered by literal id (the role can't read the `realm` table). Filters: azp, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/user_directory.py.",
+  "tags": [
+    "ai-gateway",
+    "per-user",
+    "identity",
+    "keycloak"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "5m",
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Identity attribution",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "table",
+      "targets": [
+        {
+          "expr": "((sum by (user_id) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "sum by (user_id) (increase(loki_process_custom_gen_ai_requests{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))",
+          "refId": "C",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT id AS user_id, username, email, NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), '') AS name FROM user_entity WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97'"
+        }
+      ],
+      "title": "Spend by user — resolved to identity (selected range)",
+      "transparent": false,
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "user_id",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "name": "Name",
+              "email": "Email",
+              "username": "Username",
+              "user_id": "User ID (sub)",
+              "Value #A": "Cost ($)",
+              "Value #C": "Requests"
+            },
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true
+            },
+            "indexByName": {
+              "name": 0,
+              "email": 1,
+              "username": 2,
+              "user_id": 3,
+              "Value #A": 4,
+              "Value #C": 5
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Cost ($)",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "inspect": false,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cost ($)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "keycloak"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT id AS user_id, username, email, NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), '') AS name FROM user_entity WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' ORDER BY username"
+        }
+      ],
+      "title": "Keycloak user directory (camer-digital)",
+      "transparent": false,
+      "datasource": {
+        "type": "postgres",
+        "uid": "keycloak"
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "repeatDirection": "h",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "name": "Name",
+              "email": "Email",
+              "username": "Username",
+              "user_id": "User ID (sub)"
+            },
+            "excludeByName": {},
+            "indexByName": {
+              "name": 0,
+              "email": 1,
+              "username": 2,
+              "user_id": 3
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "inspect": false,
+            "filterable": true
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
