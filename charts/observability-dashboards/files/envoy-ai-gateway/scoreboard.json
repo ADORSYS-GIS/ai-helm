@@ -1,0 +1,1002 @@
+{
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "textbox",
+        "name": "budget",
+        "label": "Monthly budget ($)",
+        "skipUrlSync": false,
+        "query": "3000",
+        "current": {
+          "text": "3000",
+          "value": "3000",
+          "selected": true
+        },
+        "multi": false,
+        "allowCustomValue": true,
+        "includeAll": false,
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "azp",
+        "label": "Client (azp)",
+        "skipUrlSync": false,
+        "query": "label_values(loki_process_custom_gen_ai_requests, azp)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "model",
+        "label": "Model",
+        "skipUrlSync": false,
+        "query": "label_values(loki_process_custom_gen_ai_requests, model)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      }
+    ]
+  },
+  "annotations": {},
+  "uid": "envoy-ai-gateway-scoreboard",
+  "title": "AI Gateway — App Scoreboard",
+  "description": "The gamified 'App Scoreboard' for the Envoy AI Gateway (ADR-0060, Phase 3): budget-burn gauge, leaderboards, token-intensity heatmap, per-actor spend histogram, daily-spend heartbeat, plan-share pie, firing-alerts list, Tempo request traces, a dashboard-list hub, and AI-governance news/narration — all on the precomputed Mimir metrics (ADR-0058) + Tempo + unified alerting. Budget is the editable $budget variable (default $3000/mo). candlestick + flame-graph are deferred (need OHLC tick / profile-frame data we don't have). GENERATED — source: tools/dashboards/envoy_ai_gateway/scoreboard.py.",
+  "tags": [
+    "ai-gateway",
+    "scoreboard",
+    "cost",
+    "mimir",
+    "gamified"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "5m",
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "mode": "markdown",
+        "content": "# 🏆 AI Gateway Scoreboard\nWho's using the platform, how much it costs, and how close we are to budget — live from the precomputed Mimir metrics (ADR-0058). Default window is **30 days**; pick a calendar month in the time picker for monthly totals. Filter by client & model up top. ⚡"
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Headline",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      }
+    },
+    {
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "100 * (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[30d])) / 1e6) / $budget",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Monthly budget burn (last 30d)",
+      "description": "Spend over the last 30 days as a % of the $budget variable (default $3000/mo).",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
+      "repeatDirection": "h",
+      "options": {
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "minVizHeight": 75,
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0.0,
+          "max": 120.0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 70.0,
+                "color": "yellow"
+              },
+              {
+                "value": 90.0,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "((sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[30d]))) / 1e6)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Spend (last 30d)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 4
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "orange"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "$budget - (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[30d])) / 1e6)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Budget remaining (of $budget)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(increase(loki_process_custom_gen_ai_requests{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Requests (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(sum by (display_name) (increase(loki_process_custom_gen_ai_requests{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range])))",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Active actors (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "purple"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Leaderboards",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      }
+    },
+    {
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "topk(15, ((sum by (display_name) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6))",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "legendFormat": "{{display_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "🥇 Top actors by spend (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "repeatDirection": "h",
+      "options": {
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "maxVizHeight": 300,
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "orange"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "topk(15, ((sum by (model) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6))",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "legendFormat": "{{model}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "🤖 Top models by spend (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "repeatDirection": "h",
+      "options": {
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "maxVizHeight": 300,
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Distributions",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      }
+    },
+    {
+      "type": "histogram",
+      "targets": [
+        {
+          "expr": "((sum by (display_name) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Per-actor spend distribution (range)",
+      "description": "Histogram of per-actor cost over the selected range.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "asc"
+        },
+        "bucketCount": 30,
+        "bucketOffset": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "gradientMode": "none"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "piechart",
+      "targets": [
+        {
+          "expr": "((sum by (billing_plan) (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "legendFormat": "{{billing_plan}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Spend share by billing plan (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "repeatDirection": "h",
+      "options": {
+        "pieType": "donut",
+        "tooltip": {
+          "mode": "single",
+          "sort": "asc"
+        },
+        "reduceOptions": {
+          "calcs": []
+        },
+        "legend": {
+          "values": [
+            "value",
+            "percent"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": []
+        },
+        "orientation": "auto"
+      }
+    },
+    {
+      "type": "heatmap",
+      "targets": [
+        {
+          "expr": "sum by (azp) (increase(loki_process_custom_gen_ai_usage_tokens{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[1h]))",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "legendFormat": "{{azp}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "interval": "1h"
+        }
+      ],
+      "title": "Token-usage intensity by client (hourly)",
+      "description": "Tokens per hour per client (azp). Brighter = busier.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "repeatDirection": "h",
+      "options": {
+        "color": {
+          "scheme": "Oranges",
+          "fill": "",
+          "exponent": 0,
+          "steps": 64,
+          "reverse": false,
+          "mode": "scheme",
+          "scale": "exponential"
+        },
+        "showValue": "auto",
+        "yAxis": {
+          "unit": "short"
+        },
+        "legend": {
+          "show": true
+        },
+        "tooltip": {
+          "mode": "single"
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "calculate": false,
+        "filterValues": {
+          "le": 1e-09
+        },
+        "cellGap": 1,
+        "cellValues": {
+          "unit": "short"
+        },
+        "selectionMode": "x"
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Daily heartbeat",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "((sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[1d]))) / 1e6)",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "legendFormat": "total",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "interval": "1d"
+        }
+      ],
+      "title": "💓 Daily spend heartbeat (total)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max",
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1.0,
+            "fillOpacity": 70.0,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Health & data-flow",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      }
+    },
+    {
+      "type": "traces",
+      "targets": [
+        {
+          "refId": "A",
+          "filters": [],
+          "queryType": "traceql",
+          "query": "{}",
+          "limit": 20
+        }
+      ],
+      "title": "Recent request traces (click → LibreChat→Envoy→Authorino→model flow)",
+      "description": "Recent traces from Tempo. Open one to inspect the per-request span flow.",
+      "transparent": false,
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 49
+      },
+      "repeatDirection": "h"
+    },
+    {
+      "type": "alertlist",
+      "title": "Firing & pending alerts",
+      "description": "Live unified-alerting state (ADR-0059) — what's on fire right now.",
+      "transparent": false,
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 49
+      },
+      "repeatDirection": "h",
+      "options": {
+        "showOptions": "current",
+        "maxItems": 20,
+        "sortOrder": 3,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "dashboardTitle": "",
+        "tags": [],
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "noData": false,
+          "normal": false,
+          "error": true
+        },
+        "alertInstanceLabelFilter": "",
+        "viewMode": "list",
+        "groupMode": "default"
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Hub & governance",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      }
+    },
+    {
+      "type": "dashlist",
+      "title": "AI Gateway dashboards",
+      "description": "Jump to the cost / per-user / model dashboards.",
+      "transparent": false,
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 60
+      },
+      "repeatDirection": "h",
+      "options": {
+        "keepTime": false,
+        "includeVars": false,
+        "showStarred": false,
+        "showRecentlyViewed": false,
+        "showSearch": false,
+        "showHeadings": true,
+        "showFolderNames": true,
+        "maxItems": 20,
+        "query": "",
+        "tags": [
+          "ai-gateway"
+        ]
+      }
+    },
+    {
+      "type": "news",
+      "title": "AI governance — latest",
+      "description": "Recent commits to the AI-governance doctrine repo.",
+      "transparent": false,
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 60
+      },
+      "repeatDirection": "h",
+      "options": {
+        "feedUrl": "https://github.com/ADORSYS-GIS/ai-governance/commits.atom",
+        "showImage": false
+      }
+    },
+    {
+      "type": "text",
+      "title": "Play fair",
+      "transparent": false,
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 60
+      },
+      "repeatDirection": "h",
+      "options": {
+        "mode": "markdown",
+        "content": "### 🤝 AI Governance\n\nAI may accelerate the work, but **humans own intent, verification, and consequences**. AI output is not truth — review AI-generated code as untrusted, and never submit work you cannot explain.\n\n📖 **Doctrine:** [https://adorsys-gis.github.io/ai-governance/](https://adorsys-gis.github.io/ai-governance/)\n\nEvery cost on this scoreboard is a real request someone made on our behalf. Spend it like it's yours. 🎯"
+      }
+    }
+  ]
+}
