@@ -115,11 +115,16 @@ DEFAULT_REFRESH_INTERVALS: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Grafana dashboard schema version. Tracks the cluster's Grafana.
-# Today: Grafana 12 → schemaVersion 42 (audit task #15).
-# Bump when grafana is bumped; ADR-0008.
+# Grafana dashboard schema version, pinned on every generated dashboard by the
+# orchestrator (`main._emit`) so the emitted JSON is decoupled from whatever the
+# grafana-foundation-sdk happens to default to (its builder exposes no fluent
+# `.schema_version()` setter, so the orchestrator stamps it post-build). 39 is
+# the SDK's current target and what the in-cluster Grafana (12.x) migrates
+# upward on import — so pinning 39 keeps today's output byte-identical while
+# making the value explicit. Bump deliberately alongside an SDK/Grafana upgrade;
+# ADR-0008.
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 42
+SCHEMA_VERSION = 39
 
 
 # ---------------------------------------------------------------------------
