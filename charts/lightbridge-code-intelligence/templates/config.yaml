@@ -56,6 +56,13 @@ data:
 {{- if ne (toString $cfg.model.maxTokens) "" }}{{- $_ := set $rev "max_tokens" $cfg.model.maxTokens }}{{- end }}
 {{- if ne (toString $cfg.model.maxTurns) "" }}{{- $_ := set $rev "max_turns" $cfg.model.maxTurns }}{{- end }}
 {{- if ne (toString $cfg.model.contextWindow) "" }}{{- $_ := set $rev "context_window" $cfg.model.contextWindow }}{{- end }}
+{{- /* Risk-first read budgets (lightbridge-ci ADR-0042): max read-only tool calls run concurrently per
+       turn (max_batch_size), and the cumulative caps before the loop winds down. Empty → the runner's
+       built-in defaults (batch 8, files 30, searches 15, batches 6). The runner clamps each to ≥1. */}}
+{{- if ne (toString $cfg.model.maxBatchSize) "" }}{{- $_ := set $rev "max_batch_size" $cfg.model.maxBatchSize }}{{- end }}
+{{- if ne (toString $cfg.model.maxFilesRead) "" }}{{- $_ := set $rev "max_files_read" $cfg.model.maxFilesRead }}{{- end }}
+{{- if ne (toString $cfg.model.maxSearches) "" }}{{- $_ := set $rev "max_searches" $cfg.model.maxSearches }}{{- end }}
+{{- if ne (toString $cfg.model.maxBatches) "" }}{{- $_ := set $rev "max_batches" $cfg.model.maxBatches }}{{- end }}
 {{- /* SSE streaming toggle (#206) → agent.json review.stream. A bool; empty → omitted (runner default
        off). Needs a runner image carrying the review.stream field (lightbridge-ci #211) before it's set
        to true, else deny_unknown_fields fails the Job. */}}
