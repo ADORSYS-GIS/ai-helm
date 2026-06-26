@@ -55,6 +55,25 @@ METRIC_REQUESTS = _METRIC_PREFIX + "gen_ai_requests"
 
 
 # ---------------------------------------------------------------------------
+# Phase-3 "gamified scoreboard" knobs (ADR-0060).
+# ---------------------------------------------------------------------------
+# Default monthly AI-inference budget the burn gauge measures against. The
+# scoreboard exposes this as an editable textbox variable ($budget), so this is
+# only the default — change it in the UI without regenerating. Set to $3000
+# (real budget ~$2.5k, rounded up for headroom; run-rate ~$5k means the gauge
+# will read >100% until usage settles — that's the point of the gamified view).
+DEFAULT_MONTHLY_BUDGET = 3000
+
+# AI-governance doctrine (referenced by the scoreboard's text + news panels).
+# The site itself (MkDocs) exposes no RSS feed, so the news panel reads the
+# GitHub repo's commits Atom feed — real "governance updates" that actually
+# render. Grafana fetches it server-side, so the Grafana pod needs egress to
+# github.com (added to the prod deps CiliumNetworkPolicy in ai-helm-values).
+GOVERNANCE_URL = "https://adorsys-gis.github.io/ai-governance/"
+GOVERNANCE_NEWS_FEED = "https://github.com/ADORSYS-GIS/ai-governance/commits.atom"
+
+
+# ---------------------------------------------------------------------------
 # Service-account client IDs — keep in sync with
 # `charts/apps/values.yaml` `security-policies.authConfigs.main.serviceAccountClients`.
 # Used by dashboards that want to split human vs SA traffic.

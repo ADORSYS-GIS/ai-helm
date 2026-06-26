@@ -326,6 +326,9 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0053 | Vanity-domain redirects (`kivoyo.com` → `camer.digital`, temporary) |
 | 0054 | Adopt the k3s-bundled metrics-server; drop our GitOps copy (ends the ADR-0015 name collision) |
 | 0055 | Continuous delivery: OCI-published charts (float on a semver range) + argocd-image-updater write-back to the private `ai-helm-values` repo; retires tag-based deploys (supersedes 0013, 0031; amends 0018) |
+| 0058 | Precompute AI Gateway usage (cost/tokens/requests) as Mimir metrics via Alloy `stage.metrics`, not live Loki log-scans of a rate-limited object store |
+| 0059 | Grafana unified alerting → Discord, provisioned as grafana-operator CRs (survives stateless-Grafana rolls) |
+| 0060 | Gamified "App Scoreboard" dashboard (Phase 3): gauge/heatmap/histogram/traces/alertlist/news/hub on the ADR-0058 metrics; candlestick + flame-graph deferred (no tick/profile data) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
