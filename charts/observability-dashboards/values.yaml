@@ -76,6 +76,14 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/user-directory.json
     resyncPeriod: 5m
+  # Keycloak OFFLINE grants (long-lived refresh-token sessions) resolved to
+  # people + client names (ADR-0063), cross-referenced with per-user/per-azp
+  # spend. Access tokens (stateless) + online sessions (in-memory) aren't in the
+  # DB, so this is standing-grant visibility, not live access-token tracking.
+  - name: envoy-ai-gateway-sessions-grants
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/sessions-grants.json
+    resyncPeriod: 5m
   # The gamified "App Scoreboard" (ADR-0060, Phase 3): budget-burn gauge,
   # leaderboards, token-intensity heatmap, per-actor spend histogram, daily-spend
   # heartbeat, plan-share pie, firing-alerts list, Tempo request traces, a
