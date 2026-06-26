@@ -110,10 +110,18 @@ config:
     # Max agent turns per review (ADR-0037 loop). Empty → the runner's built-in default (40).
     # → agent.json `review.max_turns`.
     maxTurns: ""
-    # Secondary review model to fail over to when the primary times out / errs out a turn (ADR-0039).
-    # Empty → single-model (no failover). → agent.json `review.fallback_model`. Set per-env in
-    # ai-helm-values to a DIFFERENT alias than the primary so a primary-path outage actually fails over.
-    fallbackModel: ""
+    # NB: there is no `fallbackModel` knob — the review failover model was removed (lightbridge-ci
+    # ADR-0053 / #208), replaced by a single model + retry/backoff + circuit breaker. (Any ADR-NNNN
+    # below refers to the lightbridge-ci repo's ADRs, not this chart's own ADR index.)
+    # Provider-specific passthrough generation params (lightbridge-ci #205) → agent.json `review.extra`,
+    # merged verbatim into the chat request body. An OBJECT (not a scalar); empty `{}` → omitted. Use it
+    # for knobs the typed fields don't cover — notably a reasoning budget to stop a reasoning model
+    # over-thinking, e.g. for GLM: `extra: { thinking: { type: disabled } }`. Set per-env in ai-helm-values.
+    extra: {}
+    # SSE streaming toggle (#206) → agent.json `review.stream`. Empty → off (runner default). Set `true`
+    # per-env to collect a streamed response under a per-chunk idle timeout (helps a heavy-reasoning
+    # model's long turns). REQUIRES a runner image with the `review.stream` field (lightbridge-ci #211).
+    stream: ""
     # Model context window in tokens (ADR-0045). → agent.json `review.context_window`. Empty → no
     # budgeting (the agent sends the full history and would fail a 400 on overflow). Set per-env in
     # ai-helm-values to the serving model's real window so the agent winds down + trims before overflow
