@@ -4,7 +4,11 @@ The LGTM stack, how telemetry is collected, and how every request is attributed
 back to a user. Deployed by the `observability` App-of-Apps orchestrator
 (ADR-0020), namespace `observability`, enforced `privileged` Pod Security.
 Source ADRs: **0004** (operator + dashboards-as-code), **0005/0046** (per-user
-attribution), **0008** (Python dashboards), **0045** (scrape-first sourcing).
+attribution), **0008** (Python dashboards), **0045** (scrape-first sourcing),
+**0058** (cost metrics precomputed to Mimir), **0059** (unified alerting →
+Discord), **0060** (gamified App Scoreboard). Cost observability — the metrics
+backbone, dashboards, scoreboard, alerting + runbook — is its own guide:
+[`cost-observability.md`](../cost-observability.md).
 
 ## The pipeline
 
