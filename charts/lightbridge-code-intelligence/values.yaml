@@ -136,6 +136,31 @@ config:
     # and finalizes (never discards findings) if it still overruns.
     contextWindow: ""
 
+  # Deterministic SAST pass (lightbridge-ci ADR-0061) → agent.json `sast`. opengrep scans the PR's
+  # changed files in the runner; findings ride the EXISTING review buffer (the control plane scopes +
+  # posts them in the one grouped review — NOT reviewdog, NOT a second poster), and the review agent is
+  # made AWARE of them (a prompt digest) without GATING them. Deterministic, token-free, opt-in upstream
+  # but ENABLED BY DEFAULT here.
+  #
+  # ⚠️ REQUIRES a runner image that carries the `sast` agent.json field + the bundled opengrep binary and
+  # vendored rules (lightbridge-ci #223). Emitted to an OLDER runner image, the `sast` block fails EVERY
+  # Job via deny_unknown_fields — verify AGENT_RUNNER_IMAGE + AGENT_REVIEW_RUNNER_IMAGE are ≥ that build
+  # before this lands. (At run time a missing opengrep binary is best-effort/non-fatal — the scan just
+  # no-ops — but the field itself must parse.)
+  sast:
+    enabled: true
+    # opengrep `--config` value. Empty → the runner default: the vendored /opt/opengrep-rules set baked
+    # into the image (hermetic, no registry fetch). Override per-env to narrow the rules to your stack.
+    rules: ""
+    # Minimum SARIF level to surface (error|warning|note). Empty → runner default (error — high-signal,
+    # mostly real security/correctness, so the first rollout doesn't flood PRs). Lower per-env to widen.
+    minSeverity: ""
+    # Cap on findings posted per review (excess logged, not silently dropped). Empty → runner default (25).
+    maxFindings: ""
+    # Wall-clock ceiling on one scan, seconds. Empty → runner default (300). On timeout the pass is
+    # abandoned (non-fatal).
+    timeoutSecs: ""
+
   # PR feedback the control plane applies (FILE-ONLY knobs — no env equivalent).
   review:
     reactions: true        # 👀 started → 🎉 done / 😕 errored on the PR description
