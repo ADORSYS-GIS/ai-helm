@@ -29,11 +29,22 @@ precomputed Mimir metrics (ADR-0058) that the cost boards use can't do it.
 
 The `email` axis is the Loki label Alloy promotes from the JWT `oidc_email`
 claim — the Keycloak datasource is **not** involved here (that's deliberate: this
-is the JWT's own view). A token with no email claim shows its **sentinel** —
-`missing:github:email`, `missing:lightbridge:email`, `missing:service:email`,
-`unstamped:email` — which honestly marks CI / service / unclaimed tokens rather
-than papering over the gap. To de-sentinel those you'd fix the *token* (always
-stamp `x-oidc-user-name`/email), not this dashboard.
+is the JWT's own view). A token with no email claim shows either a **structured
+synthetic identity** (for a *known* caller) or an honest **sentinel** (for a real
+gap):
+
+- **Known non-human callers (ADR-0068)** get a `<resource>@<service>` email and a
+  `<kind>:<id>` jti synthesized by Authorino from the fields already on the
+  request — so they read like real, groupable identities:
+  - GitHub CI → `ADORSYS-GIS/ai-helm@gh-runners` · jti `runid:<run_id>`
+  - LCI → `vymalo/flutter-tools@lightbridge-code-intelligence` · jti `runid:<task-id>`
+  - LibreChat user → real email · jti `librechat:<user-id>` (so the example
+    `jti=missing:librechat:jti` is now `jti=librechat:<user-id>`)
+- **Genuine gaps** still show their **sentinel** — `missing:keycloak:email`,
+  `missing:service:email`, `unstamped:email` — honestly marking an unclaimed
+  Keycloak token or a raw cron/SA caller rather than papering over it. To
+  de-sentinel those you'd fix the *token* (stamp the email claim), not this
+  dashboard.
 
 ## The LogQL contract (the load-bearing detail)
 
