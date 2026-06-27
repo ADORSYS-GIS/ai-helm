@@ -159,7 +159,7 @@ the root still lives in `home-os`.) Detail:
 
 ## Glossary
 
-- **AI Gateway** — Envoy AI Gateway (`aieg`); the OpenAI-compatible reverse proxy fronting upstream LLM providers.
+- **AI Gateway** — Envoy AI Gateway (`aieg`, **v1.0** on Envoy Gateway v1.8.1; ADR-0069); the OpenAI-compatible reverse proxy fronting upstream LLM providers. Our AIEG CRs are authored as `aigateway.envoyproxy.io/v1beta1`.
 - **lightbridge-repo-auth** — the GitHub-OIDC → billing-account binding for CI (ADR-0047).
 - **LGTM stack** — Loki + Grafana + Tempo + Mimir.
 - **MCP** — Model Context Protocol; the tool-server protocol exposed at `/mcp/*`.

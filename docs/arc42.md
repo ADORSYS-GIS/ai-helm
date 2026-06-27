@@ -168,7 +168,7 @@ flowchart TB
 | `model-serving-qwen3-4b` | Self-hosted Qwen3-4B via vLLM + Caddy auth-proxy sidecar; standby/rollback | Hybrid bjw, `homeCluster: true` (ADR-0029/0030) |
 | `ai-models-info` | OpenRouter-shape `/v1/models/info` catalog (nginx static) | Direct (ADR-0015) |
 | `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI + Mongo + Meili + opencode discovery | Orchestrator + leaves (ADR-0014) |
-| `mcps` → `mcp` | MCP tool servers (self-hosted + proxiedExternal) | Orchestrator + leaves (ADR-0038/0040/0041) |
+| `mcps` → `mcp` | MCP tool servers (self-hosted + proxiedExternal); opt-in v1.0 tool-filter / CEL authz / header-forward | Orchestrator + leaves (ADR-0038/0040/0041/0069) |
 | `lightbridge-repo-auth` | GitHub org→account binding for CI OIDC auth | Direct (ADR-0047/0049) |
 | `observability` | LGTM + Alloy + grafana-operator + dashboards | App-of-Apps (ADR-0020) |
 | `same-origin-proxy` | Generic Caddy serving external resources same-origin under an app's host to dodge browser CORS (`routes[]`; 1st route: the scoreboard governance feed under Grafana) | Direct (ADR-0061) |
@@ -340,6 +340,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0064 | Keycloak sessions & grants visibility (extends 0063): surface offline grants × spend; column-level `client(id,client_id,name)` grant (no `client.secret`); KC 26 persistent-sessions → filter `offline_flag='1'`; per-token budget rejected (no `jti`, unbounded cardinality) |
 | 0067 | JWT-token-level consumption dashboard (`jwt-tokens`): per `oidc_jti` cost/tokens/requests + last usages, email from the JWT claim ONLY (Loki `email` label, not the Keycloak DB); Loki-backed (jti is body-only, never a Mimir label); ⚠️ extract `oidc_jti` in the same `\| json` the outer `sum by` groups on |
 | 0068 | Structured synthetic identities for known non-human callers (extends 0052): Authorino synthesizes `email = <resource>@<service>` + `jti = <kind>:<id>` for known callers (GitHub CI → `<repo>@gh-runners`/`runid:<run_id>`; LCI → `<repo>@lightbridge-code-intelligence`/`runid:<task-id>`; LibreChat → real email/`librechat:<user-id>`) instead of `missing:*`; services become first-class named identities, human/service split stays on the `billing_plan`/`azp` labels (not a Grafana email-regex); email+jti only (budgets untouched); CEL-only in `ai-helm-values` |
+| 0069 | Adopt Envoy AI Gateway v1.0 (stable; no breaking changes) — `aieg`/`aieg-crd` `v0.7.0→v1.0.0`, `eg` `v1.8.0→v1.8.1` (new floor); migrate our six AIEG kinds off the now-deprecated `aigateway.envoyproxy.io/v1alpha1` → `v1beta1` (superset; the upstream `gateway.envoyproxy.io` group is separate, untouched); wire v1.0's MCP authz surface (`toolSelector`/`forwardHeaders`/CEL `authorization.rules`) into `charts/mcp` opt-in/default-off; external-MCP proxies retained (#2218/#2219 unfixed) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
