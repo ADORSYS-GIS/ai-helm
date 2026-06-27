@@ -468,6 +468,33 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
 
+  deepseek-v4-pro:
+    kind: text
+    # DeepInfra · deepseek-ai/DeepSeek-V4-Pro — 1,048,576-token context, 131k
+    # max output (capped to a sane generation ceiling). MoE model for advanced
+    # reasoning / coding / long-horizon agents; three reasoning-effort modes
+    # (Non-think / Think High / Think Max) → reasoning. Measured throughput is
+    # modest (~35 tok/s output, ~1.85s TTFT — the "Pro" tier trades speed for
+    # depth; route latency-sensitive work to deepseek-v4-flash or the local Qwen).
+    info:
+      displayName: "DeepSeek V4 Pro"
+      contextLength: 1048576
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 1.30
+        cachedInputPer1M: 0.10
+        outputPer1M: 2.60
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "deepseek-ai/DeepSeek-V4-Pro"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "deepseek-ai/DeepSeek-V4-Pro"
+
   reviewer:
     kind: text
     # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output,
