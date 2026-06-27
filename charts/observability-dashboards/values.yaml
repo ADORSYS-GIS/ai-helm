@@ -84,6 +84,13 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/sessions-grants.json
     resyncPeriod: 5m
+  # Per-JWT (oidc_jti) consumption + last usages, email taken from the JWT claim
+  # ONLY (Loki `email` label, not the Keycloak directory). Loki-backed because
+  # oidc_jti is a body field, never a Mimir label (ADR-0064).
+  - name: envoy-ai-gateway-jwt-tokens
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/jwt-tokens.json
+    resyncPeriod: 5m
   # The gamified "App Scoreboard" (ADR-0060, Phase 3): budget-burn gauge,
   # leaderboards, token-intensity heatmap, per-actor spend histogram, daily-spend
   # heartbeat, plan-share pie, firing-alerts list, Tempo request traces, a
