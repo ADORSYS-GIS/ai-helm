@@ -74,6 +74,20 @@ data:
 {{- /* NB: review.fallback_model is intentionally NOT mapped — the review failover model was removed
        (lightbridge-ci ADR-0053 / #208); a single model + retry/backoff + circuit breaker replaces it. */}}
 {{- $_ := set $ag "review" $rev }}
+{{- /* Deterministic SAST pass (lightbridge-ci ADR-0061) → agent.json `sast`. opengrep scans the PR's
+       changed files in the runner; findings ride the EXISTING review buffer (no second poster) and the
+       agent is made aware of them without gating. Default-ENABLED in this chart (config.sast.enabled).
+       ⚠️ Like review.stream, emitting this block REQUIRES a runner image that carries the `sast` field
+       AND the bundled opengrep binary + vendored rules (lightbridge-ci #223) — sent to an older runner,
+       deny_unknown_fields fails EVERY Job. (A missing opengrep binary is best-effort/non-fatal at run
+       time, but the FIELD must parse.) `enabled` is a bool; the other knobs empty → the runner defaults
+       (rules=/opt/opengrep-rules, min_severity=error, max_findings=25, timeout=300s). */}}
+{{- $sast := dict "enabled" $cfg.sast.enabled }}
+{{- if ne (toString $cfg.sast.rules) "" }}{{- $_ := set $sast "rules" $cfg.sast.rules }}{{- end }}
+{{- if ne (toString $cfg.sast.minSeverity) "" }}{{- $_ := set $sast "min_severity" $cfg.sast.minSeverity }}{{- end }}
+{{- if ne (toString $cfg.sast.maxFindings) "" }}{{- $_ := set $sast "max_findings" $cfg.sast.maxFindings }}{{- end }}
+{{- if ne (toString $cfg.sast.timeoutSecs) "" }}{{- $_ := set $sast "timeout_secs" $cfg.sast.timeoutSecs }}{{- end }}
+{{- $_ := set $ag "sast" $sast }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
