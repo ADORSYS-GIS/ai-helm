@@ -62,17 +62,18 @@ def _usd(expr: str) -> str:
     return f"(({expr}) / 1e6)"
 
 
-def _sum_by_jti(field: str) -> str:
+def _sum_by_jti(field: str, *, window: str = "$__range") -> str:
     """`sum by (oidc_jti, email) (sum_over_time(<sel> | json oidc_jti, f=… | unwrap f …))`.
 
     Extracts oidc_jti IN THE SAME json so it survives as a grouping label, plus
     the unwrap field only (bounded cardinality). sum_over_time takes no inline
-    by() (Loki) — grouping is the outer sum by.
+    by() (Loki) — grouping is the outer sum by. `window` is the range vector
+    (default `$__range` for totals/leaderboards; `$__auto` for the timeseries).
     """
     dotted = _JSON_DOTTED[field]
     inner = (
         f'sum_over_time({_SEL} | json {_JTI}, {field}=`["{dotted}"]`'
-        f' | {_JTI}!="" | unwrap {field} | __error__="" [$__range])'
+        f' | {_JTI}!="" | unwrap {field} | __error__="" [{window}])'
     )
     return f"sum by ({_JTI}, {LABEL_EMAIL}) ({inner})"
 
@@ -231,12 +232,10 @@ def _panel_cost_per_jwt_over_time() -> timeseries.Panel:
         )
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
         .with_target(
+            # Reuse the same helper as the totals/leaderboards, only the range
+            # vector differs ($__auto for per-step buckets) — no duplicated LogQL.
             _loki_target(
-                _usd(
-                    f"sum by ({_JTI}, {LABEL_EMAIL}) (sum_over_time({_SEL} "
-                    f'| json {_JTI}, cost=`["{_JSON_DOTTED["cost"]}"]`'
-                    f' | {_JTI}!="" | unwrap cost | __error__="" [$__auto]))'
-                ),
+                _usd(_sum_by_jti("cost", window="$__auto")),
                 legend=_LEGEND,
             )
         )
