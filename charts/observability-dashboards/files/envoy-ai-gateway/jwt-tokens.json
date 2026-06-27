@@ -1,0 +1,578 @@
+{
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "email",
+        "label": "User (email, from JWT)",
+        "skipUrlSync": false,
+        "query": "label_values({service_name=\"envoy-ai-gateway\"}, email)",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "model",
+        "label": "Model",
+        "skipUrlSync": false,
+        "query": "label_values({service_name=\"envoy-ai-gateway\"}, model)",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      }
+    ]
+  },
+  "annotations": {},
+  "uid": "envoy-ai-gateway-jwt-tokens",
+  "title": "AI Gateway — JWT tokens x consumption",
+  "description": "Per-JWT (the oidc_jti access-token id) consumption — cost / tokens / requests — and last usages, with the email taken from the JWT claim ONLY (the Loki `email` label, not the Keycloak directory). Thin tokens show their `missing:*`/`unstamped:*` sentinel. Loki-backed because oidc_jti is an access-log body field, never a Mimir label (per-token cardinality, ADR-0064). Cost ÷1e6 for USD. Filters: email, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/jwt_tokens.py.",
+  "tags": [
+    "ai-gateway",
+    "per-user",
+    "jwt",
+    "loki"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "JWT tokens x consumption",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(sum by (oidc_jti, email) (count_over_time({service_name=\"envoy-ai-gateway\", email=~\"$email\", model=~\"$model\"} | json oidc_jti | oidc_jti!=\"\" [$__range])))",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Distinct JWTs (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "purple"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "((sum(sum by (oidc_jti, email) (sum_over_time({service_name=\"envoy-ai-gateway\", email=~\"$email\", model=~\"$model\"} | json oidc_jti, cost=`[\"gen_ai.usage.custom_total_cost\"]` | oidc_jti!=\"\" | unwrap cost | __error__=\"\" [$__range])))) / 1e6)",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Total cost (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "orange"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(sum by (oidc_jti, email) (sum_over_time({service_name=\"envoy-ai-gateway\", email=~\"$email\", model=~\"$model\"} | json oidc_jti, tokens=`[\"gen_ai.usage.total_tokens\"]` | oidc_jti!=\"\" | unwrap tokens | __error__=\"\" [$__range])))",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Total tokens (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(sum by (oidc_jti, email) (count_over_time({service_name=\"envoy-ai-gateway\", email=~\"$email\", model=~\"$model\"} | json oidc_jti | oidc_jti!=\"\" [$__range])))",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Requests (range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "topk(20, ((sum by (oidc_jti, email) (sum_over_time({service_name=\"envoy-ai-gateway\", email=~\"$email\", model=~\"$model\"} | json oidc_jti, cost=`[\"gen_ai.usage.custom_total_cost\"]` | oidc_jti!=\"\" | unwrap cost | __error__=\"\" [$__range]))) / 1e6))",
+          "refId": "A",
+          "legendFormat": "{{email}} · {{oidc_jti}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Top JWTs by cost (selected range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "repeatDirection": "h",
+      "options": {
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "maxVizHeight": 300,
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "orange"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "topk(20, sum by (oidc_jti, email) (sum_over_time({service_name=\"envoy-ai-gateway\", email=~\"$email\", model=~\"$model\"} | json oidc_jti, tokens=`[\"gen_ai.usage.total_tokens\"]` | oidc_jti!=\"\" | unwrap tokens | __error__=\"\" [$__range])))",
+          "refId": "A",
+          "legendFormat": "{{email}} · {{oidc_jti}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Top JWTs by tokens (selected range)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "repeatDirection": "h",
+      "options": {
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "maxVizHeight": 300,
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "((sum by (oidc_jti, email) (sum_over_time({service_name=\"envoy-ai-gateway\", email=~\"$email\", model=~\"$model\"} | json oidc_jti, cost=`[\"gen_ai.usage.custom_total_cost\"]` | oidc_jti!=\"\" | unwrap cost | __error__=\"\" [$__auto]))) / 1e6)",
+          "refId": "A",
+          "legendFormat": "{{email}} · {{oidc_jti}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Cost per JWT over time",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": false,
+          "calcs": [
+            "sum",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15.0,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Last usages",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      }
+    },
+    {
+      "type": "logs",
+      "targets": [
+        {
+          "expr": "{service_name=\"envoy-ai-gateway\", email=~\"$email\", model=~\"$model\"} | json | oidc_jti!=\"\" | line_format `{{.email}} · jti={{.oidc_jti}} · {{.gen_ai_request_model}} · rc={{.response_code}} · {{.gen_ai_usage_total_tokens}}tok · {{.gen_ai_usage_custom_total_cost}}µ$`",
+          "refId": "A",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "title": "Last usages (recent requests, newest first)",
+      "transparent": false,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "repeatDirection": "h",
+      "options": {
+        "showLabels": false,
+        "showCommonLabels": false,
+        "showTime": true,
+        "showLogContextToggle": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    }
+  ]
+}
