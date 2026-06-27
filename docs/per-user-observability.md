@@ -163,7 +163,7 @@ body and is queried with `| json | <field>=~"..."`.
 | `user_id` | `user_id` ← `x-oidc-user-id` (JWT `sub`) | One value per registered user | Primary attribution dimension; required for per-user dashboards |
 | `azp` | `azp` ← `x-oidc-azp` (JWT `azp`) | One value per Keycloak client (~10–20) | Lets dashboards split human vs SA traffic and pivot by app |
 | `model` | `gen_ai.request.model` ← `x-ai-eg-model` | One value per catalog model (~10–20) | Backs the dashboard's model variable + per-model splits without a body parse (ADR-0046) |
-| `email` | `oidc_email` ← `x-oidc-email` (JWT `email`) | 1:1 with user_id — adds no stream cardinality | Unique human-readable user identity; PII (stored in label index) |
+| `email` | `oidc_email` ← `x-oidc-email` (JWT `email`) | ≤ user_id granularity — adds no stream cardinality | Unique human-readable user identity; PII (stored in label index). Humans: 1:1 with user_id. Synthetic service emails (ADR-0068, e.g. `<repo>@gh-runners`) are **coarser** than user_id (one email per repo, while user_id = the GitHub `sub` carries repo+ref) — functionally determined by it, so no new streams. |
 | `display_name` | `oidc_name` ← `x-oidc-name` (JWT `name`, e.g. "Kunga Derick") | 1:1 with user_id | Human-readable label for bar charts; first name extracted at query time via `label_replace` |
 | `billing_plan` | `billing_plan` ← `x-billing-plan` | 4 distinct values (free/pro/service/internal) | Very cheap; enables tier segmentation in dashboards |
 

@@ -65,7 +65,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-jwt-tokens",
   "title": "AI Gateway — JWT tokens x consumption",
-  "description": "Per-JWT (the oidc_jti access-token id) consumption — cost / tokens / requests — and last usages, with the email taken from the JWT claim ONLY (the Loki `email` label, not the Keycloak directory). Known service callers (GitHub CI, LCI, LibreChat) show a structured synthetic identity (<resource>@<service> / <kind>:<id>, ADR-0068); genuine gaps show their `missing:*`/`unstamped:*` sentinel. Loki-backed because oidc_jti is an access-log body field, never a Mimir label (per-token cardinality, ADR-0064). Cost ÷1e6 for USD. Filters: email, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/jwt_tokens.py.",
+  "description": "Per-JWT (the oidc_jti access-token id) consumption — cost / tokens / requests — and last usages, with the email taken from the JWT claim ONLY (the Loki `email` label, not the Keycloak directory). GitHub CI and LCI show a synthetic <resource>@<service> email; LibreChat keeps its real forwarded email; all three get a synthetic <kind>:<id> jti (ADR-0068). Genuine gaps show their `missing:*`/`unstamped:*` sentinel. Loki-backed because oidc_jti is an access-log body field, never a Mimir label (per-token cardinality, ADR-0064). Cost ÷1e6 for USD. Filters: email, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/jwt_tokens.py.",
   "tags": [
     "ai-gateway",
     "per-user",
