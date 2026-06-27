@@ -136,6 +136,20 @@ config:
     # and finalizes (never discards findings) if it still overruns.
     contextWindow: ""
 
+    # Two-tier review (lightbridge-ci ADR-0062) → agent.json `review.fast` / `review.deep`. Each is a
+    # COMPLETE, independent per-tier config: it shares the gateway (env) + system prompt, and carries its
+    # OWN model + the same generation/budget knobs as above (model, extra, maxTurns, stream,
+    # requestTimeoutSecs, contextWindow, maxTokens, temperature, topP, maxDiffChars, max* read budgets).
+    # `fast`  = the automatic `pull_request opened` pass (cheap model; the runner enforces a single
+    #           diff-only turn with no retrieval regardless of maxTurns — SAST is the backbone).
+    # `deep`  = the `@mention` run (strong model, long requestTimeoutSecs; full retrieval + multi-turn).
+    # Leave BOTH empty (the default) to keep the single flat `model.*` config for every review (legacy).
+    # Set them per-env in ai-helm-values. `model` is required within a tier block (an empty model
+    # disables that tier). ⚠️ REQUIRES a runner image carrying `review.fast`/`review.deep`
+    # (lightbridge-ci #233) before these are set, else deny_unknown_fields fails every Job.
+    fast: {}
+    deep: {}
+
   # Deterministic SAST pass (lightbridge-ci ADR-0061) → agent.json `sast`. opengrep scans the PR's
   # changed files in the runner; findings ride the EXISTING review buffer (the control plane scopes +
   # posts them in the one grouped review — NOT reviewdog, NOT a second poster), and the review agent is

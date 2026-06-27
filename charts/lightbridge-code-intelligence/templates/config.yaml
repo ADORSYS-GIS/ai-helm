@@ -73,6 +73,39 @@ data:
 {{- if $cfg.model.extra }}{{- $_ := set $rev "extra" $cfg.model.extra }}{{- end }}
 {{- /* NB: review.fallback_model is intentionally NOT mapped — the review failover model was removed
        (lightbridge-ci ADR-0053 / #208); a single model + retry/backoff + circuit breaker replaces it. */}}
+{{- /* Two-tier review (lightbridge-ci ADR-0062) → agent.json review.fast / review.deep. Each tier is a
+       COMPLETE, independent block: it shares the gateway (env) + system prompt (mounted file), and carries
+       its OWN model + generation/budget knobs. Set per tier in ai-helm-values (config.model.fast.* /
+       config.model.deep.*); `fast` is the automatic PR-opened pass (cheap model, single diff-only turn —
+       the runner enforces 1 turn + no retrieval regardless of maxTurns), `deep` is the `@mention` run
+       (strong model, long timeout). When a tier is unset the runner falls back to the flat review.* above.
+       ⚠️ REQUIRES a runner image carrying review.fast/review.deep (lightbridge-ci #233) before these are
+       set, else deny_unknown_fields fails every Job (ship the runner first). */}}
+{{- /* Truthiness guards (NOT `ne (toString …) ""`): an unset key in a `{}` tier block is nil, and
+       `toString nil` is "<nil>" (≠ ""), which would emit a JSON `null` the runner rejects. Truthiness
+       skips nil / "" / 0 / false cleanly. The whole tier is gated on a non-empty `model` so the default
+       (empty `fast: {}` / `deep: {}`) emits nothing → the runner uses the flat review.* (back-compat). */}}
+{{- range $tier := list "fast" "deep" }}
+{{- $tv := index $cfg.model $tier }}
+{{- if and $tv $tv.model }}
+{{- $t := dict "base_url" "{env:LLM_BASE_URL}" "api_key" "{env:LLM_API_KEY}" "model" $tv.model }}
+{{- if ne (toString $cfg.reviewSystemPrompt) "" }}{{- $_ := set $t "system_prompt_file" "/etc/lightbridge/review-system.md" }}{{- end }}
+{{- if $tv.maxDiffChars }}{{- $_ := set $t "max_diff_chars" $tv.maxDiffChars }}{{- end }}
+{{- if $tv.temperature }}{{- $_ := set $t "temperature" $tv.temperature }}{{- end }}
+{{- if $tv.topP }}{{- $_ := set $t "top_p" $tv.topP }}{{- end }}
+{{- if $tv.maxTokens }}{{- $_ := set $t "max_tokens" $tv.maxTokens }}{{- end }}
+{{- if $tv.maxTurns }}{{- $_ := set $t "max_turns" $tv.maxTurns }}{{- end }}
+{{- if $tv.maxBatchSize }}{{- $_ := set $t "max_batch_size" $tv.maxBatchSize }}{{- end }}
+{{- if $tv.maxFilesRead }}{{- $_ := set $t "max_files_read" $tv.maxFilesRead }}{{- end }}
+{{- if $tv.maxSearches }}{{- $_ := set $t "max_searches" $tv.maxSearches }}{{- end }}
+{{- if $tv.maxBatches }}{{- $_ := set $t "max_batches" $tv.maxBatches }}{{- end }}
+{{- if $tv.contextWindow }}{{- $_ := set $t "context_window" $tv.contextWindow }}{{- end }}
+{{- if $tv.requestTimeoutSecs }}{{- $_ := set $t "request_timeout_secs" $tv.requestTimeoutSecs }}{{- end }}
+{{- if $tv.stream }}{{- $_ := set $t "stream" $tv.stream }}{{- end }}
+{{- if $tv.extra }}{{- $_ := set $t "extra" $tv.extra }}{{- end }}
+{{- $_ := set $rev $tier $t }}
+{{- end }}
+{{- end }}
 {{- $_ := set $ag "review" $rev }}
 {{- /* Deterministic SAST pass (lightbridge-ci ADR-0061) → agent.json `sast`. opengrep scans the PR's
        changed files in the runner; findings ride the EXISTING review buffer (no second poster) and the
