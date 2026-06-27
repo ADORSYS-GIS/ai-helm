@@ -1,8 +1,31 @@
 # ADR-0065: Deploy SonarQube Community Build + community-branch-plugin for free inline PR decoration
 
-**Status:** Proposed
+**Status:** Rejected (2026-06-27) — SonarQube not adopted; the team chose opengrep
 **Date:** 2026-06-27
 **Deciders:** @stephane-segning
+
+> **⚠️ Rejected — never implemented.** After reviewing this proposal the
+> architecture team judged **SonarQube a "dinosaur" solution** for our needs: a
+> heavyweight, stateful platform (a long-running JVM server + a PostgreSQL
+> database + an embedded Elasticsearch + a node `vm.max_map_count` sysctl) whose
+> *free* tier can't even decorate pull requests without bolting on an unofficial,
+> version-lockstep third-party plugin (the whole point of the proposal). That is a
+> large, brittle, manually-pinned footprint to maintain for what is, in the end,
+> CI-time static analysis.
+>
+> The team chose **[opengrep](https://github.com/opengrep/opengrep)** instead — an
+> open-source fork of Semgrep: a **CI-native, rules-as-code SAST scanner** that
+> runs as a CLI **inside the existing in-cluster runners**, with **no server, no
+> database, no Elasticsearch, no license, and no paywalled plugin**. PR
+> annotations come from the runner using the GitHub token it already mints
+> (`lightbridge-repo-auth`) — the same "runner posts the check" shape we'd weighed
+> as the stock-server alternative, but without running any SonarQube at all.
+> Findings are versioned rules in the repo rather than state in a Postgres box.
+>
+> Consequence for this repo: the charts, the `charts/apps` entry, the Keycloak
+> SAML client, and the `ai-helm-values` artifacts proposed here are **not merged**
+> (PR closed). A follow-up ADR will record the opengrep design when it lands. The
+> original proposal body is preserved below for the record.
 
 ## Context
 
