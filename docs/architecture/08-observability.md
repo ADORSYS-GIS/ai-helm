@@ -152,8 +152,10 @@ behind it.
 the JWT id `oidc_jti` (an access-log **body** field — deliberately never a Mimir
 label, ADR-0064) × the JWT-derived `email` label: per-token cost/tokens/requests,
 a cost-per-JWT timeseries, and a last-usages logs panel. Email comes from the JWT
-claim **only** (the `email` label, not the Keycloak datasource); thin tokens show
-their `missing:*`/`unstamped:*` sentinel. ⚠️ LogQL trap: extract `oidc_jti` in the
+claim **only** (the `email` label, not the Keycloak datasource); known service
+callers (GitHub CI, LCI, LibreChat) show a structured synthetic identity
+(`<resource>@<service>` / `<kind>:<id>`, ADR-0068), genuine gaps their
+`missing:*`/`unstamped:*` sentinel. ⚠️ LogQL trap: extract `oidc_jti` in the
 *same* `| json` the outer `sum by` groups on, or it collapses to `-`. Full guide:
 [`jwt-token-observability.md`](../jwt-token-observability.md).
 

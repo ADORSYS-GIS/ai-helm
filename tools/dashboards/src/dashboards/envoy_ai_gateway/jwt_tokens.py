@@ -3,8 +3,10 @@
 Per **JWT** (the `oidc_jti` access-token id) consumption — cost / tokens /
 requests — and last usages, alongside the **email from the JWT claim only**
 (the Loki `email` label Alloy promotes from `oidc_email`), NOT the Keycloak
-directory. Thin tokens with no email claim show their `missing:*` / `unstamped:*`
-sentinel — that's the honest "from the JWT only" view.
+directory. Known non-human callers (GitHub CI, LCI, LibreChat) carry a
+structured synthetic identity Authorino builds from the request — `email =
+<resource>@<service>`, `jti = <kind>:<id>` (ADR-0068) — while genuine gaps still
+show their honest `missing:*` / `unstamped:*` sentinel: the "from the JWT only" view.
 
 Why Loki (not Mimir): the JWT id `oidc_jti` is an access-log **body** field —
 it is deliberately NOT promoted to a Mimir metric label (per-token cardinality;
@@ -289,8 +291,10 @@ def _multi_var(*, name: str, label: str, definition: str) -> db.QueryVariable:
 _DESCRIPTION = (
     "Per-JWT (the oidc_jti access-token id) consumption — cost / tokens / requests "
     "— and last usages, with the email taken from the JWT claim ONLY (the Loki "
-    "`email` label, not the Keycloak directory). Thin tokens show their "
-    "`missing:*`/`unstamped:*` sentinel. Loki-backed because oidc_jti is an "
+    "`email` label, not the Keycloak directory). Known service callers (GitHub CI, "
+    "LCI, LibreChat) show a structured synthetic identity (<resource>@<service> / "
+    "<kind>:<id>, ADR-0068); genuine gaps show their `missing:*`/`unstamped:*` "
+    "sentinel. Loki-backed because oidc_jti is an "
     "access-log body field, never a Mimir label (per-token cardinality, ADR-0064). "
     "Cost ÷1e6 for USD. Filters: email, model. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/jwt_tokens.py."
