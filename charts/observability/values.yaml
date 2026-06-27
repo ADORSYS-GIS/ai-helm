@@ -157,6 +157,44 @@ children:
         prune: true
         selfHeal: true
 
+  # --- Observability: prometheus-redis-exporter (rate-limit quota) ---
+  # Exposes the Envoy AI Gateway rate-limit service's LIVE per-account budget
+  # counters, which live ONLY in redis-ha (one key per x-account-id × model ×
+  # plan × 30-day window, value = micro-USD spent; ADR-0021/0035). SCANs the
+  # monthly-budget keys and exports them as gateway_ratelimit_spend_micro_usd;
+  # the ServiceMonitor's metricRelabelings parse account_id/model/plan/plane/
+  # window out of the key (see the values file). Feeds the `AI Gateway —
+  # rate-limit quota` dashboard (observability-dashboards). ADR-0070.
+  #
+  # depsOverlay ships the app-scoped deps: the redis-password ExternalSecret
+  # (redis-ha-redis-auth, observability ns), a self-signed-ca CA leaf for TLS
+  # trust (redis-exporter-redis-ca), and Cilium egress to redis-system:6379 +
+  # scrape ingress on :9121 (the observability default-deny baseline blocks both
+  # otherwise). Its ServiceMonitor is discovered automatically by Alloy.
+  - name: prometheus-redis-exporter
+    valuesFromRepo: true   # values in ai-helm-values (ADR-0056)
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    depsOverlay: environments/prod/deps/prometheus-redis-exporter
+    source:
+      repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 6.26.0
+      chart: prometheus-redis-exporter
+      helm:
+        releaseName: prometheus-redis-exporter
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Observability: prometheus-node-exporter ---
   # DaemonSet exposing per-node hardware/OS metrics (node_cpu_*, node_memory_*,
   # node_filesystem_*, node_network_*). Required by the K8s Nodes / Global
