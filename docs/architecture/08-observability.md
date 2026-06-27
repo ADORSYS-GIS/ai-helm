@@ -148,6 +148,15 @@ behind it.
   per-user/per-`azp`, **not** per individual token. Full guide:
   [`keycloak-identity-datasource.md`](../keycloak-identity-datasource.md).
 
+**Per-JWT consumption (ADR-0067).** A complementary, **Loki-backed** view keyed on
+the JWT id `oidc_jti` (an access-log **body** field — deliberately never a Mimir
+label, ADR-0064) × the JWT-derived `email` label: per-token cost/tokens/requests,
+a cost-per-JWT timeseries, and a last-usages logs panel. Email comes from the JWT
+claim **only** (the `email` label, not the Keycloak datasource); thin tokens show
+their `missing:*`/`unstamped:*` sentinel. ⚠️ LogQL trap: extract `oidc_jti` in the
+*same* `| json` the outer `sum by` groups on, or it collapses to `-`. Full guide:
+[`jwt-token-observability.md`](../jwt-token-observability.md).
+
 ## Why the sync-wave order is load-bearing
 
 ```mermaid

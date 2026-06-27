@@ -322,6 +322,10 @@ not replace, fixing thin tokens to carry the email/name claims.
 - `docs/adr/0063-grafana-readonly-keycloak-datasource.md` — the read-only
   Keycloak Postgres datasource that resolves opaque `user_id` UUIDs → people
   (`tools/dashboards/envoy_ai_gateway/user_directory.py`)
+- `docs/jwt-token-observability.md` (ADR-0067) — the per-JWT (`oidc_jti`)
+  consumption + last-usages view, email from the JWT claim only; the
+  `oidc_jti`-same-`| json`-extraction LogQL trap
+  (`tools/dashboards/envoy_ai_gateway/jwt_tokens.py`)
 - `docs/adr/0005-per-user-attribution-via-authorino-headers.md` — the original
   design this implements
 - `docs/observability-dashboard-research.md` — the audit that found the break
