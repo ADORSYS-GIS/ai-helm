@@ -118,6 +118,7 @@ dashboards, and all the GitOps glue.
 | Scale to 2000/5000 clients | HTTP/2 multiplexing + data-plane HPA + circuit breaking | `core-gateway` ClientTrafficPolicy / EnvoyProxy HPA / BackendTrafficPolicy (ADR-0021) |
 | Attribution | JWT → Authorino `x-oidc-*` headers → Envoy access log → Alloy → Loki labels | ADR-0005/0011/0046, `per-user-observability.md` |
 | Identity resolution | Read-only Keycloak Postgres datasource resolves `user_id` (sub UUID) → person + offline grants × spend | ADR-0063/0064, `keycloak-identity-datasource.md` |
+| Per-JWT consumption | Loki-backed `jwt-tokens` dashboard keyed on `oidc_jti` × the JWT `email` label (claim-only) | ADR-0067, `jwt-token-observability.md` |
 | Authorization | Keycloak JWT as the boundary; per-host AuthConfig differentiation | ADR-0021 |
 | CI without shared keys | GitHub Actions OIDC → `lightbridge-repo-auth` org→account binding | ADR-0047/0049 |
 | Quota & billing | Per-plan burst + per-person monthly budget in `BackendTrafficPolicy` | ADR-0021/0035 |
@@ -337,6 +338,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0062 | Grafana AI assistant (`grafana-llm-app`) on the internal gateway plane — dedicated apiKey for cost attribution, internal-CA trust, declarative (survives pod rolls) |
 | 0063 | Read-only Keycloak Postgres `GrafanaDatasource` (`-ro` replica, least-privilege role) resolves the opaque per-user `user_id` (sub UUID) → person; realm filtered by literal id (role can't read `realm`); role/GRANT in home-os, datasource in ai-helm-values, dashboard in ai-helm |
 | 0064 | Keycloak sessions & grants visibility (extends 0063): surface offline grants × spend; column-level `client(id,client_id,name)` grant (no `client.secret`); KC 26 persistent-sessions → filter `offline_flag='1'`; per-token budget rejected (no `jti`, unbounded cardinality) |
+| 0067 | JWT-token-level consumption dashboard (`jwt-tokens`): per `oidc_jti` cost/tokens/requests + last usages, email from the JWT claim ONLY (Loki `email` label, not the Keycloak DB); Loki-backed (jti is body-only, never a Mimir label); ⚠️ extract `oidc_jti` in the same `\| json` the outer `sum by` groups on |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
