@@ -113,6 +113,24 @@ it was lost — so an attribution gap is loud, not invisible:
 | `missing:service:<claim>` | Authorino (internal plane) | a non-human cron/SA caller (field legitimately absent) |
 | `unstamped:<field>` | Alloy | no header arrived at all (request matched no AuthConfig response, or a plane that omits the field) |
 
+> **Known callers are named, not sentinel'd (ADR-0068).** For callers whose
+> identity is *known* even without a human email/jti, Authorino synthesizes a
+> structured identity instead of a `missing:*` sentinel — `email = <resource>@<service>`
+> and `jti = <kind>:<id>`:
+>
+> | Caller | email | jti |
+> |---|---|---|
+> | GitHub CI | `<owner/repo>@gh-runners` (e.g. `ADORSYS-GIS/ai-helm@gh-runners`) | `runid:<run_id>` (guarded → raw GitHub `jti` → `missing:github:jti`) |
+> | LCI | `<owner/repo>@lightbridge-code-intelligence` (e.g. `vymalo/flutter-tools@lightbridge-code-intelligence`) | `runid:<task-id>` |
+> | LibreChat user | the real forwarded email (`X-LibreChat-Email`) | `librechat:<x-librechat-user>` |
+>
+> These are **not** `missing:*`, so they are *not* excluded by the board's
+> `(missing|unstamped):.*` filter — services are first-class named identities.
+> The human/service split therefore stays on the `billing_plan` (`internal` for
+> services) / `azp` labels, not the email string. Genuine gaps (a Keycloak human
+> with no email, a raw cron/SA caller) still resolve to `missing:keycloak:*` /
+> `missing:service:*`.
+
 Rule of thumb: a `missing:`/`unstamped:` prefix marks an attribution gap, and
 the shape tells you the layer — `missing:<source>:<claim>` is token-level
 (Authorino), `unstamped:<field>` is header-level (gateway/Alloy). The external
