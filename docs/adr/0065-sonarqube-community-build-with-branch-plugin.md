@@ -24,8 +24,9 @@
 >
 > Consequence for this repo: the charts, the `charts/apps` entry, the Keycloak
 > SAML client, and the `ai-helm-values` artifacts proposed here are **not merged**
-> (PR closed). A follow-up ADR will record the opengrep design when it lands. The
-> original proposal body is preserved below for the record.
+> (PR closed). The opengrep direction is recorded in
+> [ADR-0066](./0066-opengrep-ci-native-sast.md). The original proposal body is
+> preserved below for the record.
 
 ## Context
 
