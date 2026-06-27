@@ -15,8 +15,8 @@ For each entry in `.Values.backends` (unless `enabled: false`):
 | Resource | Purpose |
 |---|---|
 | `Backend` (gateway.envoyproxy.io/v1alpha1) | DNS-based upstream endpoint (fqdn + port) |
-| `AIServiceBackend` (aigateway.envoyproxy.io/v1alpha1) | Schema declaration (OpenAI / GCP / Bedrock) + prefix path |
-| `BackendSecurityPolicy` (aigateway.envoyproxy.io/v1alpha1) | API-key auth via Secret (or GCPCredentials variant) |
+| `AIServiceBackend` (aigateway.envoyproxy.io/v1beta1) | Schema declaration (OpenAI / GCP / Bedrock) + prefix path |
+| `BackendSecurityPolicy` (aigateway.envoyproxy.io/v1beta1) | API-key auth via Secret (or GCPCredentials variant) |
 | `BackendTLSPolicy` (gateway.networking.k8s.io/v1) | TLS validation against system CA, hostname pin |
 | `ExternalSecret` (external-secrets.io/v1) | Materialises the APIKey `secretRef.name` Secret (key `apiKey`) from `ssegning-aws` — one per **unique** secret name, only when the backend carries an `externalSecret` block. See below. |
 

@@ -3,7 +3,7 @@ The MCPRoute attaching this MCP to the gateway. Optional apiKey securityPolicy
 injects the upstream credential (Secret key `apiKey`; "Authorization" header
 auto-prefixes "Bearer ").
 */ -}}
-apiVersion: aigateway.envoyproxy.io/v1alpha1
+apiVersion: aigateway.envoyproxy.io/v1beta1
 kind: MCPRoute
 metadata:
   name: {{ .Values.mcp.name }}
@@ -22,12 +22,18 @@ spec:
 
   path: {{ .Values.mcp.path | quote }}
 
-  {{- if .Values.oauth.enabled }}
-  # MCP-spec OAuth (ADR-0038): Envoy-native JWT verification + the RFC 9728
-  # discovery surface, served by AIEG at the path-insertion well-known URLs.
-  # This route-level policy displaces the gateway-level Authorino extAuth for
-  # this MCPRoute; claimToHeaders restores the ADR-0011 x-oidc-* set.
+  {{- /*
+  securityPolicy carries OAuth (ADR-0038) and/or CEL per-tool authorization
+  (AIEG v1.0, v1beta1). Emit the wrapper if either is configured.
+  */ -}}
+  {{- $authzRules := dig "authorization" "rules" (list) .Values.mcp -}}
+  {{- if or .Values.oauth.enabled (gt (len $authzRules) 0) }}
   securityPolicy:
+    {{- if .Values.oauth.enabled }}
+    # MCP-spec OAuth (ADR-0038): Envoy-native JWT verification + the RFC 9728
+    # discovery surface, served by AIEG at the path-insertion well-known URLs.
+    # This route-level policy displaces the gateway-level Authorino extAuth for
+    # this MCPRoute; claimToHeaders restores the ADR-0011 x-oidc-* set.
     oauth:
       issuer: {{ required "oauth.issuer is required when oauth.enabled" .Values.oauth.issuer | quote }}
       {{- with .Values.oauth.audiences }}
@@ -45,6 +51,18 @@ spec:
         scopesSupported:
           {{- toYaml . | nindent 10 }}
         {{- end }}
+    {{- end }}
+    {{- with $authzRules }}
+    # CEL per-tool authorization (AIEG v1.0). `tools/list` is filtered by the SAME
+    # rules as `tools/call`, so callers only discover tools they may invoke. Each
+    # CEL expr gets request.mcp.tool / request.mcp.method / request.auth.jwt.claims
+    # and must return a boolean. Empty list (default) = allow-all (prior behaviour).
+    authorization:
+      rules:
+        {{- range . }}
+        - cel: {{ .cel | quote }}
+        {{- end }}
+    {{- end }}
   {{- end }}
 
   backendRefs:
@@ -52,6 +70,38 @@ spec:
       kind: Backend
       group: gateway.envoyproxy.io
       path: {{ .Values.mcp.backendPath | quote }}
+      {{- with .Values.mcp.toolFilter }}
+      # Per-backend tool include/exclude (AIEG v1.0). Exclude wins over include
+      # (deny-wins); *Regex are RE2 patterns. Empty (default) exposes all tools.
+      toolSelector:
+        {{- with .include }}
+        include:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .includeRegex }}
+        includeRegex:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .exclude }}
+        exclude:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .excludeRegex }}
+        excludeRegex:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.mcp.forwardHeaders }}
+      # Forward selected request headers to this backend (AIEG v1.0) — e.g. the
+      # gateway-stamped x-oidc-user-id so the upstream can attribute/personalize.
+      forwardHeaders:
+        {{- range . }}
+        - name: {{ .name | quote }}
+          {{- with .backendHeader }}
+          backendHeader: {{ . | quote }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
       {{- if .Values.mcp.auth.enabled }}
       securityPolicy:
         apiKey:

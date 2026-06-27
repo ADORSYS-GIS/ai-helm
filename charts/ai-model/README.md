@@ -9,7 +9,7 @@ orchestrator.
 
 ## What it renders
 
-- `aigateway.envoyproxy.io/v1alpha1` **`AIGatewayRoute`** — header-match
+- `aigateway.envoyproxy.io/v1beta1` **`AIGatewayRoute`** — header-match
   on `x-ai-eg-model: <modelName>`, backend refs with priorities, and an
   `llmRequestCosts[]` CEL expression computing per-request cost in
   micro-USD.

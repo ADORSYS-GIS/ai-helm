@@ -74,6 +74,9 @@ mcps:
       mode: selfHosted
       path: /mcp/brave
       backendPath: /mcp
+      # Forward the gateway-stamped end-user id to the backend (AIEG v1.0, ADR-0069).
+      forwardHeaders:
+        - name: x-oidc-user-id
       image: docker.io/mcp/brave-search:latest
       port: 8080
       args:
@@ -105,6 +108,9 @@ mcps:
       mode: selfHosted
       path: /mcp/terraform
       backendPath: /mcp
+      # Forward the gateway-stamped end-user id to the backend (AIEG v1.0, ADR-0069).
+      forwardHeaders:
+        - name: x-oidc-user-id
       image: hashicorp/terraform-mcp-server:latest
       port: 8080
       args:

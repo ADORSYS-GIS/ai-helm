@@ -287,17 +287,18 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: oci://docker.io/envoyproxy/ai-gateway-crds-helm
-      # v0.7.0 — keep in lockstep with ai-gateway-helm below. Floor is still
-      # Envoy Gateway v1.7.0+ (we run v1.8.0 ✓; no upper bound). v1alpha1 is
-      # still served (storage stays v1beta1) so our v1alpha1 CRs keep working
-      # via the conversion webhook. v0.7 audit (vs v0.6): MCPRoute CRD incl.
-      # securityPolicy.oauth is byte-for-byte unchanged (ADR-0038 safe); the
-      # ONE breaking change — AIGatewayRoute.spec.rules cap 128→15 — doesn't
-      # touch us (every model route has 1 rule). Bumped v0.6.0→v0.7.0 chasing
-      # the MCP-proxy bug with external hosted MCPs (context7/firecrawl/refero);
-      # v0.7 adds the spaceless-SSE decode fix (#2155) + tools/list authz
-      # filtering (#2106).
-      targetRevision: v0.7.0
+      # v1.0.0 — keep in lockstep with ai-gateway-helm below (ADR-0069). v1.0 is
+      # the stability milestone: NO breaking changes, v1beta1 declared stable
+      # (byte-identical to v0.7's). EG floor moves v1.7.0+ → v1.8.1+ (we now run
+      # v1.8.1 ✓; see eg below). ⚠️ v1alpha1 is now served-but-DEPRECATED (the CRD
+      # warns "use aigateway.envoyproxy.io/v1beta1 instead"); our AIEG manifests
+      # migrated to v1beta1 in this same change (it was already the v0.7 storage
+      # version, so no conversion/ordering hazard — this app still syncs first).
+      # The external-MCP proxy mitigations stay: AIEG #2218 (refero content-type)
+      # is still OPEN and #2219 (firecrawl SSE) has no v1.0 fix. v1.0 also makes
+      # the MCP authz surface first-class (toolSelector / CEL authz / forwardHeaders,
+      # v1beta1-only) — wired as opt-in capability in charts/mcp.
+      targetRevision: v1.0.0
       path: .
       helm:
         releaseName: aieg-crd
@@ -317,8 +318,9 @@ applications:
     valuesFromRepo: true
     source:
       repoURL: oci://docker.io/envoyproxy/gateway-helm
-      # v1.8.0 (2026-05-13) per audit. Clean minor; no CRD breaking changes.
-      targetRevision: v1.8.0
+      # v1.8.1 — the new minimum required by AIEG v1.0 (was v1.8.0). Patch bump
+      # over the audited v1.8.0; no CRD breaking changes (ADR-0069).
+      targetRevision: v1.8.1
       path: .
       helm:
         releaseName: eg
@@ -333,13 +335,13 @@ applications:
     valuesFromRepo: true
     source:
       repoURL: oci://docker.io/envoyproxy/ai-gateway-helm
-      # v0.7.0 — keep in lockstep with ai-gateway-crds-helm above (see its note
-      # for the v0.7 compatibility/breaking-change audit). Floor EG v1.7.0+
-      # (we run v1.8.0 ✓). Controller values below are unchanged across v0.6→v0.7
-      # (verified: maxRecvMsgSize, mutatingWebhook.certManager, extProc.logLevel
-      # all still valid). NB v0.7 tools/list now hides tools the caller can't
-      # invoke (authz filtering) — expected, not a regression.
-      targetRevision: v0.7.0
+      # v1.0.0 — keep in lockstep with ai-gateway-crds-helm above (see its note
+      # for the v1.0 stability/deprecation summary, ADR-0069). Floor EG v1.8.1+
+      # (we run v1.8.1 ✓). Drop-in from v0.7: no breaking changes, controller
+      # values below all still valid (maxRecvMsgSize, mutatingWebhook.certManager,
+      # extProc.logLevel). The mcpproxy lives in this controller — the external-MCP
+      # Caddy/openresty proxies still front #2218/#2219, which v1.0 does not fix.
+      targetRevision: v1.0.0
       path: .
       helm:
         releaseName: aieg
