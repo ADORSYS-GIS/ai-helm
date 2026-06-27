@@ -111,7 +111,11 @@ mcp:
   # forwardHeaders → spec.backendRefs[].forwardHeaders: forward selected request
   # headers to the upstream MCP. Each entry { name, backendHeader? } — backendHeader
   # renames it upstream. Useful to pass the gateway-stamped x-oidc-user-id so the
-  # backend can attribute/personalize per user.
+  # backend can attribute/personalize per user. NB the `x-oidc-*` headers only
+  # exist when an identity layer stamps them on the route — route-level `oauth`
+  # (claimToHeaders) or, when oauth is off, the gateway-level Authorino. With no
+  # identity layer the header is simply absent (forwardHeaders is a no-op for it),
+  # never forwarded empty.
   forwardHeaders: []
   #   - name: x-oidc-user-id
   #
