@@ -100,6 +100,14 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/scoreboard.json
     resyncPeriod: 5m
+  # LIVE rate-limit quota: who is consuming the gateway and how much of their
+  # budget, read from the limiter's per-account counters in redis-ha (ADR-0070).
+  # Mimir leaderboard (prometheus-redis-exporter → gateway_ratelimit_spend_micro_usd)
+  # + a direct redis-datasource census. Raw consumption (no quota-% overlay).
+  - name: envoy-ai-gateway-ratelimit-quota
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/ratelimit-quota.json
+    resyncPeriod: 5m
   # Alloy collector health (metrics/logs/traces pipelines, OTLP receiver,
   # clustering). Targets confirmed alloy_*/prometheus_remote_storage_*/
   # loki_write_*/otelcol_receiver_* series; datasource UID hardcoded to `mimir`.

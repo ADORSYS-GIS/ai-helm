@@ -22,6 +22,10 @@ ALERTMANAGER_UID = "alertmanager"
 # gateway `user_id` (a Keycloak `sub` UUID) to a real person. Provisioned in
 # ai-helm-values environments/prod/values/grafana.yaml; see ADR-0063.
 KEYCLOAK_UID = "keycloak"
+# Redis datasource onto redis-ha — reads the AI Gateway rate-limit service's LIVE
+# per-account budget counters straight from the limiter. Provisioned in
+# ai-helm-values environments/prod/values/grafana.yaml; see ADR-0070.
+REDIS_RATELIMIT_UID = "redis-ratelimit"
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +72,27 @@ _METRIC_PREFIX = "loki_process_custom_"
 METRIC_COST_MICRO_USD = _METRIC_PREFIX + "gen_ai_usage_cost_micro_usd"
 METRIC_TOKENS = _METRIC_PREFIX + "gen_ai_usage_tokens"
 METRIC_REQUESTS = _METRIC_PREFIX + "gen_ai_requests"
+
+
+# ---------------------------------------------------------------------------
+# LIVE rate-limit quota gauge in Mimir (ADR-0070). prometheus-redis-exporter
+# SCANs the Lyft ratelimit service's monthly-budget keys in redis-ha and exports
+# each key's value; the ServiceMonitor metricRelabelings rename redis_key_value →
+# this metric and parse account_id / model / plan / plane / window out of the
+# 200-char key (see ai-helm-values environments/prod/values/
+# prometheus-redis-exporter.yaml). Value = micro-USD spent in the current 30-day
+# budget window — a GAUGE (current cumulative spend, not a counter; ÷1e6 → USD).
+# This is the limiter's own current-window state, which Mimir's historical cost
+# metrics above do NOT hold.
+# ---------------------------------------------------------------------------
+METRIC_RATELIMIT_SPEND_MICRO_USD = "gateway_ratelimit_spend_micro_usd"
+
+# Labels the metricRelabelings carve out of the ratelimit key.
+RL_LABEL_ACCOUNT = "account_id"
+RL_LABEL_MODEL = "model"
+RL_LABEL_PLAN = "plan"
+RL_LABEL_PLANE = "plane"
+RL_LABEL_WINDOW = "window"
 
 
 # ---------------------------------------------------------------------------
