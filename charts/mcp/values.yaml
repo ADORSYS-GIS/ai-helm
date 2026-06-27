@@ -96,6 +96,34 @@ mcp:
     secretName: ""
     header: "" # empty → AIEG default "Authorization" (+ "Bearer " prefix)
 
+  # ── v1.0 MCP capabilities (AIEG v1.0 / v1beta1, ADR-0069) ───────────────
+  # All default-off → the rendered MCPRoute is unchanged until a value opts in.
+  #
+  # toolFilter → spec.backendRefs[].toolSelector: narrow the tool surface this
+  # backend exposes. exclude beats include (deny-wins); *Regex are RE2 patterns.
+  # Empty (default) exposes every upstream tool.
+  toolFilter: {}
+  #   include: [tool_a, tool_b]
+  #   includeRegex: ["^search_.*$"]
+  #   exclude: [dangerous_tool]
+  #   excludeRegex: ["^admin_.*$"]
+  #
+  # forwardHeaders → spec.backendRefs[].forwardHeaders: forward selected request
+  # headers to the upstream MCP. Each entry { name, backendHeader? } — backendHeader
+  # renames it upstream. Useful to pass the gateway-stamped x-oidc-user-id so the
+  # backend can attribute/personalize per user.
+  forwardHeaders: []
+  #   - name: x-oidc-user-id
+  #
+  # authorization.rules → spec.securityPolicy.authorization.rules[].cel: CEL
+  # per-tool authorization. `tools/list` is filtered by the SAME rules as
+  # `tools/call`, so callers only discover tools they may invoke. Each CEL expr
+  # gets request.mcp.tool / request.mcp.method / request.auth.jwt.claims and must
+  # return a boolean. Empty (default) = allow-all (prior behaviour).
+  authorization:
+    rules: []
+  #   - cel: 'request.mcp.tool != "delete" || "admin" in request.auth.jwt.claims.realm_access.roles'
+
 # ── oauth: MCP-spec OAuth on the MCPRoute (ADR-0038) ──────────────────────
 # When enabled, AIEG enforces Keycloak JWTs on the route via Envoy's native
 # jwt_authn filter and serves the RFC 9728 discovery surface itself,
