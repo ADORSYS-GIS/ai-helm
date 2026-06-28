@@ -89,7 +89,24 @@ data:
 {{- $tv := index $cfg.model $tier }}
 {{- if and $tv $tv.model }}
 {{- $t := dict "base_url" "{env:LLM_BASE_URL}" "api_key" "{env:LLM_API_KEY}" "model" $tv.model }}
-{{- if ne (toString $cfg.reviewSystemPrompt) "" }}{{- $_ := set $t "system_prompt_file" "/etc/lightbridge/review-system.md" }}{{- end }}
+{{- /* Per-tier system prompt (lightbridge-ci ADR-0062): the FAST tier may use its own lean prompt
+       (config.reviewSystemPromptFast → review-system-fast.md) that tells the model it has no retrieval,
+       to review the diff directly and `finish` with a verdict — stops it burning turns calling tools it
+       can't use, and improves severity calibration. When reviewSystemPromptFast is empty the fast tier
+       falls back to the shared review-system.md; the DEEP tier always uses the shared prompt. */}}
+{{- $promptFile := "" }}
+{{- if and (eq $tier "fast") (ne (toString $cfg.reviewSystemPromptFast) "") }}
+{{- $promptFile = "/etc/lightbridge/review-system-fast.md" }}
+{{- else if ne (toString $cfg.reviewSystemPrompt) "" }}
+{{- $promptFile = "/etc/lightbridge/review-system.md" }}
+{{- end }}
+{{- if ne $promptFile "" }}{{- $_ := set $t "system_prompt_file" $promptFile }}{{- end }}
+{{- /* Per-tier tool allowlist (lightbridge-ci ADR-0062): the exact tools this tier offers the model,
+       e.g. ["add_review_comment","finish","abort"] for a diff-only fast pass. A list → truthy only when
+       non-empty; unset → the runner's built-in per-tier default. The runner validates every name and
+       fails closed on an unknown one. REQUIRES a runner image carrying review.<tier>.tools
+       (lightbridge-ci #237) before this is set, else deny_unknown_fields fails every Job. */}}
+{{- if $tv.tools }}{{- $_ := set $t "tools" $tv.tools }}{{- end }}
 {{- if $tv.maxDiffChars }}{{- $_ := set $t "max_diff_chars" $tv.maxDiffChars }}{{- end }}
 {{- if $tv.temperature }}{{- $_ := set $t "temperature" $tv.temperature }}{{- end }}
 {{- if $tv.topP }}{{- $_ := set $t "top_p" $tv.topP }}{{- end }}
@@ -133,5 +150,11 @@ data:
 {{- if ne (toString $cfg.reviewSystemPrompt) "" }}
   review-system.md: |
 {{ $cfg.reviewSystemPrompt | indent 4 }}
+{{- end }}
+{{- /* The FAST tier's lean prompt (lightbridge-ci ADR-0062), mounted as a second file the fast tier
+       points at via review.fast.system_prompt_file. Empty → the fast tier reuses review-system.md. */}}
+{{- if ne (toString $cfg.reviewSystemPromptFast) "" }}
+  review-system-fast.md: |
+{{ $cfg.reviewSystemPromptFast | indent 4 }}
 {{- end }}
 {{- end }}

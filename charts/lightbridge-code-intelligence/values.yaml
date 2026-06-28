@@ -99,6 +99,15 @@ config:
   # add_review_comment / add_comment / finish) is appended by the runner and is not part of this text.
   reviewSystemPrompt: ""
 
+  # The FAST tier's own lean system prompt (lightbridge-ci ADR-0062) → mounted as review-system-fast.md
+  # and pointed at by review.fast.system_prompt_file. Tell the fast model it has NO retrieval/read_file,
+  # to review the diff directly, record findings with add_review_comment, and ALWAYS `finish` with a
+  # verdict (even if clean) — and to raise only what's provable from the diff (phrase the unverifiable as
+  # a question, not a P0/P1). This stops the fast pass burning turns on tools it can't call and fixes the
+  # over-confident severities seen when it reused the deep prompt. Empty → the fast tier reuses
+  # reviewSystemPrompt. Set per-env in ai-helm-values.
+  reviewSystemPromptFast: ""
+
   # Review LLM generation params → the model's `options` in opencode.json. Empty → model/provider
   # default. (max_diff_chars caps the diff pasted into the prompt.) maxTurns is operator-tuned per-env
   # → ai-helm-values; the rest stay empty (provider defaults) until an env needs them.
@@ -147,6 +156,15 @@ config:
     # Set them per-env in ai-helm-values. `model` is required within a tier block (an empty model
     # disables that tier). ⚠️ REQUIRES a runner image carrying `review.fast`/`review.deep`
     # (lightbridge-ci #233) before these are set, else deny_unknown_fields fails every Job.
+    #
+    # Per-tier TOOL ALLOWLIST (lightbridge-ci ADR-0062) → agent.json `review.<tier>.tools`: a list of the
+    # exact tool names that tier offers the model. Unset → the runner's built-in per-tier default (full
+    # surface for deep; the write/finish/abort set for fast). For a true diff-only fast pass set e.g.
+    #   fast: { model: "...", tools: ["add_review_comment", "finish", "abort"] }
+    # Valid names: lightbridge_vector_semantic_search, lightbridge_graph_find_symbol,
+    # lightbridge_graph_get_callers, read_file, add_review_comment, retract_finding, add_comment, finish,
+    # report_progress, abort. The runner validates every name and fails the review closed on an unknown
+    # one. ⚠️ REQUIRES a runner image carrying `review.<tier>.tools` before it's set.
     fast: {}
     deep: {}
 
