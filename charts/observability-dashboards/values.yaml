@@ -281,3 +281,69 @@ alerting:
           for: 10m
           severity: warning
           summary: "A node is using >92% of memory for 10m (baseline runs ~87%)."
+
+    # Lightbridge Code Intelligence (LCI) — the GitHub-App PR-review bot. Signals
+    # come from the control-plane /metrics (scraped into Mimir via the chart's
+    # ServiceMonitors): services `lightbridge-ci-control-plane` +
+    # `lightbridge-ci-dispatcher` in ns `converse`. A "review" == a task == an
+    # agent Job; its terminal outcome flows through the reaper
+    # (lci_reaper_tasks_total{outcome=succeeded|failed|requeued|cancelled}) and a
+    # job that can't even start shows as lci_dispatch_jobs_total{outcome=failed}.
+    # Every expr is `… or vector(0)`-guarded so a never-yet-incremented counter
+    # (e.g. no failure ever) still evaluates the threshold instead of going
+    # NoData. Thresholds are first-pass — tune live once firing.
+    # NOTE: review *quality* ("bad reviews" — 👎 reactions / low approval rate /
+    # P0-finding surge) is NOT a metric; it lives in the lightbridge Postgres DB
+    # and is already reachable via the `lci-postgres` Grafana datasource (created
+    # by the lightbridge-observability app). A SQL-backed quality alert group is a
+    # cheap follow-up — see review-quality.json / feedback.json in the LCI repo.
+    - name: lci-review-health
+      folderRef: applications
+      interval: 1m
+      rules:
+        - uid: lci-control-plane-down
+          title: LCI — control-plane/dispatcher down
+          datasourceUid: mimir
+          # count the LCI scrape targets reporting up==0; vector(0) so a missing
+          # series (fresh roll / scrape gap) doesn't suppress the alert.
+          expr: count(up{namespace="converse", job=~"lightbridge-ci-control-plane|lightbridge-ci-dispatcher"} == 0) or vector(0)
+          fromSeconds: 600
+          op: gt
+          threshold: 0
+          for: 5m
+          severity: critical
+          summary: "LCI control-plane or dispatcher is down (up==0) — the PR-review bot is not working: webhooks won't be processed and no reviews will run."
+        - uid: lci-review-failures
+          title: LCI — reviews failing
+          datasourceUid: mimir
+          # terminal review/task outcome = failed (the agent Job errored out).
+          expr: sum(increase(lci_reaper_tasks_total{outcome="failed"}[1h])) or vector(0)
+          fromSeconds: 3600
+          op: gt
+          threshold: 2
+          for: 5m
+          severity: warning
+          summary: "More than 2 LCI reviews failed (reaper outcome=failed) in the last hour — reviews are erroring out instead of posting."
+        - uid: lci-dispatch-failures
+          title: LCI — review jobs failing to launch
+          datasourceUid: mimir
+          # the control-plane couldn't create the agent Job → the review never even started.
+          expr: sum(increase(lci_dispatch_jobs_total{outcome="failed"}[1h])) or vector(0)
+          fromSeconds: 3600
+          op: gt
+          threshold: 2
+          for: 10m
+          severity: warning
+          summary: "More than 2 LCI review jobs failed to dispatch (lci_dispatch_jobs_total outcome=failed) in the last hour — a cluster/RBAC/quota issue is stopping reviews from starting."
+        - uid: lci-webhook-signature-failures
+          title: LCI — GitHub webhook signature failures
+          datasourceUid: mimir
+          # HMAC verification failing = misconfigured webhook secret (or spoofing);
+          # deliveries are rejected so PRs never become review tasks.
+          expr: sum(increase(lci_webhook_signature_failures_total[15m])) or vector(0)
+          fromSeconds: 900
+          op: gt
+          threshold: 3
+          for: 5m
+          severity: warning
+          summary: "LCI rejected >3 GitHub webhook deliveries on signature verification in 15m — the webhook secret is likely misconfigured, so PR events are being dropped and not reviewed."
