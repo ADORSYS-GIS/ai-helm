@@ -637,12 +637,13 @@ lci:
             capabilities:
               drop: [ALL]
 
-    # Review-feedback poller (ADR-0035): a single replica that periodically reads reactions on the
-    # comments we posted and reconciles them into review_feedback. SAME image as control-plane/
-    # dispatcher (role-selected via CONTROL_PLANE_ROLE). Unlike the dispatcher it holds the GitHub App
-    # key (to mint installation tokens for reading reactions); ONE replica so reactions aren't
-    # double-polled (ADR-0002 keeps the credential off the multi-replica serve pods + the dispatcher).
-    poller:
+    # Reconciler (ADR-0058/0059): a SINGLE replica that owns ALL GitHub egress — it drains the
+    # github_outbox and delivers reviews/replies/reactions/failure-notices, AND runs the feedback poll
+    # (reads reactions on our comments into review_feedback, ADR-0035). SAME image as control-plane/
+    # dispatcher (role-selected via CONTROL_PLANE_ROLE=reconciler; `poller` is the legacy alias the
+    # binary still accepts). It holds the GitHub App key (to mint installation tokens); ONE replica so
+    # egress isn't doubled (ADR-0002 keeps the credential off the multi-replica serve pods + dispatcher).
+    reconciler:
       type: deployment
       replicas: 1
       annotations:
@@ -652,14 +653,14 @@ lci:
           image:
             repository: ghcr.io/vymalo/lightbridge-control-plane
             # Default/fallback; the deployed tag is overridden at sync time by ai-helm-values via the
-            # image-updater `poll` alias (charts/apps/values.yaml), in lockstep with control-plane.
+            # image-updater `recon` alias (charts/apps/values.yaml), in lockstep with control-plane.
             tag: "0.1.0"
             pullPolicy: IfNotPresent
           env:
-            CONTROL_PLANE_ROLE: "poller"
+            CONTROL_PLANE_ROLE: "reconciler"
             RUST_LOG: "info"
             METRICS_ADDR: "0.0.0.0:9090"
-            # Optional cadence knobs; absent → run_poller defaults (300s interval / 14-day window).
+            # Optional cadence knobs; absent → run_reconciler defaults (300s interval / 14-day window).
             # DATABASE_URL `value` (cluster host/namespace/db) → ai-helm-values; `dependsOn` stays here.
             DB_PASSWORD:
               valueFrom:
@@ -669,8 +670,8 @@ lci:
             DATABASE_URL:
               dependsOn: DB_PASSWORD
               value: ""
-            # The poller mints installation tokens to read reactions, so it needs the GitHub App key
-            # (the dispatcher does not). Same secret the control-plane uses.
+            # The reconciler mints installation tokens (for GitHub egress + reading reactions), so it
+            # needs the GitHub App key (the dispatcher does not). Same secret the control-plane uses.
             GITHUB_APP_ID:
               valueFrom:
                 secretKeyRef:
@@ -731,7 +732,7 @@ lci:
         http:
           port: 7474
     # Metrics-only Service for the dispatcher role (METRICS_ADDR :9090). The serve role's /metrics is
-    # already on the control-plane Service (:8080); the dispatcher/poller have no Service otherwise, so
+    # already on the control-plane Service (:8080); the dispatcher/reconciler have no Service otherwise, so
     # this gives the ServiceMonitor (templates/servicemonitor.yaml) a stable Endpoints target. The
     # dispatcher pod declares no containerPort, but a Service routes by numeric targetPort regardless.
     dispatcher:

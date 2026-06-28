@@ -497,10 +497,10 @@ applications:
       # declares, which otherwise show a permanent cosmetic OutOfSync + selfHeal churn.
       # ServerSideDiff ignores those server-owned fields so the app reads Synced.
       argocd.argoproj.io/compare-options: ServerSideDiff=true
-      # Images aliased: cp/disp/poll (control-plane, role-selected), web, runner (the one-shot
+      # Images aliased: cp/disp/recon (control-plane, role-selected), web, runner (the one-shot
       # agent-runner/indexer image the dispatcher launches), and review (the slimmer review-only Job
       # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,poll=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,recon=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -520,16 +520,17 @@ applications:
       argocd-image-updater.argoproj.io/disp.signature-type: cosign
       argocd-image-updater.argoproj.io/disp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/disp.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
-      # ── poller (SAME image as control-plane, role-selected) — keeps its tag in lockstep so the
-      #    feedback reconcile loop never lags the control-plane on a build. ──
-      argocd-image-updater.argoproj.io/poll.update-strategy: newest-build
-      argocd-image-updater.argoproj.io/poll.allow-tags: regexp:^sha-[0-9a-f]+$
-      argocd-image-updater.argoproj.io/poll.force-update: "true"
-      argocd-image-updater.argoproj.io/poll.helm.image-name: lci.controllers.poller.containers.main.image.repository
-      argocd-image-updater.argoproj.io/poll.helm.image-tag: lci.controllers.poller.containers.main.image.tag
-      argocd-image-updater.argoproj.io/poll.signature-type: cosign
-      argocd-image-updater.argoproj.io/poll.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/poll.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── reconciler (SAME image as control-plane, role-selected) — the single GitHub-egress drainer +
+      #    feedback poll; keeps its tag in lockstep so egress never lags the control-plane on a build.
+      #    (alias `recon`; was `poll` before the ADR-0058 rename.) ──
+      argocd-image-updater.argoproj.io/recon.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/recon.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/recon.force-update: "true"
+      argocd-image-updater.argoproj.io/recon.helm.image-name: lci.controllers.reconciler.containers.main.image.repository
+      argocd-image-updater.argoproj.io/recon.helm.image-tag: lci.controllers.reconciler.containers.main.image.tag
+      argocd-image-updater.argoproj.io/recon.signature-type: cosign
+      argocd-image-updater.argoproj.io/recon.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/recon.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── web ──
       argocd-image-updater.argoproj.io/web.update-strategy: newest-build
       argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$
