@@ -88,6 +88,8 @@ overridable locally.
 | `reddit` | **local** (`npx`, no key) | `reddit-mcp-server` (anonymous-read social listening) | `true` |
 | `youtube` | **local** (`npx`, no key) | `@sinco-lab/mcp-youtube-transcript` (video transcripts) | `true` |
 | `rss` | **local** (`npx`, no key) | `rss-mcp` (RSS/Atom feed reader) | `true` |
+| `jira` | **local** (`npx`, per-user token) | `@aashari/mcp-server-atlassian-jira` (`ATLASSIAN_SITE_NAME`/`USER_EMAIL`/`API_TOKEN`) | `true` |
+| `confluence` | **local** (`npx`, per-user token) | `@aashari/mcp-server-atlassian-confluence` (same Atlassian vars) | `true` |
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
   with the **same** `opencode-cli` Keycloak client
@@ -117,9 +119,16 @@ overridable locally.
   API key / token / signup**, so they work for every user on day one (the
   lowest-friction org-wide push). `git` shells to the `git` binary; `shadcn`
   picks up a user's own `GITHUB_PERSONAL_ACCESS_TOKEN` if set (not injected by
-  us). Token-gated servers (Notion/Figma/Tavily/Exa/Sentry/21st.dev/Atlassian
-  npx) and the remote-only trackers (**GitHub**, **Linear**, rich **Atlassian** —
-  not `npx`-able) are deferred to opt-in / gateway-route batches.
+  us). Token-gated servers (Notion/Figma/Tavily/Exa/Sentry/21st.dev) are
+  deferred to opt-in batches.
+- **Atlassian per-user batch (ADR-0073)** — `jira` + `confluence` are local
+  `npx` servers (`@aashari/*`) read with the user's OWN Atlassian creds via
+  `{env:...}` passthrough; both share `ATLASSIAN_SITE_NAME` /
+  `ATLASSIAN_USER_EMAIL` / `ATLASSIAN_API_TOKEN`, so a user sets them once. A
+  user without them sees `@atlassian` fail when invoked. **GitHub** is NOT a
+  local server (the official npm one is deprecated → Go binary); it's planned as
+  a centralized **gateway `/mcp/github` route** backed by a GitHub App
+  (ADR-0073 phase 2), reusing the remote `/mcp` + Keycloak-JWT pattern.
 - The `chrome-devtools` **local** MCP was removed — live-browser inspection is now
   the `@vymalo/opencode-browser` plugin's `browser_*` tools, owned by `@browser`.
 
@@ -133,14 +142,14 @@ Tool access is modelled on **two decoupled axes**:
 - **Connectivity** — `config.mcp.<name>.enabled` decides whether opencode
   connects to a server at all. A tool only exists if its server is connected, so
   every server a role needs is `enabled: true` (brave, context7, terraform,
-  refero, the local memory/sequentialthinking/mobile, and the no-key
-  git/drawio/shadcn/reddit/youtube/rss); `enabled: false` = not connected
-  (firecrawl, until a role needs it).
+  refero, the local memory/sequentialthinking/mobile, the no-key
+  git/drawio/shadcn/reddit/youtube/rss, and the per-user jira/confluence);
+  `enabled: false` = not connected (firecrawl, until a role needs it).
 - **Access** — a global `config.permission` **deny-baseline** denies every
   connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`,
   `memory_*`, `sequentialthinking_*`, `mobile_*`, `git_*`, `drawio_*`,
-  `shadcn_*`, `reddit_*`, `youtube_*`, `rss_*`) plus the
-  `@vymalo/opencode-browser` plugin's `browser_*` tools. Each role is a
+  `shadcn_*`, `reddit_*`, `youtube_*`, `rss_*`, `jira_*`, `confluence_*`) plus
+  the `@vymalo/opencode-browser` plugin's `browser_*` tools. Each role is a
   **`mode: subagent`** the primary delegates to (`@name` / the task tool) and a
   **whitelist** that re-allows only its tools + its file/bash scope (per-agent
   permission overrides the root).
@@ -185,6 +194,7 @@ Tool access is modelled on **two decoupled axes**:
 | `ui` | subagent | *inherit* | deny | deny | `shadcn_*` (shadcn/ui component metadata) |
 | `diagram` | subagent | *inherit* | deny | deny | `drawio_*` (editable diagrams) |
 | `content` | subagent | *inherit* | deny | deny | `reddit_*`, `youtube_*`, `rss_*`, `webfetch` (marketing/content research) |
+| `atlassian` | subagent | *inherit* | deny | deny | `jira_*`, `confluence_*` (per-user Atlassian creds; read/search-first) |
 
 > **`@frontend` is the org-wide default PRIMARY (`config.default_agent`), kept
 > lean.** It implements directly (`edit` + JS toolchain) and **delegates** the

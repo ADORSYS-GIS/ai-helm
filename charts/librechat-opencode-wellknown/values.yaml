@@ -421,6 +421,43 @@ wellKnown:
           - "rss-mcp"
         enabled: true            # connected; scoped to the @content subagent
 
+      # ── Atlassian: per-user token local batch (ADR-0073) ───────────────
+      # Jira + Confluence as `type: local` npx servers (author @aashari). Per
+      # ADR-0073 these are PER-USER: the user exports their own Atlassian
+      # credentials and we pass them through with {env:...} — both servers
+      # share the SAME three vars, so the user sets them ONCE:
+      #   ATLASSIAN_SITE_NAME   (the "your-company" part of *.atlassian.net)
+      #   ATLASSIAN_USER_EMAIL  (their Atlassian account email)
+      #   ATLASSIAN_API_TOKEN   (id.atlassian.com → API tokens)
+      # A user who hasn't set them sees @atlassian fail when invoked (same
+      # accepted trade-off as the other local servers). GitHub is NOT here —
+      # it has no npx server (the official npm one is deprecated → Go binary),
+      # so it goes on a centralized gateway /mcp/github route backed by a
+      # GitHub App (ADR-0073 phase 2; out-of-band App + secret). Both servers
+      # scoped to the @atlassian subagent.
+      jira:
+        type: local
+        command:
+          - npx
+          - "-y"
+          - "@aashari/mcp-server-atlassian-jira"
+        environment:
+          ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
+          ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
+          ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
+        enabled: true            # connected; scoped to the @atlassian subagent
+      confluence:
+        type: local
+        command:
+          - npx
+          - "-y"
+          - "@aashari/mcp-server-atlassian-confluence"
+        environment:
+          ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
+          ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
+          ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
+        enabled: true            # connected; scoped to the @atlassian subagent
+
     # ────────────────────────────────────────────────────────────────────
     # Global permission baseline (ADR-0044) — keeps the PRIMARY/default agent
     # LEAN: every connected MCP tool is denied by default, so the main agent
@@ -455,6 +492,10 @@ wellKnown:
       "reddit_*": deny
       "youtube_*": deny
       "rss_*": deny
+      # Atlassian per-user batch (ADR-0073) — off the primary, re-allowed
+      # only on @atlassian.
+      "jira_*": deny
+      "confluence_*": deny
 
     # ────────────────────────────────────────────────────────────────────
     # Agents (ADR-0044, topology revised by ADR-0048). The `frontend` entry is
@@ -737,6 +778,28 @@ wellKnown:
           "reddit_*": allow
           "youtube_*": allow
           "rss_*": allow
+      atlassian:
+        mode: subagent
+        description: >-
+          Reads and searches Jira (projects, issues via JQL, dev info) and
+          Confluence (spaces, pages) via the Atlassian MCP servers, and
+          returns a concise summary. Delegate for "find the Jira ticket /
+          what's the status of X / look up the Confluence spec". Requires the
+          user's own Atlassian credentials (ATLASSIAN_SITE_NAME /
+          ATLASSIAN_USER_EMAIL / ATLASSIAN_API_TOKEN) in their environment.
+        temperature: 0.2
+        prompt: >-
+          You are an Atlassian specialist. Use the jira_* tools (search issues
+          via JQL, read issues + their linked dev info) and confluence_* tools
+          (search spaces, read pages) to answer the caller's question, then
+          return a concise, link-bearing summary. Default to read/search; if a
+          write is requested, confirm the exact target and scope first. You do
+          not edit local files or run shell — use only the Atlassian tools.
+        permission:
+          edit: deny
+          bash: deny
+          "jira_*": allow
+          "confluence_*": allow
       # ── PRIMARY (the org-wide default agent, ADR-0048) ──────────────────
       # A LEAN, frontend-flavoured primary. It IMPLEMENTS directly (edit + JS
       # toolchain) and DELEGATES tool-heavy work to subagents (browser →
@@ -781,6 +844,8 @@ wellKnown:
             `@diagram`.
           • to research external content (Reddit/YouTube/RSS/news) → delegate
             to `@content`.
+          • to look up Jira issues or Confluence pages → delegate to
+            `@atlassian`.
           Close the loop: implement → ask @browser to reload + screenshot +
           report → compare to the @design reference → decide what's off →
           implement again, until it matches. Destructive commands (rm, etc.) and
