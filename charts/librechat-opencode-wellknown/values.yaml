@@ -292,6 +292,66 @@ wellKnown:
         oauth: *mcpOAuth
         enabled: true            # connected; scoped to the iac agent
 
+      # ── Local servers (ADR-0071) ───────────────────────────────────────
+      # Run on the USER's own machine — opencode CLI spawns each via `npx`
+      # (`type: local`, stdout/stdin stdio transport), NOT through the gateway
+      # /mcp/* routes. So no OAuth anchor, no remote rate-limit — they're a
+      # client-side capability, same trade-off as @vymalo/opencode-browser
+      # (a user without the toolchain just sees the tool fail to spawn).
+      #
+      # NPM-ONLY batch (this ADR): every server here is a self-contained Node
+      # package runnable with bare `npx` — no Python, no API key. The
+      # Python-backed candidates the maintainer also asked about
+      # (mem0, MCP-Mathematics → `uvx`; pdfmux → npm wrapper that still needs
+      # `pip install pdfmux` + an LLM key) are DEFERRED to a later batch
+      # ("observe the python plugins then") — do NOT add them as local npx
+      # servers; they need a different (sidecar/uvx) packaging decision.
+      #
+      # NOT version-pinned (unlike the `plugin:` list, which is): MCP servers
+      # are separate processes behind a tool-protocol boundary (lower blast
+      # radius than in-process plugins), so they float to @latest like the
+      # remotes. Pin a `name@x.y.z` here if drift ever bites.
+      #
+      # Each is connected (`enabled: true`) but DENIED on the primary by the
+      # baseline below and re-allowed ONLY on its dedicated subagent — so the
+      # default agent never carries these tool schemas (ADR-0044/0048 model).
+      memory:
+        type: local
+        # Official knowledge-graph memory server. MEMORY_FILE_PATH points at
+        # opencode's own config dir (reliably present + writable — opencode
+        # created it), giving a stable PER-USER (cross-project) graph rather
+        # than the package-relative default. Scoped to the @memory subagent.
+        command:
+          - npx
+          - "-y"
+          - "@modelcontextprotocol/server-memory"
+        environment:
+          MEMORY_FILE_PATH: "{env:HOME}/.config/opencode/memory.json"
+        enabled: true            # connected; scoped to the @memory subagent
+      sequentialthinking:
+        type: local
+        # Official structured-reasoning server (one tool). Scoped to @plan —
+        # the primary delegates hard "think this through / design X" problems
+        # to it instead of carrying the tool itself.
+        command:
+          - npx
+          - "-y"
+          - "@modelcontextprotocol/server-sequential-thinking"
+        enabled: true            # connected; scoped to the @plan subagent
+      mobile:
+        type: local
+        # Mobile-Next: drives iOS Simulators / Android Emulators / physical
+        # devices via accessibility tree + screenshots. Needs the user's
+        # mobile toolchain (Xcode CLT / Android platform-tools) + Node ≥22 —
+        # users without it just see the tools fail to connect (accepted, same
+        # as the browser bridge). Returns screenshots → scoped to the @mobile
+        # subagent, which pins a multimodal model.
+        command:
+          - npx
+          - "-y"
+          - "@mobilenext/mobile-mcp@latest"
+        enabled: true            # connected; scoped to the @mobile subagent
+
     # ────────────────────────────────────────────────────────────────────
     # Global permission baseline (ADR-0044) — keeps the PRIMARY/default agent
     # LEAN: every connected MCP tool is denied by default, so the main agent
@@ -312,6 +372,12 @@ wellKnown:
       # (At call time plugin tools aren't ctx.ask-gated like MCP tools, but
       # that's moot for a denied tool — the model never receives it.)
       "browser_*": deny
+      # Local npx servers (ADR-0071) — same deny-then-re-allow discipline as
+      # the remotes: each stays OUT of the primary's injected toolset and is
+      # re-allowed only on its dedicated subagent (@memory / @plan / @mobile).
+      "memory_*": deny
+      "sequentialthinking_*": deny
+      "mobile_*": deny
 
     # ────────────────────────────────────────────────────────────────────
     # Agents (ADR-0044, topology revised by ADR-0048). The `frontend` entry is
@@ -471,6 +537,50 @@ wellKnown:
           bash: deny
           skill: allow
           "context7_*": allow
+      # ── Local-MCP role subagents (ADR-0071). Non-visual → NO model pin,
+      #    inherit the session model. Read-only on code (no edit/bash) so
+      #    they stay safe to delegate to org-wide. ─────────────────────────
+      memory:
+        mode: subagent
+        description: >-
+          Persists and recalls facts in a knowledge graph (entities,
+          relations, observations) via the local Memory MCP. Read/write the
+          GRAPH only — never edits files or runs shell. Delegate for
+          "remember this / what do you know about X / recall …" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are a memory specialist backed by a knowledge-graph MCP. Use the
+          memory_* tools to create/search/read entities, relations, and
+          observations, and return a concise answer (or confirm what you
+          stored). The graph is per-user and persists across sessions — keep
+          it tidy: prefer updating an existing entity over creating a
+          near-duplicate. You cannot edit files or run shell — do not attempt
+          to.
+        permission:
+          edit: deny
+          bash: deny
+          "memory_*": allow
+      plan:
+        mode: subagent
+        description: >-
+          Thinks through hard problems step by step (Sequential-Thinking MCP)
+          and returns a structured plan or analysis. READ-ONLY — never edits
+          files or runs shell. Delegate for "design / plan / reason through /
+          figure out the approach for X" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are a planning and reasoning specialist. Use the
+          sequentialthinking tool to break a hard problem into ordered,
+          revisable steps, and read the repo freely to ground your reasoning;
+          use Context7 for authoritative library facts when an API detail
+          matters. Return a clear, structured plan or analysis with concrete
+          next steps for the caller to execute. You cannot edit files or run
+          shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "sequentialthinking_*": allow
+          "context7_*": allow
       # ── PRIMARY (the org-wide default agent, ADR-0048) ──────────────────
       # A LEAN, frontend-flavoured primary. It IMPLEMENTS directly (edit + JS
       # toolchain) and DELEGATES tool-heavy work to subagents (browser →
@@ -502,6 +612,12 @@ wellKnown:
           • for design references / visual targets → delegate to `@design`.
           • for authoritative library/framework docs → delegate to
             `@doc-research`.
+          • to drive/screenshot the app on a phone (iOS/Android) → delegate to
+            `@mobile`.
+          • to think through a hard design/approach problem step by step →
+            delegate to `@plan`.
+          • to remember a fact for later, or recall what's known → delegate to
+            `@memory`.
           Close the loop: implement → ask @browser to reload + screenshot +
           report → compare to the @design reference → decide what's off →
           implement again, until it matches. Destructive commands (rm, etc.) and
@@ -593,6 +709,33 @@ wellKnown:
           edit: deny
           bash: deny
           "refero_*": allow
+      mobile:
+        mode: subagent
+        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads device screenshots
+        description: >-
+          Drives a mobile device through the local Mobile-Next MCP — lists and
+          launches apps, taps/swipes/types by accessibility element or
+          screen coordinates, and screenshots iOS Simulators / Android
+          Emulators / physical devices — then REPORTS what it observed (it
+          reads the screenshots it captures). READ-ONLY on the filesystem;
+          never edits code or runs shell. Delegate for "open / drive /
+          screenshot the app on a phone". Requires the user's mobile
+          toolchain (Xcode CLT / Android platform-tools) + a running
+          simulator/emulator or connected device.
+        temperature: 0.3
+        prompt: >-
+          You are a mobile-automation specialist. Use the mobile_* tools to
+          list/launch apps, read the on-screen elements (accessibility tree),
+          tap/type/swipe (by element ref where available, else by
+          coordinates), and screenshot the device, then REPORT back concisely
+          what you saw — read any screenshot you capture and describe the
+          relevant UI state for the caller. List elements first to target
+          actions reliably; avoid blind coordinate taps when an element ref
+          exists. You cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "mobile_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the

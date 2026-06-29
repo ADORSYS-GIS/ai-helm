@@ -79,6 +79,9 @@ overridable locally.
 | `terraform` | remote | gateway `/mcp/terraform` (IaC) | `true` |
 | `refero` | remote | gateway `/mcp/refero` (design refs) | `true` |
 | `firecrawl` | remote | gateway `/mcp/firecrawl` (web scraping) | `false` |
+| `memory` | **local** (`npx`) | `@modelcontextprotocol/server-memory` (knowledge graph; `MEMORY_FILE_PATH={env:HOME}/.config/opencode/memory.json`) | `true` |
+| `sequentialthinking` | **local** (`npx`) | `@modelcontextprotocol/server-sequential-thinking` (structured reasoning) | `true` |
+| `mobile` | **local** (`npx`) | `@mobilenext/mobile-mcp@latest` (iOS/Android device automation) | `true` |
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
   with the **same** `opencode-cli` Keycloak client
@@ -93,9 +96,18 @@ overridable locally.
   only via `@iac` / `@frontend`, never the default agent. `firecrawl` stays
   unconnected until a role claims it. (ADR-0042 originally shipped only `brave` +
   `context7` connected; ADR-0044 connected the rest as roles needed them.)
-- All connected MCP servers are now **remote** (gateway `/mcp/<name>` routes).
-  The `chrome-devtools` **local** MCP was removed — live-browser inspection is now
-  the `@vymalo/opencode-browser` plugin's `browser_*` tools, owned by `@frontend`.
+- **Local servers (ADR-0071)** are spawned by the opencode CLI on the user's own
+  machine via `npx` over stdio (`type: local`) — no gateway route, no OAuth
+  anchor, no remote rate-limit. They're a client-side capability (same trade-off
+  as the `@vymalo/opencode-browser` bridge: a user without the toolchain just
+  sees the tool fail to spawn). `memory`/`sequentialthinking` need only `npx`;
+  `mobile` additionally needs Xcode CLT / Android platform-tools + a running
+  simulator/emulator. They are **not** version-pinned (separate processes behind
+  a tool boundary → float like the remotes; pin `name@x.y.z` if drift bites).
+  The deferred Python-backed batch (mem0, MCP-Mathematics → `uvx`; pdfmux → npm
+  wrapper needing `pip install pdfmux` + an LLM key) is **not** added here.
+- The `chrome-devtools` **local** MCP was removed — live-browser inspection is now
+  the `@vymalo/opencode-browser` plugin's `browser_*` tools, owned by `@browser`.
 
 To verify it reached a server after deploy: `opencode mcp list` shows the merged
 catalog; the rendered descriptor's `config.mcp` should match the table above.
@@ -107,10 +119,12 @@ Tool access is modelled on **two decoupled axes**:
 - **Connectivity** — `config.mcp.<name>.enabled` decides whether opencode
   connects to a server at all. A tool only exists if its server is connected, so
   every server a role needs is `enabled: true` (brave, context7, terraform,
-  refero); `enabled: false` = not connected (firecrawl, until a role needs it).
+  refero, and the local memory/sequentialthinking/mobile); `enabled: false` =
+  not connected (firecrawl, until a role needs it).
 - **Access** — a global `config.permission` **deny-baseline** denies every
-  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`)
-  plus the `@vymalo/opencode-browser` plugin's `browser_*` tools. Each role is a
+  connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`,
+  `memory_*`, `sequentialthinking_*`, `mobile_*`) plus the
+  `@vymalo/opencode-browser` plugin's `browser_*` tools. Each role is a
   **`mode: subagent`** the primary delegates to (`@name` / the task tool) and a
   **whitelist** that re-allows only its tools + its file/bash scope (per-agent
   permission overrides the root).
@@ -148,6 +162,9 @@ Tool access is modelled on **two decoupled axes**:
 | `reviewer` | subagent | *inherit* | deny | deny | `context7_*` |
 | `test` | subagent | *inherit* | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
 | `skill` | subagent | *inherit* | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
+| `mobile` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `mobile_*` (device automation; reads screenshots) |
+| `memory` | subagent | *inherit* | deny | deny | `memory_*` (knowledge-graph r/w) |
+| `plan` | subagent | *inherit* | deny | deny | `sequentialthinking_*`, `context7_*` (read-only reasoning/planning) |
 
 > **`@frontend` is the org-wide default PRIMARY (`config.default_agent`), kept
 > lean.** It implements directly (`edit` + JS toolchain) and **delegates** the
@@ -160,8 +177,9 @@ Tool access is modelled on **two decoupled axes**:
 >
 > **Model pinning — vision-only (no-risk rule):** pin a multimodal model **only**
 > on the agents whose tools return images they must interpret — `@browser`
-> (`browser_screenshot`) and `@design` (`refero_get_screen_image`) — so they
-> **always** have vision regardless of the session model. **Every other agent**
+> (`browser_screenshot`), `@design` (`refero_get_screen_image`), and `@mobile`
+> (device screenshots) — so they **always** have vision regardless of the session
+> model. **Every other agent**
 > (the `frontend` primary *and* all role subagents) carries **no `model`** and
 > inherits the user's session model. This drops the old per-role cost-lean pins
 > (ADR-0044): simpler and risk-free, at the cost that those roles no longer force a
