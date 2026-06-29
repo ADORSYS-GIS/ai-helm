@@ -28,12 +28,13 @@ each via `npx` over stdio) and gate each behind a new role subagent, following
 the ADR-0044/0048 deny-then-re-allow discipline:
 
 - **`memory`** → `npx -y @modelcontextprotocol/server-memory`, with
-  `environment.MEMORY_FILE_PATH = {env:HOME}/.config/opencode/memory.json` (a
-  stable, reliably-writable per-user path — opencode's own config dir — rather
-  than the package-relative default). Scoped to the new **`@memory`** subagent
-  (read/write the graph only; no edit/bash; no model pin).
+  `environment.MEMORY_FILE_PATH = {env:HOME}/.local/share/opencode/memory.json`
+  (opencode's **data** dir, where `auth.json` is written on `opencode auth
+  login` — so it reliably exists before the first write; NOT `~/.config/opencode`,
+  the optional global-config dir a login-only user may lack). Scoped to the new
+  **`@memory`** subagent (read/write the graph only; no edit/bash; no model pin).
 - **`sequentialthinking`** → `npx -y @modelcontextprotocol/server-sequential-thinking`.
-  Scoped to the new **`@plan`** subagent (read-only deep-reasoning planner; also
+  Scoped to the new **`@planner`** subagent (read-only deep-reasoning; also
   allowed context7 for facts; no edit/bash; no model pin).
 - **`mobile`** → `npx -y @mobilenext/mobile-mcp@latest`. Scoped to the new
   **`@mobile`** subagent. Because its tools return device screenshots the agent
@@ -43,7 +44,7 @@ the ADR-0044/0048 deny-then-re-allow discipline:
 All three are added to the global `permission` deny-baseline
 (`memory_*`/`sequentialthinking_*`/`mobile_*` → `deny`) so the lean `frontend`
 primary never carries their schemas; the primary's prompt gains explicit
-delegation lines for `@mobile`/`@plan`/`@memory`. Local servers are **not**
+delegation lines for `@mobile`/`@planner`/`@memory`. Local servers are **not**
 version-pinned (unlike the in-process `plugin:` list): they're separate
 processes behind a tool-protocol boundary, so they float to `@latest` like the
 remotes; pin a `name@x.y.z` later only if drift bites.
@@ -86,7 +87,7 @@ remotes; pin a `name@x.y.z` later only if drift bites.
   lean-primary policy (ADR-0044/0048); the memory + mobile tool sets are large
   and would bloat every default turn's context.
 - **Make `sequentialthinking` a tool allowed broadly across existing subagents**
-  instead of a dedicated `@plan` — rejected for now: a single delegation target
+  instead of a dedicated `@planner` — rejected for now: a single delegation target
   keeps it off every other context and matches the "delegate tool-heavy work"
   shape; it can be additionally allowed on reasoning-heavy roles later if useful.
 - **Include pdfmux in this npm batch** (the maintainer specifically wants PDF

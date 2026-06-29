@@ -79,7 +79,7 @@ overridable locally.
 | `terraform` | remote | gateway `/mcp/terraform` (IaC) | `true` |
 | `refero` | remote | gateway `/mcp/refero` (design refs) | `true` |
 | `firecrawl` | remote | gateway `/mcp/firecrawl` (web scraping) | `false` |
-| `memory` | **local** (`npx`) | `@modelcontextprotocol/server-memory` (knowledge graph; `MEMORY_FILE_PATH={env:HOME}/.config/opencode/memory.json`) | `true` |
+| `memory` | **local** (`npx`) | `@modelcontextprotocol/server-memory` (knowledge graph; `MEMORY_FILE_PATH={env:HOME}/.local/share/opencode/memory.json`) | `true` |
 | `sequentialthinking` | **local** (`npx`) | `@modelcontextprotocol/server-sequential-thinking` (structured reasoning) | `true` |
 | `mobile` | **local** (`npx`) | `@mobilenext/mobile-mcp@latest` (iOS/Android device automation) | `true` |
 | `git` | **local** (`npx`, no key) | `@cyanheads/git-mcp-server` (local git on the working tree) | `true` |
@@ -189,7 +189,7 @@ Tool access is modelled on **two decoupled axes**:
 | `skill` | subagent | *inherit* | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 | `mobile` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `mobile_*` (device automation; reads screenshots) |
 | `memory` | subagent | *inherit* | deny | deny | `memory_*` (knowledge-graph r/w) |
-| `plan` | subagent | *inherit* | deny | deny | `sequentialthinking_*`, `context7_*` (read-only reasoning/planning) |
+| `planner` | subagent | *inherit* | deny | deny | `sequentialthinking_*`, `context7_*` (read-only reasoning/planning; named `planner` — `plan` is a built-in) |
 | `vcs` | subagent | *inherit* | deny | deny | `git_*` (local git on the working tree) |
 | `ui` | subagent | *inherit* | deny | deny | `shadcn_*` (shadcn/ui component metadata) |
 | `diagram` | subagent | *inherit* | deny | deny | `drawio_*` (editable diagrams) |

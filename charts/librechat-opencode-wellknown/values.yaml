@@ -318,26 +318,31 @@ wellKnown:
       memory:
         type: local
         # Official knowledge-graph memory server. MEMORY_FILE_PATH points at
-        # opencode's own config dir (reliably present + writable — opencode
-        # created it), giving a stable PER-USER (cross-project) graph rather
-        # than the package-relative default. Scoped to the @memory subagent.
+        # opencode's DATA dir — `~/.local/share/opencode` is where opencode
+        # writes auth.json on `opencode auth login` (the step every user runs
+        # to GET this config), so the directory reliably exists before the
+        # first @memory write. (NOT `~/.config/opencode`: that's the OPTIONAL
+        # global-config dir, absent for a login-only user — and the memory
+        # server creates the file but not missing parent dirs → first write
+        # would ENOENT.) Stable PER-USER (cross-project) graph.
         command:
           - npx
           - "-y"
           - "@modelcontextprotocol/server-memory"
         environment:
-          MEMORY_FILE_PATH: "{env:HOME}/.config/opencode/memory.json"
+          MEMORY_FILE_PATH: "{env:HOME}/.local/share/opencode/memory.json"
         enabled: true            # connected; scoped to the @memory subagent
       sequentialthinking:
         type: local
-        # Official structured-reasoning server (one tool). Scoped to @plan —
-        # the primary delegates hard "think this through / design X" problems
-        # to it instead of carrying the tool itself.
+        # Official structured-reasoning server (one tool). Scoped to @planner
+        # — the primary delegates hard "think this through / design X" problems
+        # to it instead of carrying the tool itself. (NOT named `plan`: that is
+        # an opencode BUILT-IN primary agent — see the @planner subagent.)
         command:
           - npx
           - "-y"
           - "@modelcontextprotocol/server-sequential-thinking"
-        enabled: true            # connected; scoped to the @plan subagent
+        enabled: true            # connected; scoped to the @planner subagent
       mobile:
         type: local
         # Mobile-Next: drives iOS Simulators / Android Emulators / physical
@@ -346,10 +351,16 @@ wellKnown:
         # users without it just see the tools fail to connect (accepted, same
         # as the browser bridge). Returns screenshots → scoped to the @mobile
         # subagent, which pins a multimodal model.
+        # `timeout` here is opencode's TOOL-FETCH timeout (initial tool listing
+        # from the server), default 5000ms — NOT a per-call timeout. Raised
+        # because mobile-mcp enumerates simulators/emulators/devices at startup
+        # (+ a possible cold `npx` install), which can exceed 5s and would
+        # otherwise drop the whole server before any tool is usable.
         command:
           - npx
           - "-y"
           - "@mobilenext/mobile-mcp@latest"
+        timeout: 60000
         enabled: true            # connected; scoped to the @mobile subagent
 
       # ── No-key local batch (ADR-0072) ──────────────────────────────────
@@ -480,7 +491,7 @@ wellKnown:
       "browser_*": deny
       # Local npx servers (ADR-0071) — same deny-then-re-allow discipline as
       # the remotes: each stays OUT of the primary's injected toolset and is
-      # re-allowed only on its dedicated subagent (@memory / @plan / @mobile).
+      # re-allowed only on its dedicated subagent (@memory / @planner / @mobile).
       "memory_*": deny
       "sequentialthinking_*": deny
       "mobile_*": deny
@@ -678,7 +689,10 @@ wellKnown:
           edit: deny
           bash: deny
           "memory_*": allow
-      plan:
+      # NB: named `planner`, NOT `plan` — `plan` is an opencode BUILT-IN primary
+      # agent (alongside `build`); defining `agent.plan` here would override/
+      # demote the built-in read-only Plan primary for every user org-wide.
+      planner:
         mode: subagent
         description: >-
           Thinks through hard problems step by step (Sequential-Thinking MCP)
@@ -834,7 +848,7 @@ wellKnown:
           • to drive/screenshot the app on a phone (iOS/Android) → delegate to
             `@mobile`.
           • to think through a hard design/approach problem step by step →
-            delegate to `@plan`.
+            delegate to `@planner`.
           • to remember a fact for later, or recall what's known → delegate to
             `@memory`.
           • for git on the working tree (diff/commit/branch/stash) → delegate
