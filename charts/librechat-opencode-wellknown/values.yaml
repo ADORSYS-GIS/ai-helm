@@ -292,6 +292,183 @@ wellKnown:
         oauth: *mcpOAuth
         enabled: true            # connected; scoped to the iac agent
 
+      # ── Local servers (ADR-0071) ───────────────────────────────────────
+      # Run on the USER's own machine — opencode CLI spawns each via `npx`
+      # (`type: local`, stdout/stdin stdio transport), NOT through the gateway
+      # /mcp/* routes. So no OAuth anchor, no remote rate-limit — they're a
+      # client-side capability, same trade-off as @vymalo/opencode-browser
+      # (a user without the toolchain just sees the tool fail to spawn).
+      #
+      # NPM-ONLY batch (this ADR): every server here is a self-contained Node
+      # package runnable with bare `npx` — no Python, no API key. The
+      # Python-backed candidates the maintainer also asked about
+      # (mem0, MCP-Mathematics → `uvx`; pdfmux → npm wrapper that still needs
+      # `pip install pdfmux` + an LLM key) are DEFERRED to a later batch
+      # ("observe the python plugins then") — do NOT add them as local npx
+      # servers; they need a different (sidecar/uvx) packaging decision.
+      #
+      # NOT version-pinned (unlike the `plugin:` list, which is): MCP servers
+      # are separate processes behind a tool-protocol boundary (lower blast
+      # radius than in-process plugins), so they float to @latest like the
+      # remotes. Pin a `name@x.y.z` here if drift ever bites.
+      #
+      # Each is connected (`enabled: true`) but DENIED on the primary by the
+      # baseline below and re-allowed ONLY on its dedicated subagent — so the
+      # default agent never carries these tool schemas (ADR-0044/0048 model).
+      memory:
+        type: local
+        # Official knowledge-graph memory server. MEMORY_FILE_PATH points at
+        # opencode's DATA dir — `~/.local/share/opencode` is where opencode
+        # writes auth.json on `opencode auth login` (the step every user runs
+        # to GET this config), so the directory reliably exists before the
+        # first @memory write. (NOT `~/.config/opencode`: that's the OPTIONAL
+        # global-config dir, absent for a login-only user — and the memory
+        # server creates the file but not missing parent dirs → first write
+        # would ENOENT.) Stable PER-USER (cross-project) graph.
+        command:
+          - npx
+          - "-y"
+          - "@modelcontextprotocol/server-memory"
+        environment:
+          MEMORY_FILE_PATH: "{env:HOME}/.local/share/opencode/memory.json"
+        enabled: true            # connected; scoped to the @memory subagent
+      sequentialthinking:
+        type: local
+        # Official structured-reasoning server (one tool). Scoped to @planner
+        # — the primary delegates hard "think this through / design X" problems
+        # to it instead of carrying the tool itself. (NOT named `plan`: that is
+        # an opencode BUILT-IN primary agent — see the @planner subagent.)
+        command:
+          - npx
+          - "-y"
+          - "@modelcontextprotocol/server-sequential-thinking"
+        enabled: true            # connected; scoped to the @planner subagent
+      mobile:
+        type: local
+        # Mobile-Next: drives iOS Simulators / Android Emulators / physical
+        # devices via accessibility tree + screenshots. Needs the user's
+        # mobile toolchain (Xcode CLT / Android platform-tools) + Node ≥22 —
+        # users without it just see the tools fail to connect (accepted, same
+        # as the browser bridge). Returns screenshots → scoped to the @mobile
+        # subagent, which pins a multimodal model.
+        # `timeout` here is opencode's TOOL-FETCH timeout (initial tool listing
+        # from the server), default 5000ms — NOT a per-call timeout. Raised
+        # because mobile-mcp enumerates simulators/emulators/devices at startup
+        # (+ a possible cold `npx` install), which can exceed 5s and would
+        # otherwise drop the whole server before any tool is usable.
+        command:
+          - npx
+          - "-y"
+          - "@mobilenext/mobile-mcp@latest"
+        timeout: 60000
+        enabled: true            # connected; scoped to the @mobile subagent
+
+      # ── No-key local batch (ADR-0072) ──────────────────────────────────
+      # Same `type: local` npx form as the ADR-0071 batch, but selected for
+      # ZERO setup: each runs with bare `npx` and needs NO API key / token /
+      # signup, so it works for EVERY user on day one (devs + marketing + PO)
+      # — the lowest-friction servers to push org-wide. Each is still denied
+      # on the lean primary and re-allowed only on its dedicated subagent.
+      # Verified npm-only + not deprecated (registry check 2026-06-29).
+      git:
+        type: local
+        # Local git on the working tree (status/diff/log/commit/branch/stash)
+        # as structured tools — shells out to the `git` binary (present
+        # everywhere). Fills the gap left by the DEPRECATED official GitHub
+        # npm server. Scoped to the @vcs subagent.
+        command:
+          - npx
+          - "-y"
+          - "@cyanheads/git-mcp-server"
+        enabled: true            # connected; scoped to the @vcs subagent
+      drawio:
+        type: local
+        # OFFICIAL draw.io server — generates editable diagrams (XML / CSV /
+        # Mermaid syntax) and an editor URL; pure node, NO browser binary, NO
+        # token. Great for non-coder POs. Scoped to the @diagram subagent.
+        command:
+          - npx
+          - "-y"
+          - "@drawio/mcp"
+        enabled: true            # connected; scoped to the @diagram subagent
+      shadcn:
+        type: local
+        # shadcn/ui v4 component source / usage / install metadata
+        # (React/Svelte/Vue/RN). Keyless (rate-limited); a user who exports
+        # GITHUB_PERSONAL_ACCESS_TOKEN locally gets the higher GitHub API
+        # limit automatically — we don't inject it (empty-string passthrough
+        # risk), it's an opt-in local env var. Scoped to the @ui subagent.
+        command:
+          - npx
+          - "-y"
+          - "@jpisnice/shadcn-ui-mcp-server"
+        enabled: true            # connected; scoped to the @ui subagent
+      reddit:
+        type: local
+        # Reddit reader — anonymous READ mode needs no credentials (~10
+        # req/min); a user wanting higher limits / posting sets REDDIT_*
+        # locally. Social listening / audience research. Scoped to @content.
+        command:
+          - npx
+          - "-y"
+          - "reddit-mcp-server"
+        enabled: true            # connected; scoped to the @content subagent
+      youtube:
+        type: local
+        # YouTube transcript fetcher (public transcript endpoints, no key) —
+        # repurpose video → blog/social/summaries. Scoped to @content.
+        command:
+          - npx
+          - "-y"
+          - "@sinco-lab/mcp-youtube-transcript"
+        enabled: true            # connected; scoped to the @content subagent
+      rss:
+        type: local
+        # RSS/Atom feed reader (no key) — news monitoring, content curation,
+        # competitor-blog watching. Scoped to @content.
+        command:
+          - npx
+          - "-y"
+          - "rss-mcp"
+        enabled: true            # connected; scoped to the @content subagent
+
+      # ── Atlassian: per-user token local batch (ADR-0073) ───────────────
+      # Jira + Confluence as `type: local` npx servers (author @aashari). Per
+      # ADR-0073 these are PER-USER: the user exports their own Atlassian
+      # credentials and we pass them through with {env:...} — both servers
+      # share the SAME three vars, so the user sets them ONCE:
+      #   ATLASSIAN_SITE_NAME   (the "your-company" part of *.atlassian.net)
+      #   ATLASSIAN_USER_EMAIL  (their Atlassian account email)
+      #   ATLASSIAN_API_TOKEN   (id.atlassian.com → API tokens)
+      # A user who hasn't set them sees @atlassian fail when invoked (same
+      # accepted trade-off as the other local servers). GitHub is NOT here —
+      # it has no npx server (the official npm one is deprecated → Go binary),
+      # so it goes on a centralized gateway /mcp/github route backed by a
+      # GitHub App (ADR-0073 phase 2; out-of-band App + secret). Both servers
+      # scoped to the @atlassian subagent.
+      jira:
+        type: local
+        command:
+          - npx
+          - "-y"
+          - "@aashari/mcp-server-atlassian-jira"
+        environment:
+          ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
+          ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
+          ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
+        enabled: true            # connected; scoped to the @atlassian subagent
+      confluence:
+        type: local
+        command:
+          - npx
+          - "-y"
+          - "@aashari/mcp-server-atlassian-confluence"
+        environment:
+          ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
+          ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
+          ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
+        enabled: true            # connected; scoped to the @atlassian subagent
+
     # ────────────────────────────────────────────────────────────────────
     # Global permission baseline (ADR-0044) — keeps the PRIMARY/default agent
     # LEAN: every connected MCP tool is denied by default, so the main agent
@@ -312,6 +489,24 @@ wellKnown:
       # (At call time plugin tools aren't ctx.ask-gated like MCP tools, but
       # that's moot for a denied tool — the model never receives it.)
       "browser_*": deny
+      # Local npx servers (ADR-0071) — same deny-then-re-allow discipline as
+      # the remotes: each stays OUT of the primary's injected toolset and is
+      # re-allowed only on its dedicated subagent (@memory / @planner / @mobile).
+      "memory_*": deny
+      "sequentialthinking_*": deny
+      "mobile_*": deny
+      # No-key local batch (ADR-0072) — same deny-then-re-allow: off the
+      # primary, re-allowed only on @vcs / @diagram / @ui / @content.
+      "git_*": deny
+      "drawio_*": deny
+      "shadcn_*": deny
+      "reddit_*": deny
+      "youtube_*": deny
+      "rss_*": deny
+      # Atlassian per-user batch (ADR-0073) — off the primary, re-allowed
+      # only on @atlassian.
+      "jira_*": deny
+      "confluence_*": deny
 
     # ────────────────────────────────────────────────────────────────────
     # Agents (ADR-0044, topology revised by ADR-0048). The `frontend` entry is
@@ -471,6 +666,154 @@ wellKnown:
           bash: deny
           skill: allow
           "context7_*": allow
+      # ── Local-MCP role subagents (ADR-0071). Non-visual → NO model pin,
+      #    inherit the session model. Read-only on code (no edit/bash) so
+      #    they stay safe to delegate to org-wide. ─────────────────────────
+      memory:
+        mode: subagent
+        description: >-
+          Persists and recalls facts in a knowledge graph (entities,
+          relations, observations) via the local Memory MCP. Read/write the
+          GRAPH only — never edits files or runs shell. Delegate for
+          "remember this / what do you know about X / recall …" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are a memory specialist backed by a knowledge-graph MCP. Use the
+          memory_* tools to create/search/read entities, relations, and
+          observations, and return a concise answer (or confirm what you
+          stored). The graph is per-user and persists across sessions — keep
+          it tidy: prefer updating an existing entity over creating a
+          near-duplicate. You cannot edit files or run shell — do not attempt
+          to.
+        permission:
+          edit: deny
+          bash: deny
+          "memory_*": allow
+      # NB: named `planner`, NOT `plan` — `plan` is an opencode BUILT-IN primary
+      # agent (alongside `build`); defining `agent.plan` here would override/
+      # demote the built-in read-only Plan primary for every user org-wide.
+      planner:
+        mode: subagent
+        description: >-
+          Thinks through hard problems step by step (Sequential-Thinking MCP)
+          and returns a structured plan or analysis. READ-ONLY — never edits
+          files or runs shell. Delegate for "design / plan / reason through /
+          figure out the approach for X" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are a planning and reasoning specialist. Use the
+          sequentialthinking tool to break a hard problem into ordered,
+          revisable steps, and read the repo freely to ground your reasoning;
+          use Context7 for authoritative library facts when an API detail
+          matters. Return a clear, structured plan or analysis with concrete
+          next steps for the caller to execute. You cannot edit files or run
+          shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "sequentialthinking_*": allow
+          "context7_*": allow
+      # ── No-key local-MCP subagents (ADR-0072). All non-visual → NO model
+      #    pin (inherit the session model). ────────────────────────────────
+      vcs:
+        mode: subagent
+        description: >-
+          Runs git on the working tree (status / diff / log / commit / branch
+          / stash) as structured tools via the Git MCP. Operates on the local
+          repo only — does not edit source files itself. Delegate for "commit
+          this / show the diff / branch / what changed" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are a version-control specialist. Use the git_* tools to inspect
+          and operate the local git repository — review status/diff/log, stage,
+          commit with a clear message, branch, and stash. Confirm the intended
+          scope before committing, and write a concise commit message that
+          explains why. You do not edit source files (the primary does that)
+          and you have no general shell — use only the git_* tools.
+        permission:
+          edit: deny
+          bash: deny
+          "git_*": allow
+      ui:
+        mode: subagent
+        description: >-
+          Looks up shadcn/ui v4 component source, usage, and install metadata
+          (React/Svelte/Vue/RN) via the shadcn MCP and returns it for the
+          primary to build with. READ-ONLY; never edits code or runs shell.
+          Delegate for "how do I use / install the shadcn X component".
+        temperature: 0.3
+        prompt: >-
+          You are a shadcn/ui component specialist. Use the shadcn_* tools to
+          fetch accurate component source, usage examples, and install commands
+          for the requested components, then return a concise, actionable
+          summary for the primary to implement against. You cannot edit files
+          or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "shadcn_*": allow
+      diagram:
+        mode: subagent
+        description: >-
+          Generates editable diagrams (architecture / flow / roadmap /
+          sequence) via the official draw.io MCP — accepts Mermaid/CSV/XML and
+          returns the diagram plus an editor URL. No file edits, no shell.
+          Delegate for "diagram this / draw the architecture / make a flowchart".
+        temperature: 0.4
+        prompt: >-
+          You are a diagramming specialist. Use the drawio_* tools to turn the
+          caller's description into a clear, editable diagram and return both
+          the diagram data and the draw.io editor URL so a human can refine it.
+          Pick the right layout for the intent (flow, sequence, architecture,
+          roadmap). You cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "drawio_*": allow
+      content:
+        mode: subagent
+        description: >-
+          Gathers external content for marketing/research — reads Reddit
+          threads, YouTube transcripts, and RSS/news feeds — and returns a
+          concise, cited digest. READ-ONLY; never edits files or runs shell.
+          Delegate for "what are people saying about X / summarize this video /
+          watch this feed".
+        temperature: 0.3
+        prompt: >-
+          You are a content-research specialist for marketing and growth. Use
+          the reddit_* (social listening), youtube_* (video transcripts), and
+          rss_* (feeds/news) tools, plus webfetch for article URLs, to gather
+          source material and return a concise, source-cited digest with the
+          key takeaways. You cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          webfetch: allow
+          "reddit_*": allow
+          "youtube_*": allow
+          "rss_*": allow
+      atlassian:
+        mode: subagent
+        description: >-
+          Reads and searches Jira (projects, issues via JQL, dev info) and
+          Confluence (spaces, pages) via the Atlassian MCP servers, and
+          returns a concise summary. Delegate for "find the Jira ticket /
+          what's the status of X / look up the Confluence spec". Requires the
+          user's own Atlassian credentials (ATLASSIAN_SITE_NAME /
+          ATLASSIAN_USER_EMAIL / ATLASSIAN_API_TOKEN) in their environment.
+        temperature: 0.2
+        prompt: >-
+          You are an Atlassian specialist. Use the jira_* tools (search issues
+          via JQL, read issues + their linked dev info) and confluence_* tools
+          (search spaces, read pages) to answer the caller's question, then
+          return a concise, link-bearing summary. Default to read/search; if a
+          write is requested, confirm the exact target and scope first. You do
+          not edit local files or run shell — use only the Atlassian tools.
+        permission:
+          edit: deny
+          bash: deny
+          "jira_*": allow
+          "confluence_*": allow
       # ── PRIMARY (the org-wide default agent, ADR-0048) ──────────────────
       # A LEAN, frontend-flavoured primary. It IMPLEMENTS directly (edit + JS
       # toolchain) and DELEGATES tool-heavy work to subagents (browser →
@@ -502,6 +845,21 @@ wellKnown:
           • for design references / visual targets → delegate to `@design`.
           • for authoritative library/framework docs → delegate to
             `@doc-research`.
+          • to drive/screenshot the app on a phone (iOS/Android) → delegate to
+            `@mobile`.
+          • to think through a hard design/approach problem step by step →
+            delegate to `@planner`.
+          • to remember a fact for later, or recall what's known → delegate to
+            `@memory`.
+          • for git on the working tree (diff/commit/branch/stash) → delegate
+            to `@vcs`.
+          • for shadcn/ui component source + install info → delegate to `@ui`.
+          • to draw a diagram (architecture/flow/roadmap) → delegate to
+            `@diagram`.
+          • to research external content (Reddit/YouTube/RSS/news) → delegate
+            to `@content`.
+          • to look up Jira issues or Confluence pages → delegate to
+            `@atlassian`.
           Close the loop: implement → ask @browser to reload + screenshot +
           report → compare to the @design reference → decide what's off →
           implement again, until it matches. Destructive commands (rm, etc.) and
@@ -593,6 +951,33 @@ wellKnown:
           edit: deny
           bash: deny
           "refero_*": allow
+      mobile:
+        mode: subagent
+        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads device screenshots
+        description: >-
+          Drives a mobile device through the local Mobile-Next MCP — lists and
+          launches apps, taps/swipes/types by accessibility element or
+          screen coordinates, and screenshots iOS Simulators / Android
+          Emulators / physical devices — then REPORTS what it observed (it
+          reads the screenshots it captures). READ-ONLY on the filesystem;
+          never edits code or runs shell. Delegate for "open / drive /
+          screenshot the app on a phone". Requires the user's mobile
+          toolchain (Xcode CLT / Android platform-tools) + a running
+          simulator/emulator or connected device.
+        temperature: 0.3
+        prompt: >-
+          You are a mobile-automation specialist. Use the mobile_* tools to
+          list/launch apps, read the on-screen elements (accessibility tree),
+          tap/type/swipe (by element ref where available, else by
+          coordinates), and screenshot the device, then REPORT back concisely
+          what you saw — read any screenshot you capture and describe the
+          relevant UI state for the caller. List elements first to target
+          actions reliably; avoid blind coordinate taps when an element ref
+          exists. You cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "mobile_*": allow
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
