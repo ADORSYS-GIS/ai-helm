@@ -352,6 +352,75 @@ wellKnown:
           - "@mobilenext/mobile-mcp@latest"
         enabled: true            # connected; scoped to the @mobile subagent
 
+      # ── No-key local batch (ADR-0072) ──────────────────────────────────
+      # Same `type: local` npx form as the ADR-0071 batch, but selected for
+      # ZERO setup: each runs with bare `npx` and needs NO API key / token /
+      # signup, so it works for EVERY user on day one (devs + marketing + PO)
+      # — the lowest-friction servers to push org-wide. Each is still denied
+      # on the lean primary and re-allowed only on its dedicated subagent.
+      # Verified npm-only + not deprecated (registry check 2026-06-29).
+      git:
+        type: local
+        # Local git on the working tree (status/diff/log/commit/branch/stash)
+        # as structured tools — shells out to the `git` binary (present
+        # everywhere). Fills the gap left by the DEPRECATED official GitHub
+        # npm server. Scoped to the @vcs subagent.
+        command:
+          - npx
+          - "-y"
+          - "@cyanheads/git-mcp-server"
+        enabled: true            # connected; scoped to the @vcs subagent
+      drawio:
+        type: local
+        # OFFICIAL draw.io server — generates editable diagrams (XML / CSV /
+        # Mermaid syntax) and an editor URL; pure node, NO browser binary, NO
+        # token. Great for non-coder POs. Scoped to the @diagram subagent.
+        command:
+          - npx
+          - "-y"
+          - "@drawio/mcp"
+        enabled: true            # connected; scoped to the @diagram subagent
+      shadcn:
+        type: local
+        # shadcn/ui v4 component source / usage / install metadata
+        # (React/Svelte/Vue/RN). Keyless (rate-limited); a user who exports
+        # GITHUB_PERSONAL_ACCESS_TOKEN locally gets the higher GitHub API
+        # limit automatically — we don't inject it (empty-string passthrough
+        # risk), it's an opt-in local env var. Scoped to the @ui subagent.
+        command:
+          - npx
+          - "-y"
+          - "@jpisnice/shadcn-ui-mcp-server"
+        enabled: true            # connected; scoped to the @ui subagent
+      reddit:
+        type: local
+        # Reddit reader — anonymous READ mode needs no credentials (~10
+        # req/min); a user wanting higher limits / posting sets REDDIT_*
+        # locally. Social listening / audience research. Scoped to @content.
+        command:
+          - npx
+          - "-y"
+          - "reddit-mcp-server"
+        enabled: true            # connected; scoped to the @content subagent
+      youtube:
+        type: local
+        # YouTube transcript fetcher (public transcript endpoints, no key) —
+        # repurpose video → blog/social/summaries. Scoped to @content.
+        command:
+          - npx
+          - "-y"
+          - "@sinco-lab/mcp-youtube-transcript"
+        enabled: true            # connected; scoped to the @content subagent
+      rss:
+        type: local
+        # RSS/Atom feed reader (no key) — news monitoring, content curation,
+        # competitor-blog watching. Scoped to @content.
+        command:
+          - npx
+          - "-y"
+          - "rss-mcp"
+        enabled: true            # connected; scoped to the @content subagent
+
     # ────────────────────────────────────────────────────────────────────
     # Global permission baseline (ADR-0044) — keeps the PRIMARY/default agent
     # LEAN: every connected MCP tool is denied by default, so the main agent
@@ -378,6 +447,14 @@ wellKnown:
       "memory_*": deny
       "sequentialthinking_*": deny
       "mobile_*": deny
+      # No-key local batch (ADR-0072) — same deny-then-re-allow: off the
+      # primary, re-allowed only on @vcs / @diagram / @ui / @content.
+      "git_*": deny
+      "drawio_*": deny
+      "shadcn_*": deny
+      "reddit_*": deny
+      "youtube_*": deny
+      "rss_*": deny
 
     # ────────────────────────────────────────────────────────────────────
     # Agents (ADR-0044, topology revised by ADR-0048). The `frontend` entry is
@@ -581,6 +658,85 @@ wellKnown:
           bash: deny
           "sequentialthinking_*": allow
           "context7_*": allow
+      # ── No-key local-MCP subagents (ADR-0072). All non-visual → NO model
+      #    pin (inherit the session model). ────────────────────────────────
+      vcs:
+        mode: subagent
+        description: >-
+          Runs git on the working tree (status / diff / log / commit / branch
+          / stash) as structured tools via the Git MCP. Operates on the local
+          repo only — does not edit source files itself. Delegate for "commit
+          this / show the diff / branch / what changed" tasks.
+        temperature: 0.2
+        prompt: >-
+          You are a version-control specialist. Use the git_* tools to inspect
+          and operate the local git repository — review status/diff/log, stage,
+          commit with a clear message, branch, and stash. Confirm the intended
+          scope before committing, and write a concise commit message that
+          explains why. You do not edit source files (the primary does that)
+          and you have no general shell — use only the git_* tools.
+        permission:
+          edit: deny
+          bash: deny
+          "git_*": allow
+      ui:
+        mode: subagent
+        description: >-
+          Looks up shadcn/ui v4 component source, usage, and install metadata
+          (React/Svelte/Vue/RN) via the shadcn MCP and returns it for the
+          primary to build with. READ-ONLY; never edits code or runs shell.
+          Delegate for "how do I use / install the shadcn X component".
+        temperature: 0.3
+        prompt: >-
+          You are a shadcn/ui component specialist. Use the shadcn_* tools to
+          fetch accurate component source, usage examples, and install commands
+          for the requested components, then return a concise, actionable
+          summary for the primary to implement against. You cannot edit files
+          or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "shadcn_*": allow
+      diagram:
+        mode: subagent
+        description: >-
+          Generates editable diagrams (architecture / flow / roadmap /
+          sequence) via the official draw.io MCP — accepts Mermaid/CSV/XML and
+          returns the diagram plus an editor URL. No file edits, no shell.
+          Delegate for "diagram this / draw the architecture / make a flowchart".
+        temperature: 0.4
+        prompt: >-
+          You are a diagramming specialist. Use the drawio_* tools to turn the
+          caller's description into a clear, editable diagram and return both
+          the diagram data and the draw.io editor URL so a human can refine it.
+          Pick the right layout for the intent (flow, sequence, architecture,
+          roadmap). You cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          "drawio_*": allow
+      content:
+        mode: subagent
+        description: >-
+          Gathers external content for marketing/research — reads Reddit
+          threads, YouTube transcripts, and RSS/news feeds — and returns a
+          concise, cited digest. READ-ONLY; never edits files or runs shell.
+          Delegate for "what are people saying about X / summarize this video /
+          watch this feed".
+        temperature: 0.3
+        prompt: >-
+          You are a content-research specialist for marketing and growth. Use
+          the reddit_* (social listening), youtube_* (video transcripts), and
+          rss_* (feeds/news) tools, plus webfetch for article URLs, to gather
+          source material and return a concise, source-cited digest with the
+          key takeaways. You cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+          webfetch: allow
+          "reddit_*": allow
+          "youtube_*": allow
+          "rss_*": allow
       # ── PRIMARY (the org-wide default agent, ADR-0048) ──────────────────
       # A LEAN, frontend-flavoured primary. It IMPLEMENTS directly (edit + JS
       # toolchain) and DELEGATES tool-heavy work to subagents (browser →
@@ -618,6 +774,13 @@ wellKnown:
             delegate to `@plan`.
           • to remember a fact for later, or recall what's known → delegate to
             `@memory`.
+          • for git on the working tree (diff/commit/branch/stash) → delegate
+            to `@vcs`.
+          • for shadcn/ui component source + install info → delegate to `@ui`.
+          • to draw a diagram (architecture/flow/roadmap) → delegate to
+            `@diagram`.
+          • to research external content (Reddit/YouTube/RSS/news) → delegate
+            to `@content`.
           Close the loop: implement → ask @browser to reload + screenshot +
           report → compare to the @design reference → decide what's off →
           implement again, until it matches. Destructive commands (rm, etc.) and

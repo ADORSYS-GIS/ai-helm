@@ -82,6 +82,12 @@ overridable locally.
 | `memory` | **local** (`npx`) | `@modelcontextprotocol/server-memory` (knowledge graph; `MEMORY_FILE_PATH={env:HOME}/.config/opencode/memory.json`) | `true` |
 | `sequentialthinking` | **local** (`npx`) | `@modelcontextprotocol/server-sequential-thinking` (structured reasoning) | `true` |
 | `mobile` | **local** (`npx`) | `@mobilenext/mobile-mcp@latest` (iOS/Android device automation) | `true` |
+| `git` | **local** (`npx`, no key) | `@cyanheads/git-mcp-server` (local git on the working tree) | `true` |
+| `drawio` | **local** (`npx`, no key) | `@drawio/mcp` (official; editable diagrams, incl. Mermaid) | `true` |
+| `shadcn` | **local** (`npx`, no key) | `@jpisnice/shadcn-ui-mcp-server` (shadcn/ui v4 component metadata) | `true` |
+| `reddit` | **local** (`npx`, no key) | `reddit-mcp-server` (anonymous-read social listening) | `true` |
+| `youtube` | **local** (`npx`, no key) | `@sinco-lab/mcp-youtube-transcript` (video transcripts) | `true` |
+| `rss` | **local** (`npx`, no key) | `rss-mcp` (RSS/Atom feed reader) | `true` |
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
   with the **same** `opencode-cli` Keycloak client
@@ -106,6 +112,14 @@ overridable locally.
   a tool boundary → float like the remotes; pin `name@x.y.z` if drift bites).
   The deferred Python-backed batch (mem0, MCP-Mathematics → `uvx`; pdfmux → npm
   wrapper needing `pip install pdfmux` + an LLM key) is **not** added here.
+- **No-key local batch (ADR-0072)** — `git`/`drawio`/`shadcn`/`reddit`/
+  `youtube`/`rss` were selected because they run with bare `npx` and need **no
+  API key / token / signup**, so they work for every user on day one (the
+  lowest-friction org-wide push). `git` shells to the `git` binary; `shadcn`
+  picks up a user's own `GITHUB_PERSONAL_ACCESS_TOKEN` if set (not injected by
+  us). Token-gated servers (Notion/Figma/Tavily/Exa/Sentry/21st.dev/Atlassian
+  npx) and the remote-only trackers (**GitHub**, **Linear**, rich **Atlassian** —
+  not `npx`-able) are deferred to opt-in / gateway-route batches.
 - The `chrome-devtools` **local** MCP was removed — live-browser inspection is now
   the `@vymalo/opencode-browser` plugin's `browser_*` tools, owned by `@browser`.
 
@@ -119,11 +133,13 @@ Tool access is modelled on **two decoupled axes**:
 - **Connectivity** — `config.mcp.<name>.enabled` decides whether opencode
   connects to a server at all. A tool only exists if its server is connected, so
   every server a role needs is `enabled: true` (brave, context7, terraform,
-  refero, and the local memory/sequentialthinking/mobile); `enabled: false` =
-  not connected (firecrawl, until a role needs it).
+  refero, the local memory/sequentialthinking/mobile, and the no-key
+  git/drawio/shadcn/reddit/youtube/rss); `enabled: false` = not connected
+  (firecrawl, until a role needs it).
 - **Access** — a global `config.permission` **deny-baseline** denies every
   connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`,
-  `memory_*`, `sequentialthinking_*`, `mobile_*`) plus the
+  `memory_*`, `sequentialthinking_*`, `mobile_*`, `git_*`, `drawio_*`,
+  `shadcn_*`, `reddit_*`, `youtube_*`, `rss_*`) plus the
   `@vymalo/opencode-browser` plugin's `browser_*` tools. Each role is a
   **`mode: subagent`** the primary delegates to (`@name` / the task tool) and a
   **whitelist** that re-allows only its tools + its file/bash scope (per-agent
@@ -165,6 +181,10 @@ Tool access is modelled on **two decoupled axes**:
 | `mobile` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `mobile_*` (device automation; reads screenshots) |
 | `memory` | subagent | *inherit* | deny | deny | `memory_*` (knowledge-graph r/w) |
 | `plan` | subagent | *inherit* | deny | deny | `sequentialthinking_*`, `context7_*` (read-only reasoning/planning) |
+| `vcs` | subagent | *inherit* | deny | deny | `git_*` (local git on the working tree) |
+| `ui` | subagent | *inherit* | deny | deny | `shadcn_*` (shadcn/ui component metadata) |
+| `diagram` | subagent | *inherit* | deny | deny | `drawio_*` (editable diagrams) |
+| `content` | subagent | *inherit* | deny | deny | `reddit_*`, `youtube_*`, `rss_*`, `webfetch` (marketing/content research) |
 
 > **`@frontend` is the org-wide default PRIMARY (`config.default_agent`), kept
 > lean.** It implements directly (`edit` + JS toolchain) and **delegates** the
