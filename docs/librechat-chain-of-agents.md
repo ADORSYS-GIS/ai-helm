@@ -19,6 +19,64 @@
 
 ---
 
+## LibreChat platform support (as of 2026-06)
+
+How much of the above is buildable on LibreChat today, and where the seams are. **Short version: the
+orchestration is config-provisionable; the agents and the chain wiring are still authored in the UI and
+referenced by id.**
+
+### Config-provisionable (`librechat.yaml` → `endpoints.agents`)
+You can declaratively set capability gates and guardrails:
+
+```yaml
+endpoints:
+  agents:
+    disableBuilder: false        # gate the UI Agent Builder
+    recursionLimit: 50
+    maxRecursionLimit: 100
+    capabilities:
+      - 'chain'                  # enables Agent Chain (Mixture-of-Agents)
+      - 'subagents'
+      - 'tools'
+      - 'actions'
+      # … file_search, web_search, execute_code, ocr, etc.
+    subagents:
+      enabled: true
+      allowSelf: true
+      agent_ids:                 # allowlist of pre-built agents, by id
+        - 'agent_context_gatherer'
+        - 'agent_adversarial_reviewer'
+```
+
+### UI-only (not provisionable)
+- **The agent definitions** (provider, model, instructions, tools) — built in the **Agent Builder**,
+  stored in the **database**, then referenced by `id`.
+- **The chain composition** itself — assembled in the UI. There is no documented "define the whole
+  agent/chain in YAML" or JSON import.
+
+### Two composition mechanisms (both relevant to the chains above)
+| Mechanism | What it is | Maps to |
+|---|---|---|
+| **Agent Chain** | Mixture-of-Agents: a *sequence* of agents, each seeing prior outputs. **Max 10 steps, currently beta.** | The linear UC1–UC5 hand-off chains |
+| **Subagents** | A parent agent spawns scoped children *as a tool call during its run* (the `agent_ids` allowlist). | The **reusable sub-agents** finding — Context Gatherer / Adversarial Reviewer as spawnable children |
+
+### Ops implications (findings for #414)
+- **No GitOps provisioning of the agent bodies.** Because agents live in the DB (not config),
+  reproducing a chain across environments means rebuilding it in the UI (or a DB migration) — there is
+  no declarative, version-controlled agent definition yet. This is the main blocker to "ship a chain as
+  a product."
+- **The 10-step / beta cap on Agent Chain** bounds chain length. UC1 (6 agents) and UC4 (5) fit; longer
+  designs must either merge stages (the "leaner v1" note) or use Subagents for fan-out instead of more
+  chain steps.
+- **`subagents.agent_ids` is the closest thing to provisioning** — it pins *which* stable agent ids may
+  compose, even though the agents themselves are UI-authored. Give shared sub-agents stable ids.
+
+Sources: [agents config](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/agents),
+[Agent Chain](https://www.librechat.ai/docs/features/agents),
+[Subagents](https://www.librechat.ai/docs/features/subagents).
+
+---
+
 ## Use Case 1 — "Sprint-to-GitHub" ticket factory
 
 **Goal:** turn an unstructured sprint dump into a structured, governance-compliant set of GitHub issues
