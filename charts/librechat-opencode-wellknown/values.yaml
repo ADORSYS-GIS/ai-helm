@@ -298,7 +298,7 @@ wellKnown:
         type: remote
         url: "https://api.ai.camer.digital/mcp/firecrawl"
         oauth: *mcpOAuth
-        enabled: false           # no agent uses it yet (web scraping)
+        enabled: false           # OFF by default (opt-in); handled by the @web-search subagent (scrape)
       terraform:
         type: remote
         url: "https://api.ai.camer.digital/mcp/terraform"
@@ -498,6 +498,11 @@ wellKnown:
       "context7_*": deny
       "terraform_*": deny
       "refero_*": deny
+      # firecrawl is opt-in like the rest now (ADR-0074) — so it MUST be denied
+      # here too, else enabling it would inject `firecrawl_*` onto every primary
+      # (opencode tools default to enabled unless a rule restricts them). It's
+      # re-allowed only on @web-search (web fetch/scrape companion to brave).
+      "firecrawl_*": deny
       # Removes browser_* from the INJECTED tool set of every agent that doesn't
       # re-allow it (request.ts `resolveTools` → `Permission.disabled`: a
       # string-form `*`-deny drops the tool from `tools`/`activeTools`). Works
@@ -556,19 +561,24 @@ wellKnown:
       web-search:
         mode: subagent
         description: >-
-          Searches the web (Brave) and returns a concise, source-cited
-          summary. Read-only — never writes files or runs shell. Delegate for
-          "look this up / find current info" tasks.
+          Searches the web (Brave) and scrapes/extracts page content
+          (Firecrawl), returning a concise, source-cited summary. Read-only —
+          never writes files or runs shell. Delegate for "look this up / find
+          current info / scrape this page" tasks. (Both servers are opt-in;
+          `@web-search` is inert until the user enables `brave`/`firecrawl`.)
         temperature: 0.3
         prompt: >-
           You are a web-research specialist. Use the Brave MCP tools to search
-          and read sources, then return a concise, cited summary. You cannot
-          write files or run shell commands — do not attempt to.
+          and read sources, and the Firecrawl MCP tools to scrape/extract a
+          specific page's content when a search snippet isn't enough, then
+          return a concise, cited summary. You cannot write files or run shell
+          commands — do not attempt to.
         permission:
           edit: deny
           bash: deny
           webfetch: allow
           "brave_*": allow
+          "firecrawl_*": allow
       doc-research:
         mode: subagent
         description: >-
@@ -627,17 +637,35 @@ wellKnown:
         mode: subagent
         description: >-
           Reviews code/changes for correctness, security, and maintainability
-          and returns findings. READ-ONLY — never edits files or runs shell.
-          Delegate for "review this / what's wrong with X" tasks.
+          and returns findings. Can READ the working diff itself (read-only git:
+          status/diff/log/show) so it reviews what actually changed, plus
+          `helm lint`/`helm template` to sanity-check chart renders. Never edits
+          files. Delegate for "review this / what's wrong with X / review my
+          changes" tasks.
         temperature: 0.1
         prompt: >-
-          You are a code reviewer. Read the change and surrounding code and
-          report concrete correctness, security, and maintainability findings
-          with file:line references. Use Context7 only to confirm correct API
-          usage. You cannot edit files or run shell — do not attempt to.
+          You are a code reviewer. Establish what changed FIRST — run
+          `git status`/`git diff` (and `git log`/`git show` for context) to see
+          the working diff — then read the changed files and the surrounding
+          code and report concrete correctness, security, and maintainability
+          findings with file:line references and a severity for each. For Helm
+          charts you may `helm lint`/`helm template` to confirm a change still
+          renders. Use Context7 to confirm correct API usage. You run ONLY those
+          read-only inspection commands and never edit files — do not attempt
+          other shell or any write.
         permission:
           edit: deny
-          bash: deny
+          # Read-only inspection only: see the diff + render-check charts. `*`
+          # stays denied (last-match-wins), so nothing mutating slips through.
+          bash:
+            "*": deny
+            "git status*": allow
+            "git diff*": allow
+            "git log*": allow
+            "git show*": allow
+            "git branch*": allow
+            "helm lint*": allow
+            "helm template*": allow
           "context7_*": allow
       test:
         mode: subagent
@@ -999,19 +1027,82 @@ wellKnown:
           pause for you (gated, not blocked). Keep changes minimal; explain why.
         permission:
           edit: allow
+          # ⚠️ CURATED ALLOWLIST, not blanket language wildcards — deliberately.
+          # A migration (`npm run migrate`, `python manage.py migrate`,
+          # `uv run alembic upgrade`, `make migrate`, `prisma migrate`) must hit
+          # the `*: ask` approval gate the prompt promises. We CANNOT achieve
+          # that by adding `*migrate*: ask` after a blanket `npm *: allow`,
+          # because the rendered config is JSON and Helm's `toJson` SORTS the
+          # keys alphabetically — so document order is lost and opencode's
+          # "last-matching-rule-wins" would let `npm *` (sorts after `*migrate*`)
+          # win for `npm run migrate`. The order-independent fix: never blanket
+          # a language wrapper; allow only specific safe sub-commands, and let
+          # everything else (incl. every migration form, alembic upgrade/
+          # downgrade, prisma, sequelize, flyway, …) fall through to `*: ask`.
+          # `*` (ASCII 42) always sorts FIRST, so the specific allows always win
+          # over it for the commands they name — regardless of sort order.
+          # Still FRICTION not a sandbox (a script can mutate without hitting a
+          # named command); the real containment is the environment.
           bash:
             "*": ask
-            "go *": allow
-            "cargo *": allow
-            "uv *": allow
-            "python *": allow
+            # Go / Rust — build/test/run/lint only
+            "go build*": allow
+            "go test*": allow
+            "go run*": allow
+            "go vet*": allow
+            "go mod*": allow
+            "gofmt*": allow
+            "cargo build*": allow
+            "cargo test*": allow
+            "cargo run*": allow
+            "cargo check*": allow
+            "cargo clippy*": allow
+            "cargo fmt*": allow
+            # Python — uv-first; NOT blanket `python *` / `uv run *` (they wrap
+            # `manage.py migrate` / `alembic upgrade`)
+            "uv sync*": allow
+            "uv lock*": allow
+            "uv add*": allow
+            "uv run pytest*": allow
             "pytest*": allow
-            "npm *": allow
-            "pnpm *": allow
-            "bun *": allow
-            "yarn *": allow
-            "make *": allow
-            "just *": allow
+            "ruff*": allow
+            # Node — install / build / dev / test / lint scripts; NOT blanket
+            # `npm *` (wraps `npm run migrate`)
+            "npm install*": allow
+            "npm ci*": allow
+            "npm run build*": allow
+            "npm run lint*": allow
+            "npm run dev*": allow
+            "npm run start*": allow
+            "npm test*": allow
+            "npm run test*": allow
+            "pnpm install*": allow
+            "pnpm build*": allow
+            "pnpm dev*": allow
+            "pnpm lint*": allow
+            "pnpm test*": allow
+            "pnpm run build*": allow
+            "pnpm run dev*": allow
+            "pnpm run test*": allow
+            "pnpm run lint*": allow
+            "bun install*": allow
+            "bun run build*": allow
+            "bun run dev*": allow
+            "bun test*": allow
+            "yarn install*": allow
+            "yarn build*": allow
+            "yarn dev*": allow
+            "yarn test*": allow
+            "yarn lint*": allow
+            # Build orchestration — specific targets only (NOT blanket `make *`,
+            # which would wrap `make migrate`)
+            "make build*": allow
+            "make test*": allow
+            "make lint*": allow
+            "make fmt*": allow
+            "just build*": allow
+            "just test*": allow
+            "just lint*": allow
             "rm *": ask
 
       # devops — k8s / Helm / Terraform / CI primary. Promotes the @iac role to
@@ -1083,7 +1174,7 @@ wellKnown:
           Delegates the gathering — social/video/feeds (@content), web search
           (@web-search), design references (@design), diagrams (@diagram),
           library/product docs (@doc-research) — to subagents.
-        temperature: 0.4
+        temperature: 0.5      # upper-"balanced": copywriting/brainstorm wants some spark
         prompt: >-
           You are a marketing / content primary for non-developers. You do NOT
           edit code or run shell — you may write Markdown ONLY under docs/. Your
@@ -1136,7 +1227,7 @@ wellKnown:
           visual subagents — design references (@design), real-browser
           verification (@browser), components (@ui), device checks (@mobile),
           diagrams (@diagram).
-        temperature: 0.3
+        temperature: 0.4      # balanced, leaning creative: design exploration
         prompt: >-
           You are a UX / design-led primary. You judge and improve the user
           experience — hierarchy, spacing, states, accessibility, copy — and
@@ -1190,19 +1281,21 @@ wellKnown:
           bash: deny
 
       # enemy — hard adversarial red-team primary. Assumes the work is WRONG and
-      # hunts the worst failure modes. READ-ONLY (no edit, no shell); delegates
-      # proof-of-breakage and review to subagents.
+      # hunts the worst failure modes. READ-ONLY (no edit, no shell) — and the
+      # read-only intent is ENFORCED, not just promised: `permission.task` locks
+      # delegation to READ-ONLY subagents, so it can't launder a write through a
+      # writable one (e.g. @test, which has edit:allow).
       enemy:
         mode: primary
         description: >-
           A hard adversarial primary — the "enemy". Assumes the code/design is
           wrong and ruthlessly hunts the worst failure modes: edge cases, race
           conditions, security holes, broken assumptions, unhandled errors.
-          READ-ONLY — never edits files or runs shell; delegates a structured
-          critique (@reviewer), step-by-step attack reasoning (@planner),
-          known-CVE / prior-art lookup (@web-search) and proof via tests
-          (@test).
-        temperature: 0.5
+          READ-ONLY — never edits files or runs shell, and delegates ONLY to
+          read-only subagents: a structured critique (@reviewer), step-by-step
+          attack reasoning (@planner), known-CVE / prior-art lookup
+          (@web-search), library facts (@doc-research).
+        temperature: 0.6
         prompt: >-
           You are the adversary. Your job is to BREAK the code or design on
           paper, not to be agreeable. Assume it is wrong until proven otherwise
@@ -1212,13 +1305,26 @@ wellKnown:
           data loss. For every attack cite the CONCRETE mechanism (file:line +
           the exact input/sequence that triggers it) — no vague "this could be
           better". Rank findings by real-world severity and likelihood.
-          DELEGATE: a structured second-pass critique → `@reviewer`; multi-step
-          attack reasoning → `@planner`; known CVEs / prior incidents →
-          `@web-search`; proving a break with a failing test → `@test`. You
-          cannot edit files or run shell — do not attempt to.
+          DELEGATE only to read-only specialists: a structured second-pass
+          critique → `@reviewer`; multi-step attack reasoning → `@planner`;
+          known CVEs / prior incidents → `@web-search`; library/API facts →
+          `@doc-research`. You CANNOT write — no edit, no shell, and you may not
+          delegate to a writable agent. To prove a break, describe the exact
+          failing test/input precisely and hand it to the caller to run; do not
+          ask another agent to write it.
         permission:
           edit: deny
           bash: deny
+          # Enforce read-only: deny all delegation, then re-allow ONLY the
+          # subagents that cannot mutate the repo. @test/@vcs/@general and the
+          # writable primaries stay denied (an adversary must not write — even
+          # via a delegate — while "proving" a break). Last-match-wins.
+          task:
+            "*": deny
+            "reviewer": allow
+            "planner": allow
+            "web-search": allow
+            "doc-research": allow
 
       # tester — TDD primary. Edits code and AUTO-runs ONLY test commands.
       # (The @test subagent stays for delegation from other primaries.)

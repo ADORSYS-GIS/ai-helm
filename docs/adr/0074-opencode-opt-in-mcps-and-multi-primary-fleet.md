@@ -101,6 +101,32 @@ default delegate is `general`). The neutral default is therefore named
 note documents. The marketing persona is named `marketing`, not `content`,
 because `content` is already the research **subagent**.
 
+**Permission hardening (order-independent by design).** Three refinements close
+gaps a primary's prompt would otherwise only *promise*:
+
+- `firecrawl_*` is added to the global deny-baseline (it was the one catalogued
+  server without one) and re-allowed on `@web-search` — so opting it in can't
+  inject its tools onto every primary. Every catalogued server now has both a
+  deny entry and a handling subagent.
+- `enemy` (a read-only adversary) gets a `permission.task` allowlist —
+  `{"*": deny, reviewer/planner/web-search/doc-research: allow}` — so it cannot
+  launder a write through a *writable* subagent (e.g. `@test`, which has
+  `edit: allow`). `edit`/`bash` deny alone don't govern delegation; `task` does.
+- `backend` uses a **curated** bash allowlist of specific safe sub-commands
+  (build/test/dev/dep) instead of blanket language wrappers, so any migration
+  (`npm run migrate`, `python manage.py migrate`, `uv run alembic upgrade`,
+  `prisma migrate`, …) falls through to `"*": ask` — matching its prompt.
+
+⚠️ **Load-bearing constraint — `toJson` sorts permission keys.** opencode
+resolves a permission map by **last-matching-rule-wins in config order**, but
+this chart serializes via Helm `toJson`, which **sorts object keys
+alphabetically** — authored order is lost. So permission maps MUST be
+**order-independent**: one catch-all `"*"` (ASCII 42 → always sorts first) plus
+**non-overlapping** specific rules. The naive "broad allow then narrow deny"
+(`"npm *": allow` then `"*migrate*": ask`) is defeated — `npm *` sorts last and
+wins. This is why `backend` curates its allowlist rather than layering a migrate
+deny over `npm *`, and it's a permanent rule for editing any agent's bash/`task`.
+
 ## Consequences
 
 **Positive**

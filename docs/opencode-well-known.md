@@ -195,15 +195,26 @@ subagents below.
 |---|---|---|---|---|
 | `assistant` | **primary** (default) | allow | `ask`; allow JS/Rust/Go/Python(`uv`)/`make`/`just`; `rm`→ask | **none** — delegates (lean) |
 | `frontend` | primary | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`) + Rust/WASM (`cargo`/`trunk`); `rm`→ask | **none** — delegates |
-| `backend` | primary | allow | `ask`; allow Go/Python(`uv`/`pytest`)/Node/Rust/`make`/`just`; `rm`→ask | **none** — delegates |
+| `backend` | primary | allow | `ask`; **curated** allowlist of safe build/test/dev/dep sub-commands (NOT blanket `npm *`/`python *`); migrations (`*migrate*`, alembic, prisma) fall through to `ask`; `rm`→ask | **none** — delegates |
 | `devops` | primary | allow | `ask`; allow SAFE `helm`/`kubectl`(read)/`terraform`·`tofu`(plan/validate/fmt)/`kustomize`/`yq`/`jq`; apply→ask; `destroy`/`kubectl delete` deny | **none** — delegates |
 | `marketing` | primary | only `docs/**` | deny | **none** — delegates (non-dev research) |
 | `docs` | primary | only `docs/**` | deny | **none** — delegates |
 | `ux` | primary | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`); `rm`→ask | **none** — delegates (visual) |
 | `architect` | primary | only `docs/**` | deny | **none** — delegates (read-heavy) |
-| `enemy` | primary | deny | deny | **none** — read-only adversary; delegates |
+| `enemy` | primary | deny | deny | **none** — read-only adversary; `permission.task` **locks delegation to read-only subagents** (reviewer/planner/web-search/doc-research) so it can't write via a delegate |
 | `tester` | primary | allow | `ask`; allow test runners only; deny `rm *` | **none** — delegates |
 | `security` | primary | only `docs/**` | deny | **none** — read-only; delegates |
+
+> ⚠️ **Bash/`task` permission ordering vs `toJson` (load-bearing).** opencode
+> resolves a permission map by **last-matching-rule-wins in config order**, but
+> our config is serialized through Helm `toJson`, which **sorts object keys
+> alphabetically** — so authored order is lost. Design permission maps to be
+> **order-independent**: a single catch-all `"*"` (ASCII 42, always sorts first)
+> plus **non-overlapping specific rules** that win for the commands they name.
+> Do NOT rely on a broad-then-narrow override (`"npm *": allow` then
+> `"*migrate*": ask`) — after sorting, `npm *` lands last and wins. That's why
+> `backend` uses a curated allowlist instead of blanket wrappers + a migrate
+> deny. Temperatures span the docs bands: 0.1 (security/reviewer) → 0.6 (enemy).
 
 **Subagents — the delegated tool owners (unchanged by ADR-0074).** Each owns its
 MCP/browser tools; a primary reaches them via `@name` / the task tool.
@@ -212,10 +223,10 @@ MCP/browser tools; a primary reaches them via `@name` / the task tool.
 |---|---|---|---|---|---|
 | `browser` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `browser_*` (page+control+debug+interactive, all 34 tools — incl. `browser_eval` and `browser_request_feedback`) |
 | `design` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `refero_*` |
-| `web-search` | subagent | *inherit* | deny | deny | `brave_*` |
+| `web-search` | subagent | *inherit* | deny | deny | `brave_*`, `firecrawl_*` (search + scrape) |
 | `doc-research` | subagent | *inherit* | only `docs/**` | deny | `context7_*` |
 | `iac` | subagent | *inherit* | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
-| `reviewer` | subagent | *inherit* | deny | deny | `context7_*` |
+| `reviewer` | subagent | *inherit* | deny | **read-only** `git status`/`diff`/`log`/`show`/`branch` + `helm lint`/`template` (reviews the working diff; `*` deny) | `context7_*` |
 | `test` | subagent | *inherit* | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
 | `skill` | subagent | *inherit* | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 | `mobile` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `mobile_*` (device automation; reads screenshots) |
