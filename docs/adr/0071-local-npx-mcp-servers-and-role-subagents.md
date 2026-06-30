@@ -4,6 +4,8 @@
 **Date:** 2026-06-29
 **Deciders:** @stephane-segning
 
+> **Amended by [ADR-0074](./0074-opencode-opt-in-mcps-and-multi-primary-fleet.md) (2026-06-30):** the servers added here now ship `enabled: false` — MCPs are opt-in org-wide. The catalogue entries, deny-baseline, and the `@memory`/`@planner`/`@mobile` subagents below are unchanged; only the default connectivity flips. Body below is immutable.
+
 ## Context
 
 Every MCP server in the opencode well-known so far is a `type: remote` server
