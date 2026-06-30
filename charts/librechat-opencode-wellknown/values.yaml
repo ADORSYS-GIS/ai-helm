@@ -639,9 +639,9 @@ wellKnown:
           Reviews code/changes for correctness, security, and maintainability
           and returns findings. Can READ the working diff itself (read-only git:
           status/diff/log/show) so it reviews what actually changed, plus
-          `helm lint`/`helm template` to sanity-check chart renders. Never edits
-          files. Delegate for "review this / what's wrong with X / review my
-          changes" tasks.
+          `helm lint` to sanity-check chart syntax. Never edits files or runs
+          mutating/exec commands. Delegate for "review this / what's wrong with X
+          / review my changes" tasks.
         temperature: 0.1
         prompt: >-
           You are a code reviewer. Establish what changed FIRST — run
@@ -649,23 +649,29 @@ wellKnown:
           the working diff — then read the changed files and the surrounding
           code and report concrete correctness, security, and maintainability
           findings with file:line references and a severity for each. For Helm
-          charts you may `helm lint`/`helm template` to confirm a change still
-          renders. Use Context7 to confirm correct API usage. You run ONLY those
-          read-only inspection commands and never edit files — do not attempt
-          other shell or any write.
+          charts you may `helm lint` to check syntax. Use Context7 to confirm
+          correct API usage. You run ONLY those read-only inspection commands and
+          never edit files — do not attempt other shell or any write.
         permission:
           edit: deny
-          # Read-only inspection only: see the diff + render-check charts. `*`
-          # stays denied (last-match-wins), so nothing mutating slips through.
+          # Read-only inspection ONLY. `*` stays denied; only these exact
+          # non-mutating, non-exec forms are allowed. Deliberately EXCLUDED:
+          #  • `git branch*` — covers `git branch -d/-D/-m/-M` (delete/rename
+          #    refs), a mutation; read history via log/show instead.
+          #  • `helm template*` — `helm template --post-renderer <exe>` runs an
+          #    arbitrary local executable (code-exec from a hostile repo). Use
+          #    `helm lint` for syntax; a reviewer doesn't need to fully render.
+          #  (Can't gate those flags with a deny pattern — `toJson` sorts keys
+          #   and ` `<`*`, so a `helm template *post-renderer*` deny would sort
+          #   BEFORE `helm template*` and lose. So the command is dropped, not
+          #   flag-gated.)
           bash:
             "*": deny
             "git status*": allow
             "git diff*": allow
             "git log*": allow
             "git show*": allow
-            "git branch*": allow
             "helm lint*": allow
-            "helm template*": allow
           "context7_*": allow
       test:
         mode: subagent
@@ -920,17 +926,73 @@ wellKnown:
           explain the why.
         permission:
           edit: allow
+          # CURATED allowlist (not blanket wrappers) — assistant is the ORG-WIDE
+          # DEFAULT, so it must not auto-run state-changing commands its prompt
+          # says it gates: a blanket `make */just */uv *` would auto-approve
+          # `make migrate`, `just deploy`, `uv run alembic upgrade`. Same
+          # `toJson`-sorts-keys reason as @backend (can't override a blanket
+          # allow with a later narrow deny). Specific safe sub-commands win over
+          # `*: ask`; everything else (deploys, migrations, …) falls to `ask`.
           bash:
             "*": ask
-            "pnpm *": allow
-            "npm *": allow
-            "bun *": allow
-            "yarn *": allow
-            "cargo *": allow
-            "go *": allow
-            "uv *": allow
-            "make *": allow
-            "just *": allow
+            # JS / TS
+            "pnpm install*": allow
+            "pnpm build*": allow
+            "pnpm dev*": allow
+            "pnpm lint*": allow
+            "pnpm test*": allow
+            "pnpm run build*": allow
+            "pnpm run dev*": allow
+            "pnpm run lint*": allow
+            "pnpm run test*": allow
+            "npm install*": allow
+            "npm ci*": allow
+            "npm run build*": allow
+            "npm run dev*": allow
+            "npm run lint*": allow
+            "npm test*": allow
+            "npm run test*": allow
+            "bun install*": allow
+            "bun run build*": allow
+            "bun run dev*": allow
+            "bun test*": allow
+            "yarn install*": allow
+            "yarn build*": allow
+            "yarn dev*": allow
+            "yarn lint*": allow
+            "yarn test*": allow
+            # Rust / WASM
+            "cargo build*": allow
+            "cargo test*": allow
+            "cargo run*": allow
+            "cargo check*": allow
+            "cargo clippy*": allow
+            "cargo fmt*": allow
+            "trunk build*": allow
+            "trunk serve*": allow
+            # Go
+            "go build*": allow
+            "go test*": allow
+            "go run*": allow
+            "go vet*": allow
+            "go mod*": allow
+            "gofmt*": allow
+            # Python (uv-first; NOT blanket `uv run *` → wraps alembic upgrade)
+            "uv sync*": allow
+            "uv lock*": allow
+            "uv add*": allow
+            "uv run pytest*": allow
+            "pytest*": allow
+            "ruff*": allow
+            # Build orchestration — specific targets (NOT blanket `make */just *`
+            # which wrap `make migrate` / `just deploy`)
+            "make build*": allow
+            "make test*": allow
+            "make lint*": allow
+            "make fmt*": allow
+            "just build*": allow
+            "just test*": allow
+            "just lint*": allow
             "rm *": ask
 
       # frontend — frontend-flavoured implementation primary (was the ADR-0048
@@ -1190,6 +1252,17 @@ wellKnown:
             "*": deny
             "docs/**": allow
           bash: deny
+          # Lock delegation (it claims "never edits code"): deny all, allow only
+          # its gathering specialists + docs-scoped @doc-research. A code/shell
+          # writer (@test/@iac/@vcs/@skill) stays denied so it can't be reached
+          # via the Task tool. (edit/bash deny alone DON'T gate `task`.)
+          task:
+            "*": deny
+            "content": allow
+            "web-search": allow
+            "design": allow
+            "diagram": allow
+            "doc-research": allow
 
       # docs — documentation/technical-writing primary. Writes under docs/;
       # pulls authoritative facts via @doc-research, diagrams via @diagram.
@@ -1199,7 +1272,8 @@ wellKnown:
           A documentation primary: plans and writes technical docs, guides and
           ADRs. Reads code freely and writes ONLY under docs/; delegates
           authoritative library facts (@doc-research), diagrams (@diagram),
-          current info (@web-search) and git (@vcs) to subagents.
+          current info (@web-search) and read-only git history (@reviewer) to
+          subagents.
         temperature: 0.3
         prompt: >-
           You are a technical-writing primary. Read the repo freely to ground
@@ -1207,13 +1281,23 @@ wellKnown:
           runbooks, ADRs — writing ONLY under docs/ (every other path is
           denied; you do not edit code). DELEGATE: authoritative library/API
           facts → `@doc-research`; editable diagrams → `@diagram`; current info
-          → `@web-search`; git/history → `@vcs`. Match the repo's existing doc
-          conventions and link related docs. You have no general shell.
+          → `@web-search`; the working diff / git history → `@reviewer`
+          (read-only git). Match the repo's existing doc conventions and link
+          related docs. You have no general shell.
         permission:
           edit:
             "*": deny
             "docs/**": allow
           bash: deny
+          # Lock delegation (no code edits): allow only read-only / docs-scoped
+          # specialists. @vcs is EXCLUDED (it can git-commit) — read history via
+          # @reviewer's read-only git instead.
+          task:
+            "*": deny
+            "doc-research": allow
+            "diagram": allow
+            "web-search": allow
+            "reviewer": allow
 
       # ux — design/experience-led frontend primary. Implements UX changes and
       # leans HARD on the visual subagents (@design references, @browser to
@@ -1261,7 +1345,7 @@ wellKnown:
           ADRs and migration plans. READ-ONLY on code (writes ONLY under docs/);
           delegates step-by-step reasoning (@planner), library facts
           (@doc-research), a critical second pass (@reviewer), diagrams
-          (@diagram) and history (@vcs).
+          (@diagram) and read-only git history (@reviewer).
         temperature: 0.2
         prompt: >-
           You are a software architect. Read the codebase broadly to build an
@@ -1270,15 +1354,24 @@ wellKnown:
           code — you may write ONLY under docs/ (designs, ADRs, migration
           plans). DELEGATE: step-by-step reasoning on a hard problem →
           `@planner`; authoritative library/framework facts → `@doc-research`;
-          a critical correctness/security pass on a proposal → `@reviewer`;
-          architecture/sequence diagrams → `@diagram`; history/why-it-is-so →
-          `@vcs`. Ground every recommendation in concrete file:line evidence and
-          name the trade-offs you're accepting. You have no general shell.
+          a critical correctness/security pass + git history/diff → `@reviewer`;
+          architecture/sequence diagrams → `@diagram`. Ground every
+          recommendation in concrete file:line evidence and name the trade-offs
+          you're accepting. You have no general shell.
         permission:
           edit:
             "*": deny
             "docs/**": allow
           bash: deny
+          # Lock delegation (read-only on code): only read-only / docs-scoped
+          # specialists. @vcs excluded (can commit) — history via @reviewer.
+          task:
+            "*": deny
+            "planner": allow
+            "doc-research": allow
+            "reviewer": allow
+            "diagram": allow
+            "web-search": allow
 
       # enemy — hard adversarial red-team primary. Assumes the work is WRONG and
       # hunts the worst failure modes. READ-ONLY (no edit, no shell) — and the
@@ -1292,9 +1385,9 @@ wellKnown:
           wrong and ruthlessly hunts the worst failure modes: edge cases, race
           conditions, security holes, broken assumptions, unhandled errors.
           READ-ONLY — never edits files or runs shell, and delegates ONLY to
-          read-only subagents: a structured critique (@reviewer), step-by-step
-          attack reasoning (@planner), known-CVE / prior-art lookup
-          (@web-search), library facts (@doc-research).
+          subagents that cannot touch the repo: a structured critique
+          (@reviewer), step-by-step attack reasoning (@planner), known-CVE /
+          prior-art lookup (@web-search).
         temperature: 0.6
         prompt: >-
           You are the adversary. Your job is to BREAK the code or design on
@@ -1307,24 +1400,25 @@ wellKnown:
           better". Rank findings by real-world severity and likelihood.
           DELEGATE only to read-only specialists: a structured second-pass
           critique → `@reviewer`; multi-step attack reasoning → `@planner`;
-          known CVEs / prior incidents → `@web-search`; library/API facts →
-          `@doc-research`. You CANNOT write — no edit, no shell, and you may not
-          delegate to a writable agent. To prove a break, describe the exact
-          failing test/input precisely and hand it to the caller to run; do not
-          ask another agent to write it.
+          known CVEs / prior incidents → `@web-search`. You CANNOT write — no
+          edit, no shell, and you may not delegate to a writable agent. To prove
+          a break, describe the exact failing test/input precisely and hand it
+          to the caller to run; do not ask another agent to write it.
         permission:
           edit: deny
           bash: deny
-          # Enforce read-only: deny all delegation, then re-allow ONLY the
-          # subagents that cannot mutate the repo. @test/@vcs/@general and the
-          # writable primaries stay denied (an adversary must not write — even
-          # via a delegate — while "proving" a break). Last-match-wins.
+          # Enforce read-only: deny all delegation, then re-allow ONLY subagents
+          # that cannot mutate the repo. NOTE @doc-research is EXCLUDED — it has
+          # `edit: docs/**` (writable), so an adversary could mutate docs/ by
+          # delegating a "documentation" write. Allowed = reviewer/planner/
+          # web-search (all edit:deny, no repo writes). @test/@vcs/@iac/@skill/
+          # @general and writable primaries stay denied. Order-independent
+          # (`*` sorts first under toJson, names after).
           task:
             "*": deny
             "reviewer": allow
             "planner": allow
             "web-search": allow
-            "doc-research": allow
 
       # tester — TDD primary. Edits code and AUTO-runs ONLY test commands.
       # (The @test subagent stays for delegation from other primaries.)
@@ -1377,7 +1471,7 @@ wellKnown:
           severity and a concrete fix. READ-ONLY on code (writes reports ONLY
           under docs/); delegates a correctness/security pass (@reviewer),
           CVE/advisory lookup (@web-search), library facts (@doc-research) and
-          history (@vcs).
+          read-only git history (@reviewer).
         temperature: 0.1
         prompt: >-
           You are a security-review and reporting primary. Audit the code and
@@ -1387,9 +1481,9 @@ wellKnown:
           write a findings report ONLY under docs/ (e.g. docs/security/). For
           each finding give: the concrete mechanism (file:line + exploit path),
           a CVSS-style severity, and a specific remediation — never a vague
-          "could be improved". DELEGATE: a focused correctness/security pass →
-          `@reviewer`; CVEs / advisories / prior incidents → `@web-search`;
-          library/API facts → `@doc-research`; history → `@vcs`. This is a
+          "could be improved". DELEGATE: a focused correctness/security pass +
+          git history/diff → `@reviewer`; CVEs / advisories / prior incidents →
+          `@web-search`; library/API facts → `@doc-research`. This is a
           DEFENSIVE review for authorized code; report, don't exploit. You have
           no general shell.
         permission:
@@ -1397,6 +1491,14 @@ wellKnown:
             "*": deny
             "docs/**": allow
           bash: deny
+          # Lock delegation (read-only on code): only read-only / docs-scoped
+          # specialists. @vcs excluded (can commit) — history via @reviewer.
+          task:
+            "*": deny
+            "reviewer": allow
+            "web-search": allow
+            "doc-research": allow
+            "diagram": allow
       # ── Split-off VISUAL specialist subagents. These own the tools lifted
       #    off the lean primary, and because their tools return IMAGES the
       #    agent must interpret (browser_screenshot, refero_get_screen_image),

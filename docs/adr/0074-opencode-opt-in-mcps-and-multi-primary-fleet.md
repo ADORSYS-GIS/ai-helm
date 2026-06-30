@@ -101,21 +101,31 @@ default delegate is `general`). The neutral default is therefore named
 note documents. The marketing persona is named `marketing`, not `content`,
 because `content` is already the research **subagent**.
 
-**Permission hardening (order-independent by design).** Three refinements close
-gaps a primary's prompt would otherwise only *promise*:
+**Permission hardening (order-independent by design).** Several refinements
+close gaps a primary's prompt would otherwise only *promise* (most surfaced in
+the PR-557 bot review):
 
 - `firecrawl_*` is added to the global deny-baseline (it was the one catalogued
   server without one) and re-allowed on `@web-search` — so opting it in can't
   inject its tools onto every primary. Every catalogued server now has both a
   deny entry and a handling subagent.
-- `enemy` (a read-only adversary) gets a `permission.task` allowlist —
-  `{"*": deny, reviewer/planner/web-search/doc-research: allow}` — so it cannot
-  launder a write through a *writable* subagent (e.g. `@test`, which has
-  `edit: allow`). `edit`/`bash` deny alone don't govern delegation; `task` does.
-- `backend` uses a **curated** bash allowlist of specific safe sub-commands
-  (build/test/dev/dep) instead of blanket language wrappers, so any migration
-  (`npm run migrate`, `python manage.py migrate`, `uv run alembic upgrade`,
-  `prisma migrate`, …) falls through to `"*": ask` — matching its prompt.
+- **Read-only intent is enforced via `permission.task`, not just prompts.**
+  `edit`/`bash` deny do NOT govern Task-tool delegation, so a "read-only" primary
+  could launder a write through a *writable* subagent (`@test`/`@iac` edit code;
+  `@vcs` commits; `@doc-research`/`@skill` write `docs/**`/`skills/**`). Every
+  primary that claims read-only-on-code now carries a `task` allowlist
+  (`{"*": deny}` + only repo-safe delegates): `enemy` (→ reviewer/planner/
+  web-search — `@doc-research` excluded as it writes `docs/`), `architect` /
+  `security` / `docs` / `marketing` (→ their read-only + `docs/`-scoped
+  specialists only; `@vcs` excluded, history read via `@reviewer`).
+- `backend` **and** the default `assistant` use a **curated** bash allowlist of
+  specific safe sub-commands (build/test/dev/dep) instead of blanket language
+  wrappers, so any state-changing command (`npm run migrate`, `make migrate`,
+  `just deploy`, `uv run alembic upgrade`, `prisma migrate`, …) falls through to
+  `"*": ask` — matching the prompt. (`assistant` matters most: it's the default.)
+- The diff-aware `reviewer` is kept genuinely read-only: `git branch*` (deletes/
+  renames refs) and `helm template*` (`--post-renderer` runs an arbitrary
+  executable) are **dropped** — it keeps `git status/diff/log/show` + `helm lint`.
 
 ⚠️ **Load-bearing constraint — `toJson` sorts permission keys.** opencode
 resolves a permission map by **last-matching-rule-wins in config order**, but
@@ -157,7 +167,9 @@ deny over `npm *`, and it's a permanent rule for editing any agent's bash/`task`
   *driver* persona, the subagent the *delegated worker*. Kept both on purpose.
 - If a server proves universally useful, graduate it back to `enabled: true`
   here (a deliberate, reviewed flip — not the silent default it was before).
-- `firecrawl` remains `enabled: false` with no subagent (reserved), unchanged.
+- `firecrawl` is `enabled: false` (opt-in) like every other server, denied in
+  the baseline and handled by the `@web-search` subagent (search + scrape) — it
+  is no longer the role-less "reserved" exception it was before this ADR.
 
 ## Alternatives considered
 

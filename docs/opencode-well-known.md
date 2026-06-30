@@ -193,17 +193,24 @@ subagents below.
 
 | Primary | mode | edit | bash | tools |
 |---|---|---|---|---|
-| `assistant` | **primary** (default) | allow | `ask`; allow JS/Rust/Go/Python(`uv`)/`make`/`just`; `rm`→ask | **none** — delegates (lean) |
+| `assistant` | **primary** (default) | allow | `ask`; **curated** safe build/test/dev/dep allowlist across JS/Rust/Go/Python (NOT blanket `make */just */uv *` — they'd wrap `make migrate`/`just deploy`); state-changers → `ask`; `rm`→ask | **none** — delegates (lean) |
 | `frontend` | primary | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`) + Rust/WASM (`cargo`/`trunk`); `rm`→ask | **none** — delegates |
 | `backend` | primary | allow | `ask`; **curated** allowlist of safe build/test/dev/dep sub-commands (NOT blanket `npm *`/`python *`); migrations (`*migrate*`, alembic, prisma) fall through to `ask`; `rm`→ask | **none** — delegates |
 | `devops` | primary | allow | `ask`; allow SAFE `helm`/`kubectl`(read)/`terraform`·`tofu`(plan/validate/fmt)/`kustomize`/`yq`/`jq`; apply→ask; `destroy`/`kubectl delete` deny | **none** — delegates |
-| `marketing` | primary | only `docs/**` | deny | **none** — delegates (non-dev research) |
-| `docs` | primary | only `docs/**` | deny | **none** — delegates |
+| `marketing` | primary | only `docs/**` | deny | **none** — delegates; **`task`-locked** to read-only/`docs/`-scoped subagents |
+| `docs` | primary | only `docs/**` | deny | **none** — delegates; **`task`-locked** (no `@vcs`; history via `@reviewer`) |
 | `ux` | primary | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`); `rm`→ask | **none** — delegates (visual) |
-| `architect` | primary | only `docs/**` | deny | **none** — delegates (read-heavy) |
-| `enemy` | primary | deny | deny | **none** — read-only adversary; `permission.task` **locks delegation to read-only subagents** (reviewer/planner/web-search/doc-research) so it can't write via a delegate |
+| `architect` | primary | only `docs/**` | deny | **none** — delegates (read-heavy); **`task`-locked** to read-only specialists |
+| `enemy` | primary | deny | deny | **none** — read-only adversary; **`permission.task` locks delegation** to repo-safe subagents (reviewer/planner/web-search — `@doc-research` excluded: it writes `docs/`) |
 | `tester` | primary | allow | `ask`; allow test runners only; deny `rm *` | **none** — delegates |
-| `security` | primary | only `docs/**` | deny | **none** — read-only; delegates |
+| `security` | primary | only `docs/**` | deny | **none** — read-only; delegates; **`task`-locked** (no `@vcs`) |
+
+> **Read-only primaries are enforced, not just prompted.** `edit`/`bash` deny do
+> not gate the Task tool, so a "read-only" primary would otherwise be able to
+> write by delegating to a writable subagent (`@test`/`@iac` edit code, `@vcs`
+> commits, `@doc-research`/`@skill` write `docs/**`/`skills/**`). `enemy`,
+> `architect`, `security`, `docs`, and `marketing` each carry a `permission.task`
+> allowlist (`{"*": deny}` + only repo-safe delegates) to close that path.
 
 > ⚠️ **Bash/`task` permission ordering vs `toJson` (load-bearing).** opencode
 > resolves a permission map by **last-matching-rule-wins in config order**, but
@@ -226,7 +233,7 @@ MCP/browser tools; a primary reaches them via `@name` / the task tool.
 | `web-search` | subagent | *inherit* | deny | deny | `brave_*`, `firecrawl_*` (search + scrape) |
 | `doc-research` | subagent | *inherit* | only `docs/**` | deny | `context7_*` |
 | `iac` | subagent | *inherit* | allow | `ask`; allow safe `terraform`/`tofu` (init/validate/plan/fmt); `apply`→ask; `destroy`/`rm *` deny | `context7_*`, `terraform_*` |
-| `reviewer` | subagent | *inherit* | deny | **read-only** `git status`/`diff`/`log`/`show`/`branch` + `helm lint`/`template` (reviews the working diff; `*` deny) | `context7_*` |
+| `reviewer` | subagent | *inherit* | deny | **read-only** `git status`/`diff`/`log`/`show` + `helm lint` (reviews the working diff; `*` deny). NO `git branch*` (mutates refs) / `helm template*` (`--post-renderer` execs code) | `context7_*` |
 | `test` | subagent | *inherit* | allow | `ask`; allow common test runners; deny `rm *` | `context7_*` |
 | `skill` | subagent | *inherit* | only `.opencode/skills/**`, `skills/**` | deny | `context7_*` + `skill` |
 | `mobile` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `mobile_*` (device automation; reads screenshots) |
