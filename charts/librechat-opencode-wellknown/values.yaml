@@ -33,14 +33,19 @@ wellKnown:
 
   config:
     $schema: https://opencode.ai/config.json
-    # The org-wide DEFAULT agent: a frontend-flavoured PRIMARY (ADR-0048). On
-    # `opencode auth login` this merges UNDER each user's own config, so a user
-    # who sets their own default_agent keeps it; otherwise they start on
-    # `frontend`. Must name a `mode: primary`, visible agent (opencode hard-fails
-    # otherwise — agent/agent.ts). The frontend primary is kept LEAN (edit + JS
-    # toolchain only) and delegates browser/design/docs to subagents below, so
-    # the default context isn't carrying the 27 browser_* schemas every turn.
-    default_agent: frontend
+    # The org-wide DEFAULT agent: the neutral `assistant` PRIMARY (ADR-0074,
+    # which broadens the single-frontend-primary of ADR-0048 into a FLEET of
+    # selectable primaries). On `opencode auth login` this merges UNDER each
+    # user's own config, so a user who sets their own default_agent keeps it;
+    # otherwise they start on `assistant`. Must name a `mode: primary`, visible
+    # agent (opencode hard-fails otherwise — agent/agent.ts).
+    # ⚠️ NOT `general`: `general` is an opencode BUILT-IN general-purpose
+    # SUBAGENT (the task tool's default delegate); defining `agent.general`
+    # would clobber it (same trap as `plan`/`build` — see the @planner note).
+    # So the neutral default is `assistant`. Every primary is kept LEAN — the
+    # deny-baseline keeps MCP/browser tool schemas OFF all primaries and behind
+    # subagents, so no primary carries the 27 browser_* schemas every turn.
+    default_agent: assistant
     plugin:
       # opencode auto-installs each via `bun install` at startup; cached
       # under ~/.cache/opencode/node_modules/. No user action needed.
@@ -247,17 +252,25 @@ wellKnown:
                   action: error
 
     # ────────────────────────────────────────────────────────────────────
-    # MCP servers (ADR-0042, scoping model refined by ADR-0044). Two axes:
+    # MCP servers (ADR-0042, scoping ADR-0044, OPT-IN default ADR-0074). Two axes:
     #   • CONNECTIVITY — `enabled` here decides whether opencode connects to
-    #     the server AT ALL. A tool only exists if its server is connected,
-    #     so every server some `agent` (below) needs is `enabled: true`.
+    #     the server AT ALL. A tool only exists if its server is connected.
+    #     ⚠️ As of ADR-0074 EVERY server ships `enabled: false` — MCPs are now
+    #     OPT-IN. The org-wide well-known no longer auto-connects a dozen npx
+    #     servers + remotes for every user; a user enables ONLY the servers a
+    #     workflow needs (drop the JSON into their own opencode.json, or we
+    #     flip one here when a team standardises on it). This keeps day-one
+    #     startup lean (no cold `npx` installs, no remote OAuth prompts) and
+    #     the tool surface honest. The `agent` wiring below is kept INTACT so
+    #     enabling a server is a one-line flip — its specialist subagent is
+    #     already there to handle it.
     #   • ACCESS — WHO may call a connected tool is decided per-agent under
     #     `config.agent.*.permission`, on top of the global `permission`
-    #     deny-baseline that keeps the PRIMARY agent lean. So a connected
-    #     server is NOT on the default agent; it lives behind its specialist
+    #     deny-baseline that keeps the PRIMARY agents lean. So even once
+    #     enabled, a server is NOT on a primary; it lives behind its specialist
     #     subagent (brave→web-search, context7→doc-research/iac,
-    #     terraform→iac). `enabled: false` = not connected → no agent can
-    #     use it (reserve for servers no role needs yet).
+    #     terraform→iac). `enabled: false` (the default now) = not connected →
+    #     no agent can use it until a user opts in.
     mcp:
       # Remote — the gateway's /mcp/<name> routes (ADR-0038): Keycloak JWT
       # via the opencode-cli client, RFC 9728 discovery on the route. All
@@ -270,17 +283,17 @@ wellKnown:
         oauth: &mcpOAuth
           clientId: opencode-cli
           scope: "openid profile offline_access"
-        enabled: true            # connected; scoped to the web-search agent
+        enabled: false           # OFF by default (opt-in); handled by the web-search agent
       context7:
         type: remote
         url: "https://api.ai.camer.digital/mcp/context7"
         oauth: *mcpOAuth
-        enabled: true            # connected; scoped to doc-research + iac agents
+        enabled: false           # OFF by default (opt-in); handled by doc-research + iac agents
       refero:
         type: remote
         url: "https://api.ai.camer.digital/mcp/refero"
         oauth: *mcpOAuth
-        enabled: true            # connected; scoped to the @design subagent
+        enabled: false           # OFF by default (opt-in); handled by the @design subagent
       firecrawl:
         type: remote
         url: "https://api.ai.camer.digital/mcp/firecrawl"
@@ -290,7 +303,7 @@ wellKnown:
         type: remote
         url: "https://api.ai.camer.digital/mcp/terraform"
         oauth: *mcpOAuth
-        enabled: true            # connected; scoped to the iac agent
+        enabled: false           # OFF by default (opt-in); handled by the iac agent
 
       # ── Local servers (ADR-0071) ───────────────────────────────────────
       # Run on the USER's own machine — opencode CLI spawns each via `npx`
@@ -312,9 +325,10 @@ wellKnown:
       # radius than in-process plugins), so they float to @latest like the
       # remotes. Pin a `name@x.y.z` here if drift ever bites.
       #
-      # Each is connected (`enabled: true`) but DENIED on the primary by the
-      # baseline below and re-allowed ONLY on its dedicated subagent — so the
-      # default agent never carries these tool schemas (ADR-0044/0048 model).
+      # Each ships `enabled: false` (opt-in, ADR-0074); when a user enables it
+      # it is still DENIED on the primaries by the baseline below and re-allowed
+      # ONLY on its dedicated subagent — so no primary ever carries these tool
+      # schemas (ADR-0044/0048 lean-context model, multi-primary by ADR-0074).
       memory:
         type: local
         # Official knowledge-graph memory server. MEMORY_FILE_PATH points at
@@ -331,7 +345,7 @@ wellKnown:
           - "@modelcontextprotocol/server-memory"
         environment:
           MEMORY_FILE_PATH: "{env:HOME}/.local/share/opencode/memory.json"
-        enabled: true            # connected; scoped to the @memory subagent
+        enabled: false           # OFF by default (opt-in); handled by the @memory subagent
       sequentialthinking:
         type: local
         # Official structured-reasoning server (one tool). Scoped to @planner
@@ -342,7 +356,7 @@ wellKnown:
           - npx
           - "-y"
           - "@modelcontextprotocol/server-sequential-thinking"
-        enabled: true            # connected; scoped to the @planner subagent
+        enabled: false           # OFF by default (opt-in); handled by the @planner subagent
       mobile:
         type: local
         # Mobile-Next: drives iOS Simulators / Android Emulators / physical
@@ -361,7 +375,7 @@ wellKnown:
           - "-y"
           - "@mobilenext/mobile-mcp@latest"
         timeout: 60000
-        enabled: true            # connected; scoped to the @mobile subagent
+        enabled: false           # OFF by default (opt-in); handled by the @mobile subagent
 
       # ── No-key local batch (ADR-0072) ──────────────────────────────────
       # Same `type: local` npx form as the ADR-0071 batch, but selected for
@@ -380,7 +394,7 @@ wellKnown:
           - npx
           - "-y"
           - "@cyanheads/git-mcp-server"
-        enabled: true            # connected; scoped to the @vcs subagent
+        enabled: false           # OFF by default (opt-in); handled by the @vcs subagent
       drawio:
         type: local
         # OFFICIAL draw.io server — generates editable diagrams (XML / CSV /
@@ -390,7 +404,7 @@ wellKnown:
           - npx
           - "-y"
           - "@drawio/mcp"
-        enabled: true            # connected; scoped to the @diagram subagent
+        enabled: false           # OFF by default (opt-in); handled by the @diagram subagent
       shadcn:
         type: local
         # shadcn/ui v4 component source / usage / install metadata
@@ -402,7 +416,7 @@ wellKnown:
           - npx
           - "-y"
           - "@jpisnice/shadcn-ui-mcp-server"
-        enabled: true            # connected; scoped to the @ui subagent
+        enabled: false           # OFF by default (opt-in); handled by the @ui subagent
       reddit:
         type: local
         # Reddit reader — anonymous READ mode needs no credentials (~10
@@ -412,7 +426,7 @@ wellKnown:
           - npx
           - "-y"
           - "reddit-mcp-server"
-        enabled: true            # connected; scoped to the @content subagent
+        enabled: false           # OFF by default (opt-in); handled by the @content subagent
       youtube:
         type: local
         # YouTube transcript fetcher (public transcript endpoints, no key) —
@@ -421,7 +435,7 @@ wellKnown:
           - npx
           - "-y"
           - "@sinco-lab/mcp-youtube-transcript"
-        enabled: true            # connected; scoped to the @content subagent
+        enabled: false           # OFF by default (opt-in); handled by the @content subagent
       rss:
         type: local
         # RSS/Atom feed reader (no key) — news monitoring, content curation,
@@ -430,7 +444,7 @@ wellKnown:
           - npx
           - "-y"
           - "rss-mcp"
-        enabled: true            # connected; scoped to the @content subagent
+        enabled: false           # OFF by default (opt-in); handled by the @content subagent
 
       # ── Atlassian: per-user token local batch (ADR-0073) ───────────────
       # Jira + Confluence as `type: local` npx servers (author @aashari). Per
@@ -456,7 +470,7 @@ wellKnown:
           ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
           ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
           ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
-        enabled: true            # connected; scoped to the @atlassian subagent
+        enabled: false           # OFF by default (opt-in); handled by the @atlassian subagent
       confluence:
         type: local
         command:
@@ -467,15 +481,18 @@ wellKnown:
           ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
           ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
           ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
-        enabled: true            # connected; scoped to the @atlassian subagent
+        enabled: false           # OFF by default (opt-in); handled by the @atlassian subagent
 
     # ────────────────────────────────────────────────────────────────────
-    # Global permission baseline (ADR-0044) — keeps the PRIMARY/default agent
-    # LEAN: every connected MCP tool is denied by default, so the main agent
-    # has none of them. Each role subagent below re-allows exactly its own
-    # (agent permission overrides root). edit/bash keep opencode's defaults
-    # for the primary. (refero/firecrawl aren't connected, so no deny needed;
-    # `.env` reads are already denied by opencode.)
+    # Global permission baseline (ADR-0044) — keeps EVERY primary agent LEAN:
+    # every MCP/browser tool is denied at the root, so no primary carries them.
+    # Each role subagent below re-allows exactly its own (agent permission
+    # overrides root via findLast). edit/bash keep opencode's defaults for
+    # primaries (each primary further scopes its own). The denies are kept for
+    # ALL servers even though every one now ships `enabled: false` (ADR-0074,
+    # opt-in): the moment a user enables a server, this baseline still keeps it
+    # off the primaries and behind its subagent — no edit needed to stay lean.
+    # (`.env` reads are already denied by opencode.)
     permission:
       "brave_*": deny
       "context7_*": deny
@@ -509,24 +526,32 @@ wellKnown:
       "confluence_*": deny
 
     # ────────────────────────────────────────────────────────────────────
-    # Agents (ADR-0044, topology revised by ADR-0048). The `frontend` entry is
-    # the PRIMARY (default agent, see `default_agent` above); everything else is
-    # a delegated `mode: subagent` the primary dispatches via the task tool /
-    # `@name`. Each subagent is a WHITELIST: it allows only its tools + its
-    # file/bash scope; everything else falls back to the deny-baseline above.
+    # Agents (ADR-0044, topology revised by ADR-0048, FLEET by ADR-0074). Two
+    # tiers:
+    #  • PRIMARIES (`mode: primary`) — the user-selectable agents (default
+    #    `assistant`; see `default_agent` above). The fleet block further down
+    #    holds them: assistant / frontend / backend / devops / marketing / docs
+    #    / ux / architect / enemy / tester / security. Each is lean — it holds
+    #    only edit + a scoped bash whitelist and DELEGATES tool-heavy work.
+    #  • SUBAGENTS (`mode: subagent`) — the delegated workers a primary
+    #    dispatches via the task tool / `@name`; these OWN the MCP/browser tools
+    #    (one per server). Defined FIRST below. Each subagent is a WHITELIST: it
+    #    allows only its tools + its file/bash scope; everything else falls back
+    #    to the deny-baseline above (which is why the tools never leak onto a
+    #    primary). The subagent wiring is unchanged by ADR-0074 — only the
+    #    primary count grew + every MCP is now opt-in (enabled:false).
     #
     # MODELS — pin ONLY where vision is required (ADR-0048, no-risk rule):
     #  • An agent whose tools return IMAGES it must interpret PINS a multimodal
     #    model — guaranteeing vision no matter the user's session model. Only
-    #    `@browser` (browser_screenshot) and `@design` (refero_get_screen_image)
-    #    qualify; both pin the branded multimodal alias `adorsys-frontend`
-    #    (`camer-digital/adorsys-frontend` → charts/ai-models, swappable THERE).
-    #  • EVERY OTHER agent — the `frontend` primary AND all role subagents
-    #    (web-search/doc-research/iac/reviewer/test/skill) — carries NO `model`
-    #    and INHERITS the user's session model. (This drops the old per-role
-    #    cost-lean pins: simpler + risk-free, at the cost of those roles no
-    #    longer forcing a cheap model — they run on whatever the user picks.)
-    #    A user can override per agent locally.
+    #    `@browser` (browser_screenshot), `@design` (refero_get_screen_image)
+    #    and `@mobile` (device screenshots) qualify; each pins the branded
+    #    multimodal alias `adorsys-frontend` (`camer-digital/adorsys-frontend` →
+    #    charts/ai-models, swappable THERE).
+    #  • EVERY OTHER agent — ALL primaries AND all non-visual role subagents —
+    #    carries NO `model` and INHERITS the user's session model. (Simpler +
+    #    risk-free; a role no longer forces a cheap model — it runs on whatever
+    #    the user picks.) A user can override per agent locally.
     agent:
       web-search:
         mode: subagent
@@ -814,25 +839,83 @@ wellKnown:
           bash: deny
           "jira_*": allow
           "confluence_*": allow
-      # ── PRIMARY (the org-wide default agent, ADR-0048) ──────────────────
-      # A LEAN, frontend-flavoured primary. It IMPLEMENTS directly (edit + JS
-      # toolchain) and DELEGATES tool-heavy work to subagents (browser →
-      # @browser, design refs → @design, library docs → @doc-research). The
-      # deny-baseline keeps browser_*/refero_*/context7_* OUT of this agent's
-      # injected toolset, so the default context stays light (no 27 browser_*
-      # schemas every turn). NO `model` pin — the primary handles no images
-      # itself (it delegates all visual work), so it INHERITS the user's chosen
-      # session model. Only the agents that actually read images pin a
-      # multimodal model (see @browser / @design).
+      # ── PRIMARIES — the selectable agent FLEET (ADR-0074, broadening the
+      #    single lean primary of ADR-0048). Every entry below is `mode: primary`
+      #    (a user picks one via the agent switcher / Tab); the org default is
+      #    `assistant`. They share one discipline:
+      #      • LEAN CONTEXT — NONE re-allow an MCP/browser tool, so the global
+      #        deny-baseline keeps those schemas OFF every primary. Tool-heavy
+      #        work is DELEGATED to the role subagents above via the task tool
+      #        (`@name`). A primary holds only `edit` + a scoped bash whitelist.
+      #      • NO `model` pin — a primary reads no images itself (it delegates
+      #        visual work to @browser/@design/@mobile, the only multimodal
+      #        agents), so it INHERITS the user's chosen session model.
+      #    A persona = its prompt + permission scope, NOT a private toolset;
+      #    adding one is cheap precisely because the tools live behind subagents
+      #    (ADR-0048 finding). ⚠️ Names avoid opencode built-ins (`build`/`plan`
+      #    primaries; `general`/`explore`/`scout` subagents) and every subagent
+      #    name above.
+
+      # assistant — the neutral DEFAULT. General-purpose across the stack:
+      # implements directly and delegates everything tool-heavy.
+      assistant:
+        mode: primary
+        description: >-
+          The neutral default agent: general-purpose across the whole stack.
+          Implements and edits code directly and runs the common build/test
+          toolchains (JS, Rust, Go, Python via uv, make/just), and delegates
+          tool-heavy work to the specialist subagents — web search
+          (@web-search), library docs (@doc-research), git (@vcs), planning
+          (@planner), tests (@test), diagrams (@diagram), memory (@memory) —
+          then decides and iterates. Switch to a focused primary (@backend,
+          @devops, @ux, @architect, @security, …) when the task has a clear
+          shape.
+        temperature: 0.3
+        prompt: >-
+          You are the default, general-purpose primary. You IMPLEMENT directly:
+          read and edit files and run the common toolchains — JS
+          (pnpm/npm/bun/yarn), Rust (cargo), Go, Python (uv), and make/just.
+          For tool-heavy or specialist work you DELEGATE via the task tool and
+          act on what the subagent reports:
+          • web search / current info → `@web-search`
+          • authoritative library/framework docs → `@doc-research`
+          • git on the working tree (diff / commit / branch / stash) → `@vcs`
+          • think a hard problem through step by step → `@planner`
+          • write or run tests → `@test`
+          • draw a diagram (architecture / flow) → `@diagram`
+          • remember a fact for later, or recall what's known → `@memory`
+          • verify UI in a real browser → `@browser`; design refs → `@design`.
+          When the task clearly fits a focused primary, say so and let the user
+          switch to it (@backend, @devops, @ux, @docs, @architect, @tester,
+          @security, @enemy, @marketing). Destructive or unrecognized commands
+          pause for your approval — gated, not blocked. Keep changes minimal and
+          explain the why.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "pnpm *": allow
+            "npm *": allow
+            "bun *": allow
+            "yarn *": allow
+            "cargo *": allow
+            "go *": allow
+            "uv *": allow
+            "make *": allow
+            "just *": allow
+            "rm *": ask
+
+      # frontend — frontend-flavoured implementation primary (was the ADR-0048
+      # org default; now one specialist among the fleet). Body kept verbatim.
       frontend:
         mode: primary
         description: >-
-          The default agent: a lean frontend-focused primary. Implements and
-          edits code and runs the frontend toolchain directly — JS
-          (pnpm/npm/bun/yarn) AND Rust/WASM (cargo/trunk) — and delegates the
-          rest — driving a real browser (@browser), pulling design references
-          (@design), and looking up library/framework docs (@doc-research) —
-          to specialist subagents, then decides and iterates.
+          A lean frontend-focused primary. Implements and edits code and runs
+          the frontend toolchain directly — JS (pnpm/npm/bun/yarn) AND Rust/WASM
+          (cargo/trunk) — and delegates the rest — driving a real browser
+          (@browser), pulling design references (@design), and looking up
+          library/framework docs (@doc-research) — to specialist subagents,
+          then decides and iterates.
         temperature: 0.3
         prompt: >-
           You are the primary agent, tuned for frontend work but capable across
@@ -891,6 +974,323 @@ wellKnown:
           # NB: no browser_*/refero_*/context7_* re-allow here — they stay denied
           # by the baseline so they're NOT injected into the primary's context.
           # Delegated to @browser / @design / @doc-research below.
+
+      # backend — server/API/DB implementation primary. Runs the backend
+      # toolchains directly; delegates docs/git/tests/planning to subagents.
+      backend:
+        mode: primary
+        description: >-
+          A backend-focused primary: services, APIs, data and migrations across
+          Go / Python / Node / Rust. Implements and edits code and runs the
+          backend toolchains directly, and delegates the rest — library docs
+          (@doc-research), git (@vcs), tests (@test), hard design (@planner),
+          issue lookup (@atlassian) — to specialist subagents.
+        temperature: 0.2
+        prompt: >-
+          You are a backend engineering primary: HTTP/gRPC services, data
+          models, queries, migrations, and background jobs. You IMPLEMENT
+          directly: edit code and run the backend toolchains — Go, Python (uv /
+          pytest), Node (pnpm/npm/bun), Rust (cargo), and make/just. DELEGATE
+          tool-heavy work: authoritative library docs → `@doc-research`; git on
+          the working tree → `@vcs`; writing/running tests → `@test`; thinking
+          a hard design through → `@planner`; Jira/Confluence lookup →
+          `@atlassian`. Be careful with anything that mutates data — never run
+          a destructive migration or DB command without explicit approval; they
+          pause for you (gated, not blocked). Keep changes minimal; explain why.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "go *": allow
+            "cargo *": allow
+            "uv *": allow
+            "python *": allow
+            "pytest*": allow
+            "npm *": allow
+            "pnpm *": allow
+            "bun *": allow
+            "yarn *": allow
+            "make *": allow
+            "just *": allow
+            "rm *": ask
+
+      # devops — k8s / Helm / Terraform / CI primary. Promotes the @iac role to
+      # a full driver: runs the SAFE (read/plan) infra commands directly,
+      # delegates registry/provider docs to @iac and history to @vcs.
+      devops:
+        mode: primary
+        description: >-
+          An infrastructure/platform primary: Kubernetes, Helm, Terraform/
+          OpenTofu, Kustomize and CI. Edits charts/manifests and runs the SAFE
+          read/plan commands directly (helm lint/template, kubectl get/describe/
+          logs, terraform/tofu plan/validate) — never auto-applies or deletes —
+          and delegates provider docs + registry lookups to @iac, git to @vcs,
+          and architecture diagrams to @diagram.
+        temperature: 0.2
+        prompt: >-
+          You are a DevOps / platform primary. You edit charts, manifests and
+          pipelines and run ONLY the safe, read-only-ish infra commands
+          yourself: helm lint/template/dep/show, kubectl get/describe/logs/
+          explain/top, terraform/tofu init/validate/plan/fmt/show/output,
+          kustomize build, yq/jq. Anything that MUTATES the cluster or state —
+          helm install/upgrade/uninstall, kubectl apply/delete, terraform/tofu
+          apply, and destroy — is NOT auto-run: apply-class commands pause for
+          the user's approval and destroy is denied outright. DELEGATE: provider
+          docs + Terraform registry → `@iac`; library docs → `@doc-research`;
+          git → `@vcs`; architecture/flow diagrams → `@diagram`; current info →
+          `@web-search`. Never run destructive shell from an org-wide default.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "helm lint*": allow
+            "helm template*": allow
+            "helm dep*": allow
+            "helm show*": allow
+            "kubectl get*": allow
+            "kubectl describe*": allow
+            "kubectl logs*": allow
+            "kubectl explain*": allow
+            "kubectl top*": allow
+            "terraform init*": allow
+            "terraform validate*": allow
+            "terraform plan*": allow
+            "terraform fmt*": allow
+            "terraform show*": allow
+            "terraform output*": allow
+            "terraform providers*": allow
+            "tofu init*": allow
+            "tofu validate*": allow
+            "tofu plan*": allow
+            "tofu fmt*": allow
+            "kustomize build*": allow
+            "yq *": allow
+            "jq *": allow
+            "terraform destroy*": deny
+            "tofu destroy*": deny
+            "kubectl delete*": deny
+            "rm *": ask
+
+      # marketing — non-dev content/research primary for marketing & PO users.
+      # Writes only under docs/; delegates all gathering to subagents. (Named
+      # `marketing`, NOT `content` — `content` is the research SUBAGENT.)
+      marketing:
+        mode: primary
+        description: >-
+          A non-developer primary for marketing, growth and product: gathers
+          and synthesises external content and turns it into briefs, posts and
+          summaries. Writes ONLY under docs/; never edits code or runs shell.
+          Delegates the gathering — social/video/feeds (@content), web search
+          (@web-search), design references (@design), diagrams (@diagram),
+          library/product docs (@doc-research) — to subagents.
+        temperature: 0.4
+        prompt: >-
+          You are a marketing / content primary for non-developers. You do NOT
+          edit code or run shell — you may write Markdown ONLY under docs/. Your
+          job is to gather source material and synthesise it: DELEGATE to
+          `@content` (Reddit / YouTube transcripts / RSS news), `@web-search`
+          (current info), `@design` (visual references), `@diagram` (turn an
+          idea into an editable diagram), and `@doc-research` (product/library
+          facts), then write a clear, source-cited brief, post, or summary.
+          Always cite where a claim or quote came from. If a coding change is
+          actually needed, hand it to the user to run @assistant / @frontend.
+        permission:
+          edit:
+            "*": deny
+            "docs/**": allow
+          bash: deny
+
+      # docs — documentation/technical-writing primary. Writes under docs/;
+      # pulls authoritative facts via @doc-research, diagrams via @diagram.
+      docs:
+        mode: primary
+        description: >-
+          A documentation primary: plans and writes technical docs, guides and
+          ADRs. Reads code freely and writes ONLY under docs/; delegates
+          authoritative library facts (@doc-research), diagrams (@diagram),
+          current info (@web-search) and git (@vcs) to subagents.
+        temperature: 0.3
+        prompt: >-
+          You are a technical-writing primary. Read the repo freely to ground
+          what you write, and produce clear, accurate docs — guides, references,
+          runbooks, ADRs — writing ONLY under docs/ (every other path is
+          denied; you do not edit code). DELEGATE: authoritative library/API
+          facts → `@doc-research`; editable diagrams → `@diagram`; current info
+          → `@web-search`; git/history → `@vcs`. Match the repo's existing doc
+          conventions and link related docs. You have no general shell.
+        permission:
+          edit:
+            "*": deny
+            "docs/**": allow
+          bash: deny
+
+      # ux — design/experience-led frontend primary. Implements UX changes and
+      # leans HARD on the visual subagents (@design references, @browser to
+      # verify, @ui for components, @mobile for devices).
+      ux:
+        mode: primary
+        description: >-
+          A UX / product-design primary: critiques and improves user
+          experience, accessibility and visual polish, and can implement the
+          frontend changes. Runs the JS toolchain directly and leans on the
+          visual subagents — design references (@design), real-browser
+          verification (@browser), components (@ui), device checks (@mobile),
+          diagrams (@diagram).
+        temperature: 0.3
+        prompt: >-
+          You are a UX / design-led primary. You judge and improve the user
+          experience — hierarchy, spacing, states, accessibility, copy — and
+          can IMPLEMENT the frontend changes (edit + JS toolchain:
+          pnpm/npm/bun/yarn). Work the loop visually: DELEGATE to `@design` for
+          references / visual targets, to `@browser` to reload + screenshot +
+          report the real rendered result, to `@ui` for shadcn component source,
+          and to `@mobile` for on-device checks; then compare to the reference,
+          decide what's off, and iterate. Favour calm, restrained layouts over
+          decoration. You delegate all image-reading to those subagents (they
+          pin a multimodal model). Destructive/unrecognized commands pause for
+          approval.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "pnpm *": allow
+            "npm *": allow
+            "bun *": allow
+            "yarn *": allow
+            "rm *": ask
+
+      # architect — deep code / systems architecture primary. READ-heavy
+      # analysis; writes ONLY ADRs/docs under docs/. Delegates reasoning,
+      # review and history to subagents.
+      architect:
+        mode: primary
+        description: >-
+          A deep code & systems architecture primary: reads broadly, reasons
+          about structure, trade-offs and blast radius, and produces designs,
+          ADRs and migration plans. READ-ONLY on code (writes ONLY under docs/);
+          delegates step-by-step reasoning (@planner), library facts
+          (@doc-research), a critical second pass (@reviewer), diagrams
+          (@diagram) and history (@vcs).
+        temperature: 0.2
+        prompt: >-
+          You are a software architect. Read the codebase broadly to build an
+          accurate model before proposing anything; reason about structure,
+          coupling, failure modes, trade-offs and blast radius. You do NOT edit
+          code — you may write ONLY under docs/ (designs, ADRs, migration
+          plans). DELEGATE: step-by-step reasoning on a hard problem →
+          `@planner`; authoritative library/framework facts → `@doc-research`;
+          a critical correctness/security pass on a proposal → `@reviewer`;
+          architecture/sequence diagrams → `@diagram`; history/why-it-is-so →
+          `@vcs`. Ground every recommendation in concrete file:line evidence and
+          name the trade-offs you're accepting. You have no general shell.
+        permission:
+          edit:
+            "*": deny
+            "docs/**": allow
+          bash: deny
+
+      # enemy — hard adversarial red-team primary. Assumes the work is WRONG and
+      # hunts the worst failure modes. READ-ONLY (no edit, no shell); delegates
+      # proof-of-breakage and review to subagents.
+      enemy:
+        mode: primary
+        description: >-
+          A hard adversarial primary — the "enemy". Assumes the code/design is
+          wrong and ruthlessly hunts the worst failure modes: edge cases, race
+          conditions, security holes, broken assumptions, unhandled errors.
+          READ-ONLY — never edits files or runs shell; delegates a structured
+          critique (@reviewer), step-by-step attack reasoning (@planner),
+          known-CVE / prior-art lookup (@web-search) and proof via tests
+          (@test).
+        temperature: 0.5
+        prompt: >-
+          You are the adversary. Your job is to BREAK the code or design on
+          paper, not to be agreeable. Assume it is wrong until proven otherwise
+          and attack it hard: enumerate the nastiest edge cases, race
+          conditions, concurrency and ordering bugs, injection/authz/SSRF and
+          other security holes, resource leaks, unhandled errors, and silent
+          data loss. For every attack cite the CONCRETE mechanism (file:line +
+          the exact input/sequence that triggers it) — no vague "this could be
+          better". Rank findings by real-world severity and likelihood.
+          DELEGATE: a structured second-pass critique → `@reviewer`; multi-step
+          attack reasoning → `@planner`; known CVEs / prior incidents →
+          `@web-search`; proving a break with a failing test → `@test`. You
+          cannot edit files or run shell — do not attempt to.
+        permission:
+          edit: deny
+          bash: deny
+
+      # tester — TDD primary. Edits code and AUTO-runs ONLY test commands.
+      # (The @test subagent stays for delegation from other primaries.)
+      tester:
+        mode: primary
+        description: >-
+          A test-driven-development primary: writes failing tests first, then
+          the minimal code to pass them, and runs the suite. Edits code but
+          AUTO-runs only test commands; delegates testing-library docs to
+          @doc-research and git to @vcs.
+        temperature: 0.2
+        prompt: >-
+          You are a TDD primary. Write a failing test that captures the intended
+          behaviour first, then the minimal code to make it pass, then run the
+          suite to verify — red, green, refactor. You may run test commands
+          freely (npm/pnpm/bun/yarn test, go test, pytest, cargo test, vitest,
+          jest, playwright, helm lint/template); anything else pauses for
+          approval and destructive shell is denied. DELEGATE: testing-library /
+          framework docs → `@doc-research`; git → `@vcs`. Prefer fast,
+          deterministic tests; cover the edge cases @enemy would attack.
+        permission:
+          edit: allow
+          bash:
+            "*": ask
+            "npm test*": allow
+            "npm run test*": allow
+            "pnpm test*": allow
+            "pnpm run test*": allow
+            "bun test*": allow
+            "yarn test*": allow
+            "go test*": allow
+            "pytest*": allow
+            "uv run pytest*": allow
+            "cargo test*": allow
+            "vitest*": allow
+            "jest*": allow
+            "playwright test*": allow
+            "helm lint*": allow
+            "helm template*": allow
+            "rm *": deny
+
+      # security — security review & reporting primary. READ-ONLY on code;
+      # writes findings ONLY under docs/ (e.g. docs/security/). Delegates
+      # review, CVE lookup, library facts and history to subagents.
+      security:
+        mode: primary
+        description: >-
+          A security-review & reporting primary: audits code and config for
+          vulnerabilities, threat-models the change, and writes up findings with
+          severity and a concrete fix. READ-ONLY on code (writes reports ONLY
+          under docs/); delegates a correctness/security pass (@reviewer),
+          CVE/advisory lookup (@web-search), library facts (@doc-research) and
+          history (@vcs).
+        temperature: 0.1
+        prompt: >-
+          You are a security-review and reporting primary. Audit the code and
+          configuration for real vulnerabilities — injection, authn/authz
+          gaps, SSRF, secret exposure, unsafe deserialization, supply-chain and
+          misconfig — and threat-model the change. You do NOT edit code; you may
+          write a findings report ONLY under docs/ (e.g. docs/security/). For
+          each finding give: the concrete mechanism (file:line + exploit path),
+          a CVSS-style severity, and a specific remediation — never a vague
+          "could be improved". DELEGATE: a focused correctness/security pass →
+          `@reviewer`; CVEs / advisories / prior incidents → `@web-search`;
+          library/API facts → `@doc-research`; history → `@vcs`. This is a
+          DEFENSIVE review for authorized code; report, don't exploit. You have
+          no general shell.
+        permission:
+          edit:
+            "*": deny
+            "docs/**": allow
+          bash: deny
       # ── Split-off VISUAL specialist subagents. These own the tools lifted
       #    off the lean primary, and because their tools return IMAGES the
       #    agent must interpret (browser_screenshot, refero_get_screen_image),

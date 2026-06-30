@@ -72,24 +72,33 @@ user — one shared config instead of each person hand-wiring the gateway routes
 opencode merges it *under* the user's own `opencode.json`, so any default is
 overridable locally.
 
-| Server | Type | Source | `enabled` (connected) |
+> ⚠️ **Since [ADR-0074](adr/0074-opencode-opt-in-mcps-and-multi-primary-fleet.md)
+> every server ships `enabled: false` — MCPs are OPT-IN.** A fresh
+> `opencode auth login` no longer auto-connects the remotes or cold-`npx`-installs
+> the locals; a user enables only what a workflow needs (in their own
+> `opencode.json`, or we flip one line here when a server graduates to
+> org-default). The handling subagent + deny-baseline entry stay in place, so
+> enabling a server is a one-line `enabled: true` flip. The `default` column
+> below is the shipped default — all `false`.
+
+| Server | Type | Source | `enabled` default |
 |---|---|---|---|
-| `brave` | remote | gateway `/mcp/brave` (web search) | `true` |
-| `context7` | remote | gateway `/mcp/context7` (library docs) | `true` |
-| `terraform` | remote | gateway `/mcp/terraform` (IaC) | `true` |
-| `refero` | remote | gateway `/mcp/refero` (design refs) | `true` |
+| `brave` | remote | gateway `/mcp/brave` (web search) | `false` |
+| `context7` | remote | gateway `/mcp/context7` (library docs) | `false` |
+| `terraform` | remote | gateway `/mcp/terraform` (IaC) | `false` |
+| `refero` | remote | gateway `/mcp/refero` (design refs) | `false` |
 | `firecrawl` | remote | gateway `/mcp/firecrawl` (web scraping) | `false` |
-| `memory` | **local** (`npx`) | `@modelcontextprotocol/server-memory` (knowledge graph; `MEMORY_FILE_PATH={env:HOME}/.local/share/opencode/memory.json`) | `true` |
-| `sequentialthinking` | **local** (`npx`) | `@modelcontextprotocol/server-sequential-thinking` (structured reasoning) | `true` |
-| `mobile` | **local** (`npx`) | `@mobilenext/mobile-mcp@latest` (iOS/Android device automation) | `true` |
-| `git` | **local** (`npx`, no key) | `@cyanheads/git-mcp-server` (local git on the working tree) | `true` |
-| `drawio` | **local** (`npx`, no key) | `@drawio/mcp` (official; editable diagrams, incl. Mermaid) | `true` |
-| `shadcn` | **local** (`npx`, no key) | `@jpisnice/shadcn-ui-mcp-server` (shadcn/ui v4 component metadata) | `true` |
-| `reddit` | **local** (`npx`, no key) | `reddit-mcp-server` (anonymous-read social listening) | `true` |
-| `youtube` | **local** (`npx`, no key) | `@sinco-lab/mcp-youtube-transcript` (video transcripts) | `true` |
-| `rss` | **local** (`npx`, no key) | `rss-mcp` (RSS/Atom feed reader) | `true` |
-| `jira` | **local** (`npx`, per-user token) | `@aashari/mcp-server-atlassian-jira` (`ATLASSIAN_SITE_NAME`/`USER_EMAIL`/`API_TOKEN`) | `true` |
-| `confluence` | **local** (`npx`, per-user token) | `@aashari/mcp-server-atlassian-confluence` (same Atlassian vars) | `true` |
+| `memory` | **local** (`npx`) | `@modelcontextprotocol/server-memory` (knowledge graph; `MEMORY_FILE_PATH={env:HOME}/.local/share/opencode/memory.json`) | `false` |
+| `sequentialthinking` | **local** (`npx`) | `@modelcontextprotocol/server-sequential-thinking` (structured reasoning) | `false` |
+| `mobile` | **local** (`npx`) | `@mobilenext/mobile-mcp@latest` (iOS/Android device automation) | `false` |
+| `git` | **local** (`npx`, no key) | `@cyanheads/git-mcp-server` (local git on the working tree) | `false` |
+| `drawio` | **local** (`npx`, no key) | `@drawio/mcp` (official; editable diagrams, incl. Mermaid) | `false` |
+| `shadcn` | **local** (`npx`, no key) | `@jpisnice/shadcn-ui-mcp-server` (shadcn/ui v4 component metadata) | `false` |
+| `reddit` | **local** (`npx`, no key) | `reddit-mcp-server` (anonymous-read social listening) | `false` |
+| `youtube` | **local** (`npx`, no key) | `@sinco-lab/mcp-youtube-transcript` (video transcripts) | `false` |
+| `rss` | **local** (`npx`, no key) | `rss-mcp` (RSS/Atom feed reader) | `false` |
+| `jira` | **local** (`npx`, per-user token) | `@aashari/mcp-server-atlassian-jira` (`ATLASSIAN_SITE_NAME`/`USER_EMAIL`/`API_TOKEN`) | `false` |
+| `confluence` | **local** (`npx`, per-user token) | `@aashari/mcp-server-atlassian-confluence` (same Atlassian vars) | `false` |
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
   with the **same** `opencode-cli` Keycloak client
@@ -97,13 +106,16 @@ overridable locally.
   is a YAML anchor (`&mcpOAuth` / `*mcpOAuth`) — declared once, reused; the
   serialized JSON expands it per server. Add a remote by copying three lines,
   never the credential.
-- ⚠️ **Since ADR-0044, `enabled` means *connectivity*, not "on for the primary
-  agent".** A connected server's tools are denied by the global permission
+- ⚠️ **`enabled` means *connectivity*, not "on for a primary agent"** (ADR-0044).
+  Even once a server is enabled, its tools are denied by the global permission
   baseline and re-allowed only on the role subagent that needs them (see *Agents
-  & tool scoping* below) — so `terraform` / `refero` are connected but reachable
-  only via `@iac` / `@frontend`, never the default agent. `firecrawl` stays
-  unconnected until a role claims it. (ADR-0042 originally shipped only `brave` +
-  `context7` connected; ADR-0044 connected the rest as roles needed them.)
+  & tool scoping* below) — so e.g. `terraform` / `refero` are reachable only via
+  `@iac` / `@design`, never a primary. **As of ADR-0074 every server starts
+  `enabled: false` (opt-in)** — the connection cost (remote OAuth prompts, cold
+  `npx` installs) is no longer paid by default; a user opts a server in and its
+  subagent is already wired. (Historically ADR-0042 shipped `brave`+`context7`
+  connected; ADR-0044/0071/0072/0073 connected the rest; ADR-0074 turned them
+  all back off as the default.)
 - **Local servers (ADR-0071)** are spawned by the opencode CLI on the user's own
   machine via `npx` over stdio (`type: local`) — no gateway route, no OAuth
   anchor, no remote rate-limit. They're a client-side capability (same trade-off
@@ -140,11 +152,10 @@ catalog; the rendered descriptor's `config.mcp` should match the table above.
 Tool access is modelled on **two decoupled axes**:
 
 - **Connectivity** — `config.mcp.<name>.enabled` decides whether opencode
-  connects to a server at all. A tool only exists if its server is connected, so
-  every server a role needs is `enabled: true` (brave, context7, terraform,
-  refero, the local memory/sequentialthinking/mobile, the no-key
-  git/drawio/shadcn/reddit/youtube/rss, and the per-user jira/confluence);
-  `enabled: false` = not connected (firecrawl, until a role needs it).
+  connects to a server at all. A tool only exists if its server is connected.
+  **As of ADR-0074 every server ships `enabled: false` (opt-in)** — so by default
+  no MCP tool exists and every role subagent is inert until the user enables the
+  server it needs. The wiring is kept so enabling is a one-line flip.
 - **Access** — a global `config.permission` **deny-baseline** denies every
   connected MCP tool (`brave_*`, `context7_*`, `terraform_*`, `refero_*`,
   `memory_*`, `sequentialthinking_*`, `mobile_*`, `git_*`, `drawio_*`,
@@ -176,9 +187,29 @@ Tool access is modelled on **two decoupled axes**:
 >   / don't register a plugin `group` you'll never allow) — registration gates
 >   what *can* be allowed; per-agent permission gates what *is* injected.
 
+**Primaries — the selectable fleet (ADR-0074).** Each is lean (no MCP re-allow,
+no `model` pin → inherits the session model) and delegates tool-heavy work to the
+subagents below.
+
+| Primary | mode | edit | bash | tools |
+|---|---|---|---|---|
+| `assistant` | **primary** (default) | allow | `ask`; allow JS/Rust/Go/Python(`uv`)/`make`/`just`; `rm`→ask | **none** — delegates (lean) |
+| `frontend` | primary | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`) + Rust/WASM (`cargo`/`trunk`); `rm`→ask | **none** — delegates |
+| `backend` | primary | allow | `ask`; allow Go/Python(`uv`/`pytest`)/Node/Rust/`make`/`just`; `rm`→ask | **none** — delegates |
+| `devops` | primary | allow | `ask`; allow SAFE `helm`/`kubectl`(read)/`terraform`·`tofu`(plan/validate/fmt)/`kustomize`/`yq`/`jq`; apply→ask; `destroy`/`kubectl delete` deny | **none** — delegates |
+| `marketing` | primary | only `docs/**` | deny | **none** — delegates (non-dev research) |
+| `docs` | primary | only `docs/**` | deny | **none** — delegates |
+| `ux` | primary | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`); `rm`→ask | **none** — delegates (visual) |
+| `architect` | primary | only `docs/**` | deny | **none** — delegates (read-heavy) |
+| `enemy` | primary | deny | deny | **none** — read-only adversary; delegates |
+| `tester` | primary | allow | `ask`; allow test runners only; deny `rm *` | **none** — delegates |
+| `security` | primary | only `docs/**` | deny | **none** — read-only; delegates |
+
+**Subagents — the delegated tool owners (unchanged by ADR-0074).** Each owns its
+MCP/browser tools; a primary reaches them via `@name` / the task tool.
+
 | Agent | mode | model | edit | bash | MCP / tools |
 |---|---|---|---|---|---|
-| `frontend` | **primary** (default) | *inherit* | allow | `ask`; allow JS (`pnpm`/`npm`/`bun`/`yarn`) + Rust/WASM (`cargo`/`trunk`); `rm`→ask | **none** — delegates (lean) |
 | `browser` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `browser_*` (page+control+debug+interactive, all 34 tools — incl. `browser_eval` and `browser_request_feedback`) |
 | `design` | subagent | **`adorsys-frontend`** (multimodal) | deny | deny | `refero_*` |
 | `web-search` | subagent | *inherit* | deny | deny | `brave_*` |
@@ -196,14 +227,19 @@ Tool access is modelled on **two decoupled axes**:
 | `content` | subagent | *inherit* | deny | deny | `reddit_*`, `youtube_*`, `rss_*`, `webfetch` (marketing/content research) |
 | `atlassian` | subagent | *inherit* | deny | deny | `jira_*`, `confluence_*` (per-user Atlassian creds; read/search-first) |
 
-> **`@frontend` is the org-wide default PRIMARY (`config.default_agent`), kept
-> lean.** It implements directly (`edit` + JS toolchain) and **delegates** the
-> tool-heavy work — so the deny-baseline keeps `browser_*`/`refero_*`/`context7_*`
-> out of its injected context (no 27-tool overhead on every turn). The closed loop
-> runs **primary implements → `@browser` reloads + screenshots + reports → primary
-> decides → iterates**. `@browser` owns the full `browser_*` surface (replacing the
-> removed `chrome-devtools` MCP); `@design` owns Refero; library docs route to
-> `@doc-research`.
+> **`@assistant` is the org-wide default PRIMARY (`config.default_agent`); the
+> rest of the fleet is opt-in via the agent switcher (ADR-0074).** Every primary
+> is kept lean — the deny-baseline keeps `browser_*`/`refero_*`/`context7_*`/all
+> MCP tools out of its injected context (no per-turn tool overhead) — and
+> **delegates** tool-heavy work. ⚠️ The default is `assistant`, **not `general`**:
+> `general` is an opencode built-in *subagent* (the task tool's default delegate),
+> so naming a primary `general` would clobber it — same trap as `build`/`plan`
+> (built-in primaries). A typical loop: **primary implements → `@browser` reloads
+> + screenshots + reports → primary decides → iterates**. `@browser` owns the full
+> `browser_*` surface (replacing the removed `chrome-devtools` MCP); `@design`
+> owns Refero; library docs route to `@doc-research`. `@frontend` is now one
+> specialist primary among the fleet (backend/devops/ux/docs/marketing/architect/
+> enemy/tester/security).
 >
 > **Model pinning — vision-only (no-risk rule):** pin a multimodal model **only**
 > on the agents whose tools return images they must interpret — `@browser`

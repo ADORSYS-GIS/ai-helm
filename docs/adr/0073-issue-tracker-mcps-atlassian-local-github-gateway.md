@@ -4,6 +4,8 @@
 **Date:** 2026-06-29
 **Deciders:** @stephane-segning
 
+> **Amended by [ADR-0074](./0074-opencode-opt-in-mcps-and-multi-primary-fleet.md) (2026-06-30):** the Jira/Confluence local servers added in phase 1 now ship `enabled: false` — MCPs are opt-in org-wide. The catalogue entries, deny-baseline, and the `@atlassian` subagent below are unchanged; only the default connectivity flips. (Phase 2 GitHub gateway route is unaffected.) Body below is immutable.
+
 ## Context
 
 The persona research behind ADR-0072 confirmed the maintainer's tracker stack
