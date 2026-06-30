@@ -4,6 +4,8 @@
 **Date:** 2026-06-14
 **Deciders:** @stephane-segning
 
+> **Amended by [ADR-0074](./0074-opencode-opt-in-mcps-and-multi-primary-fleet.md) (2026-06-30):** the single lean `frontend` default decided below is broadened into a FLEET of selectable `mode: primary` agents with a new neutral default `assistant`. The lean-primary discipline and the per-agent tool-injection finding (the "load-bearing finding") are unchanged — they are exactly what makes extra primaries cheap. Body below is immutable.
+
 > **Amendment 2026-06-14 (post-merge):** the `debug` group — dropped in
 > Decision 1 below (`browser_eval` = arbitrary in-page JS + console/network/
 > cookies, deemed too sharp for an org-wide push) — was **re-enabled at the
