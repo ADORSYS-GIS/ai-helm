@@ -193,8 +193,8 @@ modelDefaults:
 #
 # Verified 2026-06-02 against the backend model pages (DeepInfra / Fireworks).
 supportedParams:
-  # Agentic chat models with a thinking/reasoning mode (GLM-5/5.1, Kimi,
-  # MiniMax, DeepSeek-V4, Qwen3.6-Plus).
+  # Agentic chat models with a thinking/reasoning mode (GLM-5.2, Kimi,
+  # MiniMax, DeepSeek-V4, Qwen3.7-Plus).
   reasoning: &spReasoning
     - tools
     - tool_choice
@@ -704,20 +704,23 @@ models:
         modelNameOverride: "accounts/fireworks/models/qwen3-embedding-8b"
 
   qwen3p7-plus:
-    # Fireworks · qwen3p7-plus (Qwen3.7-Plus) — Fireworks lists 128k context
-    # + 8k max output; multimodal (image input) + reasoning + tools.
+    # Fireworks · qwen3p7-plus (Qwen3.7-Plus) — Fireworks lists 262,144-token
+    # context + 65,536 max output; multimodal (image input) + reasoning + tools.
+    # Metadata corrected from the qwen3p6-plus carryover (Codex review on
+    # PR #558) — 3.7 has a materially different spec than 3.6, verified live
+    # against Fireworks (app.fireworks.ai + fireworks.ai/blog/qwen-3p7-plus).
     kind: multimodal
     info:
       displayName: "Qwen3.7 Plus"
-      contextLength: 128000
-      maxOutputTokens: 8192
+      contextLength: 262144
+      maxOutputTokens: 65536
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.50
-        cachedInputPer1M: 0.10
-        outputPer1M: 3.00
+        inputPer1M: 0.40
+        cachedInputPer1M: 0.08
+        outputPer1M: 1.60
     backends:
       fw-01:
         <<: *fwBackendPrimary
