@@ -497,93 +497,77 @@ models:
 
   reviewer:
     kind: text
-    # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output,
-    # agentic thinking mode + function calling + vision.
+    # DeepInfra · zai-org/GLM-5.2 — 1,048,576-token context, 131k max output,
+    # agentic thinking mode + function calling + vision. Repointed from GLM-5
+    # (ADR-0075): GLM-5.2's DeepInfra price dropped to $0.93/$0.18/$3.00,
+    # undercutting GLM-5.1 on every axis with a far larger context ceiling.
     info:
-      displayName: "Reviewer (GLM-5)"
-      contextLength: 202752
+      displayName: "Reviewer (GLM-5.2)"
+      contextLength: 1048576
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.60
-        cachedInputPer1M: 0.12
-        outputPer1M: 2.08
+        inputPer1M: 0.93
+        cachedInputPer1M: 0.18
+        outputPer1M: 3.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "zai-org/GLM-5"
+        modelNameOverride: "zai-org/GLM-5.2"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "zai-org/GLM-5"
-
-  glm-5:
-    kind: text
-    # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output.
-    info:
-      displayName: "GLM-5"
-      contextLength: 202752
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.60
-        cachedInputPer1M: 0.12
-        outputPer1M: 2.08
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "zai-org/GLM-5"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "zai-org/GLM-5"
+        modelNameOverride: "zai-org/GLM-5.2"
 
   adorsys-planner:
     kind: text
-    # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output.
+    # DeepInfra · zai-org/GLM-5.2 — 1,048,576-token context, 131k max output.
+    # Repointed from GLM-5 (ADR-0075); see `reviewer` above for the price note.
     info:
-      displayName: "Adorsys Planner (GLM-5)"
-      contextLength: 202752
+      displayName: "Adorsys Planner (GLM-5.2)"
+      contextLength: 1048576
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.60
-        cachedInputPer1M: 0.12
-        outputPer1M: 2.08
+        inputPer1M: 0.93
+        cachedInputPer1M: 0.18
+        outputPer1M: 3.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "zai-org/GLM-5"
+        modelNameOverride: "zai-org/GLM-5.2"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "zai-org/GLM-5"
+        modelNameOverride: "zai-org/GLM-5.2"
 
   adorsys-planner-pro:
     kind: text
-    # DeepInfra · zai-org/GLM-5.1 — 202,752-token context, 131k max output,
+    # DeepInfra · zai-org/GLM-5.2 — 1,048,576-token context, 131k max output,
     # long-horizon agentic engineering (thinking + function calling + MCP).
+    # Repointed from GLM-5.1 (ADR-0075) — now the same backing as
+    # `adorsys-planner`; the value/pro split is a no-op until a future
+    # premium tier is introduced.
     info:
-      displayName: "Adorsys Planner Pro (GLM-5.1)"
-      contextLength: 202752
+      displayName: "Adorsys Planner Pro (GLM-5.2)"
+      contextLength: 1048576
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 1.05
-        cachedInputPer1M: 0.205
-        outputPer1M: 3.50
+        inputPer1M: 0.93
+        cachedInputPer1M: 0.18
+        outputPer1M: 3.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "zai-org/GLM-5.1"
+        modelNameOverride: "zai-org/GLM-5.2"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "zai-org/GLM-5.1"
+        modelNameOverride: "zai-org/GLM-5.2"
 
   kimi-k2.5:
     kind: text
@@ -673,30 +657,32 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "MiniMaxAI/MiniMax-M2.5"
 
-  glm-5p1:
-    # DeepInfra · zai-org/GLM-5.1 — text-only (NOT multimodal), 202,752-token
+  glm-5p2:
+    # DeepInfra · zai-org/GLM-5.2 — text-only (NOT multimodal), 1,048,576-token
     # context, 131k max output, thinking + function calling + structured output.
-    # Moved off Fireworks → DeepInfra (2026-06-06); pricing updated to DeepInfra's
-    # GLM-5.1 rates (matches adorsys-planner-pro, same model + provider).
+    # Consolidates the standalone `glm-5`/`glm-5p1` catalog ids (ADR-0075):
+    # DeepInfra's GLM-5.2 price dropped to $0.93/$0.18/$3.00, undercutting
+    # GLM-5.1 on every axis with a far larger context ceiling — GLM-5/5.1 are
+    # retired from the catalog.
     kind: text
     info:
-      displayName: "GLM-5.1"
-      contextLength: 202752
+      displayName: "GLM-5.2"
+      contextLength: 1048576
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 1.05
-        cachedInputPer1M: 0.205
-        outputPer1M: 3.50
+        inputPer1M: 0.93
+        cachedInputPer1M: 0.18
+        outputPer1M: 3.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "zai-org/GLM-5.1"
+        modelNameOverride: "zai-org/GLM-5.2"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "zai-org/GLM-5.1"
+        modelNameOverride: "zai-org/GLM-5.2"
 
   qwen3-embedding-8b:
     # Fireworks · qwen3-embedding-8b — an EMBEDDING model (32,768-token input,
@@ -867,25 +853,26 @@ models:
 
   adorsys-coder-pro:
     kind: text
-    # Backing: DeepInfra · zai-org/GLM-5.1 — strong long-horizon coder.
+    # Backing: DeepInfra · zai-org/GLM-5.2 — strong long-horizon coder.
+    # Repointed from GLM-5.1 (ADR-0075); see `reviewer` above for the price note.
     info:
-      displayName: "Adorsys Coder Pro (GLM-5.1)"
-      contextLength: 202752
+      displayName: "Adorsys Coder Pro (GLM-5.2)"
+      contextLength: 1048576
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 1.05
-        cachedInputPer1M: 0.205
-        outputPer1M: 3.50
+        inputPer1M: 0.93
+        cachedInputPer1M: 0.18
+        outputPer1M: 3.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "zai-org/GLM-5.1"
+        modelNameOverride: "zai-org/GLM-5.2"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "zai-org/GLM-5.1"
+        modelNameOverride: "zai-org/GLM-5.2"
 
   adorsys-reviewer:
     kind: text
@@ -913,6 +900,7 @@ models:
   adorsys-reviewer-pro:
     kind: text
     # Backing: DeepInfra · zai-org/GLM-5.2 — thorough agentic reviewer.
+    # Price corrected to DeepInfra's confirmed current rate (ADR-0075).
     info:
       displayName: "Adorsys Reviewer Pro (GLM-5.2)"
       contextLength: 1048576
@@ -921,7 +909,7 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.95
+        inputPer1M: 0.93
         cachedInputPer1M: 0.18
         outputPer1M: 3.00
     backends:

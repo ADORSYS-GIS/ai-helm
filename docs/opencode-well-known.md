@@ -45,7 +45,7 @@ $ opencode auth login \
     │  GET https://api.ai.camer.digital/v1/models    ───────────────►  Envoy AI Gateway
     │  Authorization: Bearer <access_token>           (passes Authorino,
     │  ◄────────────────────────────────────────────  forwarded to upstream)
-    │  { data: [{id: "glm-5", ...}, ...] }
+    │  { data: [{id: "glm-5p2", ...}, ...] }
     │
     │  $ opencode chat
     │  (each request: chat.headers hook injects Bearer)

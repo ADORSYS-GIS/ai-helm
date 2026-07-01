@@ -75,7 +75,7 @@ break down requests, latency, tokens, and cost by authenticated user.
 For gateway access logs, the Loki line is the **flat** attributes object:
 
 ```json
-{"user_id":"<sub>","azp":"opencode-cli","gen_ai.request.model":"glm-5p1",
+{"user_id":"<sub>","azp":"opencode-cli","gen_ai.request.model":"glm-5p2",
  "gen_ai.usage.total_tokens":"49845","duration":"51042","response_code":"200", ...}
 ```
 
@@ -215,9 +215,9 @@ allowlist from `docs/authorino-service-account-bypass.md`:
 # 1. Send a request with a real JWT (use kc-token from task #3)
 HUMAN_TOKEN=$(kc-token --client-id converse-frontend ...)
 curl -sv -H "Authorization: Bearer $HUMAN_TOKEN" \
-  -H "X-AI-EG-Model: glm-5" \
+  -H "X-AI-EG-Model: glm-5p2" \
   https://api.ai.camer.digital/v1/chat/completions \
-  -d '{"model":"glm-5","messages":[{"role":"user","content":"hi"}]}'
+  -d '{"model":"glm-5p2","messages":[{"role":"user","content":"hi"}]}'
 
 # 2. In Grafana → Explore → Loki, query
 {service_name="envoy-ai-gateway", azp=~".+"}
