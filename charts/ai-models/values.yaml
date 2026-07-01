@@ -752,6 +752,36 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "google/gemma-4-26B-A4B-it"
 
+  gemini-3p1-flash-lite:
+    # Google AI Studio (native, first model on this backend) ·
+    # gemini-3.1-flash-lite — 1,048,576-token context, 65,536 max output,
+    # multimodal (text/image/video/audio/PDF in) + reasoning + tools.
+    # Pricing is the text/image/video tier ($0.25 in / $1.50 out); Google
+    # charges a separate, higher audio-input rate ($0.50/1M) our flat
+    # weighted-pricing model doesn't distinguish — acceptable, audio input
+    # is not a primary use case here. Verified 2026-07-02 against
+    # ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite +
+    # ai.google.dev/gemini-api/docs/pricing.
+    kind: multimodal
+    info:
+      displayName: "Gemini 3.1 Flash Lite"
+      contextLength: 1048576
+      maxOutputTokens: 65536
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.25
+        cachedInputPer1M: 0.025
+        outputPer1M: 1.50
+    backends:
+      google-ai-studio-01:
+        <<: *googleAiStudioBackendPrimary
+        modelNameOverride: "gemini-3.1-flash-lite"
+      google-ai-studio-02:
+        <<: *googleAiStudioBackendSecondary
+        modelNameOverride: "gemini-3.1-flash-lite"
+
   glm-4.7-flash:
     kind: text
     # DeepInfra · zai-org/GLM-4.7-Flash — fast/cheap GLM, reasoning + agentic
