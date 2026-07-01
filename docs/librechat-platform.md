@@ -167,5 +167,6 @@ If you hit a rate limit, you'll see an error message indicating too many request
 | Document | Description |
 |----------|-------------|
 | [LibreChat OIDC Integration](librechat-oidc-integration.md) | Authentication configuration (for administrators) |
+| [Chain-of-Agent use cases](librechat-chain-of-agents.md) | Multi-agent pattern catalogue (ticket #414) |
 | [ADR-0014](adr/0014-split-librechart-and-opencode-wellknown.md) | Architecture decision (technical) |
 | [ADR-0021](adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md) | Gateway architecture (technical) |
