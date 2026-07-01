@@ -4,16 +4,16 @@ BackendTrafficPolicy — per-model rate limiting (ADR-0021).
 Up to THREE rule families per plan, all composed (Envoy denies if ANY matched
 bucket is exhausted):
 
-  1. burst requests/min — keyed on x-account-id + x-user-tier (per user per model).
-  2. burst tokens/min   — keyed on x-account-id + x-user-tier, cost = the llm_total_token
+  1. burst requests/min — keyed on x-account-id + x-billing-plan (per user per model).
+  2. burst tokens/min   — keyed on x-account-id + x-billing-plan, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
-  3. monthly budget     — keyed on x-account-id + x-user-tier ONLY (SHARED across all
+  3. monthly budget     — keyed on x-account-id + x-billing-plan ONLY (SHARED across all
                           models per user, ADR-0035), micro-USD, cost = the
                           llm_custom_total_cost response metadata.
                           Emitted ONLY for plans that carry a budget →
                           service/internal stay uncapped.
 
-x-user-tier (stamped by the AuthConfig from Keycloak's rate-limit-tier claim) selects the plan.
+x-billing-plan (stamped by the AuthConfig from Keycloak's rate-limit-tier claim) selects the plan.
 
 Budget per plan = per-model override (.Values.rateLimitBudgeting.<plan>, USD)
 else the global plan default (.Values.plans.<plan>.monthlyBudgetUsd). Burst
@@ -55,7 +55,7 @@ spec:
             - headers:
                 - name: x-account-id
                   type: Distinct
-                - name: x-user-tier
+                - name: x-billing-plan
                   type: Exact
                   value: {{ $planName | quote }}
                 - name: x-ai-eg-model
@@ -75,7 +75,7 @@ spec:
             - headers:
                 - name: x-account-id
                   type: Distinct
-                - name: x-user-tier
+                - name: x-billing-plan
                   type: Exact
                   value: {{ $planName | quote }}
                 - name: x-ai-eg-model
@@ -102,7 +102,7 @@ spec:
             - headers:
                 - name: x-account-id
                   type: Distinct
-                - name: x-user-tier
+                - name: x-billing-plan
                   type: Exact
                   value: {{ $planName | quote }}
           limit:
