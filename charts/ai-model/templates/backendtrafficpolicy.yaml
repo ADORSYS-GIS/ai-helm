@@ -4,8 +4,8 @@ BackendTrafficPolicy — per-model rate limiting (ADR-0021).
 Up to THREE rule families per plan, all composed (Envoy denies if ANY matched
 bucket is exhausted):
 
-  1. burst requests/min — keyed on x-account-id (per user / SA), cost = 1/request.
-  2. burst tokens/min   — keyed on x-account-id, cost = the llm_total_token
+  1. burst requests/min — keyed on x-account-id + x-billing-plan (per user per model).
+  2. burst tokens/min   — keyed on x-account-id + x-billing-plan, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
   3. monthly budget     — keyed on (x-account-id, x-billing-plan) ONLY — no
                           model selector — so the budget is a SINGLE shared
@@ -14,14 +14,13 @@ bucket is exhausted):
                           Emitted ONLY for plans that carry a budget →
                           service/internal stay uncapped.
 
-x-billing-plan (stamped by the AuthConfig from Keycloak) selects the plan.
+x-billing-plan (stamped by the AuthConfig from Keycloak's billing_plan claim (from group attribute)) selects the plan.
 
-Budget per plan = per-model override (.Values.rateLimitBudgeting.<plan>, USD)
+Budget per plan = global plan default (.Values.plans.<plan>.monthlyBudgetUsd) — no per-model overrides for shared budget
 else the global plan default (.Values.plans.<plan>.monthlyBudgetUsd). Burst
 (rules 1+2) remains per-model; comes from .Values.plans.<plan>.burst.
 */ -}}
 {{- $modelName := .Values.modelName -}}
-{{- $overrides := default dict .Values.rateLimitBudgeting -}}
 {{- $plans := .Values.plans -}}
 {{- $costKey := "llm_custom_total_cost" -}}
 ---
@@ -35,14 +34,7 @@ spec:
       kind: HTTPRoute
       name: {{ $modelName }}
   {{- /*
-  Per-model upstream timeout. A route-scoped BackendTrafficPolicy REPLACES the
-  gateway-wide one for its route (Envoy Gateway = closest-wins, no merge), so
-  without this a model route falls back to Envoy's DEFAULT ~15s route timeout →
-  a slow/cold backend returns 504 "upstream request timeout". We therefore ALWAYS
-  emit requestTimeout, defaulting to 600s (ADR-0034) so cloud models get a real
-  budget too — not just the self-hosted ones that set it explicitly. Override per
-  model via .Values.timeout.requestTimeout (e.g. shorter for rerankers/embeddings,
-  longer to ride a cold start). connectionIdleTimeout is opt-in.
+  Per-model upstream timeout.
   */ -}}
   {{- $t := .Values.timeout | default dict }}
   timeout:
@@ -57,7 +49,7 @@ spec:
       rules:
         {{- range $planName, $planCfg := $plans }}
         {{- $burst := default dict $planCfg.burst }}
-        {{- /* ── 1. burst: requests/min (per-user) ── */}}
+        {{- /* ── 1. burst: requests/min (per-user per model) ── */}}
         {{- with $burst.requestsPerMin }}
         - clientSelectors:
             - headers:
@@ -70,14 +62,14 @@ spec:
                   type: Exact
                   value: {{ $modelName | quote }}
           limit:
-            requests: {{ int64 . }} # {{ $planName }} burst req/min for {{ $modelName | quote }}
+            requests: {{ int64 . }} # {{ $planName }} burst req/min per model
             unit: Minute
           cost:
             request:
               from: Number
               number: 1
         {{- end }}
-        {{- /* ── 2. burst: tokens/min (per-user, dynamic from llm_total_token) ── */}}
+        {{- /* ── 2. burst: tokens/min (per-user per model) ── */}}
         {{- with $burst.tokensPerMin }}
         - clientSelectors:
             - headers:
@@ -90,7 +82,7 @@ spec:
                   type: Exact
                   value: {{ $modelName | quote }}
           limit:
-            requests: {{ int64 . }} # {{ $planName }} burst tokens/min for {{ $modelName | quote }}
+            requests: {{ int64 . }} # {{ $planName }} burst tokens/min per model
             unit: Minute
           cost:
             request:
@@ -102,8 +94,8 @@ spec:
                 namespace: io.envoy.ai_gateway
                 key: llm_total_token
         {{- end }}
-        {{- /* ── 3. monthly budget (per-person, micro-USD) — skipped ⇒ uncapped ── */}}
-        {{- $budgetUsd := or (index $overrides $planName) $planCfg.monthlyBudgetUsd }}
+        {{- /* ── 3. monthly budget (SHARED across all models per user, micro-USD) ── */}}
+        {{- $budgetUsd := $planCfg.monthlyBudgetUsd }}
         {{- with $budgetUsd }}
         {{- $limit := mulf . 1000000 | int64 }}
         - clientSelectors:
