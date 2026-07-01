@@ -45,7 +45,7 @@ Next, configure the scope to read the plan attribute from the user's active grou
 
 ## Step 3: Create Plan Groups and Set Group Attributes
 
-Instead of editing attributes for every user manually, we manage plans via Groups. Users inherit the tier attribute from their group.
+Instead of editing attributes for every user manually, we manage plans via Groups. Users inherit the plan attribute from their group.
 
 1. Go to **Groups** in the left sidebar menu.
 2. Click **Create group** and create two groups:
