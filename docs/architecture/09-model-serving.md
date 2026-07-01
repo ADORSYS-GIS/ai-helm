@@ -36,7 +36,7 @@ flowchart TB
 - **Adding a model is a list edit** in `charts/ai-models/values.yaml` → the
   ApplicationSet generates a new child Application (route + budget). No new chart.
 - Models are **branded aliases** over provider backends — e.g. `adorsys-reviewer`
-  → MiniMax M2.7, `adorsys-reviewer-pro` → GLM-5, `adorsys-coder-pro` → GLM-5.1.
+  → MiniMax M2.7, `adorsys-reviewer-pro` / `adorsys-coder-pro` → GLM-5.2 (ADR-0075).
   ~30 models are live across Fireworks / DeepInfra / Google AI + the 2 local ones.
 - The catalog clients see is `ai-models-info` — an OpenRouter-shape
   `/v1/models/info` static endpoint (ADR-0015).
