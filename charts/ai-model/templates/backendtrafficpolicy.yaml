@@ -7,9 +7,10 @@ bucket is exhausted):
   1. burst requests/min — keyed on x-account-id + x-billing-plan (per user per model).
   2. burst tokens/min   — keyed on x-account-id + x-billing-plan, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
-  3. monthly budget     — keyed on x-account-id + x-billing-plan ONLY (SHARED across all
-                          models per user, ADR-0035), micro-USD, cost = the
-                          llm_custom_total_cost response metadata.
+  3. monthly budget     — keyed on (x-account-id, x-billing-plan) ONLY — no
+                          model selector — so the budget is a SINGLE shared
+                          counter across ALL models (ADR-0035). micro-USD,
+                          cost = llm_custom_total_cost response metadata.
                           Emitted ONLY for plans that carry a budget →
                           service/internal stay uncapped.
 
@@ -17,7 +18,7 @@ x-billing-plan (stamped by the AuthConfig from Keycloak's rate-limit-tier claim)
 
 Budget per plan = per-model override (.Values.rateLimitBudgeting.<plan>, USD)
 else the global plan default (.Values.plans.<plan>.monthlyBudgetUsd). Burst
-comes from .Values.plans.<plan>.burst.
+(rules 1+2) remains per-model; comes from .Values.plans.<plan>.burst.
 */ -}}
 {{- $modelName := .Values.modelName -}}
 {{- $overrides := default dict .Values.rateLimitBudgeting -}}
@@ -106,7 +107,7 @@ spec:
                   type: Exact
                   value: {{ $planName | quote }}
           limit:
-            requests: {{ $limit }} # {{ $planName }} monthly budget ${{ . }} (SHARED across all models per user)
+            requests: {{ $limit }} # {{ $planName }} monthly budget ${{ . }} — shared across ALL models
             unit: Month
           cost:
             request:
