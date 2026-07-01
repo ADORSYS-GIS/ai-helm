@@ -7,10 +7,10 @@ bucket is exhausted):
   1. burst requests/min — keyed on x-account-id (per user / SA), cost = 1/request.
   2. burst tokens/min   — keyed on x-account-id, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
-  3. monthly budget     — keyed on x-account-id (per person, ADR-0035 — NOT a
-                          shared x-org-id bucket), micro-USD, cost = the
-                          llm_custom_total_cost response metadata (the pricing
-                          CEL emitted by the AIGatewayRoute, micro-USD).
+  3. monthly budget     — keyed on (x-account-id, x-billing-plan) ONLY — no
+                          model selector — so the budget is a SINGLE shared
+                          counter across ALL models (ADR-0035). micro-USD,
+                          cost = llm_custom_total_cost response metadata.
                           Emitted ONLY for plans that carry a budget →
                           service/internal stay uncapped.
 
@@ -18,7 +18,7 @@ x-billing-plan (stamped by the AuthConfig from Keycloak) selects the plan.
 
 Budget per plan = per-model override (.Values.rateLimitBudgeting.<plan>, USD)
 else the global plan default (.Values.plans.<plan>.monthlyBudgetUsd). Burst
-comes from .Values.plans.<plan>.burst.
+(rules 1+2) remains per-model; comes from .Values.plans.<plan>.burst.
 */ -}}
 {{- $modelName := .Values.modelName -}}
 {{- $overrides := default dict .Values.rateLimitBudgeting -}}
@@ -113,11 +113,8 @@ spec:
                 - name: x-billing-plan
                   type: Exact
                   value: {{ $planName | quote }}
-                - name: x-ai-eg-model
-                  type: Exact
-                  value: {{ $modelName | quote }}
           limit:
-            requests: {{ $limit }} # {{ $planName }} monthly budget ${{ . }} for {{ $modelName | quote }}
+            requests: {{ $limit }} # {{ $planName }} monthly budget ${{ . }} — shared across ALL models
             unit: Month
           cost:
             request:
