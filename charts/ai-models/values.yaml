@@ -52,7 +52,7 @@ argocd:
 #                             cost from the llm_total_token AIEG metadata)
 #   - monthlyBudgetUsd      → per-ORG monthly micro-USD budget (keyed on
 #                             x-org-id). OMITTED for a plan ⇒ uncapped budget.
-# x-billing-plan (set by the AuthConfig from the Keycloak `rate-limit-tier` claim,
+# x-billing-plan (set by the AuthConfig from the Keycloak `billing_plan` claim,
 # or "internal" on the internal plane) selects which plan's rules apply.
 rateLimitBudgeting:
   plans:
@@ -539,10 +539,6 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-5"
-    rateLimitBudgeting:
-      free: 10
-      pro: 50
-
   adorsys-planner:
     kind: text
     # DeepInfra · zai-org/GLM-5 — 202,752-token context, 131k max output.
@@ -564,10 +560,6 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-5"
-    rateLimitBudgeting:                 # unified $15/$50 across all adorsys-* brands
-      free: 15
-      pro: 50
-
   adorsys-planner-pro:
     kind: text
     # DeepInfra · zai-org/GLM-5.1 — 202,752-token context, 131k max output,
@@ -590,10 +582,6 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "zai-org/GLM-5.1"
-    rateLimitBudgeting:                 # unified $15/$50 across all adorsys-* brands
-      free: 15
-      pro: 50
-
   kimi-k2.5:
     kind: text
     # DeepInfra · moonshotai/Kimi-K2.5 — 262,144-token context, 131k max
@@ -832,130 +820,20 @@ models:
   adorsys-researcher:
     kind: text
     # Backing: DeepInfra · deepseek-ai/DeepSeek-V4-Flash (cheap/fast research).
-    rateLimitBudgeting:                 # uniform across the new adorsys-* brands
-      free: 15
-      pro: 50
-    info:
-      displayName: "Adorsys Researcher (DeepSeek V4)"
-      contextLength: 1048576
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.14
-        cachedInputPer1M: 0.028
-        outputPer1M: 0.28
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
-
   adorsys-coder:
     kind: text
     # Backing: DeepInfra · MiniMaxAI/MiniMax-M2.7 — fast agentic coder
     # (moved off Fireworks → DeepInfra, cheaper, 2026-06-12).
-    rateLimitBudgeting:
-      free: 15
-      pro: 50
-    info:
-      displayName: "Adorsys Coder (MiniMax M2.7)"
-      contextLength: 196608
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.25
-        cachedInputPer1M: 0.05
-        outputPer1M: 1.00
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
-
   adorsys-coder-pro:
     kind: text
     # Backing: DeepInfra · zai-org/GLM-5.1 — strong long-horizon coder.
-    rateLimitBudgeting:
-      free: 15
-      pro: 50
-    info:
-      displayName: "Adorsys Coder Pro (GLM-5.1)"
-      contextLength: 202752
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 1.05
-        cachedInputPer1M: 0.205
-        outputPer1M: 3.50
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "zai-org/GLM-5.1"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "zai-org/GLM-5.1"
-
   adorsys-reviewer:
     kind: text
     # Backing: DeepInfra · MiniMaxAI/MiniMax-M2.7 — fast reviewer
     # (moved off Fireworks → DeepInfra, cheaper, 2026-06-12).
-    rateLimitBudgeting:
-      free: 15
-      pro: 50
-    info:
-      displayName: "Adorsys Reviewer (MiniMax M2.7)"
-      contextLength: 196608
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.25
-        cachedInputPer1M: 0.05
-        outputPer1M: 1.00
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
-
   adorsys-reviewer-pro:
     kind: text
     # Backing: DeepInfra · zai-org/GLM-5.2 — thorough agentic reviewer.
-    rateLimitBudgeting:
-      free: 15
-      pro: 50
-    info:
-      displayName: "Adorsys Reviewer Pro (GLM-5.2)"
-      contextLength: 1048576
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.95
-        cachedInputPer1M: 0.18
-        outputPer1M: 3.00
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "zai-org/GLM-5.2"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "zai-org/GLM-5.2"
-
   adorsys-frontend:
     # Backing: DeepInfra · nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning — an OPEN
     # OMNI-MODAL model: text/IMAGE/video/audio IN → text out, MoE 30B-A3B (3B
@@ -972,23 +850,6 @@ models:
       contextLength: 262144
       maxOutputTokens: 16384
       supportedParameters: *spReasoning
-    rateLimitBudgeting:
-      free: 15
-      pro: 50
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.20
-        cachedInputPer1M: 0.04
-        outputPer1M: 0.80
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning"
-
   adorsys-frontend-pro:
     # Backing: DeepInfra · moonshotai/Kimi-K2.7-Code — code-specialized, and
     # native MULTIMODAL (text + IMAGE in, MoonViT; "visual inputs → UI"). The
@@ -1002,19 +863,3 @@ models:
       contextLength: 262144
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
-    rateLimitBudgeting:
-      free: 15
-      pro: 50
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 0.74
-        cachedInputPer1M: 0.15
-        outputPer1M: 3.50
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "moonshotai/Kimi-K2.7-Code"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "moonshotai/Kimi-K2.7-Code"

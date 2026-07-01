@@ -16,12 +16,11 @@ bucket is exhausted):
 
 x-billing-plan (stamped by the AuthConfig from Keycloak's billing_plan claim (from group attribute)) selects the plan.
 
-Budget per plan = per-model override (.Values.rateLimitBudgeting.<plan>, USD)
+Budget per plan = global plan default (.Values.plans.<plan>.monthlyBudgetUsd) — no per-model overrides for shared budget
 else the global plan default (.Values.plans.<plan>.monthlyBudgetUsd). Burst
 (rules 1+2) remains per-model; comes from .Values.plans.<plan>.burst.
 */ -}}
 {{- $modelName := .Values.modelName -}}
-{{- $overrides := default dict .Values.rateLimitBudgeting -}}
 {{- $plans := .Values.plans -}}
 {{- $costKey := "llm_custom_total_cost" -}}
 ---
@@ -96,7 +95,7 @@ spec:
                 key: llm_total_token
         {{- end }}
         {{- /* ── 3. monthly budget (SHARED across all models per user, micro-USD) ── */}}
-        {{- $budgetUsd := or (index $overrides $planName) $planCfg.monthlyBudgetUsd }}
+        {{- $budgetUsd := $planCfg.monthlyBudgetUsd }}
         {{- with $budgetUsd }}
         {{- $limit := mulf . 1000000 | int64 }}
         - clientSelectors:
