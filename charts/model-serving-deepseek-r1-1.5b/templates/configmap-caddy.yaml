@@ -1,0 +1,29 @@
+{{- /*
+The Caddyfile for the auth-proxy sidecar. Listens on :8090, validates the Bearer,
+and reverse-proxies to the model over localhost:8080.
+*/ -}}
+{{- if .Values.edgeAuth.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "model-serving-deepseek-r1-1.5b.name" . }}-caddy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+data:
+  Caddyfile: |
+    {
+      admin off
+      auto_https off
+    }
+    :8090 {
+      @unauthorized not header Authorization "Bearer {env.MODEL_API_KEY}"
+      respond @unauthorized 401
+      reverse_proxy http://localhost:8080 {
+        transport http {
+          dial_timeout 10s
+          response_header_timeout {{ .Values.edgeAuth.proxyResponseTimeout | default "600s" }}
+        }
+      }
+    }
+{{- end }}
