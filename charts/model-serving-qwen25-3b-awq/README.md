@@ -25,7 +25,7 @@ HuggingFace download). AWQ INT4 fits the full 32K context in 12GB VRAM.
   Bearer and is the only exposed port (`:8090`); the model's `:8080` is pod-local.
 - **The gateway side is elsewhere.** This chart only stands up the model + proxy.
   It's federated into the Hetzner Envoy AI Gateway as an ordinary OpenAI backend
-  (`vllm-local-awq-01` + the `qwen2.5-3b-awq-local` model) in
+  (`vllm-local-awq-01` + the `qwen25-3b-awq-local` model) in
   `charts/ai-models/values.yaml`.
 
 ## What it renders (in sync-wave order)
@@ -33,10 +33,10 @@ HuggingFace download). AWQ INT4 fits the full 32K context in 12GB VRAM.
 | Wave | Resource | Rendered by | Purpose |
 |---|---|---|---|
 | -2 | `ExternalSecret vllm-local-api-key` + `hf-token` | own templates | the API key (Bearer the sidecar enforces) + the HF download token |
-| -1 | `PVC qwen2.5-3b-awq-models` | own template | the weights volume (Longhorn, **RWX**) |
-| 0 | `Job qwen2.5-3b-awq-seed` (ArgoCD Sync hook) | **bjw** (`controllers.seed`, `type: job`) | downloads weights into the PVC **once**; ArgoCD waits for it |
-| 1 | `StatefulSet qwen2.5-3b-awq` (containers `model` + `proxy`) + `Service qwen2.5-3b-awq:8090` + `Ingress` | **bjw** | the model + Caddy sidecar; the Service → the Ingress (className traefik, cert-manager annotation) |
-| — | `ConfigMap qwen2.5-3b-awq-caddy` | own template | the Caddyfile mounted into the proxy sidecar |
+| -1 | `PVC qwen25-3b-awq-models` | own template | the weights volume (Longhorn, **RWX**) |
+| 0 | `Job qwen25-3b-awq-seed` (ArgoCD Sync hook) | **bjw** (`controllers.seed`, `type: job`) | downloads weights into the PVC **once**; ArgoCD waits for it |
+| 1 | `StatefulSet qwen25-3b-awq` (containers `model` + `proxy`) + `Service qwen25-3b-awq:8090` + `Ingress` | **bjw** | the model + Caddy sidecar; the Service → the Ingress (className traefik, cert-manager annotation) |
+| — | `ConfigMap qwen25-3b-awq-caddy` | own template | the Caddyfile mounted into the proxy sidecar |
 
 ## Key knobs (`values.yaml`)
 
