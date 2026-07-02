@@ -171,6 +171,18 @@ backendDefaults:
     securityType: APIKey
     tlsHostname: qwen25-3b-awq--poc.ssegning.com
 
+  # Self-hosted DeepSeek-R1-Distill-Qwen-1.5B on the home GPU — vLLM via KServe's
+  # huggingfaceserver, same pattern as vllmLocalAwq but a distinct edge FQDN.
+  # BF16 reasoning model (Qwen2.5-Math base); prefix is /openai/v1 (KServe).
+  vllmDeepseek: &vllmDeepseekBackend
+    schema: OpenAI
+    prefix: "/openai/v1"
+    fqdn:
+      hostname: deepseek-r1-1.5b--poc.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: deepseek-r1-1.5b--poc.ssegning.com
+
 modelDefaults:
   backendRefs:
     fwPrimary: &fwBackendPrimary
@@ -356,6 +368,19 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # Self-hosted DeepSeek-R1-Distill-Qwen-1.5B on the home GPU — vLLM via KServe's
+  # huggingfaceserver (BF16 reasoning model). Same API key as the other local
+  # vLLM models. Distinct edge host MUST match charts/model-serving-deepseek-r1-1.5b
+  # ingress host. DISABLED by default (one GPU → one model).
+  vllm-deepseek-01:
+    <<: *vllmDeepseekBackend
+    resourceName: vllm-deepseek-01-svc
+    secretRef:
+      name: vllm-local-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -506,6 +531,47 @@ models:
         ref: vllm-local-awq-01
         priority: 0
         modelNameOverride: "qwen25-3b-awq"
+
+  # Self-hosted DeepSeek-R1-Distill-Qwen-1.5B on the home GPU — vLLM via KServe's
+  # huggingfaceserver (BF16 reasoning model). A reasoning model distilled from
+  # DeepSeek-R1 onto a Qwen2.5-Math-1.5B base (MIT). ~1.5B params, BF16 ≈ 2 GB
+  # weights → 32K native context fits easily in 12GB A2000 VRAM. Long chain-of-
+  # thought generation → high maxOutputTokens. DISABLED by default (one GPU, one
+  # model). Enable + disable another self-hosted model at cutover.
+  #
+  # ── Model card (deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B · MIT) ───────────
+  #   Qwen2.5-Math-1.5B base, fine-tuned with 800k R1 reasoning samples. Long
+  #   CoT (thinking) generation — strong on math/code/reasoning, NOT tool-use.
+  #   Usage: temp 0.5-0.7 (0.6 rec), NO system prompt, enforce "\n" start.
+  #   https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+  #
+  # ── Cost (ADR-0028: cost-recovery for owned-hardware) ──────────────────────
+  #   Same hardware → same €/h TCO basis as the other self-hosted models. The
+  #   1.5B is lighter on the GPU so per-token cost is lower; prices below are a
+  #   conservative starting point — re-tune as utilization data arrives.
+  deepseek-r1-1.5b-local:
+    enabled: false                   # STAGED — one GPU, one model. Enable at cutover.
+    kind: text
+    minBackends: 1
+    timeout:
+      requestTimeout: 600s          # rides a deploy restart + a long CoT generation
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "DeepSeek-R1-Distill-Qwen-1.5B (self-hosted)"
+      contextLength: 32768           # Qwen2.5-1.5B native context (BF16 fits in 12GB)
+      maxOutputTokens: 32768        # reasoning model → long chain-of-thought
+      supportedParameters: *spReasoning   # R1 is a reasoning model (thinking mode)
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.10             # 1.5B is lighter → cheaper per token than the 3B/4B
+        cachedInputPer1M: 0.02
+        outputPer1M: 0.50
+    backends:
+      vllm-deepseek-01:
+        ref: vllm-deepseek-01
+        priority: 0
+        modelNameOverride: "deepseek-r1-1.5b"
 
   deepseek-v4-flash:
     kind: text

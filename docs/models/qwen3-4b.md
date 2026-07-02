@@ -3,7 +3,7 @@
 > One of three self-hosted-model papers. The reusable mechanics live in the
 > **[pattern guide](../self-hosted-model-serving.md)**; this paper is the
 > **as-deployed truth** for Qwen3-4B. Siblings:
-> [Qwen3.5-4B (vLLM/BF16)](./qwen3.5-4b.md) · [Qwen3.5-4B Q4 (llama.cpp) — **LIVE**](./qwen3.5-4b-q4.md).
+> [Qwen3.5-4B (vLLM/BF16)](./qwen3.5-4b.md) · [Qwen3.5-4B Q4 (llama.cpp) — **LIVE**](,./qwen3.5-4b-q4.md).
 
 | | |
 |---|---|
