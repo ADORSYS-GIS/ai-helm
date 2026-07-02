@@ -178,10 +178,10 @@ backendDefaults:
     schema: OpenAI
     prefix: "/openai/v1"
     fqdn:
-      hostname: deepseek-r1-1.5b--poc.ssegning.com
+      hostname: deepseek-r1-1-5b--poc.ssegning.com
       port: 443
     securityType: APIKey
-    tlsHostname: deepseek-r1-1.5b--poc.ssegning.com
+    tlsHostname: deepseek-r1-1-5b--poc.ssegning.com
 
 modelDefaults:
   backendRefs:
@@ -370,7 +370,7 @@ backends:
 
   # Self-hosted DeepSeek-R1-Distill-Qwen-1.5B on the home GPU — vLLM via KServe's
   # huggingfaceserver (BF16 reasoning model). Same API key as the other local
-  # vLLM models. Distinct edge host MUST match charts/model-serving-deepseek-r1-1.5b
+  # vLLM models. Distinct edge host MUST match charts/model-serving-deepseek-r1-1-5b
   # ingress host. DISABLED by default (one GPU → one model).
   vllm-deepseek-01:
     <<: *vllmDeepseekBackend
@@ -549,7 +549,7 @@ models:
   #   Same hardware → same €/h TCO basis as the other self-hosted models. The
   #   1.5B is lighter on the GPU so per-token cost is lower; prices below are a
   #   conservative starting point — re-tune as utilization data arrives.
-  deepseek-r1-1.5b-local:
+  deepseek-r1-1-5b-local:
     enabled: false                   # STAGED — one GPU, one model. Enable at cutover.
     kind: text
     minBackends: 1
@@ -571,7 +571,7 @@ models:
       vllm-deepseek-01:
         ref: vllm-deepseek-01
         priority: 0
-        modelNameOverride: "deepseek-r1-1.5b"
+        modelNameOverride: "deepseek-r1-1-5b"
 
   deepseek-v4-flash:
     kind: text

@@ -818,28 +818,28 @@ applications:
         selfHeal: true
 
   # Self-hosted DeepSeek-R1-Distill-Qwen-1.5B (BF16 reasoning model, vLLM via
-  # KServe's huggingfaceserver) on the home GPU. charts/model-serving-deepseek-r1-1.5b
+  # KServe's huggingfaceserver) on the home GPU. charts/model-serving-deepseek-r1-1-5b
   # renders the weights PVC + seed Job + the vLLM StatefulSet (model + Caddy proxy
   # sidecar) + Service + Ingress. Federated as the `vllm-deepseek-01` backend /
-  # `deepseek-r1-1.5b-local` model in charts/ai-models. Pattern: same as the
+  # `deepseek-r1-1-5b-local` model in charts/ai-models. Pattern: same as the
   # qwen25-3b-awq chart (standard Qwen2 arch → vLLM supports it natively).
   #
   # ⚠️ STAGED (enabled:false) — one GPU → one model. CUTOVER = set this enabled:true
   # + disable the currently-live self-hosted model app (qwen25-3b-awq), then flip
-  # the ai-models deepseek-r1-1.5b-local / qwen2.5-3b-awq-local enabled flags.
+  # the ai-models deepseek-r1-1-5b-local / qwen2.5-3b-awq-local enabled flags.
   # Rollback = the inverse. See docs/self-hosted-model-serving.md.
-  - name: model-serving-deepseek-r1-1.5b
+  - name: model-serving-deepseek-r1-1-5b
     enabled: false                   # STAGED — one GPU, one model. Enable at cutover.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
     source:
       # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
-      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-deepseek-r1-1.5b
+      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-deepseek-r1-1-5b
       chart: "."
       targetRevision: ">=0.0.0"
       helm:
-        releaseName: model-serving-deepseek-r1-1.5b
+        releaseName: model-serving-deepseek-r1-1-5b
         valuesObject: { }
     destination:
       namespace: converse-poc

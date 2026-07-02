@@ -1,4 +1,4 @@
-# model-serving-deepseek-r1-1.5b
+# model-serving-deepseek-r1-1-5b
 
 Self-hosted LLM on the **home GPU** (RTX A2000, 12 GB):
 **DeepSeek-R1-Distill-Qwen-1.5B** (BF16, ~1.5B params) — a reasoning model
@@ -37,7 +37,7 @@ trivially in 12GB VRAM (~2 GB weights + KV headroom).
   `maxOutputTokens` 32768.
 - **The gateway side is elsewhere.** This chart only stands up the model + proxy.
   It's federated into the Hetzner Envoy AI Gateway as an ordinary OpenAI backend
-  (`vllm-deepseek-01` + the `deepseek-r1-1.5b-local` model) in
+  (`vllm-deepseek-01` + the `deepseek-r1-1-5b-local` model) in
   `charts/ai-models/values.yaml`.
 
 ## What it renders (in sync-wave order)
@@ -45,10 +45,10 @@ trivially in 12GB VRAM (~2 GB weights + KV headroom).
 | Wave | Resource | Rendered by | Purpose |
 |---|---|---|---|
 | -2 | `ExternalSecret vllm-local-api-key` + `hf-token` | own templates | the API key (Bearer the sidecar enforces) + the HF download token |
-| -1 | `PVC deepseek-r1-1.5b-models` | own template | the weights volume (Longhorn, **RWX**) |
-| 0 | `Job deepseek-r1-1.5b-seed` (ArgoCD Sync hook) | **bjw** (`controllers.seed`, `type: job`) | downloads weights into the PVC **once**; ArgoCD waits for it |
-| 1 | `StatefulSet deepseek-r1-1.5b` (containers `model` + `proxy`) + `Service deepseek-r1-1.5b:8090` + `Ingress` | **bjw** | the model + Caddy sidecar; the Service → the Ingress (className traefik, cert-manager annotation) |
-| — | `ConfigMap deepseek-r1-1.5b-caddy` | own template | the Caddyfile mounted into the proxy sidecar |
+| -1 | `PVC deepseek-r1-1-5b-models` | own template | the weights volume (Longhorn, **RWX**) |
+| 0 | `Job deepseek-r1-1-5b-seed` (ArgoCD Sync hook) | **bjw** (`controllers.seed`, `type: job`) | downloads weights into the PVC **once**; ArgoCD waits for it |
+| 1 | `StatefulSet deepseek-r1-1-5b` (containers `model` + `proxy`) + `Service deepseek-r1-1-5b:8090` + `Ingress` | **bjw** | the model + Caddy sidecar; the Service → the Ingress (className traefik, cert-manager annotation) |
+| — | `ConfigMap deepseek-r1-1-5b-caddy` | own template | the Caddyfile mounted into the proxy sidecar |
 
 ## Key knobs (`values.yaml`)
 

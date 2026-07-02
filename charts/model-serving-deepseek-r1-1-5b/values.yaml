@@ -1,4 +1,4 @@
-# charts/model-serving-deepseek-r1-1.5b — self-hosted DeepSeek-R1-Distill-Qwen-1.5B
+# charts/model-serving-deepseek-r1-1-5b — self-hosted DeepSeek-R1-Distill-Qwen-1.5B
 # on the home GPU. See ADR-0022 (federation) + ADR-0028 (pricing) + ADR-0029
 # (serving mode) + ADR-0030 (one StatefulSet via bjw-template) +
 # docs/self-hosted-model-serving.md.
@@ -26,23 +26,26 @@
 #
 # Sync-wave ordering (this Application's resources, on the HOME cluster):
 #   -2  ExternalSecret (vllm-local-api-key + hf-token)  — before any pod
-#   -1  PVC (deepseek-r1-1.5b-models, RWX)               — weights volume
+#   -1  PVC (deepseek-r1-1-5b-models, RWX)               — weights volume
 #    0  seed Job (download-once into the PVC)             — ArgoCD Sync hook
 #    1  StatefulSet (model + proxy) + Service + Ingress   — mounts the PVC
 
 global:
   labels:
-    app: model-serving-deepseek-r1-1.5b
+    app: model-serving-deepseek-r1-1-5b
     team: adorsys-gis
 
 model:
-  name: deepseek-r1-1.5b
+  # ⚠️ Helm/k8s-safe name (dashes, no dots). This is the --model_name, the
+  # StatefulSet/Service name, and the PVC/caddy names. The HF repo + storagePath
+  # keep dots (real HF identifiers).
+  name: deepseek-r1-1-5b
   hfRepo: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
   storagePath: DeepSeek-R1-Distill-Qwen-1.5B
 
 pvc:
   enabled: true
-  name: deepseek-r1-1.5b-models
+  name: deepseek-r1-1-5b-models
   storageClassName: longhorn
   accessMode: ReadWriteMany
   size: 10Gi                         # ~2GB BF16 weights + headroom
@@ -77,7 +80,7 @@ edgeAuth:
 
 modelServing:
   global:
-    fullnameOverride: deepseek-r1-1.5b
+    fullnameOverride: deepseek-r1-1-5b
 
   defaultPodOptions:
     runtimeClassName: nvidia
@@ -97,7 +100,7 @@ modelServing:
             tag: v0.18.0-gpu
             pullPolicy: IfNotPresent
           args:
-            - --model_name=deepseek-r1-1.5b
+            - --model_name=deepseek-r1-1-5b
             - --model_dir=/mnt/models
             - --backend=vllm
             - --dtype=float16
@@ -238,7 +241,7 @@ modelServing:
       annotations:
         cert-manager.io/cluster-issuer: cert-cloudflare
       hosts:
-        - host: deepseek-r1-1.5b--poc.ssegning.com
+        - host: deepseek-r1-1-5b--poc.ssegning.com
           paths:
             - path: /
               pathType: Prefix
@@ -246,14 +249,14 @@ modelServing:
                 identifier: main
                 port: edge
       tls:
-        - secretName: deepseek-r1-1.5b-edge-tls
+        - secretName: deepseek-r1-1-5b-edge-tls
           hosts:
-            - deepseek-r1-1.5b--poc.ssegning.com
+            - deepseek-r1-1-5b--poc.ssegning.com
 
   persistence:
     model-store:
       enabled: true
-      existingClaim: deepseek-r1-1.5b-models
+      existingClaim: deepseek-r1-1-5b-models
       advancedMounts:
         main:
           model:
@@ -266,7 +269,7 @@ modelServing:
     caddyfile:
       enabled: true
       type: configMap
-      name: deepseek-r1-1.5b-caddy
+      name: deepseek-r1-1-5b-caddy
       advancedMounts:
         main:
           proxy:
