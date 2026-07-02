@@ -259,10 +259,14 @@ lci:
     # (validates Keycloak-issued JWTs; ADR-0014).
     control-plane:
       type: deployment
-      # Single replica until delivery-id dedupe is durable: the control plane currently keeps
-      # its X-GitHub-Delivery dedupe set in process memory, so two replicas behind the Service
-      # could each accept the same delivery and (once task creation is wired) double-process it.
-      # Move dedupe to Postgres before scaling out.
+      # RollingUpdate (not the bjw-template default of Recreate): avoids a zero-pod gap on every
+      # rollout. This briefly overlaps old+new pods during the rollout window, which *could* double
+      # process one in-flight webhook delivery until dedupe moves to Postgres (accepted trade-off —
+      # a Recreate gap was judged worse). Single replica until then: the control plane currently keeps
+      # its X-GitHub-Delivery dedupe set in process memory, so steady-state concurrent replicas behind
+      # the Service could each accept the same delivery and (once task creation is wired) double-process
+      # it. Move dedupe to Postgres before scaling out.
+      strategy: RollingUpdate
       replicas: 1
       annotations:
         argocd.argoproj.io/sync-wave: "2"
@@ -377,6 +381,9 @@ lci:
     # Next.js web console: Keycloak OIDC client (Authorization-Code + PKCE; ADR-0014).
     web:
       type: deployment
+      # RollingUpdate (not the bjw-template default of Recreate) — stateless Next.js console, no
+      # reason to drop to zero pods on a rollout.
+      strategy: RollingUpdate
       replicas: 2
       annotations:
         argocd.argoproj.io/sync-wave: "2"
@@ -545,6 +552,10 @@ lci:
     # (ADR-0004). No HTTP server beyond /metrics; runs under a dedicated SA with Job-CRUD RBAC there.
     dispatcher:
       type: deployment
+      # RollingUpdate (not the bjw-template default of Recreate) — the Postgres work queue is
+      # consumed via SKIP LOCKED, which is designed for concurrent consumers, so a brief old+new
+      # overlap during rollout is safe (no dedupe caveat like control-plane).
+      strategy: RollingUpdate
       replicas: 1
       annotations:
         argocd.argoproj.io/sync-wave: "2"
@@ -643,8 +654,12 @@ lci:
     # dispatcher (role-selected via CONTROL_PLANE_ROLE=reconciler; `poller` is the legacy alias the
     # binary still accepts). It holds the GitHub App key (to mint installation tokens); ONE replica so
     # egress isn't doubled (ADR-0002 keeps the credential off the multi-replica serve pods + dispatcher).
+    # RollingUpdate (not the bjw-template default of Recreate): avoids a zero-pod gap on every
+    # rollout, at the cost of a brief old+new pod overlap where GitHub egress could theoretically
+    # double up for a moment — same accepted trade-off as control-plane above.
     reconciler:
       type: deployment
+      strategy: RollingUpdate
       replicas: 1
       annotations:
         argocd.argoproj.io/sync-wave: "2"
