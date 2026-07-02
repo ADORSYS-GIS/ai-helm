@@ -200,6 +200,16 @@ config:
     labelFindings: needs-review  # ≥1 finding of any severity
     labelError: bug        # ≥1 error-severity finding
 
+  # External-knowledge MCP servers (lightbridge-ci ADR-0066): already-running REMOTE HTTP MCP servers
+  # the control plane discovers tools from + proxies calls to. Declare the servers here; each entry is
+  # {name, url} (url must be http(s)://). The per-tier tool SELECTION (which discovered tools each tier
+  # offers) lives in config.model.<tier>.tools as `mcp__<server>__<tool>` regex selectors. Empty here →
+  # no external-knowledge tools. Names must not contain `__` (breaks the mcp__<name>__<tool> split).
+  knowledgeTools:
+    mcpServers: []
+    # - name: brave-search
+    #   url: http://brave-search.converse-mcp.svc.cluster.local:8080/mcp
+
   # Embedding-store safety (ADR-0018). The live `code_chunks.embedding` column is vector(4096), set by
   # migration 0005 to match qwen3-embedding-8b. Changing the embedding model's dimension is
   # DESTRUCTIVE: on a mismatch the control plane either wipes + re-migrates the column (only when

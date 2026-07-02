@@ -34,6 +34,17 @@ interprets `{{ }}`).
 {{- if ne (toString $cfg.embeddings.dimension) "" }}
 {{- $_ := set $cp "embeddings" (dict "dimension" $cfg.embeddings.dimension "allow_reindex_on_dim_change" $cfg.embeddings.allowReindexOnDimChange) }}
 {{- end }}
+{{- /* External-knowledge MCP servers (lightbridge-ci ADR-0066) → control-plane.json
+       knowledge_tools.mcp_servers. Each is an already-running REMOTE HTTP MCP server the control
+       plane discovers tools from + proxies calls to; the per-tier `review.<tier>.tools` regex
+       allowlist then picks which discovered tools each tier offers. Declare the servers here; the
+       tool selection lives in config.model.<tier>.tools. Empty → no servers → no external tools (a
+       safe degrade). ⚠️ The control-plane image must carry the `knowledge_tools` FileConfig field
+       (lightbridge-ci #255) before this is set — else deny_unknown_fields fails config load. The
+       runner validates each url is http(s):// (remote-transport-only, never a local stdio server). */}}
+{{- $mcps := list }}
+{{- range $s := $cfg.knowledgeTools.mcpServers }}{{- if and $s.name $s.url }}{{- $mcps = append $mcps (dict "name" $s.name "url" $s.url) }}{{- end }}{{- end }}
+{{- if $mcps }}{{- $_ := set $cp "knowledge_tools" (dict "mcp_servers" $mcps) }}{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
