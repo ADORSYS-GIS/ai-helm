@@ -19,6 +19,14 @@ x-billing-plan (stamped by the AuthConfig from Keycloak's billing_plan claim (fr
 Budget per plan = global plan default (.Values.plans.<plan>.monthlyBudgetUsd) — no per-model overrides for shared budget
 else the global plan default (.Values.plans.<plan>.monthlyBudgetUsd). Burst
 (rules 1+2) remains per-model; comes from .Values.plans.<plan>.burst.
+
+⚠️ Every clientSelectors header spells out `invert: false` explicitly, even
+though it's the zero value. The BackendTrafficPolicy CRD schema declares
+`default: false` for this field, so the k8s API server stamps it onto the
+LIVE object on every apply regardless of what we send — omitting it here
+made ArgoCD's diff perpetually see "live has extra fields" and every model
+Application showed a permanent, cosmetic OutOfSync. Spelling it out here
+makes the rendered manifest match what the API server actually stores.
 */ -}}
 {{- $modelName := .Values.modelName -}}
 {{- $plans := .Values.plans -}}
@@ -53,12 +61,15 @@ spec:
         {{- with $burst.requestsPerMin }}
         - clientSelectors:
             - headers:
-                - name: x-account-id
+                - invert: false
+                  name: x-account-id
                   type: Distinct
-                - name: x-billing-plan
+                - invert: false
+                  name: x-billing-plan
                   type: Exact
                   value: {{ $planName | quote }}
-                - name: x-ai-eg-model
+                - invert: false
+                  name: x-ai-eg-model
                   type: Exact
                   value: {{ $modelName | quote }}
           limit:
@@ -73,12 +84,15 @@ spec:
         {{- with $burst.tokensPerMin }}
         - clientSelectors:
             - headers:
-                - name: x-account-id
+                - invert: false
+                  name: x-account-id
                   type: Distinct
-                - name: x-billing-plan
+                - invert: false
+                  name: x-billing-plan
                   type: Exact
                   value: {{ $planName | quote }}
-                - name: x-ai-eg-model
+                - invert: false
+                  name: x-ai-eg-model
                   type: Exact
                   value: {{ $modelName | quote }}
           limit:
@@ -100,9 +114,11 @@ spec:
         {{- $limit := mulf . 1000000 | int64 }}
         - clientSelectors:
             - headers:
-                - name: x-account-id
+                - invert: false
+                  name: x-account-id
                   type: Distinct
-                - name: x-billing-plan
+                - invert: false
+                  name: x-billing-plan
                   type: Exact
                   value: {{ $planName | quote }}
           limit:
