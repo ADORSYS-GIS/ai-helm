@@ -159,6 +159,18 @@ backendDefaults:
     securityType: APIKey
     tlsHostname: qwen3-4b--poc.ssegning.com
 
+  # Self-hosted Qwen2.5-3B-AWQ on the home GPU — vLLM via KServe's
+  # huggingfaceserver, same pattern as vllmLocal but a distinct edge FQDN.
+  # AWQ 4-bit quantized; prefix is /openai/v1 (KServe OpenAI-compatible route).
+  vllmLocalAwq: &vllmLocalAwqBackend
+    schema: OpenAI
+    prefix: "/openai/v1"
+    fqdn:
+      hostname: qwen25-3b-awq--poc.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: qwen25-3b-awq--poc.ssegning.com
+
 modelDefaults:
   backendRefs:
     fwPrimary: &fwBackendPrimary
@@ -331,6 +343,19 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # Self-hosted Qwen2.5-3B-AWQ on the home GPU — vLLM via KServe's
+  # huggingfaceserver (AWQ 4-bit quantized). Same API key as the other local
+  # vLLM models. Distinct edge host MUST match charts/model-serving-qwen25-3b-awq
+  # ingress host. DISABLED until cutover (one GPU → one model).
+  vllm-local-awq-01:
+    <<: *vllmLocalAwqBackend
+    resourceName: vllm-local-awq-01-svc
+    secretRef:
+      name: vllm-local-awq-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -421,7 +446,7 @@ models:
   # 12GB A2000 (vs the 16k wall on qwen3-4b). Served by llama-server (prefix /v1),
   # served-model-name = --alias `qwen3-5-4b`.
   qwen3-5-4b-local:
-    enabled: true                    # CUTOVER 2026-06-08: arch load-gate PASSED (llama.cpp loads the Qwen3.5 GGUF) — live
+    enabled: false                   # DISABLED — swapped by qwen2.5-3b-awq-local (one GPU). Re-enable to roll back.
     kind: text
     minBackends: 1                   # single self-hosted backend by design (one GPU)
     timeout:
@@ -443,6 +468,44 @@ models:
         ref: llama-local-01
         priority: 0
         modelNameOverride: "qwen3-5-4b"   # = llama-server --alias
+
+  # Self-hosted Qwen2.5-3B-AWQ on the home GPU — vLLM via KServe's
+  # huggingfaceserver (AWQ 4-bit quantized). Qwen2.5 is a non-thinking causal LM
+  # with 32K native context; AWQ INT4 fits the full window in 12GB A2000 VRAM.
+  # DISABLED by default (staged) — one GPU, one model. Enable + disable another
+  # self-hosted model at cutover.
+  #
+  # Model card (Qwen/Qwen2.5-3B-Instruct-AWQ · Apache-2.0):
+  #   3.0B params, 36 layers, GQA 16 Q / 2 KV, 32,768 native context,
+  #   AWQ 4-bit quantization. Supports tool/function calling via hermes
+  #   parser. Non-thinking (no reasoning mode).
+  #   https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-AWQ
+  #
+  # Cost (ADR-0028: cost-recovery for owned-hardware): same rate as the other
+  # self-hosted models — the hardware cost is identical.
+  qwen2.5-3b-awq-local:
+    enabled: true                    # CUTOVER — live on the home GPU.
+    kind: text
+    minBackends: 1
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen2.5-3B-AWQ (self-hosted)"
+      contextLength: 32768           # full native context fits with AWQ INT4
+      maxOutputTokens: 8192
+      supportedParameters: *spStandard   # Qwen2.5 is non-thinking → standard params
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.15
+        cachedInputPer1M: 0.03
+        outputPer1M: 1.00
+    backends:
+      vllm-local-awq-01:
+        ref: vllm-local-awq-01
+        priority: 0
+        modelNameOverride: "qwen2.5-3b-awq"
 
   deepseek-v4-flash:
     kind: text
