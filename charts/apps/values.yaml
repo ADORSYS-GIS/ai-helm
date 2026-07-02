@@ -795,7 +795,7 @@ applications:
   # ai-models qwen3-5-4b-local/qwen3-4b-local enabled flags, then cut a release +
   # repoint root. Rollback = the inverse.
   - name: model-serving-qwen3-5
-    enabled: true                    # CUTOVER 2026-06-08: arch load-gate passed — live
+    enabled: false                   # DISABLED — swapped by model-serving-qwen25-3b-awq (one GPU). Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -806,6 +806,37 @@ applications:
       targetRevision: ">=0.0.0"
       helm:
         releaseName: model-serving-qwen3-5
+        valuesObject: { }
+    destination:
+      namespace: converse-poc
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # Self-hosted Qwen2.5-3B-AWQ (AWQ INT4, vLLM) on the home GPU — a smaller
+  # quantized model for fast, memory-efficient inference (full 32K context on the
+  # 12GB A2000). charts/model-serving-qwen25-3b-awq renders the weights PVC + AWQ
+  # seed Job + vLLM StatefulSet (model + Caddy auth-proxy) + Service + Ingress.
+  # Federated as the `vllm-local-awq-01` backend / `qwen2.5-3b-awq-local` model
+  # in charts/ai-models.
+  #
+  # DISABLED (staged) — one GPU, one model. Cutover = set this enabled:true +
+  # disable another self-hosted model app + flip the ai-models enabled flags.
+  - name: model-serving-qwen25-3b-awq
+    enabled: true                    # CUTOVER — live on the home GPU.
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    homeCluster: true
+    source:
+      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-qwen25-3b-awq
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: model-serving-qwen25-3b-awq
         valuesObject: { }
     destination:
       namespace: converse-poc

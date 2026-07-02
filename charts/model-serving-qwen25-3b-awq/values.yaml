@@ -1,0 +1,258 @@
+# charts/model-serving-qwen25-3b-awq — self-hosted Qwen2.5-3B-Instruct-AWQ on the home GPU.
+# See ADR-0022 (federation) + ADR-0028 (pricing) + ADR-0029 (serving mode) +
+# ADR-0030 (one StatefulSet via bjw-template) + docs/self-hosted-model-serving.md.
+#
+# Shape: a hybrid bjw-template chart (like charts/librechat-app).
+#   - The bjw-template subchart (values under `modelServing:`) renders the WHOLE
+#     workload: the model StatefulSet (model + Caddy proxy sidecar), the seed
+#     Job (a bjw `job` controller, ArgoCD Sync hook), the Service, and the
+#     Ingress.
+#   - The chart's own templates/ render only the resources bjw doesn't do
+#     natively: the weights PVC, the ExternalSecrets, and the Caddyfile ConfigMap.
+#
+# Sync-wave ordering (this Application's resources, on the HOME cluster):
+#   -2  ExternalSecret (vllm-local-api-key + hf-token)  — before any pod
+#   -1  PVC (qwen2.5-3b-awq-models, RWX)                 — weights volume
+#    0  seed Job (download-once into the PVC)             — ArgoCD Sync hook
+#    1  StatefulSet (model + proxy) + Service + Ingress   — mounts the PVC
+
+global:
+  labels:
+    app: model-serving-qwen25-3b-awq
+    team: adorsys-gis
+
+model:
+  name: qwen2.5-3b-awq
+  hfRepo: Qwen/Qwen2.5-3B-Instruct-AWQ
+  storagePath: Qwen2.5-3B-Instruct-AWQ
+
+pvc:
+  enabled: true
+  name: qwen2.5-3b-awq-models
+  storageClassName: longhorn
+  accessMode: ReadWriteMany
+  size: 10Gi
+
+seedJob:
+  enabled: true
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: true
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
+
+apiKey:
+  enabled: true
+  secretName: vllm-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: vllm_local_api_key
+
+edgeAuth:
+  enabled: true
+  proxyResponseTimeout: 600s
+
+modelServing:
+  global:
+    fullnameOverride: qwen2.5-3b-awq
+
+  defaultPodOptions:
+    runtimeClassName: nvidia
+    nodeSelector:
+      gpu-node: "true"
+
+  controllers:
+    main:
+      type: statefulset
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      containers:
+        model:
+          image:
+            repository: kserve/huggingfaceserver
+            tag: v0.18.0-gpu
+            pullPolicy: IfNotPresent
+          args:
+            - --model_name=qwen2.5-3b-awq
+            - --model_dir=/mnt/models
+            - --backend=vllm
+            - --dtype=float16
+            - --quantization=awq
+            - --max-model-len=32768
+            - --max-num-seqs=4
+            - --gpu-memory-utilization=0.90
+            - --swap-space=1
+            - --enforce-eager
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+          env:
+            LMCACHE_USE_EXPERIMENTAL: "True"
+            LMCACHE_LOCAL_CPU: "True"
+            LMCACHE_MAX_LOCAL_CPU_SIZE: "1"
+            VLLM_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 8081
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /v2/health/ready, port: 8080 }
+                periodSeconds: 15
+                failureThreshold: 120
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /v2/health/ready, port: 8080 }
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "3"
+              memory: 6Gi
+
+        proxy:
+          image:
+            repository: caddy
+            tag: 2-alpine
+            pullPolicy: IfNotPresent
+          env:
+            MODEL_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: edge
+              containerPort: 8090
+          probes:
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8090 }
+                periodSeconds: 10
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+
+    seed:
+      type: job
+      annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+        argocd.argoproj.io/sync-wave: "0"
+      pod:
+        restartPolicy: OnFailure
+      job:
+        backoffLimit: 6
+        activeDeadlineSeconds: 3600
+      containers:
+        seed:
+          image:
+            repository: python
+            tag: "3.12-slim"
+            pullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              MODEL_DIR="/models/Qwen2.5-3B-Instruct-AWQ"
+              mkdir -p "$MODEL_DIR"
+              echo "Seeding Qwen/Qwen2.5-3B-Instruct-AWQ -> $MODEL_DIR (skips files already present)"
+              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
+              hf download Qwen/Qwen2.5-3B-Instruct-AWQ --local-dir "$MODEL_DIR"
+              echo "Seed complete."
+          env:
+            HF_TOKEN:
+              secretKeyRef:
+                name: hf-token
+                key: token
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits:   { cpu: "2", memory: 4Gi }
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        edge:
+          port: 8090
+          targetPort: 8090
+
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-cloudflare
+      hosts:
+        - host: qwen25-3b-awq--poc.ssegning.com
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: edge
+      tls:
+        - secretName: qwen25-3b-awq-edge-tls
+          hosts:
+            - qwen25-3b-awq--poc.ssegning.com
+
+  persistence:
+    model-store:
+      enabled: true
+      existingClaim: qwen2.5-3b-awq-models
+      advancedMounts:
+        main:
+          model:
+            - path: /mnt/models
+              subPath: Qwen2.5-3B-Instruct-AWQ
+              readOnly: true
+        seed:
+          seed:
+            - path: /models
+    caddyfile:
+      enabled: true
+      type: configMap
+      name: qwen2.5-3b-awq-caddy
+      advancedMounts:
+        main:
+          proxy:
+            - path: /etc/caddy
