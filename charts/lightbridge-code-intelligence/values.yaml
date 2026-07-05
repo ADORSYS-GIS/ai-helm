@@ -127,6 +127,13 @@ config:
     maxFilesRead: ""    # → review.max_files_read   (cumulative read_file cap)
     maxSearches: ""     # → review.max_searches     (cumulative vector+graph search cap)
     maxBatches: ""      # → review.max_batches      (cumulative investigation-round cap)
+    # Coverage-gate bounce cap (lightbridge-ci ADR-0069) → agent.json `review.max_coverage_bounces`.
+    # How many times an early `finish` with changed files never opened/commented is bounced back before
+    # it goes through (with a coverage disclosure on the posted summary). Empty → the runner's built-in
+    # default (3). `0` DISABLES the bounce entirely (disclosure still applies), `1` = the legacy
+    # bounce-once — 0 is meaningful, so the runner does NOT clamp this one. ⚠️ REQUIRES a runner image
+    # carrying `review.max_coverage_bounces` before it's set, else deny_unknown_fields fails every Job.
+    maxCoverageBounces: ""
     # NB: there is no `fallbackModel` knob — the review failover model was removed (lightbridge-ci
     # ADR-0053 / #208), replaced by a single model + retry/backoff + circuit breaker. (Any ADR-NNNN
     # below refers to the lightbridge-ci repo's ADRs, not this chart's own ADR index.)
@@ -148,7 +155,8 @@ config:
     # Two-tier review (lightbridge-ci ADR-0062) → agent.json `review.fast` / `review.deep`. Each is a
     # COMPLETE, independent per-tier config: it shares the gateway (env) + system prompt, and carries its
     # OWN model + the same generation/budget knobs as above (model, extra, maxTurns, stream,
-    # requestTimeoutSecs, contextWindow, maxTokens, temperature, topP, maxDiffChars, max* read budgets).
+    # requestTimeoutSecs, contextWindow, maxTokens, temperature, topP, maxDiffChars, max* read budgets,
+    # maxCoverageBounces).
     # `fast`  = the automatic `pull_request opened` pass (cheap model; the runner enforces a single
     #           diff-only turn with no retrieval regardless of maxTurns — SAST is the backbone).
     # `deep`  = the `@mention` run (strong model, long requestTimeoutSecs; full retrieval + multi-turn).
