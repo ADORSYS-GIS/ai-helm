@@ -132,6 +132,14 @@ spec:
               project_id: "%REQ(X-PROJECT-ID)%"
               account_id: "%REQ(X-ACCOUNT-ID)%"
               billing_plan: "%REQ(X-BILLING-PLAN)%"
+              # LightBridge Code Intelligence review attribution (lci epic #89). The agent-runner sends
+              # these on every review LLM + embeddings call; logging them lets Loki attribute the
+              # gateway's authoritative custom_total_cost per repo / PR / run — so the LCI cost
+              # dashboard can read real billed cost from eaig instead of an app-side token estimate that
+              # goes stale on every model churn. Empty for all non-LCI traffic (harmless).
+              code_intelligence_repo:    "%REQ(X-CODE-INTELLIGENCE-REPO)%"
+              code_intelligence_target:  "%REQ(X-CODE-INTELLIGENCE-TARGET)%"
+              code_intelligence_task_id: "%REQ(X-CODE-INTELLIGENCE-TASK-ID)%"
               # LibreChat Downstream Headers
               lc_user_id: "%REQ(X-USER-ID)%"
               lc_user_email: "%REQ(X-USER-EMAIL)%"
