@@ -233,6 +233,20 @@ supportedParams:
     - response_format
     - structured_outputs
     - reasoning
+  # Reasoning models WITHOUT tool/function calling (e.g. DeepSeek-R1-Distill
+  # — a reasoning distill whose base is not instruction-tuned for tools; the
+  # serving chart deliberately omits --enable-auto-tool-choice). Advertising
+  # tools/tool_choice here would make clients send tools, which vLLM rejects.
+  reasoningNoTools: &spReasoningNoTools
+    - temperature
+    - top_p
+    - top_k
+    - max_tokens
+    - stop
+    - frequency_penalty
+    - presence_penalty
+    - seed
+    - reasoning
   # Chat models without an exposed reasoning channel (Gemma-4: tools +
   # vision but no thinking mode).
   standard: &spStandard
@@ -560,7 +574,7 @@ models:
       displayName: "DeepSeek-R1-Distill-Qwen-1.5B (self-hosted)"
       contextLength: 32768           # Qwen2.5-1.5B native context (BF16 fits in 12GB)
       maxOutputTokens: 32768        # reasoning model → long chain-of-thought
-      supportedParameters: *spReasoning   # R1 is a reasoning model (thinking mode)
+      supportedParameters: *spReasoningNoTools   # R1 distill: reasoning but NO tool calling (chart omits --enable-auto-tool-choice)
     pricing:
       strategy: weighted
       standard:
