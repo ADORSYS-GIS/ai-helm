@@ -106,7 +106,7 @@ modelServing:
             - --dtype=float16
             - --max-model-len=32768
             - --max-num-seqs=4
-            - --gpu-memory-utilization=0.55
+            - --gpu-memory-utilization=0.90
             - --swap-space=1
             - --enforce-eager
             # ⚠️ No --enable-auto-tool-choice / --tool-call-parser: the base is
@@ -160,11 +160,11 @@ modelServing:
                 - ALL
           resources:
             requests:
-              cpu: 500m
+              cpu: "1"
               memory: 2Gi
             limits:
               cpu: "2"
-              memory: 3Gi
+              memory: 6Gi
 
         proxy:
           image:
@@ -222,7 +222,7 @@ modelServing:
                 name: hf-token
                 key: token
           resources:
-            requests: { cpu: 500m, memory: 1Gi }
+            requests: { cpu: "1", memory: 1Gi }
             limits:   { cpu: "2", memory: 4Gi }
 
   service:

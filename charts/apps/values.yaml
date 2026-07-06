@@ -795,7 +795,7 @@ applications:
   # ai-models qwen3-5-4b-local/qwen3-4b-local enabled flags, then cut a release +
   # repoint root. Rollback = the inverse.
   - name: model-serving-qwen3-5
-    enabled: true                    # RE-ENABLED — rollback from the qwen25-3b-awq dual-model experiment.
+    enabled: false                   # DISABLED — swapped by model-serving-deepseek-r1-1-5b (one GPU). Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -829,7 +829,7 @@ applications:
   # the ai-models deepseek-r1-1-5b-local / qwen2.5-3b-awq-local enabled flags.
   # Rollback = the inverse. See docs/self-hosted-model-serving.md.
   - name: model-serving-deepseek-r1-1-5b
-    enabled: false  # DISABLED — dual-model co-location test; one GPU, one model.
+    enabled: true            # CUTOVER — live on the home GPU.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
