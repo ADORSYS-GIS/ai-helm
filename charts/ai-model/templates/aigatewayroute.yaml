@@ -1,6 +1,9 @@
 {{- /* Required-field guards */ -}}
 {{- if not .Values.modelName }}{{- fail "ai-model: .Values.modelName is required" -}}{{- end -}}
 {{- if not .Values.gatewayRef.name }}{{- fail "ai-model: .Values.gatewayRef.name is required" -}}{{- end -}}
+{{- if and .Values.disableExternal (not .Values.gatewayRef.internalSectionName) }}
+{{- fail (printf "Model '%s': disableExternal requires gatewayRef.internalSectionName to be set, else the route would have no parentRefs at all" .Values.modelName) -}}
+{{- end -}}
 {{- if not .Values.backendsInventory }}{{- fail "ai-model: .Values.backendsInventory is required (the parent's backends map, for resourceName lookup)" -}}{{- end -}}
 {{- $modelName := .Values.modelName -}}
 {{- /* Route-level request budget. The AIGatewayRoute CRD DEFAULTS
@@ -28,6 +31,7 @@ metadata:
   name: {{ $modelName }}
 spec:
   parentRefs:
+    {{- if not .Values.disableExternal }}
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: {{ .Values.gatewayRef.name }}
@@ -37,6 +41,7 @@ spec:
       # listener is left to the http→https redirect + the ACME solver.
       sectionName: {{ . }}
       {{- end }}
+    {{- end }}
     {{- with .Values.gatewayRef.internalSectionName }}
     # Internal plane (ADR-0021): also attach to the api-internal listener so the
     # same model backends serve in-cluster callers. The per-host AuthConfig sets
