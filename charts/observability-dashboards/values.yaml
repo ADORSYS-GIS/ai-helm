@@ -108,6 +108,23 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/ratelimit-quota.json
     resyncPeriod: 5m
+  # Phoenix-style global chat overview (embeddings excluded), no input
+  # variables. Loki/Mimir aggregates + a live Tempo trace feed reading the
+  # AI Gateway ext-proc's OpenInference spans (full request/response content
+  # per trace, click to open) — ADR-0077.
+  - name: envoy-ai-gateway-chat-overview
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/chat-overview.json
+    resyncPeriod: 5m
+  # Phoenix-style per-user chat view. $user picker sourced from the Keycloak
+  # read-only Postgres datasource (ADR-0063). No per-user trace/content panel
+  # by design (ADR-0077, amended) — content was already fully visible without
+  # per-user span attribution, so tagging spans with identity wasn't worth the
+  # privacy cost. Use envoy-ai-gateway-chat-overview to read actual content.
+  - name: envoy-ai-gateway-chats-by-user
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/chats-by-user.json
+    resyncPeriod: 5m
   # Alloy collector health (metrics/logs/traces pipelines, OTLP receiver,
   # clustering). Targets confirmed alloy_*/prometheus_remote_storage_*/
   # loki_write_*/otelcol_receiver_* series; datasource UID hardcoded to `mimir`.
@@ -231,6 +248,45 @@ alerting:
           for: 1h
           severity: warning
           summary: "AI Gateway 30-day spend exceeded $6000 (budget knob — set to your actual monthly budget; run-rate ~$5k)."
+        # Per-actor: fires when a SINGLE person/actor's own rolling 30d spend
+        # reaches their OWN plan's monthly cap (charts/ai-models/values.yaml
+        # rateLimitBudgeting.plans — free $50, pro $200; service/internal are
+        # uncapped by design and deliberately excluded, no budget to cross).
+        # Each plan's fraction-of-cap is computed separately (PromQL has no
+        # per-series threshold, so the % conversion happens IN the query) then
+        # unioned with `or` — disjoint billing_plan label values, no collision.
+        # `gt 100` is the practical `>= 100%` (spend is a continuous $ value,
+        # same "exceeded" convention the two org-wide rules above use).
+        - uid: cost-actor-budget-crossed
+          title: AI Gateway — actor hit their monthly budget
+          datasourceUid: mimir
+          expr: >-
+            (sum by (email, display_name, billing_plan)
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free"}[30d]))
+              / 1e6 / 50 * 100)
+            or
+            (sum by (email, display_name, billing_plan)
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="pro"}[30d]))
+              / 1e6 / 200 * 100)
+          fromSeconds: 2592000
+          op: gt
+          threshold: 100
+          for: 0m
+          severity: critical
+          summary: >-
+            🚨 {{ $labels.display_name }} ({{ $labels.email }}, {{ $labels.billing_plan }} plan)
+            is at {{ $values.B.Value }}% of their monthly budget over the last 30d.
+          description: >-
+            Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
+            crossed 100% of their own plan's monthlyBudgetUsd cap (free=$50,
+            pro=$200; see AI Gateway — actor consumption / chats-by-user
+            dashboards for detail). ⚠️ This is cumulative trailing-30d spend,
+            NOT the same window the rate limiter enforces against (ADR-0070's
+            fixed 30-day epoch bucket in redis, which resets on a schedule,
+            not on a rolling basis) — a person can show >100% here while their
+            LIVE enforcement budget is well under cap. Check the
+            AI Gateway — rate-limit quota dashboard for their actual current
+            enforcement state before assuming they're blocked.
 
     - name: stack-health
       folderRef: collectors
