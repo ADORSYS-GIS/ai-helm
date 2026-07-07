@@ -58,6 +58,25 @@ LABEL_CONTAINER = "container"
 # gateway access-log stream — ADR-0046. Every per-user query selects on it.
 GATEWAY_SERVICE_NAME = "envoy-ai-gateway"
 
+# The `service.name` resource attribute the AI Gateway ext-proc stamps on its
+# OpenTelemetry spans (OTEL_SERVICE_NAME = the core-gateway Helm release
+# fullname, gateway-config.yaml) — deliberately a DIFFERENT string than
+# GATEWAY_SERVICE_NAME above (that's the Loki access-log stream anchor Alloy
+# sets; this is Tempo's own resource attribute, from a completely separate
+# pipeline: AI-Gateway ext-proc → OTLP → Alloy → Tempo). Confirmed live against
+# Tempo's `/api/search/tag/service.name/values` on 2026-07-07 — re-verify if
+# the core-gateway release name ever changes. See ADR-0077.
+TEMPO_SERVICE_NAME = "core-gateway"
+
+# Model keys tagged `kind: embedding` in charts/ai-models/values.yaml —
+# excluded from the "chat" dashboards (chat_overview.py, chats_by_user.py),
+# which only want completions traffic. Loki/Mimir carry no span-kind concept
+# (that's Tempo/OpenInference-only, via `openinference.span.kind`), so on the
+# Loki/Mimir side this is the only way to drop embedding calls: a `model!~`
+# regex built from this list. Keep in sync manually — same convention as
+# SERVICE_ACCOUNT_CLIENTS below. See ADR-0077.
+EMBEDDING_MODEL_KEYS: tuple[str, ...] = ("qwen3-embedding-8b",)
+
 
 # ---------------------------------------------------------------------------
 # Precomputed AI Gateway usage METRICS in Mimir (ADR-0058). Emitted by Alloy
