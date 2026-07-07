@@ -27,3 +27,13 @@ imageUpdaters:
     applicationRefs:
       - namePattern: aii-converse-ui
         useAnnotations: true
+  # ADR-0055 continuous-delivery — lightbridge backend api/mcp image write-back
+  # to ai-helm-values (newest-build, COSIGN-signed; lightbridge-authz signs in
+  # its CI). The write-back annotations live on the `lightbridge-app` child
+  # Application emitted by the lightbridge orchestrator chart (charts/lightbridge),
+  # NOT a charts/apps entry — so the pattern is the bare child name, no `aii-`
+  # prefix (exact match).
+  - name: lightbridge-app
+    applicationRefs:
+      - namePattern: lightbridge-app
+        useAnnotations: true
