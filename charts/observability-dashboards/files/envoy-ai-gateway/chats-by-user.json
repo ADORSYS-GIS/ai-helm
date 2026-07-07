@@ -8,8 +8,11 @@
         "label": "User (Keycloak)",
         "skipUrlSync": false,
         "query": {
-          "query": "SELECT DISTINCT email AS __value, COALESCE(NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), ''), username) || ' (' || email || ')' AS __text FROM user_entity WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND email IS NOT NULL ORDER BY __text",
-          "refId": "KeycloakUsers"
+          "refId": "KeycloakUsers",
+          "rawSql": "SELECT DISTINCT email AS __value, COALESCE(NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), ''), username) || ' (' || email || ')' AS __text FROM user_entity WHERE realm_id = '04793949-13aa-48ef-9d4d-1c60761f0c97' AND email IS NOT NULL ORDER BY __text",
+          "rawQuery": true,
+          "format": "table",
+          "editorMode": "code"
         },
         "datasource": {
           "type": "postgres",
@@ -29,13 +32,12 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-chats-by-user",
   "title": "AI Gateway — chats by user",
-  "description": "Per-user chat-completion view (embeddings excluded) — the Phoenix-style 'what is this person doing' cut. The $user picker is sourced directly from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so it lists real people regardless of recent gateway traffic. Volume/cost/token/error aggregates come from Loki, filtered on the `email` label (ADR-0046). No per-user trace/content panel here by design (ADR-0077) — content was already fully visible without per-user span attribution, so adding it wasn't worth the privacy cost; use 'AI Gateway — chat overview' to read actual chat content. GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py.",
+  "description": "Per-user chat requests (embeddings excluded). The $user picker is sourced from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so it lists real people regardless of recent traffic. The hero is an itemised per-request log (model/status/tokens/cost/latency) filtered on the `email` label — distinct from the per_user / actor-consumption rollup charts. ⚠️ Metadata only: prompt/response CONTENT can't be filtered per user (Tempo spans carry no identity — ADR-0077); read content in the global chat-overview board. GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py.",
   "tags": [
     "ai-gateway",
     "chats",
     "per-user",
-    "keycloak",
-    "phoenix"
+    "keycloak"
   ],
   "timezone": "browser",
   "editable": true,
@@ -73,7 +75,7 @@
           }
         }
       ],
-      "title": "Chat requests (range)",
+      "title": "Chats (range)",
       "transparent": false,
       "datasource": {
         "type": "loki",
@@ -81,7 +83,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 8,
         "x": 0,
         "y": 1
       },
@@ -132,7 +134,7 @@
           }
         }
       ],
-      "title": "Total tokens (range)",
+      "title": "Tokens (range)",
       "transparent": false,
       "datasource": {
         "type": "loki",
@@ -140,8 +142,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
+        "w": 8,
+        "x": 8,
         "y": 1
       },
       "repeatDirection": "h",
@@ -191,7 +193,7 @@
           }
         }
       ],
-      "title": "Total cost (range)",
+      "title": "Cost (range)",
       "transparent": false,
       "datasource": {
         "type": "loki",
@@ -199,8 +201,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
+        "w": 8,
+        "x": 16,
         "y": 1
       },
       "repeatDirection": "h",
@@ -238,10 +240,10 @@
       }
     },
     {
-      "type": "stat",
+      "type": "logs",
       "targets": [
         {
-          "expr": "100 * (sum(count_over_time({service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"} | json | response_code=~\"5..\"[$__range]))) / (sum(count_over_time({service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"}[$__range])))",
+          "expr": "{service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"} | json | line_format `{{.gen_ai_request_model}} · rc={{.response_code}} · {{.gen_ai_usage_total_tokens}}tok · {{.gen_ai_usage_custom_total_cost}}µ$ · {{.duration}}ms`",
           "refId": "A",
           "queryType": "range",
           "datasource": {
@@ -250,228 +252,30 @@
           }
         }
       ],
-      "title": "Error rate — 5xx (range)",
+      "title": "$user's chats — recent requests (newest first)",
+      "description": "One row per chat request for the selected user (Loki access log). Metadata only — model, status, tokens, cost, latency. The actual prompt/response content is NOT here: it lives in Tempo, which can't be filtered by user (ADR-0077). Use chat-overview to read content.",
       "transparent": false,
       "datasource": {
         "type": "loki",
         "uid": "loki"
       },
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 1
-      },
-      "repeatDirection": "h",
-      "options": {
-        "graphMode": "area",
-        "colorMode": "value",
-        "justifyMode": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "showPercentChange": false,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false,
-          "fields": ""
-        },
-        "percentChangeColorMode": "standard",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "value": null,
-                "color": "green"
-              },
-              {
-                "value": 1,
-                "color": "orange"
-              },
-              {
-                "value": 5,
-                "color": "red"
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "row",
-      "collapsed": false,
-      "id": 0,
-      "panels": [],
-      "title": "Trends",
-      "gridPos": {
-        "h": 1,
+        "h": 22,
         "w": 24,
         "x": 0,
         "y": 5
-      }
-    },
-    {
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "((sum(sum_over_time({service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"} | json cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap cost | __error__=\"\" [$__auto]))) / 1e6)",
-          "refId": "A",
-          "legendFormat": "Cost",
-          "queryType": "range",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          }
-        }
-      ],
-      "title": "Cost over time",
-      "transparent": false,
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 6
       },
       "repeatDirection": "h",
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false,
-          "calcs": [
-            "sum",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "asc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 70.0,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum(sum_over_time({service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"} | json tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap tokens | __error__=\"\" [$__auto]))",
-          "refId": "A",
-          "legendFormat": "Tokens",
-          "queryType": "range",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          }
-        }
-      ],
-      "title": "Tokens over time",
-      "transparent": false,
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 6
-      },
-      "repeatDirection": "h",
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false,
-          "calcs": [
-            "sum",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "asc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 70.0,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "piechart",
-      "targets": [
-        {
-          "expr": "sum by (model) (count_over_time({service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"}[$__range]))",
-          "refId": "A",
-          "legendFormat": "{{model}}",
-          "queryType": "range",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          }
-        }
-      ],
-      "title": "Requests by model (range)",
-      "transparent": false,
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 15
-      },
-      "repeatDirection": "h",
-      "options": {
-        "pieType": "donut",
-        "tooltip": {
-          "mode": "single",
-          "sort": "asc"
-        },
-        "reduceOptions": {
-          "calcs": []
-        },
-        "legend": {
-          "values": [
-            "value",
-            "percent"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": false,
-          "calcs": []
-        },
-        "orientation": "auto"
+        "showLabels": false,
+        "showCommonLabels": false,
+        "showTime": true,
+        "showLogContextToggle": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
       }
     }
   ]

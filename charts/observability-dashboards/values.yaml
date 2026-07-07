@@ -117,10 +117,11 @@ dashboards:
     file: files/envoy-ai-gateway/chat-overview.json
     resyncPeriod: 5m
   # Phoenix-style per-user chat view. $user picker sourced from the Keycloak
-  # read-only Postgres datasource (ADR-0063). No per-user trace/content panel
-  # by design (ADR-0077, amended) — content was already fully visible without
-  # per-user span attribution, so tagging spans with identity wasn't worth the
-  # privacy cost. Use envoy-ai-gateway-chat-overview to read actual content.
+  # read-only Postgres datasource (ADR-0063, rawSql variable). Hero is a
+  # per-request Loki log (model/status/tokens/cost/latency) filtered by the
+  # user's email label — metadata only. Per-user CONTENT isn't shown: Tempo
+  # spans carry no user identity (ADR-0077, amended), so content can't be
+  # filtered per person. Use envoy-ai-gateway-chat-overview to read content.
   - name: envoy-ai-gateway-chats-by-user
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/chats-by-user.json
