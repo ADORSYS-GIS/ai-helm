@@ -78,8 +78,14 @@ feed and recognize them from the content (model choice, task, writing style)
   ([ADR-0063](./adr/0063-grafana-readonly-keycloak-datasource.md); `__text`/
   `__value` column aliases), so it lists real people independent of recent
   traffic — not `label_values(email)` like `per_user.py`/`jwt_tokens.py`.
-  Loki-filtered aggregates only (requests, tokens, cost, error rate,
-  filtered on `email="$user"`) — no content/trace panel, see above.
+  ⚠️ For a Postgres datasource the variable's query model must carry
+  **`rawSql`** — the generic `{query: "..."}` shape leaves Grafana with no SQL
+  to run ("error when executing the sql query"); verified live via
+  `/api/ds/query` (uid resolves regardless of `type: postgres` vs
+  `grafana-postgresql-datasource`). The hero is a **per-request Loki log**
+  (one row per chat: model/status/tokens/cost/latency, `email="$user"`) —
+  distinct from the `per_user`/`actor-consumption` rollup charts. Metadata
+  only; content isn't filterable per user (see above).
 
 ⚠️ **No raw user input is ever interpolated into SQL.** The `$user` variable's
 *available options* come from a static-realm-id query; the *selected* value

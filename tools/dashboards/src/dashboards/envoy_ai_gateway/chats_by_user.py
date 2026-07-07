@@ -1,25 +1,24 @@
-"""Envoy AI Gateway — chats by user, Phoenix-style (GENERATED SOURCE).
+"""Envoy AI Gateway — chats by user (GENERATED SOURCE).
 
-Same idea as chat_overview.py, scoped to one person. The `$user` picker is
-sourced directly from a **read-only Postgres datasource onto the Keycloak DB**
-(ADR-0063) — not from Loki `label_values(email)` like per_user.py/jwt_tokens.py
-— so the dropdown shows real names, not just whatever already has gateway
-traffic in the current time window, and doesn't depend on a token having
-carried the email claim.
+Pick a person (from the Keycloak directory) and see THEIR chat requests. The
+`$user` picker is a raw-SQL query variable against the read-only Keycloak
+Postgres datasource (ADR-0063) — so the dropdown lists real people by name,
+independent of who happens to have recent traffic, and doesn't depend on a
+token having carried the email claim.
 
-Per-user volume/cost/token/error aggregates — Loki access-log body +
-precomputed Mimir metrics (ADR-0046/0058), filtered on the `email` label.
+The hero is a **per-request log** (Loki, newest first): one line per chat
+request with model / status / tokens / cost / latency, filtered to the
+selected person's `email` label. No existing dashboard shows this — per_user
+and actor-consumption are rollup charts; this is the itemised "what did Sarah
+actually run, and when" list.
 
-⚠️ **No per-user Tempo trace panel here, by design (amended in ADR-0077).**
-An earlier version of this dashboard planned one, gated on a new
-`user.id`/`user.email` span attribute that would have required tagging the AI
-Gateway ext-proc's spans with identity (a real privacy step-up: making
-already-full-content traces directly person-attributable). That plan was
-dropped after confirming LIVE that per-request content was already fully
-readable without it — Tempo/Phoenix never needed user attribution to show
-content, only to let TraceQL FILTER by person, which nobody actually needed.
-For reading actual chat content, use chat_overview.py's global (unattributed)
-trace feed instead.
+⚠️ **This shows request METADATA, not the prompt/response CONTENT.** The chat
+content lives in Tempo (OpenInference spans), but those spans carry no user
+identity, so they can't be filtered to one person — filtering Tempo by user
+would need the `spanRequestHeaderAttributes` mapping that was deliberately
+NOT adopted (ADR-0077). To read actual chat content, use the global
+`chat-overview` trace feed. If per-user content is wanted, that mapping is
+the only way and is a conscious privacy decision to revisit.
 
 The JSON file is regenerated from this module — do **not** hand-edit it::
 
@@ -34,11 +33,10 @@ import json
 
 from grafana_foundation_sdk.builders import common as cb
 from grafana_foundation_sdk.builders import dashboard as db
-from grafana_foundation_sdk.builders import loki, piechart, stat, timeseries
+from grafana_foundation_sdk.builders import logs, loki, stat
 from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import common as cm
 from grafana_foundation_sdk.models import dashboard as dm
-from grafana_foundation_sdk.models import piechart as pm
 
 from dashboards._common import (
     CAMER_DIGITAL_REALM_ID,
@@ -66,10 +64,9 @@ _LOKI_SEL = (
 # Keycloak directory query for the $user picker. `__text`/`__value` are
 # Grafana's special column aliases for SQL-backed variable queries: the
 # dropdown shows __text, the query filters use __value. No user input is
-# interpolated into this SQL (only the constant realm id) — the SELECTED
-# value only ever reaches a Loki label matcher below, never another raw SQL
-# string, so there's no SQL-injection surface from a manipulated
-# `?var-user=` URL param.
+# interpolated into this SQL (only the constant realm id) — the SELECTED value
+# only ever reaches a Loki label matcher below, never another raw SQL string,
+# so there's no SQL-injection surface from a manipulated `?var-user=` param.
 _USER_VAR_SQL = (
     "SELECT DISTINCT email AS __value, "
     "COALESCE(NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), ''), username)"
@@ -79,13 +76,28 @@ _USER_VAR_SQL = (
     "ORDER BY __text"
 )
 
+_JSON_TOKENS = 'tokens=`["gen_ai.usage.total_tokens"]`'
+_JSON_COST = 'cost=`["gen_ai.usage.custom_total_cost"]`'
+
 
 def _user_var() -> db.QueryVariable:
+    # ⚠️ For a Postgres (SQL) datasource, the variable's query model MUST carry
+    # `rawSql` — the generic `{query: "..."}` shape leaves the datasource with
+    # no SQL to run ("error when executing the sql query"). Mirror the proven
+    # panel-target shape from user_directory.py (rawSql / rawQuery / format).
     return (
         db.QueryVariable("user")
         .label("User (Keycloak)")
         .datasource(_KEYCLOAK_DS)
-        .query({"query": _USER_VAR_SQL, "refId": "KeycloakUsers"})
+        .query(
+            {
+                "refId": "KeycloakUsers",
+                "rawSql": _USER_VAR_SQL,
+                "rawQuery": True,
+                "format": "table",
+                "editorMode": "code",
+            }
+        )
         .refresh(dm.VariableRefresh.ON_DASHBOARD_LOAD)
         .sort(dm.VariableSort.ALPHABETICAL_ASC)
         .multi(False)
@@ -121,144 +133,82 @@ def _stat(
     )
 
 
-_JSON_TOKENS = 'tokens=`["gen_ai.usage.total_tokens"]`'
-_JSON_COST = 'cost=`["gen_ai.usage.custom_total_cost"]`'
+# --- thin per-user headline row ---------------------------------------------
 
 
-def _sum_tokens(*, window: str = "$__range") -> str:
-    return f'sum(sum_over_time({_LOKI_SEL} | json {_JSON_TOKENS} | unwrap tokens | __error__="" [{window}]))'
-
-
-def _sum_cost_usd(*, window: str = "$__range") -> str:
-    inner = f'sum(sum_over_time({_LOKI_SEL} | json {_JSON_COST} | unwrap cost | __error__="" [{window}]))'
-    return f"(({inner}) / 1e6)"
-
-
-# --- stats -----------------------------------------------------------------
-
-
-def _panel_requests() -> stat.Panel:
+def _panel_chats() -> stat.Panel:
     return _stat(
-        title="Chat requests (range)",
+        title="Chats (range)",
         expr=f"sum(count_over_time({_LOKI_SEL}[$__range]))",
         unit="short",
         color="blue",
-        grid=(4, 6, 0, 1),
+        grid=(4, 8, 0, 1),
     )
 
 
 def _panel_tokens() -> stat.Panel:
     return _stat(
-        title="Total tokens (range)",
-        expr=_sum_tokens(),
+        title="Tokens (range)",
+        expr=f'sum(sum_over_time({_LOKI_SEL} | json {_JSON_TOKENS} | unwrap tokens | __error__="" [$__range]))',
         unit="short",
         color="green",
-        grid=(4, 6, 6, 1),
+        grid=(4, 8, 8, 1),
     )
 
 
 def _panel_cost() -> stat.Panel:
+    inner = f'sum(sum_over_time({_LOKI_SEL} | json {_JSON_COST} | unwrap cost | __error__="" [$__range]))'
     return _stat(
-        title="Total cost (range)",
-        expr=_sum_cost_usd(),
+        title="Cost (range)",
+        expr=f"(({inner}) / 1e6)",
         unit="currencyUSD",
         color="orange",
-        grid=(4, 6, 12, 1),
+        grid=(4, 8, 16, 1),
     )
 
 
-def _panel_error_rate() -> stat.Panel:
-    total = f"sum(count_over_time({_LOKI_SEL}[$__range]))"
-    errors = f'sum(count_over_time({_LOKI_SEL} | json | response_code=~"5.."[$__range]))'
+# --- the hero: this user's individual chat requests --------------------------
+
+
+def _panel_request_log() -> logs.Panel:
+    # One line per request, newest first — the itemised "what did they run".
+    # line_format renders: model · status · tokens · cost($) · latency(ms).
+    line_fmt = (
+        "{{.gen_ai_request_model}} · rc={{.response_code}} · "
+        "{{.gen_ai_usage_total_tokens}}tok · {{.gen_ai_usage_custom_total_cost}}µ$ · "
+        "{{.duration}}ms"
+    )
+    expr = f"{_LOKI_SEL} | json | line_format `{line_fmt}`"
     return (
-        stat.Panel()
-        .title("Error rate — 5xx (range)")
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=4, w=6, x=18, y=1))
-        .unit("percent")
-        .thresholds(
-            db.ThresholdsConfig()
-            .mode(dm.ThresholdsMode.ABSOLUTE)
-            .steps(
-                [
-                    dm.Threshold(color="green", value=None),
-                    dm.Threshold(color="orange", value=1),
-                    dm.Threshold(color="red", value=5),
-                ]
-            )
+        logs.Panel()
+        .title("$user's chats — recent requests (newest first)")
+        .description(
+            "One row per chat request for the selected user (Loki access log). "
+            "Metadata only — model, status, tokens, cost, latency. The actual "
+            "prompt/response content is NOT here: it lives in Tempo, which "
+            "can't be filtered by user (ADR-0077). Use chat-overview to read "
+            "content."
         )
-        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
-        .text_mode(cm.BigValueTextMode.AUTO)
-        .color_mode(cm.BigValueColorMode.VALUE)
-        .graph_mode(cm.BigValueGraphMode.AREA)
-        .with_target(_loki_target(f"100 * ({errors}) / ({total})"))
-    )
-
-
-# --- trends ------------------------------------------------------------
-
-
-def _panel_cost_over_time() -> timeseries.Panel:
-    return (
-        timeseries.Panel()
-        .title("Cost over time")
         .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=9, w=12, x=0, y=6))
-        .unit("currencyUSD")
-        .draw_style(cm.GraphDrawStyle.BARS)
-        .fill_opacity(70.0)
-        .show_points(cm.VisibilityMode.NEVER)
-        .legend(cb.VizLegendOptions().display_mode(cm.LegendDisplayMode.LIST).calcs(["sum", "max"]))
-        .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
-        .with_target(_loki_target(_sum_cost_usd(window="$__auto"), legend="Cost"))
-    )
-
-
-def _panel_tokens_over_time() -> timeseries.Panel:
-    return (
-        timeseries.Panel()
-        .title("Tokens over time")
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=9, w=12, x=12, y=6))
-        .unit("short")
-        .draw_style(cm.GraphDrawStyle.BARS)
-        .fill_opacity(70.0)
-        .show_points(cm.VisibilityMode.NEVER)
-        .legend(cb.VizLegendOptions().display_mode(cm.LegendDisplayMode.LIST).calcs(["sum", "max"]))
-        .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
-        .with_target(_loki_target(_sum_tokens(window="$__auto"), legend="Tokens"))
-    )
-
-
-def _panel_model_pie() -> piechart.Panel:
-    expr = f"sum by ({LABEL_MODEL}) (count_over_time({_LOKI_SEL}[$__range]))"
-    return (
-        piechart.Panel()
-        .title("Requests by model (range)")
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=9, w=24, x=0, y=15))
-        .pie_type(pm.PieChartType.DONUT)
-        .legend(
-            piechart.PieChartLegendOptions()
-            .display_mode(cm.LegendDisplayMode.TABLE)
-            .placement(cm.LegendPlacement.RIGHT)
-            .values([pm.PieChartLegendValues.VALUE, pm.PieChartLegendValues.PERCENT])
-        )
-        .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.SINGLE))
-        .with_target(_loki_target(expr, legend=f"{{{{{LABEL_MODEL}}}}}"))
+        .grid_pos(dm.GridPos(h=22, w=24, x=0, y=5))
+        .show_time(True)
+        .show_labels(False)
+        .wrap_log_message(True)
+        .enable_log_details(True)
+        .sort_order(cm.LogsSortOrder.DESCENDING)
+        .with_target(_loki_target(expr))
     )
 
 
 _DESCRIPTION = (
-    "Per-user chat-completion view (embeddings excluded) — the Phoenix-style "
-    "'what is this person doing' cut. The $user picker is sourced directly "
+    "Per-user chat requests (embeddings excluded). The $user picker is sourced "
     "from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so "
-    "it lists real people regardless of recent gateway traffic. Volume/cost/"
-    "token/error aggregates come from Loki, filtered on the `email` label "
-    "(ADR-0046). No per-user trace/content panel here by design (ADR-0077) — "
-    "content was already fully visible without per-user span attribution, so "
-    "adding it wasn't worth the privacy cost; use 'AI Gateway — chat overview' "
-    "to read actual chat content. "
+    "it lists real people regardless of recent traffic. The hero is an "
+    "itemised per-request log (model/status/tokens/cost/latency) filtered on "
+    "the `email` label — distinct from the per_user / actor-consumption rollup "
+    "charts. ⚠️ Metadata only: prompt/response CONTENT can't be filtered per "
+    "user (Tempo spans carry no identity — ADR-0077); read content in the "
+    "global chat-overview board. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py."
 )
 
@@ -267,7 +217,7 @@ def _dashboard() -> db.Dashboard:
     return (
         db.Dashboard("AI Gateway — chats by user")
         .uid("envoy-ai-gateway-chats-by-user")
-        .tags(["ai-gateway", "chats", "per-user", "keycloak", "phoenix"])
+        .tags(["ai-gateway", "chats", "per-user", "keycloak"])
         .description(_DESCRIPTION)
         .timezone("browser")
         .editable()
@@ -276,14 +226,10 @@ def _dashboard() -> db.Dashboard:
         .time("now-6h", "now")
         .with_variable(_user_var())
         .with_panel(sh.row("Chats — $user", y=0))
-        .with_panel(_panel_requests())
+        .with_panel(_panel_chats())
         .with_panel(_panel_tokens())
         .with_panel(_panel_cost())
-        .with_panel(_panel_error_rate())
-        .with_panel(sh.row("Trends", y=5))
-        .with_panel(_panel_cost_over_time())
-        .with_panel(_panel_tokens_over_time())
-        .with_panel(_panel_model_pie())
+        .with_panel(_panel_request_log())
     )
 
 
