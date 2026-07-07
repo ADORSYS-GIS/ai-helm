@@ -58,9 +58,10 @@ rateLimitBudgeting:
   plans:
     free:
       # Per-person monthly budget (ADR-0035: keyed on x-account-id, NOT a shared
-      # x-org-id bucket — colleagues no longer contend for one pool). Raised
-      # 30 → 50 to relax the free tier.
-      monthlyBudgetUsd: 50
+      # x-org-id bucket — colleagues no longer contend for one pool). Lowered
+      # 50 → 30 (2026-07-07) to stop the bleeding while we investigate users
+      # exceeding the intended cap (per-model-vs-shared counter + billing_plan).
+      monthlyBudgetUsd: 30
       burst:
         requestsPerMin: 200
         # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
