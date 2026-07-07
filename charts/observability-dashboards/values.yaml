@@ -108,6 +108,22 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/ratelimit-quota.json
     resyncPeriod: 5m
+  # Phoenix-style global chat overview (embeddings excluded), no input
+  # variables. Loki/Mimir aggregates + a live Tempo trace feed reading the
+  # AI Gateway ext-proc's OpenInference spans (full request/response content
+  # per trace, click to open) — ADR-0077.
+  - name: envoy-ai-gateway-chat-overview
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/chat-overview.json
+    resyncPeriod: 5m
+  # Phoenix-style per-user chat view. $user picker sourced from the Keycloak
+  # read-only Postgres datasource (ADR-0063). The live per-user trace feed
+  # needs span.user.email, which doesn't exist yet — see ADR-0077 for the
+  # pending ai-helm-values controller.spanRequestHeaderAttributes PR.
+  - name: envoy-ai-gateway-chats-by-user
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/chats-by-user.json
+    resyncPeriod: 5m
   # Alloy collector health (metrics/logs/traces pipelines, OTLP receiver,
   # clustering). Targets confirmed alloy_*/prometheus_remote_storage_*/
   # loki_write_*/otelcol_receiver_* series; datasource UID hardcoded to `mimir`.
