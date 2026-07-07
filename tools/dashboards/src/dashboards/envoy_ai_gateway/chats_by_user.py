@@ -7,19 +7,19 @@ sourced directly from a **read-only Postgres datasource onto the Keycloak DB**
 traffic in the current time window, and doesn't depend on a token having
 carried the email claim.
 
-Two data sources, same split as chat_overview.py:
-  1. Per-user volume/cost/token/error aggregates — Loki access-log body +
-     precomputed Mimir metrics (ADR-0046/0058), filtered on the `email` label.
-  2. A live, per-user Tempo trace feed — **this needs a span attribute that
-     does not exist yet.** As of ADR-0077, the AI Gateway ext-proc's
-     OpenInference spans carry no `user.id`/`user.email` (confirmed live
-     against Tempo's tag list) — only chat_overview.py's global, unattributed
-     feed works today. Closing this gap is a single Helm value in the private
-     ai-helm-values repo (`controller.spanRequestHeaderAttributes` on the
-     `aieg` app, e.g. `x-oidc-user-id:user.id,x-oidc-email:user.email`) — see
-     ADR-0077 for the PR. The trace panel below is wired for `span.user.email`
-     ahead of that landing; it will show "No data" until the PR merges and new
-     traffic flows, then start populating with no dashboard change needed.
+Per-user volume/cost/token/error aggregates — Loki access-log body +
+precomputed Mimir metrics (ADR-0046/0058), filtered on the `email` label.
+
+⚠️ **No per-user Tempo trace panel here, by design (amended in ADR-0077).**
+An earlier version of this dashboard planned one, gated on a new
+`user.id`/`user.email` span attribute that would have required tagging the AI
+Gateway ext-proc's spans with identity (a real privacy step-up: making
+already-full-content traces directly person-attributable). That plan was
+dropped after confirming LIVE that per-request content was already fully
+readable without it — Tempo/Phoenix never needed user attribution to show
+content, only to let TraceQL FILTER by person, which nobody actually needed.
+For reading actual chat content, use chat_overview.py's global (unattributed)
+trace feed instead.
 
 The JSON file is regenerated from this module — do **not** hand-edit it::
 
@@ -34,7 +34,7 @@ import json
 
 from grafana_foundation_sdk.builders import common as cb
 from grafana_foundation_sdk.builders import dashboard as db
-from grafana_foundation_sdk.builders import loki, piechart, stat, tempo, timeseries
+from grafana_foundation_sdk.builders import loki, piechart, stat, timeseries
 from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import common as cm
 from grafana_foundation_sdk.models import dashboard as dm
@@ -48,15 +48,12 @@ from dashboards._common import (
     LABEL_EMAIL,
     LABEL_MODEL,
     LOKI_UID,
-    TEMPO_SERVICE_NAME,
-    TEMPO_UID,
 )
 from dashboards.envoy_ai_gateway import _shared as sh
 
 OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/chats-by-user.json"
 
 _LOKI_DS = dm.DataSourceRef(type_val="loki", uid=LOKI_UID)
-_TEMPO_DS = dm.DataSourceRef(type_val="tempo", uid=TEMPO_UID)
 _KEYCLOAK_DS = dm.DataSourceRef(type_val="postgres", uid=KEYCLOAK_UID)
 
 _NOT_EMBEDDING = "|".join(EMBEDDING_MODEL_KEYS)
@@ -66,19 +63,13 @@ _LOKI_SEL = (
     f'{LABEL_MODEL}!~"{_NOT_EMBEDDING}"}}'
 )
 
-_TRACEQL_USER_CHATS = (
-    f'{{ resource.service.name = "{TEMPO_SERVICE_NAME}" '
-    f'&& span.openinference.span.kind = "LLM" '
-    f'&& span.user.email = "$user" }}'
-)
-
 # Keycloak directory query for the $user picker. `__text`/`__value` are
 # Grafana's special column aliases for SQL-backed variable queries: the
 # dropdown shows __text, the query filters use __value. No user input is
 # interpolated into this SQL (only the constant realm id) — the SELECTED
-# value only ever reaches Loki/Mimir label matchers or a Tempo attribute
-# comparison below, never another raw SQL string, so there's no SQL-injection
-# surface from a manipulated `?var-user=` URL param.
+# value only ever reaches a Loki label matcher below, never another raw SQL
+# string, so there's no SQL-injection surface from a manipulated
+# `?var-user=` URL param.
 _USER_VAR_SQL = (
     "SELECT DISTINCT email AS __value, "
     "COALESCE(NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), ''), username)"
@@ -258,40 +249,16 @@ def _panel_model_pie() -> piechart.Panel:
     )
 
 
-# --- live per-user trace feed ------------------------------------------
-
-
-def _panel_user_chats() -> db.Panel:
-    query = (
-        tempo.TempoQuery().query_type("traceql").query(_TRACEQL_USER_CHATS).limit(40).ref_id("A")
-    )
-    return (
-        db.Panel()
-        .type("traces")
-        .title("$user's chats (click a trace for the full prompt/response)")
-        .description(
-            "Live chat-completion spans for the selected user. ⚠️ Needs the "
-            "span.user.email attribute, which does not exist yet as of "
-            "ADR-0077 — shows 'No data' until the ai-helm-values "
-            "controller.spanRequestHeaderAttributes PR merges and new traffic "
-            "flows. Once live: open a trace to see the full OpenInference "
-            "content (llm.input_messages/output_messages), token counts, "
-            "model, and latency."
-        )
-        .datasource(_TEMPO_DS)
-        .grid_pos(dm.GridPos(h=16, w=24, x=0, y=24))
-        .with_target(query)
-    )
-
-
 _DESCRIPTION = (
     "Per-user chat-completion view (embeddings excluded) — the Phoenix-style "
     "'what is this person doing' cut. The $user picker is sourced directly "
     "from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so "
     "it lists real people regardless of recent gateway traffic. Volume/cost/"
     "token/error aggregates come from Loki, filtered on the `email` label "
-    "(ADR-0046). ⚠️ The live per-user trace feed needs span.user.email, which "
-    "doesn't exist yet — see ADR-0077 for the pending ai-helm-values PR. "
+    "(ADR-0046). No per-user trace/content panel here by design (ADR-0077) — "
+    "content was already fully visible without per-user span attribution, so "
+    "adding it wasn't worth the privacy cost; use 'AI Gateway — chat overview' "
+    "to read actual chat content. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py."
 )
 
@@ -300,7 +267,7 @@ def _dashboard() -> db.Dashboard:
     return (
         db.Dashboard("AI Gateway — chats by user")
         .uid("envoy-ai-gateway-chats-by-user")
-        .tags(["ai-gateway", "chats", "per-user", "keycloak", "tempo", "phoenix"])
+        .tags(["ai-gateway", "chats", "per-user", "keycloak", "phoenix"])
         .description(_DESCRIPTION)
         .timezone("browser")
         .editable()
@@ -317,8 +284,6 @@ def _dashboard() -> db.Dashboard:
         .with_panel(_panel_cost_over_time())
         .with_panel(_panel_tokens_over_time())
         .with_panel(_panel_model_pie())
-        .with_panel(sh.row("This user's chats (live)", y=23))
-        .with_panel(_panel_user_chats())
     )
 
 

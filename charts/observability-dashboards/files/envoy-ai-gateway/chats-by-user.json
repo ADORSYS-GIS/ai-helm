@@ -29,13 +29,12 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-chats-by-user",
   "title": "AI Gateway — chats by user",
-  "description": "Per-user chat-completion view (embeddings excluded) — the Phoenix-style 'what is this person doing' cut. The $user picker is sourced directly from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so it lists real people regardless of recent gateway traffic. Volume/cost/token/error aggregates come from Loki, filtered on the `email` label (ADR-0046). ⚠️ The live per-user trace feed needs span.user.email, which doesn't exist yet — see ADR-0077 for the pending ai-helm-values PR. GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py.",
+  "description": "Per-user chat-completion view (embeddings excluded) — the Phoenix-style 'what is this person doing' cut. The $user picker is sourced directly from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so it lists real people regardless of recent gateway traffic. Volume/cost/token/error aggregates come from Loki, filtered on the `email` label (ADR-0046). No per-user trace/content panel here by design (ADR-0077) — content was already fully visible without per-user span attribution, so adding it wasn't worth the privacy cost; use 'AI Gateway — chat overview' to read actual chat content. GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py.",
   "tags": [
     "ai-gateway",
     "chats",
     "per-user",
     "keycloak",
-    "tempo",
     "phoenix"
   ],
   "timezone": "browser",
@@ -474,45 +473,6 @@
         },
         "orientation": "auto"
       }
-    },
-    {
-      "type": "row",
-      "collapsed": false,
-      "id": 0,
-      "panels": [],
-      "title": "This user's chats (live)",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 23
-      }
-    },
-    {
-      "type": "traces",
-      "targets": [
-        {
-          "refId": "A",
-          "filters": [],
-          "queryType": "traceql",
-          "query": "{ resource.service.name = \"core-gateway\" && span.openinference.span.kind = \"LLM\" && span.user.email = \"$user\" }",
-          "limit": 40
-        }
-      ],
-      "title": "$user's chats (click a trace for the full prompt/response)",
-      "description": "Live chat-completion spans for the selected user. ⚠️ Needs the span.user.email attribute, which does not exist yet as of ADR-0077 — shows 'No data' until the ai-helm-values controller.spanRequestHeaderAttributes PR merges and new traffic flows. Once live: open a trace to see the full OpenInference content (llm.input_messages/output_messages), token counts, model, and latency.",
-      "transparent": false,
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
-      "gridPos": {
-        "h": 16,
-        "w": 24,
-        "x": 0,
-        "y": 24
-      },
-      "repeatDirection": "h"
     }
   ]
 }

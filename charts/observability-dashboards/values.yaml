@@ -117,9 +117,10 @@ dashboards:
     file: files/envoy-ai-gateway/chat-overview.json
     resyncPeriod: 5m
   # Phoenix-style per-user chat view. $user picker sourced from the Keycloak
-  # read-only Postgres datasource (ADR-0063). The live per-user trace feed
-  # needs span.user.email, which doesn't exist yet — see ADR-0077 for the
-  # pending ai-helm-values controller.spanRequestHeaderAttributes PR.
+  # read-only Postgres datasource (ADR-0063). No per-user trace/content panel
+  # by design (ADR-0077, amended) — content was already fully visible without
+  # per-user span attribution, so tagging spans with identity wasn't worth the
+  # privacy cost. Use envoy-ai-gateway-chat-overview to read actual content.
   - name: envoy-ai-gateway-chats-by-user
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/chats-by-user.json

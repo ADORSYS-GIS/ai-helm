@@ -1,7 +1,6 @@
 # Phoenix-style chat observability (OpenInference traces in Tempo)
 
-**Status:** live for `chat-overview`; `chats-by-user`'s per-user trace panel
-pending a cross-repo PR. **ADR:** [0077](./adr/0077-phoenix-style-chat-dashboards.md).
+**Status:** live. **ADR:** [0077](./adr/0077-phoenix-style-chat-dashboards.md).
 **Dashboards:** `AI Gateway — chat overview` (uid `envoy-ai-gateway-chat-overview`),
 `AI Gateway — chats by user` (uid `envoy-ai-gateway-chats-by-user`).
 
@@ -22,7 +21,7 @@ instrumentation, not deliberately for this). OpenInference **defaults to
 capturing full request/response content**
 (`OPENINFERENCE_HIDE_INPUTS`/`_HIDE_OUTPUTS` are opt-in, unset here). This
 means Tempo has been holding full-content chat traces all along — confirmed
-live against the cluster (`/api/search/tags`, 2026-07-07):
+live against the cluster (`/api/search/tags`, `/api/traces/<id>`, 2026-07-07):
 
 | Attribute | Holds |
 |---|---|
@@ -34,32 +33,33 @@ live against the cluster (`/api/search/tags`, 2026-07-07):
 | `llm.token_count.{prompt,completion,total}` | token usage for the span |
 
 No new logging was added to get this — these dashboards are the first thing
-to surface a capability that was already running.
+to surface a capability that was already running. This was also true in
+Phoenix's era: both backends received the exact same OpenInference spans in
+parallel (ADR-0002), so nothing about content access changed when Tempo
+replaced Phoenix.
 
-## What's missing: identity
+## No per-user identity on spans — and it turned out not to matter
 
 Spans carry **no `user.id`/`session.id`/`user.email`**, and the Envoy
 access-log JSON (Loki's identity source, [ADR-0046](./adr/0046-per-user-attribution-otlp-envelope-repair.md))
-carries no `trace_id` — so as shipped, there is no way to join a trace back to
-a person. Envoy AI Gateway supports this via a generic header→span-attribute
-mapping, `controller.spanRequestHeaderAttributes` (a Helm value on the `aieg`
-controller app — comma-separated `<http-header>:<otel-attribute>` pairs).
-Authorino already stamps `x-oidc-user-id`/`x-oidc-email` on every request
-before ext-proc sees it, so the fix is one Helm value in the private
-`ai-helm-values` repo:
+carries no `trace_id` — so there is no way to join a trace back to a person
+via TraceQL. Envoy AI Gateway supports closing this via a generic
+header→span-attribute mapping (`controller.spanRequestHeaderAttributes`, a
+Helm value on the `aieg` controller app). **A PR doing exactly that was
+built and opened in `ai-helm-values` — then closed unmerged.** Live
+verification (opening real traces and reading `input.value`/`output.value`
+and every `llm.input_messages.*`/`output_messages.*` attribute directly)
+confirmed full chat content was already completely readable without it, and
+always had been — no request body carries an OpenAI-style `user` field
+either. The mapping would only have enabled server-side TraceQL filtering by
+a specific person, at a real privacy cost (making already-full-content traces
+directly person-attributable) that wasn't worth paying for a capability
+nobody needed. See ADR-0077's Alternatives Considered section.
 
-```yaml
-# environments/prod/values/aieg.yaml
-controller:
-  spanRequestHeaderAttributes: "x-oidc-user-id:user.id,x-oidc-email:user.email"
-```
-
-This is deliberately **not** bundled into the same change as the dashboards —
-it's reviewed on its own in `ai-helm-values` because it's a genuine step up in
-privacy exposure: full chat content already existed in Tempo, but this makes
-it **directly attributable to a named person** by anyone who can use the
-`chats-by-user` dashboard or query Tempo directly. See ADR-0077's
-Consequences section.
+**Practical consequence:** `chats-by-user` has no trace/content panel. To
+read a specific person's chat content, browse `chat-overview`'s global trace
+feed and recognize them from the content (model choice, task, writing style)
+— a real limitation, accepted deliberately.
 
 ## The two dashboards
 
@@ -77,18 +77,14 @@ Consequences section.
   variable against the read-only Keycloak Postgres datasource
   ([ADR-0063](./adr/0063-grafana-readonly-keycloak-datasource.md); `__text`/
   `__value` column aliases), so it lists real people independent of recent
-  traffic — not `label_values(email)` like `per_user.py`/`jwt_tokens.py`. The
-  aggregate panels (Loki-filtered on `email="$user"`) work today. The
-  per-user trace panel queries
-  `{ resource.service.name = "core-gateway" && span.openinference.span.kind = "LLM" && span.user.email = "$user" }`
-  — it shows **"No data" until the `spanRequestHeaderAttributes` PR above
-  merges** and new traffic flows; no dashboard change is needed once it does.
+  traffic — not `label_values(email)` like `per_user.py`/`jwt_tokens.py`.
+  Loki-filtered aggregates only (requests, tokens, cost, error rate,
+  filtered on `email="$user"`) — no content/trace panel, see above.
 
 ⚠️ **No raw user input is ever interpolated into SQL.** The `$user` variable's
 *available options* come from a static-realm-id query; the *selected* value
-only ever reaches a Loki/Mimir label matcher or a TraceQL attribute
-comparison — never a second SQL string — so there's no SQL-injection surface
-from a manipulated `?var-user=` URL param.
+only ever reaches a Loki label matcher — never a second SQL string — so
+there's no SQL-injection surface from a manipulated `?var-user=` URL param.
 
 ## Not built: single-chat drill-down
 
@@ -107,5 +103,11 @@ kubectl port-forward -n observability svc/tempo 3200:3200 &
 curl -s "http://localhost:3200/api/search/tag/openinference.span.kind/values"
 # {"tagValues":["EMBEDDING","LLM"]}
 curl -s "http://localhost:3200/api/search/tag/user.email/values"
-# empty until the ai-helm-values PR merges; populated after
+# empty — expected, and expected to STAY empty (the attribution mapping was
+# deliberately not merged)
+
+# Confirm content is readable without any user attribute:
+curl -s "http://localhost:3200/api/search?q=%7B%20span.openinference.span.kind%20%3D%20%22LLM%22%20%7D&limit=1" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['traces'][0]['traceID'])"
+# then GET /api/traces/<id> and inspect the input.value / llm.input_messages.* attributes
 ```
