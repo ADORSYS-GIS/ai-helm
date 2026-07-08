@@ -203,6 +203,20 @@ clientTrafficPolicy:
 backendTrafficPolicy:
   bufferLimit: 100Mi
 
+  # ── Shared cross-model monthly budget (#532) ──────────────────────────────
+  # One SHARED micro-USD budget per (user, plan) across ALL model routes, instead
+  # of the per-model counters that let a heavy user spend cap × N-models. Rendered
+  # as a `shared: true` cost rule on the gateway-wide BTP (see the template).
+  # ⚠️ enabled MUST stay false until Envoy Gateway is ≥ v1.8.2 (bug #9244 breaks
+  # shared+cost on 1.8.1). Flip this AND ai-model `sharedBudget.enabled` together.
+  # `plans` values (USD) must match what the per-model path used (ai-models
+  # rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd) at cutover.
+  monthlyBudget:
+    enabled: false
+    plans:
+      free: 30
+      pro: 200
+
   # Whole-request ceiling for routes this gateway-wide policy governs (the
   # non-model routes — model routes are governed by their own per-model BTP in
   # charts/ai-model, which replaces this one). ADR-0034.
