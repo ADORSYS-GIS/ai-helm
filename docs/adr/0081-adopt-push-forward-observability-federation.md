@@ -1,4 +1,4 @@
-# ADR-0080: Adopt Push-Forward Mode for multi-upstream observability federation
+# ADR-0081: Adopt Push-Forward Mode for multi-upstream observability federation
 
 **Status:** Proposed
 **Date:** 2026-07-08

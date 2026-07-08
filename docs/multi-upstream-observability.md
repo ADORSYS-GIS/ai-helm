@@ -4,7 +4,7 @@
 > from many tenant/upstream clusters into a central observability cluster.
 >
 > **Status:** Draft design for review
-> **Relates to:** [ADR-0080](./adr/0080-adopt-push-forward-observability-federation.md) (proposed)
+> **Relates to:** [ADR-0081](./adr/0081-adopt-push-forward-observability-federation.md) (proposed)
 
 ---
 
@@ -757,5 +757,5 @@ The first upstream to connect is the **home GPU cluster** (the gap from
 - [docs/observability-gaps.md](./observability-gaps.md) -- gap inventory (source of this ticket)
 - [docs/alloy-servicemonitor-guide.md](./alloy-servicemonitor-guide.md) -- Phase 2 preview mentions external cluster
 - [CLAUDE.md](../CLAUDE.md) -- cluster gotchas (Cilium, Alloy egress, memberlist)
-- [ADR-0080](./adr/0080-adopt-push-forward-observability-federation.md) -- corresponding ADR for the federation decision
+- [ADR-0081](./adr/0081-adopt-push-forward-observability-federation.md) -- corresponding ADR for the federation decision
 - [architecture/06-networking-tls.md](./architecture/06-networking-tls.md#tls-issuance) -- TLS issuance (cert-home-cert-http ClusterIssuer + self-signed-ca for internal)
