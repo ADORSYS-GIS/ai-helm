@@ -250,45 +250,64 @@ alerting:
           for: 1h
           severity: warning
           summary: "AI Gateway 30-day spend exceeded $6000 (budget knob — set to your actual monthly budget; run-rate ~$5k)."
-        # Per-actor: fires when a SINGLE person/actor's own rolling 30d spend
-        # reaches their OWN plan's monthly cap (charts/ai-models/values.yaml
+        # Per-actor: fires when a SINGLE person's own rolling 30d spend crosses
+        # their OWN plan's monthly cap (charts/ai-models/values.yaml
         # rateLimitBudgeting.plans — free $50, pro $200; service/internal are
-        # uncapped by design and deliberately excluded, no budget to cross).
-        # Each plan's fraction-of-cap is computed separately (PromQL has no
-        # per-series threshold, so the % conversion happens IN the query) then
-        # unioned with `or` — disjoint billing_plan label values, no collision.
-        # `gt 100` is the practical `>= 100%` (spend is a continuous $ value,
-        # same "exceeded" convention the two org-wide rules above use).
-        - uid: cost-actor-budget-crossed
-          title: AI Gateway — actor hit their monthly budget
+        # uncapped by design and excluded, no budget to cross). Split into ONE
+        # RULE PER PLAN so the query VALUE is the dollar spend and the threshold
+        # is the plan's real dollar cap — this lets the alert message state the
+        # actual "$X spent of $Y budget" instead of an opaque bare percentage
+        # (PromQL has no per-series threshold, so a single unified rule could
+        # only compare a % and couldn't show dollars). `$values.B.Value` is the
+        # reduced dollar figure; `printf "%.2f"` formats it (Grafana annotation
+        # templates are Go text/template — printf is a builtin).
+        - uid: cost-actor-budget-free
+          title: AI Gateway — free-tier actor over budget
           datasourceUid: mimir
           expr: >-
-            (sum by (email, display_name, billing_plan)
-              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free"}[30d]))
-              / 1e6 / 50 * 100)
-            or
-            (sum by (email, display_name, billing_plan)
-              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="pro"}[30d]))
-              / 1e6 / 200 * 100)
+            sum by (email, display_name)
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free"}[30d])) / 1e6
           fromSeconds: 2592000
           op: gt
-          threshold: 100
+          threshold: 50
           for: 0m
           severity: critical
           summary: >-
-            🚨 {{ $labels.display_name }} ({{ $labels.email }}, {{ $labels.billing_plan }} plan)
-            is at {{ $values.B.Value }}% of their monthly budget over the last 30d.
+            🚨 {{ $labels.display_name }} ({{ $labels.email }}) has spent
+            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
+            over their $50.00/month free-tier budget.
           description: >-
             Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
-            crossed 100% of their own plan's monthlyBudgetUsd cap (free=$50,
-            pro=$200; see AI Gateway — actor consumption / chats-by-user
-            dashboards for detail). ⚠️ This is cumulative trailing-30d spend,
-            NOT the same window the rate limiter enforces against (ADR-0070's
-            fixed 30-day epoch bucket in redis, which resets on a schedule,
-            not on a rolling basis) — a person can show >100% here while their
-            LIVE enforcement budget is well under cap. Check the
+            exceeded the free-tier monthlyBudgetUsd cap of $50. Value = dollars
+            spent (trailing 30d). See the AI Gateway — actor consumption /
+            chats-by-user dashboards for the breakdown. ⚠️ This is cumulative
+            trailing-30d spend, NOT the same window the rate limiter enforces
+            against (ADR-0070's fixed 30-day epoch bucket in redis, which resets
+            on a schedule, not rolling) — someone can be over $50 here while
+            their LIVE enforcement budget is well under cap. Check the
             AI Gateway — rate-limit quota dashboard for their actual current
             enforcement state before assuming they're blocked.
+        - uid: cost-actor-budget-pro
+          title: AI Gateway — pro actor over budget
+          datasourceUid: mimir
+          expr: >-
+            sum by (email, display_name)
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="pro"}[30d])) / 1e6
+          fromSeconds: 2592000
+          op: gt
+          threshold: 200
+          for: 0m
+          severity: critical
+          summary: >-
+            🚨 {{ $labels.display_name }} ({{ $labels.email }}) has spent
+            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
+            over their $200.00/month pro budget.
+          description: >-
+            Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
+            exceeded the pro monthlyBudgetUsd cap of $200. Value = dollars spent
+            (trailing 30d). Same rolling-vs-enforcement caveat as the free-tier
+            rule above — check the AI Gateway — rate-limit quota dashboard for
+            the live enforcement state.
 
     - name: stack-health
       folderRef: collectors
