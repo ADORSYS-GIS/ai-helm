@@ -121,7 +121,7 @@ We choose **Push-Forward Mode (A)** because:
    their loss on restart is acceptable (30-day retention already generous).
 
 Mode B (Pull) may become relevant later if we need cross-cluster PromQL querying
-(Stage 3 in §10), but it adds TLS and reachability concerns for every upstream
+(Stage 3 in §11), but it adds TLS and reachability concerns for every upstream
 endpoint today.
 
 
@@ -132,7 +132,7 @@ endpoint today.
 **Mechanism:** `prometheus.remote_write` from upstream Alloy to central Mimir's
 HTTP API (`/api/v1/push`).
 
-**Upstream Alloy River config (component):**
+**Upstream Alloy River config — PoC (basic auth + public TLS):**
 
 ```river
 prometheus.remote_write "central_mimir" {
@@ -145,14 +145,13 @@ prometheus.remote_write "central_mimir" {
     }
 
     tls {
-      ca_file   = "/etc/alloy/mimir-ca.pem"
-      cert_file = "/etc/alloy/mimir-cert.pem"
-      key_file  = "/etc/alloy/mimir-key.pem"
+      ca_file = "/etc/alloy/mimir-ca.pem"  // public CA only; no client certs needed
     }
   }
 
   // Buffer on disk to survive short central outages.
-  // Defaults to 10 GiB; tune per upstream cluster based on volume.
+  // WAL grows until disk full or truncation; truncate_frequency controls
+  // cleanup cadence, not buffer size. Tune per upstream cluster based on volume.
   wal {
     truncate_frequency = "1m"
   }
@@ -164,20 +163,65 @@ prometheus.remote_write "central_mimir" {
 }
 ```
 
+**Upstream Alloy River config — production (mTLS):**
+
+```river
+prometheus.remote_write "central_mimir" {
+  endpoint {
+    url = "https://mimir.observability.ai.camer.digital/api/v1/push"
+
+    tls {
+      ca_file   = "/etc/alloy/mimir-ca.pem"
+      cert_file = "/etc/alloy/mimir-cert.pem"
+      key_file  = "/etc/alloy/mimir-key.pem"
+    }
+  }
+
+  wal {
+    truncate_frequency = "1m"
+  }
+
+  external_labels = {
+    cluster   = env("CLUSTER_NAME"),
+    tenant_id = env("TENANT_ID"),
+  }
+}
+```
+
+> **Note:** `external_labels` is a Prometheus-specific concept. It stamps
+> labels on metric series at the edge before they are sent. For logs and traces,
+> different mechanisms are used (see §3.2 and §3.3).
+
 **Key properties:**
-- WAL buffers metrics to disk — survives central outages up to buffer capacity
+- WAL buffers metrics to disk — survives central outages until disk fills or
+  truncation runs. There is no default WAL size limit; monitor disk usage.
 - `external_labels` stamps `cluster` and `tenant_id` at the edge, before any
-  transform or filter stage
+  transform or filter stage (Prometheus metrics only — see note above)
 - Mimir receives the data identically to local data — no Mimir-side changes needed
+- PoC uses basic auth at the Traefik Ingress layer (Mimir has no native auth
+  when `multitenancy_enabled: false`); production uses mTLS client certs
 
 ### 3.2 Logs → Loki
 
 **Mechanism:** `loki.write` from upstream Alloy to central Loki's Push API
 (`/loki/api/v1/push`).
 
-**Upstream Alloy River config (component):**
+**Upstream Alloy River config — PoC (basic auth + public TLS):**
 
 ```river
+// Step 1: process logs to add cluster/tenant_id labels before sending
+loki.process "add_labels" {
+  forward_to = [loki.write.central_loki.receiver]
+
+  stage.labels {
+    values = {
+      cluster   = env("CLUSTER_NAME"),
+      tenant_id = env("TENANT_ID"),
+    }
+  }
+}
+
+// Step 2: write to central Loki
 loki.write "central_loki" {
   endpoint {
     url = "https://loki.observability.ai.camer.digital/loki/api/v1/push"
@@ -188,21 +232,49 @@ loki.write "central_loki" {
     }
 
     tls {
+      ca_file = "/etc/alloy/loki-ca.pem"  // public CA only; no client certs needed
+    }
+  }
+
+  // Disk-backed queue retries on transient failure.
+  // Configure queue settings separately; encoding controls log format, not queue behavior.
+}
+```
+
+**Upstream Alloy River config — production (mTLS):**
+
+```river
+loki.process "add_labels" {
+  forward_to = [loki.write.central_loki.receiver]
+
+  stage.labels {
+    values = {
+      cluster   = env("CLUSTER_NAME"),
+      tenant_id = env("TENANT_ID"),
+    }
+  }
+}
+
+loki.write "central_loki" {
+  endpoint {
+    url = "https://loki.observability.ai.camer.digital/loki/api/v1/push"
+
+    tls {
       ca_file   = "/etc/alloy/loki-ca.pem"
       cert_file = "/etc/alloy/loki-cert.pem"
       key_file  = "/etc/alloy/loki-key.pem"
     }
   }
-
-  // Disk-backed queue: retries on transient failure.
-  encoding = "json"
 }
 ```
 
 **Key properties:**
+- `loki.process` with `stage.labels` adds `cluster` and `tenant_id` as log
+  labels before they leave the upstream cluster — this is the log equivalent of
+  Prometheus `external_labels`
 - Disk-backed retry queue — does not drop logs on transient central outage
-- Use `loki.process` blocks to add `cluster` and `tenant_id` as log labels
-  before they leave the upstream cluster
+- `encoding` controls the log serialization format, not queue behavior; queue
+  settings are configured separately
 - Loki's multi-tenancy remains disabled (`auth_enabled: false`); isolation is
   label-based
 
@@ -211,12 +283,51 @@ loki.write "central_loki" {
 **Mechanism:** `otlp.exporter` from upstream Alloy to central Tempo's OTLP
 gRPC endpoint (`:4317`).
 
-**Upstream Alloy River config (component):**
+**Upstream Alloy River config — PoC (TLS, no client auth):**
+
+> **gRPC auth caveat:** Traefik's basic-auth middleware is HTTP-only and does
+> not apply to gRPC routes. For the PoC, Tempo's OTLP gRPC endpoint is exposed
+> via Ingress with TLS termination only (no authentication). Restrict access
+> using CiliumNetworkPolicy (§4.2) and source IP allowlisting. For production,
+> use mTLS client certs at the Ingress level or a dedicated gRPC proxy (Envoy)
+> in front of Tempo.
 
 ```river
+// Stamp cluster/tenant_id as OTLP resource attributes (not external_labels,
+// which are Prometheus-only). This is the trace equivalent of external_labels.
+otelcol.processor.resource "add_labels" {
+  attributes = {
+    cluster   = env("CLUSTER_NAME"),
+    tenant_id = env("TENANT_ID"),
+  }
+}
+
 otelcol.exporter.otlp "central_tempo" {
   client {
-    endpoint = "tempo.observability.ai.camer.digital"
+    endpoint = "tempo.observability.ai.camer.digital:443"
+
+    tls {
+      ca_file              = "/etc/alloy/tempo-ca.pem"
+      insecure             = false
+      insecure_skip_verify = false
+    }
+  }
+}
+```
+
+**Upstream Alloy River config — production (mTLS):**
+
+```river
+otelcol.processor.resource "add_labels" {
+  attributes = {
+    cluster   = env("CLUSTER_NAME"),
+    tenant_id = env("TENANT_ID"),
+  }
+}
+
+otelcol.exporter.otlp "central_tempo" {
+  client {
+    endpoint = "tempo.observability.ai.camer.digital:443"
 
     tls {
       ca_file   = "/etc/alloy/tempo-ca.pem"
@@ -230,9 +341,12 @@ otelcol.exporter.otlp "central_tempo" {
 ```
 
 Wire trace pipeline:
-`otelcol.receiver.otlp.default → otelcol.processor.batch → otelcol.exporter.otlp.central_tempo`
+`otelcol.receiver.otlp.default → otelcol.processor.resource.add_labels → otelcol.processor.batch → otelcol.exporter.otlp.central_tempo`
 
 **Key properties:**
+- `otelcol.processor.resource` stamps `cluster` and `tenant_id` as OTLP
+  resource attributes — this is the trace equivalent of Prometheus
+  `external_labels` (which are metrics-only)
 - Traces flow over gRPC (port 4317) — ensure central Ingress supports HTTP/2
 - The `batch` processor is essential: Tempo is optimised for batched trace pushes
 - Traces are queued in-memory only (OTel exporter has no disk-backed queue) —
@@ -274,7 +388,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: mimir
+                name: mimir-nginx
                 port:
                   number: 8080
 ```
@@ -283,7 +397,7 @@ Repeat for:
 
 | Store | Hostname | Path | Service Port |
 |---|---|---|---|
-| **Loki** | `loki.observability.ai.camer.digital` | `/loki/api/v1/push` | loki:3100 |
+| **Loki** | `loki.observability.ai.camer.digital` | `/loki/api/v1/push` | loki-gateway:80 |
 | **Tempo** | `tempo.observability.ai.camer.digital` | gRPC | tempo:4317 |
 
 > **gRPC note:** Traefik handles HTTP/2 natively. For gRPC (Tempo) use
@@ -298,22 +412,64 @@ The Ingress controller already has broad egress allow. **For the stores
 themselves**, allow ingress from the Ingress controller:
 
 ```yaml
+```yaml
+# Mimir: allow ingress to nginx gateway only (port 8080)
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: allow-ingress-from-world
+  name: allow-ingress-mimir-nginx
   namespace: observability
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/instance: mimir  # also: loki, tempo
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/component: nginx
   ingress:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: traefik
       toPorts:
         - ports:
-            - port: "8080"   # or 3100 for Loki, 4317 for Tempo
+            - port: "8080"
+              protocol: TCP
+---
+# Loki: allow ingress to gateway only (port 80)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-ingress-loki-gateway
+  namespace: observability
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+      app.kubernetes.io/component: gateway
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: traefik
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+---
+# Tempo: allow ingress for OTLP gRPC (port 4317)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-ingress-tempo-otlp
+  namespace: observability
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: traefik
+      toPorts:
+        - ports:
+            - port: "4317"
               protocol: TCP
 ```
 
@@ -321,14 +477,24 @@ spec:
 > CiliumNetworkPolicy, NOT a plain Kubernetes `NetworkPolicy` with `ipBlock`.
 > Cilium's `default-deny-egress` baseline is enforced at the Cilium layer;
 > a k8s NetworkPolicy does not override it.
+>
+> **Selector specificity:** Using `app.kubernetes.io/instance: mimir` as the
+> endpointSelector would select ALL Mimir pods (distributor, ingester, querier,
+> store-gateway, compactor, nginx). Instead, target only the nginx gateway
+> component with `app.kubernetes.io/component: nginx`. The same applies to
+> Loki — target `component: gateway`, not all Loki pods.
 
 #### 4.3 No store-side config changes (yet)
 
-- Mimir stays `multitenancy_enabled: false`
-- Loki stays `auth_enabled: false`
-- Tempo stays as-is
+- Mimir stays `multitenancy_enabled: false` — **no native authentication** for
+  remote_write; auth is enforced at the Traefik Ingress layer (see §5)
+- Loki stays `auth_enabled: false` — **no native authentication** for push API;
+  auth is enforced at the Traefik Ingress layer (see §5)
+- Tempo stays as-is — OTLP gRPC endpoint has no built-in auth; restrict via
+  CiliumNetworkPolicy and source IP allowlisting for PoC, mTLS for production
 
 All tenant isolation is handled via label-stamping at the upstream edge.
+Authentication is enforced at the Ingress layer, not at the store level.
 
 ---
 
@@ -336,6 +502,20 @@ All tenant isolation is handled via label-stamping at the upstream edge.
 
 Three options, ordered by preference:
 
+
+**Auth model per signal:**
+
+| Signal | PoC auth | Production auth | Notes |
+|---|---|---|---|
+| **Metrics** (Mimir) | Basic auth at Traefik Ingress | mTLS client certs at Ingress | Mimir has no native auth when `multitenancy_enabled: false`; auth is enforced at the Ingress layer |
+| **Logs** (Loki) | Basic auth at Traefik Ingress | mTLS client certs at Ingress | Loki has no native auth when `auth_enabled: false`; auth is enforced at the Ingress layer |
+| **Traces** (Tempo) | TLS only (no auth) | mTLS client certs or gRPC proxy | Traefik basic-auth is HTTP-only; does not apply to gRPC routes. Use CiliumNetworkPolicy + source IP allowlisting for PoC |
+
+> **Key insight:** Mimir and Loki have no native authentication when
+> `multitenancy_enabled: false` / `auth_enabled: false`. All authentication
+> is enforced at the Traefik Ingress layer, not at the store level. For
+> Tempo gRPC, Traefik's basic-auth middleware does not apply (HTTP-only);
+> use mTLS or a dedicated gRPC proxy for production.
 ### Option A: mTLS (recommended for production)
 
 Reuse the cluster's existing self-signed CA (see [architecture/06-networking-tls.md](./architecture/06-networking-tls.md#tls-issuance) — the  ClusterIssuer for internal TLS). Issue per-upstream certificates:
@@ -357,6 +537,16 @@ etc.).
 **Pros:** Dead simple to set up, matches the River config examples in this doc.
 **Cons:** Shared static secret per upstream; rotation requires coordination.
 
+
+> **Credential provisioning:** Upstream clusters need credentials to push
+> to the central stores. Distribute credentials via:
+> - **ExternalSecrets** (recommended): create an `ExternalSecret` in the
+>   upstream cluster that pulls from the same secret backend as the central
+>   cluster
+> - **Manual `kubectl create secret`**: for PoC, create the secret directly
+>   on the upstream cluster
+> - **GitOps**: use SealedSecrets or SOPS-encrypted secrets in the values repo
+> if the upstream is managed by ArgoCD
 ### Option C: No auth (not recommended)
 
 Only acceptable in an air-gapped or VPC-isolated network where all upstream
@@ -380,10 +570,21 @@ justify the operational complexity:
 
 Instead, **label-based isolation** is used:
 
-| Label | Value | Set by |
+| Signal | Label mechanism | Set by |
 |---|---|---|
-| `cluster` | Unique name (e.g., `home-gpu`, `prod-eu-1`) | upstream Alloy `external_labels` |
-| `tenant_id` | Tenant ID (e.g., `adorsys`, `team-ml`) | upstream Alloy `external_labels` |
+| **Metrics** | `external_labels` in `prometheus.remote_write` | upstream Alloy (Prometheus-specific) |
+| **Logs** | `stage.labels` in `loki.process` block | upstream Alloy (before `loki.write`) |
+| **Traces** | `otelcol.processor.resource` attributes | upstream Alloy (before `otelcol.exporter.otlp`) |
+
+| Label | Value | Example |
+|---|---|---|
+| `cluster` | Unique cluster name | `home-gpu`, `prod-eu-1` |
+| `tenant_id` | Tenant ID | `adorsys`, `team-ml` |
+
+> **Note:** `external_labels` is a Prometheus-specific concept that only
+> applies to metric series. Logs use `loki.process` with `stage.labels`, and
+> traces use `otelcol.processor.resource` to set OTLP resource attributes.
+> See §3.1, §3.2, and §3.3 for per-signal River config examples.
 
 ### How it works
 
@@ -433,15 +634,25 @@ No architectural overhaul.
 
 1. **Provision credentials** -- generate basic auth user/pass or mTLS cert for
    the upstream; store in the central cluster's External Secret source
-2. **Deploy headless Alloy** -- add an `alloy-<cluster>` values file in
+2. **Distribute credentials to upstream** -- push credentials to the upstream
+   cluster via one of:
+   - ExternalSecrets (recommended): create an `ExternalSecret` in the upstream
+     cluster that pulls from the same secret backend (e.g., Vault, AWS Secrets
+     Manager) as the central cluster
+   - Manual `kubectl create secret`: for PoC, create the secret directly on
+     the upstream cluster (`kubectl create secret generic mimir-remote-write
+     --from-literal=user=... --from-literal=password=...`)
+   - GitOps secret management: if the upstream is managed by ArgoCD, use
+     SealedSecrets or SOPS-encrypted secrets in the values repo
+3. **Deploy headless Alloy** -- add an `alloy-<cluster>` values file in
    `ai-helm-values`; the upstream gets its own Alloy that reads local
    ServiceMonitors/PodMonitors and forwards via remote_write; no local store
    dependencies
-3. **Expose central Ingress** -- ensure the central Ingress rules exist for Mimir,
+4. **Expose central Ingress** -- ensure the central Ingress rules exist for Mimir,
    Loki, Tempo
-4. **Verify connectivity** -- from the upstream cluster, run the verification
+5. **Verify connectivity** -- from the upstream cluster, run the verification
    commands
-5. **Add dashboards** -- parameterise existing dashboards with `cluster` variable;
+6. **Add dashboards** -- parameterise existing dashboards with `cluster` variable;
    add to the dashboards-as-code pipeline (`tools/dashboards/`)
 
 ## 8. Verification
@@ -450,28 +661,38 @@ No architectural overhaul.
 
 ```bash
 # From the upstream cluster
-curl -v https://mimir.observability.ai.camer.digital/api/v1/push
-# Expect: 401 (auth enabled) or 404 (no auth -- Mimir returns
-# "not found" for GET /api/v1/push, which is expected)
+# Mimir: POST-only endpoint; GET returns 405 Method Not Allowed (not 404)
+curl -v -X POST https://mimir.observability.ai.camer.digital/api/v1/push
+# Expect: 401 (auth enabled) or 405 (GET not allowed; POST with no body returns 400)
+
+# Loki: POST-only endpoint
+curl -v -X POST https://loki.observability.ai.camer.digital/loki/api/v1/push
+# Expect: 401 (auth enabled) or 400 (empty body)
 ```
 
 ### After Alloy is deployed and forwarding
 
 ```bash
 # 1. Confirm metrics arrive with correct cluster label
-kubectl exec -n observability deploy/mimir -- /bin/mimir   -query=/api/v1/query --param='query=count({cluster="home-gpu"})'
+# Use curl to the mimir-nginx gateway (not kubectl exec into a non-existent deploy/mimir)
+kubectl exec -n observability deploy/mimir-nginx -- \
+  curl -s "http://localhost:8080/prometheus/api/v1/query?query=count({cluster=\"home-gpu\"})"
 # Expect: non-zero count
 
 # 2. Spot-check a specific metric from the upstream
-kubectl exec -n observability deploy/mimir -- /bin/mimir   -query=/api/v1/query --param='query=up{cluster="home-gpu"}'
+kubectl exec -n observability deploy/mimir-nginx -- \
+  curl -s "http://localhost:8080/prometheus/api/v1/query?query=up{cluster=\"home-gpu\"}"
 # Expect: values for upstream targets
 
 # 3. Verify no metric lacks a cluster label
-kubectl exec -n observability deploy/mimir -- /bin/mimir   -query=/api/v1/query --param='query=up{cluster=""}'
+kubectl exec -n observability deploy/mimir-nginx -- \
+  curl -s "http://localhost:8080/prometheus/api/v1/query?query=up{cluster=\"\"}"
 # Expect: empty result (no data without cluster label)
 
 # 4. Logs: check Loki label values
-kubectl exec -n observability deploy/loki -- /bin/loki   -query=/loki/api/v1/label/cluster/values
+# Use curl to the loki-gateway (not kubectl exec into a non-existent deploy/loki)
+kubectl exec -n observability deploy/loki-gateway -- \
+  curl -s "http://localhost:80/loki/api/v1/label/cluster/values"
 # Expect: includes "home-gpu"
 ```
 
@@ -496,12 +717,28 @@ The first upstream to connect is the **home GPU cluster** (the gap from
 | Bandwidth cost (same-region Hetzner) | Negligible intra-datacenter; cross-region could add cost | Keep upstream clusters in same DC as central |
 | Single point of failure | Central cluster outage = total observability loss | Multi-AZ central cluster; DR plan (future) |
 | Label cardinality explosion | `cluster` label adds 1 per upstream; ok at ≤10 | Review cardinality monitoring; prune inactive clusters |
-| No tenant isolation on storage | One bucket space shared by all upstreams | Prefix isolation already exists (blocks/, loki/, tempo/); add cluster/ prefix if desired |
+| No tenant isolation on storage | All upstreams share the SAME S3 buckets (per-store, not per-cluster); data from all clusters is mixed | Label-based isolation only; add per-cluster S3 prefixes if needed (requires store-level config changes) |
+| No rate limiting on Ingress | A misconfigured or high-volume upstream could overwhelm central stores | Configure Traefik rate-limiting middleware; set Mimir ingestion rate limits per tenant |
+| No Mimir ingestion limits configured | Mimir has remote_write rate limits (ingestion rate, series limit) that are not yet tuned for upstreams | Configure `limits.max_global_series_per_user` and ingestion rate limits in Mimir config |
 | Auth credential rotation | Manual for basic auth; automated for mTLS | Adopt mTLS after PoC |
 
 ---
 
-## 10. Future Evolution
+## 10. Edge Cases & Operational Concerns
+
+| Scenario | Impact | Mitigation |
+|---|---|---|
+| Upstream cluster goes down | Stale data; gaps on recovery | Alert on `up{cluster="X"} == 0`; document gap duration in incident |
+| Clock skew across clusters | Timestamp accuracy affected; queries may show data in wrong time window | Ensure NTP is configured on all upstream nodes; Alloy uses scrape timestamp by default |
+| Network partition vs buffer capacity | Metrics/logs: WAL/queue fills disk; traces: in-memory buffer lost | Monitor disk usage on upstream Alloy; set disk alerts at 70% capacity |
+| Duplicate data on WAL replay | Mimir deduplicates by timestamp+labels; Loki may create duplicate streams | Acceptable for metrics; for logs, use `loki.process` dedup stage if needed |
+| Per-cluster retention imbalance | One upstream generating more data reduces historical retention for others | Monitor per-cluster series volume; consider per-tenant retention limits (future) |
+| Alert routing across clusters | All clusters share one Grafana; no per-cluster alert routing | Use `cluster` label in alert rules; route to different channels per cluster |
+| Grafana query performance | Adding `cluster`/`tenant_id` labels increases series count | Monitor series cardinality; use recording rules for high-cardinality queries |
+
+---
+
+## 11. Future Evolution
 
 | Stage | What | When |
 |---|---|---|
