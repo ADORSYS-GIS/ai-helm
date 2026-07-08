@@ -1,7 +1,6 @@
-# charts/model-serving-ministral-3b — self-hosted Ministral-3B-Instruct-2410
-# AWQ on the home GPU. See ADR-0022 (federation) + ADR-0028 (pricing) +
-# ADR-0029 (serving mode) + ADR-0030 (one StatefulSet via bjw-template) +
-# docs/self-hosted-model-serving.md.
+# charts/model-serving-qwen3-8b — self-hosted Qwen3-8B-AWQ on the home GPU.
+# See ADR-0022 (federation) + ADR-0028 (pricing) + ADR-0029 (serving mode) +
+# ADR-0030 (one StatefulSet via bjw-template) + docs/self-hosted-model-serving.md.
 #
 # Shape: a hybrid bjw-template chart (like charts/librechat-app).
 #   - The bjw-template subchart (values under `modelServing:`) renders the WHOLE
@@ -13,26 +12,26 @@
 #
 # Sync-wave ordering (this Application's resources, on the HOME cluster):
 #   -2  ExternalSecret (vllm-local-api-key + hf-token)  — before any pod
-#   -1  PVC (ministral-3b-models, RWX)                  — weights volume
+#   -1  PVC (qwen3-8b-models, RWX)                     — weights volume
 #    0  seed Job (download-once into the PVC)             — ArgoCD Sync hook
 #    1  StatefulSet (model + proxy) + Service + Ingress   — mounts the PVC
 
 global:
   labels:
-    app: model-serving-ministral-3b
+    app: model-serving-qwen3-8b
     team: adorsys-gis
 
 model:
-  name: ministral-3b
-  hfRepo: RichardErkhov/ministral_-_Ministral-3b-instruct-awq
-  storagePath: Ministral-3b-instruct-awq
+  name: qwen3-8b
+  hfRepo: Qwen/Qwen3-8B-AWQ
+  storagePath: Qwen3-8B-AWQ
 
 pvc:
   enabled: true
-  name: ministral-3b-models
+  name: qwen3-8b-models
   storageClassName: longhorn
   accessMode: ReadWriteMany
-  size: 10Gi
+  size: 15Gi
 
 seedJob:
   enabled: true
@@ -64,7 +63,7 @@ edgeAuth:
 
 modelServing:
   global:
-    fullnameOverride: ministral-3b
+    fullnameOverride: qwen3-8b
 
   defaultPodOptions:
     runtimeClassName: nvidia
@@ -84,7 +83,7 @@ modelServing:
             tag: v0.18.0-gpu
             pullPolicy: IfNotPresent
           args:
-            - --model_name=ministral-3b
+            - --model_name=qwen3-8b
             - --model_dir=/mnt/models
             - --backend=vllm
             - --dtype=float16
@@ -95,18 +94,6 @@ modelServing:
             - --swap-space=1
             - --enforce-eager
             - --enable-auto-tool-choice
-            # hermes (not mistral): the community AWQ repo (RichardErkhov)
-            # stripped the [TOOL_CALLS] tokenizer token, so vLLM's mistral
-            # parser crashes at request time ("could not locate the tool call
-            # token in the tokenizer"). opencode always sends tools, so we need
-            # --enable-auto-tool-choice to avoid a hard reject. The hermes
-            # parser doesn't need a special tokenizer token — it parses tool
-            # calls from the generated text via XML tags. Ministral won't
-            # output Hermes format, so tool calls won't be parsed, but the
-            # request won't crash. The model responds as text and ignores the
-            # tool definitions. Proper tool support needs the official gated
-            # repo (mistralai/Ministral-3B-Instruct-2410) with its full
-            # tokenizer, or a --chat-template override.
             - --tool-call-parser=hermes
             - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
           env:
@@ -205,11 +192,11 @@ modelServing:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              MODEL_DIR="/models/Ministral-3b-instruct-awq"
+              MODEL_DIR="/models/Qwen3-8B-AWQ"
               mkdir -p "$MODEL_DIR"
-              echo "Seeding RichardErkhov/ministral_-_Ministral-3b-instruct-awq -> $MODEL_DIR (skips files already present)"
+              echo "Seeding Qwen/Qwen3-8B-AWQ -> $MODEL_DIR (skips files already present)"
               pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
-              hf download RichardErkhov/ministral_-_Ministral-3b-instruct-awq --local-dir "$MODEL_DIR"
+              hf download Qwen/Qwen3-8B-AWQ --local-dir "$MODEL_DIR"
               echo "Seed complete."
           env:
             HF_TOKEN:
@@ -236,7 +223,7 @@ modelServing:
       annotations:
         cert-manager.io/cluster-issuer: cert-cloudflare
       hosts:
-        - host: ministral-3b--poc.ssegning.com
+        - host: qwen3-8b--poc.ssegning.com
           paths:
             - path: /
               pathType: Prefix
@@ -244,19 +231,19 @@ modelServing:
                 identifier: main
                 port: edge
       tls:
-        - secretName: ministral-3b-edge-tls
+        - secretName: qwen3-8b-edge-tls
           hosts:
-            - ministral-3b--poc.ssegning.com
+            - qwen3-8b--poc.ssegning.com
 
   persistence:
     model-store:
       enabled: true
-      existingClaim: ministral-3b-models
+      existingClaim: qwen3-8b-models
       advancedMounts:
         main:
           model:
             - path: /mnt/models
-              subPath: Ministral-3b-instruct-awq
+              subPath: Qwen3-8B-AWQ
               readOnly: true
         seed:
           seed:
@@ -264,7 +251,7 @@ modelServing:
     caddyfile:
       enabled: true
       type: configMap
-      name: ministral-3b-caddy
+      name: qwen3-8b-caddy
       advancedMounts:
         main:
           proxy:
