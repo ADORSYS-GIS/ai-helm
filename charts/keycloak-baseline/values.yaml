@@ -109,6 +109,30 @@ keycloak-config:
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "converse"
 
+    # Lightbridge tenant-context scope. Carries the Lightbridge Context Mapper
+    # (SPI provider id `lightbridge-context-mapper`), which copies the account_id
+    # and project_id the token-exchange SPI sealed into user-session notes onto
+    # the issued token as claims. Attach as a default scope to whichever client
+    # performs the project_id token exchange (self-service-mcp-api below). The
+    # claim names (account_id, project_id) are fixed by the mapper — no claim.name.
+    lightbridge:
+      name: "lightbridge"
+      description: "Lightbridge tenant context (account_id, project_id)"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "true"
+        display.on.consent.screen: "false"
+      protocolMappers:
+        - name: lightbridge_context
+          protocol: "openid-connect"
+          protocolMapper: "lightbridge-context-mapper"
+          consentRequired: false
+          config:
+            access.token.claim: "true"
+            id.token.claim: "true"
+            userinfo.token.claim: "true"
+            introspection.token.claim: "true"
+
   # OIDC Clients
   clients:
     converse:
@@ -201,6 +225,10 @@ keycloak-config:
         - roles
         - basic
         - email
+        # Seals account_id/project_id into tokens this client exchanges (with a
+        # project_id form param). Standard Token Exchange must also be enabled on
+        # this client — not expressible in this template yet; see the runbook.
+        - lightbridge
       optionalClientScopes:
         - address
         - librechat
