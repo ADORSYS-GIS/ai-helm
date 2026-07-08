@@ -691,7 +691,7 @@ models:
   #
   # ── Model card (Ministral-3B-Instruct-2410 · Mistral Research License) ──────
   #   3B params, 14 layers, GQA 32 Q / 8 KV (head_dim 128 → 56 KiB KV/tok),
-  #   131,072 native context (clamped to 32K by --max-model-len for KV budget).
+  #   131,072 native context (clamped to 64K by --max-model-len for KV budget).
   #   No thinking/reasoning mode (→ *spStandard). Mistral tool-call format
   #   (→ --tool-call-parser=mistral). https://huggingface.co/mistralai/Ministral-3B-Instruct-2410
   #
@@ -714,7 +714,7 @@ models:
       connectionIdleTimeout: 1h
     info:
       displayName: "Ministral-3B-AWQ (self-hosted)"
-      contextLength: 32768           # = --max-model-len (128K native, clamped for KV budget)
+      contextLength: 65536           # = --max-model-len (128K native, 64K×2seq fits 12GB KV budget)
       maxOutputTokens: 8192
       supportedParameters: *spStandard   # standard instruct model — no thinking mode
     pricing:
