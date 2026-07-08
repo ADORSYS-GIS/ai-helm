@@ -1,0 +1,67 @@
+# Local overrides for testing model-serving-ministral-3b on the ThinkPad P16v
+# (RTX 1000 Ada, 6 GB VRAM, k3s, local-path storage, no ESO, no ArgoCD).
+# Usage:
+#   helm install model-serving-ministral-3b ./charts/model-serving-ministral-3b \
+#     -n custom-ai-ops -f charts/model-serving-ministral-3b/local-overrides.yaml
+
+# Disable both ExternalSecrets — no ESO on the local cluster.
+# The existing `hf-token` Secret (key: token) is reused as-is by the seed Job.
+# The `vllm-local-api-key` Secret (key: api_key) was created manually.
+apiKey:
+  enabled: true
+  secretName: vllm-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: false
+
+seedJob:
+  enabled: true
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: false
+
+# local-path is RWO only (single-node k3s).
+pvc:
+  enabled: true
+  name: ministral-3b-models
+  storageClassName: local-path
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+# 6 GB VRAM (~5.64 GiB usable): Ministral-3B AWQ is ~2.25 GiB (weights + lm_head),
+# leaving ~2.8 GiB for KV cache at 0.90 util. KV is 56 KiB/tok (14 layers, 8 KV,
+     # context (1.75 GiB KV, fits comfortably). Can raise to 32K×1 if needed.
+modelServing:
+  controllers:
+    main:
+      containers:
+        model:
+          args:
+            - --model_name=ministral-3b
+            - --model_dir=/mnt/models
+            - --backend=vllm
+            - --dtype=float16
+            - --quantization=awq
+            - --max-model-len=16384
+            - --max-num-seqs=2
+            - --gpu-memory-utilization=0.90
+            - --swap-space=1
+            - --enforce-eager
+            - --enable-auto-tool-choice
+            - --tool-call-parser=mistral
+            - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 6Gi
+
+  # No ingress needed for a local test — port-forward the Service instead.
+  ingress:
+    main:
+      enabled: false

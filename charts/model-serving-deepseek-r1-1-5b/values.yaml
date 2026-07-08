@@ -1,0 +1,280 @@
+# charts/model-serving-deepseek-r1-1-5b — self-hosted DeepSeek-R1-Distill-Qwen-1.5B
+# on the home GPU. See ADR-0022 (federation) + ADR-0028 (pricing) + ADR-0029
+# (serving mode) + ADR-0030 (one StatefulSet via bjw-template) +
+# docs/self-hosted-model-serving.md.
+#
+# DeepSeek-R1-Distill-Qwen-1.5B: a reasoning model distilled from DeepSeek-R1
+# onto a Qwen2.5-Math-1.5B base (MIT license). Standard Qwen2 architecture →
+# vLLM supports it natively (unlike Qwen3.5's turbulent GDN-MoE-VLM). 1.5B params
+# at BF16 ≈ 2 GB weights — trivially fits 32K context on the 12 GB A2000.
+#
+# ⚠️ Reasoning usage (from the R1 model card):
+#   - temperature 0.5–0.7 (0.6 recommended) to prevent endless repetition
+#   - AVOID system prompts — all instructions in the user prompt
+#   - the model may bypass thinking ("") — enforce output start with "\n"
+#   - long chain-of-thought → maxOutputTokens 32768 by default
+# These are CLIENT-side settings (LibreChat preset / gateway); the chart only
+# stands up the server.
+#
+# Shape: a hybrid bjw-template chart (like charts/model-serving-qwen25-3b-awq).
+#   - The bjw-template subchart (values under `modelServing:`) renders the WHOLE
+#     workload: the model StatefulSet (model + Caddy proxy sidecar), the seed
+#     Job (a bjw `job` controller, ArgoCD Sync hook), the Service, and the
+#     Ingress.
+#   - The chart's own templates/ render only the resources bjw doesn't do
+#     natively: the weights PVC, the ExternalSecrets, and the Caddyfile ConfigMap.
+#
+# Sync-wave ordering (this Application's resources, on the HOME cluster):
+#   -2  ExternalSecret (vllm-local-api-key + hf-token)  — before any pod
+#   -1  PVC (deepseek-r1-1-5b-models, RWX)               — weights volume
+#    0  seed Job (download-once into the PVC)             — ArgoCD Sync hook
+#    1  StatefulSet (model + proxy) + Service + Ingress   — mounts the PVC
+
+global:
+  labels:
+    app: model-serving-deepseek-r1-1-5b
+    team: adorsys-gis
+
+model:
+  # ⚠️ Helm/k8s-safe name (dashes, no dots). This is the --model_name, the
+  # StatefulSet/Service name, and the PVC/caddy names. The HF repo + storagePath
+  # keep dots (real HF identifiers).
+  name: deepseek-r1-1-5b
+  hfRepo: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+  storagePath: DeepSeek-R1-Distill-Qwen-1.5B
+
+pvc:
+  enabled: true
+  name: deepseek-r1-1-5b-models
+  storageClassName: longhorn
+  accessMode: ReadWriteMany
+  size: 10Gi                         # ~2GB BF16 weights + headroom
+
+seedJob:
+  enabled: true
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: true
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
+
+apiKey:
+  enabled: true
+  secretName: vllm-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: vllm_local_api_key
+
+edgeAuth:
+  enabled: true
+  proxyResponseTimeout: 600s
+
+modelServing:
+  global:
+    fullnameOverride: deepseek-r1-1-5b
+
+  defaultPodOptions:
+    runtimeClassName: nvidia
+    nodeSelector:
+      gpu-node: "true"
+
+  controllers:
+    main:
+      type: statefulset
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      containers:
+        model:
+          image:
+            repository: kserve/huggingfaceserver
+            tag: v0.18.0-gpu
+            pullPolicy: IfNotPresent
+          args:
+            - --model_name=deepseek-r1-1-5b
+            - --model_dir=/mnt/models
+            - --backend=vllm
+            - --dtype=float16
+            - --max-model-len=32768
+            - --max-num-seqs=4
+            - --gpu-memory-utilization=0.90
+            - --swap-space=1
+            - --enforce-eager
+            # opencode (and other agentic clients) always send tool definitions
+            # in the request body. Without these flags vLLM rejects any request
+            # carrying tools: "auto" tool choice requires --enable-auto-tool-choice
+            # and --tool-call-parser to be set. The R1 distill won't call tools
+            # well (its base is Qwen2.5-Math, not tool-tuned), but accepting the
+            # field stops hard rejection — the model just ignores tools and reasons.
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+          env:
+            LMCACHE_USE_EXPERIMENTAL: "True"
+            LMCACHE_LOCAL_CPU: "True"
+            LMCACHE_MAX_LOCAL_CPU_SIZE: "1"
+            VLLM_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 8081
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /v2/health/ready, port: 8080 }
+                periodSeconds: 15
+                failureThreshold: 120
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /v2/health/ready, port: 8080 }
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 6Gi
+
+        proxy:
+          image:
+            repository: caddy
+            tag: 2-alpine
+            pullPolicy: IfNotPresent
+          env:
+            MODEL_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: edge
+              containerPort: 8090
+          probes:
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8090 }
+                periodSeconds: 10
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+
+    seed:
+      type: job
+      annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+        argocd.argoproj.io/sync-wave: "0"
+      pod:
+        restartPolicy: OnFailure
+      job:
+        backoffLimit: 6
+        activeDeadlineSeconds: 3600
+      containers:
+        seed:
+          image:
+            repository: python
+            tag: "3.12-slim"
+            pullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              MODEL_DIR="/models/DeepSeek-R1-Distill-Qwen-1.5B"
+              mkdir -p "$MODEL_DIR"
+              echo "Seeding deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B -> $MODEL_DIR (skips files already present)"
+              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
+              hf download deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B --local-dir "$MODEL_DIR"
+              echo "Seed complete."
+          env:
+            HF_TOKEN:
+              secretKeyRef:
+                name: hf-token
+                key: token
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits:   { cpu: "2", memory: 4Gi }
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        edge:
+          port: 8090
+          targetPort: 8090
+
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-cloudflare
+      hosts:
+        - host: deepseek-r1-1-5b--poc.ssegning.com
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: edge
+      tls:
+        - secretName: deepseek-r1-1-5b-edge-tls
+          hosts:
+            - deepseek-r1-1-5b--poc.ssegning.com
+
+  persistence:
+    model-store:
+      enabled: true
+      existingClaim: deepseek-r1-1-5b-models
+      advancedMounts:
+        main:
+          model:
+            - path: /mnt/models
+              subPath: DeepSeek-R1-Distill-Qwen-1.5B
+              readOnly: true
+        seed:
+          seed:
+            - path: /models
+    caddyfile:
+      enabled: true
+      type: configMap
+      name: deepseek-r1-1-5b-caddy
+      advancedMounts:
+        main:
+          proxy:
+            - path: /etc/caddy

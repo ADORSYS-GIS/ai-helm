@@ -483,6 +483,40 @@ wellKnown:
           ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
         enabled: false           # OFF by default (opt-in); handled by the @atlassian subagent
 
+      # ── Mermaid: the ONE universally-available MCP (deliberate exception) ──
+      # Unlike every server above (opt-in per ADR-0074, scoped behind a
+      # subagent per ADR-0044), mermaid is enabled BY DEFAULT and available to
+      # ALL agents — it is intentionally NOT in the deny-baseline below, so its
+      # tool is injected into every primary AND every subagent. The maintainer's
+      # explicit call: diagram-as-explanation is a cross-cutting output style
+      # (see the global mermaid directive appended to every agent prompt), not a
+      # specialist capability, so it belongs everywhere rather than behind one
+      # role. Its schema is tiny (a single generate tool), so the lean-context
+      # cost of putting it on every agent is negligible — nothing like the
+      # 34-tool browser surface that stays scoped to @browser.
+      #
+      # `type: local` npx server (stdout/stdin stdio — bare `npx -y mcp-mermaid`
+      # defaults to stdio; the SSE/HTTP transports are off). NOT version-pinned,
+      # like the other local servers (float to @latest; pin `mcp-mermaid@x.y.z`
+      # if drift bites).
+      #
+      # ⚠️ SETUP CAVEAT: mcp-mermaid renders via `mermaid-isomorphic` +
+      # **playwright**, so turning a diagram into a PNG/SVG image needs a local
+      # chromium (playwright's browser download) — same accepted trade-off as
+      # @vymalo/opencode-browser and @mobile: a user without it sees the RENDER
+      # tool fail, not the whole agent. This does NOT block the core behaviour:
+      # every agent is instructed to explain via ```mermaid fenced code blocks,
+      # which the LibreChat / opencode UI renders CLIENT-SIDE with no tool call
+      # at all. The MCP is the value-add (validate the syntax, or render to a
+      # shareable image) on top of that always-works fenced-block path.
+      mermaid:
+        type: local
+        command:
+          - npx
+          - "-y"
+          - "mcp-mermaid"
+        enabled: true            # ON by default + not denied below → available to ALL agents
+
     # ────────────────────────────────────────────────────────────────────
     # Global permission baseline (ADR-0044) — keeps EVERY primary agent LEAN:
     # every MCP/browser tool is denied at the root, so no primary carries them.
@@ -529,6 +563,12 @@ wellKnown:
       # only on @atlassian.
       "jira_*": deny
       "confluence_*": deny
+      # ⚠️ mermaid is DELIBERATELY ABSENT from this deny-baseline. It is the one
+      # universally-available MCP (see its block above): leaving `mermaid_*`
+      # undenied lets opencode inject it into EVERY agent (tools default to
+      # enabled unless a rule restricts them). Do NOT add a `"mermaid_*": deny`
+      # here — that would pull the diagram tool off every agent and break the
+      # global "explain via graphs" directive. This exception is intentional.
 
     # ────────────────────────────────────────────────────────────────────
     # Agents (ADR-0044, topology revised by ADR-0048, FLEET by ADR-0074). Two
@@ -572,7 +612,12 @@ wellKnown:
           and read sources, and the Firecrawl MCP tools to scrape/extract a
           specific page's content when a search snippet isn't enough, then
           return a concise, cited summary. You cannot write files or run shell
-          commands — do not attempt to.
+          commands — do not attempt to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -589,7 +634,12 @@ wellKnown:
         prompt: >-
           You are a documentation specialist. Read freely and use the Context7
           MCP for authoritative library docs. You may create or edit files
-          ONLY under docs/ — every other path is denied; do not edit code.
+          ONLY under docs/ — every other path is denied; do not edit code. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit:
             "*": deny
@@ -609,7 +659,12 @@ wellKnown:
           edit files and run the SAFE terraform/tofu subcommands (init,
           validate, plan, fmt, show, output); `apply` requires the user's
           approval and `destroy` is blocked. Never run other destructive
-          shell (rm, etc.); pause for approval on anything unrecognized.
+          shell (rm, etc.); pause for approval on anything unrecognized. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: allow
           # Only the SAFE, read-only-ish subcommands auto-run; `apply` falls to
@@ -651,7 +706,12 @@ wellKnown:
           findings with file:line references and a severity for each. For Helm
           charts you may `helm lint` to check syntax. Use Context7 to confirm
           correct API usage. You run ONLY those read-only inspection commands and
-          never edit files — do not attempt other shell or any write.
+          never edit files — do not attempt other shell or any write. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           # Read-only inspection ONLY. `*` stays denied; only these exact
@@ -684,7 +744,12 @@ wellKnown:
           You are a test-driven-development specialist. Write a failing test
           first, then the minimal code to pass it, and run the suite to verify.
           Use Context7 for testing-library docs. You may run test commands
-          freely; anything else needs approval, and never run destructive shell.
+          freely; anything else needs approval, and never run destructive shell. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: allow
           bash:
@@ -716,7 +781,12 @@ wellKnown:
           You are an opencode skill author. Create and refine skill definitions
           under the skills directory, and use the skill tool to test discovery.
           Use Context7 for any library facts a skill needs. You may write ONLY
-          under the skills directory — every other path is denied.
+          under the skills directory — every other path is denied. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit:
             "*": deny
@@ -743,7 +813,12 @@ wellKnown:
           stored). The graph is per-user and persists across sessions — keep
           it tidy: prefer updating an existing entity over creating a
           near-duplicate. You cannot edit files or run shell — do not attempt
-          to.
+          to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -766,7 +841,12 @@ wellKnown:
           use Context7 for authoritative library facts when an API detail
           matters. Return a clear, structured plan or analysis with concrete
           next steps for the caller to execute. You cannot edit files or run
-          shell — do not attempt to.
+          shell — do not attempt to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -788,7 +868,12 @@ wellKnown:
           commit with a clear message, branch, and stash. Confirm the intended
           scope before committing, and write a concise commit message that
           explains why. You do not edit source files (the primary does that)
-          and you have no general shell — use only the git_* tools.
+          and you have no general shell — use only the git_* tools. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -806,7 +891,12 @@ wellKnown:
           fetch accurate component source, usage examples, and install commands
           for the requested components, then return a concise, actionable
           summary for the primary to implement against. You cannot edit files
-          or run shell — do not attempt to.
+          or run shell — do not attempt to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -824,7 +914,12 @@ wellKnown:
           caller's description into a clear, editable diagram and return both
           the diagram data and the draw.io editor URL so a human can refine it.
           Pick the right layout for the intent (flow, sequence, architecture,
-          roadmap). You cannot edit files or run shell — do not attempt to.
+          roadmap). You cannot edit files or run shell — do not attempt to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -843,7 +938,12 @@ wellKnown:
           the reddit_* (social listening), youtube_* (video transcripts), and
           rss_* (feeds/news) tools, plus webfetch for article URLs, to gather
           source material and return a concise, source-cited digest with the
-          key takeaways. You cannot edit files or run shell — do not attempt to.
+          key takeaways. You cannot edit files or run shell — do not attempt to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -867,7 +967,12 @@ wellKnown:
           (search spaces, read pages) to answer the caller's question, then
           return a concise, link-bearing summary. Default to read/search; if a
           write is requested, confirm the exact target and scope first. You do
-          not edit local files or run shell — use only the Atlassian tools.
+          not edit local files or run shell — use only the Atlassian tools. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -923,7 +1028,12 @@ wellKnown:
           switch to it (@backend, @devops, @ux, @docs, @architect, @tester,
           @security, @enemy, @marketing). Destructive or unrecognized commands
           pause for your approval — gated, not blocked. Keep changes minimal and
-          explain the why.
+          explain the why. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: allow
           # CURATED allowlist (not blanket wrappers) — assistant is the ORG-WIDE
@@ -1038,7 +1148,12 @@ wellKnown:
           implement again, until it matches. Destructive commands (rm, etc.) and
           anything unrecognized pause for your approval — they're not blocked,
           just gated. You do not hold the browser/design/docs tools yourself —
-          route those through the subagents.
+          route those through the subagents. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: allow
           bash:
@@ -1086,7 +1201,12 @@ wellKnown:
           a hard design through → `@planner`; Jira/Confluence lookup →
           `@atlassian`. Be careful with anything that mutates data — never run
           a destructive migration or DB command without explicit approval; they
-          pause for you (gated, not blocked). Keep changes minimal; explain why.
+          pause for you (gated, not blocked). Keep changes minimal; explain why. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: allow
           # ⚠️ CURATED ALLOWLIST, not blanket language wildcards — deliberately.
@@ -1191,7 +1311,12 @@ wellKnown:
           the user's approval and destroy is denied outright. DELEGATE: provider
           docs + Terraform registry → `@iac`; library docs → `@doc-research`;
           git → `@vcs`; architecture/flow diagrams → `@diagram`; current info →
-          `@web-search`. Never run destructive shell from an org-wide default.
+          `@web-search`. Never run destructive shell from an org-wide default. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: allow
           bash:
@@ -1246,7 +1371,12 @@ wellKnown:
           idea into an editable diagram), and `@doc-research` (product/library
           facts), then write a clear, source-cited brief, post, or summary.
           Always cite where a claim or quote came from. If a coding change is
-          actually needed, hand it to the user to run @assistant / @frontend.
+          actually needed, hand it to the user to run @assistant / @frontend. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit:
             "*": deny
@@ -1283,7 +1413,12 @@ wellKnown:
           facts → `@doc-research`; editable diagrams → `@diagram`; current info
           → `@web-search`; the working diff / git history → `@reviewer`
           (read-only git). Match the repo's existing doc conventions and link
-          related docs. You have no general shell.
+          related docs. You have no general shell. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit:
             "*": deny
@@ -1323,7 +1458,12 @@ wellKnown:
           decide what's off, and iterate. Favour calm, restrained layouts over
           decoration. You delegate all image-reading to those subagents (they
           pin a multimodal model). Destructive/unrecognized commands pause for
-          approval.
+          approval. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: allow
           bash:
@@ -1357,7 +1497,12 @@ wellKnown:
           a critical correctness/security pass + git history/diff → `@reviewer`;
           architecture/sequence diagrams → `@diagram`. Ground every
           recommendation in concrete file:line evidence and name the trade-offs
-          you're accepting. You have no general shell.
+          you're accepting. You have no general shell. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit:
             "*": deny
@@ -1403,7 +1548,12 @@ wellKnown:
           known CVEs / prior incidents → `@web-search`. You CANNOT write — no
           edit, no shell, and you may not delegate to a writable agent. To prove
           a break, describe the exact failing test/input precisely and hand it
-          to the caller to run; do not ask another agent to write it.
+          to the caller to run; do not ask another agent to write it. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -1438,7 +1588,12 @@ wellKnown:
           jest, playwright, helm lint/template); anything else pauses for
           approval and destructive shell is denied. DELEGATE: testing-library /
           framework docs → `@doc-research`; git → `@vcs`. Prefer fast,
-          deterministic tests; cover the edge cases @enemy would attack.
+          deterministic tests; cover the edge cases @enemy would attack. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: allow
           bash:
@@ -1485,7 +1640,12 @@ wellKnown:
           git history/diff → `@reviewer`; CVEs / advisories / prior incidents →
           `@web-search`; library/API facts → `@doc-research`. This is a
           DEFENSIVE review for authorized code; report, don't exploit. You have
-          no general shell.
+          no general shell. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit:
             "*": deny
@@ -1532,7 +1692,12 @@ wellKnown:
           choose / point / element / region / comment) and act on their answer;
           on timeout it returns { timedOut: true } so fall back gracefully. Call
           browser_release when done so the user gets their browser back. You
-          cannot edit files or run shell — do not attempt to.
+          cannot edit files or run shell — do not attempt to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -1554,7 +1719,12 @@ wellKnown:
           search and fetch screens, flows, and styles, then return a concise,
           actionable summary (with the key visual details and any image refs)
           for the primary to implement against. You cannot edit files or run
-          shell — do not attempt to.
+          shell — do not attempt to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny
@@ -1581,7 +1751,12 @@ wellKnown:
           what you saw — read any screenshot you capture and describe the
           relevant UI state for the caller. List elements first to target
           actions reliably; avoid blind coordinate taps when an element ref
-          exists. You cannot edit files or run shell — do not attempt to.
+          exists. You cannot edit files or run shell — do not attempt to. When a diagram would make something clearer for the user —
+          architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
         permission:
           edit: deny
           bash: deny

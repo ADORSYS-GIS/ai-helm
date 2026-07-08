@@ -41,6 +41,55 @@ spec:
     http:
       requestTimeout: {{ . | quote }}
   {{- end }}
+  {{- /* ── Shared cross-model monthly budget (#532) ──────────────────────────
+     ONE gateway-scoped, `shared: true` counter per (x-account-id, x-billing-plan)
+     that spans EVERY model route — the fix for budgets being enforced per-model
+     (a heavy user held ~29 separate per-model counters, so the real cap was
+     $30 × models). Lives on THIS gateway-wide policy because `shared: true` keys
+     the bucket by policy name, so it only collapses to one bucket when the rule
+     is on a single policy (not the 28 per-model BTPs). The per-model BTPs merge
+     with this one via `mergeType: StrategicMerge` (charts/ai-model) to keep their
+     per-model burst + timeout while inheriting this shared budget.
+
+     ⚠️ REQUIRES Envoy Gateway ≥ v1.8.2. On v1.8.1 (bug envoyproxy/gateway#9244) a
+     rule that is BOTH `shared: true` AND cost-bearing drops the per-request cost
+     → the counter ticks +1/req instead of +micro-USD → budget effectively
+     UNLIMITED (worse than per-model). `monthlyBudget.enabled` defaults false;
+     flip it (and ai-model `sharedBudget.enabled`) TOGETHER only after the upgrade.
+  */ -}}
+  {{- with $btp.monthlyBudget }}
+  {{- if .enabled }}
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        {{- range $planName, $usd := .plans }}
+        - clientSelectors:
+            - headers:
+                - invert: false
+                  name: x-account-id
+                  type: Distinct
+                - invert: false
+                  name: x-billing-plan
+                  type: Exact
+                  value: {{ $planName | quote }}
+          limit:
+            requests: {{ mulf $usd 1000000.0 | int64 }} # {{ $planName }} shared monthly budget ${{ $usd }} across ALL models
+            unit: Month
+          # The lever (#9244): keyed by policy, shared across every route/model.
+          shared: true
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_custom_total_cost
+        {{- end }}
+  {{- end }}
+  {{- end }}
   connection:
     bufferLimit: {{ $btp.bufferLimit | default "100Mi" | quote }}
   retry:

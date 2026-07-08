@@ -1,9 +1,19 @@
 # ADR-0062: Grafana AI assistant (grafana-llm-app) on our internal AI-gateway plane
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0076](./0076-remove-grafana-llm-assistant.md)
 **Date:** 2026-06-24
 **Deciders:** @stephane-segning
 **Builds on:** [ADR-0021](./0021-burst-budget-billing-and-dual-plane-authconfigs.md), [ADR-0023](./0023-grafana-stateless-no-pvc.md), [ADR-0056](./0056-workload-values-in-ai-helm-values.md)
+
+> **Superseded (2026-06-29):** the backend worked end-to-end (a completion
+> through our gateway returned 200), but `grafana-llm-app` is only an LLM
+> *backend* — self-hosted OSS Grafana ships **no** AI chat UI (the Assistant is
+> Cloud-only), and the sole OSS front-end (`vikshana-graft-app`) is an unsigned
+> third-party plugin we declined on security grounds. With no viable consumer,
+> [ADR-0076](./0076-remove-grafana-llm-assistant.md) removes the whole feature.
+> The internal-CA trust cert this ADR introduced is **retained** — it was
+> repurposed by [ADR-0070](./0070-ratelimit-quota-observability.md) for the
+> Grafana `Redis` datasource. The body below is preserved unchanged.
 
 ## Context
 

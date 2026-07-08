@@ -34,6 +34,17 @@ interprets `{{ }}`).
 {{- if ne (toString $cfg.embeddings.dimension) "" }}
 {{- $_ := set $cp "embeddings" (dict "dimension" $cfg.embeddings.dimension "allow_reindex_on_dim_change" $cfg.embeddings.allowReindexOnDimChange) }}
 {{- end }}
+{{- /* External-knowledge MCP servers (lightbridge-ci ADR-0066) → control-plane.json
+       knowledge_tools.mcp_servers. Each is an already-running REMOTE HTTP MCP server the control
+       plane discovers tools from + proxies calls to; the per-tier `review.<tier>.tools` regex
+       allowlist then picks which discovered tools each tier offers. Declare the servers here; the
+       tool selection lives in config.model.<tier>.tools. Empty → no servers → no external tools (a
+       safe degrade). ⚠️ The control-plane image must carry the `knowledge_tools` FileConfig field
+       (lightbridge-ci #255) before this is set — else deny_unknown_fields fails config load. The
+       runner validates each url is http(s):// (remote-transport-only, never a local stdio server). */}}
+{{- $mcps := list }}
+{{- range $s := $cfg.knowledgeTools.mcpServers }}{{- if and $s.name $s.url }}{{- $mcps = append $mcps (dict "name" $s.name "url" $s.url) }}{{- end }}{{- end }}
+{{- if $mcps }}{{- $_ := set $cp "knowledge_tools" (dict "mcp_servers" $mcps) }}{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -63,6 +74,10 @@ data:
 {{- if ne (toString $cfg.model.maxFilesRead) "" }}{{- $_ := set $rev "max_files_read" $cfg.model.maxFilesRead }}{{- end }}
 {{- if ne (toString $cfg.model.maxSearches) "" }}{{- $_ := set $rev "max_searches" $cfg.model.maxSearches }}{{- end }}
 {{- if ne (toString $cfg.model.maxBatches) "" }}{{- $_ := set $rev "max_batches" $cfg.model.maxBatches }}{{- end }}
+{{- /* Coverage-gate bounce cap (lightbridge-ci ADR-0069). 0 is MEANINGFUL (disables the bounce;
+       the coverage disclosure still applies) and 1 = legacy bounce-once; the runner does not clamp it.
+       ⚠️ REQUIRES a runner image carrying review.max_coverage_bounces before it's set. */}}
+{{- if ne (toString $cfg.model.maxCoverageBounces) "" }}{{- $_ := set $rev "max_coverage_bounces" $cfg.model.maxCoverageBounces }}{{- end }}
 {{- /* SSE streaming toggle (#206) → agent.json review.stream. A bool; empty → omitted (runner default
        off). Needs a runner image carrying the review.stream field (lightbridge-ci #211) before it's set
        to true, else deny_unknown_fields fails the Job. */}}
@@ -116,6 +131,10 @@ data:
 {{- if $tv.maxFilesRead }}{{- $_ := set $t "max_files_read" $tv.maxFilesRead }}{{- end }}
 {{- if $tv.maxSearches }}{{- $_ := set $t "max_searches" $tv.maxSearches }}{{- end }}
 {{- if $tv.maxBatches }}{{- $_ := set $t "max_batches" $tv.maxBatches }}{{- end }}
+{{- /* Coverage-gate bounce cap (ADR-0069): NOT a truthiness guard — 0 (disable) must render, and
+       only nil/"" skip. kindIs "invalid" catches the unset-key nil the truthiness comment above warns
+       about. */}}
+{{- if and (not (kindIs "invalid" $tv.maxCoverageBounces)) (ne (toString $tv.maxCoverageBounces) "") }}{{- $_ := set $t "max_coverage_bounces" $tv.maxCoverageBounces }}{{- end }}
 {{- if $tv.contextWindow }}{{- $_ := set $t "context_window" $tv.contextWindow }}{{- end }}
 {{- if $tv.requestTimeoutSecs }}{{- $_ := set $t "request_timeout_secs" $tv.requestTimeoutSecs }}{{- end }}
 {{- if $tv.stream }}{{- $_ := set $t "stream" $tv.stream }}{{- end }}
