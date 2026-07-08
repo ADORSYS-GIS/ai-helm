@@ -32,13 +32,12 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-chats-by-user",
   "title": "AI Gateway — chats by user",
-  "description": "Per-user chats (embeddings excluded). The $user picker is sourced from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so it lists real people regardless of recent traffic. Two views: a Tempo trace feed filtered by span.user.email (click a trace to read the full prompt/response — ADR-0078), and an itemised per-request metadata log from Loki. ⚠️ The trace feed shows 'No data' until the ai-helm-values spanRequestHeaderAttributes change deploys; the Loki log works immediately. GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py.",
+  "description": "Per-user chat requests (embeddings excluded). The $user picker is sourced from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so it lists real people regardless of recent traffic. The hero is an itemised per-request log (model/status/tokens/cost/latency) filtered on the `email` label — distinct from the per_user / actor-consumption rollup charts. ⚠️ Metadata only: prompt/response CONTENT can't be filtered per user — the AIEG ext-proc runs before Authorino so its Tempo spans carry no identity (ADR-0079, confirmed live); read content in the global chat-overview board. GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py.",
   "tags": [
     "ai-gateway",
     "chats",
     "per-user",
-    "keycloak",
-    "tempo"
+    "keycloak"
   ],
   "timezone": "browser",
   "editable": true,
@@ -241,32 +240,6 @@
       }
     },
     {
-      "type": "traces",
-      "targets": [
-        {
-          "refId": "A",
-          "filters": [],
-          "queryType": "traceql",
-          "query": "{ resource.service.name = \"core-gateway\" && span.openinference.span.kind = \"LLM\" && span.user.email = \"$user\" }",
-          "limit": 50
-        }
-      ],
-      "title": "$user's chats — click a trace to read the full prompt & response",
-      "description": "This person's chat-completion traces (embeddings excluded). Open one to read the full OpenInference content (llm.input_messages / output_messages), token counts, model, latency. Filtered via span.user.email, stamped by the ext-proc (ADR-0078). ⚠️ 'No data' until the ai-helm-values spanRequestHeaderAttributes change deploys and new ext-proc pods roll — the request log below works meanwhile.",
-      "transparent": false,
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
-      "gridPos": {
-        "h": 16,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
-      "repeatDirection": "h"
-    },
-    {
       "type": "logs",
       "targets": [
         {
@@ -279,18 +252,18 @@
           }
         }
       ],
-      "title": "$user's requests — metadata log (newest first)",
-      "description": "One row per chat request for the selected user (Loki access log): model, status, tokens, cost, latency. Works immediately (doesn't wait on the span-attribution deploy). For the actual content, use the trace panel above.",
+      "title": "$user's chats — recent requests (newest first)",
+      "description": "One row per chat request for the selected user (Loki access log): model, status, tokens, cost, latency. Metadata only — the actual prompt/response content can't be filtered per user (the AIEG ext-proc runs before Authorino, so its spans carry no identity; ADR-0079). Read content in the global chat-overview board.",
       "transparent": false,
       "datasource": {
         "type": "loki",
         "uid": "loki"
       },
       "gridPos": {
-        "h": 14,
+        "h": 22,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 5
       },
       "repeatDirection": "h",
       "options": {
