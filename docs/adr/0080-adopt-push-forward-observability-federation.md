@@ -1,4 +1,4 @@
-# ADR-0078: Adopt Push-Forward Mode for multi-upstream observability federation
+# ADR-0080: Adopt Push-Forward Mode for multi-upstream observability federation
 
 **Status:** Proposed
 **Date:** 2026-07-08
@@ -85,5 +85,5 @@ and add CiliumNetworkPolicy rules to allow external push traffic.
 - Docs: [docs/multi-upstream-observability.md](../multi-upstream-observability.md) (the *how*)
 - Docs: [docs/observability-gaps.md](../observability-gaps.md) (gap inventory that prompted this decision)
 - Docs: [docs/architecture/08-observability.md](../architecture/08-observability.md) (current pipeline)
-- ADR: [ADR-0062: Self-Signed CA with cert-manager](./0062-grafana-llm-assistant-via-internal-gateway.md) (mTLS foundation)
+- Docs: [architecture/06-networking-tls.md](../architecture/06-networking-tls.md#tls-issuance) — TLS issuance (cert-home-cert-http ClusterIssuer + self-signed-ca for internal)
 - Charts touched: charts/observability/ (Ingress rules for stores)

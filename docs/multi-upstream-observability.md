@@ -4,7 +4,7 @@
 > from many tenant/upstream clusters into a central observability cluster.
 >
 > **Status:** Draft design for review
-> **Relates to:** [ADR-0078](./adr/0078-adopt-push-forward-observability-federation.md) (proposed)
+> **Relates to:** [ADR-0080](./adr/0080-adopt-push-forward-observability-federation.md) (proposed)
 
 ---
 
@@ -216,7 +216,7 @@ gRPC endpoint (`:4317`).
 ```river
 otelcol.exporter.otlp "central_tempo" {
   client {
-    endpoint = "tempo.observability.ai.camer.digital:4317"
+    endpoint = "tempo.observability.ai.camer.digital"
 
     tls {
       ca_file   = "/etc/alloy/tempo-ca.pem"
@@ -259,9 +259,9 @@ metadata:
   name: mimir-ingress
   namespace: observability
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # TLS cert managed via deps overlay Certificate (ADR-0018 pattern)
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   tls:
     - hosts:
         - mimir.observability.ai.camer.digital
@@ -284,10 +284,10 @@ Repeat for:
 | Store | Hostname | Path | Service Port |
 |---|---|---|---|
 | **Loki** | `loki.observability.ai.camer.digital` | `/loki/api/v1/push` | loki:3100 |
-| **Tempo** | `tempo.observability.ai.camer.digital:4317` | gRPC | tempo:4317 |
+| **Tempo** | `tempo.observability.ai.camer.digital` | gRPC | tempo:4317 |
 
-> **gRPC note:** Standard nginx Ingress handles gRPC with annotation
-> `nginx.ingress.kubernetes.io/backend-protocol: "GRPC"`.
+> **gRPC note:** Traefik handles HTTP/2 natively. For gRPC (Tempo) use
+> `traefik.ingress.kubernetes.io/service.serversscheme: "h2c"`.
 > For multiple upstream clusters, consider a dedicated Envoy proxy in front
 > of Tempo for OTLP/gRPC ingress.
 
@@ -308,15 +308,16 @@ spec:
     matchLabels:
       app.kubernetes.io/instance: mimir  # also: loki, tempo
   ingress:
-    - fromEntities:
-        - world
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: traefik
       toPorts:
         - ports:
             - port: "8080"   # or 3100 for Loki, 4317 for Tempo
               protocol: TCP
 ```
 
-> **Cilium gotcha:** Use `fromEntities: [world]` or `fromCIDR:` on a
+> **Cilium gotcha:** Match the Ingress controller with `fromEndpoints`. Use a
 > CiliumNetworkPolicy, NOT a plain Kubernetes `NetworkPolicy` with `ipBlock`.
 > Cilium's `default-deny-egress` baseline is enforced at the Cilium layer;
 > a k8s NetworkPolicy does not override it.
@@ -337,8 +338,7 @@ Three options, ordered by preference:
 
 ### Option A: mTLS (recommended for production)
 
-Reuse the cluster's existing self-signed CA (see [ADR-0062](./adr/0062-grafana-llm-assistant-via-internal-gateway.md): Self-Signed CA with
-cert-manager). Issue per-upstream certificates:
+Reuse the cluster's existing self-signed CA (see [architecture/06-networking-tls.md](./architecture/06-networking-tls.md#tls-issuance) — the  ClusterIssuer for internal TLS). Issue per-upstream certificates:
 
 - Each upstream gets a unique client cert for each store endpoint
 - Validate the client certificate at the Ingress level (nginx
@@ -521,5 +521,5 @@ The first upstream to connect is the **home GPU cluster** (the gap from
 - [docs/observability-gaps.md](./observability-gaps.md) -- gap inventory (source of this ticket)
 - [docs/alloy-servicemonitor-guide.md](./alloy-servicemonitor-guide.md) -- Phase 2 preview mentions external cluster
 - [CLAUDE.md](../CLAUDE.md) -- cluster gotchas (Cilium, Alloy egress, memberlist)
-- [ADR-0078](./adr/0078-adopt-push-forward-observability-federation.md) -- corresponding ADR for the federation decision
-- [ADR-0062](./adr/0062-grafana-llm-assistant-via-internal-gateway.md) -- Self-Signed CA with cert-manager (mTLS foundation)
+- [ADR-0080](./adr/0080-adopt-push-forward-observability-federation.md) -- corresponding ADR for the federation decision
+- [architecture/06-networking-tls.md](./architecture/06-networking-tls.md#tls-issuance) -- TLS issuance (cert-home-cert-http ClusterIssuer + self-signed-ca for internal)
