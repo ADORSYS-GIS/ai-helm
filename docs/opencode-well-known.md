@@ -99,6 +99,21 @@ overridable locally.
 | `rss` | **local** (`npx`, no key) | `rss-mcp` (RSS/Atom feed reader) | `false` |
 | `jira` | **local** (`npx`, per-user token) | `@aashari/mcp-server-atlassian-jira` (`ATLASSIAN_SITE_NAME`/`USER_EMAIL`/`API_TOKEN`) | `false` |
 | `confluence` | **local** (`npx`, per-user token) | `@aashari/mcp-server-atlassian-confluence` (same Atlassian vars) | `false` |
+| `mermaid` | **local** (`npx`, no key) | `mcp-mermaid` (diagram generate/render — the ONE universal server) | **`true`** |
+
+> ⚠️ **`mermaid` is the exception to everything in this section** (ADR-0080). It
+> ships **`enabled: true`** and is **deliberately absent from the deny-baseline**,
+> so opencode injects its single tool into **every primary AND every subagent** —
+> there is no `@mermaid` subagent and no `mermaid_*: deny`. Rationale: diagram-as-
+> explanation is a cross-cutting output style, not a specialist capability, and the
+> tool schema is tiny (one generate/render tool) so the lean-context cost of
+> putting it everywhere is negligible — nothing like the 34-tool browser surface
+> that stays scoped to `@browser`. Every agent's prompt also carries a global
+> directive to explain via ` ```mermaid ` fenced blocks (which the UI renders
+> client-side, no tool call). ⚠️ Rendering a diagram to a PNG/SVG **image** needs a
+> local chromium (`mcp-mermaid` → `mermaid-isomorphic` → **playwright**) — same
+> accepted trade-off as `@browser`/`@mobile`; the client-side fenced-block path
+> needs nothing, so the core behaviour works for everyone.
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
   with the **same** `opencode-cli` Keycloak client
