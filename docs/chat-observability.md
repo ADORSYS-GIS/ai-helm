@@ -1,8 +1,9 @@
 # Phoenix-style chat observability (OpenInference traces in Tempo)
 
 **Status:** live. **ADRs:** [0077](./adr/0077-phoenix-style-chat-dashboards.md)
-(the dashboards) + [0078](./adr/0078-per-user-span-attribution-for-chat-content.md)
-(per-user span attribution, supersedes 0077's decision to skip it).
+(the dashboards) + [0079](./adr/0079-per-user-span-attribution-not-viable.md)
+(per-user content is *not* achievable — the AIEG ext-proc runs before Authorino;
+supersedes [0078](./adr/0078-per-user-span-attribution-for-chat-content.md)).
 **Dashboards:** `AI Gateway — chat overview` (uid `envoy-ai-gateway-chat-overview`),
 `AI Gateway — chats by user` (uid `envoy-ai-gateway-chats-by-user`).
 
@@ -40,38 +41,41 @@ Phoenix's era: both backends received the exact same OpenInference spans in
 parallel (ADR-0002), so nothing about content access changed when Tempo
 replaced Phoenix.
 
-## Per-user identity on spans (ADR-0078)
+## Per-user identity on spans — not achievable (ADR-0079)
 
-Spans natively carry **no `user.id`/`user.email`**, and the Envoy access-log
-JSON (Loki's identity source, [ADR-0046](./adr/0046-per-user-attribution-otlp-envelope-repair.md))
+Spans carry **no `user.id`/`user.email`**, and the Envoy access-log JSON
+(Loki's identity source, [ADR-0046](./adr/0046-per-user-attribution-otlp-envelope-repair.md))
 carries no `trace_id` — and a live span carries no `x-request-id` either. So
-out of the box there is **no way to attribute a span to a person and no shared
-key to join it to the user-bearing Loki logs**; the two datasets are disjoint.
+there is **no way to attribute a span to a person and no shared key to join it
+to the user-bearing Loki logs**; the two datasets are disjoint.
 
-ADR-0077 initially took this as "per-user content is impossible" and skipped
-the fix. That was wrong framing — it's a *choice*, not a limit. The global
-`chat-overview` never needed attribution (content is all there), but per-user
-content is impossible *without* it. [ADR-0078](./adr/0078-per-user-span-attribution-for-chat-content.md)
-reverses the decision and adopts the only mechanism that closes the gap: the
-Envoy AI Gateway controller's generic header→span-attribute mapping
+[ADR-0078](./adr/0078-per-user-span-attribution-for-chat-content.md) tried to
+close this with the AI Gateway controller's `spanRequestHeaderAttributes`
+mapping (`x-oidc-user-id:user.id,x-oidc-email:user.email`), tagging spans with
+the Keycloak identity Authorino stamps. **It was deployed end-to-end and
+produced nothing.** [ADR-0079](./adr/0079-per-user-span-attribution-not-viable.md)
+found and confirmed why, by pulling the live Envoy filter chain
+(`config_dump`, external `api-https` listener):
 
-```yaml
-# ai-helm-values environments/prod/values/aieg.yaml
-controller:
-  spanRequestHeaderAttributes: "x-oidc-user-id:user.id,x-oidc-email:user.email"
+```
+1.  ext_proc/aigateway        ← AI Gateway ext-proc (BUILDS the span)  ⟵ FIRST
+    …
+7.  ext_authz/…kuadrant-policies-main   ← Authorino (INJECTS x-oidc-*)
 ```
 
-which tags each span with the Keycloak identity Authorino already stamps
-(`x-oidc-user-id`/`x-oidc-email`, present at ext-proc time). The key is
-confirmed in ai-gateway-helm **v1.0.0** (→ `--spanRequestHeaderAttributes=`
-controller arg, rendered only when set). `chats-by-user` then filters Tempo by
-`span.user.email = "$user"`.
+The AIEG ext-proc is **HTTP filter #1 — before Authorino** (it must inspect the
+raw body to extract the model before routing). So it captures request headers
+for the span *before* `x-oidc-*` exist. The access log sees them only because
+`%REQ(...)%` reads the *final* header state. The `filterOrder` reorder (move
+`ext_proc` after `ext_authz`) was **declined** — a global reorder on the prod
+gateway affecting LLM *and* MCP routes, with a suffixed filter name and
+routing/transform risk, isn't worth a per-user convenience.
 
-**⚠️ Privacy.** This makes full chat content **directly attributable to a named
-person** in Grafana. The content already existed in Tempo; this adds the who.
-Deliberate, reviewed step (its own `ai-helm-values` PR). Applies to **new
-ext-proc pods** — `chats-by-user`'s trace panel is "No data" until the change
-deploys and pods roll; its Loki metadata log works meanwhile.
+**Bottom line:** per-user chat *content* is a confirmed structural limit. The
+`spanRequestHeaderAttributes` config was reverted (it was a no-op). To read a
+specific person's content, browse the global `chat-overview` trace feed and
+recognise them from the content. **No privacy change** — nothing was ever
+attributed.
 
 ## The two dashboards
 
@@ -90,16 +94,18 @@ deploys and pods roll; its Loki metadata log works meanwhile.
   ([ADR-0063](./adr/0063-grafana-readonly-keycloak-datasource.md); `__text`/
   `__value` column aliases), so it lists real people independent of recent
   traffic — not `label_values(email)` like `per_user.py`/`jwt_tokens.py`.
-  ⚠️ For a Postgres datasource the variable's query model must carry
-  **`rawSql`** — the generic `{query: "..."}` shape leaves Grafana with no SQL
-  to run ("error when executing the sql query"); verified live via
-  `/api/ds/query` (uid resolves regardless of `type: postgres` vs
-  `grafana-postgresql-datasource`). Two views: a **Tempo trace feed** filtered
-  by `span.user.email = "$user"` (click a trace for the full prompt/response —
-  needs the ADR-0078 attribution deploy, "No data" until then) and a
-  **per-request Loki log** (one row per chat: model/status/tokens/cost/latency,
-  `email="$user"`, works immediately) — distinct from the
-  `per_user`/`actor-consumption` rollup charts.
+  ⚠️ **Postgres template-variable gotcha:** the variable's `query` must be a
+  **plain SQL string**, NOT the `{rawSql, format: table, …}` object a panel
+  target uses. Grafana's *variable* resolver only honors `format: table` for a
+  string query (it routes through `metricFindQuery`, which forces table); given
+  an object it ignores the stored format and runs `time_series`, which fails on
+  a SQL with no time column → the UI shows *"error when executing the sql
+  query"*. Verified live in Grafana 12.3 (string form resolved `__text`/
+  `__value`; both object forms errored). This is the **opposite** of a panel
+  target — don't "fix" it into an object. The hero is a **per-request Loki log**
+  (one row per chat: model/status/tokens/cost/latency, `email="$user"`) —
+  distinct from the `per_user`/`actor-consumption` rollup charts. Metadata only;
+  per-user content isn't filterable (ADR-0079, above).
 
 ⚠️ **No raw user input is ever interpolated into SQL.** The `$user` variable's
 *available options* come from a static-realm-id query; the *selected* value
@@ -123,9 +129,10 @@ kubectl port-forward -n observability svc/tempo 3200:3200 &
 curl -s "http://localhost:3200/api/search/tag/openinference.span.kind/values"
 # {"tagValues":["EMBEDDING","LLM"]}
 curl -s "http://localhost:3200/api/search/tag/user.email/values"
-# empty BEFORE the ADR-0078 attribution deploys; once the ai-helm-values
-# spanRequestHeaderAttributes change lands and ext-proc pods roll, new spans
-# populate this with the Keycloak emails → chats-by-user's trace panel works.
+# empty — and stays empty (ADR-0079): the AIEG ext-proc runs before Authorino,
+# so its spans never get the x-oidc-* identity. Confirmed by pulling the live
+# filter chain (config_dump on the api-https listener: ext_proc/aigateway is
+# filter #1, ext_authz is #7).
 
 # Read content on any trace (works regardless of attribution):
 curl -s "http://localhost:3200/api/search?q=%7B%20span.openinference.span.kind%20%3D%20%22LLM%22%20%7D&limit=1" \
