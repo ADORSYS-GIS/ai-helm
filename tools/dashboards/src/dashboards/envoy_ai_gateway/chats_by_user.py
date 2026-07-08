@@ -84,23 +84,21 @@ _JSON_COST = 'cost=`["gen_ai.usage.custom_total_cost"]`'
 
 
 def _user_var() -> db.QueryVariable:
-    # ⚠️ For a Postgres (SQL) datasource, the variable's query model MUST carry
-    # `rawSql` — the generic `{query: "..."}` shape leaves the datasource with
-    # no SQL to run ("error when executing the sql query"). Mirror the proven
-    # panel-target shape from user_directory.py (rawSql / rawQuery / format).
+    # ⚠️ For a Postgres (SQL) datasource, the template variable's `query` MUST be
+    # a **plain SQL string**, NOT the `{rawSql, format: table, …}` object a panel
+    # target uses. Grafana's *variable* resolver only honors `format: table` when
+    # the query is a string (it routes through metricFindQuery, which forces
+    # table); given an object it ignores the stored format and runs the query as
+    # `time_series`, which fails on a SQL with no time column → the UI shows
+    # "error when executing the sql query". Verified live in Grafana 12.3 (a
+    # string-form variable resolved __text/__value correctly; both object forms
+    # errored). So this is the OPPOSITE of a panel target — don't "fix" it into
+    # an object. The SQL returns `__text`/`__value` (legacy alias form).
     return (
         db.QueryVariable("user")
         .label("User (Keycloak)")
         .datasource(_KEYCLOAK_DS)
-        .query(
-            {
-                "refId": "KeycloakUsers",
-                "rawSql": _USER_VAR_SQL,
-                "rawQuery": True,
-                "format": "table",
-                "editorMode": "code",
-            }
-        )
+        .query(_USER_VAR_SQL)
         .refresh(dm.VariableRefresh.ON_DASHBOARD_LOAD)
         .sort(dm.VariableSort.ALPHABETICAL_ASC)
         .multi(False)
