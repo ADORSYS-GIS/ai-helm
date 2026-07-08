@@ -412,7 +412,6 @@ The Ingress controller already has broad egress allow. **For the stores
 themselves**, allow ingress from the Ingress controller:
 
 ```yaml
-```yaml
 # Mimir: allow ingress to nginx gateway only (port 8080)
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
