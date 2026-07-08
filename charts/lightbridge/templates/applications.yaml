@@ -91,16 +91,18 @@ metadata:
     argocd.argoproj.io/sync-wave: {{ .Values.app.syncWave | quote }}
     # Continuous delivery (ADR-0055): argocd-image-updater picks the newest
     # COSIGN-signed `sha-<gitsha>` build of each first-party image and git
-    # write-backs the tag into environments/prod/values/lightbridge-app.yaml on
-    # ai-helm-values `main` (api → global.authz.image.version, mcp →
-    # global.authz_mcp.image.version). Tag-only: the repositories are chart
-    # defaults, not in the values file. cosign identity = the lightbridge-authz
-    # CI workflow that signs the images. Until a signed build exists the updater
-    # finds no verifiable tag and safely leaves the pinned version untouched.
+    # write-backs the image into environments/prod/values/lightbridge-app.yaml on
+    # ai-helm-values `main` (api → global.authz.image.{repository,version}, mcp →
+    # global.authz_mcp.image.{repository,version}). BOTH image-name (repository)
+    # and image-tag (version) are required — the operator errors ("could not find
+    # an image-name") if only the tag param is given. cosign identity = the
+    # lightbridge-authz CI workflow that signs the images. Until a signed build
+    # exists the updater finds no verifiable tag and leaves the version untouched.
     argocd-image-updater.argoproj.io/image-list: api=ghcr.io/adorsys-gis/lightbridge-authz,mcp=ghcr.io/adorsys-gis/lightbridge-authz-mcp
     argocd-image-updater.argoproj.io/api.update-strategy: newest-build
     argocd-image-updater.argoproj.io/api.allow-tags: regexp:^sha-[0-9a-f]+$
     argocd-image-updater.argoproj.io/api.force-update: "true"
+    argocd-image-updater.argoproj.io/api.helm.image-name: global.authz.image.repository
     argocd-image-updater.argoproj.io/api.helm.image-tag: global.authz.image.version
     argocd-image-updater.argoproj.io/api.signature-type: cosign
     argocd-image-updater.argoproj.io/api.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
@@ -108,6 +110,7 @@ metadata:
     argocd-image-updater.argoproj.io/mcp.update-strategy: newest-build
     argocd-image-updater.argoproj.io/mcp.allow-tags: regexp:^sha-[0-9a-f]+$
     argocd-image-updater.argoproj.io/mcp.force-update: "true"
+    argocd-image-updater.argoproj.io/mcp.helm.image-name: global.authz_mcp.image.repository
     argocd-image-updater.argoproj.io/mcp.helm.image-tag: global.authz_mcp.image.version
     argocd-image-updater.argoproj.io/mcp.signature-type: cosign
     argocd-image-updater.argoproj.io/mcp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
