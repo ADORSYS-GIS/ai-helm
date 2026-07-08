@@ -7,18 +7,23 @@ bucket is exhausted):
   1. burst requests/min — keyed on x-account-id + x-billing-plan (per user per model).
   2. burst tokens/min   — keyed on x-account-id + x-billing-plan, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
-  3. monthly budget     — keyed on (x-account-id, x-billing-plan) ONLY — no
-                          model selector — so the budget is a SINGLE shared
-                          counter across ALL models (ADR-0035). micro-USD,
-                          cost = llm_custom_total_cost response metadata.
-                          Emitted ONLY for plans that carry a budget →
-                          service/internal stay uncapped.
+  3. monthly budget     — micro-USD, cost = llm_custom_total_cost. Emitted ONLY
+                          for plans that carry a budget → service/internal stay
+                          uncapped. ⚠️ CAVEAT: because this BTP targets the
+                          per-model HTTPRoute, Envoy Gateway namespaces the
+                          counter PER ROUTE — so despite the model-agnostic
+                          descriptor this budget is enforced PER MODEL, not shared
+                          (a heavy user held ~29 separate counters, #532). The
+                          shared fix moves this rule to the gateway-wide BTP with
+                          `shared: true` (charts/core-gateway); when
+                          `.Values.sharedBudget.enabled` this per-model rule is
+                          DROPPED and the policy instead merges
+                          (`mergeType: StrategicMerge`) with that gateway budget.
 
 x-billing-plan (stamped by the AuthConfig from Keycloak's billing_plan claim (from group attribute)) selects the plan.
 
-Budget per plan = global plan default (.Values.plans.<plan>.monthlyBudgetUsd) — no per-model overrides for shared budget
-else the global plan default (.Values.plans.<plan>.monthlyBudgetUsd). Burst
-(rules 1+2) remains per-model; comes from .Values.plans.<plan>.burst.
+Budget per plan = global plan default (.Values.plans.<plan>.monthlyBudgetUsd).
+Burst (rules 1+2) is always per-model; comes from .Values.plans.<plan>.burst.
 
 ⚠️ Every clientSelectors header spells out `invert: false` explicitly, even
 though it's the zero value. The BackendTrafficPolicy CRD schema declares
@@ -31,6 +36,13 @@ makes the rendered manifest match what the API server actually stores.
 {{- $modelName := .Values.modelName -}}
 {{- $plans := .Values.plans -}}
 {{- $costKey := "llm_custom_total_cost" -}}
+{{- /* Shared-budget cutover (#532): when enabled, the monthly-budget rule below
+       is DROPPED (it moves to the gateway-wide BTP with `shared: true`) and this
+       per-model policy MERGES with that gateway policy instead of overriding it,
+       so it keeps its per-model burst + timeout while inheriting the one shared
+       budget counter. Requires Envoy Gateway ≥ v1.8.2 (see core-gateway BTP).
+       Defaults off → unchanged per-model behaviour. */ -}}
+{{- $sharedBudget := (.Values.sharedBudget | default dict).enabled -}}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -41,6 +53,18 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: {{ $modelName }}
+  {{- if $sharedBudget }}
+  # Merge with the gateway-wide BTP (which carries the shared budget) rather than
+  # fully overriding it (EG default). Without this the route would drop the
+  # gateway's shared-budget rule. StrategicMerge combines the rate-limit rule
+  # lists (gateway budget + this policy's burst).
+  mergeType: StrategicMerge
+  # Merging also inherits the gateway policy's retry (numRetries: 1). Model routes
+  # deliberately DON'T retry LLM calls (amplifies load on stressed backends, and
+  # risks double-charging a partial generation) — so neutralise it back to 0.
+  retry:
+    numRetries: 0
+  {{- end }}
   {{- /*
   Per-model upstream timeout.
   */ -}}
@@ -108,8 +132,9 @@ spec:
                 namespace: io.envoy.ai_gateway
                 key: llm_total_token
         {{- end }}
-        {{- /* ── 3. monthly budget (SHARED across all models per user, micro-USD) ── */}}
+        {{- /* ── 3. monthly budget (per-model unless sharedBudget.enabled → moved to gateway BTP) ── */}}
         {{- $budgetUsd := $planCfg.monthlyBudgetUsd }}
+        {{- if not $sharedBudget }}
         {{- with $budgetUsd }}
         {{- $limit := mulf . 1000000 | int64 }}
         - clientSelectors:
@@ -122,7 +147,7 @@ spec:
                   type: Exact
                   value: {{ $planName | quote }}
           limit:
-            requests: {{ $limit }} # {{ $planName }} monthly budget ${{ . }} — shared across ALL models
+            requests: {{ $limit }} # {{ $planName }} monthly budget ${{ . }} — PER MODEL (see caveat; shared version is the gateway BTP)
             unit: Month
           cost:
             request:
@@ -133,5 +158,6 @@ spec:
               metadata:
                 namespace: io.envoy.ai_gateway
                 key: {{ $costKey }}
+        {{- end }}
         {{- end }}
         {{- end }}
