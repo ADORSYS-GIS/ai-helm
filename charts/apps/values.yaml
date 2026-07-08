@@ -829,7 +829,7 @@ applications:
   # the ai-models deepseek-r1-1-5b-local / qwen2.5-3b-awq-local enabled flags.
   # Rollback = the inverse. See docs/self-hosted-model-serving.md.
   - name: model-serving-deepseek-r1-1-5b
-    enabled: true            # CUTOVER — live on the home GPU.
+    enabled: false                   # DISABLED — swapped by model-serving-ministral-3b (one GPU). Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -871,6 +871,78 @@ applications:
       targetRevision: ">=0.0.0"
       helm:
         releaseName: model-serving-qwen25-3b-awq
+        valuesObject: { }
+    destination:
+      namespace: converse-poc
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # Self-hosted Qwen3-8B-AWQ (AWQ INT4, vLLM) on the home GPU — the safe dense
+  # upgrade from qwen3-4b (2× the active params, full 32K native context fits in
+  # 12GB A2000 VRAM with AWQ INT4). charts/model-serving-qwen3-8b renders the
+  # weights PVC + AWQ seed Job + vLLM StatefulSet (model + Caddy auth-proxy
+  # sidecar) + Service + Ingress. Federated as the `vllm-local-8b-01` backend /
+  # `qwen3-8b-local` model in charts/ai-models. Qwen3 hybrid thinking mode +
+  # Hermes tool calling → agentic-capable.
+  #
+  # DISABLED (staged) — one GPU, one model. CUTOVER = set this enabled:true +
+  # disable the currently-live self-hosted model app (deepseek-r1-1-5b), then
+  # flip the ai-models qwen3-8b-local / deepseek-r1-1-5b-local enabled flags.
+  # Rollback = the inverse. See docs/self-hosted-model-serving.md.
+  - name: model-serving-qwen3-8b
+    enabled: false                 # STAGED — disable deepseek-r1-1-5b + enable this at cutover.
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    homeCluster: true
+    source:
+      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
+      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-qwen3-8b
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: model-serving-qwen3-8b
+        valuesObject: { }
+    destination:
+      namespace: converse-poc
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # Self-hosted Ministral-3B-Instruct-2410 (AWQ INT4, vLLM) on the home GPU —
+  # the lightest self-hosted model (3B params, ~2 GB weights, 128K native
+  # context). charts/model-serving-ministral-3b renders the weights PVC + AWQ
+  # seed Job + vLLM StatefulSet (model + Caddy auth-proxy sidecar) + Service +
+  # Ingress. Federated as the `vllm-local-ministral-01` backend /
+  # `ministral-3b-local` model in charts/ai-models. Standard instruct model
+  # (no thinking mode) + Mistral tool calling.
+  #
+  # DISABLED (staged) — one GPU, one model. CUTOVER = set this enabled:true +
+  # disable the currently-live self-hosted model app (deepseek-r1-1-5b), then
+  # flip the ai-models ministral-3b-local / deepseek-r1-1-5b-local enabled
+  # flags. Rollback = the inverse. See docs/self-hosted-model-serving.md.
+  # ⚠️ Tool calling needs the official gated repo or a chat-template override
+  # before cutover — the community AWQ repo strips tool-call tokens.
+  - name: model-serving-ministral-3b
+    enabled: true                  # CUTOVER — live on the home GPU.
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    homeCluster: true
+    source:
+      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
+      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-ministral-3b
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: model-serving-ministral-3b
         valuesObject: { }
     destination:
       namespace: converse-poc

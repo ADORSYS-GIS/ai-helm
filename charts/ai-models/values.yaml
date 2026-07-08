@@ -184,6 +184,32 @@ backendDefaults:
     securityType: APIKey
     tlsHostname: deepseek-r1-1-5b--poc.ssegning.com
 
+  # Self-hosted Qwen3-8B-AWQ on the home GPU — vLLM via KServe's
+  # huggingfaceserver, same pattern as the other local vLLM backends but a
+  # distinct edge FQDN. AWQ 4-bit quantized (8.2B params, ~5 GB); prefix is
+  # /openai/v1 (KServe OpenAI-compatible route).
+  vllmLocal8b: &vllmLocal8bBackend
+    schema: OpenAI
+    prefix: "/openai/v1"
+    fqdn:
+      hostname: qwen3-8b--poc.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: qwen3-8b--poc.ssegning.com
+
+  # Self-hosted Ministral-3B-Instruct-2410 (AWQ) on the home GPU — vLLM via
+  # KServe's huggingfaceserver, same pattern as the other local vLLM backends
+  # but a distinct edge FQDN. AWQ 4-bit quantized (3B params, ~2 GB); prefix is
+  # /openai/v1 (KServe OpenAI-compatible route). Mistral tool-call parser.
+  vllmLocalMinistral: &vllmLocalMinistralBackend
+    schema: OpenAI
+    prefix: "/openai/v1"
+    fqdn:
+      hostname: ministral-3b--poc.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: ministral-3b--poc.ssegning.com
+
 modelDefaults:
   backendRefs:
     fwPrimary: &fwBackendPrimary
@@ -382,6 +408,35 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # Self-hosted Qwen3-8B-AWQ on the home GPU — vLLM via KServe's
+  # huggingfaceserver (AWQ 4-bit quantized, 8.2B params). Same API key as the
+  # other local vLLM models. Distinct edge host MUST match
+  # charts/model-serving-qwen3-8b ingress host. DISABLED by default (one GPU →
+  # one model).
+  vllm-local-8b-01:
+    <<: *vllmLocal8bBackend
+    resourceName: vllm-local-8b-01-svc
+    secretRef:
+      name: vllm-local-8b-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
+  # Self-hosted Ministral-3B-Instruct-2410 (AWQ) on the home GPU — vLLM via
+  # KServe's huggingfaceserver (AWQ 4-bit quantized, 3B params, ~2 GB). Same
+  # API key as the other local vLLM models. Distinct edge host MUST match
+  # charts/model-serving-ministral-3b ingress host. DISABLED by default (one
+  # GPU → one model). ⚠️ Tool calling requires the official gated repo or a
+  # chat-template override — the community AWQ repo strips tool-call tokens.
+  vllm-local-ministral-01:
+    <<: *vllmLocalMinistralBackend
+    resourceName: vllm-local-ministral-01-svc
+    secretRef:
+      name: vllm-local-ministral-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -551,7 +606,7 @@ models:
   #   1.5B is lighter on the GPU so per-token cost is lower; prices below are a
   #   conservative starting point — re-tune as utilization data arrives.
   deepseek-r1-1-5b-local:
-    enabled: true                  # CUTOVER — live on the home GPU.
+    enabled: false                  # DISABLED — swapped by ministral-3b-local (one GPU). Re-enable to roll back.
     kind: text
     minBackends: 1
     timeout:
@@ -573,6 +628,97 @@ models:
         ref: vllm-deepseek-01
         priority: 0
         modelNameOverride: "deepseek-r1-1-5b"
+
+  # Self-hosted Qwen3-8B-AWQ on the home GPU — vLLM via KServe's
+  # huggingfaceserver (AWQ 4-bit quantized, 8.2B params, ~5 GB). The safe dense
+  # upgrade from qwen3-4b-local: 2× the active params, full 32K native context
+  # fits in 12GB A2000 VRAM with AWQ INT4 (~5 GB weights + KV cache). Qwen3
+  # hybrid thinking/non-thinking mode + Hermes tool calling → agentic-capable.
+  # DISABLED by default (staged) — one GPU, one model. Enable + disable
+  # deepseek-r1-1-5b-local at cutover.
+  #
+  # ── Model card (Qwen/Qwen3-8B-AWQ · Apache-2.0) ─────────────────────────────
+  #   8.2B params, 36 layers, GQA 32 Q / 8 KV (→ 1 KB KV/tok, same as qwen3-4b),
+  #   32,768 native context (→131,072 with YaRN). Hybrid thinking / non-thinking
+  #   mode (→ *spReasoning), Hermes tool calling. Recommended sampling (think):
+  #   temp 0.6 / top_p 0.95 / top_k 20 / min_p 0 — do NOT use greedy decoding.
+  #   https://huggingface.co/Qwen/Qwen3-8B-AWQ
+  #
+  # ── Cost (ADR-0028: cost-recovery for owned-hardware) ──────────────────────
+  #   Same hardware → same €/h TCO basis as qwen3-4b-local. The 8B is heavier
+  #   on the GPU per token than the 4B, but AWQ INT4 keeps it in VRAM; prices
+  #   match qwen3-4b-local as a starting point — re-tune as utilization arrives.
+  qwen3-8b-local:
+    enabled: false                   # STAGED — disable deepseek-r1-1-5b-local + enable this at cutover.
+    kind: text
+    minBackends: 1                   # single self-hosted backend by design (one GPU)
+    timeout:
+      requestTimeout: 600s           # rides a deploy restart + a long generation
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen3-8B-AWQ (self-hosted)"
+      contextLength: 32768           # = --max-model-len (full native context fits with AWQ INT4)
+      maxOutputTokens: 8192
+      supportedParameters: *spReasoning   # Qwen3 has a thinking mode
+    pricing:
+      strategy: weighted             # same cost-recovery basis as qwen3-4b-local (ADR-0028)
+      standard:
+        inputPer1M: 0.15
+        cachedInputPer1M: 0.03
+        outputPer1M: 1.00
+    backends:
+      vllm-local-8b-01:
+        ref: vllm-local-8b-01
+        priority: 0
+        modelNameOverride: "qwen3-8b"
+
+  # Self-hosted Ministral-3B-Instruct-2410 (AWQ) on the home GPU — vLLM via
+  # KServe's huggingfaceserver (AWQ 4-bit quantized, 3B params, ~2 GB). The
+  # lightest self-hosted model that fits comfortably on the 12GB A2000 with
+  # generous KV-cache headroom (128K native context, 14 layers, 8 KV heads →
+  # 56 KiB/tok). Standard instruct model (no thinking mode) → *spStandard.
+  # Mistral tool-call parser. DISABLED by default (staged) — one GPU, one
+  # model. Enable + disable deepseek-r1-1-5b-local at cutover.
+  #
+  # ── Model card (Ministral-3B-Instruct-2410 · Mistral Research License) ──────
+  #   3B params, 14 layers, GQA 32 Q / 8 KV (head_dim 128 → 56 KiB KV/tok),
+  #   131,072 native context (clamped to 32K by --max-model-len for KV budget).
+  #   No thinking/reasoning mode (→ *spStandard). Mistral tool-call format
+  #   (→ --tool-call-parser=mistral). https://huggingface.co/mistralai/Ministral-3B-Instruct-2410
+  #
+  # ── Cost (ADR-0028: cost-recovery for owned-hardware) ──────────────────────
+  #   Same hardware → same €/h TCO basis. The 3B is lighter on the GPU per
+  #   token than the 4B; prices sit between the 1.5B and 4B tiers — re-tune
+  #   as utilization data arrives.
+  #
+  # ⚠️ Tool-calling caveat: the community AWQ repo (RichardErkhov) strips the
+  #   [TOOL_CALLS] token from the tokenizer, so vLLM's mistral parser fails.
+  #   For agentic use (opencode), switch the chart's hfRepo to the official
+  #   gated mistralai/Ministral-3B-Instruct-2410 (needs HF license acceptance)
+  #   or inject a --chat-template override before cutover.
+  ministral-3b-local:
+    enabled: true                    # CUTOVER — live on the home GPU.
+    kind: text
+    minBackends: 1                   # single self-hosted backend by design (one GPU)
+    timeout:
+      requestTimeout: 600s           # rides a deploy restart + a long generation
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Ministral-3B-AWQ (self-hosted)"
+      contextLength: 32768           # = --max-model-len (128K native, clamped for KV budget)
+      maxOutputTokens: 8192
+      supportedParameters: *spStandard   # standard instruct model — no thinking mode
+    pricing:
+      strategy: weighted             # cost-recovery basis (ADR-0028), between the 1.5B and 4B tiers
+      standard:
+        inputPer1M: 0.12
+        cachedInputPer1M: 0.02
+        outputPer1M: 0.60
+    backends:
+      vllm-local-ministral-01:
+        ref: vllm-local-ministral-01
+        priority: 0
+        modelNameOverride: "ministral-3b"
 
   deepseek-v4-flash:
     kind: text
