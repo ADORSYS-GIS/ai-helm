@@ -54,13 +54,23 @@ argocd:
 #                             x-org-id). OMITTED for a plan ⇒ uncapped budget.
 # x-billing-plan (set by the AuthConfig from the Keycloak `billing_plan` claim,
 # or "internal" on the internal plane) selects which plan's rules apply.
+# Shared cross-model monthly-budget cutover (#532). Single lever propagated to
+# every per-model ai-model child. When true: each model's BTP drops its per-model
+# budget rule and merges with the gateway-wide BTP's ONE `shared: true` counter
+# per (user, plan). ⚠️ Keep false until Envoy Gateway ≥ v1.8.2 (bug #9244), and
+# flip core-gateway `backendTrafficPolicy.monthlyBudget.enabled` in the SAME
+# rollout so there is never a window with neither budget active.
+sharedBudget:
+  enabled: false
+
 rateLimitBudgeting:
   plans:
     free:
       # Per-person monthly budget (ADR-0035: keyed on x-account-id, NOT a shared
-      # x-org-id bucket — colleagues no longer contend for one pool). Raised
-      # 30 → 50 to relax the free tier.
-      monthlyBudgetUsd: 50
+      # x-org-id bucket — colleagues no longer contend for one pool). Lowered
+      # 50 → 30 (2026-07-07) to stop the bleeding while we investigate users
+      # exceeding the intended cap (per-model-vs-shared counter + billing_plan).
+      monthlyBudgetUsd: 30
       burst:
         requestsPerMin: 200
         # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
