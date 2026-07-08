@@ -168,7 +168,7 @@ def _panel_cost() -> stat.Panel:
     )
 
 
-# --- hero 1: this user's actual chats (content, from Tempo) ------------------
+# --- hero: this user's individual chat requests (metadata, from Loki) --------
 
 
 def _panel_request_log() -> logs.Panel:
