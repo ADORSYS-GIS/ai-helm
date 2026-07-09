@@ -471,6 +471,35 @@ applications:
     destination:
       namespace: converse
 
+  # --- Restate (durable execution) — RFC-0005 / ADR-0074 Phase-1 enabler ---
+  # Single-node Restate durable-execution server for the LCI control plane. The
+  # future `restate-worker` control-plane role (in the lightbridge-code-intelligence
+  # app, default wave 0) registers services with + is invoked by this server, so
+  # Restate is a storage-backend dependency that MUST be up first → sync-wave -2
+  # (storage tier per SYNC_WAVE_PATTERN.md — same wave as the observability storage
+  # backends mimir/loki/tempo). Upstream chart from the Restate OCI registry, pinned
+  # to 1.7.2 (external source form, like eg/aieg). Single node: replicaCount 1,
+  # RocksDB on a PVC, NO cluster/Raft, NO S3. Namespace `converse` (the LCI workload
+  # namespace, ADR-0017 home-remote default). Workload values (resources / rocksdb
+  # budget / PVC size) live in ai-helm-values (ADR-0056), read via the $values ref
+  # the template injects (ignoreMissingValueFiles → renders on chart defaults until
+  # the file lands). No image-updater (upstream image, version-pinned); serviceMonitor
+  # stays off to keep the blast radius to just this new StatefulSet.
+  - name: restate
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-2"
+    valuesFromRepo: true
+    source:
+      repoURL: oci://ghcr.io/restatedev/restate-helm
+      targetRevision: 1.7.2
+      path: .
+      helm:
+        releaseName: restate
+    destination:
+      namespace: converse
+
   # --- Lightbridge Code Intelligence ---
   # The GitHub-App code-review / repo-Q&A system (repo:
   # vymalo/lightbridge-code-intelligence): Rust control plane + Next.js web console
