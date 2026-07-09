@@ -68,11 +68,11 @@ sharedBudget:
 rateLimitBudgeting:
   plans:
     free:
-      # Per-person monthly budget (ADR-0035: keyed on x-account-id, NOT a shared
-      # x-org-id bucket — colleagues no longer contend for one pool). Lowered
-      # 50 → 30 (2026-07-07) to stop the bleeding while we investigate users
-      # exceeding the intended cap (per-model-vs-shared counter + billing_plan).
-      monthlyBudgetUsd: 30
+      # Per-person monthly budget. DORMANT since the #532 shared-budget cutover
+      # (sharedBudget.enabled gates the per-model rule off) — the LIVE knob is
+      # core-gateway backendTrafficPolicy.monthlyBudget.plans. Kept in sync
+      # (15, 2026-07-08) so a rollback to per-model budgets keeps the same cap.
+      monthlyBudgetUsd: 15
       burst:
         requestsPerMin: 200
         # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
