@@ -125,12 +125,14 @@ metadata:
 spec:
   project: {{ $a.project | quote }}
   sources:
-    # Source A — the upstream Lightbridge workload (Helm chart as an ArgoCD
-    # source). releaseName stays `lightbridge` so workload resource names
-    # don't churn vs the old flat app. Values live in ai-helm-values (ADR-0056),
-    # read via the $values ref (Source C) — not inline.
-    - repoURL: {{ .Values.app.chart.repoURL | quote }}
-      chart: {{ .Values.app.chart.name | quote }}
+    # Source A — the upstream Lightbridge workload (OCI Helm chart as an ArgoCD
+    # source; full chart path in repoURL + chart "." per ADR-0055, same as the
+    # secrets/db leaves but pinned via app.chart.targetRevision rather than
+    # floated). releaseName stays `lightbridge` so workload resource names don't
+    # churn vs the old flat app. Values live in ai-helm-values (ADR-0056), read
+    # via the $values ref (Source C) — not inline.
+    - repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.app.chart.chartName | quote }}
+      chart: "."
       targetRevision: {{ .Values.app.chart.targetRevision | quote }}
       helm:
         releaseName: {{ .Values.app.releaseName | quote }}
