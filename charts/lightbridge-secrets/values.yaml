@@ -20,12 +20,13 @@ externalSecrets:
       - secretKey: secret-id
         key: ai/camer/digital/prod/env
         property: lightbridge_api_client_secret_id
-  # OPA basic-auth password the api + mcp containers require as the
-  # OPA_PASSWORD env (secretKeyRef name: opa-secret, key: OPA_PASSWORD). The
-  # upstream chart still exposes lightbridge's internal OPA listener on api/mcp,
-  # so the pods won't start without this secret — even though OPA was removed
-  # from the auth path (ADR-0021), so the value is functionally UNUSED (any
-  # value works). Populate `lightbridge_opa_password` with any string.
+  # OPA basic-auth password (secretKeyRef name: opa-secret, key: OPA_PASSWORD).
+  # Consumed by the api + mcp pods (their configs carry the OPA listener block)
+  # AND by the re-enabled opa component, which authenticates the Keycloak
+  # token-exchange SPI's /idp/v1/resolve-context call with it. NOTE: this is NO
+  # LONGER a throwaway value — the SPI presents `authorino:<this password>` as
+  # Basic auth to opa, so `lightbridge_opa_password` MUST match the password the
+  # Keycloak SPI is configured with, or context resolution 401s.
   opa-secret:
     data:
       - secretKey: OPA_PASSWORD
