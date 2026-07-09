@@ -82,10 +82,15 @@ app:
   appName: lightbridge-app
   releaseName: lightbridge
   syncWave: "2"
-  # Upstream Lightbridge chart.
+  # Upstream Lightbridge umbrella chart, now pulled via OCI (ADR-0055) instead of
+  # the retired gh-pages Helm repo. Published by lightbridge-authz CI to
+  # <argocd.chartRegistry>/<chartName> = oci://ghcr.io/adorsys-gis/charts/lightbridge-authz-stack
+  # (renamed from `lightbridge` to avoid colliding with THIS orchestrator's own
+  # charts/lightbridge package). Pinned — NOT floated like the secrets/db leaves —
+  # so a lightbridge-authz chart release doesn't auto-deploy; the workload IMAGE
+  # still floats via argocd-image-updater (annotations below).
   chart:
-    repoURL: https://adorsys-gis.github.io/lightbridge-authz
-    name: lightbridge
+    chartName: lightbridge-authz-stack
     targetRevision: "0.8.1"
   # App-scoped deps (ingress Certificates) — kustomize overlay in this repo,
   # added as a second source (issuer patched per env). ADR-0018 pattern.
