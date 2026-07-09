@@ -531,10 +531,12 @@ applications:
       # declares, which otherwise show a permanent cosmetic OutOfSync + selfHeal churn.
       # ServerSideDiff ignores those server-owned fields so the app reads Synced.
       argocd.argoproj.io/compare-options: ServerSideDiff=true
-      # Images aliased: cp/disp/recon (control-plane, role-selected), web, runner (the one-shot
+      # Images aliased: cp/disp/recon/rw/a2a (control-plane, role-selected), web, runner (the one-shot
       # agent-runner/indexer image the dispatcher launches), and review (the slimmer review-only Job
       # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,recon=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
+      # `rw` = restate-worker (RFC-0005/ADR-0074), `a2a` = the A2A surface (RFC-0006) — both the SAME
+      # control-plane image, kept in lockstep so the new roles never lag the control-plane on a build.
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,recon=ghcr.io/vymalo/lightbridge-control-plane,rw=ghcr.io/vymalo/lightbridge-control-plane,a2a=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -565,6 +567,26 @@ applications:
       argocd-image-updater.argoproj.io/recon.signature-type: cosign
       argocd-image-updater.argoproj.io/recon.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/recon.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── restate-worker (SAME image as control-plane, role-selected; RFC-0005/ADR-0074) — keeps its
+      #    tag in lockstep so the Restate SDK worker never lags the control-plane on a build. ──
+      argocd-image-updater.argoproj.io/rw.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/rw.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/rw.force-update: "true"
+      argocd-image-updater.argoproj.io/rw.helm.image-name: lci.controllers.restate-worker.containers.main.image.repository
+      argocd-image-updater.argoproj.io/rw.helm.image-tag: lci.controllers.restate-worker.containers.main.image.tag
+      argocd-image-updater.argoproj.io/rw.signature-type: cosign
+      argocd-image-updater.argoproj.io/rw.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/rw.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── a2a (SAME image as control-plane, role-selected; RFC-0006) — keeps its tag in lockstep so
+      #    the A2A surface never lags the control-plane on a build. ──
+      argocd-image-updater.argoproj.io/a2a.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/a2a.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/a2a.force-update: "true"
+      argocd-image-updater.argoproj.io/a2a.helm.image-name: lci.controllers.a2a.containers.main.image.repository
+      argocd-image-updater.argoproj.io/a2a.helm.image-tag: lci.controllers.a2a.containers.main.image.tag
+      argocd-image-updater.argoproj.io/a2a.signature-type: cosign
+      argocd-image-updater.argoproj.io/a2a.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/a2a.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── web ──
       argocd-image-updater.argoproj.io/web.update-strategy: newest-build
       argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$
