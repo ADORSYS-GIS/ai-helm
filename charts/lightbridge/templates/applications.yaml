@@ -102,6 +102,10 @@ metadata:
     argocd-image-updater.argoproj.io/api.update-strategy: newest-build
     argocd-image-updater.argoproj.io/api.allow-tags: regexp:^sha-[0-9a-f]+$
     argocd-image-updater.argoproj.io/api.force-update: "true"
+    # GHCR read cred (App-based, argocd ns) so tag detection keeps working once
+    # ghcr.io/adorsys-gis/lightbridge-authz goes private. Secret provisioned in
+    # home-os (serverless/k/lightbridge-authz). No-op while the image is public.
+    argocd-image-updater.argoproj.io/api.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
     argocd-image-updater.argoproj.io/api.helm.image-name: global.authz.image.repository
     argocd-image-updater.argoproj.io/api.helm.image-tag: global.authz.image.version
     argocd-image-updater.argoproj.io/api.signature-type: cosign
@@ -110,6 +114,7 @@ metadata:
     argocd-image-updater.argoproj.io/mcp.update-strategy: newest-build
     argocd-image-updater.argoproj.io/mcp.allow-tags: regexp:^sha-[0-9a-f]+$
     argocd-image-updater.argoproj.io/mcp.force-update: "true"
+    argocd-image-updater.argoproj.io/mcp.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
     argocd-image-updater.argoproj.io/mcp.helm.image-name: global.authz_mcp.image.repository
     argocd-image-updater.argoproj.io/mcp.helm.image-tag: global.authz_mcp.image.version
     argocd-image-updater.argoproj.io/mcp.signature-type: cosign
