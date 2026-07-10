@@ -52,6 +52,16 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: {{ $wave }}
 automountServiceAccountToken: false
+{{- if .Values.agents.pullSecretName }}
+# Private-image cutover: the runner images (ghcr.io/vymalo/*) are now private. The agent Jobs the
+# dispatcher launches use THIS SA (k8s.rs sets pod.serviceAccountName), and the kubelet automatically
+# merges an SA's imagePullSecrets into every pod that uses it — so this one line gives every Job pod
+# pull credentials with no dispatcher/manifest change. The secret is materialised in this namespace by
+# the ExternalSecret in externalsecret.yaml. (Unaffected by automountServiceAccountToken: false, which
+# only governs the API-token mount.)
+imagePullSecrets:
+  - name: {{ .Values.agents.pullSecretName }}
+{{- end }}
 ---
 # Identity the dispatcher runs as (release namespace). bjw uses the `default` SA otherwise, which is
 # shared cluster-wide — too broad to grant Job CRUD to. The dispatcher controller selects this SA via

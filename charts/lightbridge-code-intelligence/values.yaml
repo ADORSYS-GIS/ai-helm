@@ -37,12 +37,29 @@ secrets:
   # it's agents.llm.model (also env-owned).
   agentRunnerTokenProperty: ""
   openaiKeyProperty: ""
+  # GHCR pull credential for the agent Jobs' namespace (private-image cutover). The runner images
+  # (ghcr.io/vymalo/*) are private, so the Jobs the dispatcher launches into `agents.namespace` need
+  # imagePullSecrets — and, unlike the bjw controllers, they get NO defaultPodOptions (they're created
+  # imperatively by the Rust dispatcher, see k8s.rs). We materialise a dockerconfigjson in that
+  # namespace (externalsecret.yaml) and attach it to the agent SA (agents-rbac.yaml). The PAT lives in
+  # the SAME bucket as remoteKey (github_username/github_token @ ai/camer/digital/prod/env); both
+  # property names are empty in chart defaults (ADR-0057), so the pull-secret ExternalSecret renders
+  # ONLY once the env override sets them → a defaults-only lint render stays render-neutral.
+  ghcrUsernameProperty: ""
+  ghcrTokenProperty: ""
 
 # ── Agent execution (epic #5): per-task Jobs in an isolated namespace ─────────
 agents:
   enabled: true
   namespace: lightbridge-agents
   serviceAccount: lightbridge-agent
+  # Pull secret (dockerconfigjson) the agent Job pods use for the now-private ghcr.io/vymalo/* runner
+  # images. Materialised in `namespace` by the ExternalSecret in externalsecret.yaml and attached to
+  # `serviceAccount` (agents-rbac.yaml), so every Job pod inherits it with NO dispatcher change — the
+  # kubelet merges an SA's imagePullSecrets into each pod that uses it. One name drives both the secret
+  # and the SA reference. Reuses the org-wide ghcr.io credential (keyed on the HOST, so it also covers
+  # the vymalo org). Empty → no imagePullSecrets attached (public images / anonymous pull).
+  pullSecretName: lightbridge-repo-auth-ghcr
   # NOTE: unused/vestigial — bjw renders the dispatcher env against the sub-chart scope where
   # top-level `agents.*` isn't visible, so the LIVE runner image is the dispatcher's
   # AGENT_RUNNER_IMAGE env literal (controllers.dispatcher) below, NOT this. That env value IS
