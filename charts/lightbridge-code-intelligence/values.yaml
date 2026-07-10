@@ -47,6 +47,13 @@ secrets:
   # ONLY once the env override sets them → a defaults-only lint render stays render-neutral.
   ghcrUsernameProperty: ""
   ghcrTokenProperty: ""
+  # A2A push-notification token key (RFC-0006 Phase 3, ADR-0079 §3): a base64-encoded 32-byte key the
+  # `notifier` role uses to encrypt each push-config's webhook auth token at rest. Lives in the dedicated
+  # codeintel bucket ($codeintelKey), like the GitHub App creds. Empty in chart defaults (ADR-0057) → the
+  # `-a2a-push` ExternalSecret (externalsecret.yaml) renders ONLY once an env override sets this property,
+  # so a defaults-only lint render stays render-neutral. The 32-byte VALUE is an OPERATOR PREREQ in the SM
+  # bucket — never in this chart.
+  a2aPushTokenKeyProperty: ""
 
 # ── Agent execution (epic #5): per-task Jobs in an isolated namespace ─────────
 agents:
@@ -935,6 +942,21 @@ lci:
             DATABASE_URL:
               dependsOn: DB_PASSWORD
               value: ""
+            # Push-notification token-signing key (ADR-0079 §3) — SHARED with the notifier. The a2a role
+            # ENCRYPTS each push config's webhook auth token on create_push_config and DECRYPTS it for the
+            # get/list echo (services/control-plane/src/a2a/mod.rs → push_token_key_from_env()); the
+            # notifier DECRYPTS it at delivery. SAME `{{ .Release.Name }}-a2a-push` ExternalSecret both
+            # roles read. `optional: true` MATTERS: without the key the code degrades gracefully (tokened
+            # CreateTaskPushNotificationConfig is rejected, tokenless webhooks still work) — it does NOT
+            # crash. Since the a2a surface is LIVE (it also serves the `review` skill), a hard secretKeyRef
+            # to a not-yet-provisioned secret would take the WHOLE surface down; optional keeps it up and
+            # only the push-token feature degrades until the operator adds the SM property. base64 32-byte.
+            A2A_PUSH_TOKEN_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-a2a-push'
+                  key: push-token-key
+                  optional: true
           probes:
             # Liveness = the process/metrics server (:9090 /healthz), like the other headless roles.
             liveness:
@@ -955,6 +977,100 @@ lci:
                 httpGet:
                   path: /.well-known/agent-card.json
                   port: 8080
+                initialDelaySeconds: 5
+                periodSeconds: 10
+            startup:
+              enabled: false
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1000
+            capabilities:
+              drop: [ALL]
+
+    # ── notifier (RFC-0006 Phase 3 / ADR-0079) ────────────────────────────────────────────────────
+    # The SAME control-plane image in the `notifier` role: a HEADLESS worker (like dispatcher/
+    # reconciler) that drains the A2A push-notification outbox and delivers webhook POSTs to the URLs
+    # callers registered on their push configs. It runs NO HTTP surface beyond the metrics-only listener
+    # on :9090 (/metrics + /healthz) — NO Service, NO Ingress. It REQUIRES a DB pool (the push_configs
+    # store + the monotonic delivery cursor) and the token-signing key; absent either it degrades.
+    #
+    # SECURITY — push delivery is an SSRF surface (ADR-0079 §2), defended in depth:
+    #   (1) app-level: the SSRF URL validator rejects private/link-local/loopback/metadata targets;
+    #   (2) A2A_PUSH_DENIED_CIDRS: an explicit deny list (this cluster's pod + service CIDRs) the
+    #       notifier refuses to POST to — belt-and-suspenders over (1);
+    #   (3) network-level: the notifier NetworkPolicy (`networkpolicies.notifier` below) is the CNI
+    #       backstop — egress allowed ONLY to 443 on PUBLIC IPs, plus DNS (kube-dns) + Postgres (CNPG);
+    #       RFC1918 + the pod/service CIDRs + link-local/metadata + loopback are excluded at the CNI.
+    # `enabled: false` here → inert on chart defaults; ai-helm-values enables it and supplies the image
+    # tag + DATABASE_URL + A2A_PUSH_DENIED_CIDRS per-env, and turns on the NetworkPolicy.
+    notifier:
+      enabled: false
+      type: deployment
+      # RollingUpdate: the outbox is drained via a monotonic cursor and delivery is idempotent-safe, so a
+      # brief old+new overlap on rollout is acceptable (matches the other headless roles).
+      strategy: RollingUpdate
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+      containers:
+        main:
+          image:
+            repository: ghcr.io/vymalo/lightbridge-control-plane
+            # Default/fallback; the deployed tag is overridden at sync time by ai-helm-values via the
+            # image-updater `notifier` alias (charts/apps/values.yaml), in lockstep with control-plane.
+            tag: "0.1.0"
+            pullPolicy: IfNotPresent
+          env:
+            CONTROL_PLANE_ROLE: "notifier"
+            RUST_LOG: "info"
+            # Metrics-only listener (like dispatcher/reconciler) — /metrics + /healthz on :9090.
+            METRICS_ADDR: "0.0.0.0:9090"
+            # Same CNPG queue the serve/dispatcher/reconciler roles use. DATABASE_URL `value` (cluster
+            # host/namespace/db) → ai-helm-values; `dependsOn` stays here.
+            DB_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: lightbridge-codeintel-db-role
+                  key: password
+            DATABASE_URL:
+              dependsOn: DB_PASSWORD
+              value: ""
+            # Token-signing key (ADR-0079 §3) — SHARED with the a2a role. The notifier DECRYPTS each push
+            # config's webhook auth token at delivery time (the a2a role encrypts it at CRUD). base64
+            # 32-byte key from the `{{ .Release.Name }}-a2a-push` ExternalSecret (externalsecret.yaml,
+            # codeintel bucket). `optional: true` → without it the role degrades gracefully (delivers
+            # tokenless webhooks; tokened ones can't be decrypted) rather than the pod failing to start.
+            A2A_PUSH_TOKEN_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-a2a-push'
+                  key: push-token-key
+                  optional: true
+            # SSRF network deny list (ADR-0079 §2): comma-separated CIDRs the notifier refuses to POST to
+            # (this cluster's pod + service CIDRs). Belt-and-suspenders over the app-level SSRF validator
+            # (which already blocks 10.0.0.0/8) and the NetworkPolicy. DEPLOYMENT-SPECIFIC → ai-helm-values.
+            A2A_PUSH_DENIED_CIDRS: ""
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 9090
+                initialDelaySeconds: 5
+                periodSeconds: 15
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 9090
                 initialDelaySeconds: 5
                 periodSeconds: 10
             startup:
@@ -1012,6 +1128,16 @@ lci:
       ports:
         http:
           port: 8080
+    # Metrics-only Service for the notifier role (METRICS_ADDR :9090) — same pattern as the dispatcher
+    # Service above: the headless notifier has no other Service, so this gives its ServiceMonitor
+    # (templates/servicemonitor.yaml) a stable Endpoints target for its push-delivery metrics. `enabled`
+    # tracks the controller (both flipped on in ai-helm-values); OFF here so defaults stay render-neutral.
+    notifier:
+      enabled: false
+      controller: notifier
+      ports:
+        metrics:
+          port: 9090
 
   # DEPLOYMENT-SPECIFIC: ingress is OFF by default — the ingress class, cert-manager cluster-issuer,
   # public hostnames, and TLS secrets are all env-specific, so the FULL ingress config (enabled: true +
@@ -1028,6 +1154,79 @@ lci:
     # every A2A binding behind it is OIDC-gated in-app (no anonymous access).
     a2a:
       enabled: false
+
+  # NetworkPolicies (bjw-s `networkpolicies` — rendered by bjw-common as networking.k8s.io/v1
+  # NetworkPolicy; Cilium, this cluster's CNI, enforces plain k8s NetworkPolicies natively). OFF by
+  # default so a defaults-only render emits nothing; ai-helm-values opts each one in per-env.
+  networkpolicies:
+    # ── notifier egress lock-down (RFC-0006 Phase 3 / ADR-0079 §2) ────────────────────────────────
+    # The network-layer half of the push-delivery SSRF defence. The notifier makes ONLY outbound
+    # calls, so we constrain Egress and leave Ingress untouched (policyTypes: [Egress] → ingress stays
+    # default-allow, so kubelet probes on :9090 keep working). Selecting a pod for Egress under Cilium
+    # DENIES all egress not listed here, so DNS + Postgres MUST be allowed explicitly or the pod wedges.
+    #   • DNS      → kube-dns pods (ns kube-system), UDP+TCP 53. The pod resolves via the kube-dns
+    #                ClusterIP (10.43.0.10), which Cilium evaluates against the destination ENDPOINT
+    #                (the CoreDNS pod) — so a namespaceSelector on the pod, NOT an ipBlock on the
+    #                ClusterIP, is the correct match (the service CIDR is inside the ipBlock `except`).
+    #   • Postgres → the CNPG pods backing `lightbridge-main-db-rw` (matched by cnpg.io/cluster, so BOTH
+    #                instances are allowed and a primary→replica failover never wedges egress), TCP 5432.
+    #                Again a podSelector, not the -rw ClusterIP, because Cilium resolves the DNAT to the
+    #                backing pod's endpoint identity.
+    #   • Webhooks → 0.0.0.0/0 minus RFC1918 + link-local/metadata + loopback (which COVERS this
+    #                cluster's pod CIDR 10.42.0.0/16 + service CIDR 10.43.0.0/16, both inside 10.0.0.0/8),
+    #                TCP 443 only. This is the CNI backstop over the app-level SSRF validator + the
+    #                A2A_PUSH_DENIED_CIDRS deny list.
+    # ⚠️ REVIEW: validate the egress semantics against Cilium on hetzner-prod before relying on it — a
+    # wrong policy either WEDGES the notifier (no DB/DNS → CrashLoop/never-Ready) or FAILS to isolate
+    # (internal SSRF still reachable). Verify: (a) Cilium honours ipBlock `except` as CIDR exceptions;
+    # (b) the CoreDNS namespace/label match resolves DNS; (c) the CNPG podSelector permits :5432.
+    notifier:
+      enabled: false
+      controller: notifier
+      # Force a stable `<fullname>-notifier` name (bjw defaults a single-item networkpolicy to the bare
+      # fullname). With the suffix it renders `lightbridge-ci-notifier` regardless of item count, so
+      # adding a second networkpolicy later never renames/recreates this one.
+      suffix: notifier
+      policyTypes:
+        - Egress
+      rules:
+        egress:
+          # DNS to kube-dns (CoreDNS) in kube-system.
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+            ports:
+              - protocol: UDP
+                port: 53
+              - protocol: TCP
+                port: 53
+          # Postgres: the CNPG pods of the lightbridge-main-db cluster in converse (both instances).
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: converse
+                podSelector:
+                  matchLabels:
+                    cnpg.io/cluster: lightbridge-main-db
+            ports:
+              - protocol: TCP
+                port: 5432
+          # Public webhooks: TCP 443 to PUBLIC IPs only. `except` removes RFC1918 (covers the pod CIDR
+          # 10.42.0.0/16 + service CIDR 10.43.0.0/16, both within 10.0.0.0/8), link-local + cloud
+          # metadata (169.254.0.0/16), and loopback (127.0.0.0/8).
+          - to:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+                  except:
+                    - 10.0.0.0/8
+                    - 172.16.0.0/12
+                    - 192.168.0.0/16
+                    - 169.254.0.0/16
+                    - 127.0.0.0/8
+            ports:
+              - protocol: TCP
+                port: 443
 
   # emptyDir scratch dirs for the read-only-rootfs containers (control-plane, web).
   # Neo4j /data is NOT here — it's a StatefulSet volumeClaimTemplate on the neo4j controller
