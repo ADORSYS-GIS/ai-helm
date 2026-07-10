@@ -539,7 +539,7 @@ applications:
       # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
       # `rw` = restate-worker (RFC-0005/ADR-0074), `a2a` = the A2A surface (RFC-0006) — both the SAME
       # control-plane image, kept in lockstep so the new roles never lag the control-plane on a build.
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,recon=ghcr.io/vymalo/lightbridge-control-plane,rw=ghcr.io/vymalo/lightbridge-control-plane,a2a=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,recon=ghcr.io/vymalo/lightbridge-control-plane,rw=ghcr.io/vymalo/lightbridge-control-plane,a2a=ghcr.io/vymalo/lightbridge-control-plane,notifier=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -598,6 +598,17 @@ applications:
       argocd-image-updater.argoproj.io/a2a.signature-type: cosign
       argocd-image-updater.argoproj.io/a2a.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/a2a.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── notifier (SAME image as control-plane, role-selected; RFC-0006 Phase 3 / ADR-0079) — keeps its
+      #    tag in lockstep so the A2A push-notification worker never lags the control-plane on a build. ──
+      argocd-image-updater.argoproj.io/notifier.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/notifier.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/notifier.force-update: "true"
+      argocd-image-updater.argoproj.io/notifier.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/notifier.helm.image-name: lci.controllers.notifier.containers.main.image.repository
+      argocd-image-updater.argoproj.io/notifier.helm.image-tag: lci.controllers.notifier.containers.main.image.tag
+      argocd-image-updater.argoproj.io/notifier.signature-type: cosign
+      argocd-image-updater.argoproj.io/notifier.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/notifier.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── web ──
       argocd-image-updater.argoproj.io/web.update-strategy: newest-build
       argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$
