@@ -59,10 +59,11 @@ argocd:
   # per-env values, and the `environments/` overlays live in the PRIVATE
   # `ai-helm-values` repo (argocd-image-updater write-back). A merge to main is a
   # live deploy. Rollback = `git revert` in ai-helm-values and/or pin an app's
-  # chartVersionRange. converse-ui now floats from converse-frontends' OWN OCI
-  # namespace (oci://ghcr.io/adorsys-gis/converse-frontends/charts, not this
-  # chartRegistry). External NON-OCI sources (lightbridge-repo-auth, the upstream
-  # Lightbridge chart, etc.) pin their own SHAs/versions. Runbook:
+  # chartVersionRange. converse-ui floats its chart from this same chartRegistry
+  # (oci://ghcr.io/adorsys-gis/charts/converse-frontend) — published there by the
+  # external converse-frontends repo, and PRIVATE (repo cred in home-os). External
+  # NON-OCI sources (lightbridge-repo-auth, the upstream Lightbridge chart, etc.)
+  # pin their own SHAs/versions. Runbook:
   # docs/continuous-delivery.md.
   # ── Continuous-delivery knobs (ADR-0055) ────────────────────────────────
   # Charts are published to OCI on merge to main and consumed by any app entry
@@ -724,10 +725,11 @@ applications:
 
   # --- Converse UI --- (ADR-0055 continuous-delivery pilot: image write-back)
   # Multi-source (the lightbridge pattern, writing to ai-helm-values):
-  #   Source A — the converse-frontend chart, now floated from OCI (converse-frontends
-  #     publishes it to oci://ghcr.io/adorsys-gis/converse-frontends/charts on merge
-  #     to main; a merge that republishes the chart auto-floats this app on the next
-  #     reconcile). Its OWN GHCR namespace, not adorsys-gis/charts.
+  #   Source A — the converse-frontend chart, now floated from OCI. The external
+  #     converse-frontends repo publishes it to oci://ghcr.io/adorsys-gis/charts
+  #     (this cluster's chartRegistry) on merge to main; a merge that republishes
+  #     the chart auto-floats this app on the next reconcile. The package is
+  #     PRIVATE, so ArgoCD needs the repo cred provisioned in home-os.
   #   Source B — a $values ref to ai-helm-values, where argocd-image-updater commits
   #     the newest sha-<gitsha> build. Strategy: newest-build + allow-tags ^sha-…,
   #     UNSIGNED (converse-frontends images are not cosign-signed — no .sig tags).
@@ -758,7 +760,7 @@ applications:
       # Source A — the converse-frontend chart from OCI (ADR-0055 float): full chart
       # path in repoURL + chart "." + a semver range, exactly like core-gateway.
       # Published by converse-frontends' publish-charts-oci.yml (converse-frontends#100).
-      - repoURL: oci://ghcr.io/adorsys-gis/converse-frontends/charts/converse-frontend
+      - repoURL: oci://ghcr.io/adorsys-gis/charts/converse-frontend
         chart: "."
         targetRevision: ">=0.0.0"
         helm:
@@ -802,7 +804,7 @@ applications:
     # chartVersionRange), with per-env values from ai-helm-values via $values
     # (Source B). No image write-back here (the backup image is static) — this
     # was the first `chart:` OCI-float pilot (converse-ui has since joined it,
-    # floating from converse-frontends' own OCI namespace).
+    # floating its chart from the same adorsys-gis/charts namespace).
     # Once live, a merge that republishes charts/mongodb-backup auto-floats this
     # app to the new version on the next reconcile (no release/repoint needed).
     chart: mongodb-backup
