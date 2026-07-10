@@ -261,6 +261,34 @@ applications:
   # gateway's ACME cert won't be issued. Tracked out-of-band.
   # Do not re-add a cert Application here.
 
+  # Stakater Reloader — restarts a workload when a ConfigMap/Secret it mounts
+  # changes. OPT-IN only (autoReloadAll:false): a workload is reloaded solely
+  # when it carries a `reloader.stakater.com/*` annotation, so this is a no-op
+  # for everything unannotated. Deployed so the lightbridge-mcp pod picks up
+  # cert-manager's Let's Encrypt rotation of `mcp.ai.camer.digital-tls` — the
+  # Rust server reads its TLS cert only at startup, and with the verified
+  # `mcp-verify` backend transport a stale cert would fail closed. Watches all
+  # namespaces; lands on home-remote like the other workloads.
+  - name: reloader
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://stakater.github.io/stakater-charts
+      # 2.2.14 → app v1.4.19 (latest at stakater-charts). Verify with
+      # `helm show chart stakater/reloader` before bumping.
+      targetRevision: 2.2.14
+      chart: reloader
+      helm:
+        releaseName: reloader
+        # Defaults, pinned explicitly: watch every namespace but only act on
+        # annotated workloads (no cluster-wide auto-reload surprise).
+        values: |
+          reloader:
+            watchGlobally: true
+            autoReloadAll: false
+    destination:
+      namespace: reloader
+
   # --- Secret Management ---
   # NOTE: the External Secrets Operator (controller + CRDs) is NOT
   # installed by this repo — it's deployed externally (Helm-managed in
