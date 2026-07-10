@@ -65,15 +65,6 @@ spec:
   retry:
     numRetries: 0
   {{- end }}
-  # Trace this model's route at 100%, overriding the gateway-wide
-  # samplingRate: 0 default (charts/core-gateway EnvoyProxy). Model routes
-  # are the only routes we want traced — chat completions + embeddings —
-  # not MCP routes or anything else on the shared gateway.
-  telemetry:
-    tracing:
-      samplingFraction:
-        numerator: 100
-        denominator: 100
   {{- /*
   Per-model upstream timeout.
   */ -}}

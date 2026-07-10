@@ -72,16 +72,23 @@ spec:
     metrics:
       prometheus: {}
     tracing:
-      # Gateway-wide default is OFF. We deliberately don't want a span for
-      # every request through this listener (MCP routes, health checks) —
-      # only the AI Gateway model routes (chat completions + embeddings)
-      # should be traced, and those opt back in to 100% via the per-model
-      # BackendTrafficPolicy's telemetry.tracing.samplingFraction
-      # (charts/ai-model/templates/backendtrafficpolicy.yaml), which
-      # overrides this route-by-route. Auth (Authorino ext_authz) isn't a
-      # separate routed request, so it rides inside whichever request
-      # triggered it — no separate opt-in needed for auth visibility.
-      samplingRate: 0
+      # Gateway-wide, ALL requests through this listener are traced (MCP
+      # routes and health checks included). We tried to scope this to just
+      # the AI Gateway model routes via the per-model BackendTrafficPolicy's
+      # telemetry.tracing.samplingFraction, but that field is backend/cluster
+      # -scoped telemetry (custom tags + a secondary sampling gate that only
+      # applies "if no prior sampling decision has been made" — see Envoy
+      # Gateway's own Tracing type docs), NOT a per-route override of
+      # whether the downstream request is sampled at all. Verified live: the
+      # xDS RouteConfiguration never carried a route-level `tracing:` block
+      # despite the BackendTrafficPolicy being accepted. Envoy Gateway
+      # v1.8.2 has no CRD field for genuine per-route sampling (raw Envoy
+      # supports it — config.route.v3.Tracing — Envoy Gateway just doesn't
+      # expose it); the only real per-route mechanism would be an
+      # EnvoyPatchPolicy JSON-patching the RouteConfiguration directly,
+      # which we decided against for now. Revisit if a future EG version
+      # adds real per-route sampling, or if span volume becomes a problem.
+      samplingRate: 100
       provider:
         type: OpenTelemetry
         # Same Alloy OTLP endpoint the access log sink below already uses —
