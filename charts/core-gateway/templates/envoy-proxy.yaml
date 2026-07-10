@@ -71,6 +71,23 @@ spec:
     # templates/podmonitors-observability.yaml is documented in one place.
     metrics:
       prometheus: {}
+    tracing:
+      # Gateway-wide default is OFF. We deliberately don't want a span for
+      # every request through this listener (MCP routes, health checks) —
+      # only the AI Gateway model routes (chat completions + embeddings)
+      # should be traced, and those opt back in to 100% via the per-model
+      # BackendTrafficPolicy's telemetry.tracing.samplingFraction
+      # (charts/ai-model/templates/backendtrafficpolicy.yaml), which
+      # overrides this route-by-route. Auth (Authorino ext_authz) isn't a
+      # separate routed request, so it rides inside whichever request
+      # triggered it — no separate opt-in needed for auth visibility.
+      samplingRate: 0
+      provider:
+        type: OpenTelemetry
+        # Same Alloy OTLP endpoint the access log sink below already uses —
+        # no new backend/collector needed.
+        host: alloy.observability.svc.cluster.local
+        port: 4317
     accessLog:
       settings:
         - sinks:
@@ -119,6 +136,15 @@ spec:
               x-forwarded-for: "%REQ(X-FORWARDED-FOR)%"
               user-agent: "%REQ(USER-AGENT)%"
               x-request-id: "%REQ(X-REQUEST-ID)%"
+              # Tempo trace correlation: the AI Gateway extproc's tracer
+              # injects `traceparent` into the request headers when it
+              # starts a ChatCompletion span (same mechanism used for
+              # x-ai-eg-model). Logging the header here — rather than
+              # %TRACE_ID%, which needs Envoy's own tracing provider
+              # configured (it isn't) — lets Grafana pull the trace ID
+              # straight out of this access log line and jump to the
+              # matching Tempo span (see the Loki derivedFields config).
+              traceparent: "%REQ(TRACEPARENT)%"
               ":authority": "%REQ(:AUTHORITY)%"
               upstream_host: "%UPSTREAM_HOST%"
               upstream_cluster: "%UPSTREAM_CLUSTER%"
