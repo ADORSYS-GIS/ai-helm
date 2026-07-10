@@ -543,6 +543,10 @@ applications:
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/cp.force-update: "true"
+      # GHCR read cred so tag detection survives ghcr.io/vymalo/* going private. The
+      # #621 secret's dockerconfigjson is keyed on the ghcr.io host, so it authenticates
+      # the vymalo org too — one secret for both orgs. Applied to every alias below.
+      argocd-image-updater.argoproj.io/cp.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/cp.helm.image-name: lci.controllers.control-plane.containers.main.image.repository
       argocd-image-updater.argoproj.io/cp.helm.image-tag: lci.controllers.control-plane.containers.main.image.tag
       argocd-image-updater.argoproj.io/cp.signature-type: cosign
@@ -553,6 +557,7 @@ applications:
       argocd-image-updater.argoproj.io/disp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/disp.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/disp.force-update: "true"
+      argocd-image-updater.argoproj.io/disp.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/disp.helm.image-name: lci.controllers.dispatcher.containers.main.image.repository
       argocd-image-updater.argoproj.io/disp.helm.image-tag: lci.controllers.dispatcher.containers.main.image.tag
       argocd-image-updater.argoproj.io/disp.signature-type: cosign
@@ -564,6 +569,7 @@ applications:
       argocd-image-updater.argoproj.io/recon.update-strategy: newest-build
       argocd-image-updater.argoproj.io/recon.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/recon.force-update: "true"
+      argocd-image-updater.argoproj.io/recon.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/recon.helm.image-name: lci.controllers.reconciler.containers.main.image.repository
       argocd-image-updater.argoproj.io/recon.helm.image-tag: lci.controllers.reconciler.containers.main.image.tag
       argocd-image-updater.argoproj.io/recon.signature-type: cosign
@@ -574,6 +580,7 @@ applications:
       argocd-image-updater.argoproj.io/rw.update-strategy: newest-build
       argocd-image-updater.argoproj.io/rw.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/rw.force-update: "true"
+      argocd-image-updater.argoproj.io/rw.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/rw.helm.image-name: lci.controllers.restate-worker.containers.main.image.repository
       argocd-image-updater.argoproj.io/rw.helm.image-tag: lci.controllers.restate-worker.containers.main.image.tag
       argocd-image-updater.argoproj.io/rw.signature-type: cosign
@@ -584,6 +591,7 @@ applications:
       argocd-image-updater.argoproj.io/a2a.update-strategy: newest-build
       argocd-image-updater.argoproj.io/a2a.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/a2a.force-update: "true"
+      argocd-image-updater.argoproj.io/a2a.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/a2a.helm.image-name: lci.controllers.a2a.containers.main.image.repository
       argocd-image-updater.argoproj.io/a2a.helm.image-tag: lci.controllers.a2a.containers.main.image.tag
       argocd-image-updater.argoproj.io/a2a.signature-type: cosign
@@ -593,6 +601,7 @@ applications:
       argocd-image-updater.argoproj.io/web.update-strategy: newest-build
       argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/web.force-update: "true"
+      argocd-image-updater.argoproj.io/web.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/web.helm.image-name: lci.controllers.web.containers.main.image.repository
       argocd-image-updater.argoproj.io/web.helm.image-tag: lci.controllers.web.containers.main.image.tag
       argocd-image-updater.argoproj.io/web.signature-type: cosign
@@ -607,6 +616,7 @@ applications:
       argocd-image-updater.argoproj.io/runner.update-strategy: newest-build
       argocd-image-updater.argoproj.io/runner.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/runner.force-update: "true"
+      argocd-image-updater.argoproj.io/runner.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/runner.helm.image-spec: lci.controllers.dispatcher.containers.main.env.AGENT_RUNNER_IMAGE
       argocd-image-updater.argoproj.io/runner.signature-type: cosign
       argocd-image-updater.argoproj.io/runner.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
@@ -617,6 +627,7 @@ applications:
       argocd-image-updater.argoproj.io/review.update-strategy: newest-build
       argocd-image-updater.argoproj.io/review.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/review.force-update: "true"
+      argocd-image-updater.argoproj.io/review.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/review.helm.image-spec: lci.controllers.dispatcher.containers.main.env.AGENT_REVIEW_RUNNER_IMAGE
       argocd-image-updater.argoproj.io/review.signature-type: cosign
       argocd-image-updater.argoproj.io/review.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
@@ -732,6 +743,10 @@ applications:
       argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
       argocd-image-updater.argoproj.io/frontend.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/frontend.force-update: "true"
+      # GHCR read cred (App-based, argocd ns) so tag detection keeps working once
+      # ghcr.io/adorsys-gis/converse-frontends goes private. Same secret as #621
+      # (dockerconfigjson keyed on the ghcr.io host → covers every org). No-op public.
+      argocd-image-updater.argoproj.io/frontend.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/frontend.helm.image-name: conversefrontend.controllers.main.containers.frontend.image.repository
       argocd-image-updater.argoproj.io/frontend.helm.image-tag: conversefrontend.controllers.main.containers.frontend.image.tag
       argocd-image-updater.argoproj.io/write-back-method: git
