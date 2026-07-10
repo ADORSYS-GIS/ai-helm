@@ -271,6 +271,16 @@ lci:
       runAsNonRoot: true
       seccompProfile:
         type: RuntimeDefault
+    # GHCR pull secret so kubelet can pull the now-private ghcr.io/vymalo/* images.
+    # REUSE the org-wide ghcr.io dockerconfigjson already materialised in `converse`
+    # by the lightbridge-repo-auth chart (secret `lightbridge-repo-auth-ghcr`,
+    # github_username/github_token @ ssegning-aws) — it's keyed on the ghcr.io HOST
+    # so it covers the vymalo org too, exactly as the authz stack reuses it
+    # (ai-helm-values lightbridge-app.yaml). bjw-s resolves imagePullSecrets from
+    # defaultPodOptions/pod — NOT global.imagePullSecrets. Harmless while the images
+    # are public (a missing/anonymous pull still works).
+    imagePullSecrets:
+      - name: lightbridge-repo-auth-ghcr
 
   controllers:
     # Rust control plane: GitHub webhook trust boundary + OAuth2 resource server
