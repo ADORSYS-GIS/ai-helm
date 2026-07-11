@@ -1118,6 +1118,164 @@ models:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "MiniMaxAI/MiniMax-M2.7"
 
+  mimo-v2p5:
+    kind: multimodal
+    # DeepInfra · XiaomiMiMo/MiMo-V2.5 — native omnimodal (text/image/video/audio
+    # in), sparse MoE 310B total / 15B active, hybrid attention + multi-token
+    # prediction, agentic tool calling. 1,048,576-token context.
+    info:
+      displayName: "MiMo V2.5"
+      contextLength: 1048576
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.40
+        cachedInputPer1M: 0.08
+        outputPer1M: 2.00
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "XiaomiMiMo/MiMo-V2.5"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "XiaomiMiMo/MiMo-V2.5"
+
+  mimo-v2p5-pro:
+    kind: text
+    # DeepInfra · XiaomiMiMo/MiMo-V2.5-Pro — 1.02T total / 42B active MoE, hybrid
+    # attention + multi-token prediction, tuned for complex agentic and
+    # software-engineering tasks. Text-only (no vision), no exposed thinking
+    # mode. 1,048,576-token context.
+    info:
+      displayName: "MiMo V2.5 Pro (Non-Thinking)"
+      contextLength: 1048576
+      maxOutputTokens: 131072
+      supportedParameters: *spStandard
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 1.00
+        cachedInputPer1M: 0.20
+        outputPer1M: 3.00
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "XiaomiMiMo/MiMo-V2.5-Pro"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "XiaomiMiMo/MiMo-V2.5-Pro"
+
+  ornith-1p0-35b:
+    kind: multimodal
+    # DeepInfra · deepreinforce-ai/Ornith-1.0-35B — MIT-licensed agentic coding
+    # model (RL post-training of Qwen3.5-35B-A3B MoE), hybrid Gated-DeltaNet
+    # attention, image + video understanding, reasoning + tool calling.
+    # 75.6 SWE-bench Verified / 64.2 Terminal-Bench 2.1 — beats Qwen3.5-397B on
+    # Terminal-Bench 2.1 despite being far smaller. 262,144-token context.
+    info:
+      displayName: "Ornith 1.0 35B"
+      contextLength: 262144
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.14
+        cachedInputPer1M: 0.05
+        outputPer1M: 1.00
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "deepreinforce-ai/Ornith-1.0-35B"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "deepreinforce-ai/Ornith-1.0-35B"
+
+  minimax-m3:
+    kind: multimodal
+    # DeepInfra · MiniMaxAI/MiniMax-M3 — ~428B total / 23B active MoE, mixed-
+    # modality (text/image/video) training from the first step, MiniMax Sparse
+    # Attention for long-context efficiency, strong coding/agentic benchmarks.
+    # No exposed thinking mode. Context configured at 524,288 tokens (catalog
+    # lists up to 1M; clamped like minimax-m2p5's 400k → 204,800 caveat).
+    info:
+      displayName: "MiniMax M3 (Non-Thinking)"
+      contextLength: 524288
+      maxOutputTokens: 131072
+      supportedParameters: *spStandard
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.30
+        cachedInputPer1M: 0.06
+        outputPer1M: 1.20
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "MiniMaxAI/MiniMax-M3"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "MiniMaxAI/MiniMax-M3"
+
+  claude-sonnet-5:
+    kind: multimodal
+    # DeepInfra · anthropic/claude-sonnet-5 — Anthropic's Sonnet-tier model
+    # resold via DeepInfra (a "Partner" model on their catalog), near-Opus
+    # quality on coding/agentic work, adaptive thinking, vision. DeepInfra's
+    # price matches Anthropic's own intro API rate ($2/$10, through
+    # 2026-08-31 per Anthropic's pricing table); cachedInputPer1M estimated at
+    # the standard ~10% cache-read ratio (unconfirmed on DeepInfra's page).
+    # 1,048,576-token context, 128k max output.
+    info:
+      displayName: "Claude Sonnet 5 (DeepInfra)"
+      contextLength: 1048576
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 2.00
+        cachedInputPer1M: 0.20
+        outputPer1M: 10.00
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "anthropic/claude-sonnet-5"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "anthropic/claude-sonnet-5"
+
+  claude-fable-5:
+    enabled: false                   # DISABLED for now — priced at $10/$50 per 1M (2x Sonnet 5's intro rate); holding off until we've validated demand. Re-enable to roll forward.
+    kind: multimodal
+    # DeepInfra · anthropic/claude-fable-5 — Anthropic's most capable widely
+    # released model, resold via DeepInfra. Long-running autonomous agentic
+    # work (multi-day sessions), vision (diagrams/charts/tables in files and
+    # PDFs), always-on adaptive thinking. DeepInfra's price matches Anthropic's
+    # own API rate ($10/$50); cachedInputPer1M estimated at the standard ~10%
+    # cache-read ratio (unconfirmed on DeepInfra's page). 1,048,576-token
+    # context, 128k max output.
+    info:
+      displayName: "Claude Fable 5 (DeepInfra)"
+      contextLength: 1048576
+      maxOutputTokens: 131072
+      supportedParameters: *spReasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 10.00
+        cachedInputPer1M: 1.00
+        outputPer1M: 50.00
+    backends:
+      deepinfra-01:
+        <<: *deepinfraBackendPrimary
+        modelNameOverride: "anthropic/claude-fable-5"
+      deepinfra-02:
+        <<: *deepinfraBackendSecondary
+        modelNameOverride: "anthropic/claude-fable-5"
+
   # ── Branded "Adorsys" model aliases ───────────────────────────────────────
   # Stable, user-facing model IDs whose BACKING model can be swapped later
   # WITHOUT changing the id a user/agent selected — only the
