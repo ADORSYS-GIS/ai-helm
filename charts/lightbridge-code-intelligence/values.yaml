@@ -1251,6 +1251,35 @@ lci:
   # Neo4j /data is NOT here — it's a StatefulSet volumeClaimTemplate on the neo4j controller
   # (see `statefulset.volumeClaimTemplates` above); neo4j runs with a writable rootfs so it
   # needs no scratch emptyDirs. advancedMounts scope each volume to one container.
+  # ── config-rollout: force the config-reading roles to restart on a read-once-at-boot config flip ──────
+  # The control plane reads FILE config (control-plane.json — egress.mode, dispatcher tuning, review knobs)
+  # ONCE at startup; it is deploy-scoped, NOT live-reloadable. But the real config lives in STANDALONE
+  # ConfigMaps rendered by templates/config.yaml, and editing a ConfigMap's *content* does NOT roll the
+  # pods that mount it — so a config flip (notably egress.mode drain↔restate) would silently no-op until
+  # the role happens to restart for another reason (next image deploy). That is a foot-gun: e.g. flipping
+  # egress.mode=restate while the reconciler keeps running the old `drain` config → double-posts.
+  #
+  # bjw-s can only auto-checksum ConfigMaps IT manages (this `configMaps` block), and its tpl runs in the
+  # subchart context — it cannot see the top-level `config.*` values that drive the standalone ConfigMaps,
+  # so it cannot content-hash them directly. Instead this is a tiny UNMOUNTED marker ConfigMap: listing it
+  # in `includeChecksumInControllers` makes bjw-s stamp a `checksum/configMaps` annotation on those roles'
+  # pods. **Bump `data.generation` in ai-helm-values in the SAME change as any read-once config flip** and
+  # all three config-reading roles roll together to pick it up. (Introducing the annotation also rolls them
+  # once on first deploy — brief RollingUpdate egress overlap, the same trade-off the roles already accept.)
+  configMaps:
+    config-rollout:
+      enabled: true
+      # Explicit stable name (`<release>-config-rollout`). Without this, bjw-s collapses a lone managed
+      # configMap to the bare release name, which would silently rename (and needlessly re-roll) if another
+      # bjw-s configMap is ever added. The checksum hashes only `data`, so the suffix doesn't affect it.
+      suffix: config-rollout
+      includeChecksumInControllers:
+        - control-plane
+        - dispatcher
+        - reconciler
+      data:
+        generation: "1"
+
   persistence:
     # control-plane.json (ADR-0021), mounted read-only into the serve + dispatcher roles. `name`
     # references the standalone ConfigMap from templates/config.yaml (not a bjw-created one).
