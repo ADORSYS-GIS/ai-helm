@@ -232,6 +232,19 @@ config:
     labelFindings: needs-review  # ≥1 finding of any severity
     labelError: bug        # ≥1 error-severity finding
 
+  # Egress routing (RFC-0005 Phase A / ADR-0074). Which path delivers `github_outbox` intents to the
+  # forge. `drain` (default) keeps the reconciler outbox drain (ADR-0059) as the sole egress path — no
+  # behavior change, the pilot is inert. Flip to `restate` in ai-helm-values to route egress through the
+  # PlatformEgress virtual object (per-`platform:installation` exclusivity makes the single-writer
+  # invariant STRUCTURAL). Rendered into control-plane.json for the producers (serve/dispatcher) AND into
+  # a dedicated egress-only ConfigMap for the reconciler (so it disables its drain in restate mode).
+  #   mode:              drain | restate
+  #   restateIngressUrl: the Restate server INGRESS (:8080). REQUIRED in restate mode unless the
+  #                      RESTATE_INGRESS_URL env is set on the producers; ignored in drain mode.
+  egress:
+    mode: drain
+    restateIngressUrl: ""
+
   # External-knowledge MCP servers (lightbridge-ci ADR-0066): already-running REMOTE HTTP MCP servers
   # the control plane discovers tools from + proxies calls to. Declare the servers here; each entry is
   # {name, url} (url must be http(s)://). The per-tier tool SELECTION (which discovered tools each tier
@@ -727,6 +740,12 @@ lci:
             CONTROL_PLANE_ROLE: "reconciler"
             RUST_LOG: "info"
             METRICS_ADDR: "0.0.0.0:9090"
+            # File config (ADR-0021): the reconciler reads an egress-ONLY control-plane.json (the
+            # <release>-reconciler-config ConfigMap, mounted below) so it can see egress.mode and turn
+            # its outbox drain OFF when the RFC-0005 pilot is active (egress.mode=restate). Egress-only
+            # on purpose — it must NOT read the `review` block or it would start applying outcome labels
+            # it doesn't today. Absent/drain → the drain stays on (no behavior change).
+            CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
             # Optional cadence knobs; absent → run_reconciler defaults (300s interval / 14-day window).
             # DATABASE_URL `value` (cluster host/namespace/db) → ai-helm-values; `dependsOn` stays here.
             DB_PASSWORD:
@@ -1244,6 +1263,17 @@ lci:
             - path: /etc/lightbridge
               readOnly: true
         dispatcher:
+          main:
+            - path: /etc/lightbridge
+              readOnly: true
+    # Egress-only control-plane.json for the reconciler (RFC-0005 Phase A / ADR-0074). Separate from the
+    # producers' ConfigMap above so the reconciler sees `egress` (to disable its drain in restate mode)
+    # but NOT the `review` block (which would make it start applying outcome labels — see config.yaml).
+    reconciler-config:
+      type: configMap
+      name: lightbridge-ci-reconciler-config
+      advancedMounts:
+        reconciler:
           main:
             - path: /etc/lightbridge
               readOnly: true
