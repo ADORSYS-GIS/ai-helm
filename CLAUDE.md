@@ -283,6 +283,8 @@ Co-Authored-By: Claude Opus <version> (1M context) <noreply@anthropic.com>
 
 See recent `git log` for the established length and style — bodies of 20–60 lines are common for non-trivial changes.
 
+**Conventional Commits are ENFORCED** (full spec: `docs/commit-conventions.md`). The `type` drives release-please/ADR-0082 version bumps (`feat`→minor, `fix`→patch, `!`/`BREAKING CHANGE:`→major; pre-1.0 charts bump minor), and the scope is the chart dir name (attribution is by file path). Because merges are squash (`COMMIT_OR_PR_TITLE`) — and merge/rebase are also enabled — **both the PR title and every commit must be valid**. Enforced by the local `commit-msg` hook (`git config core.hooksPath .githooks`) + the `Commit Lint` CI gate, both delegating to the single validator `tools/commit-lint.sh` (dependency-free POSIX sh — no npm). Change the rule in that one script; keep the doc's type table + `release-please-config.json` `changelog-sections` in sync.
+
 ## Local shell convention
 
 Default shell on the maintainer's laptop is **zsh** (not bash). For shell commands that depend on shell features, prefer POSIX-portable; otherwise note zsh assumptions explicitly. CI workflows use GitHub Actions' implicit `bash` — that's intentional, don't change it (the user's "use zsh locally" preference is local-only).
