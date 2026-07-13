@@ -32,6 +32,10 @@ folders:
   - name: ai-gateway
     title: "AI Gateway"
     resyncPeriod: 5m
+    # Folder-level RBAC: Admin=4 (full), Editor=2 (edit). Viewer is
+    # intentionally omitted — denies access to admin dashboards (per-user,
+    # cost-by-model, etc.) that show ALL users data. (ADR-0077)
+    permissions: "{\"items\":[{\"role\":\"Admin\",\"permission\":4},{\"role\":\"Editor\",\"permission\":2}]}"
   - name: applications
     title: "Applications"
     resyncPeriod: 5m
@@ -42,6 +46,12 @@ folders:
   - name: collectors
     title: "Collectors & Tracing"
     resyncPeriod: 5m
+  - name: my-usage
+    title: "My Usage"
+    resyncPeriod: 5m
+    # Folder-level RBAC: Admin=4 (full), Editor=2 (edit), Viewer=1 (view).
+    # All authenticated users (Viewer) can see their own usage. (ADR-0077)
+    permissions: "{\"items\":[{\"role\":\"Admin\",\"permission\":4},{\"role\":\"Editor\",\"permission\":2},{\"role\":\"Viewer\",\"permission\":1}]}"
 
 # Dashboards. Each entry becomes one GrafanaDashboard CR. Supply the JSON via
 # `file:` (preferred — keeps the source diffable in git), `json:` (inline) or
@@ -108,6 +118,12 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/ratelimit-quota.json
     resyncPeriod: 5m
+  # Auth-scoped personal usage dashboard (ADR-0077). All LogQL queries
+  # filter on email="${__user.email}" — a server-controlled Grafana
+  # built-in variable. No Grafana config changes needed.
+  - name: envoy-ai-gateway-my-usage
+    folderRef: my-usage
+    file: files/envoy-ai-gateway/my-usage.json
   # Phoenix-style global chat overview (embeddings excluded), no input
   # variables. Loki/Mimir aggregates + a live Tempo trace feed reading the
   # AI Gateway ext-proc's OpenInference spans (full request/response content
