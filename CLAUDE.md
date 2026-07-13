@@ -65,7 +65,7 @@ for cf in charts/*/Chart.yaml; do c=$(dirname "$cf"); n=$(yq e .name "$cf")
   else helm lint "$c" $sf >/dev/null && helm template x "$c" --dry-run >/dev/null || echo "FAIL: $n"; fi; done
 ```
 
-There is no `npm`, no `pytest`, no `cargo`, no `go build` in this repo. The dashboards Python project at `tools/dashboards/` is the only code that runs; everything else is YAML rendered by Helm. **CI gates** (`.github/workflows/`): `helm-lint` (per-chart `helm lint` + `helm template --dry-run`; `--strict` only for charts with own `templates/`, render-only leaves go through their `ci/*-values.yaml` fixtures — see the tool-quirks note below), `dashboards-drift` (`uv run dashboards check`), `security` (scans), `release-helm-charts` (non-strict lint + Trivy config scan + package on tag), `opencode` (the agent/CI rules — see `.github/workflows/opencode.yml`, the canonical agent rules; the stale `.opencode/README.md` is unrelated).
+There is no `npm`, no `pytest`, no `cargo`, no `go build` in this repo. The dashboards Python project at `tools/dashboards/` is the only code that runs; everything else is YAML rendered by Helm. **CI gates** (`.github/workflows/`): `helm-lint` (per-chart `helm lint` + `helm template --dry-run`; `--strict` only for charts with own `templates/`, render-only leaves go through their `ci/*-values.yaml` fixtures — see the tool-quirks note below), `dashboards-drift` (`uv run dashboards check`), `security` (scans), `release-helm-charts` (non-strict lint + Trivy config scan + package on tag), `opencode` (the agent/CI rules — see `.github/workflows/opencode.yml`, the canonical agent rules; the stale `.opencode/README.md` is unrelated). Two more run on push-to-main (not PR gates): `publish-charts-oci` (ADR-0055 OCI publish) and `release-please` (ADR-0082 — `googleapis/release-please-action@v5`, config `release-please-config.json` + `.release-please-manifest.json`; grooms ONE Conventional-Commits changelog/version PR that owns only each chart's `MAJOR.MINOR` floor + `CHANGELOG.md` — publish still derives the deployed PATCH from commit-count, so the PATCH release-please writes into `Chart.yaml` is cosmetic; `bjw-common`/`bjw-template` are excluded because dependents exact-pin them).
 
 ## The orchestrator-plus-leaves pattern (used for `ai-models` and `librechart`)
 
@@ -282,6 +282,8 @@ Co-Authored-By: Claude Opus <version> (1M context) <noreply@anthropic.com>
 (use the running model version, e.g. `Opus 4.8`)
 
 See recent `git log` for the established length and style — bodies of 20–60 lines are common for non-trivial changes.
+
+**Conventional Commits are ENFORCED** (full spec: `docs/commit-conventions.md`). The `type` drives release-please/ADR-0082 version bumps (`feat`→minor, `fix`→patch, `!`/`BREAKING CHANGE:`→major; pre-1.0 charts bump minor), and the scope is the chart dir name (attribution is by file path). Because merges are squash (`COMMIT_OR_PR_TITLE`) — and merge/rebase are also enabled — **both the PR title and every commit must be valid**. Enforced by the local `commit-msg` hook (`git config core.hooksPath .githooks`) + the `Commit Lint` CI gate, both delegating to the single validator `tools/commit-lint.sh` (dependency-free POSIX sh — no npm). Change the rule in that one script; keep the doc's type table + `release-please-config.json` `changelog-sections` in sync.
 
 ## Local shell convention
 
