@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Local commit-msg hook: reject a non-Conventional-Commit message at `git commit`
+# time. Delegates to the shared validator so it can never drift from CI.
+#
+# Enable once per clone (hooks are not installed automatically):
+#   git config core.hooksPath .githooks
+#
+# Bypass a single commit (rarely needed):  git commit --no-verify
+# Full spec: docs/commit-conventions.md
+exec "$(git rev-parse --show-toplevel)/tools/commit-lint.sh" --file "$1"

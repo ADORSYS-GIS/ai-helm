@@ -1,0 +1,68 @@
+name: Commit Lint
+
+# Enforce Conventional Commits (docs/commit-conventions.md) so every subject that
+# can land on `main` is parseable by release-please (ADR-0082).
+#
+# The repo allows squash, merge, AND rebase merges, and squash uses
+# COMMIT_OR_PR_TITLE — so BOTH surfaces can become the commit on main:
+#   • the PR title (squash of a multi-commit PR), and
+#   • each individual commit (rebase/merge, or a single-commit squash).
+# We validate both. Non-merge commits + the PR title must all conform, or the
+# check fails and the PR can't merge (once this is a required status check).
+#
+# Zero third-party actions / no npm — it calls the same tools/commit-lint.sh the
+# local hook uses, so the rule lives in exactly one place.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commit-lint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for the PR commit range)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate PR title + every commit
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          flag=$(mktemp)   # marker file: the commit loop runs in a pipe subshell
+
+          echo "── PR title ──"
+          ./tools/commit-lint.sh --message "$PR_TITLE" || echo bad >> "$flag"
+
+          echo "── commits in ${BASE_SHA}..${HEAD_SHA} (merge commits skipped) ──"
+          # %h<TAB>%p<TAB>%s : the parents column (%p) lets us skip merge commits (2+ parents).
+          git log --format='%h%x09%p%x09%s' "${BASE_SHA}..${HEAD_SHA}" | while IFS="$(printf '\t')" read -r sha parents subject; do
+            case "$parents" in *" "*) echo "  ↷ $sha  (merge, skipped)"; continue ;; esac
+            if ./tools/commit-lint.sh --message "$subject" >/dev/null 2>&1; then
+              echo "  ✓ $sha  $subject"
+            else
+              echo "  ✗ $sha  $subject"
+              echo bad >> "$flag"
+            fi
+          done
+
+          if [ -s "$flag" ]; then
+            echo ""
+            echo "Commit Lint failed. Fix the offending subject(s):"
+            echo "  • PR title: edit the PR title on GitHub."
+            echo "  • commits : git commit --amend (last) or git rebase -i (older), then force-push."
+            echo "  • spec    : docs/commit-conventions.md"
+            exit 1
+          fi
+          echo "All subjects are valid Conventional Commits."

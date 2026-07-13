@@ -47,4 +47,26 @@ spec:
     - port: metrics
       path: /metrics
       interval: {{ $interval }}
+{{- /* notifier (ADR-0079) → the notifier metrics Service (:9090, port name `metrics`) added in values.
+       Gated ALSO on the notifier Service being enabled so we never emit a ServiceMonitor whose
+       Endpoints target (the Service) doesn't exist — a defaults-only render has the Service off. */}}
+{{- if (index .Values "lci" "service" "notifier" "enabled") }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $fullname }}-notifier
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $wave }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $fullname }}
+      app.kubernetes.io/service: {{ $fullname }}-notifier
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ $interval }}
+{{- end }}
 {{- end }}

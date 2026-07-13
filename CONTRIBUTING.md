@@ -29,25 +29,40 @@ You need:
 
 ## Commit messages
 
-Conventional Commits. Common prefixes:
-
-| Prefix | When to use |
-|---|---|
-| `feat(scope):` | New user-facing behavior (a new chart, a new dashboard, a new endpoint) |
-| `fix(scope):` | Bug fix |
-| `chore(scope):` | Maintenance: dep bumps, CI tweaks, file renames |
-| `refactor(scope):` | Restructure with no behavior change (chart split, helper extraction) |
-| `docs(scope):` | Documentation only |
-
-Body: explain **why**, not what (the diff shows what). When a commit
-implements an ADR, link it: `(ADR-NNNN)`. Long bodies are encouraged for
-non-trivial changes — see recent commit history for the style.
-
-Co-author trailer for AI-assisted commits:
+**[Conventional Commits](https://www.conventionalcommits.org/), enforced.** The
+full spec — every type, what it does to release-please/version bumps, scope rules,
+breaking changes, and the enforcement — lives in
+[`docs/commit-conventions.md`](docs/commit-conventions.md). The short version:
 
 ```
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+<type>[optional scope][!]: <description>
 ```
+
+| Type | When to use | release-please effect |
+|---|---|---|
+| `feat(scope):` | New user-facing behavior (a new chart, dashboard, endpoint) | chart **MINOR** bump |
+| `fix(scope):` | Bug fix | patch (cosmetic — publish derives the deployed patch) |
+| `docs(scope):` / `refactor` / `perf` / `revert` | Docs-only / restructure / perf / revert | changelog only |
+| `chore` / `ci` / `build` / `test` / `style` | Maintenance, CI, deps, tests, formatting | none (hidden) |
+| any `!` or `BREAKING CHANGE:` footer | Breaks consumers | **MAJOR** (pre-1.0 chart: minor) |
+
+- **Scope = the chart directory name** for chart changes (`feat(core-gateway): …`);
+  attribution is by file path, so a commit touching `charts/<x>/**` versions `<x>`.
+- **Body: explain *why*** (the diff shows what). Link the ADR: `(ADR-NNNN)`. 20–60
+  line bodies are common for non-trivial changes.
+- **Because we squash-merge, the PR title must also be a valid Conventional Commit**
+  — it’s what lands on `main` and feeds release-please.
+
+Co-author trailer for AI-assisted commits (running model version):
+
+```
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+```
+
+**Enforcement** (details in the doc): a local `commit-msg` hook rejects bad
+messages at `git commit` — enable once with `git config core.hooksPath .githooks` —
+and the `Commit Lint` CI gate validates the PR title + every commit on each PR.
+Both call the same validator, [`tools/commit-lint.sh`](tools/commit-lint.sh).
 
 ## Architecture Decision Records (ADRs)
 

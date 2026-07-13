@@ -1,0 +1,53 @@
+name: Release Please
+
+# Auto-maintains a single "release" PR from Conventional Commits (googleapis/
+# release-please-action). On every push to main it (re)opens/updates ONE PR that,
+# per changed chart, bumps charts/<name>/Chart.yaml `version:` and appends its
+# CHANGELOG.md. Merging that PR cuts per-chart GitHub Releases + tags
+# (<chart>-vX.Y.Z).
+#
+# ── Why this coexists with ADR-0055 (does NOT supersede it) ──────────────────
+# ADR-0055's Publish-Charts-to-OCI derives the DEPLOYED version as
+#   <MAJOR.MINOR from Chart.yaml>.<git-rev-list --count of the chart dir>
+# i.e. it reads only the MAJOR.MINOR floor and always recomputes PATCH from the
+# commit count. So release-please here owns exactly the MAJOR.MINOR floor
+# (feat → minor, breaking → major; pre-1.0 charts bump minor via
+# bump-minor-pre-major) and the human-readable CHANGELOG; the PATCH component it
+# writes into Chart.yaml is cosmetic — the OCI publish ignores it and keeps
+# deriving the deployed patch from commit-count. Merging a release PR touches
+# charts/**, which triggers publish-charts-oci.yml → the floor bump deploys.
+# Nothing is committed back BY the publish workflow, so there is no loop (ADR-0082).
+#
+# Config: release-please-config.json + .release-please-manifest.json (repo root).
+# bjw-common / bjw-template are intentionally NOT tracked — dependents pin them at
+# an EXACT version (`4.6.2`), so a release-please bump would break every
+# dependent's `helm dependency build`. They stay deliberately hand-versioned.
+#
+# Token note: uses the default GITHUB_TOKEN. PRs it opens therefore do NOT trigger
+# other workflows (GitHub anti-recursion) — intended: the release PR is a
+# version/changelog bump that needs no CI, and it never trips the governance gate
+# (governance.yml is pull_request-triggered). A human still reviews + merges it,
+# and that merge (a push to main) fires publish-charts-oci.yml normally.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the release branch + create tags/GitHub Releases
+  pull-requests: write # open/groom the release PR
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
