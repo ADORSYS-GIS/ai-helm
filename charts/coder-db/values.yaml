@@ -1,0 +1,153 @@
+# coder-db — CNPG Cluster (coder-db) + barman ObjectStore + ScheduledBackup +
+# PodMonitor + managed role `coder` + Database CR. Leaf chart of the coder
+# orchestrator (ADR-0082). Follows the lightbridge-db pattern (ADR-0019).
+#
+# Namespace is `coder` (the orchestrator targets that namespace; these CRs
+# pin it explicitly).
+
+resources:
+  # ────────────────────────────────────────────────────────────────────
+  # The primary CNPG cluster. Instances 2, postgresql:18.4-system-trixie,
+  # 5Gi storage, archive_timeout 30min, the barman WAL-archiver plugin.
+  # Backs up via the barman ObjectStore below.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: coder-db
+      namespace: coder
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      instances: 2
+      imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+      storage:
+        size: "5Gi"
+      plugins:
+        - name: barman-cloud.cloudnative-pg.io
+          enabled: true
+          isWALArchiver: true
+          parameters:
+            barmanObjectName: coder-db
+            serverName: coder-db
+      postgresql:
+        parameters:
+          archive_timeout: "30min"
+      resources:
+        limits:
+          cpu: 300m
+          memory: 1Gi
+        requests:
+          cpu: 200m
+          memory: 500Mi
+      managed:
+        roles:
+          # Dedicated login role for the Coder app. Password from the
+          # basic-auth Secret `coder-db-role` (ESO-provisioned in
+          # charts/coder-secrets). CNPG creates/maintains the role and the
+          # `coder` Database (below) is owned by it.
+          - name: coder
+            ensure: present
+            login: true
+            passwordSecret:
+              name: coder-db-role
+  # ────────────────────────────────────────────────────────────────────
+  # barman-cloud ObjectStore — Hetzner Object Storage (Ceph-RGW).
+  # Shared bucket `ssegning-k8s-state`, endpoint nbg1.your-objectstorage.com,
+  # same pattern as lightbridge-db's backup. 7d retention to keep the catalog
+  # small (Hetzner rate-limits large catalogs → backup prune failures).
+  # No top-level `region` field — not in the barmancloud ObjectStore schema.
+  # ⚠️ The barman-cloud plugin's defaulting webhook injects an
+  # `s3Credentials.region` ref → {name: coder-cnpg-s3, key: s3_region_name}
+  # server-side, so the `coder-cnpg-s3` Secret MUST carry `s3_region_name`
+  # (provisioned as a literal in charts/coder-secrets). No trailing slash on
+  # destinationPath (Ceph ListObjectsV2 quirk).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: barmancloud.cnpg.io/v1
+    kind: ObjectStore
+    metadata:
+      name: coder-db
+      namespace: coder
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      retentionPolicy: "7d"
+      configuration:
+        destinationPath: s3://ssegning-k8s-state/coder-db
+        endpointURL: https://nbg1.your-objectstorage.com
+        data:
+          jobs: 1
+          compression: gzip
+        s3Credentials:
+          accessKeyId:
+            name: coder-cnpg-s3
+            key: s3_access_key_id
+          secretAccessKey:
+            name: coder-cnpg-s3
+            key: s3_secret_access_key
+  # ────────────────────────────────────────────────────────────────────
+  # Scheduled backup — every 6h. CNPG cron is 6-field
+  # (sec min hour dom mon dow); "0 0 */6 * * *" = 00:00 / 06:00 / 12:00 / 18:00.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: ScheduledBackup
+    metadata:
+      name: coder-db-scheduled
+      namespace: coder
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      immediate: true
+      schedule: "0 0 */6 * * *"
+      backupOwnerReference: self
+      cluster:
+        name: coder-db
+      method: plugin
+      pluginConfiguration:
+        name: barman-cloud.cloudnative-pg.io
+  # ────────────────────────────────────────────────────────────────────
+  # PodMonitor so Grafana Alloy scrapes the CloudNativePG per-instance
+  # metrics exporter (port 9187, name "metrics"). Same pattern as
+  # lightbridge-db.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: coder-db
+      namespace: coder
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+    spec:
+      selector:
+        matchLabels:
+          cnpg.io/cluster: coder-db
+      podMetricsEndpoints:
+        - port: metrics
+          interval: 30s
+  # ────────────────────────────────────────────────────────────────────
+  # Coder Database CR — a `coder` database owned by the managed `coder` role
+  # above. CNPG creates the database and grants ownership. The Coder app
+  # connects to `coder` database via the connection URL assembled in
+  # charts/coder-secrets.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: coder
+      namespace: coder
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: coder-db
+      name: coder
+      owner: coder
+      ensure: present

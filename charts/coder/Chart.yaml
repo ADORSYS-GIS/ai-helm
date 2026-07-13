@@ -1,0 +1,37 @@
+apiVersion: v2
+name: coder
+description: |
+  App-of-Apps orchestrator for the Coder platform. Renders THREE ArgoCD
+  Application CRs:
+
+    1. coder-secrets — the ExternalSecrets (OIDC creds, CNPG S3 backup creds,
+                       DB role password + connection URL) the DB + app depend
+                       on (leaf chart, sync-wave 0)
+    2. coder-db      — CloudNativePG Cluster (coder-db) + barman ObjectStore +
+                      ScheduledBackup + PodMonitor + a managed `coder` role +
+                      Database CR (leaf chart, sync-wave 1)
+    3. coder-app     — the Coder workload (upstream Helm chart
+                      oci://ghcr.io/coder/chart/coder, deployed as an ArgoCD
+                      source) with ingress TLS Certificates via the per-env
+                      kustomize overlay (sync-wave 2)
+
+  Same App-of-Apps pattern as lightbridge (ADR-0019 canonical). Re-introduces
+  Coder after ADR-0027 removal — see ADR-0082.
+type: application
+version: 1.0.0
+appVersion: "2.33.7"
+keywords:
+  - coder
+  - dev-environments
+  - ai-agents
+  - workspaces
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

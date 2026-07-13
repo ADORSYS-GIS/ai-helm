@@ -1093,11 +1093,23 @@ applications:
     destination:
       namespace: converse-mcp
 
-  # Coder was REMOVED 2026-06-06 (ADR-0027 supersedes ADR-0019) — not in use
-  # for now. The charts/coder + charts/coder-db leaf charts and the
-  # environments/*/deps/coder overlay were deleted; the coder orchestrator and
-  # its children (coder-app, coder-db) are pruned by ArgoCD. Re-introduce via a
-  # new ADR if Coder comes back.
+  # --- Coder App-of-Apps orchestrator (ADR-0083, re-introduction) ---
+  # Renders three child Application CRs (coder-secrets wave 0, coder-db wave 1,
+  # coder-app wave 2) from charts/coder. As a control object (it emits
+  # Application CRs) this entry is controlPlane: true — the children themselves
+  # target home-remote. OCI mode (ADR-0055): orchestrator chart floats from OCI
+  # so its App-of-Apps children config deploys continuously. Children: secrets +
+  # db leaf charts from OCI, the app's upstream Coder chart (oci://ghcr.io/coder/
+  # chart/coder, pinned) + its cert overlay from ai-helm-values (see
+  # charts/coder values). Supersedes ADR-0027 removal.
+  - name: coder
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: coder
+    releaseName: coder
+    destination:
+      namespace: coder
 
 extraObjects:
   # ==========================================

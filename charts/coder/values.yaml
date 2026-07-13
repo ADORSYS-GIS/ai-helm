@@ -1,0 +1,85 @@
+# coder App-of-Apps orchestrator — renders three child Application CRs
+# (coder-secrets + coder-db + coder-app). Follows the lightbridge canonical
+# pattern (ADR-0019). The chart owns no workload resources; it owns the three
+# child Applications.
+#
+# Re-introduces Coder after ADR-0027 removal — see ADR-0082.
+
+# ────────────────────────────────────────────────────────────────────────
+# Shared ArgoCD wiring for all child Applications.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  project: ai
+  # OCI chart-float (ADR-0055). Two sources of truth:
+  #  • chartRegistry/chartVersionRange — the secrets + db leaf charts float from
+  #    OCI (full chart path in repoURL + chart "."; template builds
+  #    `<chartRegistry>/<chartName>`).
+  #  • repoURL/targetRevision — the app child's cert/deps overlay (Source B) +
+  #    $values ref (Source C), from ai-helm-values @ main (where environments/ lives).
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: coder
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# ────────────────────────────────────────────────────────────────────────
+# coder-secrets child — the ExternalSecrets leaf chart (this repo).
+# Lowest sync-wave: the OIDC creds, DB role password + connection URL, and CNPG
+# S3 backup creds must exist before the DB (barman) and the app start.
+# ────────────────────────────────────────────────────────────────────────
+secrets:
+  enabled: true
+  appName: coder-secrets
+  chartName: coder-secrets   # OCI chart name
+  releaseName: coder-secrets
+  syncWave: "0"
+
+# ────────────────────────────────────────────────────────────────────────
+# coder-db child — the CloudNativePG database leaf chart (this repo).
+# Lower sync-wave than the app so Postgres is up before Coder starts.
+# ────────────────────────────────────────────────────────────────────────
+db:
+  enabled: true
+  appName: coder-db
+  chartName: coder-db   # OCI chart name
+  releaseName: coder-db
+  syncWave: "1"
+  # Ignore the CNPG operator's defaulted fields on the Cluster so it doesn't sit
+  # permanently OutOfSync (the operator, field manager `manager`, adds affinity/
+  # bootstrap/probes/primaryUpdateStrategy/… that the chart never declares).
+  ignoreDifferences:
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      managedFieldsManagers:
+        - manager
+
+# ────────────────────────────────────────────────────────────────────────
+# coder-app child — the upstream Coder workload (Helm chart, deployed as an
+# ArgoCD source — NOT a Helm dependency, so ArgoCD pulls it directly) + the
+# ingress TLS Certificates via the kustomize overlay. releaseName stays `coder`
+# so workload resource names match the namespace.
+# ────────────────────────────────────────────────────────────────────────
+app:
+  enabled: true
+  appName: coder-app
+  releaseName: coder
+  syncWave: "2"
+  # Upstream Coder chart from the Coder OCI registry (NOT the adorsys-gis
+  # registry). Pinned to a stable version — NOT floated like the secrets/db
+  # leaves.
+  chart:
+    repoURL: oci://ghcr.io/coder/chart/coder
+    targetRevision: "2.33.7"
+  # App-scoped deps (ingress Certificates) — kustomize overlay in ai-helm-values,
+  # added as a second source (issuer patched per env). ADR-0018 pattern.
+  depsOverlay: environments/prod/deps/coder

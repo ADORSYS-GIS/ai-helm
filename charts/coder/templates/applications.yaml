@@ -1,0 +1,124 @@
+{{- /*
+coder App-of-Apps orchestrator — renders three child Application CRs:
+  • coder-secrets — local ExternalSecrets leaf chart (single source, OCI float).
+  • coder-db      — local CNPG leaf chart (single source, OCI float).
+  • coder-app     — upstream Coder chart (deployed as an ArgoCD source) + the
+                    ingress Certificates via the per-env kustomize overlay
+                    (second source).
+All target home-remote (ADR-0017 guard via coder.argocd.destinationClusterRef).
+Rendered as direct Application CRs rather than an ApplicationSet because the
+children are fixed + heterogeneous — see ADR-0019 (lightbridge is the canonical
+example). Re-introduces Coder after ADR-0027 — see ADR-0082.
+*/ -}}
+{{- $a := .Values.argocd -}}
+{{- if .Values.secrets.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.secrets.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.secrets.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.secrets.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
+    helm:
+      releaseName: {{ .Values.secrets.releaseName | quote }}
+  destination:
+    {{- include "coder.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.db.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.db.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.db.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.db.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
+    helm:
+      releaseName: {{ .Values.db.releaseName | quote }}
+  destination:
+    {{- include "coder.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  {{- /*
+    The CNPG operator (field manager `manager`) stamps dozens of default fields
+    onto the Cluster (affinity, bootstrap, probes, primaryUpdateStrategy, …) that
+    the chart doesn't declare → permanent cosmetic OutOfSync (and selfHeal churn).
+    Ignore fields owned by the operator's field manager so the Cluster reads
+    Synced. */}}
+  {{- with .Values.db.ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.app.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.app.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.app.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  sources:
+    # Source A — the upstream Coder workload (OCI Helm chart as an ArgoCD
+    # source; full chart path in repoURL + chart "." per ADR-0055). The Coder
+    # chart is from the Coder OCI registry, NOT the adorsys-gis registry.
+    # releaseName stays `coder` so workload resource names match the namespace.
+    # Values live in ai-helm-values (ADR-0056), read via the $values ref
+    # (Source C) — not inline.
+    - repoURL: {{ .Values.app.chart.repoURL | quote }}
+      chart: "."
+      targetRevision: {{ .Values.app.chart.targetRevision | quote }}
+      helm:
+        releaseName: {{ .Values.app.releaseName | quote }}
+        valueFiles:
+          - $values/environments/{{ $a.env | default "prod" }}/values/coder-app.yaml
+        ignoreMissingValueFiles: true
+    # Source B — app-scoped deps (ingress Certificates) via the per-env
+    # kustomize overlay in ai-helm-values; issuer patched per environment.
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      path: {{ .Values.app.depsOverlay | quote }}
+    # Source C — $values ref: the workload values file (ai-helm-values, ADR-0056).
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      ref: values
+  destination:
+    {{- include "coder.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
