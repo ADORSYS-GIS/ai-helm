@@ -29,6 +29,10 @@ secrets:
   githubAppIdProperty: ""
   githubAppPrivateKeyProperty: ""
   githubWebhookProperty: ""
+  # GitLab: API token + webhook secret, same SM bucket as GitHub (codeintelKey).
+  # Empty → the GitLab ExternalSecret doesn't render (GitLab disabled). → ai-helm-values.
+  gitlabTokenProperty: ""
+  gitlabWebhookProperty: ""
   # TRANSITIONAL — consumed only by the outgoing better-auth image (the OIDC web image is a PUBLIC
   # client + PKCE, ADR-0014, and needs no client secret). Remove once the OIDC image is confirmed live.
   betterAuthProperty: ""
@@ -111,6 +115,10 @@ config:
   # the registered GitHub App's handle (a different deployment registers its own app). → ai-helm-values.
   # Keep in sync with the env literals GITHUB_APP_HANDLE (control-plane) + GITHUB_APP_INSTALL_URL (web).
   appHandle: ""
+
+  # GitLab bot @mention handle. Default `lightbridge-bot`. → ai-helm-values;
+  # keep in sync with GITLAB_BOT_HANDLE (control-plane).
+  gitlabBotHandle: ""
 
   # Reviewer guidance — the mounted system-prompt template (env-substituted): the agent's persona and
   # operating instructions, the SOURCE OF TRUTH for its behaviour. ADR-0037: the runner has NO built-in
@@ -355,6 +363,26 @@ lci:
             # DEPLOYMENT-SPECIFIC → ai-helm-values; keep in sync with `config.appHandle` + the web
             # GITHUB_APP_INSTALL_URL. Empty here.
             GITHUB_APP_HANDLE: ""
+            # GitLab @mention handle. → ai-helm-values; keep in sync with `config.gitlabBotHandle`.
+            # Empty → binary default `lightbridge-bot`.
+            GITLAB_BOT_HANDLE: ""
+            # GitLab API URL. Default `https://gitlab.com/api/v4`. → ai-helm-values.
+            # Empty → binary default.
+            GITLAB_API_URL: ""
+            # GitLab API token (PRIVATE-TOKEN header). Absent → GitLab is disabled (the
+            # GitlabClient::from_env() returns None). Sourced from the `-gitlab` ExternalSecret.
+            GITLAB_API_TOKEN:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-gitlab'
+                  key: api-token
+            # GitLab webhook secret. Absent → GitLab
+            # webhooks are rejected. Sourced from the `-gitlab` ExternalSecret.
+            GITLAB_WEBHOOK_SECRET:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-gitlab'
+                  key: webhook-secret
             # Authorization (ADR-0023): the dotted token claim carrying the caller's permissions list.
             # The IdP/gateway must emit this; endpoints fail closed without it. Default `permissions`.
             PERMISSIONS_CLAIM: "permissions"
@@ -476,6 +504,9 @@ lci:
             # Settings link. DEPLOYMENT-SPECIFIC (https://github.com/apps/<handle>) → ai-helm-values;
             # keep in sync with `config.appHandle` + the control-plane GITHUB_APP_HANDLE. Empty here.
             GITHUB_APP_INSTALL_URL: ""
+            # GitLab base URL for repo/target links in the dashboard. Self-hosted deployments set
+            # this to their instance origin (e.g. `https://gitlab.example.com`); unset → `https://gitlab.com`.
+            NEXT_PUBLIC_GITLAB_URL: ""
             # Authorization (ADR-0023): the dotted token claim carrying the caller's permissions. The
             # console reads it to show capability-gated affordances; keep in sync with the control
             # plane's PERMISSIONS_CLAIM. Default `permissions`.
@@ -678,6 +709,14 @@ lci:
             AGENT_REVIEW_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-review:latest"
             # Secret (agents ns) whose ca.crt the runner mounts to trust the HTTPS gateway.
             AGENT_CA_SECRET: "lightbridge-agent-ca"
+            # GitLab API token + URL. The dispatcher posts reactions via the platform dispatch
+            # table, so it needs the GitLab client. Absent → GitLab reactions are skipped.
+            GITLAB_API_TOKEN:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-gitlab'
+                  key: api-token
+            GITLAB_API_URL: ""
             # FQDN, not the bare Service name: the runner Jobs run in the lightbridge-agents
             # namespace, so a same-namespace short name would not resolve to the control-plane
             # Service in `converse`.
@@ -713,14 +752,15 @@ lci:
             capabilities:
               drop: [ALL]
 
-    # Reconciler (ADR-0058/0059): a SINGLE replica that owns ALL GitHub egress — it drains the
-    # github_outbox and delivers reviews/replies/reactions/failure-notices, AND runs the feedback poll
+    # Reconciler (ADR-0058/0059): a SINGLE replica that owns ALL platform egress — it drains the
+    # outbox and delivers reviews/replies/reactions/failure-notices, AND runs the feedback poll
     # (reads reactions on our comments into review_feedback, ADR-0035). SAME image as control-plane/
     # dispatcher (role-selected via CONTROL_PLANE_ROLE=reconciler; `poller` is the legacy alias the
-    # binary still accepts). It holds the GitHub App key (to mint installation tokens); ONE replica so
-    # egress isn't doubled (ADR-0002 keeps the credential off the multi-replica serve pods + dispatcher).
+    # binary still accepts). It holds the GitHub App key (to mint installation tokens) + the GitLab API
+    # token; ONE replica so egress isn't doubled (ADR-0002 keeps the credential off the
+    # multi-replica serve pods + dispatcher).
     # RollingUpdate (not the bjw-template default of Recreate): avoids a zero-pod gap on every
-    # rollout, at the cost of a brief old+new pod overlap where GitHub egress could theoretically
+    # rollout, at the cost of a brief old+new pod overlap where platform egress could theoretically
     # double up for a moment — same accepted trade-off as control-plane above.
     reconciler:
       type: deployment
@@ -768,6 +808,15 @@ lci:
                 secretKeyRef:
                   name: '{{ .Release.Name }}-github'
                   key: app-private-key
+            # GitLab API token + URL. The reconciler owns ALL platform egress, so it needs the
+            # GitLab client to post reviews/reactions and poll 👍/👎 feedback. Absent → GitLab egress
+            # is skipped.
+            GITLAB_API_TOKEN:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-gitlab'
+                  key: api-token
+            GITLAB_API_URL: ""
           probes:
             liveness:
               enabled: true
@@ -870,6 +919,15 @@ lci:
                 secretKeyRef:
                   name: '{{ .Release.Name }}-github'
                   key: app-private-key
+            # GitLab API token + URL. The restate-worker serves PlatformEgress which posts
+            # intents, so it needs the GitLab client alongside the GitHub App key. Absent → GitLab
+            # egress degrades (Health-only for GitLab rows).
+            GITLAB_API_TOKEN:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-gitlab'
+                  key: api-token
+            GITLAB_API_URL: ""
           probes:
             liveness:
               enabled: true
