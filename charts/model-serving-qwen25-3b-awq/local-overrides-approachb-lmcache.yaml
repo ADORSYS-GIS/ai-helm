@@ -1,0 +1,134 @@
+# Local overrides for Experiment B — TREATMENT (APC enabled + LMCache, tight VRAM)
+#
+# Experiment B keeps vLLM's APC ENABLED on both variants and forces its
+# eviction under a tight GPU KV budget + high concurrency. When APC misses
+# (evicted prefix), LMCache's CPU RAM tier (L1) retrieves the cached KV and
+# injects it into the GPU — skipping prefill. This mirrors real production:
+# GPU prefix cache misses under load, LMCache CPU tier saves the day.
+#
+# Key differences vs Experiment 0 (APC + LMCache, normal VRAM):
+#   - --gpu-memory-utilization=0.55  (was 0.90) → shrinks KV budget
+#   - --max-num-seqs=4               (was 2)   → more concurrent pressure
+#   - --max-num-seqs=8               (was 2)   → more concurrent pressure
+#   - LMCache env tuned for bigger prefixes (CHUNK_SIZE=128, LOCAL_CPU=True,
+#     MAX_LOCAL_CPU_SIZE=6, LOCAL_DISK + disk tier, MIN_RETRIEVE_TOKENS=0)
+#
+# Usage:
+#   helm upgrade --install model-serving-qwen25-3b-awq ./charts/model-serving-qwen25-3b-awq \
+#     -n custom-ai-ops \
+#     -f charts/model-serving-qwen25-3b-awq/local-overrides-approachb-lmcache.yaml
+
+apiKey:
+  enabled: true
+  secretName: vllm-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: false
+
+seedJob:
+  enabled: true
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: false
+
+pvc:
+  enabled: true
+  name: qwen25-3b-awq-models
+  storageClassName: local-path
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+modelServing:
+  controllers:
+    main:
+      containers:
+        model:
+          image:
+            repository: lmcache/vllm-openai
+            tag: v0.5.1
+            pullPolicy: IfNotPresent
+          args:
+            - --model=/mnt/models
+            - --served-model-name=qwen25-3b-awq
+            - --port=8080
+            - --quantization=awq
+            - --dtype=float16
+            # *** Experiment B: tight KV budget to force APC eviction ***
+            - --max-model-len=16384
+            - --max-num-seqs=8
+            - --gpu-memory-utilization=0.55
+            - --enforce-eager
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            # APC stays ENABLED — Experiment B forces its eviction under
+            # memory pressure so LMCache's CPU tier becomes the fallback.
+            # Enable in-process LMCache (single replica, store + retrieve).
+            - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+          env:
+            LMCACHE_USE_EXPERIMENTAL: "False"
+            LMCACHE_CHUNK_SIZE: "128"
+            LMCACHE_LOCAL_CPU: "True"
+            LMCACHE_MAX_LOCAL_CPU_SIZE: "6"
+            LMCACHE_LOCAL_DISK: "file:///tmp/lmcache-disk"
+            LMCACHE_MAX_LOCAL_DISK_SIZE: "10"
+            LMCACHE_SAVE_DECODE_CACHE: "False"
+            LMCACHE_MIN_RETRIEVE_TOKENS: "0"
+            LMCACHE_LOG_LEVEL: "INFO"
+            VLLM_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: http
+              containerPort: 8080
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8080
+                periodSeconds: 15
+                failureThreshold: 120
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8080
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: 8080
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: false
+            runAsUser: 0
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "2"
+              memory: 10Gi
+
+  ingress:
+    main:
+      enabled: false

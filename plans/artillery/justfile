@@ -247,6 +247,193 @@ errors:
     @kubectl logs -n converse-proxy -l app=proxy-app --tail=50 2>/dev/null | grep -i "error\|warn\|fail" | tail -10 || echo "No errors found"
 
 # ============================================================================
+# Self-Hosted Model Tests (Qwen2.5-3B-AWQ + vLLM ± LMCache)
+# ============================================================================
+# Two-phase A/B test: prefix-reuse (LMCache should help) + cold-unique (control).
+# Run order: deploy baseline → run both tests → switch to LMCache → run both → compare.
+
+# Resolve VLLM_LOCAL_API_KEY from the Kubernetes secret
+qwen25-api-key:
+    @kubectl get secret vllm-local-api-key -n custom-ai-ops -o jsonpath='{.data.api_key}' | base64 -d
+
+# Setup port-forward to qwen25-3b-awq Service (Caddy proxy on :8090)
+qwen25-port-forward:
+    @echo "Starting port-forward to qwen25-3b-awq..."
+    @kubectl port-forward svc/qwen25-3b-awq 8090:8090 -n custom-ai-ops &
+    @sleep 2
+    @echo "Port-forward active on localhost:8090"
+
+# Kill qwen25 port-forward
+qwen25-kill-port-forward:
+    @pkill -f "port-forward.*qwen25" 2>/dev/null || true
+
+# Check that qwen25 model is ready
+qwen25-check:
+    @echo "Checking qwen25-3b-awq pod..."
+    @kubectl wait pod/qwen25-3b-awq-main-0 -n custom-ai-ops --for=condition=Ready --timeout=300s
+    @echo "Model is ready"
+
+# Run prefix-reuse load test (shared system prompt + rotating questions)
+qwen25-prefix-reuse: check-deps reports-dir
+    @test -n "$$VLLM_LOCAL_API_KEY" || { echo "❌ VLLM_LOCAL_API_KEY not set. Run: export VLLM_LOCAL_API_KEY=$$(just qwen25-api-key)"; exit 1; }
+    @echo "=== Prefix Reuse Load Test ==="
+    artillery run self-hosted-model/artillery-qwen25-prefix-reuse.yml -o reports/report-qwen25-prefix-reuse.json
+    node generate-report.js reports/report-qwen25-prefix-reuse.json reports/report-qwen25-prefix-reuse.html
+    @echo "Report: reports/report-qwen25-prefix-reuse.html"
+
+# Run cold-unique load test (completely different prompts, no shared prefix)
+qwen25-cold-unique: check-deps reports-dir
+    @test -n "$$VLLM_LOCAL_API_KEY" || { echo "❌ VLLM_LOCAL_API_KEY not set. Run: export VLLM_LOCAL_API_KEY=$$(just qwen25-api-key)"; exit 1; }
+    @echo "=== Cold Unique Load Test ==="
+    artillery run self-hosted-model/artillery-qwen25-cold-unique.yml -o reports/report-qwen25-cold-unique.json
+    node generate-report.js reports/report-qwen25-cold-unique.json reports/report-qwen25-cold-unique.html
+    @echo "Report: reports/report-qwen25-cold-unique.html"
+
+# Run both tests against the current deployment (baseline or LMCache — caller deploys first)
+qwen25-run-both: qwen25-port-forward
+    @echo "=== Running both load tests against current deployment ==="
+    @just qwen25-prefix-reuse
+    @just qwen25-cold-unique
+    @just qwen25-kill-port-forward
+    @echo "=== Both tests complete ==="
+
+# Deploy baseline (no LMCache)
+qwen25-deploy-baseline:
+    @echo "=== Deploying baseline (no LMCache) ==="
+    helm upgrade --install model-serving-qwen25-3b-awq ./charts/model-serving-qwen25-3b-awq \
+      -n custom-ai-ops -f charts/model-serving-qwen25-3b-awq/local-overrides.yaml
+    @just qwen25-check
+
+# Deploy LMCache variant
+qwen25-deploy-lmcache:
+    @echo "=== Deploying LMCache variant ==="
+    helm upgrade --install model-serving-qwen25-3b-awq ./charts/model-serving-qwen25-3b-awq \
+      -n custom-ai-ops -f charts/model-serving-qwen25-3b-awq/local-overrides-lmcache.yaml
+    @just qwen25-check
+
+# Scrape vLLM /metrics (for lmcache:* counters on LMCache variant)
+qwen25-metrics:
+    @echo "=== vLLM /metrics ==="
+    @kubectl exec -n custom-ai-ops qwen25-3b-awq-main-0 -c model -- curl -s http://localhost:8080/metrics > reports/metrics-raw.txt
+    @grep -E "^vllm:|^lmcache:" reports/metrics-raw.txt > reports/metrics-lmcache.txt || true
+    @echo "Full metrics: reports/metrics-raw.txt"
+    @echo "LMCache metrics: reports/metrics-lmcache.txt"
+    @echo "LMCache hit tokens:" && grep "lmcache:num_hit_tokens" reports/metrics-lmcache.txt || echo "  (none — LMCache not enabled or no hits yet)"
+    @echo "LMCache retrieve hit rate:" && grep "lmcache:retrieve_hit_rate" reports/metrics-lmcache.txt || echo "  (none)"
+
+# Generate A/B comparison reports
+qwen25-compare: reports-dir
+    @echo "=== Generating A/B Comparison Reports ==="
+    @test -f reports/report-qwen25-prefix-reuse-nolmcache.json && test -f reports/report-qwen25-prefix-reuse-lmcache.json && \
+      node self-hosted-model/generate-comparison.js \
+        reports/report-qwen25-prefix-reuse-nolmcache.json \
+        reports/report-qwen25-prefix-reuse-lmcache.json \
+        "Prefix Reuse" \
+        reports/comparison-prefix-reuse.md || echo "⚠️  Prefix-reuse comparison: missing files"
+    @test -f reports/report-qwen25-cold-unique-nolmcache.json && test -f reports/report-qwen25-cold-unique-lmcache.json && \
+      node self-hosted-model/generate-comparison.js \
+        reports/report-qwen25-cold-unique-nolmcache.json \
+        reports/report-qwen25-cold-unique-lmcache.json \
+        "Cold Unique" \
+        reports/comparison-cold-unique.md || echo "⚠️  Cold-unique comparison: missing files"
+    @echo "=== Comparison reports generated ==="
+
+# Full A/B test suite: baseline → tests → LMCache → tests → compare
+qwen25-full-ab:
+    @echo "=========================================="
+    @echo "  Full A/B Test: Qwen2.5-3B-AWQ ± LMCache"
+    @echo "=========================================="
+    @echo ""
+    @echo "--- Phase 1: Baseline (no LMCache) ---"
+    @just qwen25-deploy-baseline
+    @just qwen25-run-both
+    @cp reports/report-qwen25-prefix-reuse.json reports/report-qwen25-prefix-reuse-nolmcache.json
+    @cp reports/report-qwen25-cold-unique.json reports/report-qwen25-cold-unique-nolmcache.json
+    @node generate-report.js reports/report-qwen25-prefix-reuse-nolmcache.json reports/report-qwen25-prefix-reuse-nolmcache.html
+    @node generate-report.js reports/report-qwen25-cold-unique-nolmcache.json reports/report-qwen25-cold-unique-nolmcache.html
+    @echo ""
+    @echo "--- Phase 2: Treatment (LMCache) ---"
+    @just qwen25-deploy-lmcache
+    @just qwen25-run-both
+    @cp reports/report-qwen25-prefix-reuse.json reports/report-qwen25-prefix-reuse-lmcache.json
+    @cp reports/report-qwen25-cold-unique.json reports/report-qwen25-cold-unique-lmcache.json
+    @node generate-report.js reports/report-qwen25-prefix-reuse-lmcache.json reports/report-qwen25-prefix-reuse-lmcache.html
+    @node generate-report.js reports/report-qwen25-cold-unique-lmcache.json reports/report-qwen25-cold-unique-lmcache.html
+    @just qwen25-metrics
+    @echo ""
+    @echo "--- Phase 3: Comparison ---"
+    @just qwen25-compare
+    @echo ""
+    @echo "=========================================="
+    @echo "  A/B Test Complete"
+    @echo "=========================================="
+
+# ============================================================================
+# Experiment B (Approach B): APC eviction test
+# ============================================================================
+
+# Generate the eviction-busters.csv file (~20 unique ~8K-token prompts)
+qwen25-gen-busters:
+    @echo "=== Generating eviction-busters.csv ==="
+    @cd self-hosted-model && node generate-eviction-busters.js
+
+# Run eviction (mixed buster + prefix-reuse) load test against current deploy
+qwen25-eviction: check-deps reports-dir qwen25-gen-busters
+    @test -n "$$VLLM_LOCAL_API_KEY" || { echo "❌ VLLM_LOCAL_API_KEY not set. Run: export VLLM_LOCAL_API_KEY=$$(just qwen25-api-key)"; exit 1; }
+    @echo "=== Approach B: Eviction Load Test ==="
+    artillery run self-hosted-model/artillery-qwen25-eviction.yml -o reports/report-qwen25-eviction.json
+    node generate-report.js reports/report-qwen25-eviction.json reports/report-qwen25-eviction.html
+    @echo "Report: reports/report-qwen25-eviction.html"
+
+# Deploy Approach B baseline (APC enabled, no LMCache, tight VRAM)
+qwen25-deploy-approachb-baseline:
+    @echo "=== Deploying Approach B baseline (APC, no LMCache, gpu-mem=0.55) ==="
+    helm upgrade --install model-serving-qwen25-3b-awq ./charts/model-serving-qwen25-3b-awq \
+      -n custom-ai-ops -f charts/model-serving-qwen25-3b-awq/local-overrides-approachb.yaml
+    @just qwen25-check
+
+# Deploy Approach B treatment (APC enabled + LMCache, tight VRAM)
+qwen25-deploy-approachb-lmcache:
+    @echo "=== Deploying Approach B treatment (APC + LMCache, gpu-mem=0.55) ==="
+    helm upgrade --install model-serving-qwen25-3b-awq ./charts/model-serving-qwen25-3b-awq \
+      -n custom-ai-ops -f charts/model-serving-qwen25-3b-awq/local-overrides-approachb-lmcache.yaml
+    @just qwen25-check
+
+# Full Approach B A/B test: deploy baseline → test → deploy LMCache → test → compare
+qwen25-approachb-full:
+    @echo "=========================================="
+    @echo "  Approach B: APC Eviction A/B Test"
+    @echo "=========================================="
+    @echo ""
+    @echo "--- Phase 1: Baseline (APC, no LMCache) ---"
+    @just qwen25-deploy-approachb-baseline
+    @just qwen25-port-forward
+    @just qwen25-eviction
+    @cp reports/report-qwen25-eviction.json reports/report-qwen25-eviction-nolmcache.json
+    @cp reports/report-qwen25-eviction.html reports/report-qwen25-eviction-nolmcache.html
+    @just qwen25-kill-port-forward
+    @echo ""
+    @echo "--- Phase 2: Treatment (APC + LMCache) ---"
+    @just qwen25-deploy-approachb-lmcache
+    @just qwen25-port-forward
+    @just qwen25-eviction
+    @cp reports/report-qwen25-eviction.json reports/report-qwen25-eviction-lmcache.json
+    @cp reports/report-qwen25-eviction.html reports/report-qwen25-eviction-lmcache.html
+    @just qwen25-metrics
+    @just qwen25-kill-port-forward
+    @echo ""
+    @echo "--- Phase 3: Comparison ---"
+    @node self-hosted-model/generate-comparison.js \
+      reports/report-qwen25-eviction-nolmcache.json \
+      reports/report-qwen25-eviction-lmcache.json \
+      "Eviction mix (APC enabled)" \
+      reports/comparison-eviction.md
+    @echo ""
+    @echo "=========================================="
+    @echo "  Approach B A/B Test Complete"
+    @echo "=========================================="
+
+# ============================================================================
 # Help
 # ============================================================================
 
@@ -273,6 +460,26 @@ help:
     @echo "LUA OVERHEAD:"
     @echo "  just lua-overhead         - Full Lua with/without test"
     @echo "  just lua-compare          - Compare existing Lua results"
+    @echo ""
+    @echo "SELF-HOSTED MODEL (Qwen2.5-3B-AWQ ± LMCache):"
+    @echo "  just qwen25-full-ab       - Full A/B suite (deploy+test both variants)"
+    @echo "  just qwen25-deploy-baseline - Deploy vLLM without LMCache"
+    @echo "  just qwen25-deploy-lmcache  - Deploy vLLM with LMCache"
+    @echo "  just qwen25-prefix-reuse  - Run prefix-reuse test (LMCache helps)"
+    @echo "  just qwen25-cold-unique   - Run cold-unique test (control)"
+    @echo "  just qwen25-run-both      - Run both tests against current deploy"
+    @echo "  just qwen25-compare       - Generate A/B comparison reports"
+    @echo "  just qwen25-metrics       - Scrape lmcache:* / vllm: /metrics"
+    @echo "  just qwen25-api-key       - Print the VLLM_LOCAL_API_KEY"
+    @echo "  just qwen25-port-forward  - Port-forward :8090 to qwen25 svc"
+    @echo "  just qwen25-kill-port-forward - Kill port-forward"
+    @echo ""
+    @echo "EXPERIMENT B (APC eviction):"
+    @echo "  just qwen25-approachb-full       - Full Approach B A/B suite"
+    @echo "  just qwen25-deploy-approachb-baseline - Deploy baseline (APC, no LMCache, tight VRAM)"
+    @echo "  just qwen25-deploy-approachb-lmcache   - Deploy treatment (APC + LMCache, tight VRAM)"
+    @echo "  just qwen25-eviction      - Run eviction mix test (busters + prefix-reuse)"
+    @echo "  just qwen25-gen-busters   - Generate eviction-busters.csv"
     @echo ""
     @echo "UTILITIES:"
     @echo "  just all                  - Run complete test suite"
