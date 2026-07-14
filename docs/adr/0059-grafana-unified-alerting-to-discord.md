@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-06-25
 **Deciders:** @stephane-segning
-**Builds on:** [ADR-0023](./0023-stateless-grafana.md) (stateless Grafana), [ADR-0020](./0020-observability-app-of-apps.md), [ADR-0058](./0058-precompute-gateway-usage-metrics-to-mimir.md) (the gen_ai metrics some alerts use)
+**Builds on:** [ADR-0023](./0023-grafana-stateless-no-pvc.md) (stateless Grafana), [ADR-0020](./0020-observability-app-of-apps-orchestrator.md), [ADR-0058](./0058-precompute-gateway-usage-metrics-to-mimir.md) (the gen_ai metrics some alerts use)
 **Relates to:** [ADR-0036](./0036-remove-apprise-notification-path.md) (the removed apprise path)
 
 ## Context

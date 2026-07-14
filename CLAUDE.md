@@ -321,9 +321,18 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 > **"upgrade the doc"**, they mean **every** affected surface, not just the one
 > nearest doc. For any substantive change, sweep this whole set and update what's
 > relevant:
-> 1. **The design/subsystem doc** under `docs/` (or a new one). Long-lived
+> 1. **The topical doc** under `docs/`, filed by **intent** into one of the four
+>    dirs — **`docs/playbooks/`** (runbooks, setup, how-to), **`docs/integrations/`**
+>    (consuming a specific product/surface: LibreChat, opencode, Coder,
+>    Keycloak-as-IdP), **`docs/patterns/`** (reusable patterns, concept explainers,
+>    reference/research), **`docs/migrations/`** (cutovers, upgrades, point-in-time
+>    audits) — or an existing subsystem subdir (`adr/`, `architecture/`, `models/`,
+>    `models-chart-docs/`, `cnpg-native-backup/`, `secret-management/`, …).
+>    Front-matter docs (`architecture.md`, `arc42.md`, `continuous-delivery.md`,
+>    `commit-conventions.md`) stay at `docs/` root. Each topical dir has a local
+>    `README.md` index — add your file there **and** to `docs/README.md`. Long-lived
 >    subsystem guides drop the date prefix (`self-hosted-model-serving.md`, not
->    `2026-…`); dated files are for point-in-time change-logs/audits.
+>    `2026-…`); dated files are point-in-time change-logs/audits (→ `migrations/`).
 > 2. **ADRs** — write a new ADR for any decision with non-obvious consequences or
 >    a locked-in contract; amend a prior decision with a *new* ADR (the old body
 >    is immutable). Update `docs/adr/README.md`.
@@ -338,7 +347,7 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 **Self-hosted models/agents:** the model-agnostic pattern + the "deploy the next one"
 checklist live in [`docs/patterns/self-hosted-model-serving.md`](docs/patterns/self-hosted-model-serving.md)
 §8 (vLLM-vs-llama.cpp engine choice; pricing per ADR-0028). **Per-model papers** are
-under [`docs/models/`](docs/patterns/self-hosted-model-serving.md) — `qwen3.5-4b-q4.md`
+under [`docs/models/`](docs/models/) — `qwen3.5-4b-q4.md`
 (llama.cpp/Q4, **LIVE** = the active model, ADR-0032, chart `charts/model-serving-qwen3-5`;
 §6 = measured capacity/perf), `qwen3-4b.md` (vLLM, chart `charts/model-serving-qwen3-4b`,
 now standby/rollback), `qwen3.5-4b.md` (vLLM/BF16, studied-not-chosen). Follow the guide when adding a model —
