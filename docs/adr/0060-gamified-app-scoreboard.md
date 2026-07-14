@@ -3,8 +3,8 @@
 **Status:** Accepted
 **Date:** 2026-06-26
 **Deciders:** @stephane-segning
-**Builds on:** [ADR-0058](./0058-precompute-gateway-usage-metrics-to-mimir.md) (the Mimir metrics backbone), [ADR-0059](./0059-grafana-unified-alerting-to-discord.md) (unified alerting), [ADR-0008](./0008-python-dashboard-generation.md) (dashboards-as-code), [ADR-0046](./0046-per-user-attribution-otlp-envelope-repair.md) (attribution labels), [ADR-0023](./0023-stateless-grafana.md) (stateless Grafana → operator CRs)
-**Relates to:** [ADR-0028](./0028-self-hosted-model-pricing.md)/ADR-0051 (cost is µ$ ÷1e6)
+**Builds on:** [ADR-0058](./0058-precompute-gateway-usage-metrics-to-mimir.md) (the Mimir metrics backbone), [ADR-0059](./0059-grafana-unified-alerting-to-discord.md) (unified alerting), [ADR-0008](./0008-python-dashboard-generation.md) (dashboards-as-code), [ADR-0046](./0046-per-user-attribution-otlp-envelope-repair.md) (attribution labels), [ADR-0023](./0023-grafana-stateless-no-pvc.md) (stateless Grafana → operator CRs)
+**Relates to:** [ADR-0028](./0028-owned-hardware-model-pricing.md)/ADR-0051 (cost is µ$ ÷1e6)
 
 > ⚠️ **Correction (2026-06-26) — see [ADR-0061](./0061-same-origin-proxy-for-grafana-news-feed.md).** The
 > "news panel reads the governance repo's GitHub Atom feed … needs `github.com`

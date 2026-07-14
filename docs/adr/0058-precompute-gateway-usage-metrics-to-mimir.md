@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-06-25
 **Deciders:** @stephane-segning
-**Builds on:** [ADR-0005](./0005-per-user-observability.md), [ADR-0046](./0046-per-user-attribution-otlp-envelope-repair.md), [ADR-0008](./0008-python-dashboard-generation.md), [ADR-0028](./0028-self-hosted-model-pricing.md)/[ADR-0051]
+**Builds on:** [ADR-0005](./0005-per-user-attribution-via-authorino-headers.md), [ADR-0046](./0046-per-user-attribution-otlp-envelope-repair.md), [ADR-0008](./0008-python-dashboard-generation.md), [ADR-0028](./0028-owned-hardware-model-pricing.md)/[ADR-0051]
 **Relates to:** the Loki chunk/results cache enablement + the cost-dashboard taming (`ai-helm-values`)
 
 ## Context
