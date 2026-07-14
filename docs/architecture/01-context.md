@@ -8,22 +8,22 @@ depends on. No internals here — that's [02 Containers](02-containers.md).
 ```mermaid
 flowchart TB
     subgraph people["People & automated callers"]
-        HUMAN["👤 End user<br/>browser (chat)"]:::actor
-        DEV["🧑‍💻 Developer<br/>opencode / OpenAI-compatible CLI"]:::actor
-        CI["🤖 CI runner<br/>GitHub Actions"]:::actor
-        OPS["🛠️ Platform maintainer"]:::actor
-        FIN["📊 Finance / billing"]:::actor
+        HUMAN["👤 End user<br/>browser (chat)"]
+        DEV["🧑‍💻 Developer<br/>opencode / OpenAI-compatible CLI"]
+        CI["🤖 CI runner<br/>GitHub Actions"]
+        OPS["🛠️ Platform maintainer"]
+        FIN["📊 Finance / billing"]
     end
 
-    PLATFORM["🟢 <b>Camer Digital AI Platform</b><br/>(ai-helm)<br/><br/>OpenAI-compatible inference,<br/>chat UI, MCP tools, dev observability"]:::platform
+    PLATFORM["🟢 <b>Camer Digital AI Platform</b><br/>(ai-helm)<br/><br/>OpenAI-compatible inference,<br/>chat UI, MCP tools, dev observability"]
 
     subgraph ext["External systems (consumed, not owned)"]
-        KC["🔑 Keycloak IdP<br/>auth.verif.fyi<br/>realm camer-digital"]:::ext
-        PROV["🧠 Model providers<br/>DeepInfra · Fireworks · Google AI"]:::ext
-        GH["🐙 GitHub<br/>source · Actions OIDC · App webhooks"]:::ext
-        EXTMCP["🔌 Hosted MCP servers<br/>context7 · firecrawl · refero"]:::ext
-        S3["🪣 Hetzner Object Storage<br/>nbg1.your-objectstorage.com"]:::ext
-        HCLOUD["☁️ Hetzner Cloud LB"]:::ext
+        KC["🔑 Keycloak IdP<br/>auth.verif.fyi<br/>realm camer-digital"]
+        PROV["🧠 Model providers<br/>DeepInfra · Fireworks · Google AI"]
+        GH["🐙 GitHub<br/>source · Actions OIDC · App webhooks"]
+        EXTMCP["🔌 Hosted MCP servers<br/>context7 · firecrawl · refero"]
+        S3["🪣 Hetzner Object Storage<br/>nbg1.your-objectstorage.com"]
+        HCLOUD["☁️ Hetzner Cloud LB"]
     end
 
     HUMAN -->|"OIDC login, chat"| PLATFORM
@@ -39,9 +39,6 @@ flowchart TB
     PLATFORM -->|"metrics/logs/traces + DB backups"| S3
     HCLOUD -->|"public ingress"| PLATFORM
 
-    classDef actor fill:#fff,stroke:#555,color:#222;
-    classDef platform fill:#eaf3ea,stroke:#4a8a4a,color:#1a401a,stroke-width:2px;
-    classDef ext fill:#eee,stroke:#888,color:#333,stroke-dasharray:4 3;
 ```
 
 ## Actors

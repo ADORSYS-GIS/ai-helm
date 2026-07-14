@@ -29,20 +29,19 @@ Lightbridge `lci-postgres` datasource.
 ```mermaid
 flowchart LR
     subgraph KC["keycloak ns (Hetzner)"]
-      DB[("Keycloak CNPG<br/>-ro replica :5432")]:::own
-      ROLE["grafana_ro role<br/>(least-privilege)"]:::own
+      DB[("Keycloak CNPG<br/>-ro replica :5432")]
+      ROLE["grafana_ro role<br/>(least-privilege)"]
     end
     subgraph OBS["observability ns"]
-      G["Grafana<br/>datasource uid: keycloak"]:::own
-      D1["user-directory dashboard"]:::own
-      D2["sessions-grants dashboard"]:::own
+      G["Grafana<br/>datasource uid: keycloak"]
+      D1["user-directory dashboard"]
+      D2["sessions-grants dashboard"]
     end
-    MIMIR[("Mimir<br/>per-user spend")]:::own
+    MIMIR[("Mimir<br/>per-user spend")]
     G -->|"TLS, sslmode=require<br/>(Cilium egress :5432)"| DB
     ROLE -.scopes.- DB
     G --> D1 & D2
     MIMIR -->|"joinByField on user_id / azp"| D1 & D2
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 | Concern | Repo | What |

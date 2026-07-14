@@ -8,27 +8,27 @@ metered. This is the layer where latency and correctness live.
 
 ```mermaid
 flowchart TB
-    CLIENT["client (HTTP/2)"]:::ext
+    CLIENT["client (HTTP/2)"]
 
     subgraph dp["Envoy data plane (eg) — HPA 3–5, LeastRequest LB"]
-        LISTEN["Listeners<br/><b>external</b>: api.ai.camer.digital (ACME TLS)<br/><b>internal</b>: core-gateway-internal.svc (self-signed CA)"]:::own
-        FILTER["HTTP filter chain<br/>ext_authz → ratelimit → router"]:::own
+        LISTEN["Listeners<br/><b>external</b>: api.ai.camer.digital (ACME TLS)<br/><b>internal</b>: core-gateway-internal.svc (self-signed CA)"]
+        FILTER["HTTP filter chain<br/>ext_authz → ratelimit → router"]
     end
 
     subgraph authz["Authorino (authorino-system, 2 replicas)"]
-        AC["AuthConfig per Host (ADR-0021)<br/>verify JWT (JWKS, ttl 3600)<br/>stamp x-oidc-* + descriptors"]:::own
+        AC["AuthConfig per Host (ADR-0021)<br/>verify JWT (JWKS, ttl 3600)<br/>stamp x-oidc-* + descriptors"]
     end
 
     subgraph route["AI Gateway CRs (per model)"]
-        AIR["AIGatewayRoute<br/><i>model name → backend</i>"]:::own
-        BTP["BackendTrafficPolicy<br/><i>burst + monthly budget + circuit breaker</i>"]:::own
-        ASB["AIServiceBackend<br/><i>provider mapping + key</i>"]:::own
+        AIR["AIGatewayRoute<br/><i>model name → backend</i>"]
+        BTP["BackendTrafficPolicy<br/><i>burst + monthly budget + circuit breaker</i>"]
+        ASB["AIServiceBackend<br/><i>provider mapping + key</i>"]
     end
 
-    PROV["Provider<br/>DeepInfra / Fireworks / Google AI"]:::ext
-    GPU["Self-hosted model<br/>(llama.cpp, home GPU)"]:::gpu
-    REDIS["redis-ha<br/><i>ratelimit counters</i>"]:::ext
-    OBS["Alloy → Loki / Mimir<br/><i>access log + counters</i>"]:::own
+    PROV["Provider<br/>DeepInfra / Fireworks / Google AI"]
+    GPU["Self-hosted model<br/>(llama.cpp, home GPU)"]
+    REDIS["redis-ha<br/><i>ratelimit counters</i>"]
+    OBS["Alloy → Loki / Mimir<br/><i>access log + counters</i>"]
 
     CLIENT --> LISTEN --> FILTER
     FILTER -->|"gRPC ext_authz"| AC
@@ -39,9 +39,6 @@ flowchart TB
     ASB --> GPU
     FILTER -->|"JSON access log"| OBS
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a,color:#1a401a;
-    classDef ext fill:#eee,stroke:#888,color:#333,stroke-dasharray:4 3;
-    classDef gpu fill:#f7e8f0,stroke:#a54a81,color:#401a2e;
 ```
 
 | Component | CR / chart | Responsibility |

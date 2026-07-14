@@ -15,8 +15,8 @@ ArgoCD does **not** run on the cluster it deploys to.
 flowchart LR
     subgraph cp["🧠 admin@homeos (Talos) — the CONTROL plane"]
         ARGOCD["ArgoCD<br/>ns: argocd"]
-        ROOT["Application: ai-apps-v2<br/><i>applied manually; pins a release tag</i>"]
-        APPS["charts/apps renders<br/>~21 Application/ApplicationSet CRs<br/><i>(control objects live here)</i>"]
+        ROOT["Application: ai-apps-v2<br/><i>applied manually; tracks main (ADR-0055)</i>"]
+        APPS["charts/apps renders<br/>23 Application/ApplicationSet CRs<br/><i>(control objects live here)</i>"]
         ARGOCD --> ROOT --> APPS
     end
 
@@ -26,11 +26,10 @@ flowchart LR
         NS1 --> PODS
     end
 
-    HOMEOS["home-os repo<br/>charts/cd/values.yaml<br/><i>pins ai-apps-v2 targetRevision</i>"]:::ext
-    HOMEOS -.->|"GitOps-manages the root tag"| ROOT
+    HOMEOS["home-os repo<br/>charts/cd/values.yaml<br/><i>pins ai-apps-v2 targetRevision = main</i>"]
+    HOMEOS -.->|"GitOps-manages the root"| ROOT
     APPS ==>|"deploys workloads to"| wl
 
-    classDef ext fill:#eee,stroke:#888,color:#333,stroke-dasharray:4 3;
 ```
 
 - **Control objects** (`Application`, `ApplicationSet`) must live where ArgoCD's
@@ -44,26 +43,22 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph apps["charts/apps — per-app destination logic"]
-        WL["normal workload<br/><i>(default)</i>"]:::own
-        CP["controlPlane: true<br/><i>(orchestrators: models, librechat,<br/>mcps, observability, lightbridge-backend)</i>"]:::ctrl
-        HC["homeCluster: true<br/><i>(model-serving-qwen3-* only — ADR-0022)</i>"]:::gpu
+        WL["normal workload<br/><i>(default)</i>"]
+        CP["controlPlane: true<br/><i>(orchestrators: models, librechat,<br/>mcps, observability, lightbridge-backend)</i>"]
+        HC["homeCluster: true<br/><i>(model-serving-qwen3-* only — ADR-0022)</i>"]
     end
 
-    DESTW["→ home-remote<br/>(workload namespace)"]:::own
-    DESTC["→ https://kubernetes.default.svc<br/>argocd ns (the AppSet it emits<br/>lands where ArgoCD watches)"]:::ctrl
-    DESTH["→ in-cluster server<br/>but keeps its own workload ns;<br/>guard called with allowInCluster"]:::gpu
+    DESTW["→ home-remote<br/>(workload namespace)"]
+    DESTC["→ https://kubernetes.default.svc<br/>argocd ns (the AppSet it emits<br/>lands where ArgoCD watches)"]
+    DESTH["→ in-cluster server<br/>but keeps its own workload ns;<br/>guard called with allowInCluster"]
 
     WL --> DESTW
     CP --> DESTC
     HC --> DESTH
 
-    GUARD{{"render guard:<br/>workload → in-cluster?<br/>FAIL unless allowInCluster"}}:::warn
+    GUARD{{"render guard:<br/>workload → in-cluster?<br/>FAIL unless allowInCluster"}}
     WL -.checked by.-> GUARD
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5;
-    classDef gpu fill:#f7e8f0,stroke:#a54a81;
-    classDef warn fill:#fbeaea,stroke:#a54a4a;
 ```
 
 > **Project invariant:** every Application/ApplicationSet from this repo is in the
@@ -88,8 +83,6 @@ flowchart TB
         AAT --> AC2["child: upstream chart as source"]
     end
 
-    classDef g fill:#eaf3ea,stroke:#4a8a4a;
-    class D,DW,O,OS,OL1,OL2,AA,AAT,AC1,AC2 g;
 ```
 
 | Pattern | Used by | Why |
@@ -106,15 +99,13 @@ Application:
 ```mermaid
 flowchart LR
     subgraph umbrella["Umbrella Application (e.g. lightbridge-repo-auth)"]
-        SA["Source A — workload<br/>charts/&lt;x&gt; or upstream chart"]:::own
-        SB["Source B — deps overlay (kustomize)<br/>environments/prod/deps/&lt;app&gt;<br/><i>ingress Certificate, ExternalSecrets,<br/>CiliumNetworkPolicy</i>"]:::own
-        SC["Source C — $values (optional)<br/><i>per-env workload knob</i>"]:::own
+        SA["Source A — workload<br/>charts/&lt;x&gt; or upstream chart"]
+        SB["Source B — deps overlay (kustomize)<br/>environments/prod/deps/&lt;app&gt;<br/><i>ingress Certificate, ExternalSecrets,<br/>CiliumNetworkPolicy</i>"]
+        SC["Source C — $values (optional)<br/><i>per-env workload knob</i>"]
     end
-    CLUSTER["environments/prod/cluster.yaml<br/><i>clusterIssuer, secretStore,<br/>ingressClass, storageClass, domainBase</i>"]:::ext
+    CLUSTER["environments/prod/cluster.yaml<br/><i>clusterIssuer, secretStore,<br/>ingressClass, storageClass, domainBase</i>"]
     CLUSTER -.->|patched into| SB
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 - Attach deps with one field on the app entry: `depsOverlay: environments/prod/deps/<app>`.
@@ -129,15 +120,14 @@ visualisation** — violating it once cost a day (`MONITORING_FIX.md`).
 
 ```mermaid
 flowchart LR
-    W3["wave -3<br/>namespace bootstrap<br/>observability-secrets<br/>(allow-same-namespace)"]:::w
-    W2["wave -2<br/>storage backends<br/>Mimir · Loki · Tempo<br/>kube-state-metrics · node-exporter"]:::w
-    W1["wave -1<br/>operators + collectors<br/>grafana-operator · Alloy<br/>librechat-search"]:::w
-    W0["wave 0<br/>workloads<br/>gateway · LibreChat · models"]:::w
-    WP1["wave 1<br/>content<br/>dashboards · opencode-wellknown"]:::w
-    WP2["wave 2+<br/>post-sync"]:::w
+    W3["wave -3<br/>namespace bootstrap<br/>observability-secrets<br/>(allow-same-namespace)"]
+    W2["wave -2<br/>storage backends<br/>Mimir · Loki · Tempo<br/>kube-state-metrics · node-exporter"]
+    W1["wave -1<br/>operators + collectors<br/>grafana-operator · Alloy<br/>librechat-search"]
+    W0["wave 0<br/>workloads<br/>gateway · LibreChat · models"]
+    WP1["wave 1<br/>content<br/>dashboards · opencode-wellknown"]
+    WP2["wave 2+<br/>post-sync"]
     W3 --> W2 --> W1 --> W0 --> WP1 --> WP2
 
-    classDef w fill:#eaf3ea,stroke:#4a8a4a,color:#1a401a;
 ```
 
 > cert-manager and ESO are **not** synced here (external). The `allow-same-namespace`
