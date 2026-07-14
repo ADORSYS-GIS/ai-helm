@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-12 (live audit of `home-remote` / hetzner-prod)
 **Ticket:** [#354](https://github.com/ADORSYS-GIS/ai-helm/issues/354) (reconnaissance), epic [#341](https://github.com/ADORSYS-GIS/ai-helm/issues/341)
-**Companions:** [observability-dashboard-research.md](observability-dashboard-research.md) (#355 — *which dashboards to adopt for the gaps*; this doc is *what exists and what's missing*), [ADR-0045](adr/0045-scrape-first-dashboard-sourcing.md) (sourcing policy), [ADR-0046](adr/0046-per-user-attribution-otlp-envelope-repair.md) (per-user repair)
+**Companions:** [observability-dashboard-research.md](observability-dashboard-research.md) (#355 — *which dashboards to adopt for the gaps*; this doc is *what exists and what's missing*), [ADR-0045](../adr/0045-scrape-first-dashboard-sourcing.md) (sourcing policy), [ADR-0046](../adr/0046-per-user-attribution-otlp-envelope-repair.md) (per-user repair)
 
 ## How to read this
 
@@ -111,7 +111,7 @@ access-log sink emits fields as OTLP *attributes*; Alloy stored
 underlying data was intact (21 distinct users with real token totals
 re-queried via the nested form).
 
-**Fixed** via [ADR-0046](adr/0046-per-user-attribution-otlp-envelope-repair.md)
+**Fixed** via [ADR-0046](../adr/0046-per-user-attribution-otlp-envelope-repair.md)
 (Alloy envelope flatten + `user_id`/`azp`/`model` labels +
 `service_name=envoy-ai-gateway` anchor), merged in
 [#383](https://github.com/ADORSYS-GIS/ai-helm/pull/383), rolling out with

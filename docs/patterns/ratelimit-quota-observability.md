@@ -2,22 +2,22 @@
 
 > How to see **who is consuming the Envoy AI Gateway and how much of their budget**,
 > read from the rate-limit service's **live counters in redis-ha**.
-> Decision record: [ADR-0070](adr/0070-ratelimit-quota-observability.md).
+> Decision record: [ADR-0070](../adr/0070-ratelimit-quota-observability.md).
 > Dashboard: **AI Gateway → "AI Gateway — rate-limit quota"**.
 
 ## Why this exists
 
 The gateway rate-limits every request against per-account budgets
-([ADR-0021](adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md) /
-[ADR-0035](adr/0035-per-person-monthly-budget-and-free-50.md)): a per-model
+([ADR-0021](../adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md) /
+[ADR-0035](../adr/0035-per-person-monthly-budget-and-free-50.md)): a per-model
 `BackendTrafficPolicy` keyed on `x-account-id` enforces burst (req/min,
 tokens/min) **and** a monthly micro-USD budget. The Lyft ratelimit service keeps
 those counters in **redis-ha** (home-os `charts/home-apps/redis-ha`).
 
 That current-window counter exists **nowhere else**. The cost dashboards
-([ADR-0058](adr/0058-precompute-gateway-usage-metrics-to-mimir.md) Mimir,
-[ADR-0046](adr/0046-per-user-attribution-otlp-envelope-repair.md)/
-[0067](adr/0067-jwt-token-consumption-dashboard.md) Loki) answer "how much did X
+([ADR-0058](../adr/0058-precompute-gateway-usage-metrics-to-mimir.md) Mimir,
+[ADR-0046](../adr/0046-per-user-attribution-otlp-envelope-repair.md)/
+[0067](../adr/0067-jwt-token-consumption-dashboard.md) Loki) answer "how much did X
 spend *historically*". Only Redis answers "how close is X to being throttled
 *right now*". This subsystem surfaces that.
 
@@ -115,7 +115,7 @@ The password is the existing `ssegning-aws prod/meta/test-app#redis_password`
   both. Re-verify with a live `--scan` of the rule indices.
 - **Forward-only** Mimir history (begins when the exporter deploys); the redis
   census is live.
-- **Values-repo-first** ([ADR-0055](adr/0055-oci-charts-and-image-updater-writeback-to-values-repo.md)/0056):
+- **Values-repo-first** ([ADR-0055](../adr/0055-oci-charts-and-image-updater-writeback-to-values-repo.md)/0056):
   merge `ai-helm-values` before `ai-helm` or the exporter silently falls back to
   chart defaults (`ignoreMissingValueFiles`).
 

@@ -9,7 +9,7 @@ in one pod** — the model + the proxy. Weights are fed from a **pre-seeded PVC*
 context in 12GB VRAM with room for KV cache.
 
 - **Why:** [ADR-0022](../../docs/adr/0022-self-hosted-gpu-model-federated-into-gateway.md) (federation) + [ADR-0028](../../docs/adr/0028-owned-hardware-model-pricing.md) (pricing) + [ADR-0029](../../docs/adr/0029-self-hosted-model-plain-deployment.md) (serving mode) + [ADR-0030](../../docs/adr/0030-merge-model-and-proxy-into-one-statefulset-bjw.md) (one STS via bjw)
-- **How:** [`docs/self-hosted-model-serving.md`](../../docs/self-hosted-model-serving.md)
+- **How:** [`docs/patterns/self-hosted-model-serving.md`](../../docs/patterns/self-hosted-model-serving.md)
 
 ## Unusual things about this chart
 

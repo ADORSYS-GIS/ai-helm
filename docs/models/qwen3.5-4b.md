@@ -1,7 +1,7 @@
 # Qwen3.5-4B (vLLM / BF16) — deployment paper
 
 > One of three self-hosted-model papers. Shared mechanics: the
-> **[pattern guide](../self-hosted-model-serving.md)**. Siblings:
+> **[pattern guide](../patterns/self-hosted-model-serving.md)**. Siblings:
 > [Qwen3-4B (shipped)](./qwen3-4b.md) · [Qwen3.5-4B Q4 (llama.cpp)](./qwen3.5-4b-q4.md).
 
 | | |
@@ -40,7 +40,7 @@ small for 4B).
 
 ## 2. The BF16 / vLLM design (if built)
 
-Same chart pattern as Qwen3-4B ([guide](../self-hosted-model-serving.md)); the
+Same chart pattern as Qwen3-4B ([guide](../patterns/self-hosted-model-serving.md)); the
 deltas:
 
 - **Image:** a Qwen3.5-capable `kserve/huggingfaceserver` — candidates `latest-gpu`

@@ -8,32 +8,32 @@ attribution), **0008** (Python dashboards), **0045** (scrape-first sourcing),
 **0058** (cost metrics precomputed to Mimir), **0059** (unified alerting →
 Discord), **0060** (gamified App Scoreboard). Cost observability — the metrics
 backbone, dashboards, scoreboard, alerting + runbook — is its own guide:
-[`cost-observability.md`](../cost-observability.md).
+[`cost-observability.md`](../patterns/cost-observability.md).
 
 ## The pipeline
 
 ```mermaid
 flowchart BT
     subgraph sources["Telemetry sources"]
-        WL["workload /metrics<br/>(Service/PodMonitor)"]:::own
-        KSM["kube-state-metrics<br/><i>honorLabels: true</i>"]:::own
-        NE["node-exporter"]:::own
-        LOGS["pod logs (/var/log)"]:::own
-        GWLOG["Envoy access log (OTLP)"]:::own
-        TRACE["core-gateway -traces<br/>OTel collector"]:::own
+        WL["workload /metrics<br/>(Service/PodMonitor)"]
+        KSM["kube-state-metrics<br/><i>honorLabels: true</i>"]
+        NE["node-exporter"]
+        LOGS["pod logs (/var/log)"]
+        GWLOG["Envoy access log (OTLP)"]
+        TRACE["core-gateway -traces<br/>OTel collector"]
     end
 
     subgraph collect["Collection · wave -1"]
-        ALLOY["Alloy (DaemonSet)<br/>ServiceMonitor/PodMonitor discovery<br/>log tail · OTLP :4317/:4318 receiver<br/>ai_gateway_user_attribution stage"]:::own
+        ALLOY["Alloy (DaemonSet)<br/>ServiceMonitor/PodMonitor discovery<br/>log tail · OTLP :4317/:4318 receiver<br/>ai_gateway_user_attribution stage"]
     end
 
     subgraph store["Storage · wave -2 → S3"]
-        MIMIR["Mimir<br/>metrics"]:::own
-        LOKI["Loki<br/>logs"]:::own
-        TEMPO["Tempo<br/>traces :3200"]:::own
+        MIMIR["Mimir<br/>metrics"]
+        LOKI["Loki<br/>logs"]
+        TEMPO["Tempo<br/>traces :3200"]
     end
 
-    GRAF["Grafana (stateless, emptyDir)<br/>+ grafana-operator (external mode)<br/>wave 0 / dashboards wave 1"]:::own
+    GRAF["Grafana (stateless, emptyDir)<br/>+ grafana-operator (external mode)<br/>wave 0 / dashboards wave 1"]
 
     WL --> ALLOY
     KSM --> ALLOY
@@ -48,7 +48,6 @@ flowchart BT
     LOKI --> GRAF
     TEMPO --> GRAF
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 | Layer | Components | Notes |
@@ -64,17 +63,15 @@ Envoy access log → Alloy → Loki labels.
 
 ```mermaid
 flowchart LR
-    JWT["Keycloak JWT"]:::ext
-    AUTH["Authorino<br/>stamp x-oidc-user-id, x-oidc-azp"]:::own
-    ENVOY["Envoy access log (OTLP)<br/>fields → OTLP attributes (ADR-0046)"]:::own
-    ALLOY["Alloy ai_gateway_user_attribution stage<br/>flatten attributes envelope<br/>promote user_id/azp/model labels<br/>pin service_name=envoy-ai-gateway"]:::own
-    LOKI["Loki streams<br/>{user_id, azp, model}"]:::own
-    DASH["per-user usage dashboard"]:::own
+    JWT["Keycloak JWT"]
+    AUTH["Authorino<br/>stamp x-oidc-user-id, x-oidc-azp"]
+    ENVOY["Envoy access log (OTLP)<br/>fields → OTLP attributes (ADR-0046)"]
+    ALLOY["Alloy ai_gateway_user_attribution stage<br/>flatten attributes envelope<br/>promote user_id/azp/model labels<br/>pin service_name=envoy-ai-gateway"]
+    LOKI["Loki streams<br/>{user_id, azp, model}"]
+    DASH["per-user usage dashboard"]
 
     JWT --> AUTH --> ENVOY --> ALLOY --> LOKI --> DASH
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 > ⚠️ Two attribution traps, both fixed and worth remembering:
@@ -89,15 +86,14 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    PY["tools/dashboards/*.py<br/>(grafana-foundation-sdk)"]:::own
-    JSON["generated JSON<br/>(committed; CI drift-checked)"]:::own
-    CR["GrafanaDashboard / GrafanaFolder CRs<br/>(observability-dashboards)"]:::own
-    OP["grafana-operator (external mode)"]:::own
-    G["Grafana"]:::own
+    PY["tools/dashboards/*.py<br/>(grafana-foundation-sdk)"]
+    JSON["generated JSON<br/>(committed; CI drift-checked)"]
+    CR["GrafanaDashboard / GrafanaFolder CRs<br/>(observability-dashboards)"]
+    OP["grafana-operator (external mode)"]
+    G["Grafana"]
 
     PY -->|"uv run dashboards build"| JSON --> CR --> OP --> G
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 - **Scrape-first (ADR-0045):** no board without verified metrics; API-verified
@@ -133,7 +129,7 @@ behind it.
 - Bounded by what KC stores: access tokens are stateless (never in the DB),
   revocation deletes the row (no enumerable "revoked" list), and budget is
   per-user/per-`azp`, **not** per individual token. Full guide:
-  [`keycloak-identity-datasource.md`](../keycloak-identity-datasource.md).
+  [`keycloak-identity-datasource.md`](../integrations/keycloak-identity-datasource.md).
 
 **Per-JWT consumption (ADR-0067).** A complementary, **Loki-backed** view keyed on
 the JWT id `oidc_jti` (an access-log **body** field — deliberately never a Mimir
@@ -144,15 +140,13 @@ LCI show a synthetic `<resource>@<service>` email, LibreChat keeps its real
 forwarded email, and all three get a synthetic `<kind>:<id>` jti (ADR-0068);
 genuine gaps show their `missing:*`/`unstamped:*` sentinel. ⚠️ LogQL trap: extract `oidc_jti` in the
 *same* `| json` the outer `sum by` groups on, or it collapses to `-`. Full guide:
-[`jwt-token-observability.md`](../jwt-token-observability.md).
+[`jwt-token-observability.md`](../patterns/jwt-token-observability.md).
 
 ## Why the sync-wave order is load-bearing
 
 ```mermaid
 flowchart LR
     S["-3 secrets +<br/>allow-same-namespace"] --> ST["-2 stores<br/>(Mimir/Loki/Tempo)"] --> C["-1 collectors<br/>(Alloy)"] --> V["0/1 Grafana +<br/>dashboards"]
-    classDef w fill:#eaf3ea,stroke:#4a8a4a;
-    class S,ST,C,V w;
 ```
 
 Collectors before stores = dropped data; visualisation before either = empty

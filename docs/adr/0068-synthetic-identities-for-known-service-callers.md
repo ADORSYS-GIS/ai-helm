@@ -109,5 +109,5 @@ separate decision (ADR-0052 follow-up, still deferred).
 - Files: `ai-helm-values` `environments/prod/values/security-policies.yaml`
   (both AuthConfig planes — the AuthConfig moved out of `charts/apps/values.yaml`
   per ADR-0056). No dashboard change required; the boards display the new values.
-- Docs: [per-user-observability.md](../per-user-observability.md),
-  [jwt-token-observability.md](../jwt-token-observability.md) (the *how*).
+- Docs: [per-user-observability.md](../patterns/per-user-observability.md),
+  [jwt-token-observability.md](../patterns/jwt-token-observability.md) (the *how*).

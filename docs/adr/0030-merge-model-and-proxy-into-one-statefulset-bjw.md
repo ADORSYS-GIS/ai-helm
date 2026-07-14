@@ -76,4 +76,4 @@ hand-rolled→bjw-template).
 
 - Charts/files: `charts/model-serving` — `Chart.yaml` (bjw-template dep, alias `modelServing`), `values.yaml` (`modelServing:` block), deleted `templates/deployment.yaml`, new `templates/configmap-caddy.yaml`, slimmed `templates/edge-auth.yaml` (Certificate + IngressRoute only)
 - Builds on / refines: ADR-0029 (serving mode), ADR-0016 (bjw-template fork), ADR-0022 (federation/exposure)
-- Docs: [`docs/self-hosted-model-serving.md`](../self-hosted-model-serving.md) §11
+- Docs: [`docs/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) §11

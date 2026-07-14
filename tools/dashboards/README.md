@@ -7,7 +7,7 @@ the JSON is committed in git and consumed by the
 app's chart `files/dashboards/` (Layout A).
 
 **ADR:** [`docs/adr/0008-python-dashboard-generation.md`](../../docs/adr/0008-python-dashboard-generation.md)
-**Architecture context:** [`docs/grafana-operator-and-dashboards.md`](../../docs/grafana-operator-and-dashboards.md)
+**Architecture context:** [`docs/playbooks/grafana-operator-and-dashboards.md`](../../docs/playbooks/grafana-operator-and-dashboards.md)
 **SDK:** [`grafana-foundation-sdk`](https://github.com/grafana/grafana-foundation-sdk) (Python flavor) — Grafana Labs' official, typed, multi-language dashboard SDK. Pinned to `1769699452!11.5.0` (the latest Grafana-11.x SDK on PyPI; emits `schemaVersion: 39`). PyPI uses `<epoch>!<grafana-version>` local-version identifiers — one Python release per Grafana minor.
 **Toolchain:** `uv` + `ruff`, Python 3.12+
 

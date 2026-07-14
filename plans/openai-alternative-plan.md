@@ -4,7 +4,7 @@
 > of* `api.openai.com` — same SDKs, predictable quota and billing, full usage
 > observability, and capacity for **~2000 sustained / ~5000 peak concurrent
 > clients**. Grounded in what already shipped on `claude/magical-bohr-390242`
-> (see the [architectural-shift](../docs/architectural-shift-main-to-magical-bohr.md)
+> (see the [architectural-shift](../docs/migrations/architectural-shift-main-to-magical-bohr.md)
 > and [arc42](../docs/arc42.md)).
 
 **Status:** Proposed plan · **Date:** 2026-06-04 · **Maintainer:** @stephane-segning

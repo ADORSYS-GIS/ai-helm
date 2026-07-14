@@ -42,7 +42,7 @@ CAMER_DIGITAL_REALM_ID = "04793949-13aa-48ef-9d4d-1c60761f0c97"
 
 # ---------------------------------------------------------------------------
 # Loki label keys promoted by Alloy's `ai_gateway_user_attribution` stage
-# (see ADR-0005 + ADR-0046 and docs/per-user-observability.md).
+# (see ADR-0005 + ADR-0046 and docs/patterns/per-user-observability.md).
 # ---------------------------------------------------------------------------
 LABEL_USER_ID = "user_id"
 LABEL_AZP = "azp"

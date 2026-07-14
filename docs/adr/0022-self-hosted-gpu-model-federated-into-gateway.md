@@ -164,7 +164,7 @@ re-litigate them (the *how* is in the design doc):
 
 ## Related
 
-- Docs: [`docs/self-hosted-model-serving.md`](../self-hosted-model-serving.md) (the *how*: VRAM math, flags, runbook, verification)
+- Docs: [`docs/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) (the *how*: VRAM math, flags, runbook, verification)
 - Charts/files: `charts/model-serving/` (PVC + seed-hook + ServingRuntime + InferenceService + API-key ESO), `charts/ai-models/values.yaml` (`vllm-local-01` backend + `qwen3-4b-local` model), `charts/apps/` (`homeCluster: true` affordance + the `model-serving` app)
 - Prior art: home-os commit `5dafc759` (the commented-out `ai-poc-model-deployment`)
 - Builds on: ADR-0017 (destination invariant — this is its sanctioned exception), ADR-0021 (the gateway policy the model inherits)

@@ -1,11 +1,11 @@
 # Keycloak identity datasource — resolving `user_id`, sessions & grants
 
-**Status:** live (2026-06-26). **ADRs:** [0063](./adr/0063-grafana-readonly-keycloak-datasource.md) (identity resolution), [0064](./adr/0064-keycloak-sessions-and-grants-visibility.md) (sessions & grants).
+**Status:** live (2026-06-26). **ADRs:** [0063](../adr/0063-grafana-readonly-keycloak-datasource.md) (identity resolution), [0064](../adr/0064-keycloak-sessions-and-grants-visibility.md) (sessions & grants).
 
 This is the "how it works + how to run it" guide for the read-only Keycloak
 Postgres datasource that Grafana uses to turn opaque per-user identifiers into
 people, and to surface standing offline grants alongside spend. It complements
-[`per-user-observability.md`](./per-user-observability.md) (the Loki attribution
+[`per-user-observability.md`](../patterns/per-user-observability.md) (the Loki attribution
 pipeline) — that doc gets the `user_id` *label* onto a log line; this one
 resolves that `user_id` to a **name** and shows the **sessions** behind it.
 
@@ -29,20 +29,19 @@ Lightbridge `lci-postgres` datasource.
 ```mermaid
 flowchart LR
     subgraph KC["keycloak ns (Hetzner)"]
-      DB[("Keycloak CNPG<br/>-ro replica :5432")]:::own
-      ROLE["grafana_ro role<br/>(least-privilege)"]:::own
+      DB[("Keycloak CNPG<br/>-ro replica :5432")]
+      ROLE["grafana_ro role<br/>(least-privilege)"]
     end
     subgraph OBS["observability ns"]
-      G["Grafana<br/>datasource uid: keycloak"]:::own
-      D1["user-directory dashboard"]:::own
-      D2["sessions-grants dashboard"]:::own
+      G["Grafana<br/>datasource uid: keycloak"]
+      D1["user-directory dashboard"]
+      D2["sessions-grants dashboard"]
     end
-    MIMIR[("Mimir<br/>per-user spend")]:::own
+    MIMIR[("Mimir<br/>per-user spend")]
     G -->|"TLS, sslmode=require<br/>(Cilium egress :5432)"| DB
     ROLE -.scopes.- DB
     G --> D1 & D2
     MIMIR -->|"joinByField on user_id / azp"| D1 & D2
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 | Concern | Repo | What |

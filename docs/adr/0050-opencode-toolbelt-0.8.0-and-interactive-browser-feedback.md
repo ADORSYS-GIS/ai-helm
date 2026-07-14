@@ -111,7 +111,7 @@ guessing.
 
 - Charts/files: `charts/librechat-opencode-wellknown/values.yaml` (plugin pins,
   browser `groups`, `@browser` prompt, version-citation fixes)
-- Docs: [`docs/opencode-well-known.md`](../opencode-well-known.md) (the *how*:
+- Docs: [`docs/opencode-well-known.md`](../integrations/opencode-well-known.md) (the *how*:
   plugin list, agent/tool table)
 - Upstream: [vymalo/opencode-oauth2 CHANGELOG](https://github.com/vymalo/opencode-oauth2/blob/main/CHANGELOG.md)
   (0.8.0 — `browser_request_feedback`, #49/#50/#51)

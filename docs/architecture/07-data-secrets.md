@@ -9,19 +9,19 @@ ExternalSecrets, backup jobs) and references the platform by name.
 ```mermaid
 flowchart TB
     subgraph owned["Defined by this repo (consumers)"]
-        LC["LibreChat"]:::own
-        MONGO["MongoDB<br/>(librechat-app)"]:::own
-        MEILI["Meilisearch<br/>(librechat-search)"]:::own
-        REPOAUTH["lightbridge-repo-auth"]:::own
-        LGTM["Mimir / Loki / Tempo"]:::own
-        MBK["mongodb-backup CronJob"]:::own
-        LBDB["lightbridge-db cluster (CNPG Cluster CR)<br/>charts/lightbridge-db + repoauth Database CR"]:::own
+        LC["LibreChat"]
+        MONGO["MongoDB<br/>(librechat-app)"]
+        MEILI["Meilisearch<br/>(librechat-search)"]
+        REPOAUTH["lightbridge-repo-auth"]
+        LGTM["Mimir / Loki / Tempo"]
+        MBK["mongodb-backup CronJob"]
+        LBDB["lightbridge-db cluster (CNPG Cluster CR)<br/>charts/lightbridge-db + repoauth Database CR"]
     end
 
     subgraph external["Owned externally (the actual engines)"]
-        CNPGOP["CNPG operator + Barman plugin<br/>cnpg-system"]:::ext
-        REDIS["redis-ha · redis-system<br/>(TLS-only)"]:::ext
-        S3["Hetzner Object Storage<br/>bucket: ssegning-k8s-state"]:::ext
+        CNPGOP["CNPG operator + Barman plugin<br/>cnpg-system"]
+        REDIS["redis-ha · redis-system<br/>(TLS-only)"]
+        S3["Hetzner Object Storage<br/>bucket: ssegning-k8s-state"]
     end
 
     LC --> MONGO
@@ -34,8 +34,6 @@ flowchart TB
     MONGO --> MBK --> S3
     LBDB -->|Barman backup| S3
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 | Store | Engine | Who owns it | This repo defines |
@@ -51,14 +49,13 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    BUCKET["🪣 ssegning-k8s-state<br/>endpoint: nbg1.your-objectstorage.com<br/>region: us-east-1"]:::ext
+    BUCKET["🪣 ssegning-k8s-state<br/>endpoint: nbg1.your-objectstorage.com<br/>region: us-east-1"]
     BUCKET --> P1["mimirblocks/<br/><i>(alphanumeric-only prefix)</i>"]
     BUCKET --> P2["loki/"]
     BUCKET --> P3["tempo/"]
     BUCKET --> P4["cnpg backups/"]
     BUCKET --> P5["librechat files/"]
     BUCKET --> P6["mongodb backups/"]
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 > `mimir.storage_prefix` must be **alphanumeric-only** (no `/`) → `mimirblocks`.
@@ -72,22 +69,22 @@ removed (2026-06-04).
 
 ```mermaid
 flowchart TB
-    AWS["AWS Secrets Manager<br/>(behind ssegning-aws store)"]:::ext
+    AWS["AWS Secrets Manager<br/>(behind ssegning-aws store)"]
     subgraph keys["Two key namespaces"]
-        K1["ai/camer/digital/prod/env<br/><i>APP secrets (one prop each)</i>"]:::ext
-        K2["prod/meta/test-app<br/><i>PLATFORM secrets (S3, redis pw)</i>"]:::ext
+        K1["ai/camer/digital/prod/env<br/><i>APP secrets (one prop each)</i>"]
+        K2["prod/meta/test-app<br/><i>PLATFORM secrets (S3, redis pw)</i>"]
     end
-    ESO["External Secrets Operator<br/>external-secrets ns"]:::ext
+    ESO["External Secrets Operator<br/>external-secrets ns"]
 
     subgraph charts["In-chart ExternalSecret CRs (this repo)"]
-        ES1["ai-models-backends (provider keys)"]:::own
-        ES2["librechat-app"]:::own
-        ES3["observability-secrets"]:::own
-        ES4["lightbridge-repo-auth + db-role"]:::own
-        ES5["environments/prod/deps/* overlays"]:::own
+        ES1["ai-models-backends (provider keys)"]
+        ES2["librechat-app"]
+        ES3["observability-secrets"]
+        ES4["lightbridge-repo-auth + db-role"]
+        ES5["environments/prod/deps/* overlays"]
     end
 
-    K8S["k8s Secrets in each namespace"]:::own
+    K8S["k8s Secrets in each namespace"]
 
     AWS --> K1 & K2
     K1 --> ESO
@@ -95,8 +92,6 @@ flowchart TB
     charts -->|reference store by name| ESO
     ESO --> K8S
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 ### Ownership split (who owns which secret)
@@ -123,8 +118,6 @@ flowchart LR
         R5["cluster-issuer annotations"] -.-> E5["cert-manager + ClusterIssuers (home-os)"]
         R6["OpenTelemetryCollector CR"] -.-> E6["otel-operator (opentelemetry-system)"]
     end
-    classDef e fill:#eee,stroke:#888,stroke-dasharray:4 3;
-    class E1,E2,E3,E4,E5,E6 e;
 ```
 
 Don't re-add operators/stores/issuers for any of these — they're provisioned by

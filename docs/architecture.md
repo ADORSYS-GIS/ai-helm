@@ -7,18 +7,20 @@ component, plus one page per subsystem) or the formal
 **[arc42 description](arc42.md)**. Every *why* lives in the
 [ADR index](adr/README.md).
 
-> Reflects `release-2026.06.14-v09`. Coder was removed (ADR-0027) and is not shown.
+> Reflects `main` under **continuous delivery** (ADR-0055; charts float from OCI,
+> no release tag). Coder was removed (ADR-0027) and is returning (issue #651);
+> the newer surfaces — code intelligence, the in-cluster agent, and Restate —
+> are shown below.
 
 ## Where to go for what
 
 ```mermaid
 flowchart LR
-    HERE["📍 architecture.md<br/><i>you are here — the map</i>"]:::own
-    SUITE["architecture/ suite<br/><i>11 layered, mermaid pages</i>"]:::own
-    ARC["arc42.md<br/><i>formal 12-section</i>"]:::own
-    ADR["adr/<br/><i>the why</i>"]:::own
+    HERE["📍 architecture.md<br/><i>you are here — the map</i>"]
+    SUITE["architecture/ suite<br/><i>11 layered, mermaid pages</i>"]
+    ARC["arc42.md<br/><i>formal 12-section</i>"]
+    ADR["adr/<br/><i>the why</i>"]
     HERE --> SUITE & ARC & ADR
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 | You want… | Go to |
@@ -38,40 +40,44 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    NET["🌐 Internet"]:::ext
-    LB["Hetzner LB → Traefik / Envoy data-plane"]:::ext
+    NET["🌐 Internet"]
+    LB["Hetzner LB → Traefik / Envoy data-plane"]
 
     subgraph gw["Gateway (converse-gateway + envoy-*-system + authorino-system)"]
-        CG["Envoy AI Gateway (core-gateway)<br/>ai.camer.digital → LibreChat<br/>api.ai.camer.digital → /v1 (Authorino)<br/>api.ai.camer.digital/mcp/* → MCP (native JWT)"]:::own
+        CG["Envoy AI Gateway (core-gateway)<br/>ai.camer.digital → LibreChat<br/>api.ai.camer.digital → /v1 (Authorino)<br/>api.ai.camer.digital/mcp/* → MCP (native JWT)"]
     end
 
     subgraph app["Application plane"]
-        LC["LibreChat<br/>(converse-chat)"]:::ctrl
-        MODELS["AI models<br/>(converse)"]:::ctrl
-        MCP["MCP servers<br/>(converse-mcp)"]:::ctrl
-        REPO["lightbridge-repo-auth<br/>(converse)"]:::own
+        LC["LibreChat / converse-ui"]
+        MODELS["AI models"]
+        MCP["MCP servers"]
+        REPO["lightbridge-repo-auth"]
+        LCI["lightbridge-code-intelligence<br/>(automated code review)"]
+        AGENT["opencode-k8s-agent<br/>(in-cluster ops)"]
     end
 
     subgraph infra["Platform plane"]
-        GPU["Self-hosted model 🟢<br/>(converse-poc, home GPU)"]:::gpu
-        OBS["Observability LGTM<br/>(observability)"]:::ctrl
+        GPU["Self-hosted GPU models<br/>(home GPU)"]
+        OBS["Observability LGTM"]
+        RST["restate<br/>(durable runtime)"]
     end
 
-    KC["Keycloak"]:::ext
-    PROV["Model providers"]:::ext
+    KC["Keycloak"]
+    PROV["Model providers"]
+    GIT["GitHub / GitLab"]
 
     NET --> LB --> CG
     CG --> LC & MODELS & MCP
-    CG -.-> REPO
+    CG -.-> REPO & LCI
+    AGENT -.internal plane.-> CG
+    LCI -.calls models.-> CG
+    GIT -.PR / MR events.-> LCI
     MODELS --> PROV & GPU
     CG -.OIDC.-> KC
     LC --> OBS
     MODELS --> OBS
+    RST -.-> AGENT
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
-    classDef gpu fill:#f7e8f0,stroke:#a54a81;
 ```
 
 > **Vanity-domain redirects (ADR-0053).** We own `kivoyo.com`; its DNS already
@@ -86,23 +92,31 @@ flowchart TB
 
 Two clusters: ArgoCD runs on `admin@homeos`; workloads run on Hetzner
 `home-remote`. The root `ai-apps-v2` Application is **applied from `home-os`** and
-pins an **immutable release tag** (never `main` — ADR-0031). Detail:
-[suite · 04 GitOps](architecture/04-gitops-deployment.md).
-
-> ⚠️ **Migrating to continuous delivery (ADR-0055):** tag-based deploys are being
-> replaced by OCI-published charts floated on a semver range + argocd-image-updater
-> write-back to the private `ai-helm-values` repo. Per-app opt-in (`chart:`); the
-> tag model applies until each app is cut over. Runbook:
-> [`continuous-delivery.md`](continuous-delivery.md).
+now **tracks `main`** — continuous delivery (ADR-0055) replaced the immutable-tag
+model (ADR-0031). Detail: [suite · 04 GitOps](architecture/04-gitops-deployment.md).
 
 ```mermaid
 flowchart LR
-    ROOT["ai-apps-v2 (root, in-cluster/argocd)<br/>→ charts/apps"]:::ctrl
-    APPS["~21 Applications/ApplicationSets<br/>(control objects in argocd ns)"]:::ctrl
-    WL["workloads → home-remote"]:::own
+    ROOT["ai-apps-v2 (root, in-cluster/argocd)<br/>tracks main → charts/apps"]
+    APPS["23 Applications/ApplicationSets<br/>(control objects in argocd ns)"]
+    WL["workloads → home-remote"]
     ROOT --> APPS ==> WL
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5;
+```
+
+**Continuous delivery (ADR-0055/0056)** — a merge to `main` is a live deploy;
+charts float from OCI on a semver range, image tags + per-env values live in the
+private `ai-helm-values` repo, and argocd-image-updater writes new tags back.
+Rollback is a `git revert` in `ai-helm-values` (or a chart-version pin). Runbook:
+[`continuous-delivery.md`](continuous-delivery.md).
+
+```mermaid
+flowchart LR
+    PR["merge to main (ai-helm)"] --> PUB["publish-charts-oci<br/>auto-semver"]
+    PUB --> OCI["oci://ghcr.io/adorsys-gis/charts"]
+    OCI -->|chart source A| ARGO["ArgoCD (ai-apps-v2)"]
+    VAL["ai-helm-values (private)<br/>image tags + per-env values + deps"] -->|source B: $values + deps| ARGO
+    ARGO ==> WL2["workloads → home-remote"]
+    WL2 -->|image-updater write-back| VAL
 ```
 
 ## Auth in one diagram
@@ -113,14 +127,12 @@ removed (2026-06-04). Detail: [suite · 05 Auth](architecture/05-auth-identity.m
 
 ```mermaid
 flowchart LR
-    H["human / dev"]:::ext -->|JWT / API key| EXT["EXTERNAL plane<br/>api.ai.camer.digital"]:::own
-    CI["CI runner"]:::ext -->|GHA OIDC| EXT
-    SVC["in-cluster svc"]:::ext -->|SA token / apiKey| INT["INTERNAL plane<br/>core-gateway-internal.svc"]:::own
-    EXT --> A["Authorino<br/>x-oidc-* + x-account-id/x-billing-plan"]:::own
+    H["human / dev"] -->|JWT / API key| EXT["EXTERNAL plane<br/>api.ai.camer.digital"]
+    CI["CI runner"] -->|GHA OIDC| EXT
+    SVC["in-cluster svc"] -->|SA token / apiKey| INT["INTERNAL plane<br/>core-gateway-internal.svc"]
+    EXT --> A["Authorino<br/>x-oidc-* + x-account-id/x-billing-plan"]
     INT --> A
-    A --> RL["per-model burst + monthly budget"]:::own
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+    A --> RL["per-model burst + monthly budget"]
 ```
 
 > ⚠️ `/mcp/*` is the one carve-out from Authorino — Envoy-native JWT verification
@@ -131,17 +143,33 @@ flowchart LR
 
 LGTM + Alloy, per-user attribution from JWT → Loki labels; opaque `user_id`
 UUIDs + offline grants resolved via a read-only Keycloak datasource
-([`keycloak-identity-datasource.md`](keycloak-identity-datasource.md),
+([`keycloak-identity-datasource.md`](integrations/keycloak-identity-datasource.md),
 ADR-0063/0064). Detail: [suite · 08 Observability](architecture/08-observability.md).
 
 ```mermaid
 flowchart BT
-    SRC["workloads · ksm · node-exporter ·<br/>pod logs · Envoy access log · traces"]:::own
-    ALLOY["Alloy (collect)"]:::own
-    STORE["Mimir / Loki / Tempo → S3"]:::own
-    GRAF["Grafana (+ operator dashboards)"]:::own
+    SRC["workloads · ksm · node-exporter ·<br/>pod logs · Envoy access log · traces"]
+    ALLOY["Alloy (collect)"]
+    STORE["Mimir / Loki / Tempo → S3"]
+    GRAF["Grafana (+ operator dashboards)"]
     SRC --> ALLOY --> STORE --> GRAF
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
+```
+
+## Code intelligence & agents in one diagram
+
+Automated code review (`lightbridge-code-intelligence`) and the in-cluster
+`opencode-k8s-agent` both call models through the gateway; the agent uses the
+**internal** plane with its own SA token (ADR-0037). Detail:
+[arc42 · §5](arc42.md#5-building-block-view).
+
+```mermaid
+flowchart LR
+    GH["GitHub / GitLab<br/>PR / MR webhook"] --> CP["LCI control plane (Rust/Axum)"]
+    CP --> NEO["Neo4j graph"]
+    CP --> PG["CNPG pgvector"]
+    CP -->|review / embed| GWI["Gateway (internal plane)"]
+    AG["opencode-k8s-agent"] -->|cluster ops| GWI
+    CP -->|inline feedback| GH
 ```
 
 ## What is *not* in this repo
@@ -149,12 +177,12 @@ flowchart BT
 Shared cluster infrastructure is owned externally — this repo only *consumes* it
 by name (no Application here): **Traefik**, **CloudNativePG** + Barman,
 **cert-manager** + ClusterIssuers, **redis-ha**, the **External Secrets
-Operator** + the `ssegning-aws` store, and the **OpenTelemetry Operator**. There
-is also **no `ai-gitops` repo** — per-env config lives in `environments/` and the
-root Application is applied from `home-os` with its tag pinned in `home-os`
-`charts/cd`. (ADR-0055 introduces a private **`ai-helm-values`** repo for the
-written-back image tags + the migrated `environments/` overlays — values-only;
-the root still lives in `home-os`.) Detail:
+Operator** + the `ssegning-aws` store, the **OpenTelemetry Operator**, and the
+k3s-bundled **metrics-server** (ADR-0054). The old `ai-gitops` repo was never
+built: under continuous delivery (ADR-0055/0056) the private **`ai-helm-values`**
+repo holds the written-back image tags, the per-env `environments/` overlays, and
+every workload `valuesObject` — values-only. The root `ai-apps-v2` Application is
+applied from `home-os` (tracking `main`, pinned in `home-os` `charts/cd`). Detail:
 [suite · 07 Data & secrets](architecture/07-data-secrets.md).
 
 ## Glossary

@@ -9,7 +9,7 @@ Federated into the Hetzner Envoy AI Gateway as an OpenAI backend (`prefix: /v1`)
 model id `qwen3-5-4b-local`. Deploys to the **home** cluster (`homeCluster: true`).
 
 **Full deployment paper:** [`docs/models/qwen3.5-4b-q4.md`](../../docs/models/qwen3.5-4b-q4.md).
-**Pattern:** [`docs/self-hosted-model-serving.md`](../../docs/self-hosted-model-serving.md).
+**Pattern:** [`docs/patterns/self-hosted-model-serving.md`](../../docs/patterns/self-hosted-model-serving.md).
 **Decisions:** ADR-0022 (federation) · ADR-0028 (pricing) · ADR-0030 (one bjw STS) ·
 ADR-0032 (llama.cpp engine).
 

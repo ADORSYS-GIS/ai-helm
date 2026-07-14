@@ -180,7 +180,7 @@ lean primary or any other agent. This is what makes decision **3** cheap.
   (remove chrome-devtools), `06cbfdd` (correct the token model), `f44321f`
   (dual-package guardrail), + the lean-primary restructure (`default_agent:
   frontend`; the `@browser`/`@design` vision subagents + the model-pinning rule)
-- Docs: [`docs/opencode-well-known.md`](../opencode-well-known.md) (the *how*:
+- Docs: [`docs/opencode-well-known.md`](../integrations/opencode-well-known.md) (the *how*:
   plugin config, agent table, the per-agent injection note)
 - Charts/files: `charts/librechat-opencode-wellknown/values.yaml` (`default_agent`,
   plugin entry, deny-baseline, the `frontend` primary + `@browser`/`@design`

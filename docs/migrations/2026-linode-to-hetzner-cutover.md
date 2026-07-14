@@ -1,6 +1,6 @@
 # Linode → Hetzner cutover + domain rename (`ai-v2` → `ai`)
 
-**Why is [ADR-0025](./adr/0025-linode-to-hetzner-cutover-domain-ai.md). This is the ordered runbook.**
+**Why is [ADR-0025](../adr/0025-linode-to-hetzner-cutover-domain-ai.md). This is the ordered runbook.**
 
 Goal: make the **Hetzner** cluster (`aii-*`, today on `ai-v2.camer.digital`) the
 production cluster on **`ai.camer.digital`**, migrating production data from the

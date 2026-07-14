@@ -1,5 +1,12 @@
 # Authorino: bypass OPA / external metadata for service accounts
 
+> ⚠️ **Historical — superseded.** OPA was removed from the gateway auth path on
+> 2026-06-04 ([ADR-0021](../adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md)):
+> a valid Keycloak JWT is now the boundary, so there is no OPA to bypass. This
+> doc is kept as a record of the earlier `azp`-allowlist design (ADR-0003, also
+> superseded). For the current model see
+> [architecture · 05 Auth](../architecture/05-auth-identity.md).
+
 **Chart:** `charts/kuadrant-policies`
 **App:** `security-policies` (in `charts/apps/values.yaml`)
 **Authorino API:** `authorino.kuadrant.io/v1beta3`
@@ -11,8 +18,8 @@
 > hop). The `serviceAccountClients` allowlist and `_skipForServiceAccounts`
 > markers are kept but **inert** (reserved for possible future burst control).
 > This doc is retained as a record of the SA-skip mechanism (ADR-0003 era). For
-> the current model read [`architecture/05-auth-identity.md`](./architecture/05-auth-identity.md)
-> and [ADR-0021](./adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md).
+> the current model read [`architecture/05-auth-identity.md`](../architecture/05-auth-identity.md)
+> and [ADR-0021](../adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md).
 
 ## What this does
 

@@ -18,30 +18,27 @@ planes with different trust assumptions.
 ```mermaid
 flowchart TB
     subgraph clients["Callers"]
-        H["👤 human (opencode / CLI)"]:::actor
-        CI["🤖 CI runner"]:::actor
-        SVC["⚙️ in-cluster service<br/>(LibreChat, jobs)"]:::actor
+        H["👤 human (opencode / CLI)"]
+        CI["🤖 CI runner"]
+        SVC["⚙️ in-cluster service<br/>(LibreChat, jobs)"]
     end
 
     subgraph ext["EXTERNAL plane · api.ai.camer.digital<br/>(public LB, ACME TLS)"]
-        EA["AuthConfig: external<br/>① Keycloak JWT (humans, remote SAs)<br/>② github-actions JWT → repo-auth /resolve"]:::own
+        EA["AuthConfig: external<br/>① Keycloak JWT (humans, remote SAs)<br/>② github-actions JWT → repo-auth /resolve"]
     end
     subgraph int["INTERNAL plane · core-gateway-internal.svc<br/>(ClusterIP only, self-signed CA TLS)"]
-        IA["AuthConfig: internal<br/>k8s SA TokenReview (one-time jobs)<br/>OR static apiKey (long-running)<br/>+ prefer X-LibreChat-User"]:::own
+        IA["AuthConfig: internal<br/>k8s SA TokenReview (one-time jobs)<br/>OR static apiKey (long-running)<br/>+ prefer X-LibreChat-User"]
     end
 
-    DESC["Descriptors stamped (CEL, with defaults):<br/>x-account-id · x-org-id · x-billing-plan<br/>+ x-oidc-* identity set (ADR-0011)"]:::ctrl
+    DESC["Descriptors stamped (CEL, with defaults):<br/>x-account-id · x-org-id · x-billing-plan<br/>+ x-oidc-* identity set (ADR-0011)"]
 
     H --> EA
     CI --> EA
     SVC --> IA
     EA --> DESC
     IA --> DESC
-    DESC --> RL["per-model BackendTrafficPolicy<br/>burst + monthly budget by tier"]:::own
+    DESC --> RL["per-model BackendTrafficPolicy<br/>burst + monthly budget by tier"]
 
-    classDef actor fill:#fff,stroke:#555;
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5;
 ```
 
 | Plane | Host | TLS | Accepts | Trust basis |
@@ -64,8 +61,6 @@ flowchart LR
         K["in-cluster job"] -->|k8s SA / apiKey| KJ["internal plane"]
     end
 
-    classDef g fill:#eaf3ea,stroke:#4a8a4a;
-    class B,BJ,O,OJ,C,CJ,K,KJ g;
 ```
 
 **Per-user attribution for LibreChat:** LibreChat authenticates as *itself*
@@ -82,17 +77,17 @@ secret, no per-runner registration, no distributed private key.
 ```mermaid
 flowchart TB
     subgraph gh["GitHub"]
-        APP["GitHub App: camer-digital-ai<br/><i>control plane (install webhooks)</i>"]:::ext
-        OIDC["GHA OIDC issuer<br/><i>data plane (per-run token)</i>"]:::ext
+        APP["GitHub App: camer-digital-ai<br/><i>control plane (install webhooks)</i>"]
+        OIDC["GHA OIDC issuer<br/><i>data plane (per-run token)</i>"]
     end
 
     subgraph cluster["in-cluster (converse ns)"]
-        RA["lightbridge-repo-auth"]:::own
-        DB["CNPG repoauth DB<br/>(sources: owner_id → account)"]:::ext
+        RA["lightbridge-repo-auth"]
+        DB["CNPG repoauth DB<br/>(sources: owner_id → account)"]
     end
 
-    A["Authorino (external AuthConfig)"]:::own
-    CTL["repo-auth-ctl<br/><i>operator CLI: claim / block</i>"]:::own
+    A["Authorino (external AuthConfig)"]
+    CTL["repo-auth-ctl<br/><i>operator CLI: claim / block</i>"]
 
     APP -->|"installation.created webhook<br/>(repository_owner_id)"| RA
     RA --> DB
@@ -101,8 +96,6 @@ flowchart TB
     A -->|"github-actions JWT →<br/>POST /v1/resolve (owner_id)"| RA
     RA -->|"account_id + plan, or 403"| A
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 - **Binding key** = `repository_owner_id` (GitHub numeric, server-set, immutable —

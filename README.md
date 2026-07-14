@@ -73,12 +73,12 @@ every workload that runs in the cluster, plus the ArgoCD `Application` /
 | Understand the system at a glance | [`docs/architecture.md`](docs/architecture.md) |
 | See every architectural decision and why | [`docs/adr/README.md`](docs/adr/README.md) |
 | Contribute a change | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
-| Audit chart pin currency vs upstream | [`docs/2026-currency-audit.md`](docs/2026-currency-audit.md) |
-| Add a new dashboard | [`docs/grafana-operator-and-dashboards.md`](docs/grafana-operator-and-dashboards.md) + [`docs/python-dashboard-generation.md`](docs/python-dashboard-generation.md) |
-| Understand the gateway auth flow | [`docs/per-user-observability.md`](docs/per-user-observability.md) + [`docs/adr/0011-oidc-downstream-headers.md`](docs/adr/0011-oidc-downstream-headers.md) |
-| Use the AI gateway from a CLI | [`docs/opencode-well-known.md`](docs/opencode-well-known.md) |
-| Operate the LGTM stack | [`docs/observability-stack.md`](docs/observability-stack.md) |
-| Restore a backup | [`docs/cnpg-native-backup/`](docs/cnpg-native-backup/), [`docs/mongodb-restoration-guide.md`](docs/mongodb-restoration-guide.md) |
+| Audit chart pin currency vs upstream | [`docs/migrations/2026-currency-audit.md`](docs/migrations/2026-currency-audit.md) |
+| Add a new dashboard | [`docs/playbooks/grafana-operator-and-dashboards.md`](docs/playbooks/grafana-operator-and-dashboards.md) + [`docs/playbooks/python-dashboard-generation.md`](docs/playbooks/python-dashboard-generation.md) |
+| Understand the gateway auth flow | [`docs/patterns/per-user-observability.md`](docs/patterns/per-user-observability.md) + [`docs/adr/0011-oidc-downstream-headers.md`](docs/adr/0011-oidc-downstream-headers.md) |
+| Use the AI gateway from a CLI | [`docs/integrations/opencode-well-known.md`](docs/integrations/opencode-well-known.md) |
+| Operate the LGTM stack | [`docs/playbooks/observability-stack.md`](docs/playbooks/observability-stack.md) |
+| Restore a backup | [`docs/cnpg-native-backup/`](docs/cnpg-native-backup/), [`docs/playbooks/mongodb-restoration-guide.md`](docs/playbooks/mongodb-restoration-guide.md) |
 
 ## The big picture in three sentences
 

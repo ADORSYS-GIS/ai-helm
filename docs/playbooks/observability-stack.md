@@ -39,7 +39,7 @@
 > orchestrator (`charts/observability`, ADR-0020); current chart versions are
 > mimir-distributed 5.8.0 / loki 7.0.0 / tempo 1.24.4. For the *current* topology
 > and the answers to "why N pods?", read the next section — or the canonical
-> mermaid map at [`architecture/08-observability.md`](./architecture/08-observability.md).
+> mermaid map at [`architecture/08-observability.md`](../architecture/08-observability.md).
 
 ## Topology & component rationale (current)
 
@@ -66,7 +66,7 @@ Loki `http://loki-gateway.observability…`, Tempo
 > A full point-in-time diagnosis of the 2026-06-07 datasource breakages (Tempo
 > `:3100`→`:3200`, Loki mislabeling via line-regex, Mimir empty due to a wedged
 > memberlist ring) lives in
-> [`2026-06-07-observability-datasource-audit.md`](./2026-06-07-observability-datasource-audit.md).
+> [`2026-06-07-observability-datasource-audit.md`](../migrations/2026-06-07-observability-datasource-audit.md).
 
 ---
 
