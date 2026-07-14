@@ -129,4 +129,4 @@ Concretely:
   `charts/librechat-app/values.yaml` (`X-LibreChat-Name` forwarding),
   `tools/dashboards/src/dashboards/envoy_ai_gateway/per_user.py` (sentinel-aware
   `_SELECTOR`).
-- Docs: [per-user-observability.md](../per-user-observability.md) (the *how*).
+- Docs: [per-user-observability.md](../patterns/per-user-observability.md) (the *how*).

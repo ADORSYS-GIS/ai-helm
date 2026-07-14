@@ -416,7 +416,7 @@ _DESCRIPTION = (
     "Personal AI usage for the authenticated user. "
     "Isolated by ${__user.email} (Grafana built-in user variable, ADR-0077). "
     "Data path: JWT -> Authorino -> Envoy access log -> Alloy -> Loki. "
-    "See docs/per-user-observability.md. "
+    "See docs/patterns/per-user-observability.md. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/my_usage.py."
 )
 

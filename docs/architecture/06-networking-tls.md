@@ -9,21 +9,21 @@ crashloop" incidents — so it gets the most attention here.
 
 ```mermaid
 flowchart TB
-    NET["🌐 Internet"]:::ext
-    LB["Hetzner Cloud LB · 46.225.38.138<br/><i>targets WORKERS only;<br/>use-private-ip: true</i>"]:::ext
+    NET["🌐 Internet"]
+    LB["Hetzner Cloud LB · 46.225.38.138<br/><i>targets WORKERS only;<br/>use-private-ip: true</i>"]
 
     subgraph cluster["home-remote (Hetzner k3s)"]
-        TRAEFIK["Traefik (external)<br/>IngressClass traefik<br/><i>non-gateway ingresses</i>"]:::ext
-        EGW["Envoy data plane<br/>(core-gateway)"]:::own
+        TRAEFIK["Traefik (external)<br/>IngressClass traefik<br/><i>non-gateway ingresses</i>"]
+        EGW["Envoy data plane<br/>(core-gateway)"]
 
         subgraph hosts["Host-based routing on the gateway"]
-            H1["ai.camer.digital → LibreChat"]:::own
-            H2["api.ai.camer.digital → /v1 (Authorino)"]:::own
-            H3["api.ai.camer.digital/mcp/* → MCP (native JWT)"]:::own
+            H1["ai.camer.digital → LibreChat"]
+            H2["api.ai.camer.digital → /v1 (Authorino)"]
+            H3["api.ai.camer.digital/mcp/* → MCP (native JWT)"]
         end
     end
 
-    KC["auth.verif.fyi → Keycloak<br/>(separate cluster)"]:::ext
+    KC["auth.verif.fyi → Keycloak<br/>(separate cluster)"]
 
     NET --> LB
     LB --> TRAEFIK
@@ -31,8 +31,6 @@ flowchart TB
     EGW --> H1 & H2 & H3
     H1 -.OIDC.-> KC
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 > **LB gotcha:** the 3 control-plane nodes carry
@@ -50,25 +48,22 @@ storage crashloops until it gets an *additive* allow.
 
 ```mermaid
 flowchart TB
-    POD["any pod"]:::own
-    DNS["✅ allow-dns<br/>(DNS → kube-system)"]:::ok
-    DENY["⛔ everything else<br/>DENIED by default"]:::deny
+    POD["any pod"]
+    DNS["✅ allow-dns<br/>(DNS → kube-system)"]
+    DENY["⛔ everything else<br/>DENIED by default"]
 
     POD --> DNS
     POD --> DENY
 
     subgraph additive["Additive CiliumNetworkPolicy (per app, via deps overlay)"]
-        API["toEntities: [kube-apiserver]<br/><i>operators, ksm, grafana-operator, Alloy</i>"]:::ok
-        S3A["toFQDNs: '*.your-objectstorage.com'<br/><i>mimir, loki, tempo</i>"]:::ok
-        SAME["allow-same-namespace<br/><i>Mimir memberlist gossip :7946</i>"]:::ok
-        OTLP["ingress :4317/:4318 fromEntities: [cluster]<br/><i>Alloy OTLP receiver</i>"]:::ok
+        API["toEntities: [kube-apiserver]<br/><i>operators, ksm, grafana-operator, Alloy</i>"]
+        S3A["toFQDNs: '*.your-objectstorage.com'<br/><i>mimir, loki, tempo</i>"]
+        SAME["allow-same-namespace<br/><i>Mimir memberlist gossip :7946</i>"]
+        OTLP["ingress :4317/:4318 fromEntities: [cluster]<br/><i>Alloy OTLP receiver</i>"]
     end
 
     DENY -.->|"unblocked by"| additive
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ok fill:#eafaea,stroke:#4a8a4a;
-    classDef deny fill:#fbeaea,stroke:#a54a4a;
 ```
 
 > ⚠️ **A plain k8s `NetworkPolicy` `ipBlock` does NOT match on Cilium** — node IPs
@@ -95,21 +90,19 @@ Two issuers, two trust models — both via cert-manager (installed by `home-os`)
 ```mermaid
 flowchart LR
     subgraph external["External / public"]
-        ACME["in-chart ns ACME Issuer<br/>(core-gateway, gateway.acmeHttp01)"]:::own
-        LE["Let's Encrypt<br/>HTTP-01 via gatewayHTTPRoute"]:::ext
-        ACME --> LE --> PUBCERT["api.ai.camer.digital cert"]:::own
+        ACME["in-chart ns ACME Issuer<br/>(core-gateway, gateway.acmeHttp01)"]
+        LE["Let's Encrypt<br/>HTTP-01 via gatewayHTTPRoute"]
+        ACME --> LE --> PUBCERT["api.ai.camer.digital cert"]
     end
     subgraph internal["Internal / first-party"]
-        CA["self-signed-ca ClusterIssuer<br/>'Home SSegning Root CA'<br/>(home-os)"]:::ext
-        CA --> INTCERT["core-gateway-internal cert<br/>+ redis-ha client trust"]:::own
+        CA["self-signed-ca ClusterIssuer<br/>'Home SSegning Root CA'<br/>(home-os)"]
+        CA --> INTCERT["core-gateway-internal cert<br/>+ redis-ha client trust"]
     end
     subgraph ingress["Webhook / app ingress"]
-        HTTP["cert-home-cert-http ClusterIssuer"]:::ext
-        HTTP --> WHCERT["repo-auth.ai.camer.digital cert<br/>(deps overlay)"]:::own
+        HTTP["cert-home-cert-http ClusterIssuer"]
+        HTTP --> WHCERT["repo-auth.ai.camer.digital cert<br/>(deps overlay)"]
     end
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 | Surface | Issuer | Mechanism |
@@ -131,10 +124,8 @@ internal CA — a plaintext client gets `connection reset by peer`.
 
 ```mermaid
 flowchart LR
-    LCC["LibreChat"]:::own -->|"REDIS_PASSWORD + TLS"| R["redis-ha-haproxy.redis-system:6379<br/>(master-router, not the round-robin redis-ha-redis)"]:::ext
-    RL["Envoy ratelimit"]:::own -->|"REDIS_TLS=true + REDIS_TLS_CACERT"| R
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+    LCC["LibreChat"] -->|"REDIS_PASSWORD + TLS"| R["redis-ha-haproxy.redis-system:6379<br/>(master-router, not the round-robin redis-ha-redis)"]
+    RL["Envoy ratelimit"] -->|"REDIS_TLS=true + REDIS_TLS_CACERT"| R
 ```
 
 Each consumer namespace needs its own `redis-ha-redis-auth` Secret (via

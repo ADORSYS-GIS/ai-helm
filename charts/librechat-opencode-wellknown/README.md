@@ -5,7 +5,7 @@ Tiny nginx serving a static JSON at
 `opencode auth login https://ai.camer.digital/opencode`.
 
 **ADR:** [`0014`](../../docs/adr/0014-split-librechart-and-opencode-wellknown.md)
-**User-facing doc:** [`docs/opencode-well-known.md`](../../docs/opencode-well-known.md)
+**User-facing doc:** [`docs/integrations/opencode-well-known.md`](../../docs/integrations/opencode-well-known.md)
 **Orchestrator:** [`librechart`](../librechart/)
 
 ## What it renders
@@ -76,7 +76,7 @@ app-template's standard schema).
 | `opencode-wellknown.controllers.main.containers.nginx.resources` | requests/limits |
 | `opencode-wellknown.ingress.main` | bjw-s `ingress.<name>` shape (className, hosts, tls, annotations) |
 
-## Cluster prerequisites (out of scope; see `docs/opencode-well-known.md`)
+## Cluster prerequisites (out of scope; see `docs/integrations/opencode-well-known.md`)
 
 1. Keycloak `opencode-cli` public client with device-grant enabled +
    `offline_access` default scope.

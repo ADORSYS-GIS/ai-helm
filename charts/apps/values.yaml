@@ -876,7 +876,7 @@ applications:
   # API-key ExternalSecret (sync-waves -2..1). The model is federated into the
   # Hetzner gateway as the `vllm-local-01` backend / `qwen3-4b-local` model in
   # charts/ai-models — so it inherits ADR-0021 JWT auth + rate limits there.
-  # See docs/self-hosted-model-serving.md.
+  # See docs/patterns/self-hosted-model-serving.md.
   - name: model-serving-qwen3-4b
     enabled: false                   # DISABLED at cutover 2026-06-08 — swapped by model-serving-qwen3-5 (one GPU). Re-enable to roll back.
     finalizers:
@@ -945,7 +945,7 @@ applications:
   # ⚠️ STAGED (enabled:false) — one GPU → one model. CUTOVER = set this enabled:true
   # + disable the currently-live self-hosted model app (qwen25-3b-awq), then flip
   # the ai-models deepseek-r1-1-5b-local / qwen2.5-3b-awq-local enabled flags.
-  # Rollback = the inverse. See docs/self-hosted-model-serving.md.
+  # Rollback = the inverse. See docs/patterns/self-hosted-model-serving.md.
   - name: model-serving-deepseek-r1-1-5b
     enabled: false                   # DISABLED — swapped by model-serving-ministral-3b (one GPU). Re-enable to roll back.
     finalizers:
@@ -1011,7 +1011,7 @@ applications:
   # DISABLED (staged) — one GPU, one model. CUTOVER = set this enabled:true +
   # disable the currently-live self-hosted model app (deepseek-r1-1-5b), then
   # flip the ai-models qwen3-8b-local / deepseek-r1-1-5b-local enabled flags.
-  # Rollback = the inverse. See docs/self-hosted-model-serving.md.
+  # Rollback = the inverse. See docs/patterns/self-hosted-model-serving.md.
   - name: model-serving-qwen3-8b
     enabled: false                 # STAGED — disable deepseek-r1-1-5b + enable this at cutover.
     finalizers:
@@ -1046,7 +1046,7 @@ applications:
   # DISABLED (staged) — one GPU, one model. CUTOVER = set this enabled:true +
   # disable the currently-live self-hosted model app (deepseek-r1-1-5b), then
   # flip the ai-models ministral-3b-local / deepseek-r1-1-5b-local enabled
-  # flags. Rollback = the inverse. See docs/self-hosted-model-serving.md.
+  # flags. Rollback = the inverse. See docs/patterns/self-hosted-model-serving.md.
   # ⚠️ Tool calling needs the official gated repo or a chat-template override
   # before cutover — the community AWQ repo strips tool-call tokens.
   - name: model-serving-ministral-3b

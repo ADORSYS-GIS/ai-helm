@@ -10,19 +10,19 @@ external MCPs behave. Source ADRs: **0038** (OAuth discovery), **0040**
 
 ```mermaid
 flowchart TB
-    GW["Envoy AI Gateway<br/>/mcp/* (native jwt_authn)"]:::own
+    GW["Envoy AI Gateway<br/>/mcp/* (native jwt_authn)"]
 
     subgraph self["Self-hosted (in-cluster, plain HTTP)"]
-        BRAVE["brave<br/>mcp/brave-search"]:::own
-        TF["terraform<br/>hashicorp/terraform-mcp-server"]:::own
+        BRAVE["brave<br/>mcp/brave-search"]
+        TF["terraform<br/>hashicorp/terraform-mcp-server"]
     end
     subgraph proxied["proxiedExternal (in-cluster proxy → external TLS)"]
-        CTX["context7 → mcp.context7.com<br/><i>engine: caddy</i>"]:::own
-        REF["refero → api.refero.design<br/><i>caddy + Content-Type rewrite</i>"]:::own
-        FC["firecrawl → mcp.firecrawl.dev<br/><i>engine: openresty + protocol pin</i>"]:::own
+        CTX["context7 → mcp.context7.com<br/><i>engine: caddy</i>"]
+        REF["refero → api.refero.design<br/><i>caddy + Content-Type rewrite</i>"]
+        FC["firecrawl → mcp.firecrawl.dev<br/><i>engine: openresty + protocol pin</i>"]
     end
 
-    EXT["external MCP services"]:::ext
+    EXT["external MCP services"]
 
     GW --> BRAVE & TF
     GW --> CTX & REF & FC
@@ -30,8 +30,6 @@ flowchart TB
     REF -.TLS.-> EXT
     FC -.TLS.-> EXT
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 | MCP | Mode | Proxy engine | Upstream |
@@ -83,15 +81,15 @@ distinct failures and their fix:
 ```mermaid
 flowchart TB
     subgraph problems["Why direct Envoy TLS backends failed"]
-        P1["AIEG stamps empty-SNI<br/>dummy.transport_socket<br/>(BackendTLSPolicy never reaches it)"]:::warn
-        P2["BoringSSL rejects context7's<br/>ECDSA cert (BAD_ECC_CERT)"]:::warn
-        P3["refero mislabels JSON as<br/>text/event-stream → empty tools<br/>(AIEG #2218)"]:::warn
-        P4["firecrawl prepends empty SSE event<br/>for protocol 2025-11-25 → 500<br/>(AIEG #2219)"]:::warn
+        P1["AIEG stamps empty-SNI<br/>dummy.transport_socket<br/>(BackendTLSPolicy never reaches it)"]
+        P2["BoringSSL rejects context7's<br/>ECDSA cert (BAD_ECC_CERT)"]
+        P3["refero mislabels JSON as<br/>text/event-stream → empty tools<br/>(AIEG #2218)"]
+        P4["firecrawl prepends empty SSE event<br/>for protocol 2025-11-25 → 500<br/>(AIEG #2219)"]
     end
 
     subgraph fix["Fix: per-MCP in-cluster normalizing proxy"]
-        CADDY["Caddy (caddy:2-alpine)<br/>Go TLS handles ECDSA ✅<br/>injects Bearer (header_up)<br/>refero: rewrite Content-Type (header_down)"]:::own
-        ORS["openresty (nginx+Lua)<br/>rewrite_by_lua_block:<br/>pin request protocolVersion → 2025-06-18<br/>inject Bearer via os.getenv"]:::own
+        CADDY["Caddy (caddy:2-alpine)<br/>Go TLS handles ECDSA ✅<br/>injects Bearer (header_up)<br/>refero: rewrite Content-Type (header_down)"]
+        ORS["openresty (nginx+Lua)<br/>rewrite_by_lua_block:<br/>pin request protocolVersion → 2025-06-18<br/>inject Bearer via os.getenv"]
     end
 
     P1 --> CADDY
@@ -99,16 +97,12 @@ flowchart TB
     P3 --> CADDY
     P4 --> ORS
 
-    classDef warn fill:#fbeaea,stroke:#a54a4a;
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 ```mermaid
 flowchart LR
-    MCPR["MCPRoute"]:::own -->|plain HTTP| PROXY["in-cluster proxy<br/>(Caddy or openresty)"]:::own
-    PROXY -->|"TLS + credential + rewrites"| UP["external MCP"]:::ext
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+    MCPR["MCPRoute"] -->|plain HTTP| PROXY["in-cluster proxy<br/>(Caddy or openresty)"]
+    PROXY -->|"TLS + credential + rewrites"| UP["external MCP"]
 ```
 
 The proxy turns an unreliable external TLS backend into a **reliable in-cluster
@@ -125,6 +119,6 @@ ADR-0039 `EnvoyPatchPolicy` was removed.
 > ⚠️ **The openresty/Caddy engine choices are INTERIM.** Drop the firecrawl
 > openresty engine once AIEG's SSE parser skips non-response events (#2219); drop
 > refero's `rewriteResponseContentType` once #2218 lands. Full diagnosis:
-> [`../2026-06-10-mcp-external-server-proxy-debug.md`](../2026-06-10-mcp-external-server-proxy-debug.md).
+> [`../2026-06-10-mcp-external-server-proxy-debug.md`](../migrations/2026-06-10-mcp-external-server-proxy-debug.md).
 
 → Related: [05 Auth (carve-out)](05-auth-identity.md) · [06 Networking & TLS](06-networking-tls.md)

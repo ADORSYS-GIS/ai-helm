@@ -84,6 +84,6 @@ local exposure, the Caddy auth-proxy, `homeCluster: true`) stands.
 
 ## Related
 
-- Docs: [`docs/self-hosted-model-serving.md`](../self-hosted-model-serving.md) §13 (the €/hour → per-token derivation) + §14 (the per-model checklist)
+- Docs: [`docs/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) §13 (the €/hour → per-token derivation) + §14 (the per-model checklist)
 - Charts/files: `charts/ai-models/values.yaml` (`qwen3-4b-local` → `pricing.strategy: weighted`), consumed by `charts/ai-model` `costExpression` CEL
 - Builds on / amends: ADR-0022 (self-hosted GPU model — pricing only), ADR-0021 (the budget/metering machinery this feeds), ADR-0012 (`ai-model` pricing strategies)

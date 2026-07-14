@@ -11,7 +11,7 @@ Regenerate with::
     uv run dashboards build
 
 Architecture decision: see ``docs/adr/0008-python-dashboard-generation.md``.
-Data path the dashboard consumes: ``docs/per-user-observability.md``.
+Data path the dashboard consumes: ``docs/patterns/per-user-observability.md``.
 """
 
 from __future__ import annotations
@@ -591,7 +591,7 @@ def _panel_overall_total_requests() -> stat.Panel:
 # ⚠️ KNOWN GAP: LibreChat AGENT runs + RAG embeddings don't forward the end-user
 # (they fall back to azp=internal-key-librechat with user_id=internal-key-librechat),
 # so LibreChat's per-USER split is currently only its DIRECT chats. See
-# docs/per-user-observability.md / the librechat-app header-forwarding note.
+# docs/patterns/per-user-observability.md / the librechat-app header-forwarding note.
 # ---------------------------------------------------------------------------
 
 
@@ -681,7 +681,7 @@ _DESCRIPTION = (
     "promotes user_id/azp/model/email/display_name/billing_plan labels, "
     "pins service_name=envoy-ai-gateway; ADR-0046) -> Loki. "
     "Shows ATTRIBUTED traffic only — unauthenticated requests carry no identity labels. "
-    "See docs/per-user-observability.md. "
+    "See docs/patterns/per-user-observability.md. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/per_user.py."
 )
 

@@ -109,7 +109,7 @@ stand unchanged.
 
 ## Related
 
-- Docs: [`docs/self-hosted-model-serving.md`](../self-hosted-model-serving.md) (architecture, build, runbook)
+- Docs: [`docs/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) (architecture, build, runbook)
 - Charts/files: `charts/model-serving/templates/deployment.yaml` (replaces `inferenceservice.yaml` + `servingruntime.yaml`), `edge-auth.yaml` (plain HTTP), `values.yaml` (`server:` block replaces `inferenceService:`/`servingRuntime:`)
 - Supersedes: ADR-0022 — **serving mode only** (its federation/exposure/`homeCluster` stand)
 - Builds on: ADR-0017 (`homeCluster: true`), ADR-0028 (pricing, unaffected)

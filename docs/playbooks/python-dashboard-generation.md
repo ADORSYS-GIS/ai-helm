@@ -3,9 +3,9 @@
 How Grafana dashboards are authored in this repo, why the choice was made,
 and the developer workflow.
 
-**ADR:** [`docs/adr/0008-python-dashboard-generation.md`](./adr/0008-python-dashboard-generation.md) (the *why*)
-**Project:** [`tools/dashboards/`](../tools/dashboards/) (the *code*)
-**Operator wiring:** [`docs/grafana-operator-and-dashboards.md`](./grafana-operator-and-dashboards.md) (how the JSON gets into Grafana)
+**ADR:** [`docs/adr/0008-python-dashboard-generation.md`](../adr/0008-python-dashboard-generation.md) (the *why*)
+**Project:** [`tools/dashboards/`](../../tools/dashboards) (the *code*)
+**Operator wiring:** [`docs/grafana-operator-and-dashboards.md`](grafana-operator-and-dashboards.md) (how the JSON gets into Grafana)
 
 ## At a glance
 
@@ -46,7 +46,7 @@ Decided in ADR-0008. Short version:
   `1769699452!11.5.0` (the latest Grafana-11.x SDK) which emits
   `schemaVersion: 39`. Bumping to a 12.x SDK happens when both the SDK
   is published to PyPI AND the grafana chart upgrade (audit task #15)
-  lands. See [`tools/dashboards/README.md`](../tools/dashboards/README.md)
+  lands. See [`tools/dashboards/README.md`](../../tools/dashboards/README.md)
   for the install pin + bump procedure.
 
 ## Project layout

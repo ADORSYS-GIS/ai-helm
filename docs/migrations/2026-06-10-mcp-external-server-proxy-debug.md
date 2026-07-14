@@ -1,22 +1,22 @@
 # MCP external-server proxy debug + AIEG v0.6.0 → v0.7.0 upgrade (2026-06-10)
 
-**Status:** RESOLVED — **final fix = [ADR-0040](adr/0040-external-mcps-via-caddy-normalizing-proxy.md)**
+**Status:** RESOLVED — **final fix = [ADR-0040](../adr/0040-external-mcps-via-caddy-normalizing-proxy.md)**
 (`release-2026.06.10-v04`): all three external MCPs (context7, firecrawl, refero)
 go through per-MCP in-cluster **Caddy normalizing proxies**. Point-in-time
 change-log of the whole investigation; durable contracts in
-[ADR-0038](adr/0038-mcp-oauth-protected-resource-metadata.md),
-[ADR-0040](adr/0040-external-mcps-via-caddy-normalizing-proxy.md),
-[ADR-0027](adr/0027-mcps-orchestrator-split-and-coder-removal.md).
+[ADR-0038](../adr/0038-mcp-oauth-protected-resource-metadata.md),
+[ADR-0040](../adr/0040-external-mcps-via-caddy-normalizing-proxy.md),
+[ADR-0027](../adr/0027-mcps-orchestrator-split-and-coder-removal.md).
 
 > ## ✅ FINAL resolution (supersedes the ADR-0039 EnvoyPatchPolicy below)
 > The investigation went through three fixes; only the last stuck:
 > 1. AIEG v0.6→v0.7 upgrade (`-v01`) — red herring (mcpproxy unchanged).
-> 2. EnvoyPatchPolicy SNI injection ([ADR-0039](adr/0039-mcp-external-backend-tls-envoypatchpolicy.md), `-v02`) —
+> 2. EnvoyPatchPolicy SNI injection ([ADR-0039](../adr/0039-mcp-external-backend-tls-envoypatchpolicy.md), `-v02`) —
 >    fixed firecrawl/refero **TLS**, but brittle, BoringSSL-only (context7's ECDSA
 >    cert still failed), and **didn't fix refero's empty tools** (it returns a
 >    JSON body mislabeled `text/event-stream`, so the mcpproxy's SSE parser yields
 >    nothing — [envoyproxy/ai-gateway#2218](https://github.com/envoyproxy/ai-gateway/issues/2218)).
-> 3. **[ADR-0040](adr/0040-external-mcps-via-caddy-normalizing-proxy.md) (`-v04`) — the real fix:**
+> 3. **[ADR-0040](../adr/0040-external-mcps-via-caddy-normalizing-proxy.md) (`-v04`) — the real fix:**
 >    front each external MCP with an in-cluster **Caddy** proxy (`mode:
 >    proxiedExternal`). Caddy does the upstream TLS (Go TLS → **handles context7's
 >    ECDSA cert** that BoringSSL rejected), injects the credential, and rewrites
@@ -47,7 +47,7 @@ change-log of the whole investigation; durable contracts in
 > (§3) succeeded only because `curl`/`openssl` set SNI themselves — bypassing the
 > broken Envoy socket.
 >
-> **The fix ([ADR-0039](adr/0039-mcp-external-backend-tls-envoypatchpolicy.md)):**
+> **The fix ([ADR-0039](../adr/0039-mcp-external-backend-tls-envoypatchpolicy.md)):**
 > an `EnvoyPatchPolicy` (runs last in the xDS pipeline) replaces the dummy socket
 > with a real `envoy.transport_sockets.tls` carrying SNI + system-CA validation.
 > **Verified live before shipping:** with the patch, `refero` returns `200`s
@@ -76,7 +76,7 @@ change-log of the whole investigation; durable contracts in
 
 ## 1. Symptom
 
-Right after [ADR-0038](adr/0038-mcp-oauth-protected-resource-metadata.md) shipped
+Right after [ADR-0038](../adr/0038-mcp-oauth-protected-resource-metadata.md) shipped
 MCP-spec OAuth discovery (so `opencode mcp auth` can finally authenticate against
 `api.ai.camer.digital/mcp/*`), the **self-hosted** MCPs worked but every
 **external hosted** MCP failed downstream of the gateway:
@@ -429,7 +429,7 @@ public PKCE, `refresh_token` grant + `resource=` indicator) to drive the SDK.
 
 ## 9. References
 
-- [ADR-0038](adr/0038-mcp-oauth-protected-resource-metadata.md) — MCP OAuth discovery (the edge surface, working).
-- [ADR-0027](adr/0027-mcps-orchestrator-split-and-coder-removal.md) — the `mcps`/`mcp` chart split.
+- [ADR-0038](../adr/0038-mcp-oauth-protected-resource-metadata.md) — MCP OAuth discovery (the edge surface, working).
+- [ADR-0027](../adr/0027-mcps-orchestrator-split-and-coder-removal.md) — the `mcps`/`mcp` chart split.
 - AIEG issues/PRs: [#1924](https://github.com/envoyproxy/ai-gateway/issues/1924), [#1980](https://github.com/envoyproxy/ai-gateway/pull/1980), [#1996](https://github.com/envoyproxy/ai-gateway/issues/1996), [#1997](https://github.com/envoyproxy/ai-gateway/pull/1997), [#1938](https://github.com/envoyproxy/ai-gateway/issues/1938), [#1962](https://github.com/envoyproxy/ai-gateway/pull/1962), [#2106](https://github.com/envoyproxy/ai-gateway/pull/2106), [#2155](https://github.com/envoyproxy/ai-gateway/pull/2155), [#1880](https://github.com/envoyproxy/ai-gateway/pull/1880).
 - v0.7.0 release notes: https://aigateway.envoyproxy.io/release-notes/v0.7/

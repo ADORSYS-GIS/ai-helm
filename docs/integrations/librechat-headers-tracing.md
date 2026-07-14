@@ -12,7 +12,7 @@ LibreChat supports passing internal session variables via custom API headers. In
 
 Here is how you can pass the relevant user information down to downstream endpoints/MCPs:
 
-![alt text](./images/image-10.png)
+![alt text](../images/image-10.png)
 
 ```yaml
     lightbridge_self_service:
@@ -62,8 +62,8 @@ authConfigs:
 ```
 
 For more details on OIDC mapping, see:
-- [LibreChat OIDC Integration with Keycloak](./librechat-oidc-integration.md)
-- [LibreChat OIDC Experiments](./librechat-oidc-experiments.md)
+- [LibreChat OIDC Integration with Keycloak](librechat-oidc-integration.md)
+- [LibreChat OIDC Experiments](librechat-oidc-experiments.md)
 
 ---
 
@@ -90,7 +90,7 @@ Monitor the Envoy proxy logs using `kubectl` or your centralized logging stack:
 kubectl logs -l app.kubernetes.io/name=envoy -n converse-gateway -c envoy --tail=200 -f
 ```
 
-![alt text](./images/image-12.png)
+![alt text](../images/image-12.png)
 
 When a request is processed, you will see Envoy decoding the headers:
 

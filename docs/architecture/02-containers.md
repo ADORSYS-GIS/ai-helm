@@ -9,57 +9,57 @@ lives on a different cluster — see [04 GitOps](04-gitops-deployment.md).
 
 ```mermaid
 flowchart TB
-    LB(["☁️ Hetzner LB → Traefik / Envoy data-plane"]):::ext
+    LB(["☁️ Hetzner LB → Traefik / Envoy data-plane"])
 
     subgraph eg_ns["ns: envoy-gateway-system"]
-        EG["eg<br/><i>Envoy Gateway controller<br/>+ data-plane proxies</i>"]:::own
+        EG["eg<br/><i>Envoy Gateway controller<br/>+ data-plane proxies</i>"]
     end
     subgraph aieg_ns["ns: envoy-ai-gateway-system"]
-        AIEG["aieg + aieg-crd<br/><i>AI Gateway controller</i>"]:::own
+        AIEG["aieg + aieg-crd<br/><i>AI Gateway controller</i>"]
     end
     subgraph gw_ns["ns: converse-gateway"]
-        CG["core-gateway<br/><i>Gateway, listeners, AIGatewayRoutes,<br/>BackendTrafficPolicies, ACME issuer,<br/>OTel traces collector</i>"]:::own
-        SP["security-policies<br/><i>Authorino AuthConfigs + SecurityPolicy</i>"]:::own
+        CG["core-gateway<br/><i>Gateway, listeners, AIGatewayRoutes,<br/>BackendTrafficPolicies, ACME issuer,<br/>OTel traces collector</i>"]
+        SP["security-policies<br/><i>Authorino AuthConfigs + SecurityPolicy</i>"]
     end
     subgraph authz_ns["ns: authorino-system"]
-        AUTH["authorino-operator<br/><i>+ Authorino instance (ext_authz)</i>"]:::own
+        AUTH["authorino-operator<br/><i>+ Authorino instance (ext_authz)</i>"]
     end
 
     subgraph converse_ns["ns: converse"]
-        MODELS["models<br/><i>ai-models orchestrator →<br/>1 route+budget App per model</i>"]:::ctrl
-        LBACK["lightbridge-backend<br/><i>authz/usage service</i>"]:::own
-        REPOAUTH["lightbridge-repo-auth<br/><i>GitHub org→account binding</i>"]:::own
-        UI["converse-ui<br/><i>self-service frontend</i>"]:::own
+        MODELS["models<br/><i>ai-models orchestrator →<br/>1 route+budget App per model</i>"]
+        LBACK["lightbridge-backend<br/><i>authz/usage service</i>"]
+        REPOAUTH["lightbridge-repo-auth<br/><i>GitHub org→account binding</i>"]
+        UI["converse-ui<br/><i>self-service frontend</i>"]
     end
     subgraph chat_ns["ns: converse (LibreChat) · converse-chat (backup)"]
-        LC["librechat → ns converse<br/><i>app + MongoDB + Meili search<br/>+ opencode well-known</i>"]:::ctrl
-        MB["mongodb-backup<br/><i>ns converse-chat</i>"]:::own
+        LC["librechat → ns converse<br/><i>app + MongoDB + Meili search<br/>+ opencode well-known</i>"]
+        MB["mongodb-backup<br/><i>ns converse-chat</i>"]
     end
     subgraph mcp_ns["ns: converse-mcp"]
-        MCPS["mcps<br/><i>brave · terraform (self-hosted)<br/>context7 · firecrawl · refero (proxied)</i>"]:::ctrl
+        MCPS["mcps<br/><i>brave · terraform (self-hosted)<br/>context7 · firecrawl · refero (proxied)</i>"]
     end
     subgraph poc_ns["ns: converse-poc"]
-        QWEN["model-serving-qwen3-5 🟢<br/><i>Qwen3.5-4B Q4 · llama.cpp · GPU</i>"]:::gpu
-        QWEN4["model-serving-qwen3-4b<br/><i>vLLM · standby</i>"]:::gpu
+        QWEN["model-serving-qwen3-5 🟢<br/><i>Qwen3.5-4B Q4 · llama.cpp · GPU</i>"]
+        QWEN4["model-serving-qwen3-4b<br/><i>vLLM · standby</i>"]
     end
 
     subgraph obs_ns["ns: observability"]
-        OBS["observability orchestrator →<br/>mimir · loki · tempo · alloy ·<br/>grafana · grafana-operator ·<br/>kube-state-metrics · node-exporter ·<br/>dashboards"]:::ctrl
+        OBS["observability orchestrator →<br/>mimir · loki · tempo · alloy ·<br/>grafana · grafana-operator ·<br/>kube-state-metrics · node-exporter ·<br/>dashboards"]
     end
     subgraph mon_ns["ns: monitoring"]
-        APPR["apprise-api · opencode-k8s-agent"]:::own
+        APPR["apprise-api · opencode-k8s-agent"]
     end
     subgraph sys_ns["ns: kube-system"]
-        MS["metrics-server<br/>(k3s-bundled, ADR-0054)"]:::ext
+        MS["metrics-server<br/>(k3s-bundled, ADR-0054)"]
     end
 
     subgraph external["External (consumed by name)"]
-        KC["Keycloak"]:::ext
-        REDIS["redis-ha<br/>redis-system"]:::ext
-        CNPG["CNPG operator + lightbridge-db<br/>cnpg-system"]:::ext
-        ESO["ESO + ssegning-aws store<br/>external-secrets"]:::ext
-        S3["Hetzner Object Storage"]:::ext
-        PROV["Model providers"]:::ext
+        KC["Keycloak"]
+        REDIS["redis-ha<br/>redis-system"]
+        CNPG["CNPG operator + lightbridge-db<br/>cnpg-system"]
+        ESO["ESO + ssegning-aws store<br/>external-secrets"]
+        S3["Hetzner Object Storage"]
+        PROV["Model providers"]
     end
 
     LB --> CG
@@ -79,10 +79,6 @@ flowchart TB
     converse_ns -.->|secrets| ESO
     chat_ns -.->|secrets| ESO
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a,color:#1a401a;
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5,color:#1a2a40;
-    classDef ext fill:#eee,stroke:#888,color:#333,stroke-dasharray:4 3;
-    classDef gpu fill:#f7e8f0,stroke:#a54a81,color:#401a2e;
 ```
 
 ## Containers by responsibility
@@ -142,8 +138,6 @@ flowchart LR
         A3["Application"] --> CH["renders child<br/>Application CRs directly"] --> C1["child"] & C2["child"]
     end
 
-    classDef d fill:#eaf3ea,stroke:#4a8a4a;
-    class A1,W1,A2,AS,L1,L2,A3,CH,C1,C2 d;
 ```
 
 → Next: [03 · Gateway components](03-gateway-components.md) · or jump to a subsystem [04](04-gitops-deployment.md)–[10](10-mcp.md)

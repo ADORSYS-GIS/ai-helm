@@ -21,7 +21,7 @@ After [ADR-0038](0038-mcp-oauth-protected-resource-metadata.md) made the MCPs
 reachable, the three **external** hosted MCPs (context7, firecrawl, refero)
 failed at the gateway→upstream hop while self-hosted ones (brave, terraform)
 worked. Root cause, traced through the live Envoy config (full debug in
-[`docs/2026-06-10-mcp-external-server-proxy-debug.md`](../2026-06-10-mcp-external-server-proxy-debug.md)):
+[`docs/2026-06-10-mcp-external-server-proxy-debug.md`](../migrations/2026-06-10-mcp-external-server-proxy-debug.md)):
 
 The Envoy AI Gateway's extension server generates the upstream cluster for each
 external MCP backend and stamps a **placeholder `dummy.transport_socket`** on it
@@ -105,5 +105,5 @@ separately.)
 
 - [ADR-0038](0038-mcp-oauth-protected-resource-metadata.md) (MCP OAuth edge),
   [ADR-0027](0027-mcps-orchestrator-split-and-coder-removal.md) (the mcps charts).
-- [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](../2026-06-10-mcp-external-server-proxy-debug.md) — full diagnosis + reproduction.
+- [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](../migrations/2026-06-10-mcp-external-server-proxy-debug.md) — full diagnosis + reproduction.
 - EG [#9137](https://github.com/envoyproxy/gateway/issues/9137) (Host-vs-FQDN SNI), AIEG [#1880](https://github.com/envoyproxy/ai-gateway/pull/1880) (context7 TLS disabled in CI).

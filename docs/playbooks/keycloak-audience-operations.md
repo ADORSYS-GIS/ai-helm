@@ -40,7 +40,7 @@ To enforce a strict audience list and prevent "audience bloat," use a dedicated 
     *   **Add to ID Token**: `OFF`
     *   **Add to Access Token**: `ON`
 
-![Image Placeholder - Audience mapper creation](./images/audience-mapper-creation.png)
+![Image Placeholder - Audience mapper creation](../images/audience-mapper-creation.png)
 
 ## 6. Full Scope Allowed Explained
 The **Full Scope Allowed** setting is a critical switch that determines how client roles propagate into the token.
@@ -58,7 +58,7 @@ When disabled, the client is only granted the roles explicitly mapped to it via 
 | **ON** | `["lightbridge-api-key", "converse-frontend", "realm-management", "converse", "account"]` |
 | **OFF** | `["lightbridge-api-key", "converse-frontend"]` |
 
-![Image Placeholder - Full Scope Allowed enabled](./images/full-scope-enabled.png)
+![Image Placeholder - Full Scope Allowed enabled](../images/full-scope-enabled.png)
 
 ## 7. Testing Token Generation
 To verify configuration changes, use the following `curl` command to perform a Client Credentials grant or check a user-based exchange.
@@ -95,7 +95,7 @@ Upload the resulting `access_token` to [jwt.io](https://jwt.io) or use a local C
 }
 ```
 
-![Image Placeholder - Token inspection example](./images/token-inspection.png)
+![Image Placeholder - Token inspection example](../images/token-inspection.png)
 
 ## 9. Troubleshooting
 *   **Missing Audience**: Ensure the Mapper is added to the *effective* Client Scope (Dedicated vs. Default).
@@ -112,4 +112,4 @@ Upload the resulting `access_token` to [jwt.io](https://jwt.io) or use a local C
 ## 11. Appendix: Token Bloat Example
 Below is an example of a token generated with `Full Scope Allowed: ON`, showcasing the leakage of `realm-management` and internal infrastructure roles into the client's audience claim.
 
-![Image Placeholder - JWT payload example](./images/jwt-payload-bloat.png)
+![Image Placeholder - JWT payload example](../images/jwt-payload-bloat.png)

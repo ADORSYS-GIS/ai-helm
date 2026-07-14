@@ -9,7 +9,7 @@
 The flagship per-user usage dashboard (`envoy-ai-gateway-per-user`,
 ticket [#357](https://github.com/ADORSYS-GIS/ai-helm/issues/357)) has been
 empty since rollout. The live audit
-([docs/observability-dashboard-research.md](../observability-dashboard-research.md))
+([docs/observability-dashboard-research.md](../patterns/observability-dashboard-research.md))
 isolated the break to a single seam: Envoy's OpenTelemetry access-log sink
 delivers the `format.json` fields as OTLP log **attributes**, and Alloy's
 `otelcol.exporter.loki` serializes the stored line as
@@ -112,6 +112,6 @@ to it for the header payload.
 - [ADR-0011](./0011-oidc-downstream-headers.md) — the `x-oidc-*` header payload
 - [ADR-0045](./0045-scrape-first-dashboard-sourcing.md) — the sourcing policy decided alongside
 - [ADR-0008](./0008-python-dashboard-generation.md) — the pipeline that generates the consuming dashboard
-- [docs/per-user-observability.md](../per-user-observability.md) — the repaired pipeline walkthrough
-- [docs/observability-dashboard-research.md](../observability-dashboard-research.md) — the evidence base
+- [docs/per-user-observability.md](../patterns/per-user-observability.md) — the repaired pipeline walkthrough
+- [docs/observability-dashboard-research.md](../patterns/observability-dashboard-research.md) — the evidence base
 - Tickets: [#341](https://github.com/ADORSYS-GIS/ai-helm/issues/341), [#357](https://github.com/ADORSYS-GIS/ai-helm/issues/357)

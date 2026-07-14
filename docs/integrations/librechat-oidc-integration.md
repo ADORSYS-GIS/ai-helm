@@ -5,7 +5,7 @@
 This document describes the OIDC (OpenID Connect) integration between LibreChat and Keycloak, providing a reusable SSO mapping contract for downstream applications.
 
 
-![alt text](./images/image-9.png)
+![alt text](../images/image-9.png)
 ## Architecture
 
 ```mermaid
@@ -27,7 +27,7 @@ flowchart LR
     KC -->|"User Lookup"| US
     KC --- Realm
 ```
-![alt text](./images/image-8.png)
+![alt text](../images/image-8.png)
 
 ## Keycloak Configuration
 
@@ -540,5 +540,5 @@ curl -s https://accounts.camer.digital/realms/camer-digital/.well-known/openid-c
 
 - [LibreChat OIDC Documentation](https://www.librechat.ai/docs/configuration/auth/oidc)
 - [Keycloak OpenID Connect Documentation](https://www.keycloak.org/docs/latest/server_admin/#_oidc)
-- [Kuadrant AuthConfig Template](../charts/kuadrant-policies/templates/authconfig.yaml)
-- [Advanced Access Control Experiments](./librechat-oidc-experiments.md) - Group-based access, MCP role control, token propagation
+- [Kuadrant AuthConfig Template](../../charts/kuadrant-policies/templates/authconfig.yaml)
+- [Advanced Access Control Experiments](librechat-oidc-experiments.md) - Group-based access, MCP role control, token propagation

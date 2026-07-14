@@ -102,7 +102,7 @@ children:
     # (`Get "https://10.43.0.1:443/api": i/o timeout`) and metrics stay empty.
     # This overlay ships the additive egress allow (CiliumNetworkPolicy
     # kube-apiserver + cluster entities + DNS), same pattern as kube-state-metrics
-    # / grafana-operator. See docs/2026-06-07-observability-datasource-audit.md §6.
+    # / grafana-operator. See docs/migrations/2026-06-07-observability-datasource-audit.md §6.
     depsOverlay: environments/prod/deps/alloy
     source:
       repoURL: https://grafana.github.io/helm-charts
@@ -138,7 +138,7 @@ children:
     # default-deny-egress baseline (allow-dns) it can't reach it and crashloops
     # (`Get https://10.43.0.1:443/version: i/o timeout`). This overlay ships an
     # additive egress allow (CiliumNetworkPolicy kube-apiserver entity + DNS),
-    # same pattern as grafana-operator. See docs/2026-hetzner-cutover.md.
+    # same pattern as grafana-operator. See docs/migrations/2026-hetzner-cutover.md.
     depsOverlay: environments/prod/deps/kube-state-metrics
     source:
       repoURL: https://prometheus-community.github.io/helm-charts
@@ -238,7 +238,7 @@ children:
   # existing grafana app loads dashboards via the chart's `dashboards:` map
   # (file-provider, baked into the deployment), not via the sidecar. New
   # dashboards go through CRs; existing in-values dashboards stay until
-  # migrated one-by-one. See docs/grafana-operator-and-dashboards.md.
+  # migrated one-by-one. See docs/playbooks/grafana-operator-and-dashboards.md.
   #
   # NOTE: chart version pinned to a known-good. Verify against
   # `helm search repo grafana-operator` before bumping.
@@ -254,7 +254,7 @@ children:
     # the pod hung 32s on the API dial and the 30s liveness probe killed it ~2s
     # before the error logged — presenting as a silent exit-2 CrashLoop. This
     # overlay ships an additive egress NetworkPolicy granting the operator pod
-    # API-server (+ intra-namespace + DNS) egress. See docs/2026-hetzner-cutover.md.
+    # API-server (+ intra-namespace + DNS) egress. See docs/migrations/2026-hetzner-cutover.md.
     depsOverlay: environments/prod/deps/grafana-operator
     source:
       # OCI chart path must include the chart name (grafana-operator).

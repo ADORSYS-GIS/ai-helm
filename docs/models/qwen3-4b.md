@@ -1,9 +1,9 @@
 # Qwen3-4B (self-hosted) — deployment paper
 
 > One of three self-hosted-model papers. The reusable mechanics live in the
-> **[pattern guide](../self-hosted-model-serving.md)**; this paper is the
+> **[pattern guide](../patterns/self-hosted-model-serving.md)**; this paper is the
 > **as-deployed truth** for Qwen3-4B. Siblings:
-> [Qwen3.5-4B (vLLM/BF16)](./qwen3.5-4b.md) · [Qwen3.5-4B Q4 (llama.cpp) — **LIVE**](,./qwen3.5-4b-q4.md).
+> [Qwen3.5-4B (vLLM/BF16)](./qwen3.5-4b.md) · [Qwen3.5-4B Q4 (llama.cpp) — **LIVE**](./qwen3.5-4b-q4.md).
 
 | | |
 |---|---|
@@ -17,7 +17,7 @@
 
 The serving **pattern** (bjw StatefulSet, Caddy auth-proxy sidecar, pre-seeded RWX
 PVC, plain Ingress + cert-cloudflare, `homeCluster: true`, gateway federation) is
-described once in the [guide](../self-hosted-model-serving.md). This paper records
+described once in the [guide](../patterns/self-hosted-model-serving.md). This paper records
 only what's **specific to Qwen3-4B**.
 
 ---

@@ -2,23 +2,27 @@
 
 > [arc42](https://arc42.org) architecture description for the AI platform
 > deployed by this repository — the twelve sections applied to the steady state
-> at `release-2026.06.14-v09`. Every diagram is mermaid.
+> on `main` under **continuous delivery** (ADR-0055; charts float from OCI, no
+> release tag). Every diagram is mermaid, deliberately uncolored.
 >
 > **Companion reading:** the single-page [architecture map](./architecture.md),
 > the layered, mermaid-rich [architecture suite](./architecture/README.md)
 > (C4 context → container → component + one page per subsystem), and the
 > [ADR index](./adr/README.md) — the source of truth for every *why*.
 
-**Maintainer:** @stephane-segning · **Updated:** 2026-06-14
+**Maintainer:** @stephane-segning · **Updated:** 2026-07-14
 
 ---
 
 ## 1. Introduction and goals
 
 The platform delivers a **multi-tenant, OpenAI-compatible inference service**
-plus the tools around it (a chat UI, a CLI integration, MCP tool servers, dev
-observability) for Camer Digital. It is delivered entirely as Helm charts
-reconciled by ArgoCD; there is no application build in this repo.
+plus the tools around it — a chat UI, an org-wide opencode/CLI integration, MCP
+tool servers, an automated code-review app, in-cluster autonomous agents, and
+dev observability — for Camer Digital. It is delivered entirely as Helm charts
+reconciled by ArgoCD; there is no application build in this repo. *How to render*
+lives here in `ai-helm`; *what is deployed* (image tags + per-env values + deps
+overlays) lives in the private `ai-helm-values` repo (ADR-0055/0056).
 
 ### Core quality goals
 
@@ -27,8 +31,8 @@ reconciled by ArgoCD; there is no application build in this repo.
 | 1 | **Scalability** | Serve ~2000 concurrent clients sustained, ~5000 at peak, on the OpenAI-compatible endpoint without latency collapse |
 | 2 | **Observability / attribution** | Every request attributable to a user, plan, and model; usage/cost queryable in Grafana in near-real-time |
 | 3 | **Security / multi-tenancy** | Keycloak JWT is the authorization boundary; per-plan burst + monthly budget enforced at the gateway; tenant isolation by claim |
-| 4 | **Operability (GitOps)** | Every change is a reviewed Git diff; reproducible, declarative, env-overlayable |
-| 5 | **Cost control** | Per-person monthly USD budget enforced; self-hosted object storage; no per-request Python hop |
+| 4 | **Operability (GitOps)** | Every change is a reviewed Git diff; reproducible, declarative, env-overlayable; merge to `main` is the deploy |
+| 5 | **Cost control** | Per-person monthly USD budget enforced; self-hosted object storage; self-hosted GPU inference at cost-recovery; no per-request Python hop |
 
 ### Stakeholders
 
@@ -47,13 +51,14 @@ reconciled by ArgoCD; there is no application build in this repo.
 | Constraint | Implication |
 |---|---|
 | **GitOps only** — no imperative deploys | Everything is a chart; `kubectl rollout restart` is reverted by ArgoCD selfHeal |
+| **Config vs. state split** — chart logic here, deployed state in `ai-helm-values` | A workload config / image-tag / per-env CR change lands in the private values repo; cut over **values-repo-first** or `ignoreMissingValueFiles` silently falls back to chart defaults |
 | **Two clusters** — ArgoCD on Talos `admin@homeos`, workloads on Hetzner k3s `home-remote` | Control objects in-cluster, workloads `home-remote` (ADR-0017) |
 | **Cilium default-deny-egress** baseline | Every API-server / S3 reach needs an additive `CiliumNetworkPolicy`; a plain `NetworkPolicy` ipBlock does not match |
-| **Infra owned externally** (`home-os`, `hetzner-k8s`) | cert-manager, ESO, Redis, Traefik, CNPG, OTel-operator referenced by name only |
+| **Infra owned externally** (`home-os`, `hetzner-k8s`) | cert-manager, ESO, Redis, Traefik, CNPG, OTel-operator, metrics-server referenced by name only |
 | **k3s `baseline` Pod Security** cluster-wide | Observability collectors' namespace must be `privileged` |
 | **OpenAI API compatibility** | Routes, `/v1/models`, `/v1/models/info` (OpenRouter shape) must match client expectations |
 | **Verification = `helm template` + `helm lint`** | No app test loop; dashboards Python is the only runnable code |
-| **Single env today (`prod`/Hetzner)** | A second env is a drop-in `environments/<env>/` sibling |
+| **Single env today (`prod`/Hetzner)** | Overlays live in `ai-helm-values` `environments/prod/`; a second env is a drop-in sibling |
 
 ---
 
@@ -63,49 +68,49 @@ reconciled by ArgoCD; there is no application build in this repo.
 
 ```mermaid
 flowchart TB
-    H["👤 Humans (browser)"]:::actor
-    D["🧑‍💻 Devs (opencode/CLI)"]:::actor
-    C["🤖 CI service accounts"]:::actor
+    H["Humans (browser)"]
+    D["Devs (opencode / CLI)"]
+    C["CI service accounts"]
 
-    P["🟢 Camer Digital AI Platform (ai-helm)<br/>OpenAI-compatible inference + chat + tools"]:::own
+    P["Camer Digital AI Platform (ai-helm)<br/>OpenAI-compatible inference + chat + agents + tools"]
 
-    M["🧠 Model backends<br/>DeepInfra · Fireworks · Google AI"]:::ext
-    K["🔑 Keycloak IdP<br/>auth.verif.fyi · realm camer-digital"]:::ext
-    G["🐙 GitHub<br/>Actions OIDC · App webhooks"]:::ext
+    M["Model backends<br/>DeepInfra · Fireworks · Google AI · self-hosted GPU"]
+    K["Keycloak IdP<br/>realm camer-digital"]
+    G["GitHub / GitLab<br/>Actions OIDC · App webhooks · code review"]
 
     H -->|OIDC / JWT| P
     D -->|API key / JWT| P
     C -->|GHA OIDC| P
     P -->|provider calls| M
     P -->|verify identity| K
-    P -->|CI binding| G
-
-    classDef actor fill:#fff,stroke:#555;
-    classDef own fill:#eaf3ea,stroke:#4a8a4a,stroke-width:2px;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+    P -->|CI binding · PR review| G
 ```
 
 ### Technical context (external systems consumed, not owned)
 
 | External system | Role | Owner repo |
 |---|---|---|
-| Keycloak (`auth.verif.fyi`) | OIDC IdP, JWT issuer, billing-plan claim source | (separate) |
+| Keycloak | OIDC IdP, JWT issuer, billing-plan claim source; read-only DID datasource | `home-os` (`keycloak-ha`) |
 | cert-manager + ClusterIssuers | TLS (ACME HTTP-01 + internal CA) | `home-os` |
 | External Secrets Operator + `ssegning-aws` store | Secret sync | external |
 | redis-ha (TLS-only) | LibreChat sessions, Envoy ratelimit counters | `home-os` |
 | Traefik | Ingress controller (non-gateway ingresses) | external |
-| CloudNativePG + Barman | Postgres for lightbridge-repo-auth, backups | external |
+| CloudNativePG + Barman | Postgres for lightbridge-repo-auth / code-intelligence, backups | external |
+| metrics-server | `kubectl top` / HPA metrics (k3s-bundled, ADR-0054) | k3s addon |
 | Hetzner Object Storage (`nbg1.your-objectstorage.com`) | Mimir/Loki/Tempo/CNPG/Mongo/LibreChat S3 | Hetzner |
 | Hetzner Cloud LB | Public data-plane LB (`46.225.38.138`) | Hetzner |
-| GitHub | Chart source; GHA OIDC issuer; `camer-digital-ai` App webhooks | SaaS |
+| GitHub / GitLab | Chart source; GHA OIDC issuer; App webhooks; code-review targets | SaaS |
 | Model providers (DeepInfra/Fireworks/Google AI) | Actual inference | SaaS |
+| `ai-helm-values` (private) | Image tags + per-env values + deps overlays | `adorsys-gis` |
 
 ### System scope (owned by ai-helm)
 
 The Envoy AI Gateway, AuthConfigs/security policies, per-model routing + budget
-policies, LibreChat, opencode well-known + models-info catalog, the GitHub-OIDC
-CI binding (`lightbridge-repo-auth`), MCP servers, the observability stack,
-dashboards, and all the GitOps glue.
+policies, LibreChat (converse), opencode well-known + models-info catalog, the
+GitHub-OIDC CI binding (`lightbridge-repo-auth`), the Lightbridge code-review app
+(`lightbridge-code-intelligence`), the in-cluster opencode agent, MCP servers,
+the Restate durable-execution runtime, the observability stack, dashboards, and
+all the GitOps glue.
 
 > Detail: [architecture suite · 01 Context](./architecture/01-context.md).
 
@@ -116,14 +121,17 @@ dashboards, and all the GitOps glue.
 | Goal | Strategy | Realised by |
 |---|---|---|
 | Scale to 2000/5000 clients | HTTP/2 multiplexing + data-plane HPA + circuit breaking | `core-gateway` ClientTrafficPolicy / EnvoyProxy HPA / BackendTrafficPolicy (ADR-0021) |
-| Attribution | JWT → Authorino `x-oidc-*` headers → Envoy access log → Alloy → Loki labels | ADR-0005/0011/0046, `per-user-observability.md` |
+| Attribution | JWT → Authorino `x-oidc-*` headers → Envoy access log → Alloy → Loki labels + Mimir counters | ADR-0005/0011/0046/0058, `per-user-observability.md` |
 | Identity resolution | Read-only Keycloak Postgres datasource resolves `user_id` (sub UUID) → person + offline grants × spend | ADR-0063/0064, `keycloak-identity-datasource.md` |
-| Per-JWT consumption | Loki-backed `jwt-tokens` dashboard keyed on `oidc_jti` × the JWT `email` label (claim-only) | ADR-0067, `jwt-token-observability.md` |
+| Per-JWT / synthetic identity | Loki-backed `jwt-tokens` on `oidc_jti`; Authorino synthesizes named identities for known service callers | ADR-0067/0068 |
+| Chat-content visibility | Reuse the gateway ext-proc's OpenInference spans (full request/response) in Tempo; per-request Loki metadata | ADR-0077 (per-user span attribution not viable — ADR-0079) |
 | Rate-limit quota | Live per-account budget counters read from redis-ha: `prometheus-redis-exporter` → Mimir leaderboard + a `redis-datasource` census | ADR-0070, `ratelimit-quota-observability.md` |
 | Authorization | Keycloak JWT as the boundary; per-host AuthConfig differentiation | ADR-0021 |
-| CI without shared keys | GitHub Actions OIDC → `lightbridge-repo-auth` org→account binding | ADR-0047/0049 |
+| CI without shared keys | GitHub Actions OIDC → `lightbridge-repo-auth` org→account binding (GitLab multi-forge in progress) | ADR-0047/0049 |
+| Automated code review | `lightbridge-code-intelligence` GitHub/GitLab App: Rust control plane + Next.js console + Neo4j + pgvector, calls through the gateway | chart `lightbridge-code-intelligence` |
+| Cluster autonomy | In-cluster opencode agent on the internal plane (own SA token) | ADR-0037 |
 | Quota & billing | Per-plan burst + per-person monthly budget in `BackendTrafficPolicy` | ADR-0021/0035 |
-| Operability | GitOps + umbrella apps + env overlays + App-of-Apps | ADR-0016–0020 |
+| Operability / delivery | Continuous delivery: OCI charts (semver float) + image-updater write-back to `ai-helm-values`; umbrella apps + App-of-Apps | ADR-0016–0020, 0055/0056/0082 |
 | Provider abstraction | Envoy AI Gateway `AIGatewayRoute` per model, fan-out via ApplicationSet | ADR-0012 |
 | Dashboards reproducibility | Python (grafana-foundation-sdk) → `GrafanaDashboard` CRs, drift-checked | ADR-0004/0008/0045 |
 
@@ -135,44 +143,54 @@ dashboards, and all the GitOps glue.
 
 ```mermaid
 flowchart TB
-    NET["Internet (TLS: Let's Encrypt HTTP-01)"]:::ext
-    GW["Envoy AI Gateway (core-gateway)<br/>+ eg/aieg controllers + Authorino ext_authz<br/>external + internal planes"]:::own
+    NET["Internet (TLS: Let's Encrypt HTTP-01)"]
+    GW["Envoy AI Gateway (core-gateway)<br/>+ eg / aieg controllers + Authorino ext_authz<br/>external + internal planes"]
 
-    LC["LibreChat (librechart orchestrator)<br/>+ opencode well-known + models-info"]:::ctrl
-    MODELS["AI models (ai-models → ai-model leaves)<br/>per-model route + budget; provider backends"]:::ctrl
-    REPO["lightbridge-repo-auth<br/>GitHub-OIDC CI binding"]:::own
-    MCP["MCP servers (mcps orchestrator)"]:::ctrl
-    OBS["Observability<br/>(LGTM + Alloy + grafana-operator)"]:::ctrl
+    LC["LibreChat / converse-ui<br/>+ opencode well-known + models-info"]
+    MODELS["AI models (ai-models → ai-model leaves)<br/>per-model route + budget; cloud + self-hosted GPU"]
+    REPO["lightbridge-repo-auth<br/>GitHub-OIDC CI binding"]
+    LCI["lightbridge-code-intelligence<br/>automated code review (App-of-Apps)"]
+    AGENT["opencode-k8s-agent<br/>in-cluster autonomous ops"]
+    MCP["MCP servers (mcps orchestrator)"]
+    RST["restate<br/>durable-execution runtime"]
+    OBS["Observability<br/>(LGTM + Alloy + grafana-operator)"]
 
     NET --> GW
     GW --> LC
     GW --> MODELS
     GW --> MCP
     GW -.-> REPO
+    GW -.-> LCI
+    AGENT -->|internal plane| GW
+    LCI -->|calls models| GW
     LC --> OBS
     MODELS --> OBS
-
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+    RST -.-> AGENT
 ```
 
 ### Level 2 — key building blocks
 
 | Chart | Responsibility | Pattern |
 |---|---|---|
-| `core-gateway` | Envoy AI Gateway, listeners (external + internal), ClientTrafficPolicy, BackendTrafficPolicy, ACME issuer, OTel collector, `gateway.redirectHosts` (vanity-domain redirects, ADR-0053) | Direct |
-| `kuadrant-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy | Direct |
+| `core-gateway` | Envoy AI Gateway, listeners (external + internal), ClientTrafficPolicy, BackendTrafficPolicy, ACME issuer, OTel collector, `gateway.redirectHosts` (vanity redirects, ADR-0053) | Direct |
+| `kuadrant-policies` / `security-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy (values in `ai-helm-values`) | Direct |
 | `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget) | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
-| `model-serving-qwen3-5` | **🟢 LIVE** self-hosted Qwen3.5-4B Q4 on the home GPU via llama.cpp; bjw-template StatefulSet, native `--api-key` | Hybrid bjw, `homeCluster: true` (ADR-0022/0030/0032) |
-| `model-serving-qwen3-4b` | Self-hosted Qwen3-4B via vLLM + Caddy auth-proxy sidecar; standby/rollback | Hybrid bjw, `homeCluster: true` (ADR-0029/0030) |
+| `model-serving-*` (qwen3-5, qwen3-4b, deepseek-r1-1-5b, qwen25-3b-awq, qwen3-8b, ministral-3b) | Self-hosted models on the home GPU; Qwen3.5-4B Q4 via llama.cpp is the designated GPU model (ADR-0032); bjw-template, `homeCluster: true` | Hybrid bjw (ADR-0022/0029/0030/0032) |
 | `ai-models-info` | OpenRouter-shape `/v1/models/info` catalog (nginx static) | Direct (ADR-0015) |
-| `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI + Mongo + Meili + opencode discovery | Orchestrator + leaves (ADR-0014) |
+| `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI (converse) + Mongo + Meili + opencode discovery/agents | Orchestrator + leaves (ADR-0014) |
 | `mcps` → `mcp` | MCP tool servers (self-hosted + proxiedExternal); opt-in v1.0 tool-filter / CEL authz / header-forward | Orchestrator + leaves (ADR-0038/0040/0041/0069) |
+| `lightbridge` → `lightbridge-secrets`/`-db`/`-app` | Lightbridge authz stack (repo-auth backend) | App-of-Apps (ADR-0026) |
 | `lightbridge-repo-auth` | GitHub org→account binding for CI OIDC auth | Direct (ADR-0047/0049) |
-| `observability` | LGTM + Alloy + grafana-operator + dashboards | App-of-Apps (ADR-0020) |
-| `same-origin-proxy` | Generic Caddy serving external resources same-origin under an app's host to dodge browser CORS (`routes[]`; 1st route: the scoreboard governance feed under Grafana) | Direct (ADR-0061) |
+| `lightbridge-code-intelligence` | GitHub/GitLab code-review App: Rust control plane + Next.js console + Neo4j; pgvector reused from the CNPG cluster | Direct (bjw-template) |
+| `opencode-k8s-agent` | In-cluster opencode agent (external repo, pinned SHA) on the internal gateway plane | Direct (ADR-0037) |
+| `restate` | Durable-execution runtime (OCI chart) — foundation for the A2A agent platform (ADR-0081) | Direct |
+| `observability` → children | LGTM + Alloy + grafana-operator + redis-exporter | App-of-Apps (ADR-0020) |
+| `observability-dashboards` | Dashboards + folders + alerting as grafana-operator CRs (Python-generated) | Direct (ADR-0008/0059) |
+| `same-origin-proxy` | Generic Caddy serving external resources same-origin to dodge browser CORS | Direct (ADR-0061) |
+| `imageupdater` | argocd-image-updater — cosign-gated image-tag write-back to `ai-helm-values` | Direct (ADR-0055) |
+| `reloader` | Stakater Reloader — restart on cert/secret rotation | Direct |
+| `keycloak-baseline` / `keycloak-backup` / `mongodb-backup` | Realm config-as-code; scheduled backups to object storage | Direct |
 | `apps` | Root chart: emits one Application per workload (umbrella multi-source) | Root (ADR-0018) |
 | `bjw-common` / `bjw-template` | Forked bjw-s common library | Library (ADR-0016) |
 
@@ -182,20 +200,42 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    C["client (HTTP/2)"]:::ext
-    E["EnvoyProxy (HPA 3–5, LeastRequest LB)"]:::own
-    A["Authorino (replicas 2, JWKS ttl 3600)<br/>verify Keycloak JWT<br/>stamp x-oidc-* + x-account-id/x-org-id/x-billing-plan"]:::own
-    R["AIGatewayRoute (per model)"]:::own
-    B["BackendTrafficPolicy<br/>burst (per user) + monthly budget (per person)<br/>circuit breaker + outlier detection"]:::own
-    S["AIServiceBackend → provider<br/>(DeepInfra/Fireworks/Google) or self-hosted GPU"]:::own
-    O["access log (JSON, x-oidc-*) → Alloy → Loki/Mimir"]:::own
+    C["client (HTTP/2)"]
+    E["EnvoyProxy (HPA 3–5, LeastRequest LB)"]
+    A["Authorino (replicas 2, JWKS ttl 3600)<br/>verify Keycloak JWT<br/>stamp x-oidc-* + x-account-id / x-org-id / x-billing-plan"]
+    R["AIGatewayRoute (per model)"]
+    B["BackendTrafficPolicy<br/>burst (per user) + monthly budget (per person)<br/>circuit breaker + outlier detection"]
+    S["AIServiceBackend → provider<br/>(DeepInfra / Fireworks / Google) or self-hosted GPU"]
+    O["access log (JSON, x-oidc-*) → Alloy → Loki / Mimir<br/>OpenInference spans → Tempo"]
 
-    C --> E -->|ext_authz gRPC| A --> E
+    C --> E
+    E -->|ext_authz gRPC| A
+    A --> E
     E --> R --> B --> S
     E --> O
+```
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+### Level 3 — code intelligence & autonomous agents
+
+```mermaid
+flowchart TB
+    GH["GitHub / GitLab<br/>PR / MR webhook"]
+    subgraph lci["lightbridge-code-intelligence"]
+        CP["Rust control plane (Axum)<br/>trust boundary + OAuth2 RS"]
+        WEB["Next.js console (Keycloak OIDC)"]
+        NEO["Neo4j knowledge graph"]
+    end
+    PG["CNPG cluster (pgvector)<br/>codeintel role + db"]
+    GWI["Envoy AI Gateway (internal plane)"]
+    AG["opencode-k8s-agent<br/>(own SA token)"]
+
+    GH -->|events| CP
+    CP --> NEO
+    CP --> PG
+    WEB --> CP
+    CP -->|review / embed via models| GWI
+    AG -->|cluster reviews via internal plane| GWI
+    CP -->|inline PR / MR feedback| GH
 ```
 
 > Sequence diagrams per identity surface: [suite · 03 Gateway components](./architecture/03-gateway-components.md).
@@ -206,24 +246,67 @@ flowchart TB
 
 ### Scenario A — human dev via opencode (external plane, full attribution)
 
-1. `opencode auth login` → Keycloak code+PKCE → JWT (carries `sub`, `azp`, `billing_plan`).
-2. Request to `api.ai.camer.digital` with the user's JWT.
-3. Authorino verifies (JWKS cached), stamps `x-oidc-*` + `x-account-id` (=`sub`) + `x-billing-plan`.
-4. `BackendTrafficPolicy` checks burst (per user) + monthly budget (per person); denies on any exhausted bucket.
-5. Request proxied to provider; response token cost extracted (`llmRequestCosts`).
-6. Access log → Alloy → Loki (labels `user_id`, `azp`) + Mimir counters.
+```mermaid
+sequenceDiagram
+    participant C as opencode (dev)
+    participant K as Keycloak
+    participant G as Envoy AI Gateway
+    participant A as Authorino
+    participant P as Provider / GPU
+    participant O as Alloy → Loki / Mimir
+    C->>K: code + PKCE login
+    K-->>C: JWT (sub, azp, billing_plan)
+    C->>G: request + JWT (api.ai.camer.digital)
+    G->>A: ext_authz (gRPC)
+    A-->>G: x-oidc-* + x-account-id(=sub) + x-billing-plan
+    G->>G: BackendTrafficPolicy — burst + monthly budget
+    G->>P: proxied request
+    P-->>G: stream + token cost (llmRequestCosts)
+    G-->>C: response
+    G->>O: access log (user_id, azp) + counters
+```
 
 ### Scenario B — human via LibreChat (internal plane, per-user via forwarded sub)
 
-1. User logs into LibreChat (Keycloak OIDC).
-2. LibreChat calls `core-gateway-internal.…svc` with an apiKey/SA token **and** `X-LibreChat-User: <end-user sub>`.
-3. Internal AuthConfig prefers that header → per-user `x-account-id`; `x-billing-plan: internal` (uncapped, burst-only).
+```mermaid
+sequenceDiagram
+    participant U as End user (browser)
+    participant L as LibreChat (converse)
+    participant G as Gateway (internal plane)
+    participant A as Authorino (internal AuthConfig)
+    participant P as Provider
+    U->>L: chat (Keycloak OIDC session)
+    L->>G: request + apiKey/SA token + X-LibreChat-User: <sub>
+    G->>A: ext_authz
+    A-->>G: prefer forwarded sub → x-account-id; x-billing-plan: internal
+    G->>P: proxied request
+    P-->>G: response
+    G-->>L: response
+```
 
 ### Scenario C — CI service account via GitHub OIDC (ADR-0047)
 
-1. Workflow mints its GHA OIDC token (audience = the org's Source URL); keyless.
-2. Authorino verifies (github issuer); `when github-actions` → calls `lightbridge-repo-auth /v1/resolve` with `repository_owner_id`.
-3. Bound + not-blocked → `{account_id, billing_plan}` stamped; unbound/blocked → 403.
+```mermaid
+sequenceDiagram
+    participant W as GitHub Actions runner
+    participant G as Gateway (external plane)
+    participant A as Authorino
+    participant R as lightbridge-repo-auth
+    participant P as Provider
+    W->>W: mint GHA OIDC token (aud = Source URL)
+    W->>G: request + OIDC token
+    G->>A: ext_authz (github issuer)
+    A->>R: /v1/resolve (repository_owner_id, X-Internal-Token)
+    alt bound and not blocked
+        R-->>A: {account_id, billing_plan}
+        A-->>G: stamp descriptors
+        G->>P: proxied request
+        P-->>G: response
+    else unbound / blocked
+        R-->>A: not found
+        A-->>G: 403
+    end
+```
 
 ### Scenario D — rollout under load
 
@@ -234,37 +317,43 @@ SSE/token streams aren't cut; HPA keeps ≥3 replicas; PDB `maxUnavailable: 1`.
 
 ## 7. Deployment view
 
-### Two-cluster, two-tier GitOps
+### Two-cluster, two-tier GitOps + continuous delivery
 
 ```mermaid
 flowchart LR
     subgraph cp["admin@homeos (Talos, ArgoCD) · ns argocd"]
-        ROOT["ai-apps-v2 (manual root)<br/>charts/apps → 1 App per workload<br/>(control objects live here)"]:::ctrl
+        ROOT["ai-apps-v2 (tracks main)<br/>charts/apps → 1 App per workload<br/>(control objects live here)"]
     end
     subgraph wl["home-remote (Hetzner k3s, workloads)"]
-        W["Envoy AI Gateway · LibreChat · models<br/>MCP · LGTM · dashboards · repo-auth<br/>(each its own Application, dest home-remote)"]:::own
+        W["Gateway · LibreChat · models · MCP<br/>LGTM · dashboards · repo-auth · LCI<br/>agent · restate (each its own Application)"]
     end
-    HO["home-os charts/cd<br/>pins ai-apps-v2 tag"]:::ext
+    HO["home-os charts/cd<br/>pins ai-apps-v2 targetRevision = main"]
+    OCI["oci://ghcr.io/adorsys-gis/charts<br/>(charts float on semver range)"]
+    VAL["ai-helm-values (private)<br/>image tags + per-env values + deps"]
 
-    HO -.->|GitOps-manages root tag| ROOT
+    HO -.->|GitOps-manages root| ROOT
     ROOT ==>|deploys| W
-
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
+    OCI -->|chart source A| W
+    VAL -->|$values + deps sources| W
+    W -.->|image-updater write-back| VAL
 ```
 
+- **Charts** publish to OCI on merge to `main`; every app sources its chart on a floating semver range. A merge is a **live deploy** (immutability deliberately abandoned, ADR-0055).
+- **Image tags + values + deps** live in the private `ai-helm-values`; ArgoCD reads them via each app's `$values`/`depsOverlay` source; image-updater writes new cosign-gated tags back.
 - **Workloads** target `home-remote`; a render guard hard-fails an in-cluster workload destination unless `allowInCluster`.
 - **Control objects** (orchestrators emitting ApplicationSets) set `controlPlane: true` → `https://kubernetes.default.svc` / `argocd` ns.
 - **`homeCluster: true`** is the one sanctioned exception — the self-hosted GPU models (ADR-0022).
-- **Per-env knobs** live in `environments/prod/cluster.yaml`; umbrella apps fold in a kustomize dep overlay (`environments/prod/deps/<app>/`).
+- **Rollback** = `git revert` in `ai-helm-values` (tags/values) and/or pin an app's `chartVersionRange`.
 
 ### Sync waves (infrastructure → storage → collection → visualisation)
 
 ```mermaid
 flowchart LR
-    A["-3 namespace + secrets +<br/>allow-same-namespace"]:::w --> B["-2 storage backends<br/>Mimir/Loki/Tempo/ksm/node-exporter"]:::w --> C["-1 operators + collectors<br/>grafana-operator/Alloy"]:::w --> D["0 workloads<br/>gateway/LibreChat/models"]:::w --> E["1 content<br/>dashboards/opencode-wellknown"]:::w --> F["2+ post-sync"]:::w
-    classDef w fill:#eaf3ea,stroke:#4a8a4a;
+    A["-3 namespace + secrets +<br/>allow-same-namespace"] --> B["-2 storage backends +<br/>restate (Mimir/Loki/Tempo/ksm/node-exporter)"]
+    B --> C["-1 operators + collectors<br/>grafana-operator / Alloy / ESO"]
+    C --> D["0 workloads<br/>gateway / LibreChat / models / LCI / agent"]
+    D --> E["1 content<br/>dashboards / opencode-wellknown"]
+    E --> F["2+ post-sync"]
 ```
 
 Violating this order cost a day once — `MONITORING_FIX.md` is the postmortem.
@@ -280,17 +369,34 @@ needs `toFQDNs: "*.your-objectstorage.com"`. Hetzner LB targets workers only
 
 ## 8. Crosscutting concepts
 
+### Identity & cost attribution flow
+
+```mermaid
+flowchart LR
+    JWT["Keycloak JWT / GHA OIDC"] --> AZ["Authorino<br/>verify + stamp x-oidc-*<br/>synthesize service identities (ADR-0068)"]
+    AZ --> HDR["x-account-id · x-billing-plan · x-oidc-user-id · oidc_jti"]
+    HDR --> LOG["Envoy access log (JSON)"]
+    LOG --> AL["Alloy — flatten OTLP envelope<br/>promote labels + stage.metrics"]
+    AL --> LK["Loki (per-request labels, oidc_jti in body)"]
+    AL --> MI["Mimir (cost / tokens / requests counters)"]
+    KC["Keycloak Postgres (-ro)"] --> DIR["Grafana keycloak datasource<br/>user_id → person"]
+    MI --> DASH["Grafana cost / quota / user boards"]
+    LK --> DASH
+    DIR --> DASH
+```
+
 | Concept | How it's realised | Detail |
 |---|---|---|
-| **Identity** | Keycloak JWT (RS256); 3 surfaces: human/browser, human/API, service account (CI via GHA OIDC). `x-oidc-*` contract (ADR-0011). | [05](./architecture/05-auth-identity.md) |
+| **Identity** | Keycloak JWT (RS256); 3 surfaces: human/browser, human/API, service account (CI via GHA OIDC). `x-oidc-*` contract (ADR-0011); synthetic named identities for known service callers (ADR-0068). | [05](./architecture/05-auth-identity.md) |
 | **Authorization** | JWT validity = entry; per-host AuthConfig differentiates plane/plan; no OPA in path. | [05](./architecture/05-auth-identity.md) |
 | **Multi-tenancy** | `x-account-id` (user), `x-org-id`, `x-billing-plan` (Keycloak claim) → rate-limit tiers. | [05](./architecture/05-auth-identity.md) |
-| **Quota** | Burst + monthly USD budget (both per-person, ADR-0035) in `BackendTrafficPolicy`; Redis counters. | [09](./architecture/09-model-serving.md) |
-| **Observability** | LGTM + Alloy; per-user Loki labels; dashboards-as-code; traces via Tempo. | [08](./architecture/08-observability.md) |
+| **Quota** | Burst + monthly USD budget (both per-person, ADR-0035) in `BackendTrafficPolicy`; Redis counters read live (ADR-0070). | [09](./architecture/09-model-serving.md) |
+| **Observability** | LGTM + Alloy; per-user Loki labels; Mimir usage counters (ADR-0058); dashboards-as-code; traces + chat content via Tempo/OpenInference (ADR-0077). | [08](./architecture/08-observability.md) |
+| **Alerting** | Grafana-native unified alerting → Discord as grafana-operator CRs (ADR-0059). | [08](./architecture/08-observability.md) |
 | **Secrets** | ESO + `ssegning-aws`; chart-owned ExternalSecrets; app vs platform split. | [07](./architecture/07-data-secrets.md) |
 | **TLS** | External: ACME HTTP-01 via the Gateway. Internal: `self-signed-ca` (Home Root CA). | [06](./architecture/06-networking-tls.md) |
-| **Config portability** | `environments/<env>/` overlays; `global.namespacePodSecurity`; per-cluster LB annotations. | [04](./architecture/04-gitops-deployment.md) |
-| **Cost metadata** | Native Envoy `llmRequestCosts` extraction (no Lua/Python hop). | [03](./architecture/03-gateway-components.md) |
+| **Config portability** | `ai-helm-values` `environments/<env>/` overlays; `global.namespacePodSecurity`; per-cluster LB annotations. | [04](./architecture/04-gitops-deployment.md) |
+| **Cost metadata** | Native Envoy `llmRequestCosts` extraction (no Lua/Python hop); unified `llm_custom_total_cost` key (ADR-0051). | [03](./architecture/03-gateway-components.md) |
 
 ---
 
@@ -314,12 +420,14 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0020 | Observability App-of-Apps orchestrator |
 | 0021 | Burst/budget/billing via dual-plane AuthConfigs (OPA removed) |
 | 0022 | Self-hosted GPU model federated into the gateway (`homeCluster: true`) |
-| 0027 | **Coder removed** (supersedes ADR-0019) |
+| 0026 | Lightbridge App-of-Apps split (secrets/db/app) |
+| 0027 | **Coder removed** (supersedes ADR-0019); returning is tracked (issue #651) |
 | 0028 | Cost-recovery pricing for owned-hardware models |
 | 0029/0030 | Self-hosted model as a plain/StatefulSet deployment (drop KServe) |
-| 0031 | Tag-based deploys (`release-YYYY.MM.DD`), never `main` |
-| 0032 | llama.cpp engine alongside vLLM — Qwen3.5-4B Q4 LIVE |
+| 0031 | Tag-based deploys (`release-YYYY.MM.DD`) — **superseded by 0055** |
+| 0032 | llama.cpp engine alongside vLLM — Qwen3.5-4B Q4 as the designated GPU model |
 | 0035 | Per-person monthly budget (drop the shared org bucket) |
+| 0037 | opencode-k8s-agent → internal plane via its own projected SA token |
 | 0038 | MCP OAuth discovery (RFC 9728) via native AIEG `MCPRoute.securityPolicy.oauth` |
 | 0040 | External MCPs via per-MCP in-cluster Caddy normalizing proxies |
 | 0041 | openresty request-body protocol-version rewrite for firecrawl |
@@ -327,25 +435,33 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0046 | Per-user attribution repair (flatten OTLP access-log attributes at Alloy) |
 | 0047/0049 | GitHub-OIDC CI binding (`lightbridge-repo-auth`) + operator-only onboarding |
 | 0048 | Global opencode-browser plugin + lean default primary agent |
+| 0051 | Unify cost metadata to `llm_custom_total_cost`; retire per-model keys |
+| 0052 | Source-qualified `missing:*` / `unstamped:*` sentinels for absent identity claims |
 | 0053 | Vanity-domain redirects (`kivoyo.com` → `camer.digital`, temporary) |
-| 0054 | Adopt the k3s-bundled metrics-server; drop our GitOps copy (ends the ADR-0015 name collision) |
+| 0054 | Adopt the k3s-bundled metrics-server; drop our GitOps copy |
 | 0055 | Continuous delivery: OCI-published charts (float on a semver range) + argocd-image-updater write-back to the private `ai-helm-values` repo; retires tag-based deploys (supersedes 0013, 0031; amends 0018) |
 | 0056 | Workload Helm values move out of `charts/apps` into `ai-helm-values` (read via a `$values` ref) |
 | 0057 | Genericize a leaf chart's own `values.yaml`; deployment-specific literals move to `ai-helm-values` |
-| 0058 | Precompute AI Gateway usage (cost/tokens/requests) as Mimir metrics via Alloy `stage.metrics`, not live Loki log-scans of a rate-limited object store |
-| 0059 | Grafana unified alerting → Discord, provisioned as grafana-operator CRs (survives stateless-Grafana rolls) |
-| 0060 | Gamified "App Scoreboard" dashboard (Phase 3): gauge/heatmap/histogram/traces/alertlist/news/hub on the ADR-0058 metrics; candlestick + flame-graph deferred (no tick/profile data) |
-| 0061 | Generic same-origin Caddy proxy (`same-origin-proxy`, `routes[]`) — serve external resources under an app's host to dodge browser CORS; in-chart netpol egress derived from routes. 1st use: the scoreboard news feed (Grafana news panel fetches client-side, GitHub Atom is CORS-blocked) |
-| 0062 | Grafana AI assistant (`grafana-llm-app`) on the internal gateway plane — **superseded by 0076** (removed) |
-| 0076 | Remove the Grafana LLM assistant — no OSS chat UI (Assistant is Cloud-only), sole OSS front-end is an unsigned plugin (declined); retain only the internal-CA cert (repurposed by 0070 for the Redis datasource) |
-| 0063 | Read-only Keycloak Postgres `GrafanaDatasource` (`-ro` replica, least-privilege role) resolves the opaque per-user `user_id` (sub UUID) → person; realm filtered by literal id (role can't read `realm`); role/GRANT in home-os, datasource in ai-helm-values, dashboard in ai-helm |
-| 0064 | Keycloak sessions & grants visibility (extends 0063): surface offline grants × spend; column-level `client(id,client_id,name)` grant (no `client.secret`); KC 26 persistent-sessions → filter `offline_flag='1'`; per-token budget rejected (no `jti`, unbounded cardinality) |
-| 0067 | JWT-token-level consumption dashboard (`jwt-tokens`): per `oidc_jti` cost/tokens/requests + last usages, email from the JWT claim ONLY (Loki `email` label, not the Keycloak DB); Loki-backed (jti is body-only, never a Mimir label); ⚠️ extract `oidc_jti` in the same `\| json` the outer `sum by` groups on |
-| 0068 | Structured synthetic identities for known non-human callers (extends 0052): Authorino synthesizes `email = <resource>@<service>` + `jti = <kind>:<id>` for known callers (GitHub CI → `<repo>@gh-runners`/`runid:<run_id>`; LCI → `<repo>@lightbridge-code-intelligence`/`runid:<task-id>`; LibreChat → real email/`librechat:<user-id>`) instead of `missing:*`; services become first-class named identities, human/service split stays on the `billing_plan`/`azp` labels (not a Grafana email-regex); email+jti only (budgets untouched); CEL-only in `ai-helm-values` |
-| 0069 | Adopt Envoy AI Gateway v1.0 (stable; no breaking changes) — `aieg`/`aieg-crd` `v0.7.0→v1.0.0`, `eg` `v1.8.0→v1.8.1` (new floor); migrate our six AIEG kinds off the now-deprecated `aigateway.envoyproxy.io/v1alpha1` → `v1beta1` (superset; the upstream `gateway.envoyproxy.io` group is separate, untouched); wire v1.0's MCP authz surface (`toolSelector`/`forwardHeaders`/CEL `authorization.rules`) into `charts/mcp` opt-in/default-off; external-MCP proxies retained (#2218/#2219 unfixed) |
-| 0070 | Rate-limit quota observability — read the limiter's LIVE per-account budget counters from redis-ha (the only place current-window state exists). New `AI Gateway — rate-limit quota` dashboard, two read paths over the same keys: a `prometheus-redis-exporter` observability child → `gateway_ratelimit_spend_micro_usd` Mimir leaderboard (key parsed in ServiceMonitor metricRelabelings; `window` kept to avoid monthly-rollover collisions; `rule-2`=free/`rule-7`=pro) + a `redis-datasource` tmscan census (`tlsAuth:true` enables the TLS dial, internal-CA verified); raw consumption only; chart logic in ai-helm, datasource/values/deps in ai-helm-values |
-| 0074 | opencode well-known: every catalogued MCP server ships `enabled: false` (opt-in — no day-one auto-connect of remotes / cold-`npx` locals); `frontend` broadened from the sole default into a FLEET of selectable primaries (neutral default `assistant`, named not `general` = built-in subagent): assistant/frontend/backend/devops/marketing/docs/ux/architect/enemy/tester/security — each lean (no MCP re-allow, no model pin), delegating to the 16 subagents; amends 0048/0071/0072/0073 |
-| 0082 | release-please (`googleapis/release-please-action@v5`, manifest mode) owns each chart's `MAJOR.MINOR` floor + `CHANGELOG.md`/GitHub Releases from Conventional Commits; publish (ADR-0055) still derives the deployed `PATCH` from commit-count → the PATCH release-please writes is cosmetic. `feat`→minor, breaking→major (pre-1.0: minor via `bump-minor-pre-major`), `fix`→patch. One aggregated release PR (default `GITHUB_TOKEN` → trips no CI/governance); `bjw-common`/`bjw-template` excluded (dependents exact-pin them). Amends 0055 |
+| 0058 | Precompute AI Gateway usage (cost/tokens/requests) as Mimir metrics via Alloy `stage.metrics` |
+| 0059 | Grafana unified alerting → Discord, provisioned as grafana-operator CRs |
+| 0060 | Gamified "App Scoreboard" dashboard on the ADR-0058 metrics |
+| 0061 | Generic same-origin Caddy proxy (`same-origin-proxy`) to dodge browser CORS |
+| 0062/0076 | Grafana LLM assistant on the internal plane — **removed** (no OSS chat UI); retain only the internal-CA cert (repurposed by 0070) |
+| 0063 | Read-only Keycloak Postgres `GrafanaDatasource` resolves `user_id` (sub UUID) → person; least-privilege role |
+| 0064 | Keycloak sessions & grants visibility (extends 0063): offline grants × spend; `offline_flag='1'` filter |
+| 0065/0066 | SonarQube **rejected** (heavyweight); adopt **opengrep** CI-native SAST instead (Proposed) |
+| 0067 | JWT-token-level consumption dashboard (`jwt-tokens`) on `oidc_jti`, email from the JWT claim only |
+| 0068 | Structured synthetic identities for known non-human callers (Authorino `email=<resource>@<service>`, `jti=<kind>:<id>`) |
+| 0069 | Adopt Envoy AI Gateway v1.0; migrate AIEG kinds `v1alpha1`→`v1beta1`; wire v1.0 MCP authz opt-in |
+| 0070 | Rate-limit quota observability — read the limiter's LIVE per-account counters from redis-ha (exporter→Mimir + `redis-datasource` census) |
+| 0071/0072/0073 | Local `npx` MCP servers + role subagents; no-key batch; issue-tracker MCPs (Atlassian local, GitHub via gateway phase 2) |
+| 0074 | opencode well-known: every MCP server `enabled: false` (opt-in); `frontend` → a fleet of selectable primaries (default `assistant`) |
+| 0075 | GLM-5.2 price drop — consolidate GLM-5/5.1 onto GLM-5.2 |
+| 0077 | Personal `my-usage` dashboard (built-in `${__user.login}` var + folder RBAC) **and** Phoenix-style chat-content boards on the gateway's OpenInference traces |
+| 0078/0079 | Per-user span attribution adopted then found **not viable** — the AIEG ext-proc runs before Authorino, so spans never see `x-oidc-*` (don't re-attempt) |
+| 0080 | Mermaid MCP `enabled: true` + universal (every agent); global "explain via diagrams" directive appended to all agent prompts |
+| 0081 | **A2A agent-hosting platform (Proposed)** — Rust axum protocol plane + Postgres registry + `rig-core`-on-Restate runtime, EAIG-fronted, A2A→MCP bridge |
+| 0082 | release-please owns each chart's `MAJOR.MINOR` floor + `CHANGELOG.md` from Conventional Commits; publish (ADR-0055) still derives the deployed `PATCH` from commit-count |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
@@ -355,13 +471,13 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 
 | Quality | Scenario | Target | Status |
 |---|---|---|---|
-| **Performance** | 2000 sustained, 5000 peak, mixed streaming | p95 added gateway latency < 50 ms; no window stalls | Tuned (ADR-0021); load test pending |
-| **Scalability** | Traffic doubles | HPA scales data plane 3→5 (right-sized to the 32-CPU worker pool; raise with workers); Authorino HA | Configured |
+| **Performance** | 2000 sustained, 5000 peak, mixed streaming | p95 added gateway latency < 50 ms; no window stalls | Tuned (ADR-0021/0034); load test pending |
+| **Scalability** | Traffic doubles | HPA scales data plane 3→5 (right-sized to the 32-CPU worker pool); Authorino HA | Configured |
 | **Availability** | A model backend starts erroring | Outlier detection ejects it in ≤30 s; clients reroute | Configured |
 | **Resilience** | Proxy rollout under load | No stream cut (60 s drain) | Configured |
-| **Observability** | "What did user X spend on model Y this month?" | Answerable in Grafana from Mimir counters | Partially shipped |
+| **Observability** | "What did user X spend on model Y this month?" | Answerable in Grafana from Mimir counters | Shipped (ADR-0058/0063) |
 | **Security** | Forged/expired JWT | Rejected at Authorino; no backend reached | Enforced |
-| **Cost** | User exceeds monthly budget | Budget bucket denies; alert at 80% | Designed (ADR-0021) |
+| **Cost** | User exceeds monthly budget | Budget bucket denies; alert at threshold | Enforced + alerted (ADR-0021/0059) |
 | **Operability** | Add a model | List edit in `ai-models` values → new Application | Mechanical |
 
 ---
@@ -373,16 +489,18 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Load test for 2000/5000 not yet re-run on Hetzner** | Capacity claims unvalidated | Envelope in `docs/gateway-capacity.md`; HPA right-sized; run `plans/artillery/` |
 | **Keycloak `billing_plan` / org mappers not landed** | Plan falls back to `free` | ADR-0021 external dependency |
 | **Cilium deny-egress fragility** | New egress needs a CiliumNetworkPolicy or silent crashloop | Overlay pattern established ([06](./architecture/06-networking-tls.md)) |
-| **`ai-gitops` referenced but never created** | Stale ADRs (0010/0013) mislead | Realised as the private `ai-helm-values` (values-only) — ADR-0055 |
-| **Single env (`prod`) only** | No staging to validate before release | Second env is a drop-in `environments/<env>/` |
-| **Tag-based deploys = manual two-repo step** | Forget the home-os repoint → root self-heals to old tag | Being retired by continuous delivery (ADR-0055); runbook `docs/continuous-delivery.md` |
 | **CD: immutability abandoned (ADR-0055)** | A merge / in-range upstream tag is a live deploy; no frozen fleet snapshot | Accepted trade-off; cosign-gate first-party, keep `allow-tags` tight, rollback via `git revert` in `ai-helm-values` |
 | **CD: private `ai-helm-values` needs TWO creds** | Miss the ArgoCD read repo-secret → mass `ComparisonError` | Documented #1 prereq in `docs/continuous-delivery.md` |
+| **Cut-over-values-repo-first ordering** | An ai-helm chart change merged before its values file exists silently falls back to chart defaults | `render-check.yml` in `ai-helm-values`; sequence discipline |
+| **Single env (`prod`) only** | No staging to validate before deploy | Second env is a drop-in `ai-helm-values` `environments/<env>/` |
 | **Mimir ring wedges if memberlist blocked at startup** | Metrics silently dropped | Guarded: wave -3 `allow-same-namespace` + `rejoin_interval: 1m` |
 | **External MCP proxy engines are interim** | openresty/Content-Type rewrites carried until AIEG #2218/#2219 land | Tracked in ADR-0040/0041 |
 | **MCP `MCP_TOKEN` token-bind race** | Empty-token proxy rejects all requests | Guarded: `optional: false` (waits for ESO) |
-| **Grafana has read access to the Keycloak auth DB** (ADR-0063/0064) | A leaked `grafana_ro` credential reads usernames/emails/sessions | Bounded by design: least-privilege role (no `pg_read_all_data`, no `credential`/`client.secret`/federated tokens), column-level `client` grant, `-ro` replica; blast radius = identity data only |
+| **Grafana has read access to the Keycloak auth DB** (ADR-0063/0064) | A leaked `grafana_ro` credential reads usernames/emails/sessions | Bounded: least-privilege role, column-level `client` grant, `-ro` replica; blast radius = identity data only |
 | **KC 26 persistent-sessions: online sessions live in the `offline_*` tables** | Session/grant queries miscount online logins as offline grants | Filter `offline_flag='1'`; documented in `keycloak-identity-datasource.md` + ADR-0064 |
+| **Per-user chat-content trace attribution is structurally impossible** (ADR-0079) | No per-user Tempo content panel | Accepted; ext-proc precedes Authorino by design — don't re-attempt |
+| **A2A agent platform is Proposed, not built (ADR-0081)** | ~9–13+ wk of net-new Rust/Restate infra; several open questions | Restate runtime already deployed; crate-maturity + cost-model spikes pending |
+| **GitLab multi-forge repo-auth in progress** (Epics #588/#591) | CI auth + code review limited to GitHub until landed | Tickets #586–#590 scoped; values-repo-first |
 
 ---
 
@@ -396,11 +514,14 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Authorino** | Kuadrant ext_authz service verifying JWT and stamping headers |
 | **App-of-Apps** | Orchestrator chart rendering child `Application` CRs directly |
 | **Orchestrator + leaves** | Chart emitting an ApplicationSet that fans out to sibling leaf charts |
-| **Umbrella Application** | Multi-source ArgoCD App: workload + app-scoped deps overlay |
+| **Umbrella Application** | Multi-source ArgoCD App: workload + app-scoped deps overlay + `$values` |
 | **home-remote** | Registered ArgoCD destination = the Hetzner workload cluster |
 | **External / internal plane** | Public LB host vs in-cluster ClusterIP host on the same gateway |
 | **`x-oidc-*`** | Canonical downstream identity headers (ADR-0011) |
 | **LGTM** | Loki / Grafana / Tempo / Mimir observability stack |
 | **Alloy** | Grafana's OTel-collector/agent (metrics scrape, log tail, OTLP) |
 | **ssegning-aws** | The external `ClusterSecretStore` ESO reads from |
+| **ai-helm-values** | Private repo holding image tags + per-env values + deps overlays |
+| **LCI** | `lightbridge-code-intelligence` — the automated code-review App |
+| **A2A** | Agent2Agent — the proposed multi-tenant agent-hosting platform (ADR-0081) |
 | **Plan / tier** | `free` / `pro` / `service` / `internal` rate-limit + budget tier |

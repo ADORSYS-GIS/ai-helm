@@ -59,8 +59,6 @@ flowchart TB
     JWTAUTH -->|"x-oidc-* headers"| SELF
     JWTAUTH -->|"x-oidc-* headers"| PROXY
     
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    class SELF,PROXY own;
 ```
 
 ### Key Features (from official AIEG docs)
@@ -161,8 +159,6 @@ flowchart TB
     JWTAUTH -->|"x-oidc-* headers"| SELF
     JWTAUTH -->|"x-oidc-* headers"| PROXY
     
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    class SELF,PROXY own;
 ```
 
 ---
@@ -401,10 +397,9 @@ The ai-helm codebase supports **three backend modes**:
 
 ```mermaid
 flowchart LR
-    MCPR["MCPRoute"]:::own -->|"plain HTTP"| SVC["Service<br/>brave-search"]:::own
-    SVC --> POD["Pod<br/>brave-search image"]:::own
+    MCPR["MCPRoute"] -->|"plain HTTP"| SVC["Service<br/>brave-search"]
+    SVC --> POD["Pod<br/>brave-search image"]
     
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 **Use for:** MCP servers you run yourself (brave, terraform)
@@ -451,11 +446,9 @@ brave:
 
 ```mermaid
 flowchart LR
-    MCPR["MCPRoute"]:::own -->|"plain HTTP"| PROXY["Caddy/openresty<br/>in-cluster proxy"]:::own
-    PROXY -->|"TLS + Bearer"| EXT["External MCP<br/>mcp.context7.com"]:::ext
+    MCPR["MCPRoute"] -->|"plain HTTP"| PROXY["Caddy/openresty<br/>in-cluster proxy"]
+    PROXY -->|"TLS + Bearer"| EXT["External MCP<br/>mcp.context7.com"]
     
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 **Why proxiedExternal?** Direct external TLS backends failed due to three issues documented in [ADR-0040](../adr/0040-external-mcps-via-caddy-normalizing-proxy.md):
@@ -479,10 +472,6 @@ flowchart TB
     P3 --> CADDY
     P4 --> OPENRESTY
     
-    classDef warn fill:#fbeaea,stroke:#a54a4a;
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    class P1,P2,P3,P4 warn;
-    class CADDY,OPENRESTY own;
 ```
 
 **Caddy Engine (default):**
@@ -579,19 +568,19 @@ From [`docs/architecture/10-mcp.md`](../architecture/10-mcp.md):
 
 ```mermaid
 flowchart TB
-    GW["Envoy AI Gateway<br/>/mcp/* (native jwt_authn)"]:::own
+    GW["Envoy AI Gateway<br/>/mcp/* (native jwt_authn)"]
 
     subgraph self["Self-hosted (in-cluster, plain HTTP)"]
-        BRAVE["brave<br/>mcp/brave-search"]:::own
-        TF["terraform<br/>hashicorp/terraform-mcp-server"]:::own
+        BRAVE["brave<br/>mcp/brave-search"]
+        TF["terraform<br/>hashicorp/terraform-mcp-server"]
     end
     subgraph proxied["proxiedExternal (in-cluster proxy → external TLS)"]
-        CTX["context7 → mcp.context7.com<br/><i>engine: caddy</i>"]:::own
-        REF["refero → api.refero.design<br/><i>caddy + Content-Type rewrite</i>"]:::own
-        FC["firecrawl → mcp.firecrawl.dev<br/><i>engine: openresty + protocol pin</i>"]:::own
+        CTX["context7 → mcp.context7.com<br/><i>engine: caddy</i>"]
+        REF["refero → api.refero.design<br/><i>caddy + Content-Type rewrite</i>"]
+        FC["firecrawl → mcp.firecrawl.dev<br/><i>engine: openresty + protocol pin</i>"]
     end
 
-    EXT["external MCP services"]:::ext
+    EXT["external MCP services"]
 
     GW --> BRAVE & TF
     GW --> CTX & REF & FC
@@ -599,8 +588,6 @@ flowchart TB
     REF -.TLS.-> EXT
     FC -.TLS.-> EXT
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
 ```
 
 | MCP Server | Path | Backend Mode | Proxy Engine | Upstream |
@@ -622,15 +609,15 @@ The `charts/mcps` orchestrator uses an ApplicationSet to deploy multiple MCP ser
 ```mermaid
 flowchart TB
     subgraph GitOps["ArgoCD GitOps"]
-        APPSET["ApplicationSet<br/>charts/mcps"]:::own
+        APPSET["ApplicationSet<br/>charts/mcps"]
     end
     
     subgraph Children["Child Applications"]
-        APP1["mcps-brave<br/>charts/mcp"]:::own
-        APP2["mcps-terraform<br/>charts/mcp"]:::own
-        APP3["mcps-context7<br/>charts/mcp"]:::own
-        APP4["mcps-refero<br/>charts/mcp"]:::own
-        APP5["mcps-firecrawl<br/>charts/mcp"]:::own
+        APP1["mcps-brave<br/>charts/mcp"]
+        APP2["mcps-terraform<br/>charts/mcp"]
+        APP3["mcps-context7<br/>charts/mcp"]
+        APP4["mcps-refero<br/>charts/mcp"]
+        APP5["mcps-firecrawl<br/>charts/mcp"]
     end
     
     APPSET --> APP1
@@ -639,7 +626,6 @@ flowchart TB
     APPSET --> APP4
     APPSET --> APP5
     
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
 ```
 
 ### 8.2 ApplicationSet Template
@@ -889,12 +875,6 @@ flowchart TB
     CADDY -->|"TLS + Bearer"| REF
     OPENRESTY -->|"TLS + Bearer + protocol pin"| FC
     
-    classDef own fill:#eaf3ea,stroke:#4a8a4a;
-    classDef ext fill:#eee,stroke:#888,stroke-dasharray:4 3;
-    classDef auth fill:#e3f2fd,stroke:#1976d2;
-    class BRAVE,TF,CADDY,OPENRESTY own;
-    class CTX,REF,FC ext;
-    class KC auth;
 ```
 
 ### 11.2 Component Responsibilities

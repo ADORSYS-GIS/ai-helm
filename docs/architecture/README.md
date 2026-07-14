@@ -44,12 +44,6 @@ flowchart TB
     ARC --> C4
     L2 --> SUB
 
-    classDef entry fill:#e8eef7,stroke:#4a6fa5,color:#1a2a40;
-    classDef c4 fill:#eaf3ea,stroke:#4a8a4a,color:#1a401a;
-    classDef sub fill:#f7f0e8,stroke:#a5814a,color:#402e1a;
-    class FRONT,ARC entry;
-    class L1,L2,L3 c4;
-    class D04,D05,D06,D07,D08,D09,D10 sub;
 ```
 
 ## The pages
@@ -85,24 +79,22 @@ A consistent visual language across the suite:
 
 ```mermaid
 flowchart LR
-    OWN["owned by this repo"]:::own
-    CTRL["control object<br/>(ArgoCD App/AppSet)"]:::ctrl
-    EXT["external / consumed<br/>(not deployed here)"]:::ext
-    GPU["self-hosted on home GPU"]:::gpu
+    OWN["owned by this repo"]
+    CTRL["control object<br/>(ArgoCD App/AppSet)"]
+    EXT["external / consumed<br/>(not deployed here)"]
+    GPU["self-hosted on home GPU"]
     OWN --> CTRL --> EXT --> GPU
 
-    classDef own fill:#eaf3ea,stroke:#4a8a4a,color:#1a401a;
-    classDef ctrl fill:#e8eef7,stroke:#4a6fa5,color:#1a2a40;
-    classDef ext fill:#eee,stroke:#888,color:#333,stroke-dasharray:4 3;
-    classDef gpu fill:#f7e8f0,stroke:#a54a81,color:#401a2e;
 ```
 
-- **Solid green** — a chart/workload this repo owns and deploys.
-- **Blue** — an ArgoCD control object (`Application` / `ApplicationSet`).
-- **Dashed grey** — an external system this repo only *references* by name
-  (Keycloak, Redis, cert-manager, ESO, CNPG operator, object storage, providers).
-- **Pink** — runs on the home GPU cluster (the `homeCluster: true` exception).
+Diagrams are deliberately uncolored; node **labels** carry the category:
 
-> **Accuracy note.** Diagrams reflect `release-2026.06.14-v09`. Coder
-> (old ADR-0019) was **removed** (ADR-0027) and does not appear here, despite
-> lingering mentions in some older `docs/` files.
+- **owned** — a chart/workload this repo owns and deploys.
+- **control object** — an ArgoCD `Application` / `ApplicationSet`.
+- **external / consumed** — a system this repo only *references* by name
+  (Keycloak, Redis, cert-manager, ESO, CNPG operator, object storage, providers).
+- **home GPU** — runs on the home GPU cluster (the `homeCluster: true` exception).
+
+> **Accuracy note.** Diagrams reflect `main` under continuous delivery (ADR-0055;
+> no release tag). Coder (old ADR-0019) was **removed** (ADR-0027) and is
+> returning (issue #651); it does not appear in these diagrams yet.

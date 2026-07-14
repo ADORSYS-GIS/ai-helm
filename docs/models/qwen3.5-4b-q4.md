@@ -1,7 +1,7 @@
 # Qwen3.5-4B Q4 (llama.cpp) — deployment paper
 
 > One of three self-hosted-model papers. Shared mechanics: the
-> **[pattern guide](../self-hosted-model-serving.md)**. Siblings:
+> **[pattern guide](../patterns/self-hosted-model-serving.md)**. Siblings:
 > [Qwen3-4B (vLLM, standby)](./qwen3-4b.md) · [Qwen3.5-4B vLLM/BF16](./qwen3.5-4b.md).
 
 | | |

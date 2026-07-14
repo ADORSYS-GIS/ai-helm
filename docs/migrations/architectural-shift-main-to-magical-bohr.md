@@ -1,9 +1,15 @@
 # Architectural shift: `main` → `claude/magical-bohr-390242`
 
+> ⚠️ **Historical.** This narrates a one-time branch-cutover from mid-2026 and is
+> kept as a record. The steady state has since moved on (continuous delivery,
+> [ADR-0055](../adr/0055-oci-charts-and-image-updater-writeback-to-values-repo.md);
+> Hetzner cutover, [migrations/2026-hetzner-cutover.md](2026-hetzner-cutover.md)).
+> For the current architecture start at [`architecture.md`](../architecture.md).
+
 > **Scope.** This document describes the *full* architectural shift represented
 > by the diff `main..claude/magical-bohr-390242` (≈393 files, +21.6k/−7.9k).
-> It is the narrative companion to [`docs/architecture.md`](./architecture.md)
-> (the steady-state map) and the [ADR index](./adr/README.md) (the per-decision
+> It is the narrative companion to [`docs/architecture.md`](../architecture.md)
+> (the steady-state map) and the [ADR index](../adr/README.md) (the per-decision
 > "why"). Read this when you need to understand *what changed and why the
 > platform looks different now*, not just how it is wired today.
 
@@ -163,7 +169,7 @@ managed ad hoc.
   alphanumeric Mimir `storage_prefix`.
 
 This is the foundation the OpenAI-alternative plan builds on (see
-[`plans/openai-alternative-plan.md`](../plans/openai-alternative-plan.md)).
+[`plans/openai-alternative-plan.md`](../../plans/openai-alternative-plan.md)).
 
 ---
 
@@ -300,6 +306,6 @@ and quota spine. See the plan doc for how it's completed.
 2. `docs/architecture.md` (the steady-state map).
 3. `docs/2026-hetzner-cutover.md` (the operational cutover log + live gotchas).
 4. ADRs in dependency order: 0016 → 0017 → 0018 → 0019/0020 → 0021.
-5. [`docs/arc42.md`](./arc42.md) for the formal architecture description.
-6. [`plans/openai-alternative-plan.md`](../plans/openai-alternative-plan.md) for
+5. [`docs/arc42.md`](../arc42.md) for the formal architecture description.
+6. [`plans/openai-alternative-plan.md`](../../plans/openai-alternative-plan.md) for
    where this is heading.

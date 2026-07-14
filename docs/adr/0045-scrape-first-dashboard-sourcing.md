@@ -8,7 +8,7 @@
 
 Epic [#341](https://github.com/ADORSYS-GIS/ai-helm/issues/341) asked which
 services need observability dashboards (tickets #354/#355). The live audit
-([docs/observability-dashboard-research.md](../observability-dashboard-research.md))
+([docs/observability-dashboard-research.md](../patterns/observability-dashboard-research.md))
 found that every dead dashboard we ship — six of the thirteen imported
 gnetId boards, plus our own per-user board — is dead because its *data
 source is missing*, not because the dashboard is wrong: only 9 monitor CRs
@@ -77,7 +77,7 @@ dashboards as if data were a given*.
 
 ## Related
 
-- [docs/observability-dashboard-research.md](../observability-dashboard-research.md) — the evidence base (tickets #354/#355)
+- [docs/observability-dashboard-research.md](../patterns/observability-dashboard-research.md) — the evidence base (tickets #354/#355)
 - [ADR-0046](./0046-per-user-attribution-otlp-envelope-repair.md) — the per-user pipeline repair (decided alongside, recorded separately)
 - [ADR-0008](./0008-python-dashboard-generation.md) — dashboards-as-code pipeline
 - [ADR-0022](./0022-self-hosted-gpu-model-federated-into-gateway.md) — why model serving is on the other cluster
