@@ -8,7 +8,7 @@ attribution), **0008** (Python dashboards), **0045** (scrape-first sourcing),
 **0058** (cost metrics precomputed to Mimir), **0059** (unified alerting →
 Discord), **0060** (gamified App Scoreboard). Cost observability — the metrics
 backbone, dashboards, scoreboard, alerting + runbook — is its own guide:
-[`cost-observability.md`](../cost-observability.md).
+[`cost-observability.md`](../patterns/cost-observability.md).
 
 ## The pipeline
 
@@ -129,7 +129,7 @@ behind it.
 - Bounded by what KC stores: access tokens are stateless (never in the DB),
   revocation deletes the row (no enumerable "revoked" list), and budget is
   per-user/per-`azp`, **not** per individual token. Full guide:
-  [`keycloak-identity-datasource.md`](../keycloak-identity-datasource.md).
+  [`keycloak-identity-datasource.md`](../integrations/keycloak-identity-datasource.md).
 
 **Per-JWT consumption (ADR-0067).** A complementary, **Loki-backed** view keyed on
 the JWT id `oidc_jti` (an access-log **body** field — deliberately never a Mimir
@@ -140,7 +140,7 @@ LCI show a synthetic `<resource>@<service>` email, LibreChat keeps its real
 forwarded email, and all three get a synthetic `<kind>:<id>` jti (ADR-0068);
 genuine gaps show their `missing:*`/`unstamped:*` sentinel. ⚠️ LogQL trap: extract `oidc_jti` in the
 *same* `| json` the outer `sum by` groups on, or it collapses to `-`. Full guide:
-[`jwt-token-observability.md`](../jwt-token-observability.md).
+[`jwt-token-observability.md`](../patterns/jwt-token-observability.md).
 
 ## Why the sync-wave order is load-bearing
 

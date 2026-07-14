@@ -5,7 +5,7 @@ Grafana instance — `Grafana` (external mode), `GrafanaFolder`, and
 `GrafanaDashboard` CRs. Renders NO workloads.
 
 **ADR:** [`0004`](../../docs/adr/0004-grafana-operator-external-mode.md)
-**Companion doc:** [`docs/grafana-operator-and-dashboards.md`](../../docs/grafana-operator-and-dashboards.md)
+**Companion doc:** [`docs/playbooks/grafana-operator-and-dashboards.md`](../../docs/playbooks/grafana-operator-and-dashboards.md)
 
 ## What it renders
 

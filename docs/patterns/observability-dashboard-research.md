@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-12
 **Tickets:** [#354](https://github.com/ADORSYS-GIS/ai-helm/issues/354) (reconnaissance) + [#355](https://github.com/ADORSYS-GIS/ai-helm/issues/355) (dashboard research), epic [#341](https://github.com/ADORSYS-GIS/ai-helm/issues/341)
-**Decision records:** [ADR-0045](adr/0045-scrape-first-dashboard-sourcing.md) (sourcing policy) + [ADR-0046](adr/0046-per-user-attribution-otlp-envelope-repair.md) (per-user attribution repair)
+**Decision records:** [ADR-0045](../adr/0045-scrape-first-dashboard-sourcing.md) (sourcing policy) + [ADR-0046](../adr/0046-per-user-attribution-otlp-envelope-repair.md) (per-user attribution repair)
 **Companion (flagship fix):** [#357](https://github.com/ADORSYS-GIS/ai-helm/issues/357) — per-user usage dashboard
 
 This report inventories what is actually scraped/ingested on the Hetzner
@@ -179,9 +179,9 @@ curl -s 'https://grafana.com/api/dashboards?orderBy=downloads&direction=desc&pag
 ## Related
 
 - [docs/observability-gaps.md](observability-gaps.md) — the full service-by-service inventory (ticket #354; this doc evaluates dashboards for the gaps it ranks)
-- [ADR-0045](adr/0045-scrape-first-dashboard-sourcing.md) — the sourcing policy arising from this research
-- [ADR-0046](adr/0046-per-user-attribution-otlp-envelope-repair.md) — the per-user attribution repair arising from §1
-- [ADR-0005](adr/0005-per-user-attribution-via-authorino-headers.md) — the per-user attribution design ADR-0046 repairs
+- [ADR-0045](../adr/0045-scrape-first-dashboard-sourcing.md) — the sourcing policy arising from this research
+- [ADR-0046](../adr/0046-per-user-attribution-otlp-envelope-repair.md) — the per-user attribution repair arising from §1
+- [ADR-0005](../adr/0005-per-user-attribution-via-authorino-headers.md) — the per-user attribution design ADR-0046 repairs
 - [docs/per-user-observability.md](per-user-observability.md) — pipeline walkthrough
-- [docs/2026-06-07-observability-datasource-audit.md](2026-06-07-observability-datasource-audit.md) — prior datasource audit
-- [docs/grafana-operator-and-dashboards.md](grafana-operator-and-dashboards.md) — how dashboards ship
+- [docs/2026-06-07-observability-datasource-audit.md](../migrations/2026-06-07-observability-datasource-audit.md) — prior datasource audit
+- [docs/grafana-operator-and-dashboards.md](../playbooks/grafana-operator-and-dashboards.md) — how dashboards ship

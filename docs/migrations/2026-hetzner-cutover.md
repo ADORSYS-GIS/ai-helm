@@ -161,7 +161,7 @@ pattern: issue a throwaway leaf `Certificate` from the **internal**
   <none>` → `metrics.k8s.io` unavailable. The 2026-06-05 fix (force-sync `aii-metrics-server`
   so the HA chart owns it + commit `--disable metrics-server` to hetzner-k8s) **did not
   hold** — the addon kept returning on restores, so the collision recurred on every sync.
-  **Final resolution ([ADR-0054](adr/0054-adopt-k3s-bundled-metrics-server.md)): we
+  **Final resolution ([ADR-0054](../adr/0054-adopt-k3s-bundled-metrics-server.md)): we
   dropped our GitOps metrics-server entirely and adopted the healthy k3s-bundled one**
   (removed the `charts/apps/values.yaml` entry; the k3s addon re-owns the Service +
   APIService). No node reprovision, no `--disable metrics-server` dependency.

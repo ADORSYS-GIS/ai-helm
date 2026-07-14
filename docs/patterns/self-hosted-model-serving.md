@@ -6,15 +6,15 @@ federated into the Hetzner Envoy AI Gateway like a SaaS backend. This guide is
 
 | Paper | Engine | Status |
 |---|---|---|
-| [**Qwen3.5-4B Q4 (llama.cpp)**](./models/qwen3.5-4b-q4.md) | llama.cpp (`llama-server`), UD-Q4_K_XL GGUF | 🟢 **LIVE** — the active model; ~52 tok/s decode, 4 slots, 128k ctx |
-| [**Qwen3-4B**](./models/qwen3-4b.md) | vLLM (`huggingfaceserver`) + LMCache, BF16 | 🟦 standby (disabled 2026-06-08; rollback; the reference build) |
-| [**Qwen3.5-4B (vLLM/BF16)**](./models/qwen3.5-4b.md) | vLLM, BF16 | 📋 studied, not chosen (documented alternative) |
+| [**Qwen3.5-4B Q4 (llama.cpp)**](../models/qwen3.5-4b-q4.md) | llama.cpp (`llama-server`), UD-Q4_K_XL GGUF | 🟢 **LIVE** — the active model; ~52 tok/s decode, 4 slots, 128k ctx |
+| [**Qwen3-4B**](../models/qwen3-4b.md) | vLLM (`huggingfaceserver`) + LMCache, BF16 | 🟦 standby (disabled 2026-06-08; rollback; the reference build) |
+| [**Qwen3.5-4B (vLLM/BF16)**](../models/qwen3.5-4b.md) | vLLM, BF16 | 📋 studied, not chosen (documented alternative) |
 
-The *why* of the pattern: [ADR-0022](./adr/0022-self-hosted-gpu-model-federated-into-gateway.md)
-(federation + exposure) · [ADR-0028](./adr/0028-owned-hardware-model-pricing.md)
-(owned-hardware pricing) · [ADR-0029](./adr/0029-self-hosted-model-plain-deployment.md)
-(off Knative) · [ADR-0030](./adr/0030-merge-model-and-proxy-into-one-statefulset-bjw.md)
-(one StatefulSet via bjw-template) · [ADR-0032](./adr/0032-llama-cpp-engine-for-self-hosted-models.md)
+The *why* of the pattern: [ADR-0022](../adr/0022-self-hosted-gpu-model-federated-into-gateway.md)
+(federation + exposure) · [ADR-0028](../adr/0028-owned-hardware-model-pricing.md)
+(owned-hardware pricing) · [ADR-0029](../adr/0029-self-hosted-model-plain-deployment.md)
+(off Knative) · [ADR-0030](../adr/0030-merge-model-and-proxy-into-one-statefulset-bjw.md)
+(one StatefulSet via bjw-template) · [ADR-0032](../adr/0032-llama-cpp-engine-for-self-hosted-models.md)
 (llama.cpp as a 2nd engine). **Adding the next model → the checklist in §8.**
 
 > Per-cluster facts assumed live (do not re-create): the **home GPU node**
@@ -226,9 +226,9 @@ is less machinery. When that day comes, write the ADR and update arc42 §5/§9.
 
 When the next model outgrows the home A2000, the platform comparison —
 **A2000 vs eBay 5×V100 vs Hetzner GEX44/GEX131** (deployability, concurrency,
-12/24/36-mo TCO, and the [ADR-0028](./adr/0028-owned-hardware-model-pricing.md)
+12/24/36-mo TCO, and the [ADR-0028](../adr/0028-owned-hardware-model-pricing.md)
 cost-recovery price of each) — is worked through in
-[`2026-06-08-gpu-platform-procurement-comparison.md`](./2026-06-08-gpu-platform-procurement-comparison.md).
+[`2026-06-08-gpu-platform-procurement-comparison.md`](2026-06-08-gpu-platform-procurement-comparison.md).
 Short version: A2000 for the live small tier; the **already-owned Cameroon 2×4070
 (~€0.16/kWh) for ≤30B — including the 30B-A3B coding MoEs (GLM-4.7-Flash) that GEX44
 can't hold** — try it *before* renting/buying; GEX44 only for managed multimodal

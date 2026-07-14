@@ -203,7 +203,7 @@ two more issues surfaced:
   `aii-metrics-server` app (kubernetes-sigs chart, 2 replicas) is stuck
   `Progressing` because the bundled Deployment squats the `metrics-server` name.
 
-  > **⚠️ SUPERSEDED by [ADR-0054](adr/0054-adopt-k3s-bundled-metrics-server.md) (2026-06-19).**
+  > **⚠️ SUPERSEDED by [ADR-0054](../adr/0054-adopt-k3s-bundled-metrics-server.md) (2026-06-19).**
   > The collision recurred on essentially every sync, and the k3s addon kept
   > coming back across restores. Rather than keep fighting it, we **dropped our
   > GitOps metrics-server** (removed the `charts/apps/values.yaml` entry) and

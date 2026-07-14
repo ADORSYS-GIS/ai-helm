@@ -3,8 +3,8 @@
 How `opencode auth login https://ai.camer.digital/opencode` works in
 our stack, and what's required end-to-end to make it land.
 
-**ADR:** [`docs/adr/0014-split-librechart-and-opencode-wellknown.md`](./adr/0014-split-librechart-and-opencode-wellknown.md)
-**Chart:** [`charts/librechat-opencode-wellknown`](../charts/librechat-opencode-wellknown/)
+**ADR:** [`docs/adr/0014-split-librechart-and-opencode-wellknown.md`](../adr/0014-split-librechart-and-opencode-wellknown.md)
+**Chart:** [`charts/librechat-opencode-wellknown`](../../charts/librechat-opencode-wellknown)
 **Plugin:** [`@vymalo/opencode-oauth2`](https://www.npmjs.com/package/@vymalo/opencode-oauth2)
 
 ## End-to-end flow
@@ -72,7 +72,7 @@ user — one shared config instead of each person hand-wiring the gateway routes
 opencode merges it *under* the user's own `opencode.json`, so any default is
 overridable locally.
 
-> ⚠️ **Since [ADR-0074](adr/0074-opencode-opt-in-mcps-and-multi-primary-fleet.md)
+> ⚠️ **Since [ADR-0074](../adr/0074-opencode-opt-in-mcps-and-multi-primary-fleet.md)
 > every server ships `enabled: false` — MCPs are OPT-IN.** A fresh
 > `opencode auth login` no longer auto-connects the remotes or cold-`npx`-installs
 > the locals; a user enables only what a workflow needs (in their own
@@ -295,7 +295,7 @@ MCP/browser tools; a primary reaches them via `@name` / the task tool.
 > is the **environment** (git-tracked worktree, ephemeral/sandboxed run), not the
 > permission patterns. Size the allow-list for convenience and assume an allowed
 > build tool can do anything its project's scripts can. See
-> [`opencode-sandboxing.md`](./opencode-sandboxing.md) for the containment options.
+> [`opencode-sandboxing.md`](../playbooks/opencode-sandboxing.md) for the containment options.
 
 Add a role by copying an `agent` block (+ connecting its server if new). Pin a
 model **only** if the role needs vision (the `adorsys-frontend` multimodal alias);
@@ -429,7 +429,7 @@ That's it. opencode:
    phone), enters the code, approves.
 4. Loads the models-info plugin, which fetches the OpenRouter-shape
    catalog at `https://api.ai.camer.digital/v1/models/info` (ADR-0015,
-   served by [`charts/ai-models-info`](../charts/ai-models-info/)) and
+   served by [`charts/ai-models-info`](../../charts/ai-models-info)) and
    enriches every model with context length, pricing, modalities, and
    capability flags. Cached locally for 24h.
 5. Plugin caches the resulting tokens at:

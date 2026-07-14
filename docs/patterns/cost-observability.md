@@ -4,15 +4,15 @@ How we see — and bound — what the AI platform costs. This is the operator-fa
 "how it works + how to run it" guide for the cost-observability subsystem; the
 *why* behind each decision lives in the ADRs it links.
 
-> **ADRs:** [0058](adr/0058-precompute-gateway-usage-metrics-to-mimir.md) (metrics
-> backbone) · [0059](adr/0059-grafana-unified-alerting-to-discord.md) (alerting)
-> · [0060](adr/0060-gamified-app-scoreboard.md) (scoreboard). Builds on
-> [0005](adr/0005-per-user-attribution-via-authorino-headers.md)/[0046](adr/0046-per-user-attribution-otlp-envelope-repair.md)
-> (per-user attribution), [0008](adr/0008-python-dashboard-generation.md)
-> (dashboards-as-code), [0028](adr/0028-owned-hardware-model-pricing.md)/ADR-0051
+> **ADRs:** [0058](../adr/0058-precompute-gateway-usage-metrics-to-mimir.md) (metrics
+> backbone) · [0059](../adr/0059-grafana-unified-alerting-to-discord.md) (alerting)
+> · [0060](../adr/0060-gamified-app-scoreboard.md) (scoreboard). Builds on
+> [0005](../adr/0005-per-user-attribution-via-authorino-headers.md)/[0046](../adr/0046-per-user-attribution-otlp-envelope-repair.md)
+> (per-user attribution), [0008](../adr/0008-python-dashboard-generation.md)
+> (dashboards-as-code), [0028](../adr/0028-owned-hardware-model-pricing.md)/ADR-0051
 > (pricing). Related ops docs: [`per-user-observability.md`](per-user-observability.md),
-> [`observability-stack.md`](observability-stack.md),
-> [`observability-storage-retention.md`](observability-storage-retention.md).
+> [`observability-stack.md`](../playbooks/observability-stack.md),
+> [`observability-storage-retention.md`](../playbooks/observability-storage-retention.md).
 
 ## 1. The problem this subsystem solves
 
@@ -77,7 +77,7 @@ pod roll are handled by PromQL `increase()`.
 > ⚠️ **`display_name` is the unifying "actor" axis** — a person for humans, the
 > **repository** for CI. ⚠️ LibreChat agents/embeddings don't forward the
 > end-user, so they fall back to `azp=internal-key-librechat` (see
-> [`gateway-auth-ratelimit`](adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md)).
+> [`gateway-auth-ratelimit`](../adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md)).
 
 ## 3. What made it viable: caches + log-noise drops
 
@@ -245,10 +245,10 @@ only existed ~10 days back). Job + manifests **removed after success**
 
 - Per-user attribution pipeline (JWT → headers → log labels):
   [`per-user-observability.md`](per-user-observability.md), ADR-0011/0046/0052.
-- LGTM topology, sync waves, "why N pods?": [`observability-stack.md`](observability-stack.md),
-  [`2026-06-07-observability-datasource-audit.md`](2026-06-07-observability-datasource-audit.md).
-- Storage/retention/S3 layout: [`observability-storage-retention.md`](observability-storage-retention.md).
-- Dashboards-as-code mechanics: [`python-dashboard-generation.md`](python-dashboard-generation.md).
+- LGTM topology, sync waves, "why N pods?": [`observability-stack.md`](../playbooks/observability-stack.md),
+  [`2026-06-07-observability-datasource-audit.md`](../migrations/2026-06-07-observability-datasource-audit.md).
+- Storage/retention/S3 layout: [`observability-storage-retention.md`](../playbooks/observability-storage-retention.md).
+- Dashboards-as-code mechanics: [`python-dashboard-generation.md`](../playbooks/python-dashboard-generation.md).
 - The "No data" postmortem that preceded this work:
-  [`observability-fix-no-data-dashboards.md`](observability-fix-no-data-dashboards.md).
+  [`observability-fix-no-data-dashboards.md`](../playbooks/observability-fix-no-data-dashboards.md).
 </content>

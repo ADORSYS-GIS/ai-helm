@@ -119,6 +119,6 @@ ADR-0039 `EnvoyPatchPolicy` was removed.
 > ⚠️ **The openresty/Caddy engine choices are INTERIM.** Drop the firecrawl
 > openresty engine once AIEG's SSE parser skips non-response events (#2219); drop
 > refero's `rewriteResponseContentType` once #2218 lands. Full diagnosis:
-> [`../2026-06-10-mcp-external-server-proxy-debug.md`](../2026-06-10-mcp-external-server-proxy-debug.md).
+> [`../2026-06-10-mcp-external-server-proxy-debug.md`](../migrations/2026-06-10-mcp-external-server-proxy-debug.md).
 
 → Related: [05 Auth (carve-out)](05-auth-identity.md) · [06 Networking & TLS](06-networking-tls.md)

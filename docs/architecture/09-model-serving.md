@@ -108,7 +108,7 @@ flowchart LR
 Pricing for owned hardware is **cost-recovery** (€/hour TCO → weighted per-token,
 ADR-0028), not flat-zero. The model-agnostic "deploy the next one" checklist and
 per-model capacity papers live in
-[`../self-hosted-model-serving.md`](../self-hosted-model-serving.md) and
+[`../self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) and
 [`../models/`](../models/qwen3.5-4b-q4.md).
 
 → Related: [03 Gateway request path](03-gateway-components.md) · [05 Auth & tiers](05-auth-identity.md)

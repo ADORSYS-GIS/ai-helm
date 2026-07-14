@@ -88,7 +88,7 @@ safetensors/AWQ model.
 - Papers: [`docs/models/qwen3.5-4b-q4.md`](../models/qwen3.5-4b-q4.md) (chosen),
   [`docs/models/qwen3.5-4b.md`](../models/qwen3.5-4b.md) (rejected alternative),
   [`docs/models/qwen3-4b.md`](../models/qwen3-4b.md) (the vLLM reference).
-- Pattern: [`docs/self-hosted-model-serving.md`](../self-hosted-model-serving.md).
+- Pattern: [`docs/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md).
 - Builds on [0030](./0030-merge-model-and-proxy-into-one-statefulset-bjw.md) /
   [0029](./0029-self-hosted-model-plain-deployment.md) (serving shape) and
   [0022](./0022-self-hosted-gpu-model-federated-into-gateway.md) (federation);

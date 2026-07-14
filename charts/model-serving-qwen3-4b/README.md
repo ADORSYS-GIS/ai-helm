@@ -9,7 +9,7 @@ KServe/Knative — serverless is the wrong fit for a single owned, dedicated GPU
 (ADR-0029); one STS via bjw-template (ADR-0030).
 
 - **Why:** [ADR-0022](../../docs/adr/0022-self-hosted-gpu-model-federated-into-gateway.md) (federation) + [ADR-0028](../../docs/adr/0028-owned-hardware-model-pricing.md) (pricing) + [ADR-0029](../../docs/adr/0029-self-hosted-model-plain-deployment.md) (serving mode) + [ADR-0030](../../docs/adr/0030-merge-model-and-proxy-into-one-statefulset-bjw.md) (one STS via bjw)
-- **How (VRAM math, flags, runbook, verification):** [`docs/self-hosted-model-serving.md`](../../docs/self-hosted-model-serving.md)
+- **How (VRAM math, flags, runbook, verification):** [`docs/patterns/self-hosted-model-serving.md`](../../docs/patterns/self-hosted-model-serving.md)
 
 ## Unusual things about this chart
 

@@ -1,11 +1,11 @@
 # Keycloak identity datasource — resolving `user_id`, sessions & grants
 
-**Status:** live (2026-06-26). **ADRs:** [0063](./adr/0063-grafana-readonly-keycloak-datasource.md) (identity resolution), [0064](./adr/0064-keycloak-sessions-and-grants-visibility.md) (sessions & grants).
+**Status:** live (2026-06-26). **ADRs:** [0063](../adr/0063-grafana-readonly-keycloak-datasource.md) (identity resolution), [0064](../adr/0064-keycloak-sessions-and-grants-visibility.md) (sessions & grants).
 
 This is the "how it works + how to run it" guide for the read-only Keycloak
 Postgres datasource that Grafana uses to turn opaque per-user identifiers into
 people, and to surface standing offline grants alongside spend. It complements
-[`per-user-observability.md`](./per-user-observability.md) (the Loki attribution
+[`per-user-observability.md`](../patterns/per-user-observability.md) (the Loki attribution
 pipeline) — that doc gets the `user_id` *label* onto a log line; this one
 resolves that `user_id` to a **name** and shows the **sessions** behind it.
 

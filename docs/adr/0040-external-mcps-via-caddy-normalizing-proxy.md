@@ -98,5 +98,5 @@ init, firecrawl → 19 tools.
   [ADR-0038](0038-mcp-oauth-protected-resource-metadata.md) (MCP OAuth edge),
   [ADR-0027](0027-mcps-orchestrator-split-and-coder-removal.md) (mcps charts),
   [ADR-0030](0030-merge-model-and-proxy-into-one-statefulset-bjw.md) (Caddy precedent).
-- [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](../2026-06-10-mcp-external-server-proxy-debug.md) — the full diagnosis.
+- [`docs/2026-06-10-mcp-external-server-proxy-debug.md`](../migrations/2026-06-10-mcp-external-server-proxy-debug.md) — the full diagnosis.
 - [envoyproxy/ai-gateway#2218](https://github.com/envoyproxy/ai-gateway/issues/2218) (the content-type mcpproxy bug).

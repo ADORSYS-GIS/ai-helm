@@ -1,9 +1,9 @@
 # JWT-token-level consumption (the `oidc_jti` view)
 
-**Status:** live (2026-06-27). **ADR:** [0067](./adr/0067-jwt-token-consumption-dashboard.md). **Dashboard:** `AI Gateway — JWT tokens x consumption` (uid `envoy-ai-gateway-jwt-tokens`).
+**Status:** live (2026-06-27). **ADR:** [0067](../adr/0067-jwt-token-consumption-dashboard.md). **Dashboard:** `AI Gateway — JWT tokens x consumption` (uid `envoy-ai-gateway-jwt-tokens`).
 
-The person-level boards ([`per-user-observability.md`](./per-user-observability.md),
-[`keycloak-identity-datasource.md`](./keycloak-identity-datasource.md)) answer
+The person-level boards ([`per-user-observability.md`](per-user-observability.md),
+[`keycloak-identity-datasource.md`](../integrations/keycloak-identity-datasource.md)) answer
 "who spent what". This one answers a sharper question: **per individual JWT
 (access token) — what did it consume, and when was it last used** — with the
 email taken **from the JWT claim only**, never the Keycloak directory.

@@ -1,15 +1,15 @@
 # Phoenix-style chat observability (OpenInference traces in Tempo)
 
-**Status:** live. **ADRs:** [0077](./adr/0077-phoenix-style-chat-dashboards.md)
-(the dashboards) + [0079](./adr/0079-per-user-span-attribution-not-viable.md)
+**Status:** live. **ADRs:** [0077](../adr/0077-phoenix-style-chat-dashboards.md)
+(the dashboards) + [0079](../adr/0079-per-user-span-attribution-not-viable.md)
 (per-user content is *not* achievable — the AIEG ext-proc runs before Authorino;
-supersedes [0078](./adr/0078-per-user-span-attribution-for-chat-content.md)).
+supersedes [0078](../adr/0078-per-user-span-attribution-for-chat-content.md)).
 **Dashboards:** `AI Gateway — chat overview` (uid `envoy-ai-gateway-chat-overview`),
 `AI Gateway — chats by user` (uid `envoy-ai-gateway-chats-by-user`).
 
-The cost/consumption boards ([`cost-observability.md`](./cost-observability.md),
-[`per-user-observability.md`](./per-user-observability.md),
-[`jwt-token-observability.md`](./jwt-token-observability.md)) answer "who spent
+The cost/consumption boards ([`cost-observability.md`](cost-observability.md),
+[`per-user-observability.md`](per-user-observability.md),
+[`jwt-token-observability.md`](jwt-token-observability.md)) answer "who spent
 what". This pair answers Arize-Phoenix's question instead: **what did the
 conversation actually say** — the request/response content, per chat turn.
 
@@ -44,16 +44,16 @@ replaced Phoenix.
 ## Per-user identity on spans — not achievable (ADR-0079)
 
 Spans carry **no `user.id`/`user.email`**, and the Envoy access-log JSON
-(Loki's identity source, [ADR-0046](./adr/0046-per-user-attribution-otlp-envelope-repair.md))
+(Loki's identity source, [ADR-0046](../adr/0046-per-user-attribution-otlp-envelope-repair.md))
 carries no `trace_id` — and a live span carries no `x-request-id` either. So
 there is **no way to attribute a span to a person and no shared key to join it
 to the user-bearing Loki logs**; the two datasets are disjoint.
 
-[ADR-0078](./adr/0078-per-user-span-attribution-for-chat-content.md) tried to
+[ADR-0078](../adr/0078-per-user-span-attribution-for-chat-content.md) tried to
 close this with the AI Gateway controller's `spanRequestHeaderAttributes`
 mapping (`x-oidc-user-id:user.id,x-oidc-email:user.email`), tagging spans with
 the Keycloak identity Authorino stamps. **It was deployed end-to-end and
-produced nothing.** [ADR-0079](./adr/0079-per-user-span-attribution-not-viable.md)
+produced nothing.** [ADR-0079](../adr/0079-per-user-span-attribution-not-viable.md)
 found and confirmed why, by pulling the live Envoy filter chain
 (`config_dump`, external `api-https` listener):
 
@@ -91,7 +91,7 @@ attributed.
   custom table needed.
 - **`chats-by-user`** — a `$user` picker sourced from a raw-SQL query
   variable against the read-only Keycloak Postgres datasource
-  ([ADR-0063](./adr/0063-grafana-readonly-keycloak-datasource.md); `__text`/
+  ([ADR-0063](../adr/0063-grafana-readonly-keycloak-datasource.md); `__text`/
   `__value` column aliases), so it lists real people independent of recent
   traffic — not `label_values(email)` like `per_user.py`/`jwt_tokens.py`.
   ⚠️ **Postgres template-variable gotcha:** the variable's `query` must be a

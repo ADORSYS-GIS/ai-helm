@@ -1,6 +1,6 @@
 # Sandboxing opencode
 
-> **Posture (current):** the org-wide opencode config ([`opencode-well-known.md`](./opencode-well-known.md))
+> **Posture (current):** the org-wide opencode config ([`opencode-well-known.md`](../integrations/opencode-well-known.md))
 > is pushed to users who run opencode **on their own machines**, where it executes
 > with **their full user permissions**. We do **not** sandbox it at the platform
 > layer today. This note records *why* a sandbox can't live in the config, the
@@ -17,7 +17,7 @@ execution**: `npm run <script>`, `npm exec`, `pnpm exec`, `bun x`, `cargo run`, 
 **without ever invoking `rm`**. `"rm *": ask` therefore only catches a *directly
 typed* `rm` — a casual-mistake guard, not a boundary. No per-command rule can
 close this; it's inherent to string-matched permissions over code-execution
-tools. (See the ⚠️ note in [`opencode-well-known.md`](./opencode-well-known.md)
+tools. (See the ⚠️ note in [`opencode-well-known.md`](../integrations/opencode-well-known.md)
 § *Agents & tool scoping*.)
 
 ## opencode has no native OS sandbox
@@ -50,7 +50,7 @@ with the user's permissions. Real containment must come from **around** opencode
   the user's machine, and the cluster's **Cilium default-deny-egress baseline**
   already gives precise egress control. But it effectively revives a
   **workspace platform**, which the org deliberately removed
-  ([ADR-0027](./adr/0027-mcps-orchestrator-split-and-coder-removal.md), Coder
+  ([ADR-0027](../adr/0027-mcps-orchestrator-split-and-coder-removal.md), Coder
   removal). Pursue it only via a **dedicated ADR** that re-opens that decision
   with the sandboxing motivation; don't bolt it on as a chart.
 
@@ -63,6 +63,6 @@ is wanted, that's a follow-up (an org image + doc, or a new ADR respectively).
 
 ## See also
 
-- [`opencode-well-known.md`](./opencode-well-known.md) — the org-wide opencode config (permissions, agents, the friction-not-sandbox note)
-- [ADR-0048](./adr/0048-global-browser-plugin-and-per-agent-tool-injection.md) — agent topology + per-agent tool injection
-- [ADR-0027](./adr/0027-mcps-orchestrator-split-and-coder-removal.md) — Coder (workspace platform) removal, which a hosted-opencode route would reverse
+- [`opencode-well-known.md`](../integrations/opencode-well-known.md) — the org-wide opencode config (permissions, agents, the friction-not-sandbox note)
+- [ADR-0048](../adr/0048-global-browser-plugin-and-per-agent-tool-injection.md) — agent topology + per-agent tool injection
+- [ADR-0027](../adr/0027-mcps-orchestrator-split-and-coder-removal.md) — Coder (workspace platform) removal, which a hosted-opencode route would reverse

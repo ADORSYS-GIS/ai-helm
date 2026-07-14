@@ -2,7 +2,7 @@
 
 **Status:** Evaluation Draft
 
-**Context:** Coder was previously removed from the platform stack via [ADR-0027](./adr/0027-mcps-orchestrator-split-and-coder-removal.md) (which superseded ADR-0019). This document evaluates whether circumstances justify revisiting that decision. Per ADR-0027, re-introducing Coder requires a new ADR.
+**Context:** Coder was previously removed from the platform stack via [ADR-0027](../adr/0027-mcps-orchestrator-split-and-coder-removal.md) (which superseded ADR-0019). This document evaluates whether circumstances justify revisiting that decision. Per ADR-0027, re-introducing Coder requires a new ADR.
 
 **Author:** @benie-joy-possi
 
@@ -227,15 +227,15 @@ Local testing created a comprehensive dashboard with panels for:
 
 **Dashboard Screenshots:**
 
-![Coder Observability Dashboard - Overview](./images/grafana-dashboards-local.png)
+![Coder Observability Dashboard - Overview](../images/grafana-dashboards-local.png)
 
 *Figure 1: Coder observability dashboard showing Agent Status (127/130 up), Active Users (42), API Request Latency (p50: 45ms, p99: 230ms), and Workspace Build Status (Success: 847, Failed: 12, Pending: 3).*
 
-![Coder Observability Dashboard - DERP & Network](./images/grafana-dashboards-local2.png)
+![Coder Observability Dashboard - DERP & Network](../images/grafana-dashboards-local2.png)
 
 *Figure 2: DERP Server Connections panel showing mesh connectivity across regions (NYC, FRA, SYD) and PubSub status metrics.*
 
-**Prod Note:** For the `home-remote` cluster, dashboards should be provisioned via the Grafana sidecar pattern using label `grafana_dashboard: "1"` (per [ADR-0004](./adr/0004-grafana-operator-external-mode.md)).
+**Prod Note:** For the `home-remote` cluster, dashboards should be provisioned via the Grafana sidecar pattern using label `grafana_dashboard: "1"` (per [ADR-0004](../adr/0004-grafana-operator-external-mode.md)).
 
 ### 5.5 Metrics Collected
 
@@ -634,13 +634,13 @@ sequenceDiagram
 2. Confirm ExternalSecret configuration matches prod vault paths
 3. Verify Grafana dashboard import in `home-remote` cluster
 4. Test MCP connectivity from LibreChat to Coder staging
-5. Assess whether conditions that led to [ADR-0027](./adr/0027-mcps-orchestrator-split-and-coder-removal.md) have changed
+5. Assess whether conditions that led to [ADR-0027](../adr/0027-mcps-orchestrator-split-and-coder-removal.md) have changed
 
 ---
 
 ## 13. Re-introduction Requirements
 
-If this evaluation leads to a decision to re-introduce Coder, the following steps are required per [ADR-0027](./adr/0027-mcps-orchestrator-split-and-coder-removal.md):
+If this evaluation leads to a decision to re-introduce Coder, the following steps are required per [ADR-0027](../adr/0027-mcps-orchestrator-split-and-coder-removal.md):
 
 1. **New ADR Required** — ADR-0027 explicitly states: "re-introducing Coder needs a new ADR." The previous orchestrator pattern (ADR-0019) was superseded and charts were removed.
 

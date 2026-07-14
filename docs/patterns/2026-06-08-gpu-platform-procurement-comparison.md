@@ -2,11 +2,11 @@
 
 |  |  |
 |---|---|
-| **Document type** | 🔬 **Research document** — investigative make-vs-buy analysis. **Advisory, not normative**: it informs a decision, it does not *make* one. A choice that acts on this should be recorded in an ADR (the pricing method already is — [ADR-0028](./adr/0028-owned-hardware-model-pricing.md)). |
+| **Document type** | 🔬 **Research document** — investigative make-vs-buy analysis. **Advisory, not normative**: it informs a decision, it does not *make* one. A choice that acts on this should be recorded in an ADR (the pricing method already is — [ADR-0028](../adr/0028-owned-hardware-model-pricing.md)). |
 | **Status** | Living draft — **two inputs still open** (V100 asking price; real per-developer token rate). Refresh when the Hetzner matrix, the eBay listing, the ENEO/German tariff, or the user base move. |
 | **Date** | 2026-06-08 |
 | **Author** | @stephane-segning, with Claude (Opus 4.8) |
-| **Scope** | Hardware for the *next* self-hosted-model platform. The pattern for *how* we serve models lives in [`self-hosted-model-serving.md`](./self-hosted-model-serving.md); per-model papers in [`docs/models/`](./models/). |
+| **Scope** | Hardware for the *next* self-hosted-model platform. The pattern for *how* we serve models lives in [`self-hosted-model-serving.md`](self-hosted-model-serving.md); per-model papers in [`docs/models/`](../models). |
 | **Confidence** | Mixed — **measured** (live A2000), **vendor-published** (Hetzner/NVIDIA/ENEO specs & prices), and **first-principles estimates** (throughput, concurrency, RoI). Each table flags which. See [§0 Methodology](#0-methodology-sources--confidence). |
 
 > **Read §0 first** for how the numbers were derived and how far to trust each one.
@@ -19,7 +19,7 @@
 | If you want… | Pick | Why |
 |---|---|---|
 | **The best €-RoI move for your dev + marketing users** | **Existing 2×4070 + GLM-4.7-Flash 30B-A3B** | Sunk capex, Cameroon power (~€47/mo), runs a **real coding/agent MoE** (24 GB, FP8). RoI-positive *even after maintenance* (+~$250/mo, §9.5). GEX44 can't even hold this model. |
-| Keep the live small/multilingual tier at ~zero cost | **Local A2000 (keep)** | Already owned, 70 W, llama.cpp live ([ADR-0032](./adr/0032-llama-cpp-engine-for-self-hosted-models.md)), Qwen3.5-4B @ 128 K. |
+| Keep the live small/multilingual tier at ~zero cost | **Local A2000 (keep)** | Already owned, 70 W, llama.cpp live ([ADR-0032](../adr/0032-llama-cpp-engine-for-self-hosted-models.md)), Qwen3.5-4B @ 128 K. |
 | Managed **multimodal** small models (vision/audio) | **GEX44 — €184/mo** | Gemma 4 12B with images/audio, FP8, warrantied, **near-zero maintenance**. But capped below the 30B MoEs. |
 | Owned **70B / 122B-MoE** *and* you have cheap DIY ops | **eBay 5×V100** *(conditional)* | Cheapest 70B on hardware+power — **but maintenance (§6.5) ~triples its TCO and flips RoI negative** unless ops stay near-DIY. Volta EOL, no FP8/FP4 → slow. |
 | Managed frontier-ish 122B-MoE at scale, hands-off | **GEX131 — €889/mo** | 122B-MoE-FP4 fast, 256 K ctx, multimodal, **maintenance-free**. Best at ≥~80 users. |
@@ -61,7 +61,7 @@ from first principles and anchored, where possible, to the live system.
 
 | Claim type | Source | Confidence | Notes |
 |---|---|---|---|
-| A2000 throughput / concurrency / ctx | **Measured** on the live box ([`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) §6) | **High** | Real `llama-server` slot timings under production traffic. |
+| A2000 throughput / concurrency / ctx | **Measured** on the live box ([`models/qwen3.5-4b-q4.md`](../models/qwen3.5-4b-q4.md) §6) | **High** | Real `llama-server` slot timings under production traffic. |
 | Hetzner specs & prices (GEX44/GEX131) | Vendor pages (linked §1) | **High** | €184/€889/mo, hardware as published 2026-06. |
 | GPU architecture / VRAM / bandwidth / FP8-FP4 | NVIDIA card data | **High** | A2000, RTX 4000 SFF Ada, RTX PRO 6000 Blackwell, V100, 4070. |
 | eBay V100 server specs | Listing text (price **not** captured) | **Medium** | 5×V100 16GB confirmed; **asking price open** → §6 is parametric. |
@@ -102,7 +102,7 @@ users, at what cost — and when does each pay for itself?*
 
 | # | Candidate | Kind | Source |
 |---|---|---|---|
-| 1 | **Local RTX A2000 12GB** | Owned (Erlangen, Germany — home GPU) | Live in-cluster; [`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) §6 (measured) |
+| 1 | **Local RTX A2000 12GB** | Owned (Erlangen, Germany — home GPU) | Live in-cluster; [`models/qwen3.5-4b-q4.md`](../models/qwen3.5-4b-q4.md) §6 (measured) |
 | 2 | **eBay 5× Tesla V100 16GB** | Owned — **installed in a Cameroon office** (refurb "Llama3 KI-Server", seller *biercologne*) | [ebay.de/itm/306748779023](https://www.ebay.de/itm/306748779023) — listing text only; **asking price not captured** |
 | 3 | **Hetzner GEX44** | Rented (dedicated, Germany — power incl.) | [hetzner.com/dedicated-rootserver/gex44](https://www.hetzner.com/dedicated-rootserver/gex44/) |
 | 4 | **Hetzner GEX131** | Rented (dedicated, Germany — power incl.) | [hetzner.com/pressroom/new-gex131](https://www.hetzner.com/pressroom/new-gex131/) |
@@ -114,7 +114,7 @@ users, at what cost — and when does each pay for itself?*
 > below are **engineering estimates** (order-of-magnitude), except the A2000 row,
 > which is **measured** on the live box. Treat them as planning figures, not SLOs.
 
-**Global assumptions** (used throughout, all from [ADR-0028](./adr/0028-owned-hardware-model-pricing.md) where applicable):
+**Global assumptions** (used throughout, all from [ADR-0028](../adr/0028-owned-hardware-model-pricing.md) where applicable):
 - **Electricity is location-specific** — this is the key siting input:
   - **Germany / Erlangen** — **€0.34/kWh** (the A2000, and ADR-0028's basis).
     GEX44 / GEX131 are Hetzner-rented with **power included** in the monthly fee.
@@ -328,7 +328,7 @@ backend choice is per-platform and per-architecture.
 
 | Platform | Primary backend | FP8/FP4? | Notes |
 |---|---|---|---|
-| **A2000** (Ampere) | **llama.cpp** (`llama-server`, live) | no FP8 | GGUF Q4 + native `--api-key`; 128k ctx via cheap GDN-MoE KV. vLLM works but no FP8, KV-hungry. ([ADR-0032](./adr/0032-llama-cpp-engine-for-self-hosted-models.md)) |
+| **A2000** (Ampere) | **llama.cpp** (`llama-server`, live) | no FP8 | GGUF Q4 + native `--api-key`; 128k ctx via cheap GDN-MoE KV. vLLM works but no FP8, KV-hungry. ([ADR-0032](../adr/0032-llama-cpp-engine-for-self-hosted-models.md)) |
 | **5× V100** (Volta **cc 7.0**) | **llama.cpp** (primary) · Ollama · *(vLLM only if pinned to an old Volta build)* | **no** | ⚠️ **Current vLLM needs cc 7.5+ — it will not install/run on cc 7.0 V100.** So the dependable path is **llama.cpp**, which splits layers across **all 5 cards** (uses the full 80 GB; not vLLM TP=4's 64 GB) and runs GGUF Q4 well. No FlashAttn-2 / Marlin / FP8. vLLM/TP only on a pinned legacy release — don't assume current vLLM works here. |
 | **GEX44** (Ada) | **vLLM / SGLang with FP8** | **FP8** | FP8 weights + FP8 KV cache stretches 20 GB a long way — the real value of this card. TGI/llama.cpp fine too. |
 | **GEX131** (Blackwell) | **vLLM / SGLang with FP4 + FP8** | **FP4 + FP8** | Biggest models, highest throughput, single GPU (no TP). The natural serious-multi-tenant backend. |
@@ -369,7 +369,7 @@ a 122B-A10B ~like a 15–20B dense — *fast for their size*, which is the whole
 | ~Named users (10 %) | ~60–120 | ❌ | ~300–600 |
 
 > A2000 figures from `llama-server` slot timings under real traffic
-> ([`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) §6): ~52 tok/s decode,
+> ([`models/qwen3.5-4b-q4.md`](../models/qwen3.5-4b-q4.md) §6): ~52 tok/s decode,
 > ~37 tok/s/slot under load, 4 concurrent slots, 128 K ctx (real 35 K-token prompts).
 > **Why MoE looks so good here:** the 122B-A10B serves ~300–600 users on GEX131 at
 > *near-30B quality* because only 10 B params are read per token — capacity you could
@@ -592,7 +592,7 @@ confidence — they hinge on your labour rate and the office's power reliability
 
 ## 7. Cost-recovery pricing — ADR-0028 applied to each platform
 
-[**ADR-0028**](./adr/0028-owned-hardware-model-pricing.md) prices every
+[**ADR-0028**](../adr/0028-owned-hardware-model-pricing.md) prices every
 owned-hardware model at **cost-recovery**, derived from a documented **€/hour
 TCO**, mapped to a **`weighted`** per-token catalog price (decode carries the
 cost; prefill cheaper; LMCache prefix-hit near-free). The live A2000 ships at
@@ -660,7 +660,7 @@ price** — that's ADR-0028's whole point.
 
 ### 7.4 Suggested `pricing.standard` blocks (if federated)
 
-Mirroring the [Qwen3-4B table](./models/qwen3-4b.md#6-cost--hour-tco--catalog-price-erlangen-2026-adr-0028),
+Mirroring the [Qwen3-4B table](../models/qwen3-4b.md#6-cost--hour-tco--catalog-price-erlangen-2026-adr-0028),
 at a **30 % steady-team utilization** assumption (re-tune as real data lands):
 
 | Platform / model | `outputPer1M` | `inputPer1M` | `cachedInputPer1M` |
@@ -910,5 +910,5 @@ Re-run with **fully-loaded** running cost (power **+ maintenance**, §6.5) and t
 eBay listing 306748779023 (5× Tesla V100 16GB, seller *biercologne*; specs from listing text, price not captured) ·
 [ENEO Cameroon tariffs](https://www.eneocameroon.cm/index.php/en/clients-professionnels-vos-factures-et-paiement-en/clients-professionnels-vos-factures-et-paiement-tarifs-delectricite-en) ·
 [Cameroon electricity prices — GlobalPetrolPrices (Jun 2025, ~XAF 106/kWh business)](https://www.globalpetrolprices.com/Cameroon/electricity_prices/) ·
-[ADR-0028](./adr/0028-owned-hardware-model-pricing.md) ·
-[`models/qwen3.5-4b-q4.md`](./models/qwen3.5-4b-q4.md) §6 (measured A2000 capacity).
+[ADR-0028](../adr/0028-owned-hardware-model-pricing.md) ·
+[`models/qwen3.5-4b-q4.md`](../models/qwen3.5-4b-q4.md) §6 (measured A2000 capacity).

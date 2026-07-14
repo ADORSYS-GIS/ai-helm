@@ -25,7 +25,7 @@ and model.
 
 All three are label-backed (ADR-0046), multi-select with All:
 
-- **`azp`** — Keycloak client_id (`label_values({service_name="envoy-ai-gateway"}, azp)`). Use to split human vs SA traffic (see `docs/authorino-service-account-bypass.md` for the SA allowlist).
+- **`azp`** — Keycloak client_id (`label_values({service_name="envoy-ai-gateway"}, azp)`). Use to split human vs SA traffic (see `docs/patterns/authorino-service-account-bypass.md` for the SA allowlist).
 - **`user_id`** — Keycloak user `sub` (`label_values({service_name="envoy-ai-gateway", azp=~"$azp"}, user_id)`). Cascades from `azp`.
 - **`model`** — `gen_ai.request.model`, promoted to the `model` label by Alloy. Filters all panels.
 
@@ -47,7 +47,7 @@ JWT → Authorino response headers (x-oidc-user-id, x-oidc-azp; full x-oidc-* co
 The dashboard shows **attributed traffic only** — unauthenticated requests
 carry no identity labels by design. If the dashboard is empty, walk the flow
 backwards using the
-[troubleshooting matrix in `docs/per-user-observability.md`](../../../../docs/per-user-observability.md#troubleshooting).
+[troubleshooting matrix in `docs/patterns/per-user-observability.md`](../../../../docs/patterns/per-user-observability.md#troubleshooting).
 
 ## Editing
 
