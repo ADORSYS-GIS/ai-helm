@@ -57,6 +57,27 @@ interprets `{{ }}`).
 {{- if ne (toString $cfg.egress.mode) "" }}{{- $_ := set $eg "mode" $cfg.egress.mode }}{{- end }}
 {{- if ne (toString $cfg.egress.restateIngressUrl) "" }}{{- $_ := set $eg "restate_ingress_url" $cfg.egress.restateIngressUrl }}{{- end }}
 {{- if $eg }}{{- $_ := set $cp "egress" $eg }}{{- end }}
+{{- /* ── GitLab projects (file-config-only, ADR-0072) → control-plane.json `gitlab` ─────────────
+       Per-project access tokens and webhook secrets use `{env:VAR}` markers so the actual secrets
+       stay in Kubernetes env-injected secrets, never in the ConfigMap. Empty/enabled:false → GitLab
+       is disabled (safe degrade — the runtime falls back to no GitLab integration). */}}
+{{- $gl := $cfg.gitlab | default dict }}
+{{- if $gl.enabled }}
+{{-   $glOut := dict "enabled" true }}
+{{-   if $gl.defaultApiUrl }}{{- $_ := set $glOut "default_api_url" $gl.defaultApiUrl }}{{- end }}
+{{-   if $gl.defaultBotHandle }}{{- $_ := set $glOut "default_bot_handle" $gl.defaultBotHandle }}{{- end }}
+{{-   $projects := list }}
+{{-   range $p := $gl.projects }}
+{{-     $proj := dict "project_id" $p.projectId }}
+{{-     if $p.accessToken }}{{- $_ := set $proj "access_token" $p.accessToken }}{{- end }}
+{{-     if $p.webhookSecret }}{{- $_ := set $proj "webhook_secret" $p.webhookSecret }}{{- end }}
+{{-     if $p.apiUrl }}{{- $_ := set $proj "api_url" $p.apiUrl }}{{- end }}
+{{-     if $p.botHandle }}{{- $_ := set $proj "bot_handle" $p.botHandle }}{{- end }}
+{{-     $projects = append $projects $proj }}
+{{-   end }}
+{{-   if $projects }}{{- $_ := set $glOut "projects" $projects }}{{- end }}
+{{-   $_ := set $cp "gitlab" $glOut }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
