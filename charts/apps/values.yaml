@@ -1094,14 +1094,14 @@ applications:
       namespace: converse-mcp
 
   # --- Coder App-of-Apps orchestrator (ADR-0083, re-introduction) ---
-  # Renders three child Application CRs (coder-secrets wave 0, coder-db wave 1,
-  # coder-app wave 2) from charts/coder. As a control object (it emits
-  # Application CRs) this entry is controlPlane: true — the children themselves
-  # target home-remote. OCI mode (ADR-0055): orchestrator chart floats from OCI
-  # so its App-of-Apps children config deploys continuously. Children: secrets +
-  # db leaf charts from OCI, the app's upstream Coder chart (oci://ghcr.io/coder/
-  # chart/coder, pinned) + its cert overlay from ai-helm-values (see
-  # charts/coder values). Supersedes ADR-0027 removal.
+  # Renders two child Application CRs (coder-secrets wave 0, coder-app wave 2)
+  # from charts/coder. As a control object (it emits Application CRs) this entry
+  # is controlPlane: true — the children themselves target home-remote. OCI
+  # mode (ADR-0055): orchestrator chart floats from OCI. Children: secrets leaf
+  # chart from OCI, the app's upstream Coder chart (oci://ghcr.io/coder/chart/
+  # coder, pinned) + its cert overlay from ai-helm-values. Coder uses the
+  # existing lightbridge-main-db CNPG cluster — no separate CNPG. Supersedes
+  # ADR-0027 removal.
   - name: coder
     finalizers:
       - resources-finalizer.argocd.argoproj.io

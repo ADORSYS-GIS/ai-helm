@@ -1,9 +1,11 @@
-# coder App-of-Apps orchestrator — renders three child Application CRs
-# (coder-secrets + coder-db + coder-app). Follows the lightbridge canonical
-# pattern (ADR-0019). The chart owns no workload resources; it owns the three
-# child Applications.
+# coder App-of-Apps orchestrator — renders two child Application CRs
+# (coder-secrets + coder-app). Follows the lightbridge canonical pattern
+# (ADR-0019). The chart owns no workload resources; it owns the two child
+# Applications.
 #
 # Re-introduces Coder after ADR-0027 removal — see ADR-0083.
+# Coder uses the existing lightbridge-main-db CNPG cluster (charts/lightbridge-db)
+# for its database — no separate CNPG cluster (ADR-0083).
 
 # ────────────────────────────────────────────────────────────────────────
 # Shared ArgoCD wiring for all child Applications.
@@ -11,7 +13,7 @@
 argocd:
   project: ai
   # OCI chart-float (ADR-0055). Two sources of truth:
-  #  • chartRegistry/chartVersionRange — the secrets + db leaf charts float from
+  #  • chartRegistry/chartVersionRange — the secrets leaf chart floats from
   #    OCI (full chart path in repoURL + chart "."; template builds
   #    `<chartRegistry>/<chartName>`).
   #  • repoURL/targetRevision — the app child's cert/deps overlay (Source B) +
@@ -34,8 +36,8 @@ argocd:
 
 # ────────────────────────────────────────────────────────────────────────
 # coder-secrets child — the ExternalSecrets leaf chart (this repo).
-# Lowest sync-wave: the OIDC creds, DB role password + connection URL, and CNPG
-# S3 backup creds must exist before the DB (barman) and the app start.
+# Lowest sync-wave: the OIDC creds + DB role password + connection URL must
+# exist before the app starts.
 # ────────────────────────────────────────────────────────────────────────
 secrets:
   enabled: true
@@ -45,23 +47,14 @@ secrets:
   syncWave: "0"
 
 # ────────────────────────────────────────────────────────────────────────
-# coder-db child — the CloudNativePG database leaf chart (this repo).
-# Lower sync-wave than the app so Postgres is up before Coder starts.
+# coder-db child — DISABLED. Coder uses the existing lightbridge-main-db
+# CNPG cluster (charts/lightbridge-db) for its database. A managed `coder`
+# role + `coder` Database CR are added to lightbridge-db. The coder-db
+# chart has been removed. This block is kept (disabled) so the orchestrator
+# template's conditional `{{- if .Values.db.enabled }}` stays dead code.
 # ────────────────────────────────────────────────────────────────────────
 db:
-  enabled: true
-  appName: coder-db
-  chartName: coder-db   # OCI chart name
-  releaseName: coder-db
-  syncWave: "1"
-  # Ignore the CNPG operator's defaulted fields on the Cluster so it doesn't sit
-  # permanently OutOfSync (the operator, field manager `manager`, adds affinity/
-  # bootstrap/probes/primaryUpdateStrategy/… that the chart never declares).
-  ignoreDifferences:
-    - group: postgresql.cnpg.io
-      kind: Cluster
-      managedFieldsManagers:
-        - manager
+  enabled: false
 
 # ────────────────────────────────────────────────────────────────────────
 # coder-app child — the upstream Coder workload (Helm chart, deployed as an
@@ -75,8 +68,7 @@ app:
   releaseName: coder
   syncWave: "2"
   # Upstream Coder chart from the Coder OCI registry (NOT the adorsys-gis
-  # registry). Pinned to a stable version — NOT floated like the secrets/db
-  # leaves.
+  # registry). Pinned to a stable version — NOT floated like the secrets leaf.
   chart:
     repoURL: oci://ghcr.io/coder/chart/coder
     targetRevision: "2.33.7"

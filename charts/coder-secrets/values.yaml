@@ -25,21 +25,6 @@ externalSecrets:
         key: ai/camer/digital/prod/env
         property: coder_oidc_client_secret
 
-  # CNPG barman backup credentials (Hetzner Object Storage). Same creds pattern
-  # as lightbridge-cnpg-s3 — platform secret under prod/meta/test-app.
-  # `s3_region_name` is a STATIC literal (us-east-1) — the barman-cloud plugin
-  # reads it at backup time. Merged via target.template (mergePolicy: Merge).
-  coder-cnpg-s3:
-    literals:
-      s3_region_name: us-east-1
-    data:
-      - secretKey: s3_access_key_id
-        key: prod/meta/test-app
-        property: s3_backup_cnpg_client_id
-      - secretKey: s3_secret_access_key
-        key: prod/meta/test-app
-        property: s3_backup_cnpg_secret
-
   # CNPG managed-role basic-auth Secret. CNPG reads the `password` key to set
   # the `coder` login role's password on the Cluster. The `username` is a
   # static literal. The `password` is declared in templateData (not just
@@ -62,8 +47,15 @@ externalSecrets:
   # from this Secret's `url` key. The template assembles the full connection string
   # from the password fetched above (same ASM property) so the URL and the CNPG
   # role password stay in sync. sslmode=disable for internal cluster connections.
-  # The `password` key is also present in the output Secret (via Merge) but unused
-  # by Coder — only `url` is referenced.
+  #
+  # The DB is a managed `coder` role + `coder` Database CR on the existing
+  # lightbridge-main-db CNPG cluster (charts/lightbridge-db) — Coder does NOT
+  # have its own CNPG cluster (ADR-0083). The connection targets the RW service
+  # in the `converse` namespace.
+  #
+  # The password is URL-encoded via ESO's `urlquery` function so URL-reserved
+  # characters in the password (e.g. @, :, /, #) don't break the connection
+  # string.
   #
   # NOTE: `{{ .password }}` is an ESO Go template variable (fetched from the
   # `data` section below). The externalsecret.yaml template renders this with
@@ -74,7 +66,7 @@ externalSecrets:
   # values.yaml for the tpl-brace pattern).
   coder-db-url:
     templateData:
-      url: "postgres://coder:{{ .password }}@coder-db-rw.coder.svc.cluster.local:5432/coder?sslmode=disable"
+      url: "postgres://coder:{{ .password | urlquery }}@lightbridge-main-db-rw.converse.svc.cluster.local:5432/coder?sslmode=disable"
     data:
       - secretKey: password
         key: ai/camer/digital/prod/env
