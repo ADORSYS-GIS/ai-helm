@@ -32,10 +32,13 @@ secrets:
   # TRANSITIONAL — consumed only by the outgoing better-auth image (the OIDC web image is a PUBLIC
   # client + PKCE, ADR-0014, and needs no client secret). Remove once the OIDC image is confirmed live.
   betterAuthProperty: ""
-  # Agent runner wiring (epic #5): the shared internal-API bearer (codeintelKey) + the embeddings/LLM
-  # gateway API key (remoteKey, reused from the shared eaig key). The review chat model is NOT a secret —
-  # it's agents.llm.model (also env-owned).
-  agentRunnerTokenProperty: ""
+  # Agent runner wiring (epic #5): the embeddings/LLM gateway API key (remoteKey, reused from the
+  # shared eaig key). The review chat model is NOT a secret — it's agents.llm.model (also env-owned).
+  # Per-task runner-token signing key (lightbridge-code-intelligence#243, ADR-0092) — control-plane's
+  # own secret (supersedes the old shared AGENT_RUNNER_TOKEN bearer property, removed with #410's
+  # hard cutover). Empty by default (ADR-0057) — see externalsecret.yaml's runner-signing
+  # ExternalSecret, gated on this being set.
+  runnerTokenSigningKeyProperty: ""
   openaiKeyProperty: ""
   # GHCR pull credential for the agent Jobs' namespace (private-image cutover). The runner images
   # (ghcr.io/vymalo/*) are private, so the Jobs the dispatcher launches into `agents.namespace` need
@@ -404,14 +407,22 @@ lci:
                 secretKeyRef:
                   name: '{{ .Release.Name }}-neo4j-auth'
                   key: password
-            # Shared bearer for the internal runner API (ADR-0017). Present → serve enables the
-            # /internal/* routes; absent → they fail closed (503). The dispatcher injects the same
-            # value into each Job.
-            AGENT_RUNNER_TOKEN:
+            # Mints/verifies per-task runner tokens (ADR-0092). Present → serve enables the
+            # /internal/* routes (verifying each request's task-scoped token); absent → they fail
+            # closed (503) — the same degrade posture the old shared AGENT_RUNNER_TOKEN bearer secret
+            # had (purged from this chart: #410's hard cutover means serve's own code has never read
+            # it). The dispatcher holds the SAME key to mint; it never leaves this process into a Job.
+            # `optional: true`
+            # MATTERS (mirrors A2A_PUSH_TOKEN_KEY below): the `-runner-signing` Secret only exists once
+            # runnerTokenSigningKeyProperty is set, and a hard secretKeyRef to a not-yet-provisioned
+            # secret would crash-loop the WHOLE control plane instead of just leaving serve's
+            # /internal/* routes degraded-closed as designed.
+            RUNNER_TOKEN_SIGNING_KEY:
               valueFrom:
                 secretKeyRef:
-                  name: '{{ .Release.Name }}-agent'
-                  key: runner-token
+                  name: '{{ .Release.Name }}-runner-signing'
+                  key: signing-key
+                  optional: true
           probes:
             liveness:
               enabled: true
@@ -656,12 +667,19 @@ lci:
             DATABASE_URL:
               dependsOn: DB_PASSWORD
               value: ""
-            # Injected into each Job + presented by the runner on the callback (ADR-0017).
-            AGENT_RUNNER_TOKEN:
+            # Mints per-task runner tokens the dispatcher injects into each Job (ADR-0092) via
+            # k8s.rs — never a static env value; the SAME key `serve` verifies with. Supersedes the
+            # old shared AGENT_RUNNER_TOKEN bearer secret (purged from this chart: #410's hard
+            # cutover means the dispatcher's own code has never read it). `optional: true` (mirrors
+            # A2A_PUSH_TOKEN_KEY): without it the
+            # dispatcher mints nothing and Jobs get an empty AGENT_RUNNER_TOKEN — degraded, not a
+            # crash — rather than this pod itself failing to start on a not-yet-provisioned secret.
+            RUNNER_TOKEN_SIGNING_KEY:
               valueFrom:
                 secretKeyRef:
-                  name: '{{ .Release.Name }}-agent'
-                  key: runner-token
+                  name: '{{ .Release.Name }}-runner-signing'
+                  key: signing-key
+                  optional: true
             # Where Jobs run, who they run as, what image, and where they call back (the serve Svc).
             # Literals (not {{ .Values.agents.* }}): bjw renders env against the sub-chart scope where
             # the top-level `agents` values aren't visible. Keep in sync with the `agents:` block.
