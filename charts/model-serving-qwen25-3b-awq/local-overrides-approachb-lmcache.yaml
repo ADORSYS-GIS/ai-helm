@@ -8,10 +8,16 @@
 #
 # Key differences vs Experiment 0 (APC + LMCache, normal VRAM):
 #   - --gpu-memory-utilization=0.55  (was 0.90) → shrinks KV budget
-#   - --max-num-seqs=4               (was 2)   → more concurrent pressure
 #   - --max-num-seqs=8               (was 2)   → more concurrent pressure
 #   - LMCache env tuned for bigger prefixes (CHUNK_SIZE=128, LOCAL_CPU=True,
 #     MAX_LOCAL_CPU_SIZE=6, LOCAL_DISK + disk tier, MIN_RETRIEVE_TOKENS=0)
+#
+# A/B confounder note: baseline (local-overrides-approachb.yaml) uses
+#   vllm/vllm-openai:v0.24.0; this treatment uses lmcache/vllm-openai:v0.5.1.
+#   Both embed the same vLLM 0.24.0 engine (confirmed in startup logs), but the
+#   two images are distinct builds. The measured TTFT delta is overwhelmingly from
+#   LMCache KV retrieval (0 compute tokens vs full prefill), not from any engine
+#   build difference. This caveat is documented in experiment-2-approach-b-eviction.md.
 #
 # Usage:
 #   helm upgrade --install model-serving-qwen25-3b-awq ./charts/model-serving-qwen25-3b-awq \

@@ -9,6 +9,18 @@
  *   - Once APC evicts it, LMCache retrieving ~7K tokens from CPU RAM at ~10ms
  *     produces a dramatic delta vs the baseline's multi-second full re-prefill.
  *
+ * Prerequisites:
+ *   docs/lmcache+vllm.md must exist in the repo root. This file is the KV cache
+ *   reference document (~38 KiB, ~9.7K tokens including the wrapper instruction)
+ *   used as the shared system prompt. It is NOT committed to the public repo.
+ *   To regenerate huge-prefix.csv you need a local copy. The committed
+ *   huge-prefix.csv is the canonical artifact for CI — re-run this script only
+ *   when the source document changes.
+ *
+ *   If you do not have docs/lmcache+vllm.md, the committed huge-prefix.csv in
+ *   this directory can be used directly by artillery-qwen25-huge-prefix.yml
+ *   without re-running this generator.
+ *
  * Run from plans/artillery/self-hosted-model/:
  *   node generate-huge-prefix.js
  *
@@ -18,6 +30,20 @@ const fs = require('fs');
 const path = require('path');
 
 const docPath = path.resolve(__dirname, '../../../docs/lmcache+vllm.md');
+
+if (!fs.existsSync(docPath)) {
+  console.error(`ERROR: source document not found: ${docPath}`);
+  console.error('');
+  console.error('huge-prefix.csv requires docs/lmcache+vllm.md (the KV cache reference doc,');
+  console.error('~38 KiB / ~9.7K tokens). This file is not committed to the public repo.');
+  console.error('');
+  console.error('Options:');
+  console.error('  1. Use the committed huge-prefix.csv directly — it is the correct artifact');
+  console.error('     and is already referenced by artillery-qwen25-huge-prefix.yml.');
+  console.error('  2. Provide docs/lmcache+vllm.md locally and re-run this script to regenerate.');
+  process.exit(1);
+}
+
 const docText = fs.readFileSync(docPath, 'utf8');
 
 const systemPrompt =

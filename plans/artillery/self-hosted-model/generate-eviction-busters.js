@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generates eviction-busters.csv — ~20 unique large system prompts (~8000 tokens
+ * Generates eviction-busters.csv — ~20 unique large system prompts (~2000 tokens
  * each) used as cache-busters in Experiment B. Each prompt is on a distinct topic
  * with a unique random identifier so no prefix tokens are shared across entries.
  *
@@ -13,8 +13,8 @@
 const fs = require('fs');
 const crypto = require('crypto');
 
-// Each topic gets a unique ~8000-token system prompt built from repeated
-// paragraphs with slight variations. At ~4 chars/token, ~32,000 chars → ~8000 tokens.
+// Each topic gets a unique ~2000-token system prompt built from repeated
+// paragraphs with slight variations. 17 paragraphs × ~120 tokens ≈ ~2000 tokens.
 const TOPICS = [
   { subject: 'the French Revolution', focus: 'the Reign of Terror' },
   { subject: 'solar energy technology', focus: 'perovskite solar cells' },

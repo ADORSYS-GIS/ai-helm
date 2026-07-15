@@ -71,7 +71,7 @@ At `gpu_memory_utilization=0.55`:
 | p90 | 6,312 ms | 1,002 ms | -5,310 ms (-84.1%) |
 | **p95** | **7,866 ms** | **1,755 ms** | **-6,111 ms (-77.7%)** |
 | **p99** | **10,618 ms** | **3,678 ms** | **-6,939 ms (-65.4%)** |
-| Max latency | 13,005 ms | 3,855 ms | — |
+| Max latency | 13,005 ms | 3,855 ms | -9,150 ms (-70.3%) |
 
 **Both runs completed with 0 timeouts and 100% success rate** — a clean A/B comparison.
 
@@ -150,7 +150,7 @@ Key observations:
 | p90 | 2,276.1 ms | 982.6 ms | -1,293.5 ms (-56.8%) |
 | **p95** | **2,951.9 ms** | **1,274.3 ms** | **-1,677.6 ms (-56.8%)** |
 | **p99** | **3,678.4 ms** | **2,186.8 ms** | **-1,491.6 ms (-40.6%)** |
-| Max latency | 5,153 ms | 3,070 ms | — |
+| Max latency | 5,153 ms | 3,070 ms | -2,083 ms (-40.4%) |
 
 Traffic: baseline 131 busters + 119 prefix-reuse; treatment 126 busters + 124 prefix-reuse (weight 1:1).
 
@@ -217,7 +217,7 @@ LMCache override: same enhanced config as v3 (chunk_size=128, max_local_cpu=6, m
 | p90 | 10,407.3 ms | 1,022.7 ms | -9,384.6 ms (-90.2%) |
 | **p95** | **11,501.8 ms** | **2,101.1 ms** | **-9,400.7 ms (-81.7%)** |
 | **p99** | **12,711.5 ms** | **5,272.4 ms** | **-7,439.1 ms (-58.5%)** |
-| Max latency | 15,623 ms | 7,987 ms | — |
+| Max latency | 15,623 ms | 7,987 ms | -7,636 ms (-48.9%) |
 
 Traffic: baseline 170 busters + 80 prefix-reuse; treatment 164 busters + 86 prefix-reuse (weight 2:1).
 
@@ -275,6 +275,18 @@ LMCache hit rate (79.2%) exceeded APC hit rate (72.9%) — the huge prefix benef
 The aggregate metrics include ~67% buster requests (which have no prefix to reuse). The busters are identical on both variants — no cache benefit. The **the delta comes entirely from the ~33% prefix-reuse requests**: when APC misses, baseline recomputes ~2.5K tokens of prefill (~2–3s), while LMCache retrieves from CPU in ~9ms and skips prefill.
 
 The p50 improvement (2566→450ms) is a blended metric: busters contribute ~1s on both sides, but prefix-reuse requests improve from ~3–6s (baseline, full re-prefill) to ~0.5s (LMCache, skip prefill + decode 20 tokens). This pulls the overall median down dramatically.
+
+---
+
+## A/B Confounder: Different vLLM Builds
+
+Baseline uses `vllm/vllm-openai:v0.24.0`; treatment uses `lmcache/vllm-openai:v0.5.1`.
+LMCache ships its own vLLM image so the connector can be imported — this is unavoidable.
+Both images embed the same vLLM 0.24.0 engine (confirmed in startup logs:
+`Running vLLM v0.24.0` on both arms). The measured TTFT delta is mechanistically
+explained by LMCache KV retrieval (`Inference Engine computed tokens: 0` on 100%
+of retrieval requests vs full prefill on the baseline), not by any engine build
+difference. Readers should note this as a caveat when generalising the results.
 
 ---
 
