@@ -19,7 +19,8 @@
 coder:
   env:
     # PostgreSQL connection URL — from the coder-db-url Secret assembled by
-    # charts/coder-secrets (ESO Go-template). CNPG service coder-db-rw.
+    # charts/coder-secrets (ESO Go-template). Uses lightbridge-main-db CNPG
+    # cluster (converse namespace) — no separate coder-db CNPG.
     - name: CODER_PG_CONNECTION_URL
       valueFrom:
         secretKeyRef:
@@ -175,7 +176,7 @@ coder:
         namespace: {{ .Release.Namespace }}
       spec:
         selector:
-            matchLabels:
+          matchLabels:
             app.kubernetes.io/name: coder
             app.kubernetes.io/instance: {{ .Release.Name }}
         endpoints:
