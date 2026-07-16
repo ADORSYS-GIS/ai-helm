@@ -1,0 +1,20 @@
+# CI lint fixture for the coder orchestrator chart.
+# Uses minimal values to exercise the template path.
+
+argocd:
+  project: ai
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: coder
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true

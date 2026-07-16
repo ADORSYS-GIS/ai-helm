@@ -1,0 +1,26 @@
+apiVersion: v2
+name: coder-secrets
+description: |
+  ExternalSecrets for the Coder platform — the OIDC client credentials, the
+  CNPG DB role password + connection URL, and the CNPG barman S3 backup
+  credentials. Leaf chart of the coder App-of-Apps orchestrator (ADR-0083),
+  lowest sync-wave so the Secrets exist before the DB (barman) and the app
+  start. All reference the `ssegning-aws` ClusterSecretStore (ADR-0018
+  in-chart ownership).
+type: application
+version: 1.0.0
+appVersion: "2.33.7"
+keywords:
+  - coder
+  - secrets
+  - external-secrets
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
