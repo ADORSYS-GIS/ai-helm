@@ -31,8 +31,12 @@ global:
     team: adorsys-gis
 
 model:
-  # Logical model name — the pod label EPP selects on (--endpoint-selector).
-  # Also the StatefulSet/Service name suffix (via modelServing.fullnameOverride).
+  # Logical model name — the single source of truth for the pod label that EPP
+  # selects on, the StatefulSet/Service name, and the EPP matchLabels selector.
+  # A validation template (templates/_validate.tpl) fails helm render if these
+  # three locations drift from this value. Helm cannot template values.yaml
+  # itself, so the three subchart values below are kept in sync by convention +
+  # validation, not by Go templating.
   name: llm-d-vllm
   # HuggingFace repo (Qwen2.5-0.5B-Instruct is Apache-2.0 -> no token needed).
   hfRepo: Qwen/Qwen2.5-0.5B-Instruct
@@ -57,8 +61,13 @@ pvc:
 # the optional HF-token ExternalSecret (templates/externalsecret-hf-token.yaml).
 seedJob:
   enabled: true
+  # These mirror model.hfRepo / model.storagePath for the seed Job (which lives
+  # in the bjw subchart and cant read parent .Values.model.*). The validation
+  # template (templates/_validate.tpl) fails helm render if these drift.
+  hfRepo: Qwen/Qwen2.5-0.5B-Instruct
+  storagePath: Qwen2.5-0.5B-Instruct
   hfToken:
-    enabled: false                # Qwen2.5-0.5B-Instruct is NOT gated
+    enabled: false                # Qwen2.5.0.5B-Instruct is NOT gated
     secretName: llm-d-hf-token
     dataKey: HF_TOKEN
     externalSecret:
@@ -316,6 +325,13 @@ modelServing:
             echo "Seed complete."
 
             '
+          env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: llm-d-hf-token
+                key: HF_TOKEN
+                optional: true          # absent for non-gated models -> empty env, no crash
           resources:
             requests:
               cpu: '1'
