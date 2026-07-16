@@ -979,7 +979,7 @@ applications:
   # DISABLED (staged) — one GPU, one model. Cutover = set this enabled:true +
   # disable another self-hosted model app + flip the ai-models enabled flags.
   - name: model-serving-qwen25-3b-awq
-    enabled: true                  # CUTOVER — live on the home GPU (lmcache/vllm-openai:v0.5.1 + in-process LMCache).
+    enabled: false                 # DISABLED — dual-model co-location test failed (CPU/memory contention on the GPU node). Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -1050,7 +1050,7 @@ applications:
   # ⚠️ Tool calling needs the official gated repo or a chat-template override
   # before cutover — the community AWQ repo strips tool-call tokens.
   - name: model-serving-ministral-3b
-    enabled: false                 # DISABLED — swapped by model-serving-qwen25-3b-awq (one GPU). Re-enable to roll back.
+    enabled: true                  # CUTOVER — live on the home GPU.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
