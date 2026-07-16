@@ -79,15 +79,18 @@ modelServing:
       containers:
         model:
           image:
-            repository: kserve/huggingfaceserver
-            tag: v0.18.0-gpu
+            # lmcache/vllm-openai bundles LMCache 0.5.1 + vLLM with CUDA support.
+            # The kserve/huggingfaceserver image does NOT include LMCache, so
+            # LMCacheConnectorV1 cannot be imported and vLLM rejects --kv-transfer-config.
+            repository: lmcache/vllm-openai
+            tag: v0.5.1
             pullPolicy: IfNotPresent
           args:
-            - --model_name=qwen25-3b-awq
-            - --model_dir=/mnt/models
-            - --backend=vllm
-            - --dtype=float16
+            - --model=/mnt/models
+            - --served-model-name=qwen25-3b-awq
+            - --port=8080
             - --quantization=awq
+            - --dtype=float16
             - --max-model-len=32768
             - --max-num-seqs=4
             - --gpu-memory-utilization=0.90
@@ -95,11 +98,23 @@ modelServing:
             - --enforce-eager
             - --enable-auto-tool-choice
             - --tool-call-parser=hermes
+            # In-process LMCache: single replica, both stores and retrieves KV.
+            # LMCacheConnectorV1 is the stable connector (not MP-mode).
             - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
           env:
-            LMCACHE_USE_EXPERIMENTAL: "True"
+            # Disable deprecated experimental flag; connector is activated via --kv-transfer-config alone.
+            LMCACHE_USE_EXPERIMENTAL: "False"
+            # Chunk size matches production default (demo uses 8).
+            LMCACHE_CHUNK_SIZE: "256"
+            # Enable CPU/RAM as the L1 KV cache tier.
             LMCACHE_LOCAL_CPU: "True"
-            LMCACHE_MAX_LOCAL_CPU_SIZE: "1"
+            # 2 GiB CPU RAM budget for the KV store.
+            LMCACHE_MAX_LOCAL_CPU_SIZE: "2"
+            # Skip caching decode-phase KVs — not worth the RAM on a 3B model.
+            LMCACHE_SAVE_DECODE_CACHE: "False"
+            # Ignore retrieves shorter than 64 tokens to avoid per-request overhead.
+            LMCACHE_MIN_RETRIEVE_TOKENS: "64"
+            LMCACHE_LOG_LEVEL: "INFO"
             VLLM_API_KEY:
               secretKeyRef:
                 name: vllm-local-api-key
@@ -107,14 +122,14 @@ modelServing:
           ports:
             - name: http
               containerPort: 8080
-            - name: grpc
-              containerPort: 8081
           probes:
             startup:
               enabled: true
               custom: true
               spec:
-                httpGet: { path: /v2/health/ready, port: 8080 }
+                httpGet:
+                  path: /health
+                  port: 8080
                 periodSeconds: 15
                 failureThreshold: 120
                 timeoutSeconds: 5
@@ -122,7 +137,9 @@ modelServing:
               enabled: true
               custom: true
               spec:
-                httpGet: { path: /v2/health/ready, port: 8080 }
+                httpGet:
+                  path: /health
+                  port: 8080
                 periodSeconds: 15
                 timeoutSeconds: 10
                 failureThreshold: 3
@@ -130,13 +147,16 @@ modelServing:
               enabled: true
               custom: true
               spec:
-                tcpSocket: { port: 8080 }
+                tcpSocket:
+                  port: 8080
                 periodSeconds: 30
                 timeoutSeconds: 10
                 failureThreshold: 6
           securityContext:
             allowPrivilegeEscalation: false
-            runAsNonRoot: true
+            # lmcache/vllm-openai requires root to initialise CUDA/LMCache internals.
+            runAsNonRoot: false
+            runAsUser: 0
             capabilities:
               drop:
                 - ALL

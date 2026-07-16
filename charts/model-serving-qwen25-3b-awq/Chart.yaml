@@ -2,9 +2,10 @@ apiVersion: v2
 name: model-serving-qwen25-3b-awq
 description: |
   Self-hosted LLM on the home GPU: Qwen2.5-3B-Instruct-AWQ served via vLLM
-  (kserve/huggingfaceserver) with a Caddy auth-proxy sidecar. AWQ 4-bit
-  quantized — fits a 32K context on the 12GB A2000. Weights are pre-seeded
-  into a PVC (no per-start HuggingFace download).
+  (lmcache/vllm-openai) with in-process LMCache KV caching and a Caddy
+  auth-proxy sidecar. AWQ 4-bit quantized — fits a 32K context on the 12GB A2000.
+  LMCache (LMCacheConnectorV1, CPU/RAM L1 tier) is enabled for cross-request
+  prefix reuse. Weights are pre-seeded into a PVC (no per-start HuggingFace download).
 
   Deployed via homeCluster (ADR-0017 exception) and federated into the Hetzner
   Envoy AI Gateway as an OpenAI backend. See ADR-0022 (federation) + ADR-0029

@@ -2,12 +2,14 @@ apiVersion: v2
 name: model-serving-qwen3-4b
 description: |
   Self-hosted LLM on the home GPU: a single bjw-template StatefulSet
-  (always-on) with TWO containers — the kserve/huggingfaceserver model
-  (vLLM + in-pod LMCache) and a Caddy auth-proxy sidecar that reaches the
-  model over localhost. Weights are fed from a pre-seeded PVC (local mount, no
-  per-start HuggingFace download). NOT KServe/Knative — serverless is the wrong
-  fit for a single owned, dedicated GPU (ADR-0029); the sidecar enforces the
-  Bearer the model image ignores (ADR-0030).
+  (always-on) with TWO containers — the lmcache/vllm-openai model server
+  (vLLM + in-process LMCache KV caching via LMCacheConnectorV1) and a Caddy
+  auth-proxy sidecar that reaches the model over localhost. LMCache (CPU/RAM
+  L1 tier) is enabled for cross-request prefix reuse. Weights are fed from a
+  pre-seeded PVC (local mount, no per-start HuggingFace download). NOT
+  KServe/Knative — serverless is the wrong fit for a single owned, dedicated
+  GPU (ADR-0029); the sidecar enforces the Bearer the model image ignores
+  (ADR-0030).
 
   Deployed by an ai-helm Application that — unusually — targets the HOME
   cluster (where the GPU lives), the single sanctioned exception to ADR-0017.
