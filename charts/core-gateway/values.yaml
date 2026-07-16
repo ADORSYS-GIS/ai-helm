@@ -89,6 +89,15 @@ envoyProxy:
       memory: 2Gi
   pdb:
     maxUnavailable: 1
+  # Tracing sampling rate (percent, 0-100) for ALL requests through this
+  # listener (gateway-wide — see the EnvoyProxy template comment on why this
+  # isn't scoped per-route). Every sampled request pays span-creation +
+  # OTLP-export overhead, so this trades trace completeness for per-request
+  # latency. Dropped from 100 (trace everything) to 1 (2026-07-14) once the
+  # gateway was live-traffic-serving — 100% tracing was a permanent tax on
+  # every request for a debugging capability we don't need at that volume.
+  tracing:
+    samplingRate: 1
   # Spread proxy pods across nodes so a single node drain doesn't take a
   # large slice of capacity. Soft (ScheduleAnyway) so it never blocks
   # scheduling.

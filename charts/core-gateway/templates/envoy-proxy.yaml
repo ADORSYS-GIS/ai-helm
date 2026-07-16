@@ -88,7 +88,7 @@ spec:
       # EnvoyPatchPolicy JSON-patching the RouteConfiguration directly,
       # which we decided against for now. Revisit if a future EG version
       # adds real per-route sampling, or if span volume becomes a problem.
-      samplingRate: 100
+      samplingRate: {{ (default dict $ep.tracing).samplingRate | default 1 }}
       provider:
         type: OpenTelemetry
         # Same Alloy OTLP endpoint the access log sink below already uses —
