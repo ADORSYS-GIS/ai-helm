@@ -117,14 +117,13 @@ modelServing:
             tag: v0.5.1
             pullPolicy: IfNotPresent
           args:
-            - --model=/mnt/models
+            - /mnt/models
             - --served-model-name=qwen3-4b
             - --port=8080
             - --dtype=float16                # Ampere: no hardware FP8
             - --max-model-len=16384
             - --max-num-seqs=4
             - --gpu-memory-utilization=0.90
-            - --swap-space=1
             - --enforce-eager
             - --enable-auto-tool-choice      # agentic tool calling (Qwen3 → hermes)
             - --tool-call-parser=hermes
