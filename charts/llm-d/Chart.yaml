@@ -1,0 +1,50 @@
+apiVersion: v2
+name: llm-d
+description: |
+  llm-d distributed inference middleware with a vLLM model server. Deploys the
+  llm-d router (standalone mode: EPP + Envoy sidecar) and a vLLM Deployment that
+  the router discovers by pod label. The router provides prefix-cache-aware,
+  KV-cache-utilization-aware, and queue-depth-aware intelligent routing across
+  model-server replicas with no GAIE CRDs required (inferencePool.create=false).
+
+  Two subcharts:
+    - llm-d-router-standalone (OCI, alias llmdRouter) renders the EPP
+      Deployment + Envoy sidecar, ConfigMaps (scorers + envoy.yaml), RBAC, and
+      the EPP Service (the public entrypoint on :8081).
+    - bjw-template (file://, alias modelServing) renders the vLLM
+      Deployment + Service (the model server the router routes to).
+
+  The chart own templates/ render the optional HF-token ExternalSecret (for
+  gated models). The vLLM pods carry app: <model.name> so EPP
+  --endpoint-selector discovers them.
+
+  llm-d: https://llm-d.ai  |  GAIE: gateway-api-inference-extension
+type: application
+version: 0.1.0
+appVersion: "v0.9.0"
+kubeVersion: ">=1.28.0-0"
+keywords:
+  - llm
+  - vllm
+  - llm-d
+  - inference
+  - routing
+  - gpu
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: llm-d-router-standalone
+    version: "v0.9.0"
+    repository: "oci://ghcr.io/llm-d/charts"
+    alias: llmdRouter
+  - name: bjw-template
+    version: "4.6.2"
+    repository: "file://../bjw-template"
+    alias: modelServing
+  - name: common
+    version: "*"
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
