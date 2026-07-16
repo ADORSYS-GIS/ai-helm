@@ -1,0 +1,77 @@
+# coder App-of-Apps orchestrator — renders two child Application CRs
+# (coder-secrets + coder-app). Follows the lightbridge canonical pattern
+# (ADR-0019). The chart owns no workload resources; it owns the two child
+# Applications.
+#
+# Re-introduces Coder after ADR-0027 removal — see ADR-0083.
+# Coder uses the existing lightbridge-main-db CNPG cluster (charts/lightbridge-db)
+# for its database — no separate CNPG cluster (ADR-0083).
+
+# ────────────────────────────────────────────────────────────────────────
+# Shared ArgoCD wiring for all child Applications.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  project: ai
+  # OCI chart-float (ADR-0055). Two sources of truth:
+  #  • chartRegistry/chartVersionRange — the secrets leaf chart floats from
+  #    OCI (full chart path in repoURL + chart "."; template builds
+  #    `<chartRegistry>/<chartName>`).
+  #  • repoURL/targetRevision — the app child's cert/deps overlay (Source B) +
+  #    $values ref (Source C), from ai-helm-values @ main (where environments/ lives).
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: coder
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# ────────────────────────────────────────────────────────────────────────
+# coder-secrets child — the ExternalSecrets leaf chart (this repo).
+# Lowest sync-wave: the OIDC creds + DB role password + connection URL must
+# exist before the app starts.
+# ────────────────────────────────────────────────────────────────────────
+secrets:
+  enabled: true
+  appName: coder-secrets
+  chartName: coder-secrets   # OCI chart name
+  releaseName: coder-secrets
+  syncWave: "0"
+
+# ────────────────────────────────────────────────────────────────────────
+# coder-db child — DISABLED. Coder uses the existing lightbridge-main-db
+# CNPG cluster (charts/lightbridge-db) for its database. A managed `coder`
+# role + `coder` Database CR are added to lightbridge-db. The coder-db
+# chart has been removed. This block is kept (disabled) so the orchestrator
+# template's conditional `{{- if .Values.db.enabled }}` stays dead code.
+# ────────────────────────────────────────────────────────────────────────
+db:
+  enabled: false
+
+# ────────────────────────────────────────────────────────────────────────
+# coder-app child — the upstream Coder workload (Helm chart, deployed as an
+# ArgoCD source — NOT a Helm dependency, so ArgoCD pulls it directly) + the
+# ingress TLS Certificates via the kustomize overlay. releaseName stays `coder`
+# so workload resource names match the namespace.
+# ────────────────────────────────────────────────────────────────────────
+app:
+  enabled: true
+  appName: coder-app
+  releaseName: coder
+  syncWave: "2"
+  # Upstream Coder chart from the Coder OCI registry (NOT the adorsys-gis
+  # registry). Pinned to a stable version — NOT floated like the secrets leaf.
+  chart:
+    repoURL: oci://ghcr.io/coder/chart/coder
+    targetRevision: "2.33.7"
+  # App-scoped deps (ingress Certificates) — kustomize overlay in ai-helm-values,
+  # added as a second source (issuer patched per env). ADR-0018 pattern.
+  depsOverlay: environments/prod/deps/coder
