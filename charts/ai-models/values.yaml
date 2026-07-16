@@ -85,6 +85,17 @@ rateLimitBudgeting:
       burst:
         requestsPerMin: 400
         tokensPerMin: 2000000     # 400k → 2M: a couple of max-context requests/min
+    # Customer "enterprise" tier — the top self-serve plan lightbridge keys can be
+    # minted on (lightbridge-authz billing.plans id `enterprise`, x-billing-plan set
+    # from the key's introspected plan). Explicit HIGH caps (≈2× pro), NOT uncapped —
+    # a bounded ceiling still protects the shared budget/backends. Adjust to taste.
+    # monthlyBudgetUsd DORMANT (see free); the LIVE monthly cap is
+    # core-gateway backendTrafficPolicy.monthlyBudget.plans.enterprise — keep in sync.
+    enterprise:
+      monthlyBudgetUsd: 1000
+      burst:
+        requestsPerMin: 800
+        tokensPerMin: 4000000
     # Remote service accounts (GitHub runners, …) on the EXTERNAL plane.
     # Uncapped budget (no monthlyBudgetUsd) — burst-only.
     service:

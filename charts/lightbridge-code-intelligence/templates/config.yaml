@@ -78,6 +78,7 @@ interprets `{{ }}`).
 {{-   if $projects }}{{- $_ := set $glOut "projects" $projects }}{{- end }}
 {{-   $_ := set $cp "gitlab" $glOut }}
 {{- end }}
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -87,27 +88,6 @@ metadata:
     argocd.argoproj.io/sync-wave: {{ $wave }}
 data:
   control-plane.json: {{ $cp | toJson | quote }}
----
-{{- /* ── reconciler egress config (RFC-0005 Phase A / ADR-0074) ────────────────────────────────────
-       The reconciler is the role that owns the outbox drain (ADR-0059). When the pilot is active it MUST
-       read `egress.mode = restate` to turn that drain OFF — otherwise it keeps draining while the
-       producers also `send` to Restate, and every intent posts twice.
-       It gets an egress-ONLY control-plane.json, NOT the producers' full one, on purpose: the full config
-       carries the `review` block (outcome labels/reactions), and the reconciler's deliver_review() reads
-       ReviewSection to apply the `label_findings`/`label_error` labels. Today the reconciler mounts no
-       config, so it runs on ReviewSection::default() (no labels). Handing it the full config would make it
-       START applying those labels — an unrelated behavior change. Egress-only keeps its review behavior
-       identical while still delivering the mode. mode + url come from the SAME $eg as the producers'
-       copy above, so the two egress views cannot drift. Inert while $eg.mode = drain. */}}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .Release.Name }}-reconciler-config
-  namespace: {{ .Release.Namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: {{ $wave }}
-data:
-  control-plane.json: {{ (dict "egress" $eg) | toJson | quote }}
 {{- if .Values.agents.enabled }}
 ---
 {{- /* ── agent.json + review-system.md (agents namespace) ───────────────────── */}}

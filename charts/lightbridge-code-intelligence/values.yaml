@@ -235,19 +235,6 @@ config:
     labelFindings: needs-review  # ≥1 finding of any severity
     labelError: bug        # ≥1 error-severity finding
 
-  # Egress routing (RFC-0005 Phase A / ADR-0074). Which path delivers `github_outbox` intents to the
-  # forge. `drain` (default) keeps the reconciler outbox drain (ADR-0059) as the sole egress path — no
-  # behavior change, the pilot is inert. Flip to `restate` in ai-helm-values to route egress through the
-  # PlatformEgress virtual object (per-`platform:installation` exclusivity makes the single-writer
-  # invariant STRUCTURAL). Rendered into control-plane.json for the producers (serve/dispatcher) AND into
-  # a dedicated egress-only ConfigMap for the reconciler (so it disables its drain in restate mode).
-  #   mode:              drain | restate
-  #   restateIngressUrl: the Restate server INGRESS (:8080). REQUIRED in restate mode unless the
-  #                      RESTATE_INGRESS_URL env is set on the producers; ignored in drain mode.
-  egress:
-    mode: drain
-    restateIngressUrl: ""
-
   # External-knowledge MCP servers (lightbridge-ci ADR-0066): already-running REMOTE HTTP MCP servers
   # the control plane discovers tools from + proxies calls to. Declare the servers here; each entry is
   # {name, url} (url must be http(s)://). The per-tier tool SELECTION (which discovered tools each tier
@@ -797,12 +784,6 @@ lci:
             CONTROL_PLANE_ROLE: "reconciler"
             RUST_LOG: "info"
             METRICS_ADDR: "0.0.0.0:9090"
-            # File config (ADR-0021): the reconciler reads an egress-ONLY control-plane.json (the
-            # <release>-reconciler-config ConfigMap, mounted below) so it can see egress.mode and turn
-            # its outbox drain OFF when the RFC-0005 pilot is active (egress.mode=restate). Egress-only
-            # on purpose — it must NOT read the `review` block or it would start applying outcome labels
-            # it doesn't today. Absent/drain → the drain stays on (no behavior change).
-            CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
             # Optional cadence knobs; absent → run_reconciler defaults (300s interval / 14-day window).
             # DATABASE_URL `value` (cluster host/namespace/db) → ai-helm-values; `dependsOn` stays here.
             DB_PASSWORD:
@@ -815,108 +796,6 @@ lci:
               value: ""
             # The reconciler mints installation tokens (for GitHub egress + reading reactions), so it
             # needs the GitHub App key (the dispatcher does not). Same secret the control-plane uses.
-            GITHUB_APP_ID:
-              valueFrom:
-                secretKeyRef:
-                  name: '{{ .Release.Name }}-github'
-                  key: app-id
-            GITHUB_APP_PRIVATE_KEY:
-              valueFrom:
-                secretKeyRef:
-                  name: '{{ .Release.Name }}-github'
-                  key: app-private-key
-          probes:
-            liveness:
-              enabled: true
-              custom: true
-              spec:
-                httpGet:
-                  path: /healthz
-                  port: 9090
-                initialDelaySeconds: 5
-                periodSeconds: 15
-            readiness:
-              enabled: true
-              custom: true
-              spec:
-                httpGet:
-                  path: /healthz
-                  port: 9090
-                initialDelaySeconds: 5
-                periodSeconds: 10
-            startup:
-              enabled: false
-          resources:
-            requests: { cpu: 50m, memory: 64Mi }
-            limits: { cpu: 500m, memory: 256Mi }
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsUser: 1000
-            capabilities:
-              drop: [ALL]
-
-    # ── restate-worker (RFC-0005 / ADR-0074) ──────────────────────────────────────────────────────
-    # The SAME control-plane image in the `restate-worker` role: it serves the Restate SDK endpoint
-    # (plain h2c on :9080) that the Restate server (StatefulSet `restate`, ns converse) discovers and
-    # invokes, plus the metrics-only listener on :9090 like the other headless roles. It serves the
-    # `PlatformEgress` virtual object — the RFC-0005 Phase-A egress pilot — whose per-key exclusivity
-    # makes ADR-0059's single-writer-per-installation egress invariant STRUCTURAL (no more replicas=1
-    # comment). Serving PlatformEgress needs a DB pool + a platform impl (the GitHub App key); absent
-    # either it degrades to Health-only.
-    #
-    # ⚠️ DEPLOYED-BUT-IDLE by design: egress.mode stays `drain` (the reconciler drain remains the sole
-    # egress path), so the object is registered/served but NEVER invoked until the pilot is activated.
-    # Two operator steps gate activation (NOT this chart): (1) register the endpoint with the Restate
-    # server — `restate deployments register
-    # http://lightbridge-ci-restate-worker.converse.svc.cluster.local:9080` (or via the operator);
-    # (2) flip egress.mode=restate on the producer. The idle worker is safe and changes nothing until
-    # then. `enabled: false` here → inert on chart defaults; ai-helm-values enables it and supplies the
-    # image tag + DATABASE_URL + RESTATE_INGRESS_URL per-env.
-    restate-worker:
-      enabled: false
-      type: deployment
-      # RollingUpdate: the worker is stateless (durable state lives in the Restate server + Postgres),
-      # so a brief old+new overlap on rollout is safe.
-      strategy: RollingUpdate
-      replicas: 1
-      annotations:
-        argocd.argoproj.io/sync-wave: "2"
-      containers:
-        main:
-          image:
-            repository: ghcr.io/vymalo/lightbridge-control-plane
-            # Default/fallback; the deployed tag is overridden at sync time by ai-helm-values via the
-            # image-updater `rw` alias (charts/apps/values.yaml), in lockstep with control-plane.
-            tag: "0.1.0"
-            pullPolicy: IfNotPresent
-          env:
-            CONTROL_PLANE_ROLE: "restate-worker"
-            RUST_LOG: "info"
-            # Metrics-only listener (like dispatcher/reconciler) — /metrics + /healthz on :9090.
-            METRICS_ADDR: "0.0.0.0:9090"
-            # The Restate SDK endpoint (h2c). The Restate server connects here to discover + invoke;
-            # 9080 is the SDK's conventional port. The restate-worker Service (below) exposes it.
-            RESTATE_WORKER_BIND: "0.0.0.0:9080"
-            # Where the Restate server's INGRESS is (the producer submits invocations here once the
-            # egress pilot is activated). Points at the Restate server Service in converse. Consumed by
-            # the egress path in `restate` mode only; harmless while egress.mode stays `drain`.
-            # DEPLOYMENT-SPECIFIC → ai-helm-values; empty here.
-            RESTATE_INGRESS_URL: ""
-            # Same CNPG queue the serve/dispatcher/reconciler roles use. DATABASE_URL `value` (cluster
-            # host/namespace/db) → ai-helm-values; `dependsOn` stays here.
-            DB_PASSWORD:
-              valueFrom:
-                secretKeyRef:
-                  name: lightbridge-codeintel-db-role
-                  key: password
-            DATABASE_URL:
-              dependsOn: DB_PASSWORD
-              value: ""
-            # A platform impl (GitHub App key) is required to SERVE PlatformEgress (it posts intents);
-            # the same secret the control-plane + reconciler use. Absent it the role degrades to
-            # Health-only. Single replica + `drain` mode preserve the ADR-0002/0059 egress-credential
-            # posture until the pilot flip.
             GITHUB_APP_ID:
               valueFrom:
                 secretKeyRef:
@@ -1188,15 +1067,6 @@ lci:
       ports:
         metrics:
           port: 9090
-    # SDK-endpoint Service for the restate-worker role (h2c :9080). The Restate server (ns converse)
-    # reaches the worker here to discover + invoke its services once the endpoint is registered.
-    # `enabled` tracks the controller (both flipped on in ai-helm-values).
-    restate-worker:
-      enabled: false
-      controller: restate-worker
-      ports:
-        http:
-          port: 9080
     # A2A HTTP surface Service (:8080) — the Ingress routes to it. `enabled` tracks the controller.
     a2a:
       enabled: false
@@ -1309,20 +1179,21 @@ lci:
   # (see `statefulset.volumeClaimTemplates` above); neo4j runs with a writable rootfs so it
   # needs no scratch emptyDirs. advancedMounts scope each volume to one container.
   # ── config-rollout: force the config-reading roles to restart on a read-once-at-boot config flip ──────
-  # The control plane reads FILE config (control-plane.json — egress.mode, dispatcher tuning, review knobs)
-  # ONCE at startup; it is deploy-scoped, NOT live-reloadable. But the real config lives in STANDALONE
-  # ConfigMaps rendered by templates/config.yaml, and editing a ConfigMap's *content* does NOT roll the
-  # pods that mount it — so a config flip (notably egress.mode drain↔restate) would silently no-op until
-  # the role happens to restart for another reason (next image deploy). That is a foot-gun: e.g. flipping
-  # egress.mode=restate while the reconciler keeps running the old `drain` config → double-posts.
+  # The control plane reads FILE config (control-plane.json — dispatcher tuning, review knobs) ONCE at
+  # startup; it is deploy-scoped, NOT live-reloadable. But the real config lives in STANDALONE ConfigMaps
+  # rendered by templates/config.yaml, and editing a ConfigMap's *content* does NOT roll the pods that
+  # mount it — so a config flip would silently no-op until the role happens to restart for another reason
+  # (next image deploy). That is a foot-gun: e.g. changing a dispatcher/review knob while the pods keep
+  # running the old config.
   #
   # bjw-s can only auto-checksum ConfigMaps IT manages (this `configMaps` block), and its tpl runs in the
   # subchart context — it cannot see the top-level `config.*` values that drive the standalone ConfigMaps,
   # so it cannot content-hash them directly. Instead this is a tiny UNMOUNTED marker ConfigMap: listing it
   # in `includeChecksumInControllers` makes bjw-s stamp a `checksum/configMaps` annotation on those roles'
   # pods. **Bump `data.generation` in ai-helm-values in the SAME change as any read-once config flip** and
-  # all three config-reading roles roll together to pick it up. (Introducing the annotation also rolls them
-  # once on first deploy — brief RollingUpdate egress overlap, the same trade-off the roles already accept.)
+  # both config-reading roles roll together to pick it up. (Introducing the annotation also rolls them once
+  # on first deploy — a brief RollingUpdate overlap, the same trade-off the roles already accept.) The
+  # reconciler is intentionally NOT listed: it mounts no file config (ADR-0059 drain is unconditional).
   configMaps:
     config-rollout:
       enabled: true
@@ -1333,7 +1204,6 @@ lci:
       includeChecksumInControllers:
         - control-plane
         - dispatcher
-        - reconciler
       data:
         generation: "1"
 
@@ -1349,17 +1219,6 @@ lci:
             - path: /etc/lightbridge
               readOnly: true
         dispatcher:
-          main:
-            - path: /etc/lightbridge
-              readOnly: true
-    # Egress-only control-plane.json for the reconciler (RFC-0005 Phase A / ADR-0074). Separate from the
-    # producers' ConfigMap above so the reconciler sees `egress` (to disable its drain in restate mode)
-    # but NOT the `review` block (which would make it start applying outcome labels — see config.yaml).
-    reconciler-config:
-      type: configMap
-      name: lightbridge-ci-reconciler-config
-      advancedMounts:
-        reconciler:
           main:
             - path: /etc/lightbridge
               readOnly: true

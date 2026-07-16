@@ -502,35 +502,6 @@ applications:
     destination:
       namespace: converse
 
-  # --- Restate (durable execution) — RFC-0005 / ADR-0074 Phase-1 enabler ---
-  # Single-node Restate durable-execution server for the LCI control plane. The
-  # future `restate-worker` control-plane role (in the lightbridge-code-intelligence
-  # app, default wave 0) registers services with + is invoked by this server, so
-  # Restate is a storage-backend dependency that MUST be up first → sync-wave -2
-  # (storage tier per SYNC_WAVE_PATTERN.md — same wave as the observability storage
-  # backends mimir/loki/tempo). Upstream chart from the Restate OCI registry, pinned
-  # to 1.7.2 (external source form, like eg/aieg). Single node: replicaCount 1,
-  # RocksDB on a PVC, NO cluster/Raft, NO S3. Namespace `converse` (the LCI workload
-  # namespace, ADR-0017 home-remote default). Workload values (resources / rocksdb
-  # budget / PVC size) live in ai-helm-values (ADR-0056), read via the $values ref
-  # the template injects (ignoreMissingValueFiles → renders on chart defaults until
-  # the file lands). No image-updater (upstream image, version-pinned); serviceMonitor
-  # stays off to keep the blast radius to just this new StatefulSet.
-  - name: restate
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "-2"
-    valuesFromRepo: true
-    source:
-      repoURL: oci://ghcr.io/restatedev/restate-helm
-      targetRevision: 1.7.2
-      path: .
-      helm:
-        releaseName: restate
-    destination:
-      namespace: converse
-
   # --- Lightbridge Code Intelligence ---
   # The GitHub-App code-review / repo-Q&A system (repo:
   # vymalo/lightbridge-code-intelligence): Rust control plane + Next.js web console
@@ -562,12 +533,12 @@ applications:
       # declares, which otherwise show a permanent cosmetic OutOfSync + selfHeal churn.
       # ServerSideDiff ignores those server-owned fields so the app reads Synced.
       argocd.argoproj.io/compare-options: ServerSideDiff=true
-      # Images aliased: cp/disp/recon/rw/a2a (control-plane, role-selected), web, runner (the one-shot
+      # Images aliased: cp/disp/recon/a2a (control-plane, role-selected), web, runner (the one-shot
       # agent-runner/indexer image the dispatcher launches), and review (the slimmer review-only Job
       # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
-      # `rw` = restate-worker (RFC-0005/ADR-0074), `a2a` = the A2A surface (RFC-0006) — both the SAME
-      # control-plane image, kept in lockstep so the new roles never lag the control-plane on a build.
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,recon=ghcr.io/vymalo/lightbridge-control-plane,rw=ghcr.io/vymalo/lightbridge-control-plane,a2a=ghcr.io/vymalo/lightbridge-control-plane,notifier=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
+      # `a2a` = the A2A surface (RFC-0006) — the SAME control-plane image, kept in lockstep so the a2a
+      # role never lags the control-plane on a build.
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,recon=ghcr.io/vymalo/lightbridge-control-plane,a2a=ghcr.io/vymalo/lightbridge-control-plane,notifier=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -604,17 +575,6 @@ applications:
       argocd-image-updater.argoproj.io/recon.signature-type: cosign
       argocd-image-updater.argoproj.io/recon.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/recon.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
-      # ── restate-worker (SAME image as control-plane, role-selected; RFC-0005/ADR-0074) — keeps its
-      #    tag in lockstep so the Restate SDK worker never lags the control-plane on a build. ──
-      argocd-image-updater.argoproj.io/rw.update-strategy: newest-build
-      argocd-image-updater.argoproj.io/rw.allow-tags: regexp:^sha-[0-9a-f]+$
-      argocd-image-updater.argoproj.io/rw.force-update: "true"
-      argocd-image-updater.argoproj.io/rw.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
-      argocd-image-updater.argoproj.io/rw.helm.image-name: lci.controllers.restate-worker.containers.main.image.repository
-      argocd-image-updater.argoproj.io/rw.helm.image-tag: lci.controllers.restate-worker.containers.main.image.tag
-      argocd-image-updater.argoproj.io/rw.signature-type: cosign
-      argocd-image-updater.argoproj.io/rw.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/rw.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── a2a (SAME image as control-plane, role-selected; RFC-0006) — keeps its tag in lockstep so
       #    the A2A surface never lags the control-plane on a build. ──
       argocd-image-updater.argoproj.io/a2a.update-strategy: newest-build
