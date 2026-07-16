@@ -251,7 +251,204 @@ wellKnown:
                 - maxResetSeconds: null
                   action: error
 
-    # ────────────────────────────────────────────────────────────────────
+        # ────────────────────────────────────────────────────────────────
+        # Reasoning CAP (not kill-switch) — issue #534 / PR #631.
+        #
+        # These are all thinking-capable models. Rather than disable thinking
+        # (too radical for an agentic coding fleet — it regresses exactly the
+        # work these models are chosen for), we set a LOW default reasoning
+        # budget via the OpenAI-standard graded knob `reasoningEffort`
+        # (minimal|low|medium|high). opencode reads it at
+        # provider.camer-digital.models.<id>.options.reasoningEffort. Users who
+        # want deep reasoning on a hard task cycle to the `thinking` variant
+        # (reasoningEffort: high) via the variant_cycle keybind. Well-known is
+        # the LOWEST-precedence config source, so a local opencode.json still
+        # wins — this is a calmer/cheaper default, not an enforced policy.
+        #
+        # EXCLUDED (deliberately, do not add):
+        #   • kimi-k2.7-code, adorsys-frontend-pro → thinking is ALWAYS ON
+        #     (Moonshot rejects a suppression/cap param on K2.7-Code).
+        #   • deepseek-r1-1-5b-local → pure R1 distill; CoT is intrinsic, no
+        #     effort knob to cap.
+        #   • non-reasoning models (gemma-4, ministral-3b-local,
+        #     qwen25-3b-awq-local, mimo-v2p5-pro, minimax-m3) → no reasoning
+        #     channel to cap.
+        #
+        # ⚠️ VERIFY per backend before trusting the effect: each provider must
+        # honor `reasoning_effort` on its OpenAI-compat endpoint (the catalog
+        # verifies params against the backend model pages the same way). The
+        # self-hosted vLLM/llama.cpp models may ignore it (native knob is
+        # enable_thinking) until confirmed. See docs/spike-thinking-suppression.md.
+        # ────────────────────────────────────────────────────────────────
+        models:
+          qwen3-4b-local:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          qwen3-5-4b-local:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          qwen3-8b-local:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          deepseek-v4-flash:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          deepseek-v4-pro:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          reviewer:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          adorsys-planner:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          adorsys-planner-pro:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          kimi-k2.5:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          minimax-m2p5:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          glm-5p2:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          qwen3p7-plus:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          gemini-3p1-flash-lite:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          glm-4.7-flash:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          minimax-m2.7:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          mimo-v2p5:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          ornith-1p0-35b:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          claude-sonnet-5:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          claude-fable-5:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          adorsys-researcher:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          adorsys-coder:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          adorsys-coder-pro:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          adorsys-reviewer:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          adorsys-reviewer-pro:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          # → nvidia/Nemotron-3-Nano-Omni-…-Reasoning. (The `-pro` sibling is
+          # excluded above: it routes to always-on Kimi K2.7-Code.)
+          adorsys-frontend:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          # Both RECLASSIFIED 2026-07-16 — shipped as "(Non-Thinking)" but
+          # verified live to emit reasoning_content, so they were thinking
+          # uncapped with no reasoning channel declared. See charts/ai-models.
+          mimo-v2p5-pro:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+          minimax-m3:
+            options:
+              reasoningEffort: low
+            variants:
+              thinking:
+                reasoningEffort: high
+
     # MCP servers (ADR-0042, scoping ADR-0044, OPT-IN default ADR-0074). Two axes:
     #   • CONNECTIVITY — `enabled` here decides whether opencode connects to
     #     the server AT ALL. A tool only exists if its server is connected.
