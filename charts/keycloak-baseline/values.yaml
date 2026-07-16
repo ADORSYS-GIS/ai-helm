@@ -109,6 +109,28 @@ keycloak-config:
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "converse"
 
+    coder:
+      name: "coder"
+      description: "Coder OIDC roles scope"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        - name: coder_roles
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "false"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "coder_roles"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "coder"
+
   # OIDC Clients
   clients:
     converse:
@@ -166,6 +188,7 @@ keycloak-config:
       defaultClientScopes:
         - web-origins
         - acr
+        - coder
         - profile
         - roles
         - basic
@@ -177,6 +200,15 @@ keycloak-config:
         - organization
         - offline_access
         - microprofile-jwt
+      # Client roles — included in the coder_roles claim for potential future
+      # use with Coder IdP Sync (Premium feature). Without a Premium license,
+      # roles must be assigned manually in Coder after user login.
+      #   admin → owner, developer → member
+      roles:
+        - name: "admin"
+          description: "Coder owner role"
+        - name: "developer"
+          description: "Coder member role"
 
     selfServiceMcpApi:
       enabled: true
