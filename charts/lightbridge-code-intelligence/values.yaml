@@ -38,6 +38,8 @@ secrets:
   # own secret (supersedes the old shared AGENT_RUNNER_TOKEN bearer property, removed with #410's
   # hard cutover). Empty by default (ADR-0057) — see externalsecret.yaml's runner-signing
   # ExternalSecret, gated on this being set.
+  gitlabAdorsysSolutionsAccessTokenProperty: ""
+  gitlabAdorsysSolutionsWebhookSecretProperty: ""
   runnerTokenSigningKeyProperty: ""
   openaiKeyProperty: ""
   # GHCR pull credential for the agent Jobs' namespace (private-image cutover). The runner images
@@ -383,23 +385,7 @@ lci:
                 secretKeyRef:
                   name: '{{ .Release.Name }}-github'
                   key: webhook-secret
-            # GitLab per-project secrets (file-config-only, ADR-0072). The {env:…} markers in
-            # control-plane.json resolve these env vars at runtime via lci-config substitution.
-            # The `<release>-gitlab` Secret must be provisioned with the real values before
-            # GitLab webhooks/API calls work (see externalsecret.yaml for the pattern).
-            # Placeholder values here for chart defaults; overridden per-env in ai-helm-values.
-            GITLAB_ACCESS_TOKEN_PROJECT_1:
-              valueFrom:
-                secretKeyRef:
-                  name: '{{ .Release.Name }}-gitlab'
-                  key: access-token-1
-                  optional: true
-            GITLAB_WEBHOOK_SECRET_PROJECT_1:
-              valueFrom:
-                secretKeyRef:
-                  name: '{{ .Release.Name }}-gitlab'
-                  key: webhook-secret-1
-                  optional: true
+
             # GitHub App auth (mint installation tokens for the read API + posting reviews).
             # Absent either, the control plane skips installation-token features but still
             # serves webhooks/JWT-protected reads (github::GithubApp::from_env → None).
