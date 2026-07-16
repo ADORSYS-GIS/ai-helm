@@ -587,7 +587,7 @@ models:
   # Cost (ADR-0028: cost-recovery for owned-hardware): same rate as the other
   # self-hosted models — the hardware cost is identical.
   qwen25-3b-awq-local:
-    enabled: false                   # DISABLED — dual-model co-location test failed (CPU/memory contention on the GPU node). Re-enable to roll back.
+    enabled: true                    # CUTOVER — live on the home GPU (lmcache/vllm-openai:v0.5.1 + in-process LMCache).
     kind: text
     minBackends: 1
     timeout:
@@ -719,7 +719,7 @@ models:
   #   gated mistralai/Ministral-3B-Instruct-2410 (needs HF license acceptance)
   #   or inject a --chat-template override before cutover.
   ministral-3b-local:
-    enabled: true                    # CUTOVER — live on the home GPU.
+    enabled: false                   # DISABLED — swapped by qwen25-3b-awq-local (one GPU). Re-enable to roll back.
     kind: text
     minBackends: 1                   # single self-hosted backend by design (one GPU)
     timeout:
