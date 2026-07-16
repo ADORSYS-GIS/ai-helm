@@ -80,6 +80,15 @@ resources:
               - pg_read_all_data
             passwordSecret:
               name: lightbridge-grafana-ro-db-role
+          # Dedicated login role for the Coder platform (ADR-0083). Coder
+          # connects to this database via the connection URL assembled in
+          # charts/coder-secrets. Password from the basic-auth Secret
+          # `coder-db-role` (ESO-provisioned below).
+          - name: coder
+            ensure: present
+            login: true
+            passwordSecret:
+              name: coder-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -322,3 +331,52 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: codeintel_grafana_ro_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # Coder (ADR-0083): a `coder` Database owned by the managed `coder` role
+  # above, plus the role's basic-auth Secret (username + password) consumed
+  # by BOTH CNPG (passwordSecret) and the Coder app (via coder-db-url
+  # assembled in charts/coder-secrets). Mirrors the repoauth pattern.
+  # NOTE: the ESO `password` template braces are double-escaped so Helm's
+  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: coder
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: coder
+      owner: coder
+      ensure: present
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: coder-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: coder-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "coder"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: coder_db_password
