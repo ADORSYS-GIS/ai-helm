@@ -54,8 +54,9 @@ interprets `{{ }}`).
        there for why). deny_unknown_fields on the binary's EgressSection accepts exactly
        {mode, restate_ingress_url}; the deployed image (≥ ADR-0074) carries the field. */}}
 {{- $eg := dict }}
-{{- if ne (toString $cfg.egress.mode) "" }}{{- $_ := set $eg "mode" $cfg.egress.mode }}{{- end }}
-{{- if ne (toString $cfg.egress.restateIngressUrl) "" }}{{- $_ := set $eg "restate_ingress_url" $cfg.egress.restateIngressUrl }}{{- end }}
+{{- $egressCfg := $cfg.egress | default dict }}
+{{- if ne (toString $egressCfg.mode) "" }}{{- $_ := set $eg "mode" $egressCfg.mode }}{{- end }}
+{{- if ne (toString $egressCfg.restateIngressUrl) "" }}{{- $_ := set $eg "restate_ingress_url" $egressCfg.restateIngressUrl }}{{- end }}
 {{- if $eg }}{{- $_ := set $cp "egress" $eg }}{{- end }}
 {{- /* ── GitLab projects (file-config-only, ADR-0072) → control-plane.json `gitlab` ─────────────
        Per-project access tokens and webhook secrets use `{env:VAR}` markers so the actual secrets
