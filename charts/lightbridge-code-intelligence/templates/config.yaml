@@ -45,18 +45,6 @@ interprets `{{ }}`).
 {{- $mcps := list }}
 {{- range $s := $cfg.knowledgeTools.mcpServers }}{{- if and $s.name $s.url }}{{- $mcps = append $mcps (dict "name" $s.name "url" $s.url) }}{{- end }}{{- end }}
 {{- if $mcps }}{{- $_ := set $cp "knowledge_tools" (dict "mcp_servers" $mcps) }}{{- end }}
-{{- /* Egress routing (RFC-0005 Phase A / ADR-0074) → control-plane.json `egress`. The PRODUCER roles
-       (serve + dispatcher, which mount THIS ConfigMap) read `mode` to decide whether to `send`
-       PlatformEgress::post to the Restate ingress. Default `drain` (chart) = no behavior change; flip to
-       `restate` in ai-helm-values to activate the pilot. `restate_ingress_url` is required in restate
-       mode (or the RESTATE_INGRESS_URL env). The RECONCILER reads the SAME $eg via its own egress-ONLY
-       ConfigMap below — deliberately NOT this full config, so it never picks up the `review` block (see
-       there for why). deny_unknown_fields on the binary's EgressSection accepts exactly
-       {mode, restate_ingress_url}; the deployed image (≥ ADR-0074) carries the field. */}}
-{{- $eg := dict }}
-{{- if ne (toString $cfg.egress.mode) "" }}{{- $_ := set $eg "mode" $cfg.egress.mode }}{{- end }}
-{{- if ne (toString $cfg.egress.restateIngressUrl) "" }}{{- $_ := set $eg "restate_ingress_url" $cfg.egress.restateIngressUrl }}{{- end }}
-{{- if $eg }}{{- $_ := set $cp "egress" $eg }}{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -66,27 +54,6 @@ metadata:
     argocd.argoproj.io/sync-wave: {{ $wave }}
 data:
   control-plane.json: {{ $cp | toJson | quote }}
----
-{{- /* ── reconciler egress config (RFC-0005 Phase A / ADR-0074) ────────────────────────────────────
-       The reconciler is the role that owns the outbox drain (ADR-0059). When the pilot is active it MUST
-       read `egress.mode = restate` to turn that drain OFF — otherwise it keeps draining while the
-       producers also `send` to Restate, and every intent posts twice.
-       It gets an egress-ONLY control-plane.json, NOT the producers' full one, on purpose: the full config
-       carries the `review` block (outcome labels/reactions), and the reconciler's deliver_review() reads
-       ReviewSection to apply the `label_findings`/`label_error` labels. Today the reconciler mounts no
-       config, so it runs on ReviewSection::default() (no labels). Handing it the full config would make it
-       START applying those labels — an unrelated behavior change. Egress-only keeps its review behavior
-       identical while still delivering the mode. mode + url come from the SAME $eg as the producers'
-       copy above, so the two egress views cannot drift. Inert while $eg.mode = drain. */}}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .Release.Name }}-reconciler-config
-  namespace: {{ .Release.Namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: {{ $wave }}
-data:
-  control-plane.json: {{ (dict "egress" $eg) | toJson | quote }}
 {{- if .Values.agents.enabled }}
 ---
 {{- /* ── agent.json + review-system.md (agents namespace) ───────────────────── */}}
