@@ -79,15 +79,11 @@ modelServing:
       containers:
         model:
           image:
-            # lmcache/vllm-openai bundles LMCache + vLLM with CUDA support.
-            #
-            # Pinned to v0.4.2: last default tag on CUDA 12.8 (driver 570.124.06).
-            # Tags v0.4.6+ flipped to CUDA 13.0 (driver 580+), too new for the home
-            # RTX A2000 570.x driver (reports 12080 = CUDA 12.8.0).
+            # lmcache/vllm-openai bundles LMCache 0.5.1 + vLLM with CUDA support.
             # The kserve/huggingfaceserver image does NOT include LMCache, so
             # LMCacheConnectorV1 cannot be imported and vLLM rejects --kv-transfer-config.
             repository: lmcache/vllm-openai
-            tag: v0.4.2
+            tag: v0.5.1
             pullPolicy: IfNotPresent
           args:
             - --model=/mnt/models
