@@ -18,3 +18,4 @@ to **do** something. See the [docs index](../README.md) for the other categories
 | [mongodb-restoration-guide.md](mongodb-restoration-guide.md) | Restore a MongoDB backup into the `librechat-db` StatefulSet |
 | [service-endpoint-decommission.md](service-endpoint-decommission.md) | Decommission checklist for cluster-internal service endpoints |
 | [opencode-sandboxing.md](opencode-sandboxing.md) | Why the opencode permission config is not a sandbox; containment options |
+| [cnpg-reconcile-stall.md](cnpg-reconcile-stall.md) | CNPG Managed role password not reconciled after secret change |
