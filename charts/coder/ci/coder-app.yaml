@@ -1,0 +1,205 @@
+# CI / reference values for the upstream Coder chart.
+#
+# This file serves TWO purposes:
+# 1. CI lint fixture (helm lint --strict uses this when charts/coder/ci/ exists).
+# 2. Reference template for the production values file that lives in the
+#    PRIVATE ai-helm-values repo at:
+#    environments/prod/values/coder-app.yaml
+#
+# Production differences (override in ai-helm-values):
+#   - coder.env CODER_OIDC_ISSUER_URL, CODER_ACCESS_URL → real prod URLs
+#   - coder.ingress host → coder.ai.camer.digital
+#   - resource requests/limits → tuned for prod load
+#   - replicaCount → 1 (HA is Enterprise-only)
+#
+# Certificate strategy: HTTP-01 ACME (standard platform pattern).
+# No wildcard — path-based workspace apps are used instead of wildcard
+# subdomain apps. CODER_DISABLE_PATH_APPS is not set (defaults to false).
+
+coder:
+  env:
+    # PostgreSQL connection URL — from the coder-db-url Secret assembled by
+    # charts/coder-secrets (ESO Go-template). Uses lightbridge-main-db CNPG
+    # cluster (converse namespace) — no separate coder-db CNPG.
+    - name: CODER_PG_CONNECTION_URL
+      valueFrom:
+        secretKeyRef:
+          name: coder-db-url
+          key: url
+
+    # External access URL — users and workspace agents reach Coder here.
+    # Override in ai-helm-values with the real prod URL.
+    - name: CODER_ACCESS_URL
+      value: "https://coder.ai.camer.digital"
+
+    # No wildcard — path-based workspace apps are used (HTTP-01 ACME cert
+    # cannot issue wildcard SANs). CODER_WILDCARD_ACCESS_URL is NOT set.
+    # CODER_DISABLE_PATH_APPS is NOT set (defaults to false → path apps enabled).
+
+    # OIDC — Keycloak realm camer-digital, client `coder`.
+    # Credentials from coder-oidc Secret (ESO-provisioned in charts/coder-secrets).
+    - name: CODER_OIDC_ISSUER_URL
+      value: "https://auth.verif.fyi/realms/camer-digital"
+    - name: CODER_OIDC_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: coder-oidc
+          key: client-id
+    - name: CODER_OIDC_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: coder-oidc
+          key: client-secret
+    - name: CODER_OIDC_SCOPES
+      value: "openid,profile,email,offline_access"
+
+    # OIDC + password login both enabled. The Coder chart defaults allow both;
+    # setting CODER_DISABLE_PASSWORD_AUTH=false keeps password login as a
+    # fallback alongside the OIDC provider. Disable default GitHub provider.
+    - name: CODER_DISABLE_PASSWORD_AUTH
+      value: "false"
+    - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
+      value: "false"
+
+    # CODER_REDIRECT_TO_ACCESS_URL is intentionally NOT set (defaults to
+    # false). This flag is only correct when coderd itself terminates TLS
+    # (paired with CODER_TLS_ENABLE=true). Here, Traefik ingress terminates
+    # TLS and talks plain HTTP to coderd — coderd's redirect middleware
+    # (cli/server.go redirectToAccessURL) decides whether to force-redirect
+    # by checking Go's raw r.TLS state, NOT X-Forwarded-Proto. Since r.TLS
+    # is always nil behind a TLS-terminating proxy, enabling this flag
+    # causes coderd to 307-redirect to the bare access URL on EVERY
+    # request (including the redirect target itself) → infinite redirect
+    # loop / ERR_TOO_MANY_REDIRECTS in the browser. This is a long-standing
+    # upstream defect (see coder/coder#7026), still present as of v2.33.7.
+    # Traefik ingress already enforces HTTPS at the edge, so this flag is
+    # both unnecessary and actively broken in this topology — leave unset.
+
+    # Trust X-Forwarded-For from the in-cluster Traefik ingress so coderd
+    # sees real client IPs (audit log, per-IP rate limiting) instead of the
+    # ingress pod IP. Pod CIDR per lightbridge-code-intelligence.yaml.
+    - name: CODER_PROXY_TRUSTED_HEADERS
+      value: "X-Forwarded-For"
+    - name: CODER_PROXY_TRUSTED_ORIGINS
+      value: "10.42.0.0/16"
+
+    # Metrics — Prometheus on :2112 (no Service created by chart; use extraTemplates).
+    - name: CODER_PROMETHEUS_ENABLE
+      value: "true"
+    - name: CODER_PROMETHEUS_COLLECT_AGENT_STATS
+      value: "true"
+
+    # Experiments — MCP server over HTTP + OAuth2 (required for LibreChat MCP).
+    - name: CODER_EXPERIMENTS
+      value: "oauth2,mcp-server-http"
+
+    # Security: restrict pprof to localhost.
+    - name: CODER_PPROF_ADDRESS
+      value: "127.0.0.1:6060"
+
+  image:
+    repo: "ghcr.io/coder/coder"
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+
+  podSecurityContext:
+    fsGroup: 1000
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Volumes: emptyDir for Coder cache (readOnlyRootFilesystem needs writable
+  # /home/coder/.cache and /tmp). Coder creates its cache dir at startup
+  # but cannot do so on a read-only rootfs.
+  volumes:
+    - name: coder-cache
+      emptyDir:
+        sizeLimit: 1Gi
+    - name: tmp
+      emptyDir:
+        sizeLimit: 512Mi
+
+  volumeMounts:
+    - name: coder-cache
+      mountPath: /home/coder/.cache
+    - name: tmp
+      mountPath: /tmp
+
+  service:
+    type: ClusterIP
+    # Ingress handles external TLS; Coder listens on HTTP internally.
+    # The chart sets CODER_HTTP_ADDRESS=0.0.0.0:8080 (not overridable).
+
+  ingress:
+    enable: true
+    className: "traefik"
+    host: "coder.ai.camer.digital"
+    # No wildcardHost — HTTP-01 ACME cannot issue wildcard certs.
+    # workspace apps use path-based URLs instead.
+    tls:
+      enable: true
+      secretName: coder-tls
+      # No wildcardSecretName — no wildcard cert.
+
+  serviceAccount:
+    workspacePerms: true
+    workspaceNamespaces:
+      - name: coder
+
+  # Extra K8s resources the chart doesn't ship:
+  # 1. Headless Service for Prometheus :2112 metrics (chart doesn't create one).
+  # 2. ServiceMonitor for Grafana Alloy scraping.
+  extraTemplates:
+    - |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: coder-prom
+        namespace: {{ .Release.Namespace }}
+        labels:
+          app.kubernetes.io/name: coder
+          app.kubernetes.io/instance: {{ .Release.Name }}
+      spec:
+        clusterIP: None
+        ports:
+          - name: prom-http
+            port: 2112
+            protocol: TCP
+            targetPort: 2112
+        selector:
+          app.kubernetes.io/name: coder
+          app.kubernetes.io/instance: {{ .Release.Name }}
+    - |
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: coder
+        namespace: {{ .Release.Namespace }}
+      spec:
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: coder
+            app.kubernetes.io/instance: {{ .Release.Name }}
+        endpoints:
+          - port: prom-http
+            path: /metrics
+            interval: 30s
