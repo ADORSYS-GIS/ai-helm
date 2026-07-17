@@ -38,6 +38,8 @@ secrets:
   # own secret (supersedes the old shared AGENT_RUNNER_TOKEN bearer property, removed with #410's
   # hard cutover). Empty by default (ADR-0057) — see externalsecret.yaml's runner-signing
   # ExternalSecret, gated on this being set.
+  gitlabAdorsysSolutionsAccessTokenProperty: ""
+  gitlabAdorsysSolutionsWebhookSecretProperty: ""
   runnerTokenSigningKeyProperty: ""
   openaiKeyProperty: ""
   # GHCR pull credential for the agent Jobs' namespace (private-image cutover). The runner images
@@ -253,6 +255,28 @@ config:
   embeddings:
     dimension: 4096
     allowReindexOnDimChange: false
+
+  # GitLab projects (file-config-only, ADR-0072). Empty / enabled:false → GitLab is disabled (the
+  # runtime degrades gracefully — no GitLab integration). When enabled, at least one project must be
+  # configured. Per-project `accessToken` and `webhookSecret` use `{env:VAR_NAME}` markers so the
+  # actual secret values stay in Kubernetes env-injected secrets (never in the ConfigMap). The
+  # corresponding env vars must be injected into the control-plane pod from Kubernetes secrets (see
+  # the control-plane controller `env` block). Example:
+  #   gitlab:
+  #     enabled: true
+  #     defaultApiUrl: "https://gitlab.com/api/v4"
+  #     defaultBotHandle: "lightbridge-bot"
+  #     projects:
+  #       - projectId: 12345
+  #         accessToken: "{env:GITLAB_ACCESS_TOKEN_12345}"
+  #         webhookSecret: "{env:GITLAB_WEBHOOK_SECRET_12345}"
+  #         # apiUrl: ""              # optional per-project override
+  #         # botHandle: ""           # optional per-project override
+  gitlab:
+    enabled: false
+    # defaultApiUrl: ""
+    # defaultBotHandle: ""
+    # projects: []
 
   # Dispatcher tuning (RFC-0001). Empty → built-in defaults.
   dispatcher:
