@@ -243,7 +243,7 @@ applications:
   # (`cnpg-barman-cloud`) are NOT deployed by this repo — both are
   # installed externally (running in the `cnpg-system` namespace; CRDs
   # postgresql.cnpg.io + barmancloud.cnpg.io present on-cluster). Charts
-  # here still define CNPG `Cluster` CRs (e.g. charts/coder-db) and rely
+  # here still define CNPG `Cluster` CRs (e.g. charts/lightbridge-db) and rely
   # on the external operator + plugin to reconcile them. Don't re-add a
   # cnpg or plugin-barman-cloud Application here.
 
@@ -838,7 +838,7 @@ applications:
   # charts/ai-models — so it inherits ADR-0021 JWT auth + rate limits there.
   # See docs/patterns/self-hosted-model-serving.md.
   - name: model-serving-qwen3-4b
-    enabled: false                   # DISABLED at cutover 2026-06-08 — swapped by model-serving-qwen3-5 (one GPU). Re-enable to roll back.
+    enabled: false                   # DISABLED — swapped by model-serving-qwen25-3b-awq (one GPU). Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -939,7 +939,7 @@ applications:
   # DISABLED (staged) — one GPU, one model. Cutover = set this enabled:true +
   # disable another self-hosted model app + flip the ai-models enabled flags.
   - name: model-serving-qwen25-3b-awq
-    enabled: false                 # DISABLED — dual-model co-location test failed (CPU/memory contention on the GPU node). Re-enable to roll back.
+    enabled: true                  # CUTOVER — live on the home GPU (lmcache/vllm-openai:v0.5.1 + in-process LMCache).
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -1010,7 +1010,7 @@ applications:
   # ⚠️ Tool calling needs the official gated repo or a chat-template override
   # before cutover — the community AWQ repo strips tool-call tokens.
   - name: model-serving-ministral-3b
-    enabled: true                  # CUTOVER — live on the home GPU.
+    enabled: false                 # DISABLED — swapped by model-serving-qwen25-3b-awq (one GPU). Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -1053,11 +1053,23 @@ applications:
     destination:
       namespace: converse-mcp
 
-  # Coder was REMOVED 2026-06-06 (ADR-0027 supersedes ADR-0019) — not in use
-  # for now. The charts/coder + charts/coder-db leaf charts and the
-  # environments/*/deps/coder overlay were deleted; the coder orchestrator and
-  # its children (coder-app, coder-db) are pruned by ArgoCD. Re-introduce via a
-  # new ADR if Coder comes back.
+  # --- Coder App-of-Apps orchestrator (ADR-0083, re-introduction) ---
+  # Renders two child Application CRs (coder-secrets wave 0, coder-app wave 2)
+  # from charts/coder. As a control object (it emits Application CRs) this entry
+  # is controlPlane: true — the children themselves target home-remote. OCI
+  # mode (ADR-0055): orchestrator chart floats from OCI. Children: secrets leaf
+  # chart from OCI, the app's upstream Coder chart (oci://ghcr.io/coder/chart/
+  # coder, pinned) + its cert overlay from ai-helm-values. Coder uses the
+  # existing lightbridge-main-db CNPG cluster — no separate CNPG. Supersedes
+  # ADR-0027 removal.
+  - name: coder
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: coder
+    releaseName: coder
+    destination:
+      namespace: coder
 
 extraObjects:
   # ==========================================

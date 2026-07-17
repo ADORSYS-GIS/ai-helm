@@ -265,6 +265,21 @@ modelDefaults:
 # from the catalog (excludeKinds) so they carry no list.
 #
 # Verified 2026-06-02 against the backend model pages (DeepInfra / Fireworks).
+#
+# ⚠️ `reasoning` here declares CAPABILITY only ("this model exposes a thinking
+# channel") — it does NOT set runtime behaviour. The runtime *cap* on how much
+# a model thinks lives client-side in the opencode well-known
+# (`charts/librechat-opencode-wellknown/values.yaml` →
+# `config.provider.camer-digital.models.<id>.options.reasoningEffort`, default
+# `low`, with a `thinking` variant at `high`). Issue #534 / PR #631 — we cap
+# rather than disable, because a hard off regresses the agentic coding models
+# this catalog is mostly made of. There is deliberately NO default-effort field
+# on the catalog entries: the OpenRouter shape this feeds
+# (`ai-models-info` → `supported_parameters[]`) has no field for a default
+# reasoning budget, and inventing one would only confuse the consumer plugin.
+# If you add a thinking-capable model here, add its cap to the well-known too
+# (and check first whether its backend honours `reasoning_effort` at all —
+# always-on models like Kimi K2.7-Code reject it).
 supportedParams:
   # Agentic chat models with a thinking/reasoning mode (GLM-5.2, Kimi,
   # MiniMax, DeepSeek-V4, Qwen3.7-Plus).
@@ -503,7 +518,7 @@ models:
   #   bill at the near-free cached rate. Every number is a documented knob
   #   (ADR-0028 §Pricing); re-tune as utilization data arrives.
   qwen3-4b-local:
-    enabled: false                  # DISABLED at cutover 2026-06-08 — swapped by qwen3-5-4b-local (one GPU → one model). Re-enable to roll back.
+    enabled: false                  # DISABLED — swapped by qwen25-3b-awq-local (one GPU). Re-enable to roll back.
     kind: text
     # Single self-hosted backend by design (one GPU, one model). The default
     # 2-backend HA guard doesn't apply; a cloud fallback at priority 1 is the
@@ -587,7 +602,7 @@ models:
   # Cost (ADR-0028: cost-recovery for owned-hardware): same rate as the other
   # self-hosted models — the hardware cost is identical.
   qwen25-3b-awq-local:
-    enabled: false                   # DISABLED — dual-model co-location test failed (CPU/memory contention on the GPU node). Re-enable to roll back.
+    enabled: true                    # CUTOVER — live on the home GPU (lmcache/vllm-openai:v0.5.1 + in-process LMCache).
     kind: text
     minBackends: 1
     timeout:
@@ -719,7 +734,7 @@ models:
   #   gated mistralai/Ministral-3B-Instruct-2410 (needs HF license acceptance)
   #   or inject a --chat-template override before cutover.
   ministral-3b-local:
-    enabled: true                    # CUTOVER — live on the home GPU.
+    enabled: false                   # DISABLED — swapped by qwen25-3b-awq-local (one GPU). Re-enable to roll back.
     kind: text
     minBackends: 1                   # single self-hosted backend by design (one GPU)
     timeout:
@@ -1157,13 +1172,20 @@ models:
     kind: text
     # DeepInfra · XiaomiMiMo/MiMo-V2.5-Pro — 1.02T total / 42B active MoE, hybrid
     # attention + multi-token prediction, tuned for complex agentic and
-    # software-engineering tasks. Text-only (no vision), no exposed thinking
-    # mode. 1,048,576-token context.
+    # software-engineering tasks. Text-only (no vision). 1,048,576-token context.
+    #
+    # ⚠️ RECLASSIFIED 2026-07-16 (issue #534): this was `*spStandard` + labelled
+    # "(Non-Thinking)" on the claim of "no exposed thinking mode". That was
+    # WRONG — verified live against the gateway, it returns a populated
+    # `reasoning_content` (e.g. "This is a classic riddle. …"). Because we
+    # declared no `reasoning` support, opencode never treated it as a reasoning
+    # model and its thinking surfaced mixed into the answer. It IS a reasoning
+    # model; the well-known caps it like the rest.
     info:
-      displayName: "MiMo V2.5 Pro (Non-Thinking)"
+      displayName: "MiMo V2.5 Pro"
       contextLength: 1048576
       maxOutputTokens: 131072
-      supportedParameters: *spStandard
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
@@ -1209,13 +1231,21 @@ models:
     # DeepInfra · MiniMaxAI/MiniMax-M3 — ~428B total / 23B active MoE, mixed-
     # modality (text/image/video) training from the first step, MiniMax Sparse
     # Attention for long-context efficiency, strong coding/agentic benchmarks.
-    # No exposed thinking mode. Context configured at 524,288 tokens (catalog
-    # lists up to 1M; clamped like minimax-m2p5's 400k → 204,800 caveat).
+    # Context configured at 524,288 tokens (catalog lists up to 1M; clamped like
+    # minimax-m2p5's 400k → 204,800 caveat).
+    #
+    # ⚠️ RECLASSIFIED 2026-07-16 (issue #534): this was `*spStandard` + labelled
+    # "(Non-Thinking)" on the claim of "no exposed thinking mode". That was
+    # WRONG — verified live against the gateway, it returns a populated
+    # `reasoning_content` (e.g. "The user is asking a classic trick question…").
+    # Declaring no `reasoning` support meant opencode never treated it as a
+    # reasoning model and its thinking surfaced mixed into the answer. It IS a
+    # reasoning model; the well-known caps it like the rest.
     info:
-      displayName: "MiniMax M3 (Non-Thinking)"
+      displayName: "MiniMax M3"
       contextLength: 524288
       maxOutputTokens: 131072
-      supportedParameters: *spStandard
+      supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:

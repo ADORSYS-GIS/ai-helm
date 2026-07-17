@@ -1,0 +1,55 @@
+# coder-secrets — ExternalSecrets for the Coder platform.
+# Leaf chart of the coder orchestrator (ADR-0083). All ExternalSecrets resolve
+# against the cluster-scoped `ssegning-aws` ClusterSecretStore.
+
+secretStore: ssegning-aws
+refreshInterval: 1h
+
+# Values-driven ExternalSecrets. Key = target Secret name. Each `data` entry
+# maps a target secretKey ← a remoteRef {key, property} in the store.
+# `literals` are static values merged into the materialised Secret (mergePolicy: Merge).
+# `templateData` are templated strings (ESO Go templates) that can reference
+# fetched data via `{{ .<secretKey> }}`.
+# `type` sets the Secret type (e.g., kubernetes.io/basic-auth for CNPG roles).
+externalSecrets:
+  # Keycloak OIDC client credentials for the Coder `coder` client. Consumed by
+  # the Coder chart as CODER_OIDC_CLIENT_ID / CODER_OIDC_CLIENT_SECRET.
+  # Populate `coder_oidc_client_id` + `coder_oidc_client_secret` under key
+  # `ai/camer/digital/prod/env`.
+  coder-oidc:
+    data:
+      - secretKey: client-id
+        key: ai/camer/digital/prod/env
+        property: coder_oidc_client_id
+      - secretKey: client-secret
+        key: ai/camer/digital/prod/env
+        property: coder_oidc_client_secret
+
+  # Coder PostgreSQL connection URL. The Coder chart reads CODER_PG_CONNECTION_URL
+  # from this Secret's `url` key. The template assembles the full connection string
+  # from the password fetched above (same ASM property) so the URL and the CNPG
+  # role password stay in sync. sslmode=disable for internal cluster connections.
+  #
+  # The DB is a managed `coder` role + `coder` Database CR on the existing
+  # lightbridge-main-db CNPG cluster (charts/lightbridge-db) — Coder does NOT
+  # have its own CNPG cluster (ADR-0083). The connection targets the RW service
+  # in the `converse` namespace.
+  #
+  # The password is URL-encoded via ESO's `urlquery` function so URL-reserved
+  # characters in the password (e.g. @, :, /, #) don't break the connection
+  # string.
+  #
+  # NOTE: `{{ .password }}` is an ESO Go template variable (fetched from the
+  # `data` section below). The externalsecret.yaml template renders this with
+  # `| quote` (NOT `| tpl`), so Helm does NOT process the double braces — they
+  # pass through as a literal for ESO's v2 template engine. If this value is
+  # ever refactored to use `tpl` (e.g., to template the namespace), the braces
+  # MUST be double-escaped: `{{ "{{ .password }}" }}` (see lightbridge-db
+  # values.yaml for the tpl-brace pattern).
+  coder-db-url:
+    templateData:
+      url: "postgres://coder:{{ .password | urlquery }}@lightbridge-main-db-rw.converse.svc.cluster.local:5432/coder?sslmode=disable"
+    data:
+      - secretKey: password
+        key: ai/camer/digital/prod/env
+        property: coder_db_password

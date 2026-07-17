@@ -45,7 +45,6 @@ every workload that runs in the cluster, plus the ArgoCD `Application` /
 │   ├── external-secrets/       ESO ClusterSecretStore + RBAC.
 │   ├── keycloak-baseline/      Keycloak realm config (clients, scopes,
 │   │                           groups, roles) via keycloak-config-cli.
-│   ├── coder-db/               CNPG cluster for Coder.
 │   ├── common/                 Bitnami common library — helpers used by
 │   │                           every first-party chart.
 │   └── …                       (mcps, mcpo, lmcache, model-deployment,
