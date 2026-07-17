@@ -53,9 +53,11 @@ coder:
     - name: CODER_OIDC_SCOPES
       value: "openid,profile,email,offline_access"
 
-    # Security: disable password auth, disable default GitHub provider.
+    # OIDC + password login both enabled. The Coder chart defaults allow both;
+    # setting CODER_DISABLE_PASSWORD_AUTH=false keeps password login as a
+    # fallback alongside the OIDC provider. Disable default GitHub provider.
     - name: CODER_DISABLE_PASSWORD_AUTH
-      value: "true"
+      value: "false"
     - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
       value: "false"
 
