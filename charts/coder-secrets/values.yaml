@@ -25,24 +25,6 @@ externalSecrets:
         key: ai/camer/digital/prod/env
         property: coder_oidc_client_secret
 
-  # CNPG managed-role basic-auth Secret. CNPG reads the `password` key to set
-  # the `coder` login role's password on the Cluster. The `username` is a
-  # static literal. The `password` is declared in templateData (not just
-  # spec-level data) so the template explicitly enumerates all output keys
-  # (matching the lightbridge-db pattern for defensiveness — mergePolicy
-  # merges template keys with fetched keys). Requires `coder_db_password`
-  # under key `ai/camer/digital/prod/env`.
-  coder-db-role:
-    type: kubernetes.io/basic-auth
-    literals:
-      username: coder
-    templateData:
-      password: "{{ .password }}"
-    data:
-      - secretKey: password
-        key: ai/camer/digital/prod/env
-        property: coder_db_password
-
   # Coder PostgreSQL connection URL. The Coder chart reads CODER_PG_CONNECTION_URL
   # from this Secret's `url` key. The template assembles the full connection string
   # from the password fetched above (same ASM property) so the URL and the CNPG
