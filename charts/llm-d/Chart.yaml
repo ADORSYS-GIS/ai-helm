@@ -12,11 +12,12 @@ description: |
       Deployment + Envoy sidecar, ConfigMaps (scorers + envoy.yaml), RBAC, and
       the EPP Service (the public entrypoint on :8081).
     - bjw-template (file://, alias modelServing) renders the vLLM
-      Deployment + Service (the model server the router routes to).
+      StatefulSet + Service (the model server the router routes to).
 
-  The chart own templates/ render the optional HF-token ExternalSecret (for
-  gated models). The vLLM pods carry app: <model.name> so EPP
-  --endpoint-selector discovers them.
+  The chart own templates/ render the Envoy ConfigMap (workaround for OCI
+  subchart presets not merging), the weights PVC, and the optional HF-token
+  ExternalSecret (for gated models). The vLLM pods carry app: <model.name> so
+  EPP --endpoint-selector discovers them.
 
   llm-d: https://llm-d.ai  |  GAIE: gateway-api-inference-extension
 type: application

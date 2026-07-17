@@ -36,11 +36,13 @@ across model-server replicas with **no GAIE CRDs required**
   by the vLLM container. HF_HUB_OFFLINE=1 prevents runtime HF fetches. This
   avoids Docker Hub / HF rate limits at startup and gives direct vLLM version
   control (not kserve-bundled).
-- **--enforce-eager is a PoC flag.** Disables CUDA graph optimization (safe on
-  a 6GB GPU). Remove for production to enable CUDA graph acceleration.
-- **RWO PVC (single-node).** Uses local-path with ReadWriteOnce -- fine for
-  k3d (single node). For multi-node clusters, switch to RWX so the seed Job
-  and model StatefulSet can mount concurrently on different nodes.
+- **GPU mode.** vLLM runs on the GPU (vllm/vllm-openai, FP16,
+  --gpu-memory-utilization=0.90). Pods are pinned via runtimeClassName: nvidia
+  + nodeSelector gpu-node=true. Single replica (one GPU, no time-slicing).
+  The chart was originally CPU-only (vllm/vllm-openai-cpu, --device=cpu,
+  float32, 2 replicas) and has been converted back to GPU mode.
+- **--enforce-eager is a PoC flag.** Disables CUDA graph optimization. Remove
+  for production to enable CUDA graph acceleration.
 
 ## Traffic flow
 
@@ -54,11 +56,11 @@ Client -> EPP Service (:8081) -> Envoy sidecar (:8081)
 | Wave | Resource | Rendered by | Purpose |
 |------|----------|-------------|---------|
 | -2 | ExternalSecret hf-token (optional) | own template | HF download token for gated models |
-| -1 | PVC llm-d-models | own template | weights volume (local-path, RWO, 5Gi) |
+| -1 | PVC llm-d-models | own template | weights volume (longhorn, RWX, 10Gi) |
 | 0 | Job llm-d-vllm-seed (ArgoCD Sync hook) | bjw (controllers.seed) | downloads weights into the PVC once |
 | 1 | StatefulSet llm-d-vllm-main + Service llm-d-vllm:8000 | bjw | the vLLM model server |
 | -- | ConfigMap llm-d-epp (scorers) | llmdRouter subchart | EPP plugin config (queue, kv-cache, prefix-cache scorers) |
-| -- | ConfigMap llm-d-epp-envoy | own template | Envoy static config (ext_proc, ORIGINAL_DST, health) |
+| 0 | ConfigMap llm-d-epp-envoy | own template | Envoy static config (ext_proc, ORIGINAL_DST, health) |
 | -- | Deployment llm-d-epp (EPP + Envoy sidecar) | llmdRouter subchart | the router pod |
 | -- | Service llm-d-epp:8081 | llmdRouter subchart | the public entrypoint |
 | -- | ServiceAccount, Role, RoleBinding | llmdRouter subchart | EPP pod watch permissions |
@@ -87,7 +89,7 @@ the PVC contents (or the PVC, which re-seeds) and re-sync.
 - modelServing.controllers.main.replicas -- 1 (one GPU). Bump for multi-GPU.
 - modelServing.controllers.main.containers.model.args -- vLLM passthrough.
   Includes --enforce-eager (PoC, remove for production).
-- pvc.accessMode -- ReadWriteOnce (single-node k3d). Use ReadWriteMany
-  for multi-node clusters.
+- pvc.accessMode -- ReadWriteMany (Longhorn, multi-node). Override to
+  ReadWriteOnce/local-path for single-node testing.
 - seedJob.hfToken.* -- optional HF token for gated models. Disabled by default
   (Qwen2.5-0.5B-Instruct is not gated).
