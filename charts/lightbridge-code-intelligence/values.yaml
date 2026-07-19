@@ -769,6 +769,8 @@ lci:
             CONTROL_PLANE_ROLE: "reconciler"
             RUST_LOG: "info"
             METRICS_ADDR: "0.0.0.0:9090"
+            # File config: control-plane.json provides GitLab project config.
+            CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
             # Optional cadence knobs; absent → run_reconciler defaults (300s interval / 14-day window).
             # DATABASE_URL `value` (cluster host/namespace/db) → ai-helm-values; `dependsOn` stays here.
             DB_PASSWORD:
@@ -1176,9 +1178,8 @@ lci:
   # so it cannot content-hash them directly. Instead this is a tiny UNMOUNTED marker ConfigMap: listing it
   # in `includeChecksumInControllers` makes bjw-s stamp a `checksum/configMaps` annotation on those roles'
   # pods. **Bump `data.generation` in ai-helm-values in the SAME change as any read-once config flip** and
-  # both config-reading roles roll together to pick it up. (Introducing the annotation also rolls them once
-  # on first deploy — a brief RollingUpdate overlap, the same trade-off the roles already accept.) The
-  # reconciler is intentionally NOT listed: it mounts no file config (ADR-0059 drain is unconditional).
+  # config-reading roles roll together to pick it up. (Introducing the annotation also rolls them once
+  # on first deploy — a brief RollingUpdate overlap, the same trade-off the roles already accept.)
   configMaps:
     config-rollout:
       enabled: true
@@ -1189,6 +1190,7 @@ lci:
       includeChecksumInControllers:
         - control-plane
         - dispatcher
+        - reconciler
       data:
         generation: "1"
 
@@ -1204,6 +1206,10 @@ lci:
             - path: /etc/lightbridge
               readOnly: true
         dispatcher:
+          main:
+            - path: /etc/lightbridge
+              readOnly: true
+        reconciler:
           main:
             - path: /etc/lightbridge
               readOnly: true
