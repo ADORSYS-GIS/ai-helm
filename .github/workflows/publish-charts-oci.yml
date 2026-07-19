@@ -46,7 +46,7 @@ env:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: adorsys-gis-runner
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -58,8 +58,14 @@ jobs:
         with:
           version: v3.15.4 # aligned with helm-lint.yaml / release-helm-charts.yml
 
+      # Native binary, not the mikefarah/yq@v4 Docker-container action: adorsys-gis-runner has no
+      # Docker daemon (same constraint as vymalo's ARC pod runners), so a container-based GH Action
+      # fails at image pull. $RUNNER_TEMP avoids needing sudo/system-dir write access.
       - name: Set up yq
-        uses: mikefarah/yq@v4
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/yq" "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+          chmod +x "$RUNNER_TEMP/yq"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Determine charts to publish
         id: select

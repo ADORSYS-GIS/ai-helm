@@ -185,7 +185,19 @@ config:
     # COMPLETE, independent per-tier config: it shares the gateway (env) + system prompt, and carries its
     # OWN model + the same generation/budget knobs as above (model, extra, maxTurns, stream,
     # requestTimeoutSecs, contextWindow, maxTokens, temperature, topP, maxDiffChars, max* read budgets,
-    # maxCoverageBounces).
+    # maxCoverageBounces, opencode).
+    #
+    # Per-tier OpenCode config overlay (lightbridge-code-intelligence ADR-0099) → agent.json
+    # `review.<tier>.opencode`. Arbitrary OpenCode config — most commonly a custom `agent.*` sub-agent on
+    # a different (usually cheaper) model — deep-merged host-side onto the checked-in review.jsonc base
+    # with FULL OVERRIDE. An OBJECT (not a scalar); empty `{}` → omitted (the review.jsonc base runs
+    # unmodified). opencode's schema rejects unknown keys, so a malformed overlay fails the WHOLE review
+    # (loud, not silent). A sub-agent needs `tools: { task: true }` in the SAME overlay to be invocable
+    # (the base disables opencode's built-in `task` tool as a coverage-accounting floor; re-enabling it is
+    # a floor relaxation the runner WARNs about and discloses on the posted review — do not also relax
+    # `tools.read`/`grep`/`glob`/`list` unless you intend the sub-agent's reads to escape coverage
+    # tracking). ⚠️ REQUIRES a runner image carrying `review.<tier>.opencode`
+    # (lightbridge-code-intelligence #464) before this is set, else deny_unknown_fields fails every Job.
     # `fast`  = the automatic `pull_request opened` pass (cheap model; the runner enforces a single
     #           diff-only turn with no retrieval regardless of maxTurns — SAST is the backbone).
     # `deep`  = the `@mention` run (strong model, long requestTimeoutSecs; full retrieval + multi-turn).
