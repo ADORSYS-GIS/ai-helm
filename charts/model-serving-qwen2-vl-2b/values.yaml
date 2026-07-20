@@ -1,0 +1,277 @@
+# charts/model-serving-qwen2-vl-2b - self-hosted Qwen2-VL-2B-Instruct on the home GPU.
+# See ADR-0022 (federation) + ADR-0028 (pricing) + ADR-0029 (serving mode) +
+# ADR-0030 (one StatefulSet via bjw-template) + docs/patterns/self-hosted-model-serving.md.
+#
+# Qwen2-VL-2B-Instruct: a vision-language model (Apache-2.0). 2B params at BF16
+# ~ 4 GB weights - fits a 32K context on the 12 GB A2000 with ~6 GB left for KV.
+# Supports image+text chat completions (OpenAI-compatible image_url content parts).
+# Standard Qwen2 architecture -> vLLM supports it natively.
+#
+# Shape: a hybrid bjw-template chart (like charts/model-serving-qwen25-3b-awq).
+#   - The bjw-template subchart (values under `modelServing:`) renders the WHOLE
+#     workload: the model StatefulSet (model + Caddy proxy sidecar), the seed
+#     Job (a bjw `job` controller, ArgoCD Sync hook), the Service, and the
+#     Ingress.
+#   - The chart's own templates/ render only the resources bjw doesn't do
+#     natively: the weights PVC, the ExternalSecrets, and the Caddyfile ConfigMap.
+#
+# Sync-wave ordering (this Application's resources, on the HOME cluster):
+#   -2  ExternalSecret (vllm-local-api-key + hf-token)  - before any pod
+#   -1  PVC (qwen2-vl-2b-models, RWX)                   - weights volume
+#    0  seed Job (download-once into the PVC)             - ArgoCD Sync hook
+#    1  StatefulSet (model + proxy) + Service + Ingress   - mounts the PVC
+
+global:
+  labels:
+    app: model-serving-qwen2-vl-2b
+    team: adorsys-gis
+
+model:
+  name: qwen2-vl-2b
+  hfRepo: Qwen/Qwen2-VL-2B-Instruct
+  storagePath: Qwen2-VL-2B-Instruct
+
+pvc:
+  enabled: true
+  name: qwen2-vl-2b-models
+  storageClassName: longhorn
+  accessMode: ReadWriteMany
+  size: 15Gi                       # ~4GB BF16 weights + headroom
+
+seedJob:
+  enabled: true
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: true
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
+
+apiKey:
+  enabled: true
+  secretName: vllm-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: vllm_local_api_key
+
+edgeAuth:
+  enabled: true
+  proxyResponseTimeout: 600s
+
+modelServing:
+  global:
+    fullnameOverride: qwen2-vl-2b
+
+  defaultPodOptions:
+    runtimeClassName: nvidia
+    nodeSelector:
+      gpu-node: "true"
+
+  controllers:
+    main:
+      type: statefulset
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      containers:
+        model:
+          image:
+            # lmcache/vllm-openai bundles LMCache + vLLM with CUDA support.
+            # Pinned to v0.7.0: CUDA 12.1.0 (driver >=470), compatible with the
+            # home RTX A2000 570.x driver. Newer tags (v0.4.6+, v0.5.1) require
+            # CUDA 13.0 (driver 580+), too new for this host.
+            repository: lmcache/vllm-openai
+            tag: v0.7.0
+            pullPolicy: IfNotPresent
+          args:
+            # vllm serve expects the model as a positional `model_tag`, not as
+            # --model=. The sibling qwen3-4b chart already has this right.
+            - /mnt/models
+            - --served-model-name=qwen2-vl-2b
+            - --port=8080
+            - --dtype=float16
+            - --max-model-len=32768
+            - --max-num-seqs=4
+            - --gpu-memory-utilization=0.90
+            - --enforce-eager
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            # In-process LMCache: single replica, both stores and retrieves KV.
+            - '--kv-transfer-config={"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+          env:
+            LMCACHE_USE_EXPERIMENTAL: "False"
+            LMCACHE_CHUNK_SIZE: "256"
+            LMCACHE_LOCAL_CPU: "True"
+            LMCACHE_MAX_LOCAL_CPU_SIZE: "2"
+            LMCACHE_SAVE_DECODE_CACHE: "False"
+            LMCACHE_MIN_RETRIEVE_TOKENS: "64"
+            LMCACHE_LOG_LEVEL: "INFO"
+            VLLM_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: http
+              containerPort: 8080
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8080
+                periodSeconds: 15
+                failureThreshold: 120
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8080
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: 8080
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            # lmcache/vllm-openai requires root to initialise CUDA/LMCache internals.
+            runAsNonRoot: false
+            runAsUser: 0
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 6Gi
+
+        proxy:
+          image:
+            repository: caddy
+            tag: 2-alpine
+            pullPolicy: IfNotPresent
+          env:
+            MODEL_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: edge
+              containerPort: 8090
+          probes:
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8090 }
+                periodSeconds: 10
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+
+    seed:
+      type: job
+      annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+        argocd.argoproj.io/sync-wave: "0"
+      pod:
+        restartPolicy: OnFailure
+      job:
+        backoffLimit: 6
+        activeDeadlineSeconds: 3600
+      containers:
+        seed:
+          image:
+            repository: python
+            tag: "3.12-slim"
+            pullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              MODEL_DIR="/models/Qwen2-VL-2B-Instruct"
+              mkdir -p "$MODEL_DIR"
+              echo "Seeding Qwen/Qwen2-VL-2B-Instruct -> $MODEL_DIR (skips files already present)"
+              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
+              hf download Qwen/Qwen2-VL-2B-Instruct --local-dir "$MODEL_DIR"
+              echo "Seed complete."
+          env:
+            HF_TOKEN:
+              secretKeyRef:
+                name: hf-token
+                key: token
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits:   { cpu: "2", memory: 4Gi }
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        edge:
+          port: 8090
+          targetPort: 8090
+
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-cloudflare
+      hosts:
+        - host: qwen2-vl-2b--poc.ssegning.com
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: edge
+      tls:
+        - secretName: qwen2-vl-2b-edge-tls
+          hosts:
+            - qwen2-vl-2b--poc.ssegning.com
+
+  persistence:
+    model-store:
+      enabled: true
+      existingClaim: qwen2-vl-2b-models
+      advancedMounts:
+        main:
+          model:
+            - path: /mnt/models
+              subPath: Qwen2-VL-2B-Instruct
+              readOnly: true
+        seed:
+          seed:
+            - path: /models
+    caddyfile:
+      enabled: true
+      type: configMap
+      name: qwen2-vl-2b-caddy
+      advancedMounts:
+        main:
+          proxy:
+            - path: /etc/caddy
