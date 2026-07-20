@@ -224,15 +224,39 @@ backendTrafficPolicy:
   # ai-models sharedBudget.enabled: true.
   monthlyBudget:
     enabled: true
+    # ⚠️⚠️ ORDER IS LOAD-BEARING — APPEND ONLY. NEVER reorder, insert, or remove.
+    #
+    # Each entry's INDEX in this list becomes the `rule/N` inside the Lyft
+    # ratelimit Redis counter key, and the plan name itself is masked (it is an
+    # `Exact` match, so it renders as a constant). The index is therefore the ONLY
+    # carrier of plan identity in the key. Renumbering a plan does not migrate its
+    # counter — it ORPHANS it and starts a fresh one from zero.
+    #
+    # This was a `map` until 2026-07-20. Helm sorts map keys, so adding the
+    # `enterprise` plan on 2026-07-16 (which sorts alphabetically FIRST) inserted a
+    # rule at index 0 and pushed `free` 0→1 and `pro` 1→2 MID-WINDOW. Every user's
+    # accumulated monthly spend was orphaned and everyone silently received a fresh
+    # budget. A list makes the order explicit and append-only, so a new plan lands
+    # at the tail and cannot shift an existing counter (ADR-0084).
+    #
+    # The order below is NOT alphabetical and must not be "tidied" — it reproduces
+    # the sorted order that was live on 2026-07-20, so this change is render-neutral
+    # and re-keys nothing.
     plans:
-      # 30 → 15 (2026-07-08): now that the budget is genuinely shared across all
-      # models (#532 cutover), the old per-model headroom rationale is gone.
-      free: 15
-      pro: 200
-      # Customer "enterprise" tier (LIVE monthly $ cap; keep in sync with
-      # ai-models rateLimitBudgeting.plans.enterprise.monthlyBudgetUsd). A key
-      # gets x-billing-plan=enterprise from its lightbridge introspected plan.
-      enterprise: 1000
+      # index 0
+      - id: enterprise
+        # Customer "enterprise" tier (LIVE monthly $ cap; keep in sync with
+        # ai-models rateLimitBudgeting.plans.enterprise.monthlyBudgetUsd). A key
+        # gets x-billing-plan=enterprise from its lightbridge introspected plan.
+        monthlyBudgetUsd: 1000
+      # index 1
+      - id: free
+        # 30 → 15 (2026-07-08): now that the budget is genuinely shared across all
+        # models (#532 cutover), the old per-model headroom rationale is gone.
+        monthlyBudgetUsd: 15
+      # index 2
+      - id: pro
+        monthlyBudgetUsd: 200
 
   # Whole-request ceiling for routes this gateway-wide policy governs (the
   # non-model routes — model routes are governed by their own per-model BTP in

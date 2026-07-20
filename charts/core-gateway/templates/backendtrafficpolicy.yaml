@@ -63,7 +63,14 @@ spec:
     type: Global
     global:
       rules:
-        {{- range $planName, $usd := .plans }}
+        {{- /* ⚠️ `plans` is an ORDERED LIST, not a map — the index below becomes the
+               `rule/N` in the Lyft ratelimit Redis key, and the plan name is masked
+               (Exact match ⇒ constant), so the index is the only carrier of plan
+               identity. A map was sorted by Helm, so inserting a plan renumbered the
+               existing ones and orphaned their counters (2026-07-16 incident, ADR-0084).
+               APPEND ONLY — never reorder, insert, or remove an entry. */ -}}
+        {{- range $i, $plan := .plans }}
+        {{- if not $plan.id }}{{ fail (printf "core-gateway monthlyBudget.plans[%d]: `id` is required (plans is an ordered list of {id, monthlyBudgetUsd}, not a map — see values.yaml)" $i) }}{{ end }}
         - clientSelectors:
             - headers:
                 - invert: false
@@ -72,9 +79,9 @@ spec:
                 - invert: false
                   name: x-billing-plan
                   type: Exact
-                  value: {{ $planName | quote }}
+                  value: {{ $plan.id | quote }}
           limit:
-            requests: {{ mulf $usd 1000000.0 | int64 }} # {{ $planName }} shared monthly budget ${{ $usd }} across ALL models
+            requests: {{ mulf $plan.monthlyBudgetUsd 1000000.0 | int64 }} # rule/{{ $i }} · {{ $plan.id }} shared monthly budget ${{ $plan.monthlyBudgetUsd }} across ALL models
             unit: Month
           # The lever (#9244): keyed by policy, shared across every route/model.
           shared: true
