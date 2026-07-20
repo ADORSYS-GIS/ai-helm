@@ -32,10 +32,10 @@ from grafana_foundation_sdk.models import piechart as pm
 from dashboards._common import (
     GATEWAY_SERVICE_NAME,
     LABEL_AZP,
-    LABEL_DISPLAY_NAME,
-    LABEL_MODEL,
-    LABEL_EMAIL,
     LABEL_BILLING_PLAN,
+    LABEL_DISPLAY_NAME,
+    LABEL_EMAIL,
+    LABEL_MODEL,
     LOKI_UID,
 )
 
@@ -120,8 +120,9 @@ def _loki_target(
     if legend:
         q = q.legend_format(legend)
     return q
-def _single_color_thresholds(color: str) -> db.ThresholdsConfig:
 
+
+def _single_color_thresholds(color: str) -> db.ThresholdsConfig:
 
     return db.ThresholdsConfig().mode(dm.ThresholdsMode.ABSOLUTE).steps([dm.Threshold(color=color)])
 
@@ -187,9 +188,6 @@ def _pie_panel(
 # ---------------------------------------------------------------------------
 # Panels
 # ---------------------------------------------------------------------------
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -360,12 +358,7 @@ def _panel_display_name() -> stat.Panel:
         .datasource(_LOKI_DS)
         .grid_pos(dm.GridPos(h=8, w=6, x=12, y=32))
         .thresholds(_single_color_thresholds("blue"))
-        .reduce_options(
-            cb.ReduceDataOptions()
-            .calcs(["lastNotNull"])
-            .fields("")
-            .values(False)
-        )
+        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
         .orientation(cm.VizOrientation.HORIZONTAL)
         .text_mode(cm.BigValueTextMode.NAME)
         .color_mode(cm.BigValueColorMode.NONE)
@@ -388,12 +381,7 @@ def _panel_billing_plan() -> stat.Panel:
         .datasource(_LOKI_DS)
         .grid_pos(dm.GridPos(h=8, w=6, x=18, y=32))
         .thresholds(_single_color_thresholds("blue"))
-        .reduce_options(
-            cb.ReduceDataOptions()
-            .calcs(["lastNotNull"])
-            .fields("")
-            .values(False)
-        )
+        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
         .orientation(cm.VizOrientation.HORIZONTAL)
         .text_mode(cm.BigValueTextMode.NAME)
         .color_mode(cm.BigValueColorMode.NONE)
