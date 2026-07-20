@@ -1,0 +1,40 @@
+apiVersion: v2
+name: model-serving-qwen2-vl-2b
+description: |
+  Self-hosted Vision-Language Model on the home GPU: Qwen2-VL-2B-Instruct served
+  via vLLM (lmcache/vllm-openai) with in-process LMCache KV caching and a Caddy
+  auth-proxy sidecar. 2B params at BF16 ~ 4 GB - fits a 32K context on the 12GB
+  A2000 with room for KV. Supports image+text inputs (chat completions with
+  image_url content parts). Weights are pre-seeded into a PVC (no per-start
+  HuggingFace download).
+
+  Deployed via homeCluster (ADR-0017 exception) and federated into the Hetzner
+  Envoy AI Gateway as an OpenAI backend. See ADR-0022 (federation) + ADR-0029
+  (serving mode) + ADR-0030 (one STS via bjw-template).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+keywords:
+  - llm
+  - vllm
+  - qwen
+  - qwen2-vl
+  - vision-language
+  - multimodal
+  - inference
+  - gpu
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: bjw-template
+    version: "4.6.2"
+    repository: "file://../bjw-template"
+    alias: modelServing
+  - name: common
+    version: "*"
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

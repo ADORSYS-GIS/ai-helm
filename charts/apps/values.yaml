@@ -1032,6 +1032,43 @@ applications:
         prune: true
         selfHeal: true
 
+  # Self-hosted Qwen2-VL-2B-Instruct (vision-language, BF16, vLLM) on the home
+  # GPU — the first MULTIMODAL self-hosted model (image+text chat completions
+  # via OpenAI-compatible `image_url` content parts). charts/model-serving-qwen2-vl-2b
+  # renders the weights PVC + seed Job + vLLM StatefulSet (model + Caddy
+  # auth-proxy sidecar) + Service + Ingress. Same hybrid bjw-template shape as
+  # model-serving-qwen25-3b-awq. Federated into charts/ai-models as a new
+  # `qwen2-vl-2b-local` model + `vllm-local-vl-01` backend (separate task — the
+  # ai-models entry is NOT added here).
+  #
+  # DISABLED (staged) — one GPU, one model. CUTOVER = set this enabled:true +
+  # disable the currently-live self-hosted model app (qwen25-3b-awq), then
+  # add the ai-models federation entry + flip its enabled flag. Rollback =
+  # the inverse. See docs/patterns/self-hosted-model-serving.md.
+  # ADRs: 0022 (federation), 0029 (serving mode), 0030 (one STS via bjw-template).
+  - name: model-serving-qwen2-vl-2b
+    enabled: false                 # STAGED — disable qwen25-3b-awq + enable this at cutover.
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    homeCluster: true
+    source:
+      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
+      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-qwen2-vl-2b
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: model-serving-qwen2-vl-2b
+        valuesObject: { }
+    destination:
+      namespace: converse-poc
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # Self-hosted llm-d (CNCF Sandbox distributed inference middleware) + vLLM on
   # the home GPU. charts/llm-d deploys the llm-d router in standalone mode (EPP +
   # Envoy sidecar, no GAIE CRDs) + a vLLM StatefulSet the router discovers by pod
