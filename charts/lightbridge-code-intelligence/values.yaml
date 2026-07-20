@@ -38,6 +38,8 @@ secrets:
   # own secret (supersedes the old shared AGENT_RUNNER_TOKEN bearer property, removed with #410's
   # hard cutover). Empty by default (ADR-0057) — see externalsecret.yaml's runner-signing
   # ExternalSecret, gated on this being set.
+  gitlabAdorsysSolutionsAccessTokenProperty: ""
+  gitlabAdorsysSolutionsWebhookSecretProperty: ""
   runnerTokenSigningKeyProperty: ""
   openaiKeyProperty: ""
   # GHCR pull credential for the agent Jobs' namespace (private-image cutover). The runner images
@@ -183,7 +185,19 @@ config:
     # COMPLETE, independent per-tier config: it shares the gateway (env) + system prompt, and carries its
     # OWN model + the same generation/budget knobs as above (model, extra, maxTurns, stream,
     # requestTimeoutSecs, contextWindow, maxTokens, temperature, topP, maxDiffChars, max* read budgets,
-    # maxCoverageBounces).
+    # maxCoverageBounces, opencode).
+    #
+    # Per-tier OpenCode config overlay (lightbridge-code-intelligence ADR-0099) → agent.json
+    # `review.<tier>.opencode`. Arbitrary OpenCode config — most commonly a custom `agent.*` sub-agent on
+    # a different (usually cheaper) model — deep-merged host-side onto the checked-in review.jsonc base
+    # with FULL OVERRIDE. An OBJECT (not a scalar); empty `{}` → omitted (the review.jsonc base runs
+    # unmodified). opencode's schema rejects unknown keys, so a malformed overlay fails the WHOLE review
+    # (loud, not silent). A sub-agent needs `tools: { task: true }` in the SAME overlay to be invocable
+    # (the base disables opencode's built-in `task` tool as a coverage-accounting floor; re-enabling it is
+    # a floor relaxation the runner WARNs about and discloses on the posted review — do not also relax
+    # `tools.read`/`grep`/`glob`/`list` unless you intend the sub-agent's reads to escape coverage
+    # tracking). ⚠️ REQUIRES a runner image carrying `review.<tier>.opencode`
+    # (lightbridge-code-intelligence #464) before this is set, else deny_unknown_fields fails every Job.
     # `fast`  = the automatic `pull_request opened` pass (cheap model; the runner enforces a single
     #           diff-only turn with no retrieval regardless of maxTurns — SAST is the backbone).
     # `deep`  = the `@mention` run (strong model, long requestTimeoutSecs; full retrieval + multi-turn).
@@ -253,6 +267,28 @@ config:
   embeddings:
     dimension: 4096
     allowReindexOnDimChange: false
+
+  # GitLab projects (file-config-only, ADR-0072). Empty / enabled:false → GitLab is disabled (the
+  # runtime degrades gracefully — no GitLab integration). When enabled, at least one project must be
+  # configured. Per-project `accessToken` and `webhookSecret` use `{env:VAR_NAME}` markers so the
+  # actual secret values stay in Kubernetes env-injected secrets (never in the ConfigMap). The
+  # corresponding env vars must be injected into the control-plane pod from Kubernetes secrets (see
+  # the control-plane controller `env` block). Example:
+  #   gitlab:
+  #     enabled: true
+  #     defaultApiUrl: "https://gitlab.com/api/v4"
+  #     defaultBotHandle: "lightbridge-bot"
+  #     projects:
+  #       - projectId: 12345
+  #         accessToken: "{env:GITLAB_ACCESS_TOKEN_12345}"
+  #         webhookSecret: "{env:GITLAB_WEBHOOK_SECRET_12345}"
+  #         # apiUrl: ""              # optional per-project override
+  #         # botHandle: ""           # optional per-project override
+  gitlab:
+    enabled: false
+    # defaultApiUrl: ""
+    # defaultBotHandle: ""
+    # projects: []
 
   # Dispatcher tuning (RFC-0001). Empty → built-in defaults.
   dispatcher:
@@ -745,6 +781,8 @@ lci:
             CONTROL_PLANE_ROLE: "reconciler"
             RUST_LOG: "info"
             METRICS_ADDR: "0.0.0.0:9090"
+            # File config: control-plane.json provides GitLab project config.
+            CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
             # Optional cadence knobs; absent → run_reconciler defaults (300s interval / 14-day window).
             # DATABASE_URL `value` (cluster host/namespace/db) → ai-helm-values; `dependsOn` stays here.
             DB_PASSWORD:
@@ -1152,9 +1190,8 @@ lci:
   # so it cannot content-hash them directly. Instead this is a tiny UNMOUNTED marker ConfigMap: listing it
   # in `includeChecksumInControllers` makes bjw-s stamp a `checksum/configMaps` annotation on those roles'
   # pods. **Bump `data.generation` in ai-helm-values in the SAME change as any read-once config flip** and
-  # both config-reading roles roll together to pick it up. (Introducing the annotation also rolls them once
-  # on first deploy — a brief RollingUpdate overlap, the same trade-off the roles already accept.) The
-  # reconciler is intentionally NOT listed: it mounts no file config (ADR-0059 drain is unconditional).
+  # config-reading roles roll together to pick it up. (Introducing the annotation also rolls them once
+  # on first deploy — a brief RollingUpdate overlap, the same trade-off the roles already accept.)
   configMaps:
     config-rollout:
       enabled: true
@@ -1165,6 +1202,7 @@ lci:
       includeChecksumInControllers:
         - control-plane
         - dispatcher
+        - reconciler
       data:
         generation: "1"
 
@@ -1180,6 +1218,10 @@ lci:
             - path: /etc/lightbridge
               readOnly: true
         dispatcher:
+          main:
+            - path: /etc/lightbridge
+              readOnly: true
+        reconciler:
           main:
             - path: /etc/lightbridge
               readOnly: true

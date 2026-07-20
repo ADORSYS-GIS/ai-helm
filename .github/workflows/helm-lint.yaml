@@ -9,15 +9,22 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: adorsys-gis-runner
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup Helm & yq
+      - name: Setup Helm
         uses: azure/setup-helm@v5
         with:
           version: v3.15.4
-      - uses: mikefarah/yq@v4
+      # Native binary, not the mikefarah/yq@v4 Docker-container action: adorsys-gis-runner has no
+      # Docker daemon (same constraint as vymalo's ARC pod runners), so a container-based GH Action
+      # fails at image pull. $RUNNER_TEMP avoids needing sudo/system-dir write access.
+      - name: Install yq
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/yq" "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+          chmod +x "$RUNNER_TEMP/yq"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Cache Helm
         uses: actions/cache@v6

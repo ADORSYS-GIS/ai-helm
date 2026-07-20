@@ -45,6 +45,41 @@ interprets `{{ }}`).
 {{- $mcps := list }}
 {{- range $s := $cfg.knowledgeTools.mcpServers }}{{- if and $s.name $s.url }}{{- $mcps = append $mcps (dict "name" $s.name "url" $s.url) }}{{- end }}{{- end }}
 {{- if $mcps }}{{- $_ := set $cp "knowledge_tools" (dict "mcp_servers" $mcps) }}{{- end }}
+{{- /* Egress routing (RFC-0005 Phase A / ADR-0074) → control-plane.json `egress`. The PRODUCER roles
+       (serve + dispatcher, which mount THIS ConfigMap) read `mode` to decide whether to `send`
+       PlatformEgress::post to the Restate ingress. Default `drain` (chart) = no behavior change; flip to
+       `restate` in ai-helm-values to activate the pilot. `restate_ingress_url` is required in restate
+       mode (or the RESTATE_INGRESS_URL env). The RECONCILER reads the SAME $eg via its own egress-ONLY
+       ConfigMap below — deliberately NOT this full config, so it never picks up the `review` block (see
+       there for why). deny_unknown_fields on the binary's EgressSection accepts exactly
+       {mode, restate_ingress_url}; the deployed image (≥ ADR-0074) carries the field. */}}
+{{- $eg := dict }}
+{{- $egressCfg := $cfg.egress | default dict }}
+{{- if ne (toString $egressCfg.mode) "" }}{{- $_ := set $eg "mode" $egressCfg.mode }}{{- end }}
+{{- if ne (toString $egressCfg.restateIngressUrl) "" }}{{- $_ := set $eg "restate_ingress_url" $egressCfg.restateIngressUrl }}{{- end }}
+{{- if $eg }}{{- $_ := set $cp "egress" $eg }}{{- end }}
+{{- /* ── GitLab projects (file-config-only, ADR-0072) → control-plane.json `gitlab` ─────────────
+       Per-project access tokens and webhook secrets use `{env:VAR}` markers so the actual secrets
+       stay in Kubernetes env-injected secrets, never in the ConfigMap. Empty/enabled:false → GitLab
+       is disabled (safe degrade — the runtime falls back to no GitLab integration). */}}
+{{- $gl := $cfg.gitlab | default dict }}
+{{- if $gl.enabled }}
+{{-   $glOut := dict "enabled" true }}
+{{-   if $gl.defaultApiUrl }}{{- $_ := set $glOut "default_api_url" $gl.defaultApiUrl }}{{- end }}
+{{-   if $gl.defaultBotHandle }}{{- $_ := set $glOut "default_bot_handle" $gl.defaultBotHandle }}{{- end }}
+{{-   $projects := list }}
+{{-   range $p := $gl.projects }}
+{{-     $proj := dict "project_id" $p.projectId }}
+{{-     if $p.accessToken }}{{- $_ := set $proj "access_token" $p.accessToken }}{{- end }}
+{{-     if $p.webhookSecret }}{{- $_ := set $proj "webhook_secret" $p.webhookSecret }}{{- end }}
+{{-     if $p.apiUrl }}{{- $_ := set $proj "api_url" $p.apiUrl }}{{- end }}
+{{-     if $p.botHandle }}{{- $_ := set $proj "bot_handle" $p.botHandle }}{{- end }}
+{{-     $projects = append $projects $proj }}
+{{-   end }}
+{{-   if $projects }}{{- $_ := set $glOut "projects" $projects }}{{- end }}
+{{-   $_ := set $cp "gitlab" $glOut }}
+{{- end }}
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -139,6 +174,15 @@ data:
 {{- if $tv.requestTimeoutSecs }}{{- $_ := set $t "request_timeout_secs" $tv.requestTimeoutSecs }}{{- end }}
 {{- if $tv.stream }}{{- $_ := set $t "stream" $tv.stream }}{{- end }}
 {{- if $tv.extra }}{{- $_ := set $t "extra" $tv.extra }}{{- end }}
+{{- /* Operator OpenCode config overlay (lightbridge-code-intelligence ADR-0099) → agent.json
+       review.<tier>.opencode. Arbitrary OpenCode config (agent, provider, mcp, permission, tools keys),
+       deep-merged host-side onto the checked-in review.jsonc base with FULL OVERRIDE — e.g. a custom
+       sub-agent on a different model. opencode's schema rejects unknown keys, so a typo here fails the
+       WHOLE review; the runner logs a WARNING (and notes it in the coverage disclosure) when the
+       overlay relaxes a review floor invariant (built-in re-enabled, permission opened, mediated MCP/
+       plugin dropped). REQUIRES a runner image carrying review.<tier>.opencode
+       (lightbridge-code-intelligence #464) before this is set, else deny_unknown_fields fails every Job. */}}
+{{- if $tv.opencode }}{{- $_ := set $t "opencode" $tv.opencode }}{{- end }}
 {{- $_ := set $rev $tier $t }}
 {{- end }}
 {{- end }}

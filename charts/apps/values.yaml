@@ -1069,6 +1069,42 @@ applications:
         prune: true
         selfHeal: true
 
+  # Self-hosted llm-d (CNCF Sandbox distributed inference middleware) + vLLM on
+  # the home GPU. charts/llm-d deploys the llm-d router in standalone mode (EPP +
+  # Envoy sidecar, no GAIE CRDs) + a vLLM StatefulSet the router discovers by pod
+  # label. The router provides prefix-cache-aware, KV-cache-utilization-aware,
+  # queue-depth-aware intelligent routing across model-server replicas. The chart
+  # own templates render the Envoy ConfigMap (workaround for OCI subchart presets
+  # not merging), the weights PVC, and an optional HF-token ExternalSecret.
+  # See docs/patterns/self-hosted-model-serving.md.
+  #
+  # DISABLED (staged) — one GPU, one model. CUTOVER = set this enabled:true +
+  # disable the currently-live self-hosted model app (qwen25-3b-awq), then flip
+  # the ai-models llm-d-local / qwen2.5-3b-awq-local enabled flags. Rollback =
+  # the inverse.
+  - name: llm-d
+    enabled: false                   # STAGED — disable qwen25-3b-awq + enable this at cutover.
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    homeCluster: true
+    source:
+      # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+      repoURL: oci://ghcr.io/adorsys-gis/charts/llm-d
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: llm-d
+        valuesObject: { }
+    destination:
+      namespace: converse-poc
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- MCPs (App-of-Apps orchestrator, ADR-0027) ---
   # charts/mcps now emits an ApplicationSet (a control object) that generates
   # one child Application per MCP (mcps-brave, mcps-terraform, mcps-firecrawl,
