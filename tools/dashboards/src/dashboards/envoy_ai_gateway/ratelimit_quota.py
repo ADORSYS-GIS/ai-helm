@@ -225,6 +225,15 @@ def _panel_live_census() -> table.Panel:
     # *-match-0* = an x-account-id-keyed budget/burst counter). Zero scrape-lag,
     # the limiter's own current view. extractFields carves Account + Model out of
     # the raw key (JS RegExp named groups — this transform runs in the browser).
+    #
+    # ⚠️ The `/converse/<model>/` segment is OPTIONAL and must stay so. Only the
+    # PER-MODEL keys carry it; the gateway-wide shared-budget keys (`shared: true`
+    # ⇒ keyed by policy, not route) do not. When that segment was mandatory this
+    # regex failed outright on the shared keys, so the rows holding the ACTUAL
+    # monthly budget showed neither Account nor Model — they rendered as raw
+    # unparsed keys. The leading `.*/` inside the optional group is load-bearing
+    # too: without it the group matches empty at position 0 and Model is dropped
+    # from the per-model keys as well.
     return (
         table.Panel()
         .title("Live limiter counters — direct from Redis (zero scrape-lag)")
@@ -239,8 +248,8 @@ def _panel_live_census() -> table.Panel:
                     "source": "key",
                     "format": "regex",
                     "regExp": (
-                        r"/converse/(?<Model>[^/]+)/.*"
-                        r"_rule-\d+-match-0_(?<Account>.+?)_rule-\d+-match-1"
+                        r"^(?:.*/converse/(?<Model>[^/]+)/)?"
+                        r".*_rule-\d+-match-0_(?<Account>.+?)_rule-\d+-match-1"
                     ),
                     "keepFields": True,
                 },
