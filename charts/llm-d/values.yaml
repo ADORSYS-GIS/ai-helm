@@ -1,0 +1,370 @@
+# charts/llm-d — llm-d distributed inference middleware + vLLM model server.
+#
+# Deploys the llm-d router (standalone mode: EPP + Envoy sidecar) and a vLLM
+# StatefulSet that the router discovers by pod label. The router provides
+# prefix-cache-aware, KV-cache-utilization-aware, and queue-depth-aware
+# intelligent routing across model-server replicas with no GAIE CRDs required
+# (inferencePool.create=false).
+#
+# Shape: a hybrid chart with two subcharts + own templates:
+#   - llm-d-router-standalone (OCI, alias llmdRouter) renders the EPP
+#     Deployment + Envoy sidecar, ConfigMaps (scorers + envoy.yaml), RBAC, and
+#     the EPP Service (the public entrypoint on :8081).
+#   - bjw-template (file://, alias modelServing) renders the vLLM
+#     StatefulSet + Service + seed Job (the model server the router routes to).
+#   - The chart own templates/ render the Envoy ConfigMap (workaround for OCI
+#     subchart preset not merging), the weights PVC, and the optional HF-token
+#     ExternalSecret.
+#
+# Sync-wave ordering (ArgoCD):
+#   -2  ExternalSecret (hf-token, optional)  — before any pod
+#   -1  PVC (llm-d-models, RWX)              — weights volume
+#    0  seed Job (download-once into the PVC) — ArgoCD Sync hook
+#    1  StatefulSet (vLLM) + Service         — mounts the PVC
+#   —   EPP Deployment + Envoy sidecar       — no sync-wave (llm-d subchart)
+#   —   Envoy ConfigMap                      — no sync-wave (own template)
+
+global:
+  # Used by the chart OWN templates labels (common.labels.standard).
+  labels:
+    app: llm-d
+    team: adorsys-gis
+
+model:
+  # Logical model name — the single source of truth for the pod label that EPP
+  # selects on, the StatefulSet/Service name, and the EPP matchLabels selector.
+  # A validation template (templates/_validate.tpl) fails helm render if these
+  # three locations drift from this value. Helm cannot template values.yaml
+  # itself, so the three subchart values below are kept in sync by convention +
+  # validation, not by Go templating.
+  name: llm-d-vllm
+  # HuggingFace repo (Qwen2.5-0.5B-Instruct is Apache-2.0 -> no token needed).
+  hfRepo: Qwen/Qwen2.5-0.5B-Instruct
+  # Sub-path inside the PVC where weights are seeded and mounted from.
+  storagePath: Qwen2.5-0.5B-Instruct
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Weights volume (own templates/pvc.yaml). RWX (Longhorn) so the seed Job and
+# the model StatefulSet can mount concurrently — matching the other GPU
+# model-serving charts.
+pvc:
+  enabled: true
+  name: llm-d-models
+  storageClassName: longhorn
+  accessMode: ReadWriteMany
+  size: 10Gi
+
+# Seed Job — the bulk of its config lives in the bjw seed controller below.
+# These top-level values only drive the chart own templates: the enabled gate +
+# the optional HF-token ExternalSecret (templates/externalsecret-hf-token.yaml).
+seedJob:
+  enabled: true
+  # These mirror model.hfRepo / model.storagePath for the seed Job (which lives
+  # in the bjw subchart and cant read parent .Values.model.*). The validation
+  # template (templates/_validate.tpl) fails helm render if these drift.
+  hfRepo: Qwen/Qwen2.5-0.5B-Instruct
+  storagePath: Qwen2.5-0.5B-Instruct
+  hfToken:
+    enabled: false                # Qwen2.5.0.5B-Instruct is NOT gated
+    secretName: llm-d-hf-token
+    dataKey: HF_TOKEN
+    externalSecret:
+      enabled: false
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
+
+# ═════════════════════════════════════════════════════════════════════════════
+# llm-d-router-standalone subchart (OCI, alias llmdRouter) — the EPP + Envoy.
+# ═════════════════════════════════════════════════════════════════════════════
+llmdRouter:
+  router:
+    # Standalone mode: no GAIE CRDs needed. EPP discovers vLLM pods by label
+    # selector (--endpoint-selector) instead of via an InferencePool CRD.
+    inferencePool:
+      create: false
+    modelServers:
+      matchLabels:
+        app: llm-d-vllm           # MUST match modelServing.defaultPodOptions.labels
+      type: vllm
+      protocol: http
+      targetPorts:
+      - number: 8000              # vLLM HTTP port
+    # Extra port on the EPP Service: the public entrypoint (:8081 -> Envoy).
+    extraServicePorts:
+    - name: http
+      port: 8081
+      protocol: TCP
+      targetPort: 8081
+    proxy:
+      enabled: true
+      proxyType: envoy
+      mode: sidecar               # Envoy runs in the EPP pod (not a separate Deployment)
+      failOpen: true              # If EPP is down, Envoy passes traffic through
+      # ConfigMap name for the Envoy static config (own templates/configmap-envoy.yaml).
+      # The OCI subchart presets dont merge when used as a dependency, so we
+      # render the Envoy ConfigMap ourselves and reference it here.
+      configMapName: llm-d-epp-envoy
+      name: envoy-proxy
+      image: docker.io/envoyproxy/envoy:distroless-v1.33.2
+      command: envoy
+      args:
+      - --service-node
+      - envoy-proxy
+      - --log-level
+      - warn
+      - --cpuset-threads
+      - --drain-strategy
+      - immediate
+      - --drain-time-s
+      - '60'
+      - -c
+      - /etc/envoy/envoy.yaml
+      env:
+      - name: NS_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+      - name: POD_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      ports:
+      - containerPort: 8081
+        name: http-8081
+      - containerPort: 19001
+        name: metrics-19001
+      # Right-sized from subchart defaults (4 CPU / 8Gi -> 100m / 128Mi).
+      # Envoy is a lightweight proxy; the defaults are for large production.
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      readinessProbe:
+        failureThreshold: 1
+        httpGet:
+          path: /ready
+          port: 19001
+          scheme: HTTP
+        periodSeconds: 5
+        successThreshold: 1
+        timeoutSeconds: 1
+      volumeMounts:
+      - name: envoy-config
+        mountPath: /etc/envoy
+        readOnly: true
+      # Keep this name in sync with proxy.configMapName above.
+      volumes:
+      - name: envoy-config
+        configMap:
+          name: llm-d-epp-envoy
+          items:
+          - key: envoy.yaml
+            path: envoy.yaml
+    epp:
+      image:
+        registry: ghcr.io/llm-d
+        repository: llm-d-router-endpoint-picker
+        tag: v0.9.0
+        pullPolicy: IfNotPresent
+      # Right-sized from subchart defaults (8 CPU / 8Gi -> 500m / 512Mi).
+      resources:
+        requests:
+          cpu: 500m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+    monitoring:
+      prometheus:
+        enabled: false
+        auth:
+          enabled: false
+
+# ═════════════════════════════════════════════════════════════════════════════
+# bjw-template subchart (alias modelServing) — the vLLM workload.
+# ═════════════════════════════════════════════════════════════════════════════
+modelServing:
+  global:
+    fullnameOverride: llm-d-vllm
+
+  # GPU pinning for the pods. No nvidia.com/gpu resource — the PoC node has no
+  # device plugin; runtimeClassName + nodeSelector are how a pod gets the GPU.
+  # (The seed Job inherits these too; harmless — it just doesn't use the GPU.)
+  defaultPodOptions:
+    labels:
+      app: llm-d-vllm           # EPP --endpoint-selector matches this label
+    runtimeClassName: nvidia
+    nodeSelector:
+      gpu-node: "true"
+
+  controllers:
+    # ── The model server (StatefulSet) ───────────────────────────────────────
+    main:
+      type: statefulset
+      replicas: 1                # Single GPU — one replica (no time-slicing).
+      annotations:
+        argocd.argoproj.io/sync-wave: '1'
+      containers:
+        model:
+          image:
+            repository: vllm/vllm-openai
+            tag: v0.4.1            # GPU build — pinned to cached image (avoids network pulls)
+            pullPolicy: IfNotPresent
+          args:
+          - --model
+          - /mnt/models/Qwen2.5-0.5B-Instruct  # PVC mount path (not HF repo)
+          - --port=8000
+          - --host=0.0.0.0
+          - --dtype=float16                # GPU: FP16 (was float32 for CPU)
+          - --max-model-len=4096
+          - --max-num-seqs=4
+          - --gpu-memory-utilization=0.90  # GPU: fraction of GPU memory to use
+          - --enforce-eager                # Disable CUDA graph (matches sibling GPU charts)
+          - --swap-space=0                 # No CPU swap (avoids OOM on 6GB GPU nodes)
+          - --served-model-name=Qwen/Qwen2.5-0.5B-Instruct
+          - --enable-prefix-caching  # Critical for benchmark: enables KV-cache reuse across requests
+          ports:
+          - name: http
+            containerPort: 8000
+          # Probes use custom: true so bjw uses our spec verbatim (without it
+          # bjw derives the probe from the SERVICE port, not the model port).
+          # vLLM /health returns 200 only once the model is loaded.
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8000
+                periodSeconds: 10
+                failureThreshold: 60   # ~10 min worst-case weight load
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8000
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8000
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            # vLLM GPU containers need root to initialise CUDA runtime.
+            runAsNonRoot: false
+            runAsUser: 0
+            capabilities:
+              drop:
+              - ALL
+          resources:
+            requests:
+              cpu: '1'
+              memory: 2Gi
+            limits:
+              cpu: '3'
+              memory: 12Gi
+          env:
+          - name: TRANSFORMERS_OFFLINE
+            value: '1'
+          - name: HF_HUB_OFFLINE
+            value: '1'
+          volumeMounts:
+          - name: model-store
+            mountPath: /mnt/models
+            readOnly: true
+
+    # ── The weight seed Job (bjw job controller, ArgoCD Sync hook) ───────────
+    # Downloads model weights from HuggingFace into the PVC once. ArgoCD waits
+    # for it (Sync hook + BeforeHookCreation). hf download is idempotent.
+    seed:
+      type: job
+      annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+        argocd.argoproj.io/sync-wave: '0'
+      pod:
+        restartPolicy: OnFailure  # A Job must NOT be Always (bjw default)
+      job:
+        backoffLimit: 6
+        activeDeadlineSeconds: 3600  # A stuck download dies + retries
+      containers:
+        seed:
+          image:
+            repository: python
+            tag: 3.12-slim
+            pullPolicy: IfNotPresent
+          command:
+          - /bin/sh
+          - -ec
+          # NOTE: repo + sub-path are hardcoded (bjw subchart scope cant read
+          # parent .Values.model.*). Keep in sync with model.hfRepo /
+          # model.storagePath above.
+          args:
+          - 'MODEL_DIR="/models/Qwen2.5-0.5B-Instruct"
+
+            mkdir -p "$MODEL_DIR"
+
+            echo "Seeding Qwen/Qwen2.5-0.5B-Instruct -> $MODEL_DIR"
+
+            pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
+
+            hf download Qwen/Qwen2.5-0.5B-Instruct --local-dir "$MODEL_DIR"
+
+            echo "Seed complete."
+
+            '
+          env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: llm-d-hf-token
+                key: HF_TOKEN
+                optional: true          # absent for non-gated models -> empty env, no crash
+          resources:
+            requests:
+              cpu: '1'
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          port: 8000
+          targetPort: 8000
+
+  persistence:
+    # The pre-seeded weights PVC (own templates/pvc.yaml), mounted into BOTH
+    # the seed Job (rw, full volume at /models) and the model container (ro,
+    # at /mnt/models). RWX on Longhorn for concurrent multi-node mounts.
+    model-store:
+      enabled: true
+      existingClaim: llm-d-models
+      advancedMounts:
+        main:
+          model:
+          - path: /mnt/models
+            readOnly: true
+        seed:
+          seed:
+          - path: /models
