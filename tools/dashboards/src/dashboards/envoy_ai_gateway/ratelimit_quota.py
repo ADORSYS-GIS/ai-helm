@@ -42,9 +42,7 @@ from dashboards._common import (
     METRIC_RATELIMIT_SPEND_MICRO_USD,
     REDIS_RATELIMIT_UID,
     RL_LABEL_ACCOUNT,
-    RL_LABEL_MODEL,
     RL_LABEL_PLAN,
-    RL_LABEL_PLANE,
     RL_LABEL_WINDOW,
 )
 from dashboards.envoy_ai_gateway import _shared as sh
@@ -53,17 +51,23 @@ OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/ratel
 
 _M = METRIC_RATELIMIT_SPEND_MICRO_USD
 _A = RL_LABEL_ACCOUNT
-_MO = RL_LABEL_MODEL
 _PL = RL_LABEL_PLAN
-_PE = RL_LABEL_PLANE
 
+# ⚠️ NO `model` / `plane` dimension here, by design. Since the #532 shared-budget
+# cutover the monthly budget is ONE counter per (account, plan) on the gateway-wide
+# BackendTrafficPolicy (`shared: true` keys the bucket by POLICY name), spanning
+# every model route and both planes — so the exporter's keys carry neither label.
+# Filtering on an absent label with the multi-var default `.+` matches NOTHING, so
+# a `$model` variable here would blank the whole board, not just its own panels.
+# Per-model spend still lives in the Mimir/Loki cost dashboards (ADR-0058/0046).
+#
 # All filters refine the same metric. $window is single-select (default newest)
 # so totals are for ONE budget period; the rest are multi (default All → .+).
-_SEL = f'{{{RL_LABEL_WINDOW}=~"$window", {_PL}=~"$plan", {_MO}=~"$model", {_A}=~"$account"}}'
+_SEL = f'{{{RL_LABEL_WINDOW}=~"$window", {_PL}=~"$plan", {_A}=~"$account"}}'
 _MSEL = f"{_M}{_SEL}"
 
 _LEGEND_ACCOUNT = "{{" + _A + "}}"
-_LEGEND_MODEL = "{{" + _MO + "}}"
+_LEGEND_PLAN = "{{" + _PL + "}}"
 
 _REDIS_DS = dm.DataSourceRef(type_val="redis-datasource", uid=REDIS_RATELIMIT_UID)
 
@@ -116,7 +120,7 @@ def _panel_active_accounts() -> object:
 
 def _panel_counters() -> object:
     return sh.stat_panel(
-        title="Tracked counters (account x model)",
+        title="Tracked counters (account x plan)",
         expr=f"count({_MSEL})",
         unit="short",
         color="purple",
@@ -124,10 +128,12 @@ def _panel_counters() -> object:
     )
 
 
-def _panel_models() -> object:
+def _panel_plans() -> object:
+    # Was "Models in use" before the shared-budget cutover removed the model
+    # dimension from the budget counters. Same grid slot, plan-keyed.
     return sh.stat_panel(
-        title="Models in use",
-        expr=f"count(count by ({_MO}) ({_MSEL}))",
+        title="Plans in use",
+        expr=f"count(count by ({_PL}) ({_MSEL}))",
         unit="short",
         color="green",
         grid=(4, 6, 18, 1),
@@ -145,21 +151,23 @@ def _panel_top_accounts() -> object:
     )
 
 
-def _panel_spend_by_model() -> object:
+def _panel_spend_by_plan() -> object:
+    # Was "Spend share by model". Same grid slot; billing tier is the dimension
+    # the shared budget actually has.
     return sh.pie_panel(
-        title="Spend share by model — this window",
-        expr=sh.usd(f"sum by ({_MO}) ({_MSEL})"),
-        legend_label=_LEGEND_MODEL,
+        title="Spend share by plan — this window",
+        expr=sh.usd(f"sum by ({_PL}) ({_MSEL})"),
+        legend_label=_LEGEND_PLAN,
         grid=(12, 12, 12, 5),
     )
 
 
 def _panel_breakdown_table() -> table.Panel:
-    # One row per account x model x plan x plane, instant → table, ranked by spend.
-    expr = sh.usd(f"sum by ({_A}, {_MO}, {_PL}, {_PE}) ({_MSEL})")
+    # One row per account x plan, instant → table, ranked by spend.
+    expr = sh.usd(f"sum by ({_A}, {_PL}) ({_MSEL})")
     panel = (
         table.Panel()
-        .title("Consumption by account x model — this window")
+        .title("Consumption by account x plan — this window")
         .datasource(sh.MIMIR_DS)
         .grid_pos(dm.GridPos(h=12, w=24, x=0, y=17))
         .filterable(True)
@@ -170,18 +178,14 @@ def _panel_breakdown_table() -> table.Panel:
                 options={
                     "renameByName": {
                         _A: "Account",
-                        _MO: "Model",
                         _PL: "Plan",
-                        _PE: "Plane",
                         "Value #A": "Spend ($)",
                     },
                     "excludeByName": {"Time": True, RL_LABEL_WINDOW: True},
                     "indexByName": {
                         _A: 0,
-                        _MO: 1,
-                        _PL: 2,
-                        _PE: 3,
-                        "Value #A": 4,
+                        _PL: 1,
+                        "Value #A": 2,
                     },
                 },
             )
@@ -221,6 +225,15 @@ def _panel_live_census() -> table.Panel:
     # *-match-0* = an x-account-id-keyed budget/burst counter). Zero scrape-lag,
     # the limiter's own current view. extractFields carves Account + Model out of
     # the raw key (JS RegExp named groups — this transform runs in the browser).
+    #
+    # ⚠️ The `/converse/<model>/` segment is OPTIONAL and must stay so. Only the
+    # PER-MODEL keys carry it; the gateway-wide shared-budget keys (`shared: true`
+    # ⇒ keyed by policy, not route) do not. When that segment was mandatory this
+    # regex failed outright on the shared keys, so the rows holding the ACTUAL
+    # monthly budget showed neither Account nor Model — they rendered as raw
+    # unparsed keys. The leading `.*/` inside the optional group is load-bearing
+    # too: without it the group matches empty at position 0 and Model is dropped
+    # from the per-model keys as well.
     return (
         table.Panel()
         .title("Live limiter counters — direct from Redis (zero scrape-lag)")
@@ -235,8 +248,8 @@ def _panel_live_census() -> table.Panel:
                     "source": "key",
                     "format": "regex",
                     "regExp": (
-                        r"/converse/(?<Model>[^/]+)/.*"
-                        r"_rule-\d+-match-0_(?<Account>.+?)_rule-\d+-match-1"
+                        r"^(?:.*/converse/(?<Model>[^/]+)/)?"
+                        r".*_rule-\d+-match-0_(?<Account>.+?)_rule-\d+-match-1"
                     ),
                     "keepFields": True,
                 },
@@ -258,12 +271,15 @@ def _panel_live_census() -> table.Panel:
 _DESCRIPTION = (
     "WHO is consuming the Envoy AI Gateway and HOW MUCH of their budget, read from "
     "the rate-limit service's LIVE counters in redis-ha (ADR-0070) — the only place "
-    "that current-window state exists. Mimir panels rank spend per account/model "
+    "that current-window state exists. Mimir panels rank spend per account/plan "
     "for the selected 30-day budget window (prometheus-redis-exporter → "
     "gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct "
     "redis-datasource census (zero scrape-lag). RAW consumption only — budget "
     "limits are static Helm config (ADR-0021/0035), not derivable per-user here. "
-    "$window defaults to the current bucket. Filters: plan, model, account. "
+    "NO per-model breakdown: since the #532 shared-budget cutover the budget is one "
+    "counter per (account, plan) spanning ALL models and both planes, so the keys "
+    "carry no model label — see the Mimir/Loki cost dashboards for per-model spend. "
+    "$window defaults to the current bucket. Filters: plan, account. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/ratelimit_quota.py."
 )
 
@@ -296,9 +312,8 @@ def _dashboard() -> db.Dashboard:
         .time("now-30d", "now")
         .with_variable(_window_var())
         .with_variable(sh.multi_var(name="plan", label="Plan", definition=sh.label_values(_M, _PL)))
-        .with_variable(
-            sh.multi_var(name="model", label="Model", definition=sh.label_values(_M, _MO))
-        )
+        # NB: no `$model` variable — the shared-budget counters carry no `model`
+        # label, and the multi-var default `.+` would match nothing at all.
         .with_variable(
             sh.multi_var(name="account", label="Account", definition=sh.label_values(_M, _A))
         )
@@ -306,9 +321,9 @@ def _dashboard() -> db.Dashboard:
         .with_panel(_panel_total_spend())
         .with_panel(_panel_active_accounts())
         .with_panel(_panel_counters())
-        .with_panel(_panel_models())
+        .with_panel(_panel_plans())
         .with_panel(_panel_top_accounts())
-        .with_panel(_panel_spend_by_model())
+        .with_panel(_panel_spend_by_plan())
         .with_panel(_panel_breakdown_table())
         .with_panel(sh.row("Spend over time (gauge history)", y=29))
         .with_panel(_panel_spend_over_time())

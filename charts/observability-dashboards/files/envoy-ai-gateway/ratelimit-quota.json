@@ -52,35 +52,6 @@
       },
       {
         "type": "query",
-        "name": "model",
-        "label": "Model",
-        "skipUrlSync": false,
-        "query": "label_values(gateway_ratelimit_spend_micro_usd, model)",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "mimir"
-        },
-        "current": {
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ],
-          "selected": true
-        },
-        "multi": true,
-        "allowCustomValue": true,
-        "refresh": 2,
-        "sort": 1,
-        "includeAll": true,
-        "allValue": ".+",
-        "auto": false,
-        "auto_min": "10s",
-        "auto_count": 30
-      },
-      {
-        "type": "query",
         "name": "account",
         "label": "Account",
         "skipUrlSync": false,
@@ -113,7 +84,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-ratelimit-quota",
   "title": "AI Gateway — rate-limit quota",
-  "description": "WHO is consuming the Envoy AI Gateway and HOW MUCH of their budget, read from the rate-limit service's LIVE counters in redis-ha (ADR-0070) — the only place that current-window state exists. Mimir panels rank spend per account/model for the selected 30-day budget window (prometheus-redis-exporter → gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct redis-datasource census (zero scrape-lag). RAW consumption only — budget limits are static Helm config (ADR-0021/0035), not derivable per-user here. $window defaults to the current bucket. Filters: plan, model, account. GENERATED — source: tools/dashboards/envoy_ai_gateway/ratelimit_quota.py.",
+  "description": "WHO is consuming the Envoy AI Gateway and HOW MUCH of their budget, read from the rate-limit service's LIVE counters in redis-ha (ADR-0070) — the only place that current-window state exists. Mimir panels rank spend per account/plan for the selected 30-day budget window (prometheus-redis-exporter → gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct redis-datasource census (zero scrape-lag). RAW consumption only — budget limits are static Helm config (ADR-0021/0035), not derivable per-user here. NO per-model breakdown: since the #532 shared-budget cutover the budget is one counter per (account, plan) spanning ALL models and both planes, so the keys carry no model label — see the Mimir/Loki cost dashboards for per-model spend. $window defaults to the current bucket. Filters: plan, account. GENERATED — source: tools/dashboards/envoy_ai_gateway/ratelimit_quota.py.",
   "tags": [
     "ai-gateway",
     "rate-limit",
@@ -147,7 +118,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "((sum(gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", model=~\"$model\", account_id=~\"$account\"})) / 1e6)",
+          "expr": "((sum(gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -208,7 +179,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "count(count by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", model=~\"$model\", account_id=~\"$account\"}))",
+          "expr": "count(count by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"}))",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -269,7 +240,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "count(gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", model=~\"$model\", account_id=~\"$account\"})",
+          "expr": "count(gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"})",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -280,7 +251,7 @@
           }
         }
       ],
-      "title": "Tracked counters (account x model)",
+      "title": "Tracked counters (account x plan)",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -330,7 +301,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "count(count by (model) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", model=~\"$model\", account_id=~\"$account\"}))",
+          "expr": "count(count by (plan) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"}))",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -341,7 +312,7 @@
           }
         }
       ],
-      "title": "Models in use",
+      "title": "Plans in use",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -391,7 +362,7 @@
       "type": "bargauge",
       "targets": [
         {
-          "expr": "((topk(20, sum by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", model=~\"$model\", account_id=~\"$account\"}))) / 1e6)",
+          "expr": "((topk(20, sum by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"}))) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -460,19 +431,19 @@
       "type": "piechart",
       "targets": [
         {
-          "expr": "((sum by (model) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", model=~\"$model\", account_id=~\"$account\"})) / 1e6)",
+          "expr": "((sum by (plan) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
           "format": "time_series",
-          "legendFormat": "{{model}}",
+          "legendFormat": "{{plan}}",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
           }
         }
       ],
-      "title": "Spend share by model — this window",
+      "title": "Spend share by plan — this window",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -511,7 +482,7 @@
       "type": "table",
       "targets": [
         {
-          "expr": "((sum by (account_id, model, plan, plane) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", model=~\"$model\", account_id=~\"$account\"})) / 1e6)",
+          "expr": "((sum by (account_id, plan) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -522,7 +493,7 @@
           }
         }
       ],
-      "title": "Consumption by account x model — this window",
+      "title": "Consumption by account x plan — this window",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -541,9 +512,7 @@
           "options": {
             "renameByName": {
               "account_id": "Account",
-              "model": "Model",
               "plan": "Plan",
-              "plane": "Plane",
               "Value #A": "Spend ($)"
             },
             "excludeByName": {
@@ -552,10 +521,8 @@
             },
             "indexByName": {
               "account_id": 0,
-              "model": 1,
-              "plan": 2,
-              "plane": 3,
-              "Value #A": 4
+              "plan": 1,
+              "Value #A": 2
             }
           }
         },
@@ -617,7 +584,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "((topk(10, sum by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", model=~\"$model\", account_id=~\"$account\"}))) / 1e6)",
+          "expr": "((topk(10, sum by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"}))) / 1e6)",
           "refId": "A",
           "instant": false,
           "range": true,
@@ -722,7 +689,7 @@
           "options": {
             "source": "key",
             "format": "regex",
-            "regExp": "/converse/(?<Model>[^/]+)/.*_rule-\\d+-match-0_(?<Account>.+?)_rule-\\d+-match-1",
+            "regExp": "^(?:.*/converse/(?<Model>[^/]+)/)?.*_rule-\\d+-match-0_(?<Account>.+?)_rule-\\d+-match-1",
             "keepFields": true
           }
         },
