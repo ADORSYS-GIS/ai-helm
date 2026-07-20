@@ -56,7 +56,10 @@ function generateHTML(reportData, reportName) {
 
   // Calculate key metrics
   const totalRequests = counters['http.requests'] || 0;
-  const successfulRequests = counters['http.codes.200'] || counters['http.codes.2xx'] || 0;
+  // Sum all 2xx response codes to avoid under-counting (e.g. 201, 204).
+  const successfulRequests = Object.entries(counters)
+    .filter(([k]) => /^http\.codes\.[23]\d\d$/.test(k))
+    .reduce((sum, [, v]) => sum + v, 0) || counters['http.codes.200'] || 0;
   const failedRequests = counters['http.errors'] || 0;
   const timeouts = counters['http.errors.ETIMEDOUT'] || 0;
   const successRate = totalRequests > 0 ? (successfulRequests / totalRequests * 100) : 0;
@@ -75,7 +78,9 @@ function generateHTML(reportData, reportName) {
     return {
       phase: index + 1,
       requests: phaseCounters['http.requests'] || 0,
-      successful: phaseCounters['http.codes.200'] || phaseCounters['http.codes.2xx'] || 0,
+      successful: Object.entries(phaseCounters)
+        .filter(([k]) => /^http\.codes\.[23]\d\d$/.test(k))
+        .reduce((sum, [, v]) => sum + v, 0) || phaseCounters['http.codes.200'] || 0,
       errors: phaseCounters['http.errors'] || 0,
       timeouts: phaseCounters['http.errors.ETIMEDOUT'] || 0,
       p50: phaseRt.median,
@@ -417,7 +422,9 @@ function generateConsoleSummary(reportData, reportName) {
   const summaries = aggregate.summaries || {};
   
   const totalRequests = counters['http.requests'] || 0;
-  const successfulRequests = counters['http.codes.200'] || counters['http.codes.2xx'] || 0;
+  const successfulRequests = Object.entries(counters)
+    .filter(([k]) => /^http\.codes\.[23]\d\d$/.test(k))
+    .reduce((sum, [, v]) => sum + v, 0) || counters['http.codes.200'] || 0;
   const failedRequests = counters['http.errors'] || 0;
   const timeouts = counters['http.errors.ETIMEDOUT'] || 0;
   const successRate = totalRequests > 0 ? (successfulRequests / totalRequests * 100) : 0;

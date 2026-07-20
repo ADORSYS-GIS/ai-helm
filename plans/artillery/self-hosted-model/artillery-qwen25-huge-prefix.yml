@@ -1,0 +1,110 @@
+# artillery-qwen25-huge-prefix.yml
+#
+# Experiment B v4 — APC eviction test with a HUGE shared prefix (~9.7K tokens).
+#
+# Uses the full text of docs/lmcache+vllm.md as the shared system prompt —
+# "summarise on demand" instruction + full document — then a rotating short
+# user question. With ~7K-token KV at 36 KiB/tok = ~252 MiB, the prefix alone
+# consumes ~19% of the ~1.3 GiB GPU KV budget available at gpu-mem=0.55.
+# Buster traffic forces APC to evict the prefix after ~12–15s of the mix phase.
+#
+# When LMCache retrieves the evicted prefix from CPU RAM (~10ms for ~9K
+# tokens), prefill is skipped entirely → the delta vs the baseline's full
+# ~5–8s recompute is even more dramatic than the v3 run (~5K prefix).
+#
+# APC is ENABLED on both variants. The override files are identical to v3
+# (approachb / approachb-lmcache) — only the Artillery payload differs.
+#
+# Payloads:
+#   self-hosted-model/huge-prefix.csv      — single-row full-md system prompt
+#   self-hosted-model/prefix-reuse-questions.csv — 15 rotating questions
+#   self-hosted-model/eviction-busters.csv — 20 unique ~2K-token busters
+#
+# Run from plans/artillery/ :
+#   just qwen25-huge-prefix
+#   # or directly:
+#   artillery run self-hosted-model/artillery-qwen25-huge-prefix.yml \
+#     --output reports/<report-name>.json
+
+config:
+  target: "http://localhost:8090"
+  http:
+    timeout: 60
+  phases:
+    # Warmup: cache the huge prefix in both APC (GPU) and LMCache (CPU, if running).
+    # 2 RPS × 10s = ~20 repetitions of the prefix → fully prefill-cached.
+    - name: "Warmup"
+      duration: 10
+      arrivalRate: 1
+
+    # Eviction mix: 120s at 2 RPS, buster:prefix weight 2:1.
+    # ~1.33 busters/s × 2K tokens × 36 KiB ≈ 96 MiB/s of new KV → exceeds the
+    # ~1.3 GiB GPU KV budget in ~14s → APC LRU evicts the 252 MiB huge prefix.
+    # At 2:1 ratio: ~80 busters + ~40 prefix-reuse across the 120s phase.
+    - name: "Eviction mix"
+      duration: 120
+      arrivalRate: 2
+
+  payload:
+    # Huge shared prefix — one row loaded and reused on every prefix-reuse request
+    - path: "huge-prefix.csv"
+      fields:
+        - "huge_prefix"
+      order: "random"
+      skipHeader: true
+
+    # Buster payloads — ~2K-token unique unique system prompts
+    - path: "eviction-busters.csv"
+      fields:
+        - "buster_prompt"
+        - "buster_question"
+      order: "random"
+      skipHeader: true
+
+    # Rotating short questions for the prefix-reuse scenario
+    - path: "prefix-reuse-questions.csv"
+      fields:
+        - "prefix_question"
+      order: "random"
+      skipHeader: true
+
+  defaults:
+    headers:
+      Authorization: "Bearer {{ $processEnvironment.VLLM_LOCAL_API_KEY }}"
+      Content-Type: "application/json"
+
+scenarios:
+  # Scenario 1 (weight 1): Huge-prefix reuse — the measured scenario.
+  - name: "Huge prefix reuse"
+    weight: 1
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            model: "qwen25-3b-awq"
+            max_tokens: 30
+            temperature: 0
+            messages:
+              - role: "system"
+                content: "{{ huge_prefix }}"
+              - role: "user"
+                content: "{{ prefix_question }}"
+
+  # Scenario 2 (weight 2): cache buster — maintains eviction pressure on APC.
+  # Buster weight 2 → ~2× more busters than prefix-reuse → guarantees steady
+  # APC eviction throughout the 120s phase so the huge prefix is repeatedly
+  # evicted and re-retrieved from LMCache on each prefix-reuse request.
+  - name: "Cache buster"
+    weight: 2
+    flow:
+      - post:
+          url: "/v1/chat/completions"
+          json:
+            model: "qwen25-3b-awq"
+            max_tokens: 5
+            temperature: 0
+            messages:
+              - role: "system"
+                content: "{{ buster_prompt }}"
+              - role: "user"
+                content: "{{ buster_question }}"

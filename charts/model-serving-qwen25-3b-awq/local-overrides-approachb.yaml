@@ -1,0 +1,130 @@
+# Local overrides for Experiment B — BASELINE (APC enabled, no LMCache, tight VRAM)
+#
+# Experiment B keeps vLLM's built-in Automatic Prefix Caching (APC) ENABLED on
+# BOTH variants and forces APC eviction via a tight GPU KV budget + high
+# concurrency. When APC evicts the shared prefix, the baseline has NO fallback
+# — it must fully recompute prefill. The treatment (LMCache) can retrieve the
+# evicted KV from CPU RAM → skip prefill → faster TTFT.
+#
+# Key differences vs Experiment 0 / Experiment A:
+#   - --gpu-memory-utilization=0.55  (was 0.90) → shrinks KV budget to ~1.3 GiB
+#   - --max-num-seqs=8               (was 2)   → more concurrent pressure
+#   - --max-model-len=16384          (same)    → allows 8K-token cache-busters
+#   - APC ENABLED                    (no --no-enable-prefix-caching)
+#   - No --kv-transfer-config        (baseline has no LMCache)
+#
+# Usage:
+#   helm upgrade --install model-serving-qwen25-3b-awq ./charts/model-serving-qwen25-3b-awq \
+#     -n custom-ai-ops \
+#     -f charts/model-serving-qwen25-3b-awq/local-overrides-approachb.yaml
+
+apiKey:
+  enabled: true
+  secretName: vllm-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: false
+
+seedJob:
+  enabled: true
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: false
+
+pvc:
+  enabled: true
+  name: qwen25-3b-awq-models
+  storageClassName: local-path
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+modelServing:
+  controllers:
+    main:
+      containers:
+        model:
+          image:
+            repository: vllm/vllm-openai
+            tag: v0.24.0
+            pullPolicy: IfNotPresent
+          args:
+            - --model=/mnt/models
+            - --served-model-name=qwen25-3b-awq
+            - --port=8080
+            - --quantization=awq
+            - --dtype=float16
+            # *** Experiment B: tight KV budget to force APC eviction ***
+            # 0.55 * 6141 MiB ≈ 3378 MiB for vLLM. Weights ~2 GiB.
+            # ~1.3 GiB for KV. 8 concurrent ~4K-token busters exceed this,
+            # and cumulative cache pressure from finished requests forces
+            # APC LRU eviction of the shared prefix between prefix-reuse cycles.
+            - --max-model-len=16384
+            - --max-num-seqs=8
+            - --gpu-memory-utilization=0.55
+            - --enforce-eager
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            # APC stays ENABLED (no --no-enable-prefix-caching) — Experiment B
+            # forces its eviction under memory pressure.
+          env:
+            LMCACHE_USE_EXPERIMENTAL: "False"
+            LMCACHE_LOCAL_CPU: "False"
+            LMCACHE_MAX_LOCAL_CPU_SIZE: "0"
+            VLLM_API_KEY:
+              secretKeyRef:
+                name: vllm-local-api-key
+                key: api_key
+          ports:
+            - name: http
+              containerPort: 8080
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8080
+                periodSeconds: 15
+                failureThreshold: 120
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /health
+                  port: 8080
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: 8080
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: false
+            runAsUser: 0
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "2"
+              memory: 10Gi
+
+  ingress:
+    main:
+      enabled: false
