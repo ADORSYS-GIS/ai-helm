@@ -32,7 +32,7 @@ converse-gateway/core-gateway/api-https_httproute/converse/<model>/rule/0/match/
 |---|---|
 | `…/converse/<model>/…` | the model (route path) |
 | `rule-<N>-match-0_<x-account-id>` | the Distinct `x-account-id` value — a Keycloak `sub` UUID, or a named service caller (`benie-joy`, `koufan-king`). `x-billing-plan`/`x-ai-eg-model` are fixed Exact matches → masked constants, so **plan is the rule index, not a value**. |
-| `rule-<N>` | the rule index → the plan. Plans iterate sorted (free, internal, pro, service): **`rule-2` = free monthly budget, `rule-7` = pro** (the only plans with a `monthlyBudgetUsd`; service/internal are uncapped). |
+| `rule-<N>` | the rule index → the plan. ⚠️ **The index is the ONLY carrier of plan identity** (the plan is an `Exact` match ⇒ masked to a constant), and it is **positional**, so renumbering a rule ORPHANS its counter rather than migrating it. Historically the plans were a Helm **map** (sorted: free, internal, pro, service ⇒ `rule-2` = free budget, `rule-7` = pro), and adding `enterprise` on 2026-07-16 inserted at index 0 and renumbered everything mid-window — the whole fleet silently got a fresh budget. `monthlyBudget.plans` is now an **append-only ordered list** ([ADR-0084](../adr/0084-ratelimit-plan-order-is-append-only.md)); read the current index↔plan mapping off the rendered comment (`# rule/1 · free …`), never off alphabetical order. |
 | trailing `<window>` | the 30-day budget bucket start (Unix epoch, a multiple of **2592000** = Lyft's MONTH unit). Value = micro-USD spent this window. The previous bucket lingers until TTL. |
 
 Burst (per-minute) keys also exist but churn every minute and are not a budget
