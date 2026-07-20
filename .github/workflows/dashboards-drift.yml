@@ -3,7 +3,8 @@ name: Dashboard drift check
 # Guards `charts/observability-dashboards/files/**/*.json` (and any chart-local
 # `files/dashboards/**/*.json`) against drift from their generator sources in
 # `tools/dashboards/`. Fails the PR if a committed JSON differs from what the
-# generator would emit.
+# generator would emit, or if the generator sources themselves are not
+# ruff-clean (format + lint).
 #
 # See: docs/playbooks/python-dashboard-generation.md, ADR-0008
 
@@ -42,6 +43,17 @@ jobs:
       - name: Install deps
         working-directory: tools/dashboards
         run: uv sync --frozen
+
+      # ADR-0008 mandates ruff for lint + format, but nothing enforced it, so
+      # formatting drifted silently in the generator sources. Checked before the
+      # drift check: a lint failure is cheaper to read than a JSON diff.
+      - name: Check formatting (ruff)
+        working-directory: tools/dashboards
+        run: uv run ruff format --check .
+
+      - name: Lint (ruff)
+        working-directory: tools/dashboards
+        run: uv run ruff check .
 
       - name: Verify dashboards match generators
         working-directory: tools/dashboards
