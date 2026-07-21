@@ -1,7 +1,13 @@
 # ADR-0083: Re-introduce Coder as App-of-Apps Orchestrator
 
-**Status:** Accepted (updated 2026-07-15)
+**Status:** Accepted (updated 2026-07-20)
 **Date:** 2026-07-13
+
+> **Update 2026-07-20:** Namespace ResourceQuota + LimitRange now deployed via the base
+> depsOverlay (`environments/base/deps/coder/`) with `sync-wave: -2`, replacing the
+> previously-stale commented block in `charts/apps/values.yaml`. Scoped for ~15 total
+> pods (1 coderd + ~14 workspaces at 1–2 CPU / 1–2 Gi each).
+>
 **Deciders:** @stephane-segning
 
 ## Context
@@ -48,8 +54,8 @@ removed during review to avoid duplicating the lightbridge-main-db cluster):
   namespace). A managed `coder` role, `coder` Database CR, and
   `coder-db-role` ExternalSecret are added to `charts/lightbridge-db/values.yaml`.
 - **`charts/apps/values.yaml`** — `coder` entry with `controlPlane: true`,
-  OCI chart float. LimitRange + ResourceQuota stay **commented** (not enabled
-  — same as other namespaces).
+  OCI chart float. LimitRange + ResourceQuota reference values kept **commented**
+  (active quota deployed via depsOverlay — see environments/base/deps/coder/).
 - **Upstream Coder chart** (`oci://ghcr.io/coder/chart/coder` v2.33.7) deployed
   as a multi-source ArgoCD Application (wave 2) with `$values` valueFiles and
   a per-environment `depsOverlay` for the ingress `Certificate`. The values
@@ -100,9 +106,9 @@ The following items were raised in review (`@stephane-segning`) and addressed:
   any future App-of-Apps workload.
 - Uses existing lightbridge-main-db CNPG — no new CNPG cluster to manage,
   no S3 backup credentials needed, fewer CRDs.
-- The Keycloak `coder` client, commented LimitRange/ResourceQuota, and
+- The Keycloak `coder` client, LimitRange/ResourceQuota reference values, and
   integration spec were all usable as-is, validating the ADR-0027 decision
-  to leave them in place.
+  to leave them in place (the quota is now active via the depsOverlay).
 - HTTP-01 ACME cert strategy avoids the Cloudflare DNS-01 dependency that
   blocked the original deployment — TLS certs issue automatically.
 - OIDC integration tested against prod Keycloak — authentication confirmed
@@ -163,4 +169,6 @@ The following items were raised in review (`@stephane-segning`) and addressed:
   `charts/keycloak-baseline/`,
   `environments/prod/values/coder-app.yaml`,
   `environments/base/deps/coder/`, `environments/prod/deps/coder/`
+  - **Added:** `environments/base/deps/coder/limitrange.yaml`,
+    `environments/base/deps/coder/resourcequota.yaml` (active quota via depsOverlay)
 - Supersedes: ADR-0019 (original Coder App-of-Apps), ADR-0027 (Coder removal)
