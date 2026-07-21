@@ -34,8 +34,8 @@ model:
 pvc:
   enabled: true
   name: qwen2-vl-2b-models
-  storageClassName: longhorn
-  accessMode: ReadWriteMany
+  storageClassName: local-path
+  accessMode: ReadWriteOnce
   size: 15Gi                       # ~4GB BF16 weights + headroom
 
 seedJob:
@@ -84,16 +84,10 @@ modelServing:
       containers:
         model:
           image:
-            # lmcache/vllm-openai bundles LMCache + vLLM with CUDA support.
-            # Pinned to v0.7.0: CUDA 12.1.0 (driver >=470), compatible with the
-            # home RTX A2000 570.x driver. Newer tags (v0.4.6+, v0.5.1) require
-            # CUDA 13.0 (driver 580+), too new for this host.
-            repository: lmcache/vllm-openai
-            tag: v0.7.0
+            repository: vllm/vllm-openai
+            tag: v0.25.1
             pullPolicy: IfNotPresent
           args:
-            # vllm serve expects the model as a positional `model_tag`, not as
-            # --model=. The sibling qwen3-4b chart already has this right.
             - /mnt/models
             - --served-model-name=qwen2-vl-2b
             - --port=8080
@@ -104,16 +98,7 @@ modelServing:
             - --enforce-eager
             - --enable-auto-tool-choice
             - --tool-call-parser=hermes
-            # In-process LMCache: single replica, both stores and retrieves KV.
-            - '--kv-transfer-config={"kv_connector":"LMCacheConnector","kv_role":"kv_both"}'
           env:
-            LMCACHE_USE_EXPERIMENTAL: "False"
-            LMCACHE_CHUNK_SIZE: "256"
-            LMCACHE_LOCAL_CPU: "True"
-            LMCACHE_MAX_LOCAL_CPU_SIZE: "2"
-            LMCACHE_SAVE_DECODE_CACHE: "False"
-            LMCACHE_MIN_RETRIEVE_TOKENS: "64"
-            LMCACHE_LOG_LEVEL: "INFO"
             VLLM_API_KEY:
               secretKeyRef:
                 name: vllm-local-api-key
@@ -153,7 +138,6 @@ modelServing:
                 failureThreshold: 6
           securityContext:
             allowPrivilegeEscalation: false
-            # lmcache/vllm-openai requires root to initialise CUDA/LMCache internals.
             runAsNonRoot: false
             runAsUser: 0
             capabilities:
