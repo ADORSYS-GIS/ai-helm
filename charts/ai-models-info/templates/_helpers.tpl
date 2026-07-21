@@ -8,6 +8,8 @@ Output: dict { inputModalities: [...], outputModalities: [...] }
 {{- $kind := default "text" . -}}
 {{- if eq $kind "multimodal" -}}
 {{- dict "inputModalities" (list "text" "image") "outputModalities" (list "text") | toJson -}}
+{{- else if eq $kind "image" -}}
+{{- dict "inputModalities" (list "text") "outputModalities" (list "image") | toJson -}}
 {{- else if eq $kind "embedding" -}}
 {{- dict "inputModalities" (list "text") "outputModalities" (list "text") | toJson -}}
 {{- else if eq $kind "reranker" -}}
@@ -49,6 +51,12 @@ Output: dict-as-JSON.
   {{- $eff := index $std "effectivePer1M" -}}
   {{- $_ := set $out "prompt"     (include "ai-models-info.usdPerToken" $eff) -}}
   {{- $_ := set $out "completion" (include "ai-models-info.usdPerToken" $eff) -}}
+{{- else if eq $strategy "flatPerRequest" -}}
+  {{- /* Image models price per image ($/image), not per token. Emit as
+         flat per-request price in the prompt field for OpenRouter-shape compat. */ -}}
+  {{- $perReq := index $std "effectivePerRequest" | default 0 -}}
+  {{- $_ := set $out "prompt"     (printf "%.8f" $perReq) -}}
+  {{- $_ := set $out "completion" (printf "%.8f" $perReq) -}}
 {{- else -}}
   {{- /* weighted (and tieredWeighted falls through to standard pricing) */ -}}
   {{- $in  := index $std "inputPer1M" -}}
