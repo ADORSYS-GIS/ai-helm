@@ -1,0 +1,51 @@
+apiVersion: v2
+name: lakefs
+description: |
+  App-of-Apps orchestrator for LakeFS (data-lake version control). Renders
+  THREE ArgoCD Application CRs:
+
+    1. lakefs-secrets — ExternalSecrets (DB connection URL, S3 blockstore
+                        creds, auth encrypt key, oauth2-proxy OIDC creds +
+                        cookie secret) the app depends on (leaf chart,
+                        sync-wave 0)
+    2. lakefs-auth    — a dedicated oauth2-proxy instance gating LakeFS with
+                        Keycloak SSO via Traefik ForwardAuth (upstream
+                        oauth2-proxy chart, sync-wave 1)
+    3. lakefs-app     — the LakeFS workload (upstream Helm chart from
+                        https://charts.lakefs.io, deployed as an ArgoCD
+                        source) with ingress TLS Certificate + the
+                        ForwardAuth Middleware + oauth2 callback Ingress via
+                        the per-env kustomize overlay (sync-wave 2)
+
+  LakeFS uses the existing lightbridge-main-db CNPG cluster for its metadata
+  DB (a managed `lakefs` role + `lakefs` Database CR added to
+  charts/lightbridge-db) — no separate CNPG cluster. Its blockstore is S3
+  (Hetzner Object Storage), a `lakefs/` prefix inside the shared
+  ssegning-k8s-state bucket, reusing the platform's existing S3 credentials.
+
+  LakeFS OSS has no functional native OIDC (Enterprise-only) — oauth2-proxy
+  gates network access via Keycloak, but LakeFS's own internal user/
+  credential system (access-key/secret-key) remains separate. See ADR-0085.
+
+  Same App-of-Apps pattern as lightbridge (ADR-0019 canonical) / coder
+  (ADR-0083) — see ADR-0085 for this platform's specifics.
+type: application
+version: 1.0.0
+appVersion: "1.83.0"
+keywords:
+  - lakefs
+  - data-lake
+  - mlops
+  - version-control
+maintainers:
+  - name: ai-helm
+annotations:
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

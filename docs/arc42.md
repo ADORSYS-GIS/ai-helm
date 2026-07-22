@@ -185,6 +185,10 @@ flowchart TB
 | `lightbridge-code-intelligence` | GitHub/GitLab code-review App: Rust control plane + Next.js console + Neo4j; pgvector reused from the CNPG cluster | Direct (bjw-template) |
 | `opencode-k8s-agent` | In-cluster opencode agent (external repo, pinned SHA) on the internal gateway plane | Direct (ADR-0037) |
 | `restate` | Durable-execution runtime (OCI chart) — foundation for the A2A agent platform (ADR-0081) | Direct |
+| `coder` → `coder-secrets`/`-app` | AI-agent dev-workspace platform, Keycloak OIDC | App-of-Apps (ADR-0083) |
+| `lakefs` → `lakefs-secrets`/`-auth`/`-app` | Data-lake version control; S3 blockstore (Hetzner Object Storage); dedicated oauth2-proxy gate (LakeFS OSS has no functional OIDC) | App-of-Apps (ADR-0085) |
+| `argo-workflows` → `argo-workflows-secrets`/`-app` | Pipeline orchestration; native Keycloak SSO; S3 artifact repository | App-of-Apps (ADR-0085) |
+| `mlflow` → `mlflow-secrets`/`-app` | Experiment tracking + model registry; native Keycloak OIDC (bundled `mlflow-oidc-auth`); S3 artifact store | App-of-Apps (ADR-0085) |
 | `observability` → children | LGTM + Alloy + grafana-operator + redis-exporter | App-of-Apps (ADR-0020) |
 | `observability-dashboards` | Dashboards + folders + alerting as grafana-operator CRs (Python-generated) | Direct (ADR-0008/0059) |
 | `same-origin-proxy` | Generic Caddy serving external resources same-origin to dodge browser CORS | Direct (ADR-0061) |
@@ -462,6 +466,8 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0080 | Mermaid MCP `enabled: true` + universal (every agent); global "explain via diagrams" directive appended to all agent prompts |
 | 0081 | **A2A agent-hosting platform (Proposed)** — Rust axum protocol plane + Postgres registry + `rig-core`-on-Restate runtime, EAIG-fronted, A2A→MCP bridge |
 | 0082 | release-please owns each chart's `MAJOR.MINOR` floor + `CHANGELOG.md` from Conventional Commits; publish (ADR-0055) still derives the deployed `PATCH` from commit-count |
+| 0083 | Re-introduce Coder as an App-of-Apps orchestrator (supersedes 0019/0027); reuses `lightbridge-main-db`, no dedicated CNPG |
+| 0085 | Self-hosted MLOps platform (LakeFS + Argo Workflows + MLflow): shared CNPG/S3 reuse, per-app auth (native SSO for Argo Workflows and MLflow's bundled `mlflow-oidc-auth`; dedicated oauth2-proxy for LakeFS, which has no functional OIDC in OSS) |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 

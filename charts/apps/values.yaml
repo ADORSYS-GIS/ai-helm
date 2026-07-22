@@ -1144,6 +1144,43 @@ applications:
     destination:
       namespace: coder
 
+  # --- mlops platform: LakeFS + Argo Workflows + MLflow (ADR-0085) ---
+  # Three App-of-Apps orchestrators, all in the new `mlops` namespace, all
+  # controlPlane: true (control objects emitting child Application CRs — the
+  # children themselves target home-remote). OCI mode: each orchestrator
+  # chart floats from OCI. All three reuse the existing lightbridge-main-db
+  # CNPG cluster (no separate CNPG) and the platform's existing Hetzner
+  # Object Storage S3 credentials. Auth is mixed: Argo Workflows has native
+  # OIDC (server.sso); LakeFS is gated by a dedicated oauth2-proxy (OSS has
+  # no functional native OIDC); MLflow uses its bundled mlflow-oidc-auth
+  # plugin (native, no proxy needed).
+  - name: lakefs
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: lakefs
+    releaseName: lakefs
+    destination:
+      namespace: mlops
+
+  - name: argo-workflows
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: argo-workflows
+    releaseName: argo-workflows
+    destination:
+      namespace: mlops
+
+  - name: mlflow
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: mlflow
+    releaseName: mlflow
+    destination:
+      namespace: mlops
+
 extraObjects:
   # ==========================================
   # Upstream namespace quotas & limit ranges
