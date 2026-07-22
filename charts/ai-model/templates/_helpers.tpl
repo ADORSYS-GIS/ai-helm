@@ -23,7 +23,7 @@ Input: pricing dict with standard.effectivePerRequest in USD.
 */}}
 {{- define "ai-model.flatPerRequestCostBranch" -}}
 {{- $p := . -}}
-{{- $cost := mulf $p.effectivePerRequest 1.0 | printf "%.4f" -}}
+{{- $cost := mulf $p.effectivePerRequest 1000000.0 | printf "%.0f" -}}
 {{- printf "1.0 * %s" $cost -}}
 {{- end -}}
 
