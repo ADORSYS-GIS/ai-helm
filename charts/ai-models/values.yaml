@@ -1276,7 +1276,20 @@ models:
     kind: multimodal
     # DeepInfra · anthropic/claude-sonnet-5 — Anthropic's Sonnet-tier model
     # resold via DeepInfra (a "Partner" model on their catalog), near-Opus
-    # quality on coding/agentic work, adaptive thinking, vision. DeepInfra's
+    # quality on coding/agentic work, adaptive thinking, vision.
+    #
+    # ⚠️ DO NOT send `reasoning_effort` to this model (nor claude-fable-5).
+    # DeepInfra maps the OpenAI `reasoning_effort` param onto the DEPRECATED
+    # Anthropic `thinking.type.enabled`, which Sonnet 5 rejects with a 500:
+    # "'thinking.type.enabled' is not supported for this model. Use
+    # 'thinking.type.adaptive' and 'output_config.effort'". Verified live
+    # 2026-07-22 (req_vrtx_…). It IS a reasoning model (adaptive thinking,
+    # self-regulating with no param) so `reasoning` stays in supported params,
+    # but it is deliberately excluded from the opencode well-known reasoning
+    # caps (charts/librechat-opencode-wellknown) — a cap there would send
+    # reasoning_effort and break it. (`output_config.effort` was ACCEPTED —
+    # HTTP 200 — in live testing, so it's the likely path if we ever want a
+    # real cap; not yet proven to actually reduce thinking volume.) DeepInfra's
     # price matches Anthropic's own intro API rate ($2/$10, through
     # 2026-08-31 per Anthropic's pricing table); cachedInputPer1M estimated at
     # the standard ~10% cache-read ratio (unconfirmed on DeepInfra's page).

@@ -270,9 +270,18 @@ wellKnown:
         #     (Moonshot rejects a suppression/cap param on K2.7-Code).
         #   • deepseek-r1-1-5b-local → pure R1 distill; CoT is intrinsic, no
         #     effort knob to cap.
+        #   • claude-sonnet-5, claude-fable-5 → Anthropic resold via DeepInfra.
+        #     DeepInfra maps `reasoning_effort` onto the DEPRECATED Anthropic
+        #     `thinking.type.enabled`, which Sonnet 5 rejects with a 500
+        #     ("use thinking.type.adaptive and output_config.effort"). Sending
+        #     ANY reasoning_effort breaks them; they self-regulate via adaptive
+        #     thinking with no param. Verified live 2026-07-22. Revisit if we
+        #     wire `output_config.effort` (ACCEPTED with HTTP 200 in testing;
+        #     not yet proven to cap) or if DeepInfra fixes the translation.
         #   • non-reasoning models (gemma-4, ministral-3b-local,
-        #     qwen25-3b-awq-local, mimo-v2p5-pro, minimax-m3) → no reasoning
-        #     channel to cap.
+        #     qwen25-3b-awq-local) → no reasoning channel to cap. (NB
+        #     mimo-v2p5-pro + minimax-m3 were RECLASSIFIED as reasoning on
+        #     2026-07-16 and ARE capped below — they are no longer excluded.)
         #
         # ⚠️ VERIFY per backend before trusting the effect: each provider must
         # honor `reasoning_effort` on its OpenAI-compat endpoint (the catalog
@@ -383,18 +392,10 @@ wellKnown:
             variants:
               thinking:
                 reasoningEffort: high
-          claude-sonnet-5:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          claude-fable-5:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
+          # claude-sonnet-5 / claude-fable-5 are EXCLUDED — see the header note.
+          # Anthropic-via-DeepInfra rejects reasoning_effort (DeepInfra maps it
+          # to the deprecated `thinking.type.enabled`, which Sonnet 5 refuses
+          # with a 500). Verified live 2026-07-22.
           adorsys-researcher:
             options:
               reasoningEffort: low
