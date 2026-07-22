@@ -40,9 +40,21 @@ server:
       name: argo-server-sso
       key: client-secret
     redirectUrl: "https://argo-workflows.mlops.ai.camer.digital/oauth2/callback"
-    scopes:
-      - groups
+    # No explicit scopes override: the `argo-workflows` Keycloak clientScope
+    # (charts/keycloak-baseline) is a DEFAULT client scope, always included
+    # in every token regardless of what's requested here — no need to name
+    # it. The previous `scopes: [groups]` named a scope that doesn't exist
+    # on this client at all, which made Keycloak reject the WHOLE OIDC
+    # request (invalid_scope), not just omit the claim — that's why nothing
+    # worked, not just RBAC. Found live during ADR-0085 verification.
     customGroupClaimName: "argo_workflows_roles"
+    # NOTE: `secretWhitelist` is documented in this chart's values.yaml but
+    # NOT actually templated by argo-helm 1.0.20's
+    # workflow-controller-config-map.yaml (verified against the template
+    # source) — setting it here would be a silent no-op. RBAC ServiceAccount
+    # selection (see environments/base/deps/argo-workflows/rbac.yaml) is
+    # unaffected: it works purely off the rbac-rule/rbac-rule-precedence
+    # annotations, independent of secretWhitelist.
     rbac:
       enabled: true
 
