@@ -50,8 +50,8 @@ Three shared decisions needed to be made before any chart could be written:
 ### Namespace and hostnames
 
 A new `mlops` namespace on `home-remote`. Hostnames:
-`lakefs.ai.camer.digital`, `argo-workflows.ai.camer.digital`,
-`mlflow.ai.camer.digital`.
+`lakefs.mlops.ai.camer.digital`, `argo-workflows.mlops.ai.camer.digital`,
+`mlflow.mlops.ai.camer.digital`.
 
 ### S3 backend
 
