@@ -474,6 +474,7 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+<<<<<<< HEAD
   # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the home GPU — custom
   # Rust/Candle server (no Python, no PyTorch, 6B params FP8). Different
   # schema/prefix from the vLLM backends: the server natively speaks OpenAI
@@ -481,6 +482,15 @@ backends:
   # Gateway enforces the Bearer token. Distinct edge host MUST match
   # charts/model-serving-zimage-turbo ingress host. DISABLED by default
   # (one GPU → one model).
+=======
+  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the home GPU — custom FastAPI
+  # server (Diffusers, FP8 quantized, 6B params). Different schema/prefix from
+  # the vLLM/vLLM backends: the Z-Image-Turbo server natively speaks OpenAI
+  # /v1/images/generations at root (/). Distinct edge host MUST match
+  # charts/model-serving-zimage-turbo ingress host. DISABLED by default (one
+  # GPU → one model). Reuses the vllm_local_api_key SM property (the API key
+  # the FastAPI server validates as Bearer token).
+>>>>>>> f21ca5f2fd0b55936e528cc1d579f5bbb3ab0495
   zimage-local-01:
     schema: OpenAI
     prefix: "/"

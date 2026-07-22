@@ -9,8 +9,13 @@
 #     natively: the weights PVC and the ExternalSecrets.
 #
 # Sync-wave ordering (this Application's resources, on the HOME cluster):
+<<<<<<< HEAD
 #   -2  ExternalSecret (hf-token)                     — before any pod
 #   -1  PVC (zimage-models, RWX)                     — weights volume
+=======
+#   -2  ExternalSecret (zimage-api-key + hf-token)  — before any pod
+#   -1  PVC (zimage-models, RWX)                    — weights volume
+>>>>>>> f21ca5f2fd0b55936e528cc1d579f5bbb3ab0495
 #    0  seed Job (download-once into the PVC)         — ArgoCD Sync hook
 #    1  Deployment (model server) + Service + Ingress — mounts the PVC
 
@@ -44,6 +49,20 @@ seedJob:
       key: ai/camer/digital/prod/env
       property: hf_token
 
+<<<<<<< HEAD
+=======
+apiKey:
+  enabled: true
+  secretName: zimage-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: vllm_local_api_key
+
+>>>>>>> f21ca5f2fd0b55936e528cc1d579f5bbb3ab0495
 modelServing:
   global:
     fullnameOverride: z-image-turbo
@@ -63,9 +82,19 @@ modelServing:
         model:
           image:
             repository: ghcr.io/adorsys-gis/z-image-turbo-server
+<<<<<<< HEAD
             tag: v0.1.0
             pullPolicy: IfNotPresent
           env:
+=======
+            tag: v1.0.0
+            pullPolicy: IfNotPresent
+          env:
+            API_KEY:
+              secretKeyRef:
+                name: zimage-local-api-key
+                key: api_key
+>>>>>>> f21ca5f2fd0b55936e528cc1d579f5bbb3ab0495
             MODEL_DIR: /mnt/models
           ports:
             - name: http
