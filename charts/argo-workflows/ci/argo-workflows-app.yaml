@@ -1,0 +1,88 @@
+# CI / reference values for the upstream Argo Workflows chart
+# (https://argoproj.github.io/argo-helm, chart argo-workflows).
+#
+# This file serves TWO purposes:
+# 1. Human reference copy — kept structurally in sync with the PRIVATE
+#    ai-helm-values repo file at environments/prod/values/argo-workflows-app.yaml
+#    (NOT auto-linted: the top-level repo CI loop only picks up
+#    charts/<chart>/ci/*-values.yaml, and this file is named *-app.yaml).
+# 2. Documentation of the exact chart schema decisions (native server.sso,
+#    S3 artifact repository, RBAC kept minimal for v1).
+#
+# No metadata DB — Workflows/WorkflowTemplates are k8s CRs. Artifact
+# repository: Hetzner Object Storage (S3-compatible), prefix
+# `argo-workflows-artifacts/` inside the shared ssegning-k8s-state bucket,
+# reusing the platform's existing S3 credentials.
+#
+# Auth: NATIVE OIDC (server.sso) — no fronting oauth2-proxy needed, unlike
+# LakeFS (ADR-0085). Keycloak client `argo-workflows`; the `groups` claim is
+# repointed at the same client-role-mapping pattern coder uses
+# (customGroupClaimName: argo_workflows_roles) rather than real Keycloak
+# realm Groups, for consistency with this repo's existing convention.
+#
+# RBAC kept minimal for v1: SSO is enabled and any authenticated
+# camer-digital user can log in and use the default namespace-scoped
+# ServiceAccount; fine-grained per-role RBAC (mapping `admin`/`viewer` from
+# argo_workflows_roles to distinct ServiceAccounts via
+# workflows.argoproj.io/rbac-rule) is a follow-up once real usage patterns
+# emerge — do not over-build this now.
+
+server:
+  authModes:
+    - sso
+  sso:
+    enabled: true
+    issuer: "https://auth.verif.fyi/realms/camer-digital"
+    clientId:
+      name: argo-server-sso
+      key: client-id
+    clientSecret:
+      name: argo-server-sso
+      key: client-secret
+    redirectUrl: "https://argo-workflows.mlops.ai.camer.digital/oauth2/callback"
+    scopes:
+      - groups
+    customGroupClaimName: "argo_workflows_roles"
+    rbac:
+      enabled: true
+
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - argo-workflows.mlops.ai.camer.digital
+    tls:
+      - secretName: argo-workflows-tls
+        hosts:
+          - argo-workflows.mlops.ai.camer.digital
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+artifactRepository:
+  archiveLogs: true
+  s3:
+    bucket: ssegning-k8s-state
+    endpoint: nbg1.your-objectstorage.com
+    region: us-east-1
+    keyFormat: "argo-workflows-artifacts/{{ `{{workflow.namespace}}/{{workflow.name}}/{{pod.name}}` }}"
+    accessKeySecret:
+      name: argo-workflows-s3-creds
+      key: accesskey
+    secretKeySecret:
+      name: argo-workflows-s3-creds
+      key: secretkey

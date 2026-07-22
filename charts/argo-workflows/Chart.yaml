@@ -1,0 +1,47 @@
+apiVersion: v2
+name: argo-workflows
+description: |
+  App-of-Apps orchestrator for Argo Workflows (pipeline orchestration).
+  Renders TWO ArgoCD Application CRs:
+
+    1. argo-workflows-secrets — ExternalSecrets (Keycloak OIDC client secret,
+                        S3 artifact-repository creds) the app depends on
+                        (leaf chart, sync-wave 0)
+    2. argo-workflows-app     — the Argo Workflows workload (upstream Helm
+                        chart from https://argoproj.github.io/argo-helm,
+                        deployed as an ArgoCD source) with ingress TLS
+                        Certificate via the per-env kustomize overlay
+                        (sync-wave 1)
+
+  No metadata DB — Argo Workflows stores WorkflowTemplates/Workflows as k8s
+  CRs (etcd), no separate CNPG cluster or role needed. Its artifact
+  repository is S3 (Hetzner Object Storage), an `argo-workflows-artifacts/`
+  prefix inside the shared ssegning-k8s-state bucket, reusing the platform's
+  existing S3 credentials.
+
+  Argo Workflows has NATIVE OIDC (`server.sso`) — no fronting oauth2-proxy
+  needed, unlike LakeFS. The lightest of the three mlops apps: only 2
+  children (no DB child, no auth-proxy child). See ADR-0085.
+
+  Same App-of-Apps pattern as lightbridge (ADR-0019 canonical) / coder
+  (ADR-0083) — see ADR-0085 for this platform's specifics.
+type: application
+version: 1.0.0
+appVersion: "v4.0.7"
+keywords:
+  - argo-workflows
+  - pipeline-orchestration
+  - mlops
+  - ci-cd
+maintainers:
+  - name: ai-helm
+annotations:
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

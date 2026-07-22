@@ -1,0 +1,48 @@
+# CI / reference values for the upstream oauth2-proxy chart
+# (https://oauth2-proxy.github.io/manifests, chart oauth2-proxy).
+#
+# This file serves TWO purposes:
+# 1. Human reference copy — kept structurally in sync with the PRIVATE
+#    ai-helm-values repo file at environments/prod/values/lakefs-auth.yaml
+#    (NOT auto-linted: the top-level repo CI loop only picks up
+#    charts/<chart>/ci/*-values.yaml, and this file is named *-auth.yaml).
+# 2. Documentation of the exact chart schema decisions (config.existingSecret,
+#    upstream/redirect via extraArgs, no chart-owned ingress).
+#
+# A DEDICATED instance for LakeFS (own Keycloak client `lakefs-proxy`, own
+# cookie secret) — NOT shared with any other app (ADR-0085). Gates ALL of
+# LakeFS via Traefik ForwardAuth (Middleware CR + oauth2 callback Ingress
+# shipped in the lakefs-app depsOverlay, pointing at THIS release's Service
+# `lakefs-auth-oauth2-proxy:80`).
+
+config:
+  existingSecret: lakefs-proxy-secret
+  cookieName: "_lakefs_proxy"
+  emailDomains:
+    - "*"
+
+extraArgs:
+  provider: "keycloak-oidc"
+  oidc-issuer-url: "https://auth.verif.fyi/realms/camer-digital"
+  redirect-url: "https://lakefs.mlops.ai.camer.digital/oauth2/callback"
+  upstreams: "http://lakefs.mlops.svc.cluster.local:80"
+  reverse-proxy: "true"
+  cookie-secure: "true"
+  skip-provider-button: "true"
+  set-xauthrequest: "true"
+  silence-ping-logging: "true"
+
+# No chart-owned ingress — the oauth2 callback path is routed via the
+# lakefs-app depsOverlay Ingress (path `/oauth2`) at the SAME hostname, and
+# `/` is gated by a ForwardAuth Middleware calling this Service's
+# `/oauth2/auth` endpoint. Traffic to this Service stays in-cluster.
+ingress:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

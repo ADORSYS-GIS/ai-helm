@@ -131,6 +131,74 @@ keycloak-config:
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "coder"
 
+    # mlops platform (ADR-0085). Three scopes mirroring the coder pattern —
+    # each app's client roles feed its own claim.
+    argoWorkflows:
+      name: "argo-workflows"
+      description: "Argo Workflows OIDC roles scope"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        - name: argo_workflows_roles
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "true"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "argo_workflows_roles"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "argo-workflows"
+
+    lakefsProxy:
+      name: "lakefs-proxy"
+      description: "LakeFS oauth2-proxy roles scope"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        - name: lakefs_roles
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "false"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "lakefs_roles"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "lakefs-proxy"
+
+    mlflow:
+      name: "mlflow"
+      description: "MLflow OIDC roles scope"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        - name: mlflow_roles
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "false"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "mlflow_roles"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "mlflow"
+
   # OIDC Clients
   clients:
     converse:
@@ -209,6 +277,126 @@ keycloak-config:
           description: "Coder owner role"
         - name: "developer"
           description: "Coder member role"
+
+    # ── mlops platform (ADR-0085) ─────────────────────────────────────────
+    # Argo Workflows: NATIVE OIDC (server.sso) — no fronting oauth2-proxy.
+    # The argo_workflows_roles claim (multivalued) is read as the SSO
+    # "groups" claim via customGroupClaimName, used for RBAC precedence.
+    argoWorkflows:
+      enabled: true
+      clientId: "argo-workflows"
+      name: "Argo Workflows"
+      description: ""
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris:
+        - "/*"
+      webOrigins:
+        - "/*"
+      rootUrl: "https://argo-workflows.mlops.ai.camer.digital"
+      baseUrl: "/"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - argo-workflows
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+      roles:
+        - name: "admin"
+          description: "Argo Workflows admin"
+        - name: "viewer"
+          description: "Argo Workflows read-only"
+
+    # LakeFS: OSS has no functional native OIDC (Enterprise-only, ADR-0085)
+    # — this client is consumed by the DEDICATED lakefs-auth oauth2-proxy
+    # instance (network gate only; LakeFS's own internal user/credential
+    # system remains separate — see ADR-0085 consequences).
+    lakefsProxy:
+      enabled: true
+      clientId: "lakefs-proxy"
+      name: "LakeFS (oauth2-proxy)"
+      description: ""
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris:
+        - "https://lakefs.mlops.ai.camer.digital/oauth2/callback"
+      webOrigins:
+        - "https://lakefs.mlops.ai.camer.digital"
+      rootUrl: "https://lakefs.mlops.ai.camer.digital"
+      baseUrl: "/"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - lakefs-proxy
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+      roles:
+        - name: "user"
+          description: "LakeFS gated access"
+
+    # MLflow: this specific upstream chart bundles the mlflow-oidc-auth
+    # plugin natively — real per-user Keycloak identity + group RBAC inside
+    # MLflow itself, no fronting oauth2-proxy needed (ADR-0085).
+    mlflow:
+      enabled: true
+      clientId: "mlflow"
+      name: "MLflow"
+      description: ""
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris:
+        - "/*"
+      webOrigins:
+        - "/*"
+      rootUrl: "https://mlflow.mlops.ai.camer.digital"
+      baseUrl: "/"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - mlflow
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+      roles:
+        - name: "admin"
+          description: "MLflow MANAGE permission"
+        - name: "viewer"
+          description: "MLflow READ permission (default)"
 
     selfServiceMcpApi:
       enabled: true

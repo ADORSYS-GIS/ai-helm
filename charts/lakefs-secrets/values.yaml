@@ -1,0 +1,71 @@
+# lakefs-secrets — ExternalSecrets for LakeFS. Leaf chart of the lakefs
+# orchestrator (ADR-0085). All ExternalSecrets resolve against the
+# cluster-scoped `ssegning-aws` ClusterSecretStore.
+
+secretStore: ssegning-aws
+refreshInterval: 1h
+
+# Values-driven ExternalSecrets. Key = target Secret name. Each `data` entry
+# maps a target secretKey ← a remoteRef {key, property} in the store.
+# `literals` are static values merged into the materialised Secret (mergePolicy: Merge).
+# `templateData` are templated strings (ESO Go templates) that can reference
+# fetched data via `{{ .<secretKey> }}`.
+externalSecrets:
+  # NOTE: the CNPG-facing `lakefs-db-role` basic-auth Secret (consumed by the
+  # managed role's passwordSecret) is NOT here — it must live in the SAME
+  # namespace as the lightbridge-main-db CNPG cluster (`converse`), not
+  # `mlops`. It's created directly by charts/lightbridge-db (mirrors
+  # coder-db-role). This chart only carries mlops-namespace Secrets.
+
+  # Single Secret carrying the two values the upstream LakeFS chart natively
+  # pulls from an existingSecret (chart's `secretKeys` map). The DB is a
+  # managed `lakefs` role + `lakefs` Database CR on the existing
+  # lightbridge-main-db CNPG cluster (charts/lightbridge-db) — LakeFS does NOT
+  # have its own CNPG cluster (ADR-0085, same reasoning as coder in ADR-0083).
+  # The connection targets the RW service in the `converse` namespace.
+  # The password is URL-encoded via ESO's `urlquery` function so URL-reserved
+  # characters don't break the connection string.
+  lakefs-app-secret:
+    templateData:
+      database_connection_string: "postgres://lakefs:{{ .dbPassword | urlquery }}@lightbridge-main-db-rw.converse.svc.cluster.local:5432/lakefs?sslmode=disable"
+      auth_encrypt_secret_key: "{{ .encryptSecretKey }}"
+    data:
+      - secretKey: dbPassword
+        key: ai/camer/digital/prod/env
+        property: lakefs_db_password
+      - secretKey: encryptSecretKey
+        key: ai/camer/digital/prod/env
+        property: lakefs_encrypt_secret_key
+
+  # S3 blockstore credentials — the SAME platform S3 material every other
+  # Hetzner Object Storage consumer uses (Keycloak/lightbridge CNPG backups,
+  # LibreChat's S3 file storage): prod/meta/test-app, bucket ssegning-k8s-state.
+  # LakeFS repositories default to the `lakefs/` prefix (set via extraEnvVars
+  # in the app values, not here).
+  lakefs-s3-creds:
+    data:
+      - secretKey: access_key_id
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_client_id
+      - secretKey: secret_access_key
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_secret
+
+  # Single Secret for the DEDICATED lakefs-auth oauth2-proxy instance (client
+  # `lakefs-proxy` — NOT shared with mlflow, ADR-0085): Keycloak OIDC client
+  # credentials + the session cookie signing secret. Matches the upstream
+  # oauth2-proxy chart's config.existingSecret schema, which reads all three
+  # keys (client-id/client-secret/cookie-secret) from ONE Secret
+  # (config.requiredSecretKeys default). cookie-secret is a 32-byte
+  # base64 value (generate with `openssl rand -base64 32 | head -c 32 | base64`).
+  lakefs-proxy-secret:
+    data:
+      - secretKey: client-id
+        key: ai/camer/digital/prod/env
+        property: lakefs_proxy_client_id
+      - secretKey: client-secret
+        key: ai/camer/digital/prod/env
+        property: lakefs_proxy_client_secret
+      - secretKey: cookie-secret
+        key: ai/camer/digital/prod/env
+        property: lakefs_proxy_cookie_secret
