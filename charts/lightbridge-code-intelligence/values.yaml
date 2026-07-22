@@ -185,7 +185,14 @@ config:
     # COMPLETE, independent per-tier config: it shares the gateway (env) + system prompt, and carries its
     # OWN model + the same generation/budget knobs as above (model, extra, maxTurns, stream,
     # requestTimeoutSecs, contextWindow, maxTokens, temperature, topP, maxDiffChars, max* read budgets,
-    # maxCoverageBounces, opencode).
+    # maxCoverageBounces, maxCycles, opencode).
+    #
+    # maxCycles (fast-tier-parity plan) → agent.json `review.<tier>.max_cycles`: how many whole
+    # `session/prompt` re-prompt cycles the OpenCode-path supervisor drives before declaring exhaustion —
+    # the real stuck-model backstop (opencode's own step cap doesn't work over ACP). Empty → the runner's
+    # built-in default (8). Set fast smaller than deep here for a genuinely cheaper budget, now that both
+    # tiers share the same gate/tool mechanics. ⚠️ REQUIRES a runner image carrying
+    # `review.<tier>.max_cycles` before it's set, else deny_unknown_fields fails every Job.
     #
     # Per-tier OpenCode config overlay (lightbridge-code-intelligence ADR-0099) → agent.json
     # `review.<tier>.opencode`. Arbitrary OpenCode config — most commonly a custom `agent.*` sub-agent on
