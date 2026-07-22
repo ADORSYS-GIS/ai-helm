@@ -56,8 +56,12 @@ externalSecrets:
   # credentials + the session cookie signing secret. Matches the upstream
   # oauth2-proxy chart's config.existingSecret schema, which reads all three
   # keys (client-id/client-secret/cookie-secret) from ONE Secret
-  # (config.requiredSecretKeys default). cookie-secret is a 32-byte
-  # base64 value (generate with `openssl rand -base64 32 | head -c 32 | base64`).
+  # (config.requiredSecretKeys default). cookie-secret MUST base64-decode to
+  # exactly 16, 24, or 32 raw bytes (oauth2-proxy uses it as an AES cipher
+  # key) — generate with `openssl rand -base64 32` (no extra piping; a
+  # `head -c 32` truncating the base64 TEXT, or double-encoding, produces a
+  # value of the wrong decoded length and oauth2-proxy refuses to start:
+  # "cookie_secret must be 16, 24, or 32 bytes ... but is N bytes").
   lakefs-proxy-secret:
     data:
       - secretKey: client-id
