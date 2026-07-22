@@ -191,7 +191,15 @@ keycloak-config:
           consentRequired: false
           config:
             introspection.token.claim: "true"
-            multivalued: "false"
+            # MUST be multivalued: mlflow-oidc-auth's `oidcAuth.groupsAttribute`
+            # expects a JSON array to match against `groupName`/`adminGroupName`
+            # — `multivalued: false` emits a bare string, which the plugin
+            # can't match, so login is unconditionally rejected
+            # ("User is not allowed to login") even for a user with the
+            # `admin`/`viewer` client role assigned. Found live during
+            # ADR-0085 verification (compare argo_workflows_roles, which was
+            # multivalued: true from the start and worked).
+            multivalued: "true"
             userinfo.token.claim: "true"
             id.token.claim: "true"
             access.token.claim: "true"
