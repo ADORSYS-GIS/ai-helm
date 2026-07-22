@@ -1047,7 +1047,7 @@ applications:
   # the inverse. See docs/patterns/self-hosted-model-serving.md.
   # ADRs: 0022 (federation), 0029 (serving mode), 0030 (one STS via bjw-template).
   - name: model-serving-qwen2-vl-2b
-    enabled: true                 # STAGED — disable qwen25-3b-awq + enable this at cutover.
+    enabled: false                 # DISABLED — swapped by model-serving-zimage-turbo (one GPU). Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -1058,6 +1058,32 @@ applications:
       targetRevision: ">=0.0.0"
       helm:
         releaseName: model-serving-qwen2-vl-2b
+        valuesObject: { }
+    destination:
+      namespace: converse-poc
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
+  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the home GPU (ADR-0022).
+  # 6B params, FP8 quantized (~8 GB VRAM), 1024×1024, 8-step distilled DiT.
+  # LIVE on the home GPU. See docs/patterns/self-hosted-model-serving.md.
+  - name: model-serving-zimage-turbo
+    enabled: true                  # LIVE — one GPU, one model.
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    homeCluster: true
+    source:
+      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
+      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-zimage-turbo
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: model-serving-zimage-turbo
         valuesObject: { }
     destination:
       namespace: converse-poc
