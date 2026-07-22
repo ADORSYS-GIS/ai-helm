@@ -64,7 +64,7 @@ impl GenerateRequest {
         if w == 0 || h == 0 || w > max_size || h > max_size {
             return None;
         }
-        if w % 16 != 0 || h % 16 != 0 {
+        if !w.is_multiple_of(16) || !h.is_multiple_of(16) {
             return None;
         }
         Some((w, h))

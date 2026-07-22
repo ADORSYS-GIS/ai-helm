@@ -254,7 +254,7 @@ impl InferenceEngine {
 
         // ── Validate dimensions ───────────────────────────────────────────
         let vae_align = 16;
-        if height % vae_align != 0 || width % vae_align != 0 {
+        if !height.is_multiple_of(vae_align) || !width.is_multiple_of(vae_align) {
             return Err(crate::ServerError::BadRequest(format!(
                 "Image dimensions must be divisible by {vae_align}. Got {width}x{height}."
             )));
@@ -302,7 +302,7 @@ impl InferenceEngine {
             let input_ids = Tensor::from_vec(
                 token_ids.to_vec(),
                 (1, num_tokens),
-                &self.device, // Create on GPU initially
+                &Device::Cpu, // Text encoder weights are on CPU
             )
             .map_err(|e| crate::ServerError::Inference(format!("Tensor creation: {e}")))?;
 
@@ -340,7 +340,7 @@ impl InferenceEngine {
             let neg_input_ids = Tensor::from_vec(
                 neg_ids.to_vec(),
                 (1, neg_ids.len()),
-                &self.device,
+                &Device::Cpu, // Text encoder weights are on CPU
             )
             .map_err(|e| crate::ServerError::Inference(format!("Neg tensor: {e}")))?;
 

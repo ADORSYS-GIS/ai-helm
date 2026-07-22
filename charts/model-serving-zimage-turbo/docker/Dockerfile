@@ -96,7 +96,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN groupadd -r zimage && useradd -r -g zimage -m -d /app zimage
+RUN groupadd -r zimage --gid 1002 && useradd -r -g zimage -m -d /app zimage --uid 1002
 
 WORKDIR /app
 

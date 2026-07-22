@@ -66,7 +66,7 @@ impl Config {
             ));
         }
 
-        if self.max_image_size % 16 != 0 {
+        if !self.max_image_size.is_multiple_of(16) {
             return Err(format!(
                 "max_image_size must be divisible by 16, got {}",
                 self.max_image_size

@@ -21,7 +21,11 @@ pub struct AppState {
     pub config: Config,
 }
 
-/// GET /health — lightweight health check (no model load required).
+/// GET /health — lightweight health check.
+///
+/// Returns 200 only when the inference engine is loaded and ready.
+/// Returns 503 (Service Unavailable) while the model is still loading,
+/// so the readiness probe can correctly gate traffic.
 pub async fn health(data: web::Data<AppState>) -> HttpResponse {
     let engine_loaded = data.engine.lock()
         .ok()
@@ -29,12 +33,21 @@ pub async fn health(data: web::Data<AppState>) -> HttpResponse {
         .unwrap_or(false);
     let device = if data.config.cpu { "cpu" } else { "cuda" };
 
-    HttpResponse::Ok().json(HealthResponse {
-        status: "ok".into(),
-        device: device.into(),
-        model_loaded: engine_loaded,
-        version: env!("CARGO_PKG_VERSION"),
-    })
+    if engine_loaded {
+        HttpResponse::Ok().json(HealthResponse {
+            status: "ok".into(),
+            device: device.into(),
+            model_loaded: true,
+            version: env!("CARGO_PKG_VERSION"),
+        })
+    } else {
+        HttpResponse::ServiceUnavailable().json(HealthResponse {
+            status: "model_loading".into(),
+            device: device.into(),
+            model_loaded: false,
+            version: env!("CARGO_PKG_VERSION"),
+        })
+    }
 }
 
 /// GET /v1/models — list available models (OpenAI-compatible).
@@ -154,10 +167,11 @@ mod tests {
 
         let req = test::TestRequest::get().uri("/health").to_request();
         let resp = test::call_service(&app, req).await;
-        assert!(resp.status().is_success());
+        // When no model is loaded, health returns 503 Service Unavailable
+        assert_eq!(resp.status(), actix_web::http::StatusCode::SERVICE_UNAVAILABLE);
 
         let body: Value = test::read_body_json(resp).await;
-        assert_eq!(body["status"], "ok");
+        assert_eq!(body["status"], "model_loading");
         assert_eq!(body["model_loaded"], false);
     }
 
