@@ -65,6 +65,21 @@ extraEnvVars:
 
 replicaCount: 1
 
+# Chart defaults (delay=0s, period=10s, failureThreshold=3 => killed after
+# only 30s) are too tight for LakeFS's first-boot DB migration — the pod
+# was being SIGKILLed (exit 137, "failed liveness probe") before it ever
+# bound :8000. Found live during ADR-0085 verification.
+readinessProbe:
+  # This chart's readinessProbe template has no initialDelaySeconds field
+  # (silently dropped if set) — periodSeconds/failureThreshold still give
+  # the same ~60s grace window.
+  periodSeconds: 10
+  failureThreshold: 6
+livenessProbe:
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  failureThreshold: 6
+
 resources:
   requests:
     cpu: 250m
