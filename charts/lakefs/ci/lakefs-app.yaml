@@ -68,7 +68,10 @@ replicaCount: 1
 # Chart defaults (delay=0s, period=10s, failureThreshold=3 => killed after
 # only 30s) are too tight for LakeFS's first-boot DB migration — the pod
 # was being SIGKILLed (exit 137, "failed liveness probe") before it ever
-# bound :8000. Found live during ADR-0085 verification.
+# bound :8000. Found live during ADR-0085 verification. Round 1
+# (initialDelaySeconds=20, failureThreshold=6, ~80s) still wasn't enough —
+# still got killed mid-migration ("postgres get: context canceled").
+# Round 2: more generous margin, ~150s.
 readinessProbe:
   # This chart's readinessProbe template has no initialDelaySeconds field
   # (silently dropped if set) — periodSeconds/failureThreshold still give
@@ -96,9 +99,14 @@ ingress:
   enabled: true
   ingressClassName: traefik
   annotations:
-    # ForwardAuth Middleware CR shipped by the depsOverlay — gates the whole
-    # app behind the lakefs-auth oauth2-proxy instance (ADR-0085).
-    traefik.ingress.kubernetes.io/router.middlewares: mlops-lakefs-forwardauth@kubernetescrd
+    # Middleware chain shipped by the depsOverlay (ADR-0085). ORDER MATTERS:
+    # Traefik applies middlewares left-to-right on the request, so the
+    # FIRST one listed is outermost and sees the response LAST — it must be
+    # errors-first so it can catch/rewrite the 401 that forwardauth
+    # produces for unauthenticated requests. forwardauth alone (no errors
+    # middleware) returns a bare 401 with no redirect to login — found live
+    # during ADR-0085 verification.
+    traefik.ingress.kubernetes.io/router.middlewares: mlops-lakefs-oauth-errors@kubernetescrd,mlops-lakefs-forwardauth@kubernetescrd
   hosts:
     - host: lakefs.mlops.ai.camer.digital
       paths:

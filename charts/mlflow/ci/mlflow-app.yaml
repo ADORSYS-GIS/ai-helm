@@ -66,7 +66,9 @@ oidcAuth:
   existingSecret:
     name: mlflow-oidc
     clientSecretKey: client-secret
-  scope: "openid,email,profile"
+  # OAuth2/OIDC `scope` is SPACE-separated per spec — Keycloak rejected the
+  # comma-separated form outright. Found live during ADR-0085 verification.
+  scope: "openid email profile"
   providerDisplayName: "Sign in with Keycloak"
   # Client-role claim (oidc-usermodel-client-role-mapper on the `mlflow`
   # Keycloak client, same pattern as coder's coder_roles / argo-workflows'
