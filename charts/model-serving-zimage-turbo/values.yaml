@@ -95,7 +95,13 @@ modelServing:
                 tcpSocket: { port: 8000 }
                 periodSeconds: 30
                 timeoutSeconds: 10
-                failureThreshold: 6
+securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: false
+            runAsUser: 0
+            capabilities:
+              drop:
+                - ALL
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
