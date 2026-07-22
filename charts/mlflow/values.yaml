@@ -1,0 +1,81 @@
+# mlflow App-of-Apps orchestrator — renders two child Application CRs
+# (mlflow-secrets + mlflow-app). Follows the lightbridge canonical pattern
+# (ADR-0019) / the coder 2-child shape (ADR-0083). No auth-proxy child: the
+# upstream chart bundles the mlflow-oidc-auth plugin natively (ADR-0085) —
+# native Keycloak OIDC + group RBAC inside MLflow itself. The chart owns no
+# workload resources; it owns the two child Applications.
+#
+# MLflow uses the existing lightbridge-main-db CNPG cluster (charts/lightbridge-db)
+# for its backend store — no separate CNPG cluster (ADR-0085, same reasoning
+# as coder in ADR-0083).
+
+# ────────────────────────────────────────────────────────────────────────
+# Shared ArgoCD wiring for all child Applications.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  project: ai
+  # OCI chart-float (ADR-0055). Two sources of truth:
+  #  • chartRegistry/chartVersionRange — the secrets leaf chart floats from
+  #    OCI (full chart path in repoURL + chart "."; template builds
+  #    `<chartRegistry>/<chartName>`).
+  #  • repoURL/targetRevision — the app child's cert/deps overlay (Source B) +
+  #    $values ref (Source C), from ai-helm-values @ main (where environments/ lives).
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: mlops
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# ────────────────────────────────────────────────────────────────────────
+# mlflow-secrets child — the ExternalSecrets leaf chart (this repo).
+# Lowest sync-wave: DB password + S3 creds + OIDC client secret must exist
+# before the app starts.
+# ────────────────────────────────────────────────────────────────────────
+secrets:
+  enabled: true
+  appName: mlflow-secrets
+  chartName: mlflow-secrets   # OCI chart name
+  releaseName: mlflow-secrets
+  syncWave: "0"
+
+# ────────────────────────────────────────────────────────────────────────
+# mlflow-db child — DISABLED. MLflow uses the existing lightbridge-main-db
+# CNPG cluster (charts/lightbridge-db) for its backend store. A managed
+# `mlflow` role + `mlflow` Database CR are added to lightbridge-db instead.
+# Kept (disabled) so a future dedicated-DB path exists without a template
+# rewrite — mirrors charts/coder's db.enabled: false block.
+# ────────────────────────────────────────────────────────────────────────
+db:
+  enabled: false
+
+# ────────────────────────────────────────────────────────────────────────
+# mlflow-app child — the upstream MLflow workload (Helm chart, deployed as
+# an ArgoCD source — NOT a Helm dependency, so ArgoCD pulls it directly) +
+# the ingress TLS Certificate via the kustomize overlay. releaseName stays
+# `mlflow` so workload resource names match the namespace.
+# ────────────────────────────────────────────────────────────────────────
+app:
+  enabled: true
+  appName: mlflow-app
+  releaseName: mlflow
+  syncWave: "1"
+  # Upstream MLflow chart (community-charts) — classic Helm repo (NOT OCI),
+  # pinned to a stable version (not floated like the secrets leaf).
+  chart:
+    repoURL: https://community-charts.github.io/helm-charts
+    name: mlflow
+    targetRevision: "1.11.2"
+  # App-scoped deps (ingress Certificate) — kustomize overlay in
+  # ai-helm-values, added as a second source (issuer patched per env).
+  # ADR-0018 pattern.
+  depsOverlay: environments/prod/deps/mlflow

@@ -1,0 +1,77 @@
+# argo-workflows App-of-Apps orchestrator — renders two child Application CRs
+# (argo-workflows-secrets + argo-workflows-app). Follows the lightbridge
+# canonical pattern (ADR-0019) / the coder 2-child shape (ADR-0083). No DB
+# child (Argo Workflows stores Workflows as k8s CRs, no metadata DB needed
+# for basic operation) and no auth-proxy child (native `server.sso` OIDC —
+# ADR-0085). The chart owns no workload resources; it owns the two child
+# Applications.
+
+# ────────────────────────────────────────────────────────────────────────
+# Shared ArgoCD wiring for all child Applications.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  project: ai
+  # OCI chart-float (ADR-0055). Two sources of truth:
+  #  • chartRegistry/chartVersionRange — the secrets leaf chart floats from
+  #    OCI (full chart path in repoURL + chart "."; template builds
+  #    `<chartRegistry>/<chartName>`).
+  #  • repoURL/targetRevision — the app child's cert/deps overlay (Source B) +
+  #    $values ref (Source C), from ai-helm-values @ main (where environments/ lives).
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: mlops
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# ────────────────────────────────────────────────────────────────────────
+# argo-workflows-secrets child — the ExternalSecrets leaf chart (this repo).
+# Lowest sync-wave: OIDC client secret + S3 artifact creds must exist before
+# the app starts.
+# ────────────────────────────────────────────────────────────────────────
+secrets:
+  enabled: true
+  appName: argo-workflows-secrets
+  chartName: argo-workflows-secrets   # OCI chart name
+  releaseName: argo-workflows-secrets
+  syncWave: "0"
+
+# ────────────────────────────────────────────────────────────────────────
+# argo-workflows-db child — kept disabled/dead-code for structural parity
+# with lakefs/mlflow/coder, even though Argo Workflows has no metadata DB
+# story to reuse here (WorkflowTemplates/Workflows are k8s CRs).
+# ────────────────────────────────────────────────────────────────────────
+db:
+  enabled: false
+
+# ────────────────────────────────────────────────────────────────────────
+# argo-workflows-app child — the upstream Argo Workflows workload (Helm
+# chart, deployed as an ArgoCD source — NOT a Helm dependency, so ArgoCD
+# pulls it directly) + the ingress TLS Certificate via the kustomize
+# overlay. releaseName stays `argo-workflows` so workload resource names
+# match the namespace.
+# ────────────────────────────────────────────────────────────────────────
+app:
+  enabled: true
+  appName: argo-workflows-app
+  releaseName: argo-workflows
+  syncWave: "1"
+  # Upstream Argo Workflows chart (argoproj/argo-helm) — classic Helm repo
+  # (NOT OCI), pinned to a stable version (not floated like the secrets leaf).
+  chart:
+    repoURL: https://argoproj.github.io/argo-helm
+    name: argo-workflows
+    targetRevision: "1.0.20"
+  # App-scoped deps (ingress Certificate) — kustomize overlay in
+  # ai-helm-values, added as a second source (issuer patched per env).
+  # ADR-0018 pattern.
+  depsOverlay: environments/prod/deps/argo-workflows

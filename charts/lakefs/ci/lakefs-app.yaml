@@ -1,0 +1,94 @@
+# CI / reference values for the upstream LakeFS chart (https://charts.lakefs.io).
+#
+# This file serves TWO purposes:
+# 1. Human reference copy — kept structurally in sync with the PRIVATE
+#    ai-helm-values repo file at environments/prod/values/lakefs-app.yaml
+#    (NOT auto-linted: the top-level repo CI loop only picks up
+#    charts/<chart>/ci/*-values.yaml, and this file is named *-app.yaml).
+# 2. Documentation of the exact chart schema decisions (existingSecret +
+#    secretKeys, S3 blockstore via extraEnvVars, ForwardAuth-gated ingress).
+#
+# Metadata DB: the existing lightbridge-main-db CNPG cluster (converse ns),
+# via the `lakefs` managed role/Database (charts/lightbridge-db). Blockstore:
+# Hetzner Object Storage (S3-compatible), prefix `lakefs/` inside the shared
+# ssegning-k8s-state bucket, reusing the platform's existing S3 credentials
+# (same material CNPG backups + LibreChat's S3 file storage use).
+#
+# Auth: LakeFS OSS has no functional native OIDC (Enterprise-only, ADR-0085)
+# — the whole app sits behind the lakefs-auth oauth2-proxy instance via a
+# Traefik ForwardAuth Middleware (attached below via ingress annotation, CR
+# shipped in the depsOverlay). LakeFS's own internal user/credential system
+# (access-key/secret-key) is untouched by this — see ADR-0085 consequences.
+
+# Single Secret (ESO-provisioned by charts/lakefs-secrets, key `lakefs-app-secret`)
+# carrying both sensitive values the chart natively supports pulling from an
+# existing Secret.
+existingSecret: lakefs-app-secret
+secretKeys:
+  authEncryptSecretKey: auth_encrypt_secret_key
+  databaseConnectionString: database_connection_string
+
+lakefsConfig: |
+  database:
+    type: postgres
+  blockstore:
+    type: s3
+    s3:
+      region: us-east-1
+      endpoint: https://nbg1.your-objectstorage.com
+      # Hetzner Object Storage (Ceph-RGW) needs path-style addressing —
+      # virtual-hosted-style DNS isn't set up for this endpoint.
+      force_path_style: true
+
+# S3 access key/secret aren't part of the chart's existingSecret/secretKeys
+# mechanism (no such key listed upstream) — the AWS SDK's standard env var
+# fallback (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) picks these up.
+# Same platform S3 credentials every other Hetzner Object Storage consumer
+# uses (prod/meta/test-app), surfaced by charts/lakefs-secrets as `lakefs-s3-creds`.
+extraEnvVars:
+  - name: AWS_ACCESS_KEY_ID
+    valueFrom:
+      secretKeyRef:
+        name: lakefs-s3-creds
+        key: access_key_id
+  - name: AWS_SECRET_ACCESS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: lakefs-s3-creds
+        key: secret_access_key
+  # Default storage namespace for newly-created repositories (a `lakefs/`
+  # prefix inside the shared bucket) — set via env since lakefsConfig has no
+  # dedicated key for this (it's a per-repository default, not a blockstore
+  # setting).
+  - name: LAKEFS_BLOCKSTORE_DEFAULT_NAMESPACE_PREFIX
+    value: "s3://ssegning-k8s-state/lakefs"
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  annotations:
+    # ForwardAuth Middleware CR shipped by the depsOverlay — gates the whole
+    # app behind the lakefs-auth oauth2-proxy instance (ADR-0085).
+    traefik.ingress.kubernetes.io/router.middlewares: mlops-lakefs-forwardauth@kubernetescrd
+  hosts:
+    - host: lakefs.ai.camer.digital
+      paths:
+        - /
+  tls:
+    - secretName: lakefs-tls
+      hosts:
+        - lakefs.ai.camer.digital

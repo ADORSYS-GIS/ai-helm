@@ -1,0 +1,28 @@
+apiVersion: v2
+name: mlflow-secrets
+description: |
+  ExternalSecrets for MLflow — the DB role password (basic-auth Secret
+  matching the upstream chart's backendStore.existingDatabaseSecret schema),
+  the S3 artifact-store credentials (reused platform material), and the
+  Keycloak OIDC client secret for the bundled mlflow-oidc-auth plugin
+  (auth.oidcAuth.existingSecret). Leaf chart of the mlflow App-of-Apps
+  orchestrator (ADR-0085), lowest sync-wave so the Secrets exist before the
+  app starts. All reference the `ssegning-aws` ClusterSecretStore (ADR-0018
+  in-chart ownership).
+type: application
+version: 1.0.0
+appVersion: "3.14.0"
+keywords:
+  - mlflow
+  - secrets
+  - external-secrets
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

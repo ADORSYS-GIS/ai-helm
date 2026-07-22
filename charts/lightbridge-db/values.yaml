@@ -89,6 +89,20 @@ resources:
             login: true
             passwordSecret:
               name: coder-db-role
+          # Dedicated login roles for the mlops platform (ADR-0085): LakeFS
+          # and MLflow both reuse this shared CNPG cluster instead of
+          # dedicated clusters, same reasoning as coder (ADR-0083). Passwords
+          # from the basic-auth Secrets below (ESO-provisioned).
+          - name: lakefs
+            ensure: present
+            login: true
+            passwordSecret:
+              name: lakefs-db-role
+          - name: mlflow
+            ensure: present
+            login: true
+            passwordSecret:
+              name: mlflow-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -380,3 +394,103 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: coder_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # LakeFS (ADR-0085): a `lakefs` Database owned by the managed `lakefs`
+  # role above, plus the role's basic-auth Secret (username + password)
+  # consumed by BOTH CNPG (passwordSecret) and the LakeFS app (via
+  # lakefs-app-secret assembled in charts/lakefs-secrets). Mirrors the
+  # coder pattern.
+  # NOTE: the ESO `password` template braces are double-escaped so Helm's
+  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: lakefs
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: lakefs
+      owner: lakefs
+      ensure: present
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lakefs-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lakefs-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "lakefs"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: lakefs_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # MLflow (ADR-0085): a `mlflow` Database owned by the managed `mlflow`
+  # role above, plus the role's basic-auth Secret (username + password)
+  # consumed by BOTH CNPG (passwordSecret) and the MLflow app (via
+  # mlflow-db-secret assembled in charts/mlflow-secrets). Mirrors the
+  # coder pattern.
+  # NOTE: the ESO `password` template braces are double-escaped so Helm's
+  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: mlflow
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: mlflow
+      owner: mlflow
+      ensure: present
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: mlflow-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: mlflow-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "mlflow"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: mlflow_db_password
