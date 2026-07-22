@@ -36,6 +36,9 @@ makes the rendered manifest match what the API server actually stores.
 {{- $modelName := .Values.modelName -}}
 {{- $plans := .Values.plans -}}
 {{- $costKey := "llm_custom_total_cost" -}}
+{{- /* Image models have no meaningfull token counting (llm_total_token = 0 always),
+      so we skip the tokens/min rate-limit rule and only keep requests/min + budget. */ -}}
+{{- $isImage := eq (.Values.kind | default "text") "image" -}}
 {{- /* Shared-budget cutover (#532): when enabled, the monthly-budget rule below
        is DROPPED (it moves to the gateway-wide BTP with `shared: true`) and this
        per-model policy MERGES with that gateway policy instead of overriding it,
@@ -104,8 +107,8 @@ spec:
               from: Number
               number: 1
         {{- end }}
-        {{- /* ── 2. burst: tokens/min (per-user per model) ── */}}
-        {{- with $burst.tokensPerMin }}
+        {{- /* ── 2. burst: tokens/min (per-user per model) — SKIPPED for image models ── */}}
+        {{- if not $isImage }}{{ with $burst.tokensPerMin }}
         - clientSelectors:
             - headers:
                 - invert: false
@@ -131,7 +134,7 @@ spec:
               metadata:
                 namespace: io.envoy.ai_gateway
                 key: llm_total_token
-        {{- end }}
+        {{- end }}{{ end }}
         {{- /* ── 3. monthly budget (per-model unless sharedBudget.enabled → moved to gateway BTP) ── */}}
         {{- $budgetUsd := $planCfg.monthlyBudgetUsd }}
         {{- if not $sharedBudget }}

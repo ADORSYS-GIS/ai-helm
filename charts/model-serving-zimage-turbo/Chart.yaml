@@ -1,0 +1,37 @@
+apiVersion: v2
+name: model-serving-zimage-turbo
+description: |
+  Self-hosted image generation on the home GPU: Tongyi-MAI Z-Image-Turbo (6B
+  params, FP8 quantized) served via a custom Rust/Candle server (Actix-web)
+  with a minimal footprint. FP8 quantization fits comfortably in 12 GB VRAM
+  (~8 GB weights + VAE + activations) with headroom for 1024×1024 generation.
+  No authentication — the server is directly accessible (intended for internal
+  cluster use behind the Envoy AI Gateway).
+
+  Deployed via homeCluster (ADR-0017 exception) and federated into the Hetzner
+  Envoy AI Gateway as an OpenAI /v1/images/generations backend.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+keywords:
+  - image-generation
+  - diffusion
+  - z-image-turbo
+  - tongyi
+  - inference
+  - gpu
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: bjw-template
+    version: "4.6.2"
+    repository: "file://../bjw-template"
+    alias: modelServing
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
