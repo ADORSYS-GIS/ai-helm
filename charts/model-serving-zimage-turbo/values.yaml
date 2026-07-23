@@ -9,7 +9,7 @@
 #     natively: the weights PVC and the ExternalSecrets.
 #
 # Sync-wave ordering (this Application's resources, on the HOME cluster):
-#   -2  ExternalSecret (hf-token)                     — before any pod
+#   -2  ExternalSecrets (api-key + hf-token)           — before any pod
 #   -1  PVC (zimage-models, RWX)                     — weights volume
 #    0  seed Job (download-once into the PVC)         — ArgoCD Sync hook
 #    1  Deployment (model server) + Service + Ingress — mounts the PVC
@@ -44,6 +44,19 @@ seedJob:
       key: ai/camer/digital/prod/env
       property: hf_token
 
+# The API key the Rust server enforces (Authorization: Bearer <key>).
+# Injected as an env var API_KEY. Reuses the existing ssegning-aws
+# property `vllm_local_api_key` (same key as other self-hosted models).
+apiKey:
+  enabled: true
+  secretName: zimage-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: vllm_local_api_key
 
 modelServing:
   global:
@@ -68,6 +81,10 @@ modelServing:
             pullPolicy: IfNotPresent
           env:
             MODEL_DIR: /mnt/models
+            API_KEY:
+              secretKeyRef:
+                name: zimage-local-api-key
+                key: api_key
           ports:
             - name: http
               containerPort: 8000
@@ -99,6 +116,8 @@ modelServing:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 1002
+            seccompProfile:
+              type: RuntimeDefault
             capabilities:
               drop:
                 - ALL

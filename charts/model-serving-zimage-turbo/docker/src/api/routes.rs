@@ -1,6 +1,6 @@
 //! Actix-web route handlers for the Z-Image-Turbo server.
 
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 use base64::Engine;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -12,6 +12,28 @@ use crate::api::models::{
 use crate::config::Config;
 use crate::inference::engine::InferenceEngine;
 use crate::ServerError;
+
+/// Verify the `Authorization: Bearer <token>` header against the configured API key.
+/// Returns `true` if no API key is configured (auth disabled) or if the token matches.
+fn check_auth(req: &HttpRequest, api_key: Option<&str>) -> bool {
+    let Some(expected) = api_key else {
+        // No API key configured → auth disabled (public endpoint).
+        return true;
+    };
+
+    let header = req
+        .headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim());
+
+    match header {
+        Some(h) if h.len() > 7 && h[..7].eq_ignore_ascii_case("Bearer ") => {
+            h[7..].trim() == expected
+        }
+        _ => false,
+    }
+}
 
 /// Shared application state.
 pub struct AppState {
@@ -70,30 +92,38 @@ pub async fn list_models() -> HttpResponse {
 
 /// POST /v1/images/generations — generate image(s) from a text prompt.
 pub async fn generate_images(
+    req: HttpRequest,
     data: web::Data<AppState>,
     body: web::Json<GenerateRequest>,
 ) -> Result<HttpResponse, ServerError> {
     let cfg = &data.config;
 
-    let req = body.into_inner();
+    // ── Authentication ────────────────────────────────────────────────────
+    if !check_auth(&req, cfg.api_key.as_deref()) {
+        return Err(ServerError::Unauthorized(
+            "Invalid or missing API key. Provide it as: Authorization: Bearer <key>".into(),
+        ));
+    }
+
+    let gen_req = body.into_inner();
 
     // ── Validate request ──────────────────────────────────────────────────
-    if req.prompt.trim().is_empty() {
+    if gen_req.prompt.trim().is_empty() {
         return Err(ServerError::BadRequest("prompt is required".into()));
     }
 
-    let n = req.n.clamp(1, 4);
-    let (width, height) = req
+    let n = gen_req.n.clamp(1, 4);
+    let (width, height) = gen_req
         .parse_size(cfg.max_image_size)
         .ok_or_else(|| {
             ServerError::BadRequest(format!(
                 "Invalid size '{}'. Must be WxH with both dimensions ≤ {} and divisible by 16. \
                  Examples: 1024x1024, 768x768, 512x512",
-                req.size, cfg.max_image_size
+                gen_req.size, cfg.max_image_size
             ))
         })?;
 
-    if req.response_format != "b64_json" {
+    if gen_req.response_format != "b64_json" {
         return Err(ServerError::BadRequest(
             "Only 'b64_json' response_format is supported".into(),
         ));
@@ -109,7 +139,7 @@ pub async fn generate_images(
     // `web::block` runs the synchronous inference on the Actix blocking thread pool,
     // preventing the async runtime from being blocked by CUDA kernel execution.
     let config_clone = cfg.clone();
-    let prompt = req.prompt.clone();
+    let prompt = gen_req.prompt.clone();
 
     let images = web::block(move || -> Result<Vec<Vec<u8>>, ServerError> {
         let mut guard = data.engine.lock().map_err(|e| {
