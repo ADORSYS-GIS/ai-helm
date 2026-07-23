@@ -15,6 +15,11 @@ pub struct Config {
     #[arg(long = "hf-token", env = "HF_TOKEN")]
     pub hf_token: Option<String>,
 
+    /// API key for Bearer token authentication (Authorization: Bearer <key>).
+    /// If not set, authentication is disabled (public endpoint).
+    #[arg(long = "api-key", env = "API_KEY")]
+    pub api_key: Option<String>,
+
     /// Host address to bind.
     #[arg(long = "host", env = "HOST", default_value = "0.0.0.0")]
     pub host: String,
