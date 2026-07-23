@@ -232,6 +232,16 @@ backendDefaults:
     securityType: APIKey
     tlsHostname: ministral-3b--poc.ssegning.com
 
+  # Self-hosted Qwen2-VL-2B-Instruct on the home GPU.
+  vllmLocalQwen2Vl: &vllmLocalQwen2VlBackend
+    schema: OpenAI
+    prefix: "/v1"
+    fqdn:
+      hostname: qwen2-vl-2b--poc.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: qwen2-vl-2b--poc.ssegning.com
+
 modelDefaults:
   backendRefs:
     fwPrimary: &fwBackendPrimary
@@ -470,6 +480,15 @@ backends:
     resourceName: vllm-local-ministral-01-svc
     secretRef:
       name: vllm-local-ministral-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
+  vllm-local-qwen2-vl-01:
+    <<: *vllmLocalQwen2VlBackend
+    resourceName: vllm-local-qwen2-vl-01-svc
+    secretRef:
+      name: vllm-local-api-key
     externalSecret:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
@@ -756,6 +775,30 @@ models:
         ref: vllm-local-ministral-01
         priority: 0
         modelNameOverride: "ministral-3b"
+
+  qwen2-vl-2b-local:
+    enabled: true
+    kind: multimodal
+    minBackends: 1
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen2-VL-2B (self-hosted)"
+      contextLength: 32768
+      maxOutputTokens: 8192
+      supportedParameters: *spStandard
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.15
+        cachedInputPer1M: 0.03
+        outputPer1M: 1.00
+    backends:
+      vllm-local-qwen2-vl-01:
+        ref: vllm-local-qwen2-vl-01
+        priority: 0
+        modelNameOverride: "qwen2-vl-2b"
 
   deepseek-v4-flash:
     kind: text
