@@ -38,13 +38,27 @@ spec:
         argocd.argoproj.io/sync-wave: '{{ "{{ .syncWave }}" }}'
     spec:
       project: {{ .Values.argocd.project | quote }}
-      source:
-        # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
-        repoURL: '{{ .Values.argocd.chartRegistry }}/{{ "{{ .chartName }}" }}'
-        chart: "."
-        targetRevision: {{ .Values.argocd.chartVersionRange | quote }}
-        helm:
-          releaseName: '{{ "{{ .appName }}" }}'
+      # Multi-source (ADR-0087/0056): every child sources its leaf OCI chart
+      # (Source A, ADR-0055) AND a $values ref to ai-helm-values (Source B). The
+      # workload `config:` object is overlaid from
+      # environments/<env>/values/<child>.yaml when that file exists
+      # (librechat-app today); leaves without one fall through
+      # ignoreMissingValueFiles to pure chart defaults — behaviour-neutral. A
+      # uniform `sources:` (vs a per-child source/sources switch) is used because
+      # an ApplicationSet's structured template can't carry a controller-side
+      # `{{ "{{- if }}" }}` that adds/removes keys and still be valid YAML.
+      sources:
+        - repoURL: '{{ .Values.argocd.chartRegistry }}/{{ "{{ .chartName }}" }}'
+          chart: "."
+          targetRevision: {{ .Values.argocd.chartVersionRange | quote }}
+          helm:
+            releaseName: '{{ "{{ .appName }}" }}'
+            valueFiles:
+              - '$values/environments/{{ .Values.argocd.env | default "prod" }}/values/{{ "{{ .appName }}" }}.yaml'
+            ignoreMissingValueFiles: true
+        - repoURL: {{ .Values.argocd.repoURL | quote }}
+          targetRevision: {{ .Values.argocd.targetRevision | quote }}
+          ref: values
       destination:
         {{- include "librechart.argocd.destinationClusterRef" .Values.argocd.destination | nindent 8 }}
         namespace: {{ .Values.argocd.destination.namespace | quote }}
