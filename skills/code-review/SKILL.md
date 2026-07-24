@@ -1,94 +1,118 @@
 ---
 name: code-review
-description: A structured procedure for reviewing a code change (pull/merge request) — what to evaluate, how to calibrate severity, and how to phrase feedback. Use when reviewing a diff, a PR, or deciding whether a change is ready to merge.
+description: A structured procedure for reviewing a code change (pull/merge request) — what to evaluate, how to grade findings on the P0–P3 severity framework, and how to phrase feedback. Use when reviewing a diff, a PR, or deciding whether a change is ready to merge.
 ---
 
 # Code Review
 
-A good review makes the codebase healthier over time without blocking progress
-for perfection. Approve once the change **definitely improves overall code
-health**, even if it isn't perfect. Inspired by Google's engineering practices,
-restructured into an actionable checklist.
+Find what humans miss — real bugs, security flaws, broken assumptions, gaps in
+reasoning — *before* they reach production, without holding a net improvement
+hostage over nits. You are a skeptical senior engineer and a security reviewer
+in one, and an assistant, not a gatekeeper: a human owns the merge decision.
 
 ## The one rule
 
-> Reviewers should favor approving a change once it improves code health, even if
-> it is not perfect. There is no "perfect" change — there is only *better*.
+> There is no perfect code, only *better* code. **Endorse a change once it
+> clearly improves the health of the codebase**, even if it isn't perfect. Be
+> adversarial in *finding* problems; be constructive in the *verdict*.
 
-Balance forward progress against the value of each improvement you request. Do
-not let the perfect block the clearly-good.
+Forward progress with sound code health beats endless polishing. Never wave
+through something that makes the codebase worse; never block a net improvement
+over P3s.
 
-## Review in this order
+## Prime directives (apply throughout)
 
-1. **Purpose** — Does the change make sense? Is *this* change actually wanted?
-   Read the description and the linked issue/ADR before the diff. If the change
-   shouldn't exist, say so before reviewing lines.
-2. **Design** — Does it belong here? Does it fit the architecture? Do the
-   interactions with the rest of the system make sense? This is the most
-   important thing to get right — and the hardest to change later.
-3. **Functionality** — Does it do what it claims, and is that good for users
-   (including future developers)? Think about edge cases, concurrency, and
-   failure modes, not just the happy path.
-4. **Complexity** — Is it more complex than it needs to be? Could a future dev
-   understand and use it easily? Watch for over-engineering (solving problems
-   that don't exist yet).
-5. **Tests** — Are there appropriate tests, and do they actually exercise the
-   change? Tests should fail when the code is broken. No dead or always-green
-   tests.
-6. **Naming & comments** — Clear names? Comments explain *why*, not *what*
-   (the code shows what). Stale comments removed.
-7. **Consistency & style** — Follows the project's conventions and the local
-   file's style. Style nits are `Nit:` unless they violate an agreed standard.
-8. **Docs** — Are relevant docs (README, ADRs, runbooks) updated when behavior
-   or contracts change?
+1. **Review THIS change, not the repository.** The diff is the subject; the rest
+   of the repo is only context. A problem in code this change doesn't touch is
+   **not a finding** — at most one terse "pre-existing, consider a separate fix"
+   note, never a P0/P1. Reviewing the repo instead of the change is the most
+   trust-destroying failure mode.
+2. **Cite or don't claim.** Every finding names the concrete failure mode (the
+   input/path that triggers it) and points at the exact lines. If you can't cite
+   it, don't raise it.
+3. **A wrong finding costs more trust than a missed nit.** Default to adversarial
+   *investigation*, not invention. Don't manufacture findings to look thorough,
+   and don't rubber-stamp — the cure for a lazy "looks fine" is to actually read
+   each changed file, not to pad the list.
+4. **Security is a mandatory dimension of every review** — not an optional
+   section. On every change ask "what could a malicious actor do with this?"
+   (authz on new/changed endpoints, untrusted input reaching a dangerous sink,
+   secrets/credentials, trust-boundary crossings) even when the change isn't
+   framed as security. A proven security flaw is **P0**; a plausible one is at
+   least **P1**.
 
-## Severity — label every comment
+## Severity — grade every finding P0–P3
 
-Prefix each comment so the author knows what blocks merge:
+Label each finding so the author knows what blocks merge:
 
-- **`Blocking:`** — must be fixed before merge (correctness, security, data
-  loss, a broken contract, missing critical test).
-- **`Nit:`** — minor / optional; author's discretion (style, naming taste, a
-  cleaner phrasing). Never block on a nit.
-- **`Question:`** — you don't understand something; the answer may or may not
-  change anything.
-- **`FYI:`** — non-actionable context for the future; not for this change.
+- **P0 — critical, must fix before merge.** Security flaws (injection, auth
+  bypass, secrets in code/logs, data loss/corruption) **and serious "future
+  code" risks** — a design or decision that will be very costly to undo or that
+  endangers the codebase's health going forward. Blocks merge.
+- **P1 — bad, should fix.** Wrong implementations, logic/thinking errors, broken
+  assumptions, incorrect behavior on real inputs/edge cases. Fix before merge, or
+  defer only with an explicit, justified reason.
+- **P2 — medium.** Notable maintainability, robustness, or quality issues that
+  will bite a maintainer or a failure path — worth fixing, not a blocker.
+- **P3 — might fix (mergeable as-is).** Nits, style, naming taste, minor polish.
+  Author's discretion; **never blocks**.
 
-If a review has **only** nits, approve and let the author decide.
+Calibration rules:
+- **Grade on evidence, not vibes.** A confirmed issue is recorded even at P2/P3;
+  an unprovable "what if" is at most a P3 question — or nothing.
+- **Don't inflate to look useful, don't bury a blocker among nits.** A precise
+  three-finding review beats a noisy ten-finding one.
+- If a review has **only P3s**, approve and let the author decide.
+
+## Review in this order (risk-first)
+
+1. **Purpose** — is *this* change wanted? Read the description/linked issue/ADR
+   before the diff. If it shouldn't exist, say so before reviewing lines.
+2. **Design** — does it fit the architecture, or bolt on a parallel way of doing
+   the same thing? Flag a fundamental design problem *now*, before nits, so the
+   author isn't building on a flawed base. (Serious design risk = P0 "future
+   code"; smaller ones = P2.)
+3. **Correctness** — trace old→new per hunk. Off-by-one/boundaries; null/empty;
+   inverted/missing conditions; wrong operator; missing return/break; illegal or
+   inconsistent states. Does the code match the stated intent?
+4. **Security** — the mandatory dimension above.
+5. **Concurrency & errors** — races, lost updates, locks held across await/IO;
+   swallowed errors, partial failure with no rollback, resource leaks.
+6. **Data & compatibility** — schema/migration safety, backward/forward compat,
+   irreversible or data-losing operations, breaking API changes.
+7. **Tests** — is the change actually covered? Do tests assert behavior (not just
+   run) and exercise the failure modes, not only the happy path?
+8. **Maintainability** — duplication that should reuse a helper, wrong-layer
+   abstraction, misleading names, YAGNI/speculative generality, comments that
+   explain *what* not *why*, docs not updated when a contract changed.
 
 ## How to phrase feedback
 
-- Comment on the **code, not the coder** — "this function can NPE on empty
-  input", not "you forgot to handle empty input".
-- Explain **why**, and prefer suggesting a direction over prescribing the exact
-  line. Give the reasoning so the author learns, not just the fix.
-- Offer sincere praise for good decisions — reviews aren't only for finding
-  faults.
-- If something is unclear, ask the author to **clarify the code** (or add a
-  comment), rather than only explaining it to you in the thread. The next reader
-  won't have the thread.
+- **Comment on the code, not the coder** — "this can NPE on empty input", not
+  "you forgot the empty case".
+- **Explain *why*** and prefer suggesting a direction (or the exact fix when
+  that's fastest) over prescribing — the why is what teaches and survives in the
+  thread.
+- **Acknowledge genuinely good work specifically** — it's calibration, not
+  flattery, and tells the author what to keep doing.
+- If code is unclear, ask the author to **clarify the code** (or add a comment),
+  not just to explain it in the thread — the next reader won't have the thread.
+- Don't nitpick what a linter/formatter already enforces.
 
 ## Handling disagreement
 
-1. Reach technical consensus on facts first (benchmark, cite the standard, point
-   at the code).
-2. The author may be right — be willing to be convinced.
-3. If stuck, escalate to the team/maintainer rather than letting the change rot
-   in review. Never wear someone down; resolve with facts or a decision-maker.
-
-## Speed
-
-- Review promptly (within one business day where you can) — a fast-moving review
-  loop is worth more than a perfectly-thorough-but-slow one.
-- If you can't do a full review now, a quick "looks reasonable, will look
-  deeper by X" unblocks the author's mental context.
+1. Reach consensus on facts first (benchmark, cite the standard, point at the
+   code). The author may be right — be willing to be convinced.
+2. If stuck, escalate to the maintainer rather than letting the change rot or
+   wearing the author down. Resolve with facts or a decision-maker.
 
 ## Definition of done (approve when all true)
 
-- [ ] The change's purpose is justified (issue/ADR/source-of-truth linked).
-- [ ] Design fits the system; no simpler approach is obviously better.
-- [ ] Correct for the edge/failure cases you can think of.
+- [ ] Purpose justified (issue/ADR/source-of-truth linked).
+- [ ] Design fits; no obviously simpler approach.
+- [ ] Correct for the edge/failure cases you actually checked.
+- [ ] Security impact assessed and stated (even if "no new surface").
 - [ ] Tests exist and would fail if the change broke.
-- [ ] No unresolved `Blocking:` comments.
-- [ ] Docs updated where behavior/contracts changed.
+- [ ] **No unresolved P0/P1.** (P2/P3 may remain at the author's discretion.)
+- [ ] Docs updated where a behavior/contract changed.
 - [ ] Net effect: the codebase is healthier than before.
