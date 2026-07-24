@@ -88,6 +88,27 @@ librechatSecrets:
     librechat-skills-sync:
       github_token: { key: ai/camer/digital/prod/env, property: librechat_skills_sync_github_token }
 
+# ────────────────────────────────────────────────────────────────────────
+# Agent-seed Job (ADR-0088). Idempotently provisions the LibreChat agent fleet
+# (DB Agents, incl. subagent delegation) as the SSO system user. Structural
+# defaults only — the live fleet + enable live in ai-helm-values:
+#   agentSeed:
+#     enabled: true
+#     platformUserEmail: platform@ai.camer.digital   # must have logged in once
+#     agents: [ {name, description, provider, model, instructions, category,
+#                subagentNames?}, … ]
+# `image`/`librechatUrl` default to the LibreChat image + the in-cluster
+# librechat-app Service (:3080). Runs as an ArgoCD PostSync hook; the seed script
+# is idempotent (GET-by-name → PATCH/POST) and two-phase (leaves → orchestrators).
+# ────────────────────────────────────────────────────────────────────────
+agentSeed:
+  enabled: false
+  platformUserEmail: ""
+  # Override only if the Service name/namespace differ from the defaults above.
+  librechatUrl: ""
+  image: ""
+  agents: []
+
 global:
   librechat:
     version: "v0.8.7"
