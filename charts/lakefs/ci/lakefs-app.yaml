@@ -95,14 +95,19 @@ service:
   type: ClusterIP
   port: 80
 
-# The LakeFS chart does NOT own an ingress. All external traffic enters
-# through the lakefs-auth oauth2-proxy (reverse-proxy mode) via the ingress
-# shipped in the depsOverlay (environments/base/deps/lakefs/ingress.yaml),
-# which routes `/` → the oauth2-proxy Service; oauth2-proxy then proxies to
-# this chart's in-cluster `lakefs` Service. Exposing the chart's own ingress
-# too would bypass the SSO gate. (Previously this chart owned the ingress
-# with a ForwardAuth + `errors` middleware chain that rewrote LakeFS's own
-# API 401s to redirects → "Failed to fetch"; replaced by reverse-proxy mode,
-# ADR-0085.)
+# The LakeFS chart owns its ingress again — direct to the LakeFS Service, no
+# oauth2-proxy, no middlewares (ADR-0085 revised). Users authenticate with
+# LakeFS's native access-key/secret-key login. The TLS Certificate (lakefs-tls)
+# is still issued by the depsOverlay (environments/base/deps/lakefs/
+# certificate.yaml); this ingress just references the resulting secret.
 ingress:
-  enabled: false
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - host: lakefs.mlops.ai.camer.digital
+      paths:
+        - /
+  tls:
+    - secretName: lakefs-tls
+      hosts:
+        - lakefs.mlops.ai.camer.digital

@@ -1,8 +1,14 @@
-# lakefs App-of-Apps orchestrator — renders three child Application CRs
-# (lakefs-secrets + lakefs-auth + lakefs-app). Follows the lightbridge
-# canonical pattern (ADR-0019), extended with a dedicated oauth2-proxy child
-# (ADR-0085) since LakeFS OSS has no functional native OIDC. The chart owns
-# no workload resources; it owns the three child Applications.
+# lakefs App-of-Apps orchestrator — renders two child Application CRs
+# (lakefs-secrets + lakefs-app). Follows the lightbridge canonical pattern
+# (ADR-0019). The chart owns no workload resources; it owns the child
+# Applications.
+#
+# NOTE (ADR-0085, revised): the dedicated oauth2-proxy `lakefs-auth` child was
+# REMOVED. LakeFS OSS has no supported SSO into its own IAM (that's
+# Enterprise/"Fluffy" only), so an oauth2-proxy in front only stacked a second
+# login on top of LakeFS's native access-key login with no per-user benefit.
+# LakeFS is now exposed directly on its native login; the chart owns its own
+# ingress again (no ForwardAuth). Users get per-user LakeFS access keys.
 #
 # LakeFS uses the existing lightbridge-main-db CNPG cluster (charts/lightbridge-db)
 # for its metadata DB — no separate CNPG cluster (ADR-0085, same reasoning as
@@ -58,26 +64,20 @@ db:
   enabled: false
 
 # ────────────────────────────────────────────────────────────────────────
-# lakefs-auth child — a dedicated oauth2-proxy instance (own Keycloak client
-# `lakefs-proxy`, own cookie secret — NOT shared with mlflow-auth) gating
-# LakeFS via Traefik ForwardAuth. Upstream chart, floated at a pinned minor.
+# lakefs-auth child — REMOVED (ADR-0085 revised). Was a dedicated oauth2-proxy
+# gate; dropped because LakeFS OSS can't consume external SSO (Enterprise
+# only), so it only added a redundant second login. LakeFS now uses its
+# native access-key login.
 # ────────────────────────────────────────────────────────────────────────
 auth:
-  enabled: true
-  appName: lakefs-auth
-  releaseName: lakefs-auth
-  syncWave: "1"
-  chart:
-    repoURL: https://oauth2-proxy.github.io/manifests
-    name: oauth2-proxy
-    targetRevision: "10.7.0"
+  enabled: false
 
 # ────────────────────────────────────────────────────────────────────────
 # lakefs-app child — the upstream LakeFS workload (Helm chart, deployed as
 # an ArgoCD source — NOT a Helm dependency, so ArgoCD pulls it directly) +
-# the ingress TLS Certificate + ForwardAuth Middleware + oauth2 callback
-# Ingress via the kustomize overlay. releaseName stays `lakefs` so workload
-# resource names match the namespace.
+# the ingress TLS Certificate via the kustomize overlay. The chart owns its
+# own ingress (direct to LakeFS, native login — no ForwardAuth). releaseName
+# stays `lakefs` so workload resource names match the namespace.
 # ────────────────────────────────────────────────────────────────────────
 app:
   enabled: true
