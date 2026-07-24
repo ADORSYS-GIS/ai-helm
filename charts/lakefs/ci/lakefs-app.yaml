@@ -27,9 +27,6 @@ existingSecret: lakefs-app-secret
 secretKeys:
   authEncryptSecretKey: auth_encrypt_secret_key
   databaseConnectionString: database_connection_string
-  # NB: the chart's `secretKeys.oidcClientSecret` is NOT wired into the pod in
-  # lakefs chart 1.12.13, so the OIDC client secret is injected via
-  # extraEnvVars (LAKEFS_AUTH_OIDC_CLIENT_SECRET) below instead.
 
 lakefsConfig: |
   database:
@@ -42,43 +39,6 @@ lakefsConfig: |
       # Hetzner Object Storage (Ceph-RGW) needs path-style addressing —
       # virtual-hosted-style DNS isn't set up for this endpoint.
       force_path_style: true
-  # ── OIDC SSO (ADR-0085 revised — the maintainer's "OIDC is free in OSS"
-  # ── direction). LakeFS OSS `auth.oidc` is the DEPRECATED-but-free built-in
-  # ── OIDC login (NOT the Enterprise `providers.oidc`/Fluffy path). The
-  # ── client_secret is injected from the existingSecret (secretKeys above),
-  # ── not written here.
-  #
-  # ⚠️ STANDALONE-OIDC TRIAL: LakeFS OSS core removed its authorization layer
-  # ── (ACLs), and with `rbac: none` "no additional users/groups can be
-  # ── created". Whether `auth.oidc` still provisions a login here (likely a
-  # ── shared identity) or needs the external contrib ACL server is being
-  # ── verified LIVE. `login_url_method: select` keeps the native login form
-  # ── available as a fallback so a failed OIDC flow can't lock everyone out.
-  auth:
-    oidc:
-      enabled: true
-      # Reusing the existing Keycloak confidential client (was the oauth2-proxy
-      # client). Its redirect URIs must include
-      # https://lakefs.mlops.ai.camer.digital/oidc/callback.
-      client_id: lakefs_proxy
-      url: https://auth.verif.fyi/realms/camer-digital
-      callback_base_url: https://lakefs.mlops.ai.camer.digital
-      friendly_name_claim_name: name
-      persist_friendly_name: true
-      # Group provisioning only takes effect if an authz service is present
-      # (external ACL server / Enterprise). Harmless under rbac:none.
-      default_initial_groups: ["admins"]
-      initial_groups_claim_name: lakefs_roles
-    ui_config:
-      login_url: /oidc/login
-      # `select` = show BOTH the native login form and the SSO button (safe
-      # during the trial). Switch to the default `redirect` (SSO-only) once
-      # OIDC is confirmed working end-to-end.
-      login_url_method: select
-      logout_url: /logout
-      login_cookie_names:
-        - internal_auth_session
-        - oidc_auth_session
 
 # S3 access key/secret aren't part of the chart's existingSecret/secretKeys
 # mechanism (no such key listed upstream) — the AWS SDK's standard env var
@@ -102,17 +62,6 @@ extraEnvVars:
   # setting).
   - name: LAKEFS_BLOCKSTORE_DEFAULT_NAMESPACE_PREFIX
     value: "s3://ssegning-k8s-state/lakefs"
-  # OIDC client secret → auth.oidc.client_secret. The lakefs chart 1.12.13
-  # does NOT wire `secretKeys.oidcClientSecret` into the pod, so inject it
-  # directly via LakeFS's env-override of any config key
-  # (LAKEFS_AUTH_OIDC_CLIENT_SECRET). Key `oidc_client_secret` is provisioned
-  # into lakefs-app-secret by charts/lakefs-secrets (from ASM
-  # `lakefs_proxy_client_secret`). Kept out of lakefsConfig/this repo.
-  - name: LAKEFS_AUTH_OIDC_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: lakefs-app-secret
-        key: oidc_client_secret
 
 replicaCount: 1
 
