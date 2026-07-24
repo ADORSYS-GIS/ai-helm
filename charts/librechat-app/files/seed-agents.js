@@ -75,10 +75,16 @@ async function main() {
     if (id) { await api('PATCH', `/api/agents/${id}`, token, body); console.log(`[agent-seed] patched ${spec.name} (${id})`); }
     else { const a = await api('POST', '/api/agents', token, body); id = a.id || (a.agent && a.agent.id); if (!id) die(`create returned no id for ${spec.name}: ${JSON.stringify(a).slice(0,300)}`); idByName[spec.name] = id; console.log(`[agent-seed] created ${spec.name} (${id})`); }
     // grant PUBLIC view (visible to all users) via the generic resource-ACL endpoint
-    // PUT /api/permissions/<resourceType>/<id> — `updated`/`removed` are REQUIRED
-    // arrays; the top-level public+publicAccessRoleId is expanded to a PUBLIC
-    // principal server-side (PermissionsController.updateResourcePermissions).
-    await api('PUT', `/api/permissions/agent/${id}`, token, { updated: [], removed: [], public: true, publicAccessRoleId: AGENT_VIEWER });
+    // PUT /api/permissions/<resourceType>/<resourceId> — `updated`/`removed` are
+    // REQUIRED arrays; the top-level public+publicAccessRoleId is expanded to a
+    // PUBLIC principal server-side (PermissionsController.updateResourcePermissions).
+    // ⚠️ resourceId is the Mongo ObjectId (_id), NOT the public `agent_<nanoid>`
+    // id — the ACL layer validates it with mongoose.Types.ObjectId.isValid
+    // (PermissionService), so the public id 400s "Invalid resource ID". Resolve
+    // _id from Mongo by the public id (we already hold the connection).
+    const doc = await mongoose.connection.collection('agents').findOne({ id }, { projection: { _id: 1 } });
+    if (!doc) die(`agent doc not found in Mongo for id ${id} (${spec.name})`);
+    await api('PUT', `/api/permissions/agent/${doc._id}`, token, { updated: [], removed: [], public: true, publicAccessRoleId: AGENT_VIEWER });
     return id;
   }
 

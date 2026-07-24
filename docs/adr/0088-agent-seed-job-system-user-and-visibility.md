@@ -26,12 +26,17 @@ two pins resolved:
    ObjectId up in Mongo and **mints a LibreChat JWT** (`jwt.sign({id}, JWT_SECRET)`
    — the payload `requireJwtAuth` expects). No fake service account.
 2. **Visibility = a public ACL grant.** After create, the Job calls the generic
-   resource-ACL endpoint **`PUT /api/permissions/agent/<id>`** with
+   resource-ACL endpoint **`PUT /api/permissions/agent/<_id>`** with
    `{ updated: [], removed: [], public: true, publicAccessRoleId: "agent_viewer" }`
    (`updated`/`removed` are required arrays; the top-level `public` +
    `publicAccessRoleId` is expanded to a `PrincipalType.PUBLIC` principal
    server-side). This is the same access-role mechanism the skill sync uses
-   (`skill_viewer`). Every seeded agent is world-visible under the Agents endpoint.
+   (`skill_viewer`). ⚠️ The `resourceId` is the agent's Mongo **ObjectId
+   (`_id`)**, not the public `agent_<nanoid>` `id` — the ACL layer validates it
+   with `mongoose.Types.ObjectId.isValid` (`PermissionService`), so the public id
+   400s `Invalid resource ID`; the Job resolves `_id` from Mongo by the public id
+   (it already holds the connection). Every seeded agent is world-visible under
+   the Agents endpoint.
 
 ### Seed flow (all verified against v0.8.7)
 
