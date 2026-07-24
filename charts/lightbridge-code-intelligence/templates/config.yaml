@@ -162,6 +162,14 @@ data:
 {{- if $tv.topP }}{{- $_ := set $t "top_p" $tv.topP }}{{- end }}
 {{- if $tv.maxTokens }}{{- $_ := set $t "max_tokens" $tv.maxTokens }}{{- end }}
 {{- if $tv.maxTurns }}{{- $_ := set $t "max_turns" $tv.maxTurns }}{{- end }}
+{{- /* OpenCode re-prompt ceiling (lightbridge-code-intelligence fast-tier-parity plan): opencode's own
+       `maxSteps` was proven NOT to cap anything over ACP, so this Rust-side counter (how many whole
+       `session/prompt` cycles the supervisor re-drives) is the real stuck-model backstop on the
+       OpenCode path — tier-configurable so fast can run a smaller budget than deep. Unrelated to
+       `maxTurns` above (a CoverageGate wind-down heuristic input, not an enforcement mechanism).
+       ⚠️ REQUIRES a runner image carrying review.<tier>.max_cycles before this is set, else
+       deny_unknown_fields fails every Job (ship the runner first). */}}
+{{- if $tv.maxCycles }}{{- $_ := set $t "max_cycles" $tv.maxCycles }}{{- end }}
 {{- if $tv.maxBatchSize }}{{- $_ := set $t "max_batch_size" $tv.maxBatchSize }}{{- end }}
 {{- if $tv.maxFilesRead }}{{- $_ := set $t "max_files_read" $tv.maxFilesRead }}{{- end }}
 {{- if $tv.maxSearches }}{{- $_ := set $t "max_searches" $tv.maxSearches }}{{- end }}

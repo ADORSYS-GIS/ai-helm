@@ -77,6 +77,17 @@ modelServing:
       replicas: 1
       annotations:
         argocd.argoproj.io/sync-wave: "1"
+      pod:
+        # Pod-level hardening so the workload clears Trivy KSV-0118
+        # ("default security context"). The GPU model container needs root to
+        # initialise the GPU runtime; every container additionally drops
+        # ALL caps + disables privilege escalation.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          # No seccompProfile here — the Caddy sidecar shares this pod and its
+          # /usr/bin/caddy is a file-capability binary that cannot exec under the
+          # no_new_privs a seccomp profile forces; runAsUser:0 keeps KSV-0118 cleared.
       containers:
         model:
           image:
@@ -166,6 +177,22 @@ modelServing:
             repository: caddy
             tag: 2-alpine
             pullPolicy: IfNotPresent
+          # ⚠️ caddy:2-alpine's /usr/bin/caddy carries FILE CAPABILITIES
+          # (cap_net_bind_service). The kernel refuses to exec a file-capability
+          # binary once no_new_privs is set (execve -> EPERM -> crashloop), and
+          # no_new_privs is forced by allowPrivilegeEscalation:false OR any
+          # seccompProfile (RuntimeDefault/Localhost/Unconfined) with CAP_SYS_ADMIN
+          # dropped. Unconfined is ALSO forbidden by the namespace's baseline
+          # PodSecurity. So this sidecar sets NO seccompProfile (the pod-level
+          # seccomp above is removed so none is inherited) and leaves
+          # allowPrivilegeEscalation unset — no no_new_privs, exec works, baseline
+          # PSS satisfied. Dropping ALL caps still clears KSV-0118 (Caddy runs as
+          # root, binds only :8090). readOnlyRootFilesystem omitted (autosave to
+          # /config,/data) -> KSV-0014 path-scoped-ignored.
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
           env:
             MODEL_API_KEY:
               secretKeyRef:
@@ -193,11 +220,30 @@ modelServing:
         argocd.argoproj.io/sync-wave: "0"
       pod:
         restartPolicy: OnFailure
+        # Hardened for Trivy KSV-0118 (job- and container-level). The seed pip-installs
+        # huggingface_hub into system site-packages, so it runs as root; capabilities are
+        # dropped and privilege-escalation disabled. readOnlyRootFilesystem is intentionally
+        # omitted (pip writes to the rootfs) — KSV-0014 is path-scoped-ignored in .trivyignore.yaml.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
       job:
         backoffLimit: 6
         activeDeadlineSeconds: 3600
       containers:
         seed:
+          # Container hardening for KSV-0118 (see the pod securityContext note above).
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
           image:
             repository: python
             tag: "3.12-slim"

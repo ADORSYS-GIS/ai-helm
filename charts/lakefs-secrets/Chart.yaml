@@ -1,0 +1,28 @@
+apiVersion: v2
+name: lakefs-secrets
+description: |
+  ExternalSecrets for LakeFS — the assembled DB connection string + auth
+  encrypt key (single Secret matching the upstream chart's existingSecret
+  schema), the S3 blockstore credentials (reused platform material), and the
+  dedicated lakefs-auth oauth2-proxy's OIDC client credentials + cookie
+  secret. Leaf chart of the lakefs App-of-Apps orchestrator (ADR-0085),
+  lowest sync-wave so the Secrets exist before the auth proxy and the app
+  start. All reference the `ssegning-aws` ClusterSecretStore (ADR-0018
+  in-chart ownership).
+type: application
+version: 1.0.0
+appVersion: "1.83.0"
+keywords:
+  - lakefs
+  - secrets
+  - external-secrets
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

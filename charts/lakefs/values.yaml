@@ -1,0 +1,96 @@
+# lakefs App-of-Apps orchestrator — renders three child Application CRs
+# (lakefs-secrets + lakefs-auth + lakefs-app). Follows the lightbridge
+# canonical pattern (ADR-0019), extended with a dedicated oauth2-proxy child
+# (ADR-0085) since LakeFS OSS has no functional native OIDC. The chart owns
+# no workload resources; it owns the three child Applications.
+#
+# LakeFS uses the existing lightbridge-main-db CNPG cluster (charts/lightbridge-db)
+# for its metadata DB — no separate CNPG cluster (ADR-0085, same reasoning as
+# coder in ADR-0083).
+
+# ────────────────────────────────────────────────────────────────────────
+# Shared ArgoCD wiring for all child Applications.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  project: ai
+  # OCI chart-float (ADR-0055). Two sources of truth:
+  #  • chartRegistry/chartVersionRange — the secrets/auth leaf charts float
+  #    from OCI (full chart path in repoURL + chart "."; template builds
+  #    `<chartRegistry>/<chartName>`).
+  #  • repoURL/targetRevision — the app child's cert/deps overlay (Source B) +
+  #    $values ref (Source C), from ai-helm-values @ main (where environments/ lives).
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: mlops
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# ────────────────────────────────────────────────────────────────────────
+# lakefs-secrets child — the ExternalSecrets leaf chart (this repo).
+# Lowest sync-wave: DB URL + S3 creds + auth encrypt key + OIDC creds must
+# exist before the auth proxy and the app start.
+# ────────────────────────────────────────────────────────────────────────
+secrets:
+  enabled: true
+  appName: lakefs-secrets
+  chartName: lakefs-secrets   # OCI chart name
+  releaseName: lakefs-secrets
+  syncWave: "0"
+
+# ────────────────────────────────────────────────────────────────────────
+# lakefs-db child — DISABLED. LakeFS uses the existing lightbridge-main-db
+# CNPG cluster (charts/lightbridge-db) for its metadata DB. A managed
+# `lakefs` role + `lakefs` Database CR are added to lightbridge-db instead.
+# Kept (disabled) so a future dedicated-DB path exists without a template
+# rewrite — mirrors charts/coder's db.enabled: false block.
+# ────────────────────────────────────────────────────────────────────────
+db:
+  enabled: false
+
+# ────────────────────────────────────────────────────────────────────────
+# lakefs-auth child — a dedicated oauth2-proxy instance (own Keycloak client
+# `lakefs-proxy`, own cookie secret — NOT shared with mlflow-auth) gating
+# LakeFS via Traefik ForwardAuth. Upstream chart, floated at a pinned minor.
+# ────────────────────────────────────────────────────────────────────────
+auth:
+  enabled: true
+  appName: lakefs-auth
+  releaseName: lakefs-auth
+  syncWave: "1"
+  chart:
+    repoURL: https://oauth2-proxy.github.io/manifests
+    name: oauth2-proxy
+    targetRevision: "10.7.0"
+
+# ────────────────────────────────────────────────────────────────────────
+# lakefs-app child — the upstream LakeFS workload (Helm chart, deployed as
+# an ArgoCD source — NOT a Helm dependency, so ArgoCD pulls it directly) +
+# the ingress TLS Certificate + ForwardAuth Middleware + oauth2 callback
+# Ingress via the kustomize overlay. releaseName stays `lakefs` so workload
+# resource names match the namespace.
+# ────────────────────────────────────────────────────────────────────────
+app:
+  enabled: true
+  appName: lakefs-app
+  releaseName: lakefs
+  syncWave: "2"
+  # Upstream LakeFS chart — classic Helm repo (NOT OCI), pinned to a stable
+  # version (not floated like the secrets/auth leaves).
+  chart:
+    repoURL: https://charts.lakefs.io
+    name: lakefs
+    targetRevision: "1.12.13"
+  # App-scoped deps (ingress Certificate, ForwardAuth Middleware, oauth2
+  # callback Ingress) — kustomize overlay in ai-helm-values, added as a
+  # second source (issuer patched per env). ADR-0018 pattern.
+  depsOverlay: environments/prod/deps/lakefs

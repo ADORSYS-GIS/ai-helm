@@ -153,10 +153,33 @@ llmdRouter:
         periodSeconds: 5
         successThreshold: 1
         timeoutSeconds: 1
+      # Sidecar hardening — clears Trivy KSV-0118 + KSV-0014 for the envoy-proxy
+      # container (the internet-facing data-plane proxy). This is the ONLY
+      # securityContext hook the pinned llm-d-router-standalone v0.9.0 subchart
+      # exposes (router.proxy.securityContext, rendered into the epp Deployment's
+      # sidecar). The epp container + the pod itself have NO securityContext hook
+      # in v0.9.0, so their KSV-0118/0014 are path-scoped-ignored in
+      # .trivyignore.yaml (revisit on a subchart bump that adds the hooks).
+      # readOnlyRootFilesystem is safe here: the static envoy.yaml sends its
+      # access log to /dev/null and binds the admin listener on a TCP socket, so
+      # envoy writes nothing to the rootfs; /tmp is a scratch emptyDir for safety.
+      # Non-root uid 65532 works because both listeners (8081, 19001) are >1024.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+          - ALL
+        seccompProfile:
+          type: RuntimeDefault
       volumeMounts:
       - name: envoy-config
         mountPath: /etc/envoy
         readOnly: true
+      - name: envoy-tmp
+        mountPath: /tmp
       # Keep this name in sync with proxy.configMapName above.
       volumes:
       - name: envoy-config
@@ -165,6 +188,8 @@ llmdRouter:
           items:
           - key: envoy.yaml
             path: envoy.yaml
+      - name: envoy-tmp
+        emptyDir: {}
     epp:
       image:
         registry: ghcr.io/llm-d
@@ -208,6 +233,16 @@ modelServing:
       replicas: 1                # Single GPU — one replica (no time-slicing).
       annotations:
         argocd.argoproj.io/sync-wave: '1'
+      pod:
+        # Pod-level hardening so the workload clears Trivy KSV-0118
+        # ("default security context"). The GPU model container needs root to
+        # initialise the GPU runtime; every container additionally drops
+        # ALL caps + disables privilege escalation.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
       containers:
         model:
           image:
@@ -300,11 +335,30 @@ modelServing:
         argocd.argoproj.io/sync-wave: '0'
       pod:
         restartPolicy: OnFailure  # A Job must NOT be Always (bjw default)
+        # Hardened for Trivy KSV-0118 (job- and container-level). The seed pip-installs
+        # huggingface_hub into system site-packages, so it runs as root; capabilities are
+        # dropped and privilege-escalation disabled. readOnlyRootFilesystem is intentionally
+        # omitted (pip writes to the rootfs) — KSV-0014 is path-scoped-ignored in .trivyignore.yaml.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
       job:
         backoffLimit: 6
         activeDeadlineSeconds: 3600  # A stuck download dies + retries
       containers:
         seed:
+          # Container hardening for KSV-0118 (see the pod securityContext note above).
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
           image:
             repository: python
             tag: 3.12-slim
