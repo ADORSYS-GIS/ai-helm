@@ -40,3 +40,14 @@ misconfigurations:
       control-plane and web containers keep readOnlyRootFilesystem:true.
     paths:
       - "lightbridge-code-intelligence/charts/lci/templates/common.yaml"
+      # The LibreChat Deployment (bjw-template alias `librechat`) needs a WRITABLE
+      # rootfs: the app writes winston logs (/app/api/logs) and stages uploads on
+      # its rootfs at runtime, so readOnlyRootFilesystem:true crashloops the live
+      # user-facing app (same class as the neo4j exemption above). KSV-0118 (the
+      # "allows root" finding) IS hardened for this Deployment — pod + container
+      # securityContext in charts/librechat-app/values.yaml (runAsNonRoot uid 1000,
+      # drop ALL caps, no priv-esc, seccomp RuntimeDefault); only the read-only
+      # rootfs is exempt. The mongodb subchart (`db`) DOES set
+      # readOnlyRootFilesystem:true (it only needs a /tmp emptyDir) and is not
+      # exempt.
+      - "librechat-app/charts/librechat/templates/common.yaml"
