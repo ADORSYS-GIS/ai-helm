@@ -24,10 +24,17 @@ so make it specific about *when* to use the skill.
 
 ⚠️ **`name` must be kebab-case** — `^[a-z0-9][a-z0-9-]*$`, ≤64 chars, not
 starting `anthropic-`/`claude-`, and not a reserved word (`help`, `clear`,
-`compact`, `model`, `exit`, `quit`, `settings`, `anthropic`, `claude`). A
-non-conforming name (e.g. `Code Review`) fails sync with
-`[GitHubSkillSync] … Skill validation failed`. Put the human-friendly label in
-`displayTitle` (≤128 chars); `description` ≤1024, body ≤100k.
+`compact`, `model`, `exit`, `quit`, `settings`, `anthropic`, `claude`).
+`description` ≤1024 chars, body ≤100k.
+
+⚠️ **The sync validates frontmatter against a strict allowlist** — only these
+keys are permitted: `name`, `description`, `when-to-use`, `allowed-tools`,
+`arguments`, `argument-hint`, `user-invocable`, `disable-model-invocation`,
+`always-apply`/`alwaysApply`, `model`, `effort`, `context`, `agent`, `paths`,
+`shell`, `hooks`, `version`, `license`, `metadata`. **Any other key
+(e.g. `displayTitle`, `title`) fails sync** with `[GitHubSkillSync] … Skill
+validation failed`. There is no frontmatter field for a pretty display name in a
+synced skill — the skill shows under its `name`.
 
 ## Adding a skill
 

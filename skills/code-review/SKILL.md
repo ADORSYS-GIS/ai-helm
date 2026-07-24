@@ -1,6 +1,5 @@
 ---
 name: code-review
-displayTitle: Code Review
 description: A structured procedure for reviewing a code change (pull/merge request) — what to evaluate, how to calibrate severity, and how to phrase feedback. Use when reviewing a diff, a PR, or deciding whether a change is ready to merge.
 ---
 
