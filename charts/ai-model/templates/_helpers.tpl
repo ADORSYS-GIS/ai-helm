@@ -17,6 +17,17 @@
 {{- end -}}
 
 {{/*
+ai-model.flatPerRequestCostBranch — render a fixed per-request cost CEL expression.
+Used for image-generation models where cost is per image, not per token.
+Input: pricing dict with standard.effectivePerRequest in USD.
+*/}}
+{{- define "ai-model.flatPerRequestCostBranch" -}}
+{{- $p := . -}}
+{{- $cost := mulf $p.effectivePerRequest 1000000.0 | printf "%.0f" -}}
+{{- printf "1.0 * %s" $cost -}}
+{{- end -}}
+
+{{/*
 ai-model.costExpression — render the cost CEL expression for a model.
 Input: dict { modelName, pricing }
 */}}
@@ -39,6 +50,8 @@ Input: dict { modelName, pricing }
 {{- $expr = printf "(double(input_tokens) > %d.0 ? %s : %s)" $threshold $longBranch $standardBranch -}}
 {{- else if eq $pricing.strategy "flat" -}}
 {{- $expr = include "ai-model.flatCostBranch" $pricing.standard -}}
+{{- else if eq $pricing.strategy "flatPerRequest" -}}
+{{- $expr = include "ai-model.flatPerRequestCostBranch" $pricing.standard -}}
 {{- else -}}
 {{- fail (printf "Model '%s' has unsupported pricing.strategy '%v'" $modelName $pricing.strategy) -}}
 {{- end -}}

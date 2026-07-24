@@ -1,0 +1,227 @@
+# charts/model-serving-zimage-turbo — self-hosted Z-Image-Turbo FP8
+# on the home GPU. See ADR-0022 (federation) + ADR-0028 (pricing).
+#
+# Shape: a hybrid bjw-template chart (like charts/model-serving-ministral-3b).
+#   - The bjw-template subchart (values under `modelServing:`) renders the WHOLE
+#     workload: the model Deployment, the seed Job (a bjw `job` controller,
+#     ArgoCD Sync hook), the Service, and the Ingress.
+#   - The chart's own templates/ render only the resources bjw doesn't do
+#     natively: the weights PVC and the ExternalSecrets.
+#
+# Sync-wave ordering (this Application's resources, on the HOME cluster):
+#   -2  ExternalSecrets (api-key + hf-token)           — before any pod
+#   -1  PVC (zimage-models, RWX)                     — weights volume
+#    0  seed Job (download-once into the PVC)         — ArgoCD Sync hook
+#    1  Deployment (model server) + Service + Ingress — mounts the PVC
+
+global:
+  labels:
+    app: model-serving-zimage-turbo
+    team: adorsys-gis
+
+model:
+  name: z-image-turbo
+  hfRepo: Tongyi-MAI/Z-Image-Turbo
+  storagePath: Z-Image-Turbo
+
+pvc:
+  enabled: true
+  name: zimage-models
+  storageClassName: longhorn
+  accessMode: ReadWriteMany
+  size: 20Gi
+
+seedJob:
+  enabled: true
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: true
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
+
+# The API key the Rust server enforces (Authorization: Bearer <key>).
+# Injected as an env var API_KEY. Reuses the existing ssegning-aws
+# property `vllm_local_api_key` (same key as other self-hosted models).
+apiKey:
+  enabled: true
+  secretName: zimage-local-api-key
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: vllm_local_api_key
+
+modelServing:
+  global:
+    fullnameOverride: z-image-turbo
+
+  defaultPodOptions:
+    runtimeClassName: nvidia
+    nodeSelector:
+      gpu-node: "true"
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1002
+      seccompProfile:
+        type: RuntimeDefault
+
+  controllers:
+    main:
+      type: deployment
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      containers:
+        model:
+          image:
+            repository: ghcr.io/adorsys-gis/z-image-turbo-server
+            tag: v0.1.0
+            pullPolicy: IfNotPresent
+          env:
+            MODEL_DIR: /mnt/models
+            API_KEY:
+              secretKeyRef:
+                name: zimage-local-api-key
+                key: api_key
+          ports:
+            - name: http
+              containerPort: 8000
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /health, port: 8000 }
+                periodSeconds: 15
+                failureThreshold: 240
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /health, port: 8000 }
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8000 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1002
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 16Gi
+
+    seed:
+      type: job
+      annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+        argocd.argoproj.io/sync-wave: "0"
+      pod:
+        restartPolicy: OnFailure
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
+      job:
+        backoffLimit: 6
+        activeDeadlineSeconds: 7200
+      containers:
+        seed:
+          image:
+            repository: python
+            tag: "3.12-slim"
+            pullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              MODEL_DIR="/models/Z-Image-Turbo"
+              mkdir -p "$MODEL_DIR"
+              echo "Seeding Tongyi-MAI/Z-Image-Turbo -> $MODEL_DIR (skips files already present)"
+              pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
+              hf download Tongyi-MAI/Z-Image-Turbo --local-dir "$MODEL_DIR"
+              echo "Seed complete."
+          env:
+            HF_TOKEN:
+              secretKeyRef:
+                name: hf-token
+                key: token
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+            limits:   { cpu: "2", memory: 4Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          port: 8000
+          targetPort: 8000
+
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: cert-cloudflare
+      hosts:
+        - host: z-image-turbo--poc.ssegning.com
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: http
+      tls:
+        - secretName: z-image-turbo-edge-tls
+          hosts:
+            - z-image-turbo--poc.ssegning.com
+
+  persistence:
+    model-store:
+      enabled: true
+      existingClaim: zimage-models
+      advancedMounts:
+        main:
+          model:
+            - path: /mnt/models
+              subPath: Z-Image-Turbo
+              readOnly: true
+        seed:
+          seed:
+            - path: /models
