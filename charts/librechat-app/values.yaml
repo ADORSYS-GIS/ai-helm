@@ -82,6 +82,11 @@ librechatSecrets:
       serper_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_serper_api_key }
       firecrawl_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_firecrawl_api_key }
       jina_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_jina_api_key }
+    # GitHub PAT for skill sync (config.skillSync). Fine-grained token with
+    # Contents: Read-only on ADORSYS-GIS/ai-helm (classic: public_repo, or repo
+    # once ai-helm is private, #640). Injected as GITHUB_SKILLS_TOKEN below.
+    librechat-skills-sync:
+      github_token: { key: ai/camer/digital/prod/env, property: librechat_skills_sync_github_token }
 
 global:
   librechat:
@@ -301,6 +306,12 @@ librechat:
               secretKeyRef:
                 name: librechat-mcp-coder-credentials
                 key: client_secret
+
+            # GitHub PAT for config.skillSync (ESO secret librechat-skills-sync).
+            GITHUB_SKILLS_TOKEN:
+              secretKeyRef:
+                name: librechat-skills-sync
+                key: github_token
 
             OPENID_CLIENT_ID:
               secretKeyRef:
@@ -582,6 +593,29 @@ config:
   version: 1.3.5
   cache: true
   fileStrategy: "s3"
+
+  # ── GitHub skill sync (librechat.ai/docs/features/skills#github-skill-sync) ──
+  # Mirror shared SKILL.md skills from this repo's `skills/` dir into LibreChat on
+  # an interval. Skills are read-only, exposed to every user with Skills enabled
+  # (interface.skills defaults true) and available to agents (the `skills` agent
+  # capability is on by default). Authoring format: skills/<name>/SKILL.md with
+  # `name` + `description` frontmatter (+ optional references/). The token MUST be
+  # the ${ENV} form — provided via ESO (see librechatSecrets.librechat-skills-sync
+  # + the GITHUB_SKILLS_TOKEN env). A token is required even while ai-helm is
+  # public (raises the rate limit + keeps working once it goes private, #640).
+  skillSync:
+    github:
+      enabled: true
+      runOnStartup: true      # sync once at pod start, then every intervalMinutes
+      intervalMinutes: 60
+      sources:
+        - id: ai-helm-skills
+          owner: ADORSYS-GIS
+          repo: ai-helm
+          ref: main
+          paths: ["skills"]
+          token: ${GITHUB_SKILLS_TOKEN}
+
   interface:
     endpointsMenu: true
     # Hide the raw-model dropdown so users land on the curated `modelSpecs`
