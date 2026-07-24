@@ -74,8 +74,11 @@ async function main() {
     let id = idByName[spec.name];
     if (id) { await api('PATCH', `/api/agents/${id}`, token, body); console.log(`[agent-seed] patched ${spec.name} (${id})`); }
     else { const a = await api('POST', '/api/agents', token, body); id = a.id || (a.agent && a.agent.id); if (!id) die(`create returned no id for ${spec.name}: ${JSON.stringify(a).slice(0,300)}`); idByName[spec.name] = id; console.log(`[agent-seed] created ${spec.name} (${id})`); }
-    // grant PUBLIC view (visible to all users) — same mechanism skill-sync uses
-    await api('PUT', `/api/agents/${id}/permissions`, token, { public: true, publicAccessRoleId: AGENT_VIEWER });
+    // grant PUBLIC view (visible to all users) via the generic resource-ACL endpoint
+    // PUT /api/permissions/<resourceType>/<id> — `updated`/`removed` are REQUIRED
+    // arrays; the top-level public+publicAccessRoleId is expanded to a PUBLIC
+    // principal server-side (PermissionsController.updateResourcePermissions).
+    await api('PUT', `/api/permissions/agent/${id}`, token, { updated: [], removed: [], public: true, publicAccessRoleId: AGENT_VIEWER });
     return id;
   }
 

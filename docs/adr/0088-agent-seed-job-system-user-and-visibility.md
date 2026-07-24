@@ -25,11 +25,13 @@ two pins resolved:
    User doc is provisioned (ObjectId ↔ OIDC `sub`); the Job then looks that
    ObjectId up in Mongo and **mints a LibreChat JWT** (`jwt.sign({id}, JWT_SECRET)`
    — the payload `requireJwtAuth` expects). No fake service account.
-2. **Visibility = a public ACL grant.** After create, the Job calls
-   **`PUT /api/agents/<id>/permissions`** with
-   `{ public: true, publicAccessRoleId: "agent_viewer" }` — the same
-   `PrincipalType.PUBLIC` + access-role mechanism the skill sync uses
-   (`SKILL_VIEWER`). Every seeded agent is world-visible under the Agents endpoint.
+2. **Visibility = a public ACL grant.** After create, the Job calls the generic
+   resource-ACL endpoint **`PUT /api/permissions/agent/<id>`** with
+   `{ updated: [], removed: [], public: true, publicAccessRoleId: "agent_viewer" }`
+   (`updated`/`removed` are required arrays; the top-level `public` +
+   `publicAccessRoleId` is expanded to a `PrincipalType.PUBLIC` principal
+   server-side). This is the same access-role mechanism the skill sync uses
+   (`skill_viewer`). Every seeded agent is world-visible under the Agents endpoint.
 
 ### Seed flow (all verified against v0.8.7)
 
