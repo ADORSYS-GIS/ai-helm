@@ -76,11 +76,47 @@ jobs:
             fi
           done
 
-      - name: Run Trivy vulnerability scanner
+      # Render every chart to a static manifest with HELM, then let Trivy scan
+      # the static YAML. We do NOT point Trivy at charts/ directly, for two
+      # reasons that both stem from Trivy's own Helm renderer:
+      #   1. It renders with a DEFAULT capabilities version of k8s v1.20.0, so
+      #      every chart declaring `kubeVersion: '>=1.28.0-0'` (llm-d, lmcache,
+      #      model-deployment, all model-serving-*) fails to render and is
+      #      SILENTLY SKIPPED — never scanned. (v0.36.0 is already the latest
+      #      trivy-action, and the config-file kube-version key is ignored by the
+      #      bundled Trivy, so neither a version bump nor trivy.yaml fixes this.)
+      #   2. It is NON-DETERMINISTIC on charts that embed the bjw-template
+      #      subchart: a concurrency bug intermittently drops rendered
+      #      securityContexts, so the same scan both FALSE-flags hardened
+      #      workloads (~15%/run) and, worse, silently MISSES real findings.
+      # `helm template --kube-version 1.31` is deterministic and honours the
+      # kubeVersion floor, so scanning its output is both complete and stable
+      # (verified 20/20 identical). Charts that can't render standalone (e.g.
+      # render-only leaves that fail-guard on injected values) are skipped here
+      # exactly as Trivy's own renderer skipped them.
+      - name: Render charts to static manifests
+        run: |
+          set -e
+          mkdir -p rendered
+          for cf in charts/*/Chart.yaml; do
+            c=$(dirname "$cf"); name=$(basename "$c")
+            [ "$(yq e '.type // "application"' "$cf")" = "library" ] && continue
+            # --skip-tests: exclude helm test hooks (e.g. meilisearch's
+            # test-connection Pod) — they are ephemeral `helm test` resources,
+            # never deployed, so they are not part of the security surface.
+            if helm template "$name" "$c" --kube-version 1.31.0 --skip-tests > "rendered/$name.yaml" 2>/dev/null && [ -s "rendered/$name.yaml" ]; then
+              echo "rendered $name"
+            else
+              echo "skip (does not render standalone): $name"
+              rm -f "rendered/$name.yaml"
+            fi
+          done
+
+      - name: Run Trivy config scan (over rendered manifests)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
-          scan-ref: 'charts/'
+          scan-ref: 'rendered/'
           scanners: 'vuln,secret,misconfig'
           ignore-unfixed: true
           format: 'table'
@@ -88,8 +124,9 @@ jobs:
           severity: 'HIGH,CRITICAL'
           # Trivy auto-detects a plain `.trivyignore` but NOT `.trivyignore.yaml`,
           # so the structured (path-scoped) ignore file must be named explicitly.
-          # It scopes the KSV-0109 false positives to two specific ConfigMap
-          # templates — see .trivyignore.yaml for the justification.
+          # Its `paths:` are the rendered FILE names `<chart>.yaml`; it scopes the
+          # KSV-0109/0014/0118 false-positives + upstream-limited findings — see
+          # .trivyignore.yaml for the per-path justification.
           trivyignores: '.trivyignore.yaml'
 
       - name: Configure Git

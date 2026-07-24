@@ -1,0 +1,57 @@
+# mlflow-secrets — ExternalSecrets for MLflow. Leaf chart of the mlflow
+# orchestrator (ADR-0085). All ExternalSecrets resolve against the
+# cluster-scoped `ssegning-aws` ClusterSecretStore.
+
+secretStore: ssegning-aws
+refreshInterval: 1h
+
+# Values-driven ExternalSecrets. Key = target Secret name. Each `data` entry
+# maps a target secretKey ← a remoteRef {key, property} in the store.
+externalSecrets:
+  # NOTE: the CNPG-facing `mlflow-db-role` basic-auth Secret (consumed by the
+  # managed role's passwordSecret) is NOT here — it must live in the SAME
+  # namespace as the lightbridge-main-db CNPG cluster (`converse`), not
+  # `mlops`. It's created directly by charts/lightbridge-db (mirrors
+  # coder-db-role). This chart only carries mlops-namespace Secrets.
+
+  # DB role password — the upstream chart's `backendStore.existingDatabaseSecret`
+  # reads username/password from here (host/port/database/driver stay plain
+  # config in the app values, not secret). The DB is a managed `mlflow` role +
+  # `mlflow` Database CR on the existing lightbridge-main-db CNPG cluster
+  # (charts/lightbridge-db) — MLflow does NOT have its own CNPG cluster
+  # (ADR-0085, same reasoning as coder in ADR-0083).
+  mlflow-db-secret:
+    literals:
+      username: mlflow
+    templateData:
+      password: "{{ .dbPassword }}"
+    data:
+      - secretKey: dbPassword
+        key: ai/camer/digital/prod/env
+        property: mlflow_db_password
+
+  # S3 artifact-store credentials — the SAME platform S3 material every
+  # other Hetzner Object Storage consumer uses (Keycloak/lightbridge CNPG
+  # backups, LibreChat's S3 file storage): prod/meta/test-app, bucket
+  # ssegning-k8s-state. Key names match the chart's
+  # artifactRoot.s3.existingSecret defaults (AWS_ACCESS_KEY_ID /
+  # AWS_SECRET_ACCESS_KEY) so no keyOf* override is needed.
+  mlflow-s3-creds:
+    data:
+      - secretKey: AWS_ACCESS_KEY_ID
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_client_id
+      - secretKey: AWS_SECRET_ACCESS_KEY
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_secret
+
+  # Keycloak OIDC client secret for the mlflow-oidc-auth plugin bundled in
+  # the upstream image (auth.oidcAuth.existingSecret). client-id is not
+  # secret (plain value in the app values). Key name matches the chart's
+  # oauth2Proxy.existingSecret.clientSecretKey default convention, reused
+  # here for oidcAuth's existingSecret.clientSecretKey.
+  mlflow-oidc:
+    data:
+      - secretKey: client-secret
+        key: ai/camer/digital/prod/env
+        property: mlflow_oidc_client_secret

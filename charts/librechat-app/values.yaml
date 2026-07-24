@@ -82,6 +82,39 @@ librechatSecrets:
       serper_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_serper_api_key }
       firecrawl_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_firecrawl_api_key }
       jina_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_jina_api_key }
+    # GitHub PAT for skill sync (config.skillSync). Fine-grained token with
+    # Contents: Read-only on ADORSYS-GIS/ai-helm (classic: public_repo, or repo
+    # once ai-helm is private, #640). Injected as GITHUB_SKILLS_TOKEN below.
+    librechat-skills-sync:
+      github_token: { key: ai/camer/digital/prod/env, property: librechat_skills_sync_github_token }
+    # LibreChat Code Interpreter API key (the managed sandbox service — code runs
+    # on LibreChat/Clickhouse infra, not our cluster). Activates the already-on
+    # `execute_code` agent capability. Injected as LIBRECHAT_CODE_API_KEY below.
+    # Get the key from your librechat.ai account (Code Interpreter is GA/free
+    # now — no pricing; a key is still required to call the managed API).
+    librechat-code-config:
+      code_api_key: { key: ai/camer/digital/prod/env, property: librechat_code_api_key }
+
+# ────────────────────────────────────────────────────────────────────────
+# Agent-seed Job (ADR-0088). Idempotently provisions the LibreChat agent fleet
+# (DB Agents, incl. subagent delegation) as the SSO system user. Structural
+# defaults only — the live fleet + enable live in ai-helm-values:
+#   agentSeed:
+#     enabled: true
+#     platformUserEmail: platform@ai.camer.digital   # must have logged in once
+#     agents: [ {name, description, provider, model, instructions, category,
+#                subagentNames?}, … ]
+# `image`/`librechatUrl` default to the LibreChat image + the in-cluster
+# librechat-app Service (:3080). Runs as an ArgoCD PostSync hook; the seed script
+# is idempotent (GET-by-name → PATCH/POST) and two-phase (leaves → orchestrators).
+# ────────────────────────────────────────────────────────────────────────
+agentSeed:
+  enabled: false
+  platformUserEmail: ""
+  # Override only if the Service name/namespace differ from the defaults above.
+  librechatUrl: ""
+  image: ""
+  agents: []
 
 global:
   librechat:
@@ -220,6 +253,24 @@ librechat:
           port: 8000
           targetPort: 8000
 
+  # Pod + container hardening so the LibreChat Deployment clears Trivy KSV-0118
+  # (non-default securityContext / "allows root"). The official
+  # ghcr.io/danny-avila/librechat image runs as USER node (uid/gid 1000, from
+  # node:24-alpine), so runAsNonRoot at 1000 is a no-op on the image's own user.
+  # fsGroup 1000 keeps the mounted config/CA (readOnly secrets/CMs) group-owned.
+  # NOTE: readOnlyRootFilesystem is intentionally NOT set — LibreChat writes
+  # winston logs + upload staging to its rootfs at runtime; a read-only rootfs
+  # would crashloop the live app (KSV-0014 is path-scoped-ignored in
+  # .trivyignore.yaml with that justification).
+  defaultPodOptions:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+
   controllers:
     librechat:
       type: deployment
@@ -232,6 +283,16 @@ librechat:
           app: librechat-app
       containers:
         librechat:
+          # Container hardening for KSV-0118. readOnlyRootFilesystem omitted on
+          # purpose (see defaultPodOptions note above + .trivyignore KSV-0014).
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           image:
             repository: ghcr.io/danny-avila/librechat
             tag: "{{ .Values.global.librechat.version }}"
@@ -255,7 +316,7 @@ librechat:
 
             OPENID_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
             OPENID_CALLBACK_URL: "/oauth/openid/callback"
-            OPENID_SCOPE: "openid profile email librechat"
+            OPENID_SCOPE: "openid profile email librechat offline_access"
             #OPENID_REQUIRED_ROLE: "user" # Now we're in open beta; everyone can connect and test
             OPENID_REQUIRED_ROLE_TOKEN_KIND: "access"
             OPENID_REQUIRED_ROLE_PARAMETER_PATH: "librechat_roles"
@@ -301,6 +362,18 @@ librechat:
               secretKeyRef:
                 name: librechat-mcp-coder-credentials
                 key: client_secret
+
+            # GitHub PAT for config.skillSync (ESO secret librechat-skills-sync).
+            GITHUB_SKILLS_TOKEN:
+              secretKeyRef:
+                name: librechat-skills-sync
+                key: github_token
+
+            # Code Interpreter (managed sandbox API) — activates execute_code.
+            LIBRECHAT_CODE_API_KEY:
+              secretKeyRef:
+                name: librechat-code-config
+                key: code_api_key
 
             OPENID_CLIENT_ID:
               secretKeyRef:
@@ -534,6 +607,30 @@ librechat:
                 failureThreshold: 30
                 periodSeconds: 5
 
+  # config-rollout — force the librechat pods to redeploy on a config change.
+  # The librechat.yaml `config:` object is a STANDALONE ConfigMap
+  # (templates/configmap.yaml, rendered from top-level .Values.config which now
+  # comes from ai-helm-values). bjw-s can't content-hash a ConfigMap it doesn't
+  # manage, and the config's subPath mount does NOT auto-update — so editing the
+  # config alone would silently keep the old config until the pod restarts for
+  # another reason. This tiny UNMOUNTED marker ConfigMap, listed in
+  # includeChecksumInControllers, makes bjw-s stamp a `checksum/configMaps`
+  # annotation on the librechat pods. ⚠️ Bump `data.generation` (overridden from
+  # ai-helm-values, co-located with the config) in the SAME commit as any
+  # `config:` change and the pods roll to pick it up. Pattern: ADR-0087 +
+  # lightbridge-code-intelligence.
+  configMaps:
+    config-rollout:
+      enabled: true
+      # Pin the name to <release>-config-rollout (else bjw-s collapses a lone
+      # managed configMap to the bare release name). The checksum hashes only
+      # `data`, so the suffix doesn't affect it.
+      suffix: config-rollout
+      includeChecksumInControllers:
+        - librechat
+      data:
+        generation: "1"
+
   persistence:
     config:
       enabled: true
@@ -575,339 +672,17 @@ librechat:
           - {}
 
 # ────────────────────────────────────────────────────────────────────────
-# librechat.yaml config — mounted at /app/librechat.yaml via the
-# ConfigMap rendered in templates/configmap.yaml.
+# librechat.yaml config (the `config:` object) — MOVED to ai-helm-values
+# (ADR-0087, extends ADR-0056). It now lives at
+# environments/prod/values/librechat-app.yaml in the PRIVATE ai-helm-values
+# repo and is injected by the librechart ApplicationSet's per-child
+# `valuesFromRepo` ($values ref → helm.valueFiles). Intentionally NO inline
+# `config:` here — a stale copy would layer under the values-repo file. The
+# configmap.yaml `{{ with .Values.config }}` guard renders an empty ConfigMap
+# if the values-repo file is ever missing (fails closed, no partial config).
+# ⚠️ Values-repo-FIRST: the file must exist on ai-helm-values `main` before
+# this chart deploys, or LibreChat falls back to no models/endpoints.
 # ────────────────────────────────────────────────────────────────────────
-config:
-  version: 1.3.5
-  cache: true
-  fileStrategy: "s3"
-  interface:
-    endpointsMenu: true
-    modelSelect: true
-    parameters: true
-    presets: true
-    agents:
-      use: true
-      create: true
-      share: true
-      public: true
-    mcpServers:
-      use: true
-      create: true
-      share: false
-      public: false
-
-  # Balance settings
-  balance:
-    enabled: false               # Enable token credit balances for users
-    startBalance: 20000          # Initial tokens credited upon registration
-    autoRefillEnabled: false     # Enable automatic token refills
-    refillIntervalValue: 30      # Numerical value for refill interval
-    refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
-    refillAmount: 10000          # Tokens added during each refill
-
-  # Web Search Configuration
-  webSearch:
-    # Search Provider Configuration - use environment variable references
-    serperApiKey: "${SERPER_API_KEY}"
-    # Alternative: SearXNG (uncomment if using)
-    # searxngInstanceUrl: "${SEARXNG_INSTANCE_URL}"
-    # searxngApiKey: "${SEARXNG_API_KEY}"
-
-    # Scraper Configuration
-    firecrawlApiKey: "${FIRECRAWL_API_KEY}"
-    # Optional: Custom Firecrawl instance
-    # firecrawlApiUrl: "${FIRECRAWL_API_URL}"
-
-    # Reranker Configuration - Jina (or use Cohere)
-    jinaApiKey: "${JINA_API_KEY}"
-    # Optional: Custom Jina instance
-    # jinaApiUrl: "${JINA_API_URL}"
-    # Alternative: Cohere
-    # cohereApiKey: "${COHERE_API_KEY}"
-
-    # General Settings
-    safeSearch: 0  # Options: 0 (OFF), 1 (MODERATE - default), 2 (STRICT)
-
-  mcpServers:
-    github_issues:
-      title: "GH Issues"
-      type: "streamable-http"
-      description: "Provides access to GitHub issues across all repositories the user has access to, with support for filtering by organization, repository, assignee, and more."
-      initTimeout: 150000
-      url: "https://api.githubcopilot.com/mcp/x/issues"
-      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/GitHub_Invertocat_White.png
-      oauth:
-        authorization_url: https://github.com/login/oauth/authorize
-        token_url: https://github.com/login/oauth/access_token
-        client_id: ${GITHUB_MCP_CLIENT_ID}
-        client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_issues/oauth/callback
-        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
-    github_projects:
-      title: "GH Project"
-      type: "streamable-http"
-      description: "Provides access to GitHub projects across all repositories the user has access to, with support for filtering by organization, repository, assignee, and more."
-      initTimeout: 150000
-      url: "https://api.githubcopilot.com/mcp/x/projects"
-      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/GitHub_Invertocat_White.png
-      oauth:
-        authorization_url: https://github.com/login/oauth/authorize
-        token_url: https://github.com/login/oauth/access_token
-        client_id: ${GITHUB_MCP_CLIENT_ID}
-        client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_projects/oauth/callback
-        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
-    github_pull_requests:
-      title: "GH PR"
-      type: "streamable-http"
-      description: "Provides access to GitHub pull requests across all repositories the user has access to, with support for filtering by organization, repository, assignee, and more."
-      initTimeout: 150000
-      url: "https://api.githubcopilot.com/mcp/x/pull_requests"
-      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/GitHub_Invertocat_White.png
-      oauth:
-        authorization_url: https://github.com/login/oauth/authorize
-        token_url: https://github.com/login/oauth/access_token
-        client_id: ${GITHUB_MCP_CLIENT_ID}
-        client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_pull_requests/oauth/callback
-        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
-    github_repos:
-      title: "GH Reps"
-      type: "streamable-http"
-      description: "Provides access to GitHub repositories across all repositories the user has access to, with support for filtering by organization, repository, assignee, and more."
-      initTimeout: 150000
-      url: "https://api.githubcopilot.com/mcp/x/repos"
-      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/GitHub_Invertocat_White.png
-      oauth:
-        authorization_url: https://github.com/login/oauth/authorize
-        token_url: https://github.com/login/oauth/access_token
-        client_id: ${GITHUB_MCP_CLIENT_ID}
-        client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_repos/oauth/callback
-        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
-    github_github_support_docs_search:
-      title: "GH Docs"
-      type: "streamable-http"
-      description: "Provides access to search across GitHub's support documentation, enabling users to find relevant articles and resources based on their queries."
-      initTimeout: 150000
-      url: "https://api.githubcopilot.com/mcp/x/github_support_docs_search"
-      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/GitHub_Invertocat_White.png
-      oauth:
-        authorization_url: https://github.com/login/oauth/authorize
-        token_url: https://github.com/login/oauth/access_token
-        client_id: ${GITHUB_MCP_CLIENT_ID}
-        client_secret: ${GITHUB_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/github_github_support_docs_search/oauth/callback
-        scope: "repo repo:status repo_deployment public_repo repo:invite security_events admin:repo_hook write:repo_hook read:repo_hook admin:org write:org read:org admin:org_hook read:public_key write:public_key admin:public_key gist notifications user read:user user:email user:follow project read:project delete_repo write:packages read:packages delete:packages admin:gpg_key write:gpg_key read:gpg_key codespace workflow read:audit_log"
-    lightbridge_self_service:
-      title: "LightBridge API KEYs"
-      description: "LightBridge Self Service API-KEYs"
-      type: "streamable-http"
-      initTimeout: 150000
-      url: "https://mcp.ai.camer.digital/mcp"
-      headers:
-        X-ACCOUNT-ID: 'LIBRECHAT'
-        X-PROJECT-ID: 'sso:{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
-        X-USER-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
-        X-USER-EMAIL: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
-        X-USER-ROLE: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
-        X-USER-NAME: '{{ `{{` }}LIBRECHAT_USER_NAME{{ `}}` }}'
-      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
-      chatMenu: false
-      serverInstructions: |
-        Provides utilities to CRUD accounts, projects, and API keys.
-        - API keys are used to interact with the backend at `https://api.ai.camer.digital/v1`
-        - Backend is OpenAI compatible
-        - Api-keys belongs to projects, and projects belongs to Accounts.
-        - Billing account is usually arbitrary and mostly used for humain billing.
-        - Before creating an account, check if one exist. Same for projects.
-        - Most users don't have multiple accounts. Most users have single project.
-      oauth:
-        authorization_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth
-        token_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token
-        client_id: ${CD_MCP_CLIENT_ID}
-        client_secret: ${CD_MCP_SECRET_ID}
-        redirect_uri: https://ai.camer.digital/api/mcp/lightbridge_self_service/oauth/callback
-        scope: "email openid offline_access"
-
-    coder_mcp:
-      title: "Coder"
-      description: "Coder - Development environments in your cloud"
-      type: "streamable-http"
-      initTimeout: 150000
-      url: "https://coder.ai.camer.digital/api/experimental/mcp/http"
-      headers:
-        X-ACCOUNT-ID: 'LIBRECHAT'
-        X-PROJECT-ID: 'sso:{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
-        X-USER-ID: '{{ `{{` }}LIBRECHAT_USER_ID{{ `}}` }}'
-        X-USER-EMAIL: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
-        X-USER-ROLE: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
-        X-USER-NAME: '{{ `{{` }}LIBRECHAT_USER_NAME{{ `}}` }}'
-      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
-      requiresOAuth: true
-      serverInstructions: |
-        Provides development environment management capabilities:
-        - Create, start, stop, and delete workspaces
-        - List templates, users, and workspace resources
-        - Manage workspace builds and transitions
-      oauth:
-        authorization_url: https://coder.ai.camer.digital/oauth2/authorize
-        token_url: https://coder.ai.camer.digital/oauth2/tokens
-        client_id: ${CODERS_MCP_CLIENT_ID}
-        client_secret: ${CODERS_MCP_SECRET}
-        redirect_uri: https://ai.camer.digital/api/mcp/coder_mcp/oauth/callback
-        scope: "coder:all"
-
-  fileConfig:
-    endpoints:
-      assistants:
-        fileLimit: 5
-        fileSizeLimit: 10  # Maximum size for an individual file in MB
-        totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
-        supportedMimeTypes:
-          - "image/.*"
-          - "application/pdf"
-      openAI:
-        disabled: false  # Disables file uploading to the OpenAI endpoint
-      default:
-        totalSizeLimit: 20
-      YourCustomEndpointName:
-        fileLimit: 2
-        fileSizeLimit: 5
-    serverFileSizeLimit: 100  # Global server file size limit in MB
-    avatarSizeLimit: 2  # Limit for user avatar image size in MB
-  rateLimits:
-    fileUploads:
-      ipMax: 100
-      ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
-      userMax: 50
-      userWindowInMinutes: 60  # Rate limit window for file uploads per user
-    #registration:
-    #socialLogins: [ "openid" ]
-  endpoints:
-    all:
-      streamRate: 5
-      titlePromptTemplate: |
-        ### Task:
-        Generate a concise, 3-5 word title with an emoji summarizing the chat history.
-
-        ### Guidelines:
-        - The title should clearly represent the main theme or subject of the conversation.
-        - Always use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
-        - Write the title in the chat's primary language; default to English if multilingual.
-        - Prioritize accuracy over excessive creativity; keep it clear and simple.
-        - The title should be short and funny.
-        - The emoji should come first.
-
-        ### Output:
-        Format "<emoji> your concise title here"
-          ### Examples:
-          - 📉 Stock Market Trends
-          - 🍪 Perfect Chocolate Chip Recipe
-          - 🎧 Evolution of Music Streaming
-          - 👨🏿‍💻 Remote Work Productivity Tips
-          - 🧠 Artificial Intelligence in Healthcare
-          - 🎮 Video Game Development Insights
-
-        ### Chat History:
-        Human: {input}
-        Assistant: {output}
-    agents:
-      recursionLimit: 75
-      maxRecursionLimit: 100
-      disableBuilder: false
-      # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-      # capabilities: ["execute_code", "file_search", "actions", "tools", "artifacts", "ocr", "chain", "web_search"]
-      # (optional) File citation configuration for file_search capability
-      maxCitations: 20          # Maximum total citations in responses (1-50)
-      maxCitationsPerFile: 7    # Maximum citations from each file (1-10)
-      minRelevanceScore: 0.45   # Minimum relevance score threshold (0.0-1.0)
-    assistants:
-      disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-      pollIntervalMs: 750  # Polling interval for checking assistant updates
-      timeoutMs: 180000  # Timeout for assistant operations
-      # Should only be one or the other, either `supportedIds` or `excludedIds`
-      #supportedIds: [ "asst_supportedAssistantId1", "asst_supportedAssistantId2" ]
-      #excludedIds: ["asst_excludedAssistantId"]
-    custom:
-      - name: "Converse"
-        apiKey: "${CONVERSE_OPENAI_API_KEY}"
-        # Internal plane (ADR-0021): the stable core-gateway-internal ClusterIP on
-        # the api-internal listener (HTTPS, internal-CA), instead of the plaintext
-        # auto-generated EG Service name (which now hits the http→https redirect).
-        # NODE_EXTRA_CA_CERTS (container env) trusts the internal CA for this TLS.
-        baseURL: "https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1"
-        models:
-          # The FULL chat-capable catalog. Static list (fetch:false) so embedding
-          # + reranker kinds are excluded by construction — LibreChat can't filter
-          # an auto-fetched /v1/models by kind, and they're not conversational. Rule:
-          # every ENABLED text/multimodal model in charts/ai-models/values.yaml
-          # appears here; embedding (qwen3-embedding-8b), reranker (qwen3-reranker-8b)
-          # and disabled models (qwen3-4b-local) are omitted. Each id MUST equal the
-          # ai-models gateway model id. ⚠️ Keep in sync when adding/removing a model
-          # in charts/ai-models (no auto-derivation across charts).
-          default:
-            # ── General vendor chat models ──────────────────────────────────
-            - "glm-5p2"
-            - "glm-4.7-flash"
-            - "minimax-m2.7"
-            - "minimax-m2p5"
-            - "kimi-k2.7-code"
-            - "kimi-k2.5"
-            - "deepseek-v4-flash"
-            - "deepseek-v4-pro"
-            - "qwen3p7-plus"
-            - "gemma-4"
-            - "gemini-3p1-flash-lite"
-            - "reviewer"
-            # ── Self-hosted (home GPU) ──────────────────────────────────────
-            # Qwen3.5-4B Q4 via llama.cpp (128k ctx), routed via the internal
-            # plane like the SaaS models. Owned/cheap/private tier; see
-            # docs/models/qwen3.5-4b-q4.md.
-            - "qwen3-5-4b-local"
-            # DeepSeek-R1-Distill-Qwen-1.5B via vLLM (32k ctx, BF16 reasoning
-            # model). STAGED — enable at cutover (one GPU → one model).
-            - "deepseek-r1-1-5b-local"
-            # ── Branded adorsys-* aliases (stable ids, swappable backings; ──
-            #    ADR-0044/0050). Each carries its own $15/$50 budget bucket.
-            - "adorsys-planner"
-            - "adorsys-planner-pro"
-            - "adorsys-coder"
-            - "adorsys-coder-pro"
-            - "adorsys-reviewer"
-            - "adorsys-reviewer-pro"
-            - "adorsys-frontend"
-            - "adorsys-frontend-pro"
-            - "adorsys-researcher"
-          fetch: false
-        iconURL: "https://s3.ssegning.me/ai-ops-backups/public/chicken-leg.png"
-        titleConvo: false
-        titleMethod: "completion"
-        titleModel: "gemma-4"
-        summarize: true
-        summaryModel: "gemma-4"
-        forcePrompt: true
-        modelDisplayLabel: "Converse AI"
-        # Forward the END-USER identity to the gateway so the internal AuthConfig
-        # maps it into PER-USER rate-limit descriptors (ADR-0021), even though the
-        # gateway authenticates LibreChat as one service (apiKey). X-LibreChat-User
-        # = the user's Keycloak sub (so a user's budget is shared with their
-        # opencode usage). TRUST: only safe because the internal plane accepts
-        # authenticated first-party services only, and Authorino OVERWRITES
-        # x-account-id/x-billing-plan from these (a client can't set them directly).
-        # X-LibreChat-Email / -Name also feed the per-user OBSERVABILITY board:
-        # the internal AuthConfig stamps them into x-oidc-email / x-oidc-name so
-        # LibreChat users show up as named humans (not the "missing:*" sentinel)
-        # in the Top-15 / per-user panels. Without -Name forwarded, LibreChat
-        # traffic would attribute by id+email but render as "missing:name".
-        headers:
-          X-LibreChat-User: '{{ `{{` }}LIBRECHAT_USER_OPENIDID{{ `}}` }}'
-          X-LibreChat-Role: '{{ `{{` }}LIBRECHAT_USER_ROLE{{ `}}` }}'
-          X-LibreChat-Email: '{{ `{{` }}LIBRECHAT_USER_EMAIL{{ `}}` }}'
-          X-LibreChat-Name: '{{ `{{` }}LIBRECHAT_USER_NAME{{ `}}` }}'
-
 # ────────────────────────────────────────────────────────────────────────
 # MongoDB subchart values (helmforge/mongodb@1.7.6, aliased as `db`).
 # Bundled with librechat in this Application because they share lifecycle.
