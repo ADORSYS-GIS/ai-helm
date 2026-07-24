@@ -29,6 +29,10 @@ externalSecrets:
     templateData:
       database_connection_string: "postgres://lakefs:{{ .dbPassword | urlquery }}@lightbridge-main-db-rw.converse.svc.cluster.local:5432/lakefs?sslmode=disable"
       auth_encrypt_secret_key: "{{ .encryptSecretKey }}"
+      # OIDC client secret consumed by the chart's secretKeys.oidcClientSecret
+      # (→ auth.oidc.client_secret). Reuses the existing Keycloak confidential
+      # client's secret (ADR-0085 revised: LakeFS OSS native `auth.oidc` SSO).
+      oidc_client_secret: "{{ .oidcClientSecret }}"
     data:
       - secretKey: dbPassword
         key: ai/camer/digital/prod/env
@@ -36,6 +40,9 @@ externalSecrets:
       - secretKey: encryptSecretKey
         key: ai/camer/digital/prod/env
         property: lakefs_encrypt_secret_key
+      - secretKey: oidcClientSecret
+        key: ai/camer/digital/prod/env
+        property: lakefs_proxy_client_secret
 
   # S3 blockstore credentials — the SAME platform S3 material every other
   # Hetzner Object Storage consumer uses (Keycloak/lightbridge CNPG backups,
