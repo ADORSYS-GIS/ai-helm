@@ -766,6 +766,76 @@ config:
         redirect_uri: https://ai.camer.digital/api/mcp/coder_mcp/oauth/callback
         scope: "coder:all"
 
+    # ── Platform MCP catalog (the `charts/mcps` gateway children, ADR-0038/0040) ──
+    # Exposed on the external gateway at api.ai.camer.digital/mcp/<name> with
+    # MCP-spec OAuth (RFC 9728) against the camer-digital Keycloak realm. We reuse
+    # the SAME `self-service-mcp-api` client the lightbridge MCP uses
+    # (${CD_MCP_CLIENT_ID}); its Keycloak redirectUris already carry a `*` wildcard,
+    # so the per-MCP `.../oauth/callback` URIs below need NO keycloak-baseline change.
+    # brave + firecrawl are intentionally OMITTED — redundant with the built-in
+    # webSearch pipeline (Serper scrape + Firecrawl + Jina rerank).
+    terraform_mcp:
+      title: "Terraform"
+      description: "HashiCorp Terraform registry — look up providers, modules, resource/data-source schemas, and IaC guidance."
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "https://api.ai.camer.digital/mcp/terraform"
+      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
+      requiresOAuth: true
+      serverInstructions: |
+        Authoritative HashiCorp Terraform registry access:
+        - Resolve providers and modules, and read their resource/data-source schemas.
+        - Prefer these lookups over recalling provider arguments from memory.
+      oauth:
+        authorization_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CD_MCP_CLIENT_ID}
+        client_secret: ${CD_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/terraform_mcp/oauth/callback
+        scope: "email openid offline_access"
+
+    context7_mcp:
+      title: "Context7"
+      description: "Up-to-date, version-specific documentation and code examples for libraries, frameworks, and SDKs."
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "https://api.ai.camer.digital/mcp/context7"
+      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
+      requiresOAuth: true
+      serverInstructions: |
+        Fetch current library/framework docs instead of relying on training data:
+        - First resolve the library id, then fetch its docs (optionally scoped to a topic).
+        - Use for API syntax, config, migration, and CLI usage — even for well-known libraries.
+      oauth:
+        authorization_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CD_MCP_CLIENT_ID}
+        client_secret: ${CD_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/context7_mcp/oauth/callback
+        scope: "email openid offline_access"
+
+    refero_mcp:
+      title: "Refero Design"
+      description: "Design reference — search real product UI screens, flows, and styles for inspiration and patterns."
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "https://api.ai.camer.digital/mcp/refero"
+      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
+      requiresOAuth: true
+      # ⚠️ Shared Refero Pro quota (8k tool calls/month, ADR-0027). Steer agents to
+      # search deliberately, not to poll — heavy interactive use can exhaust it.
+      serverInstructions: |
+        Ground UI/UX work in real product references:
+        - Search screens, flows, and styles; fetch a screen's image/details when useful.
+        - Query deliberately — this is a metered design catalog, not a scratchpad.
+      oauth:
+        authorization_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CD_MCP_CLIENT_ID}
+        client_secret: ${CD_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/refero_mcp/oauth/callback
+        scope: "email openid offline_access"
+
   fileConfig:
     endpoints:
       assistants:
