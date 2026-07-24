@@ -164,22 +164,15 @@ modelServing:
             repository: caddy
             tag: 2-alpine
             pullPolicy: IfNotPresent
-          # ⚠️ caddy:2-alpine's /usr/bin/caddy carries FILE CAPABILITIES
-          # (cap_net_bind_service). The kernel refuses to exec a file-capability
-          # binary once no_new_privs is set (execve -> EPERM -> crashloop), and
-          # no_new_privs is forced by allowPrivilegeEscalation:false OR any
-          # seccompProfile (RuntimeDefault/Localhost/Unconfined) with CAP_SYS_ADMIN
-          # dropped. Unconfined is ALSO forbidden by the namespace's baseline
-          # PodSecurity. So this sidecar sets NO seccompProfile (the pod-level
-          # seccomp above is removed so none is inherited) and leaves
-          # allowPrivilegeEscalation unset — no no_new_privs, exec works, baseline
-          # PSS satisfied. Dropping ALL caps still clears KSV-0118 (Caddy runs as
-          # root, binds only :8090). readOnlyRootFilesystem omitted (autosave to
-          # /config,/data) -> KSV-0014 path-scoped-ignored.
-          securityContext:
-            capabilities:
-              drop:
-                - ALL
+          # NO securityContext on this sidecar. caddy:2-alpine's /usr/bin/caddy
+          # ships an EFFECTIVE file-capability (cap_net_bind_service=ep); the kernel
+          # refuses to exec such a binary if that cap is dropped from the bounding
+          # set (capabilities.drop) OR if no_new_privs is set (allowPrivilegeEscalation:
+          # false / any seccompProfile), and Talos baseline PSS forbids the Unconfined
+          # seccomp that would dodge the latter — so this image cannot take a hardened
+          # SC at all. KSV-0118 for it is path-scoped-ignored (.trivyignore.yaml); the
+          # pod + model container ARE hardened. PROPER FIX: drop this sidecar — vLLM
+          # gates VLLM_API_KEY on :8080 itself, making Caddy redundant (tracked).
           env:
             MODEL_API_KEY:
               secretKeyRef:
