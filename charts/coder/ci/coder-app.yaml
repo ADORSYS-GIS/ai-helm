@@ -104,13 +104,17 @@ coder:
 
   replicaCount: 1
 
+  # Resources for ~30 concurrent users + 15-30 workspace pods.
+  # Coder official minimum: 1 CPU / 2 Gi per replica.
+  # Bump requests to guarantee coderd gets resources alongside workspace pods.
+  # Prod overrides in ai-helm-values may increase further based on load testing.
   resources:
     requests:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 1000m
+      memory: 2Gi
     limits:
       cpu: 2000m
-      memory: 2048Mi
+      memory: 4Gi
 
   securityContext:
     runAsNonRoot: true

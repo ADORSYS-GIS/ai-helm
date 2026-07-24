@@ -1,0 +1,158 @@
+{{- /*
+lakefs App-of-Apps orchestrator — renders three child Application CRs:
+  • lakefs-secrets — local ExternalSecrets leaf chart (single source, OCI float).
+  • lakefs-auth    — upstream oauth2-proxy chart (classic Helm repo) gating LakeFS
+                    with Keycloak SSO via Traefik ForwardAuth (second source: $values).
+  • lakefs-app     — upstream LakeFS chart (classic Helm repo, deployed as an ArgoCD
+                    source) + the ingress Certificate/ForwardAuth Middleware/oauth2
+                    callback Ingress via the per-env kustomize overlay (second source),
+                    + $values ref (third source).
+(The lakefs-db child is disabled — LakeFS uses the existing lightbridge-main-db
+CNPG cluster. See ADR-0085.)
+All target home-remote (ADR-0017 guard via lakefs.argocd.destinationClusterRef).
+Rendered as direct Application CRs rather than an ApplicationSet because the
+children are fixed + heterogeneous — see ADR-0019 (lightbridge is the canonical
+example). See ADR-0085 for the LakeFS-specific auth/DB/S3 decisions.
+*/ -}}
+{{- $a := .Values.argocd -}}
+{{- if .Values.secrets.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.secrets.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.secrets.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.secrets.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
+    helm:
+      releaseName: {{ .Values.secrets.releaseName | quote }}
+  destination:
+    {{- include "lakefs.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.db.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.db.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.db.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.db.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
+    helm:
+      releaseName: {{ .Values.db.releaseName | quote }}
+  destination:
+    {{- include "lakefs.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  {{- with .Values.db.ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.auth.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.auth.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.auth.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  sources:
+    # Source A — upstream oauth2-proxy chart (classic Helm repo, pinned — not
+    # floated). A DEDICATED instance for LakeFS (own Keycloak client, own
+    # cookie secret) — not shared with mlflow-auth (ADR-0085).
+    - repoURL: {{ .Values.auth.chart.repoURL | quote }}
+      chart: {{ .Values.auth.chart.name | quote }}
+      targetRevision: {{ .Values.auth.chart.targetRevision | quote }}
+      helm:
+        releaseName: {{ .Values.auth.releaseName | quote }}
+        valueFiles:
+          - $values/environments/{{ $a.env | default "prod" }}/values/lakefs-auth.yaml
+        ignoreMissingValueFiles: true
+    # Source B — $values ref: the workload values file (ai-helm-values, ADR-0056).
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      ref: values
+  destination:
+    {{- include "lakefs.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.app.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.app.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.app.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  sources:
+    # Source A — the upstream LakeFS workload (classic Helm repo, pinned — not
+    # floated like the secrets/auth leaves). releaseName stays `lakefs` so
+    # workload resource names match the namespace. Values live in
+    # ai-helm-values (ADR-0056), read via the $values ref (Source C) — not inline.
+    - repoURL: {{ .Values.app.chart.repoURL | quote }}
+      chart: {{ .Values.app.chart.name | quote }}
+      targetRevision: {{ .Values.app.chart.targetRevision | quote }}
+      helm:
+        releaseName: {{ .Values.app.releaseName | quote }}
+        valueFiles:
+          - $values/environments/{{ $a.env | default "prod" }}/values/lakefs-app.yaml
+        ignoreMissingValueFiles: true
+    # Source B — app-scoped deps (ingress Certificate, ForwardAuth Middleware,
+    # oauth2 callback Ingress) via the per-env kustomize overlay in
+    # ai-helm-values; issuer patched per environment.
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      path: {{ .Values.app.depsOverlay | quote }}
+    # Source C — $values ref: the workload values file (ai-helm-values, ADR-0056).
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      ref: values
+  destination:
+    {{- include "lakefs.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}

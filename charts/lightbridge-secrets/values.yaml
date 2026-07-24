@@ -52,3 +52,20 @@ externalSecrets:
       - secretKey: s3_secret_access_key
         key: prod/meta/test-app
         property: s3_backup_cnpg_secret
+  # Shared redis-ha AUTH password (secretKeyRef name: redis-ha-redis-auth, key:
+  # redis-password) for the api component's Redis-backed rate limiting
+  # (lightbridge-authz#135 / ADR-0003 "Rate limiting (Redis-backed)"). The api pod
+  # reaches the shared redis-ha (home-os, redis-system) through a haproxy TLS
+  # sidecar and presents this password as Redis AUTH (see the redis block +
+  # sidecar in ai-helm-values environments/prod/values/lightbridge-app.yaml).
+  #
+  # SAME platform secret + property the observability exporter, LibreChat and the
+  # Envoy rate-limiter use (prod/meta/test-app # redis_password) — NOT the
+  # consolidated app secret. Each consumer namespace needs its own copy; this
+  # materialises the converse-namespace copy. Key `redis-password` matches what
+  # the other consumers read.
+  redis-ha-redis-auth:
+    data:
+      - secretKey: redis-password
+        key: prod/meta/test-app
+        property: redis_password
