@@ -1,0 +1,50 @@
+apiVersion: v2
+name: mlflow
+description: |
+  App-of-Apps orchestrator for MLflow (experiment tracking). Renders TWO
+  ArgoCD Application CRs:
+
+    1. mlflow-secrets — ExternalSecrets (DB role password, S3 artifact-store
+                        creds, Keycloak OIDC client secret) the app depends
+                        on (leaf chart, sync-wave 0)
+    2. mlflow-app     — the MLflow workload (upstream Helm chart from
+                        https://community-charts.github.io/helm-charts,
+                        deployed as an ArgoCD source) with ingress TLS
+                        Certificate via the per-env kustomize overlay
+                        (sync-wave 1)
+
+  MLflow uses the existing lightbridge-main-db CNPG cluster for its
+  backend store (a managed `mlflow` role + `mlflow` Database CR added to
+  charts/lightbridge-db) — no separate CNPG cluster. Its artifact store is
+  S3 (Hetzner Object Storage), a `mlflow-artifacts/` prefix inside the
+  shared ssegning-k8s-state bucket, reusing the platform's existing S3
+  credentials.
+
+  Unlike LakeFS, this specific upstream chart (community-charts/mlflow,
+  image burakince/mlflow) bundles the mlflow-oidc-auth plugin natively —
+  `auth.oidcAuth` gives real per-user Keycloak identity + group-based RBAC
+  inside MLflow itself, no fronting oauth2-proxy needed (a materially
+  better outcome than LakeFS's proxy-gated setup). See ADR-0085.
+
+  Same App-of-Apps pattern as lightbridge (ADR-0019 canonical) / coder
+  (ADR-0083) — see ADR-0085 for this platform's specifics.
+type: application
+version: 1.0.0
+appVersion: "3.14.0"
+keywords:
+  - mlflow
+  - experiment-tracking
+  - mlops
+  - model-registry
+maintainers:
+  - name: ai-helm
+annotations:
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

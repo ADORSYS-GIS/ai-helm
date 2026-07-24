@@ -1,0 +1,99 @@
+{{- /*
+Agent-seed Job (ADR-0088). Idempotently seeds the LibreChat agent fleet
+(agentSeed.agents) as the SSO system user. ArgoCD PostSync hook so it runs after
+LibreChat is healthy; BeforeHookCreation delete-policy so each sync re-applies
+the fleet (the seed script is idempotent: GET-by-name -> PATCH/POST). Guarded on
+agentSeed.enabled — the fleet + enable live in ai-helm-values.
+*/ -}}
+{{- if .Values.agentSeed.enabled }}
+{{- $ns := include "common.names.namespace" $ -}}
+{{- $img := .Values.agentSeed.image | default (printf "ghcr.io/danny-avila/librechat:%s" .Values.global.librechat.version) -}}
+{{- $url := .Values.agentSeed.librechatUrl | default (printf "http://librechat-app.%s.svc.cluster.local:3080" $ns) -}}
+{{- $fleet := .Values.agentSeed.agents | default list | toJson -}}
+{{- /* Mongo URI — same shape as _mongo_uri.tpl, but built with direct field
+   access (the `dig`-based helper can't run in this parent-chart context). */ -}}
+{{- $replicas := int (default 1 .Values.global.mongo.replicaCount) -}}
+{{- $hosts := list -}}
+{{- range $i := until $replicas -}}
+{{- $hosts = append $hosts (printf "%s-db-%d.%s-db-headless:27017" $.Release.Name $i $.Release.Name) -}}
+{{- end -}}
+{{- $mongo := printf "mongodb://%s" (join "," $hosts) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-agent-seed-script
+  namespace: {{ $ns }}
+  labels:
+    {{- include "common.labels.standard" $ | nindent 4 }}
+data:
+  seed-agents.js: |
+{{ .Files.Get "files/seed-agents.js" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-agent-seed-fleet
+  namespace: {{ $ns }}
+  labels:
+    {{- include "common.labels.standard" $ | nindent 4 }}
+data:
+  fleet.json: {{ $fleet | quote }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-agent-seed
+  namespace: {{ $ns }}
+  labels:
+    {{- include "common.labels.standard" $ | nindent 4 }}
+  annotations:
+    # Run after LibreChat is healthy; replace the hook Job each sync (idempotent seed).
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      annotations:
+        # Re-render (and thus re-run under the hook) when the script or fleet changes.
+        checksum/seed: {{ printf "%s%s" (.Files.Get "files/seed-agents.js") $fleet | sha256sum }}
+      labels:
+        {{- include "common.labels.standard" $ | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: agent-seed
+          image: {{ $img | quote }}
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command: ["node", "/seed/seed-agents.js"]
+          env:
+            - name: NODE_PATH
+              value: /app/node_modules
+            - name: MONGO_URI
+              value: {{ $mongo | quote }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: librechat-config
+                  key: jwt_secret
+            - name: LIBRECHAT_URL
+              value: {{ $url | quote }}
+            - name: PLATFORM_USER_EMAIL
+              value: {{ required "agentSeed.platformUserEmail is required when agentSeed.enabled" .Values.agentSeed.platformUserEmail | quote }}
+            - name: FLEET_PATH
+              value: /fleet/fleet.json
+          volumeMounts:
+            - name: seed-script
+              mountPath: /seed
+            - name: seed-fleet
+              mountPath: /fleet
+      volumes:
+        - name: seed-script
+          configMap:
+            name: {{ .Release.Name }}-agent-seed-script
+        - name: seed-fleet
+          configMap:
+            name: {{ .Release.Name }}-agent-seed-fleet
+{{- end }}

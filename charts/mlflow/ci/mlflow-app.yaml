@@ -1,0 +1,111 @@
+# CI / reference values for the upstream MLflow chart
+# (https://community-charts.github.io/helm-charts, image burakince/mlflow).
+#
+# This file serves TWO purposes:
+# 1. Human reference copy — kept structurally in sync with the PRIVATE
+#    ai-helm-values repo file at environments/prod/values/mlflow-app.yaml
+#    (NOT auto-linted: the top-level repo CI loop only picks up
+#    charts/<chart>/ci/*-values.yaml, and this file is named *-app.yaml).
+# 2. Documentation of the exact chart schema decisions (existingDatabaseSecret,
+#    S3 artifact store via existingSecret, native mlflow-oidc-auth plugin).
+#
+# Backend store DB: the existing lightbridge-main-db CNPG cluster (converse
+# ns), via the `mlflow` managed role/Database (charts/lightbridge-db).
+# Artifact store: Hetzner Object Storage (S3-compatible), prefix
+# `mlflow-artifacts/` inside the shared ssegning-k8s-state bucket, reusing
+# the platform's existing S3 credentials.
+#
+# Auth: this specific chart bundles the mlflow-oidc-auth plugin in its image
+# — `auth.oidcAuth` gives real per-user Keycloak identity + group-based
+# RBAC inside MLflow itself (no fronting oauth2-proxy needed, unlike LakeFS
+# — see ADR-0085). Keycloak client `mlflow`, client roles `viewer`/`admin`
+# mapped into the `mlflow_roles` claim (same clientRoleMapping pattern as
+# `coder`/`argo-workflows`).
+
+backendStore:
+  databaseMigration: true
+  databaseConnectionCheck: true
+  postgres:
+    enabled: true
+    host: "lightbridge-main-db-rw.converse.svc.cluster.local"
+    port: 5432
+    database: "mlflow"
+    driver: "psycopg2"
+  existingDatabaseSecret:
+    name: mlflow-db-secret
+    usernameKey: username
+    passwordKey: password
+
+artifactRoot:
+  defaultArtifactRoot: "s3://ssegning-k8s-state/mlflow-artifacts"
+  s3:
+    enabled: true
+    bucket: "ssegning-k8s-state"
+    path: "mlflow-artifacts"
+    existingSecret:
+      name: mlflow-s3-creds
+      # Keys match the Secret's defaults (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY).
+
+# Hetzner Object Storage (Ceph-RGW) endpoint + path-style addressing — this
+# chart's `extraEnvVars` is a plain MAP (key: value), not a list.
+extraEnvVars:
+  MLFLOW_S3_ENDPOINT_URL: "https://nbg1.your-objectstorage.com"
+  AWS_DEFAULT_REGION: "us-east-1"
+
+# Basic-auth (the chart default) stays OFF — oidcAuth is the auth mechanism.
+auth:
+  enabled: false
+
+# NOTE: `oidcAuth` is a TOP-LEVEL key in this chart's schema (sibling of
+# `auth`, NOT nested under it) — a schema-validation error catches this if
+# it's misplaced (`additional properties 'oidcAuth' not allowed` at /auth).
+oidcAuth:
+  enabled: true
+  discoveryUrl: "https://auth.verif.fyi/realms/camer-digital/.well-known/openid-configuration"
+  clientId: "mlflow"
+  existingSecret:
+    name: mlflow-oidc
+    clientSecretKey: client-secret
+  # OAuth2/OIDC `scope` is SPACE-separated per spec — Keycloak rejected the
+  # comma-separated form outright. Found live during ADR-0085 verification.
+  scope: "openid email profile"
+  providerDisplayName: "Sign in with Keycloak"
+  # Client-role claim (oidc-usermodel-client-role-mapper on the `mlflow`
+  # Keycloak client, same pattern as coder's coder_roles / argo-workflows'
+  # groups claim) — NOT a realm-group claim.
+  groupsAttribute: "mlflow_roles"
+  groupName:
+    - viewer
+  adminGroupName:
+    - admin
+  defaultPermission: "READ"
+  sessionCookieSecure: true
+
+replicaCount: 1
+
+# 2Gi limit still OOMKilled (round 1 of live verification, ADR-0085) — the
+# gunicorn default of 4 workers each duplicate the FastAPI+SQLAlchemy+OIDC
+# process memory. Cut to 2 workers and give more headroom.
+extraArgs:
+  workers: "2"
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: 1500m
+    memory: 4Gi
+
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: mlflow.mlops.ai.camer.digital
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - secretName: mlflow-tls
+      hosts:
+        - mlflow.mlops.ai.camer.digital

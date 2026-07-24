@@ -1,44 +1,74 @@
 # Trivy misconfiguration ignores for the chart `config` scan.
 #
-# Read by BOTH Trivy gates over charts/ — the dedicated Security Audit workflow
-# (.github/workflows/security.yml → ADORSYS-GIS/ai-ops security-gates) and the
-# release-helm-charts workflow — since each checks out this repo and Trivy reads
-# this file from the working directory.
+# ── Path scheme ──────────────────────────────────────────────────────────────
+# The authoritative chart gate (.github/workflows/release-helm-charts.yml) scans
+# DETERMINISTICALLY: it `helm template`s each chart to `rendered/<chart>.yaml`
+# and runs Trivy over the static manifests. (Trivy's own Helm renderer is
+# non-deterministic on charts that embed the bjw-template subchart — it
+# intermittently drops securityContexts and both over- and under-reports; see
+# the workflow comment + PR.) So every `paths:` entry below is the rendered
+# FILE name `<chart>.yaml`, one per chart — NOT a template path.
 #
-# Policy: keep every entry SCOPED (id + explicit paths) and justified. Never a
-# blanket whole-ID ignore — a real finding in another chart must still fail.
-# Path-scoping is deliberately brittle: if a template is renamed/moved the
-# ignore stops applying and the finding re-surfaces for re-review.
+# The sibling Security Audit gate (.github/workflows/security.yml → the external
+# ADORSYS-GIS/ai-ops security-gates workflow) does a bare checkout with NO
+# `helm dependency build`, so it cannot render any chart that has a subchart
+# dependency (every chart referenced below has one) — it skips them all. This
+# file therefore only governs the release-helm-charts static scan.
+#
+# ── Policy ───────────────────────────────────────────────────────────────────
+# Keep every entry SCOPED (id + explicit `<chart>.yaml` paths) and justified.
+# Never a blanket whole-ID ignore — a real finding in another chart must still
+# fail. If a chart is renamed the ignore stops applying and the finding
+# re-surfaces for re-review, which is intended.
 misconfigurations:
   - id: KSV-0109
-    # KSV-0109 "ConfigMap with secrets" — FALSE POSITIVE here: these two
-    # ConfigMap keys are merely NAMED *secret* but carry no secret VALUE.
-    #  - keycloak-baseline realm-configmap `clientSecret:` renders EMPTY (no
-    #    value set in values.yaml; the IdP brokering secret is supplied
-    #    out-of-band, not from this ConfigMap).
-    #  - librechat-config `client_secret:` is a `${GITHUB_MCP_SECRET_ID}` /
-    #    `${CD_MCP_SECRET_ID}` env placeholder that LibreChat substitutes at
-    #    runtime from an ESO-provided Secret (see CLAUDE.md "Secrets + ESO").
-    # No real secret is ever stored in either ConfigMap.
+    # KSV-0109 "ConfigMap with secrets" — FALSE POSITIVE: these keys are merely
+    # NAMED like a secret but carry no secret VALUE.
+    #  - keycloak-baseline realm ConfigMap `clientSecret:` renders EMPTY (no
+    #    value in values.yaml; the IdP brokering secret is supplied out-of-band).
+    #  - model-deployment `llm-config` key `MAX_NUM_BATCHED_TOKENS` trips the
+    #    heuristic on the substring *TOKENS*, but it is a plain vLLM batching
+    #    integer, NOT a credential.
+    # Real secrets are injected at runtime via ESO, never stored in a ConfigMap.
     statement: >-
-      ConfigMap keys named *secret* whose values are empty or ${ENV} placeholders;
-      real secrets are injected at runtime via ESO, never stored in the ConfigMap.
+      ConfigMap keys named *secret*/*token* whose values are empty or non-secret
+      tunables (vLLM MAX_NUM_BATCHED_TOKENS); real secrets are injected at
+      runtime via ESO, never stored in the ConfigMap.
     paths:
-      - "keycloak-baseline/templates/realm-configmap.yaml"
-      - "librechat-app/templates/configmap.yaml"
+      - "keycloak-baseline.yaml"
+      - "model-deployment.yaml"
   - id: KSV-0014
-    # KSV-0014 "readOnlyRootFilesystem" — the neo4j StatefulSet container needs a
-    # WRITABLE rootfs: the official neo4j image entrypoint renders its config to
-    # /var/lib/neo4j/conf at startup, so readOnlyRootFilesystem:true crashes it
-    # (verified in-cluster: "/var/lib/neo4j/conf/neo4j.conf: Read-only file system").
-    # /data still persists on a PVC. The lightbridge-code-intelligence control-plane and
-    # web containers DO keep readOnlyRootFilesystem:true — only neo4j is exempt. The
-    # workloads are rendered by the bjw-template subchart (aliased `lci`).
+    # KSV-0014 "readOnlyRootFilesystem" — every container listed here needs a
+    # WRITABLE rootfs at runtime; KSV-0118 (the "allows root" finding) IS
+    # hardened for all of them (pod + container securityContext: drop ALL caps,
+    # no priv-esc, seccomp RuntimeDefault), only the read-only rootfs is exempt.
+    #
+    # In-scope model-serving fleet (bjw-template alias `modelServing`) + llm-d:
+    #  - `model`   — the vLLM/lmcache GPU container writes its Torch/CUDA compile
+    #    cache + KV scratch to the rootfs; readOnlyRootFilesystem crashes startup.
+    #  - `proxy`   — the Caddy edge-auth sidecar writes its autosave config to
+    #    /config and /data on the rootfs.
+    #  - `seed`    — the weight-download Job `pip install`s huggingface_hub into
+    #    system site-packages (/usr/local); only /models (the PVC) holds weights.
+    #  - `epp`     — llm-d-router EPP; the pinned llm-d-router-standalone v0.9.0
+    #    subchart exposes no securityContext hook for it (see KSV-0118 below).
+    # Existing exemptions (unchanged, same class):
+    #  - librechat — writes winston logs (/app/api/logs) + upload staging.
+    #  - neo4j (lightbridge-code-intelligence `main`) — entrypoint renders config
+    #    to /var/lib/neo4j/conf at startup; /data persists on a PVC.
+    # Tracked backlog (pre-existing, revealed by the new deterministic scan;
+    # hardening deferred to a follow-up — see PR):
+    #  - keycloak-baseline `main` (keycloak-config-cli CronJob) + keycloak-backup
+    #    `exporter` (pg_dump CronJob) — ephemeral Jobs writing scratch to rootfs.
+    #  - lmcache `main` — the LMCache server Deployment.
     statement: >-
-      Neo4j requires a writable rootfs (its entrypoint writes /var/lib/neo4j/conf at
-      startup); /data persists on a PVC. Only the neo4j container is exempt — the
-      control-plane and web containers keep readOnlyRootFilesystem:true.
+      Containers that require a writable rootfs at runtime (GPU compile/KV cache,
+      Caddy autosave, pip install, neo4j/keycloak config render, winston logs);
+      KSV-0118 is hardened for all in-scope workloads, only the read-only rootfs
+      is exempt. The keycloak/lmcache entries are pre-existing hardening debt
+      tracked as a follow-up.
     paths:
+<<<<<<< HEAD
       - "lightbridge-code-intelligence/charts/lci/templates/common.yaml"
   - id: KSV-0014
     # KSV-0014 "readOnlyRootFilesystem" — the zimage-turbo seed Job container
@@ -53,3 +83,46 @@ misconfigurations:
       container keeps readOnlyRootFilesystem:true.
     paths:
       - "model-serving-zimage-turbo/charts/modelServing/templates/common.yaml"
+=======
+      - "llm-d.yaml"
+      - "model-serving-deepseek-r1-1-5b.yaml"
+      - "model-serving-ministral-3b.yaml"
+      - "model-serving-qwen2-vl-2b.yaml"
+      - "model-serving-qwen25-3b-awq.yaml"
+      - "model-serving-qwen3-4b.yaml"
+      - "model-serving-qwen3-5.yaml"
+      - "model-serving-qwen3-8b.yaml"
+      - "librechat-app.yaml"
+      - "lightbridge-code-intelligence.yaml"
+      - "keycloak-baseline.yaml"
+      - "keycloak-backup.yaml"
+      - "lmcache.yaml"
+  - id: KSV-0118
+    # KSV-0118 "default security context / allows root". Every OTHER workload in
+    # this repo is HARDENED, not ignored — the two categories below cannot be:
+    #
+    # 1. Upstream-limited (llm-d EPP): the llm-d EPP Deployment
+    #    (llm-d-router-standalone v0.9.0, alias `llmdRouter`) renders NO
+    #    securityContext hook for the `epp` container OR the pod — the pinned OCI
+    #    subchart's charts/router/templates/_deployment.yaml only exposes
+    #    `router.proxy.securityContext` (the envoy sidecar, which IS hardened in
+    #    charts/llm-d/values.yaml: runAsNonRoot 65532, drop ALL, no priv-esc,
+    #    readOnlyRootFilesystem, seccomp). The epp container + pod cannot be
+    #    hardened via values on v0.9.0, and v0.9.0 is the latest published tag.
+    #    REMOVE this on a subchart bump that adds an epp/pod securityContext hook
+    #    — track upstream github.com/llm-d/llm-d-router.
+    #
+    # 2. Tracked backlog (pre-existing, revealed by the new deterministic scan;
+    #    hardening deferred to a follow-up — see PR):
+    #    - keycloak-baseline — the keycloak-config-cli CronJob container + pod.
+    #    - lmcache — the LMCache server Deployment container + pod.
+    statement: >-
+      llm-d EPP: the pinned llm-d-router-standalone v0.9.0 subchart exposes no
+      securityContext hook for the epp container or pod (the envoy sidecar IS
+      hardened) — not fixable via values on v0.9.0. keycloak-baseline + lmcache
+      are pre-existing hardening debt tracked as a follow-up.
+    paths:
+      - "llm-d.yaml"
+      - "keycloak-baseline.yaml"
+      - "lmcache.yaml"
+>>>>>>> 98e6d3572f07365afadfbff3ea48dcda0e42afbe

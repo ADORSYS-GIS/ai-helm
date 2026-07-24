@@ -1,0 +1,26 @@
+apiVersion: v2
+name: argo-workflows-secrets
+description: |
+  ExternalSecrets for Argo Workflows — the Keycloak OIDC client secret
+  (native server.sso, ADR-0085) and the S3 artifact-repository credentials
+  (reused platform material). Leaf chart of the argo-workflows App-of-Apps
+  orchestrator, lowest sync-wave so the Secrets exist before the app starts.
+  All reference the `ssegning-aws` ClusterSecretStore (ADR-0018 in-chart
+  ownership).
+type: application
+version: 1.0.0
+appVersion: "v4.0.7"
+keywords:
+  - argo-workflows
+  - secrets
+  - external-secrets
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

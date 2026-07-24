@@ -20,6 +20,12 @@ argocd:
   # (the applicationset builds `<chartRegistry>/<chartName>`).
   chartRegistry: oci://ghcr.io/adorsys-gis/charts
   chartVersionRange: ">=0.0.0"
+  # ai-helm-values repo — for children with `valuesFromRepo: true`, the
+  # ApplicationSet adds a $values source (this repo @ targetRevision) and pulls
+  # helm.valueFiles from environments/<env>/values/<child>.yaml (ADR-0087/0056).
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  env: prod
   destination:
     # The home-remote cluster every child Application targets. Repo
     # invariant (ADR-0017): workloads NEVER deploy to the cluster ArgoCD
@@ -54,6 +60,10 @@ children:
     chartName: librechat-app
     syncWave: "0"
     enabled: true
+    # NB: this child's workload config (the librechat.yaml `config:` object) lives
+    # in ai-helm-values at environments/prod/values/librechat-app.yaml — the
+    # ApplicationSet overlays it via every child's $values ref + valueFiles
+    # (ADR-0087). No per-child flag: the file's presence is the opt-in.
 
   - name: librechat-opencode-wellknown
     chartName: librechat-opencode-wellknown

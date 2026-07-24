@@ -1,0 +1,37 @@
+# argo-workflows-secrets — ExternalSecrets for Argo Workflows. Leaf chart of
+# the argo-workflows orchestrator (ADR-0085). All ExternalSecrets resolve
+# against the cluster-scoped `ssegning-aws` ClusterSecretStore.
+
+secretStore: ssegning-aws
+refreshInterval: 1h
+
+# Values-driven ExternalSecrets. Key = target Secret name. Each `data` entry
+# maps a target secretKey ← a remoteRef {key, property} in the store.
+externalSecrets:
+  # Keycloak OIDC client credentials for Argo Server's NATIVE `server.sso`
+  # (ADR-0085 — no fronting oauth2-proxy needed, unlike LakeFS). Secret
+  # name/keys match the chart's server.sso.clientId/clientSecret defaults
+  # (name: argo-server-sso, keys: client-id/client-secret) — the chart only
+  # REFERENCES an existing Secret, it doesn't create one.
+  argo-server-sso:
+    data:
+      - secretKey: client-id
+        key: ai/camer/digital/prod/env
+        property: argo_workflows_oidc_client_id
+      - secretKey: client-secret
+        key: ai/camer/digital/prod/env
+        property: argo_workflows_oidc_client_secret
+
+  # S3 artifact-repository credentials — the SAME platform S3 material
+  # every other Hetzner Object Storage consumer uses (Keycloak/lightbridge
+  # CNPG backups, LibreChat's S3 file storage, LakeFS/MLflow's stores):
+  # prod/meta/test-app, bucket ssegning-k8s-state, prefix
+  # `argo-workflows-artifacts/`.
+  argo-workflows-s3-creds:
+    data:
+      - secretKey: accesskey
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_client_id
+      - secretKey: secretkey
+        key: prod/meta/test-app
+        property: s3_backup_cnpg_secret
