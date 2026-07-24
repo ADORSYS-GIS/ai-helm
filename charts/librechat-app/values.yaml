@@ -255,7 +255,7 @@ librechat:
 
             OPENID_ISSUER: "https://auth.verif.fyi/realms/camer-digital"
             OPENID_CALLBACK_URL: "/oauth/openid/callback"
-            OPENID_SCOPE: "openid profile email librechat"
+            OPENID_SCOPE: "openid profile email librechat offline_access"
             #OPENID_REQUIRED_ROLE: "user" # Now we're in open beta; everyone can connect and test
             OPENID_REQUIRED_ROLE_TOKEN_KIND: "access"
             OPENID_REQUIRED_ROLE_PARAMETER_PATH: "librechat_roles"
@@ -584,9 +584,19 @@ config:
   fileStrategy: "s3"
   interface:
     endpointsMenu: true
-    modelSelect: true
+    # Hide the raw-model dropdown so users land on the curated `modelSpecs`
+    # personas (General / Repo Concierge …) instead of picking a bare model —
+    # "specialized agents mostly, almost never direct models". Flip back to true
+    # (or set modelSpecs.enforce:true for a hard lock) to change the balance.
+    modelSelect: false
     parameters: true
     presets: true
+    # Surface the per-model token/cost gauge in the composer (the TokenUsage
+    # indicator). Gates `includePricing` server-side so the endpoints' static
+    # tokenConfig prompt/completion/cacheRead rates (below) are actually shown
+    # as estimated cost — without this the rates sit dormant and only `context`
+    # (window size) is consumed for truncation.
+    contextCost: true
     agents:
       use: true
       create: true
@@ -597,6 +607,63 @@ config:
       create: true
       share: false
       public: false
+
+  # ── Model specs: curated, git-managed "specialized agents" (ADR-0086) ────────
+  # Each spec is a named persona pinned to the `Converse` custom endpoint. On a
+  # non-agents endpoint LibreChat builds an EPHEMERAL AGENT from the spec at
+  # runtime (verified v0.8.7 — packages/api/src/agents/added.ts `loadAddedAgent`),
+  # so a spec can carry `mcpServers` + built-in capabilities + a `preset.promptPrefix`
+  # system prompt and behave like a tool-using agent WITHOUT a DB Agent object —
+  # the whole roster stays in git, no UI `agent_id` to chase.
+  #
+  # ⚠️ `preset.endpoint` MUST equal the custom endpoint name EXACTLY ("Converse",
+  #    the `endpoints.custom[].name` above); a mismatch silently yields no models.
+  # ⚠️ `preset.model` must be one of that endpoint's models.default ids.
+  # `prioritize` + a `default` spec put a persona on the landing screen; paired
+  # with interface.modelSelect:false users almost never touch a bare model. Set
+  # `enforce: true` to REMOVE raw model/endpoint access entirely.
+  # True subagent DELEGATION (orchestrator → leaf) still needs real Agent objects
+  # (agent_ids) — that's the seed-Job follow-up (issue #723), not these flat
+  # tool-using personas. Add a persona by copying an entry + its promptPrefix.
+  modelSpecs:
+    enforce: false
+    prioritize: true
+    list:
+      - name: general
+        label: "General"
+        default: true
+        description: "Everyday assistant — web search, file search, and code execution."
+        showIconInMenu: true
+        showIconInHeader: true
+        webSearch: true
+        fileSearch: true
+        executeCode: true
+        preset:
+          endpoint: "Converse"
+          model: "glm-5p2"
+          promptPrefix: |
+            You are the Converse general assistant. Be concise, accurate, and
+            practical. Prefer web search for anything time-sensitive, run code to
+            verify non-trivial claims, and cite sources when you searched.
+      - name: repo-concierge
+        label: "Repo Concierge"
+        description: "Triage GitHub issues, PRs, and project boards."
+        showIconInMenu: true
+        mcpServers:
+          - github_issues
+          - github_projects
+          - github_pull_requests
+          - github_repos
+        preset:
+          endpoint: "Converse"
+          model: "adorsys-planner"
+          promptPrefix: |
+            You are Repo Concierge, an assistant for GitHub project management.
+            Help users find and summarize issues and pull requests, groom project
+            boards, and draft issue/PR text against the repository's templates.
+            Always confirm the target org/repo before acting. Never take a write
+            action (comment, label, close, merge) without first stating exactly
+            what you will do and getting the user's confirmation.
 
   # Balance settings
   balance:
@@ -760,6 +827,76 @@ config:
         redirect_uri: https://ai.camer.digital/api/mcp/coder_mcp/oauth/callback
         scope: "coder:all"
 
+    # ── Platform MCP catalog (the `charts/mcps` gateway children, ADR-0038/0040) ──
+    # Exposed on the external gateway at api.ai.camer.digital/mcp/<name> with
+    # MCP-spec OAuth (RFC 9728) against the camer-digital Keycloak realm. We reuse
+    # the SAME `self-service-mcp-api` client the lightbridge MCP uses
+    # (${CD_MCP_CLIENT_ID}); its Keycloak redirectUris already carry a `*` wildcard,
+    # so the per-MCP `.../oauth/callback` URIs below need NO keycloak-baseline change.
+    # brave + firecrawl are intentionally OMITTED — redundant with the built-in
+    # webSearch pipeline (Serper scrape + Firecrawl + Jina rerank).
+    terraform_mcp:
+      title: "Terraform"
+      description: "HashiCorp Terraform registry — look up providers, modules, resource/data-source schemas, and IaC guidance."
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "https://api.ai.camer.digital/mcp/terraform"
+      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
+      requiresOAuth: true
+      serverInstructions: |
+        Authoritative HashiCorp Terraform registry access:
+        - Resolve providers and modules, and read their resource/data-source schemas.
+        - Prefer these lookups over recalling provider arguments from memory.
+      oauth:
+        authorization_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CD_MCP_CLIENT_ID}
+        client_secret: ${CD_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/terraform_mcp/oauth/callback
+        scope: "email openid offline_access"
+
+    context7_mcp:
+      title: "Context7"
+      description: "Up-to-date, version-specific documentation and code examples for libraries, frameworks, and SDKs."
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "https://api.ai.camer.digital/mcp/context7"
+      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
+      requiresOAuth: true
+      serverInstructions: |
+        Fetch current library/framework docs instead of relying on training data:
+        - First resolve the library id, then fetch its docs (optionally scoped to a topic).
+        - Use for API syntax, config, migration, and CLI usage — even for well-known libraries.
+      oauth:
+        authorization_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CD_MCP_CLIENT_ID}
+        client_secret: ${CD_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/context7_mcp/oauth/callback
+        scope: "email openid offline_access"
+
+    refero_mcp:
+      title: "Refero Design"
+      description: "Design reference — search real product UI screens, flows, and styles for inspiration and patterns."
+      type: "streamable-http"
+      initTimeout: 150000
+      url: "https://api.ai.camer.digital/mcp/refero"
+      iconPath: https://raw.githubusercontent.com/ADORSYS-GIS/ai-helm/main/assets/images/adorsys-icon-primary.jpg
+      requiresOAuth: true
+      # ⚠️ Shared Refero Pro quota (8k tool calls/month, ADR-0027). Steer agents to
+      # search deliberately, not to poll — heavy interactive use can exhaust it.
+      serverInstructions: |
+        Ground UI/UX work in real product references:
+        - Search screens, flows, and styles; fetch a screen's image/details when useful.
+        - Query deliberately — this is a metered design catalog, not a scratchpad.
+      oauth:
+        authorization_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/auth
+        token_url: https://auth.verif.fyi/realms/camer-digital/protocol/openid-connect/token
+        client_id: ${CD_MCP_CLIENT_ID}
+        client_secret: ${CD_MCP_SECRET_ID}
+        redirect_uri: https://ai.camer.digital/api/mcp/refero_mcp/oauth/callback
+        scope: "email openid offline_access"
+
   fileConfig:
     endpoints:
       assistants:
@@ -883,6 +1020,48 @@ config:
             - "adorsys-frontend-pro"
             - "adorsys-researcher"
           fetch: false
+        # Custom Endpoint Token Config (librechat.ai/docs/configuration/token_usage
+        # #custom-endpoint-token-config). LibreChat can't fetch tokenomics from an
+        # OpenAI-compatible /v1/models (no context/price fields there), so we declare
+        # them statically: `context` = the model's window (token truncation), and
+        # `prompt`/`completion`/`cacheRead` = USD-per-1M-token rates (context-cost
+        # display + balance accounting when enabled). Every model in models.default
+        # above MUST have an entry here.
+        # ⚠️ SOURCE OF TRUTH = charts/ai-models/values.yaml `models.<id>`:
+        #   context     ← info.contextLength
+        #   prompt      ← pricing.standard.inputPer1M
+        #   completion  ← pricing.standard.outputPer1M
+        #   cacheRead   ← pricing.standard.cachedInputPer1M (weighted prefix-cache hit)
+        # Keep in sync when a model's context/pricing changes there (no cross-chart
+        # auto-derivation) — same rule as the models.default list.
+        tokenConfig:
+          # ── General vendor chat models ──────────────────────────────────
+          "glm-5p2":                { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "glm-4.7-flash":          { context: 200000,  prompt: 0.06, completion: 0.40, cacheRead: 0.01 }
+          "minimax-m2.7":           { context: 196608,  prompt: 0.25, completion: 1.00, cacheRead: 0.05 }
+          "minimax-m2p5":           { context: 204800,  prompt: 0.15, completion: 1.15, cacheRead: 0.03 }
+          "kimi-k2.7-code":         { context: 262144,  prompt: 0.74, completion: 3.50, cacheRead: 0.15 }
+          "kimi-k2.5":              { context: 262144,  prompt: 0.45, completion: 2.25, cacheRead: 0.07 }
+          "deepseek-v4-flash":      { context: 1048576, prompt: 0.14, completion: 0.28, cacheRead: 0.028 }
+          "deepseek-v4-pro":        { context: 1048576, prompt: 1.30, completion: 2.60, cacheRead: 0.10 }
+          "qwen3p7-plus":           { context: 262144,  prompt: 0.40, completion: 1.60, cacheRead: 0.08 }
+          "gemma-4":                { context: 262144,  prompt: 0.07, completion: 0.34, cacheRead: 0.07 }
+          "gemini-3p1-flash-lite":  { context: 1048576, prompt: 0.25, completion: 1.50, cacheRead: 0.025 }
+          "reviewer":               { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          # ── Self-hosted (home GPU) ──────────────────────────────────────
+          "qwen3-5-4b-local":       { context: 131072,  prompt: 0.15, completion: 1.00, cacheRead: 0.03 }
+          "deepseek-r1-1-5b-local": { context: 32768,   prompt: 0.10, completion: 0.50, cacheRead: 0.02 }
+          "qwen2-vl-2b-local":      { context: 1048576, prompt: 0.15, completion: 1.00, cacheRead: 0.03 }
+          # ── Branded adorsys-* aliases (ADR-0044/0050) ───────────────────
+          "adorsys-planner":        { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "adorsys-planner-pro":    { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "adorsys-coder":          { context: 196608,  prompt: 0.25, completion: 1.00, cacheRead: 0.05 }
+          "adorsys-coder-pro":      { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "adorsys-reviewer":       { context: 196608,  prompt: 0.25, completion: 1.00, cacheRead: 0.05 }
+          "adorsys-reviewer-pro":   { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "adorsys-frontend":       { context: 262144,  prompt: 0.20, completion: 0.80, cacheRead: 0.04 }
+          "adorsys-frontend-pro":   { context: 262144,  prompt: 0.74, completion: 3.50, cacheRead: 0.15 }
+          "adorsys-researcher":     { context: 1048576, prompt: 0.14, completion: 0.28, cacheRead: 0.028 }
         iconURL: "https://s3.ssegning.me/ai-ops-backups/public/chicken-leg.png"
         titleConvo: false
         titleMethod: "completion"
