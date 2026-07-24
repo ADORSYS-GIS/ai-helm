@@ -468,6 +468,33 @@ resources:
       name: mlflow
       owner: mlflow
       ensure: present
+  # ────────────────────────────────────────────────────────────────────
+  # MLflow OIDC auth DB (ADR-0085): a SECOND `mlflow_oidc` Database owned by
+  # the same `mlflow` role. The mlflow-oidc-auth plugin keeps its own
+  # users/groups/permissions store and auto-migrates it (Alembic → head) on
+  # first login. It MUST NOT share the tracking store's `mlflow` DB: both use
+  # a default `alembic_version` table, so the plugin reads MLflow's tracking
+  # revision, can't resolve it against its own migration chain, aborts before
+  # any DDL, and never creates its tables → every login fails
+  # "Failed to update user/groups". A dedicated DB (empty alembic_version)
+  # lets the plugin migrate from base cleanly. Found live during ADR-0085
+  # verification. No extra Secret — reuses the `mlflow` role/password.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: mlflow-oidc
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: mlflow_oidc
+      owner: mlflow
+      ensure: present
   - |
     apiVersion: external-secrets.io/v1
     kind: ExternalSecret
