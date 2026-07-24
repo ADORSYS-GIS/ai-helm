@@ -63,7 +63,9 @@ apiKey:
     property: vllm_local_api_key
 
 edgeAuth:
-  enabled: true
+  # Caddy sidecar REMOVED — the model is real vLLM (vllm-openai) which gates
+  # VLLM_API_KEY on :8080 natively, so the edge-auth proxy was redundant.
+  enabled: false
   proxyResponseTimeout: 600s
 
 modelServing:
@@ -162,39 +164,6 @@ modelServing:
               cpu: "2"
               memory: 6Gi
 
-        proxy:
-          image:
-            repository: caddy
-            tag: 2-alpine
-            pullPolicy: IfNotPresent
-          # NO securityContext on this sidecar. caddy:2-alpine's /usr/bin/caddy
-          # ships an EFFECTIVE file-capability (cap_net_bind_service=ep); the kernel
-          # refuses to exec such a binary if that cap is dropped from the bounding
-          # set (capabilities.drop) OR if no_new_privs is set (allowPrivilegeEscalation:
-          # false / any seccompProfile), and Talos baseline PSS forbids the Unconfined
-          # seccomp that would dodge the latter — so this image cannot take a hardened
-          # SC at all. KSV-0118 for it is path-scoped-ignored (.trivyignore.yaml); the
-          # pod + model container ARE hardened. PROPER FIX: drop this sidecar — vLLM
-          # gates VLLM_API_KEY on :8080 itself, making Caddy redundant (tracked).
-          env:
-            MODEL_API_KEY:
-              secretKeyRef:
-                name: vllm-local-api-key
-                key: api_key
-          ports:
-            - name: edge
-              containerPort: 8090
-          probes:
-            readiness:
-              enabled: true
-              custom: true
-              spec:
-                tcpSocket: { port: 8090 }
-                periodSeconds: 10
-          resources:
-            requests: { cpu: 10m, memory: 32Mi }
-            limits:   { cpu: 200m, memory: 128Mi }
-
     seed:
       type: job
       annotations:
@@ -254,9 +223,9 @@ modelServing:
       controller: main
       type: ClusterIP
       ports:
-        edge:
-          port: 8090
-          targetPort: 8090
+        http:
+          port: 8080
+          targetPort: 8080
 
   ingress:
     main:
@@ -271,7 +240,7 @@ modelServing:
               pathType: Prefix
               service:
                 identifier: main
-                port: edge
+                port: http
       tls:
         - secretName: qwen2-vl-2b-edge-tls
           hosts:

@@ -96,36 +96,34 @@ misconfigurations:
     #    REMOVE this on a subchart bump that adds an epp/pod securityContext hook
     #    — track upstream github.com/llm-d/llm-d-router.
     #
-    # 2. Image-limited (model-serving Caddy edge-auth sidecar): caddy:2-alpine's
-    #    /usr/bin/caddy ships an EFFECTIVE file-capability (cap_net_bind_service=ep).
-    #    The kernel refuses to exec such a binary when that cap is dropped from the
-    #    bounding set (capabilities.drop) OR when no_new_privs is set
-    #    (allowPrivilegeEscalation:false / any seccompProfile) — and Talos baseline
-    #    PSS forbids the Unconfined seccomp that would dodge the latter. So the
-    #    sidecar cannot take ANY hardened securityContext on this image (verified:
-    #    every variant crashlooped the live pod with "exec /usr/bin/caddy:
-    #    operation not permitted"). The pod + model + seed containers ARE hardened;
-    #    only the Caddy container is exempt. PROPER FIX (tracked): drop the sidecar
-    #    entirely — the model is real vLLM (vllm-openai) and gates VLLM_API_KEY on
-    #    :8080 itself, so Caddy is redundant — or use an fcap-stripped Caddy image.
+    # 2. Image-limited (Caddy edge-auth sidecar on the huggingfaceserver models):
+    #    caddy:2-alpine's /usr/bin/caddy ships an EFFECTIVE file-capability
+    #    (cap_net_bind_service=ep). The kernel refuses to exec such a binary when
+    #    that cap is dropped from the bounding set (capabilities.drop) OR when
+    #    no_new_privs is set (allowPrivilegeEscalation:false / any seccompProfile),
+    #    and Talos baseline PSS forbids the Unconfined seccomp that would dodge the
+    #    latter — so the sidecar can take NO hardened securityContext on this image
+    #    (verified: every variant crashlooped the live pod). Only these three charts
+    #    still run Caddy: they use kserve/huggingfaceserver, which IGNORES
+    #    VLLM_API_KEY, so the edge-auth proxy is required. The vllm-openai charts
+    #    (qwen2-vl-2b, qwen25-3b-awq, qwen3-4b) DROPPED the redundant sidecar — the
+    #    model gates VLLM_API_KEY on :8080 itself (verified: 401 without the key).
+    #    Pod + model + seed are hardened; only the Caddy container is exempt.
     #
     # 3. Tracked backlog (pre-existing, revealed by the new deterministic scan;
     #    hardening deferred to a follow-up — see PR):
     #    - keycloak-baseline — the keycloak-config-cli CronJob container + pod.
     #    - lmcache — the LMCache server Deployment container + pod.
     statement: >-
-      llm-d EPP has no subchart securityContext hook; the model-serving Caddy
-      sidecar (caddy:2-alpine) ships an fcap binary that cannot exec under any
-      hardened securityContext (caps-drop or no_new_privs) and is slated for
-      removal (vLLM gates the key itself); keycloak-baseline + lmcache are
-      pre-existing hardening debt. All tracked as follow-ups.
+      llm-d EPP has no subchart securityContext hook; the Caddy sidecar on the
+      three huggingfaceserver model charts ships an fcap binary that cannot exec
+      under any hardened securityContext (it is required there because
+      huggingfaceserver ignores VLLM_API_KEY; the vllm-openai charts dropped it);
+      keycloak-baseline + lmcache are pre-existing hardening debt. All tracked.
     paths:
       - "llm-d.yaml"
       - "keycloak-baseline.yaml"
       - "lmcache.yaml"
       - "model-serving-deepseek-r1-1-5b.yaml"
       - "model-serving-ministral-3b.yaml"
-      - "model-serving-qwen2-vl-2b.yaml"
-      - "model-serving-qwen25-3b-awq.yaml"
-      - "model-serving-qwen3-4b.yaml"
       - "model-serving-qwen3-8b.yaml"

@@ -164,15 +164,13 @@ modelServing:
             repository: caddy
             tag: 2-alpine
             pullPolicy: IfNotPresent
-          # NO securityContext on this sidecar. caddy:2-alpine's /usr/bin/caddy
-          # ships an EFFECTIVE file-capability (cap_net_bind_service=ep); the kernel
-          # refuses to exec such a binary if that cap is dropped from the bounding
-          # set (capabilities.drop) OR if no_new_privs is set (allowPrivilegeEscalation:
-          # false / any seccompProfile), and Talos baseline PSS forbids the Unconfined
-          # seccomp that would dodge the latter — so this image cannot take a hardened
-          # SC at all. KSV-0118 for it is path-scoped-ignored (.trivyignore.yaml); the
-          # pod + model container ARE hardened. PROPER FIX: drop this sidecar — vLLM
-          # gates VLLM_API_KEY on :8080 itself, making Caddy redundant (tracked).
+          # NO securityContext: caddy:2-alpine's /usr/bin/caddy is a file-capability
+          # binary (cap_net_bind_service=ep) that cannot exec if that cap is dropped
+          # (capabilities.drop) or under no_new_privs (allowPrivilegeEscalation:false /
+          # any seccompProfile) — Talos baseline PSS also forbids Unconfined. So this
+          # image takes no hardened SC; KSV-0118 is path-scoped-ignored. This chart
+          # uses kserve/huggingfaceserver (IGNORES VLLM_API_KEY) so the Caddy edge-auth
+          # proxy is REQUIRED here (unlike the vllm-openai charts, where it was removed).
           env:
             MODEL_API_KEY:
               secretKeyRef:
