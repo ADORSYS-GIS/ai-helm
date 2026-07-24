@@ -81,21 +81,27 @@ oidcAuth:
   defaultPermission: "READ"
   sessionCookieSecure: true
   # The mlflow-oidc-auth plugin keeps its OWN users/groups/permissions DB,
-  # SEPARATE from the tracking backendStore. Left unset it defaults to
-  # `sqlite:///auth.db` on the pod's (read-only) filesystem → every OIDC
-  # callback fails with `sqlite3.OperationalError: unable to open database
-  # file` → "Failed to update user/groups" (the Keycloak claim is correct;
-  # the plugin just can't persist the user). Found live during ADR-0085
-  # verification. Point it at the SAME lightbridge-main-db `mlflow` Postgres
-  # the tracking store already uses (the plugin creates its own tables there;
-  # the mlflow CNPG role owns the DB so it has DDL). No new egress needed —
-  # same host:port the backendStore already reaches.
+  # SEPARATE from the tracking backendStore, and auto-migrates it (Alembic →
+  # head) on first login. It MUST have a DEDICATED database — NOT the tracking
+  # store's `mlflow` DB. Both use a default `alembic_version` table, so if the
+  # plugin shares `mlflow` it reads the TRACKING store's revision, can't
+  # resolve it against its own migration chain, aborts before any DDL, and
+  # never creates its tables → every login fails "Failed to update
+  # user/groups" (traced through the plugin's `migrate_if_needed`, ADR-0085
+  # verification). Two earlier wrong states, same class of bug: default
+  # `sqlite:///auth.db` (read-only fs → "unable to open database file"), then
+  # the shared `mlflow` DB (alembic revision collision above).
+  # Point it at a DEDICATED `mlflow_oidc` DB on the same lightbridge-main-db
+  # server (owned by the same `mlflow` role — charts/lightbridge-db Database
+  # CR); the plugin then finds an empty alembic_version and migrates from
+  # base. No new egress / no new Secret — same host:port + role as the
+  # tracking store.
   database:
     postgres:
       enabled: true
       host: "lightbridge-main-db-rw.converse.svc.cluster.local"
       port: 5432
-      database: "mlflow"
+      database: "mlflow_oidc"
       driver: "psycopg2"
       existingSecret:
         name: mlflow-db-secret
