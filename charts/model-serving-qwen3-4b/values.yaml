@@ -77,7 +77,9 @@ apiKey:
 # Caddy sidecar config (own templates/configmap-caddy.yaml). Only the upstream
 # timeout is tunable; the public host/TLS now live in `modelServing.ingress`.
 edgeAuth:
-  enabled: true
+  # Caddy sidecar REMOVED — the model is real vLLM (vllm-openai) which gates
+  # VLLM_API_KEY on :8080 natively, so the edge-auth proxy was redundant.
+  enabled: false
   # Caddy upstream timeout — must exceed a deploy-time restart (STS reloads
   # multi-GB weights) + a long generation. Keep ≥ the ai-models qwen3-4b-local
   # timeout.requestTimeout (both 600s). Path: Envoy → Ingress → Caddy → model.
@@ -217,39 +219,6 @@ modelServing:
 
         # 2) the Caddy auth-proxy sidecar — validates the Bearer the model image
         # ignores, then reverse-proxies to the model over localhost:8080.
-        proxy:
-          image:
-            repository: caddy
-            tag: 2-alpine
-            pullPolicy: IfNotPresent
-          # NO securityContext on this sidecar. caddy:2-alpine's /usr/bin/caddy
-          # ships an EFFECTIVE file-capability (cap_net_bind_service=ep); the kernel
-          # refuses to exec such a binary if that cap is dropped from the bounding
-          # set (capabilities.drop) OR if no_new_privs is set (allowPrivilegeEscalation:
-          # false / any seccompProfile), and Talos baseline PSS forbids the Unconfined
-          # seccomp that would dodge the latter — so this image cannot take a hardened
-          # SC at all. KSV-0118 for it is path-scoped-ignored (.trivyignore.yaml); the
-          # pod + model container ARE hardened. PROPER FIX: drop this sidecar — vLLM
-          # gates VLLM_API_KEY on :8080 itself, making Caddy redundant (tracked).
-          env:
-            MODEL_API_KEY:
-              secretKeyRef:
-                name: vllm-local-api-key
-                key: api_key
-          ports:
-            - name: edge
-              containerPort: 8090            # NOT 8081 — the model's gRPC owns 8081
-          probes:
-            readiness:
-              enabled: true
-              custom: true
-              spec:
-                tcpSocket: { port: 8090 }
-                periodSeconds: 10
-          resources:
-            requests: { cpu: 10m, memory: 32Mi }
-            limits:   { cpu: 200m, memory: 128Mi }
-
     # ── The weight seed Job (bjw `job` controller, ArgoCD Sync hook) ──────────
     # A Job (not a tracked resource) via the hook annotations: a plain tracked
     # Job goes perpetually OutOfSync (the controller stamps controller-uid into
@@ -319,9 +288,9 @@ modelServing:
       controller: main
       type: ClusterIP
       ports:
-        edge:
-          port: 8090
-          targetPort: 8090          # → the Caddy sidecar (8081 is the model's gRPC)
+        http:
+          port: 8080
+          targetPort: 8080          # → the Caddy sidecar (8081 is the model's gRPC)
 
   # Public entrypoint — a plain k8s Ingress (className traefik), no Traefik
   # IngressRoute CRD / DomainMapping. cert-manager's ingress-shim issues the TLS
@@ -341,7 +310,7 @@ modelServing:
               pathType: Prefix
               service:
                 identifier: main
-                port: edge
+                port: http
       tls:
         - secretName: qwen3-model-edge-tls
           hosts:
