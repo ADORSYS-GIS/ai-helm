@@ -6,8 +6,11 @@
  * LibreChat JWT ({id}, signed with JWT_SECRET — what requireJwtAuth expects),
  * then GET-by-name → PATCH/POST each agent and grant PUBLIC view. Two-phase:
  * leaves first, then orchestrators whose `subagentNames` resolve to agent_ids.
- * Finally prunes platform-authored agents no longer in the fleet (declarative:
- * a rename or removal self-cleans; scoped to this author, never user agents).
+ * Equips agents from declarative fleet knobs: `mcpServers: [name]` → whole-server
+ * MCP tool tokens, `skills: [name]` → skill ObjectIds (+ skills_enabled),
+ * `tools: [name]` → built-in tool ids. Finally prunes platform-authored agents no
+ * longer in the fleet (declarative: a rename or removal self-cleans; scoped to
+ * this author, never user agents).
  *
  * Env: MONGO_URI, JWT_SECRET, LIBRECHAT_URL, PLATFORM_USER_EMAIL, FLEET_PATH.
  * Fails closed (non-zero exit) on any error — the platform user must have logged
@@ -19,6 +22,13 @@ const fs = require('fs');
 
 const { MONGO_URI, JWT_SECRET, LIBRECHAT_URL, PLATFORM_USER_EMAIL, FLEET_PATH } = process.env;
 const AGENT_VIEWER = 'agent_viewer';
+
+// A DB agent references a WHOLE MCP server via the mcp_all wildcard token
+// (Constants.mcp_all `sys__all__sys` + mcp_delimiter `_mcp_`): `sys__all__sys_mcp_<server>`.
+// Unlike the UI-only `mcp_server` placeholder, this token IS resolved to the
+// server's tools at runtime (LibreChat packages/api/src/agents/load.ts). Fleet
+// `mcpServers: [name]` entries expand to these tool ids on the agent's `tools`.
+const MCP_ALL = 'sys__all__sys_mcp_';
 
 function die(msg) { console.error(`[agent-seed] ${msg}`); process.exit(1); }
 
@@ -65,8 +75,24 @@ async function main() {
   for (const a of arr) if (a && a.name) idByName[a.name] = a.id;
 
   async function upsert(spec) {
-    const { subagentNames, ...rest } = spec;
-    const body = { provider: 'converse', tools: [], ...rest };
+    // Fleet knobs that need translating before hitting the create API:
+    //  - `mcpServers: [name]` -> tools `sys__all__sys_mcp_<name>` (whole server)
+    //  - `tools: [name]`      -> built-in tool ids (web_search/file_search/…) as-is
+    //  - `skills: [name]`     -> skill ObjectIds (+ skills_enabled), resolved below
+    const { subagentNames, skills: skillNames, mcpServers, tools: builtinTools, ...rest } = spec;
+    const tools = [...(builtinTools || [])];
+    for (const s of mcpServers || []) tools.push(`${MCP_ALL}${s}`);
+    const body = { provider: 'converse', tools, ...rest };
+    if (skillNames && skillNames.length) {
+      const ids = skillNames.map((n) => skillIdByName[n]).filter(Boolean);
+      const missing = skillNames.filter((n) => !skillIdByName[n]);
+      if (missing.length)
+        // Not fatal: a skill may not be synced yet (skillSync runs on pod start;
+        // the seed is a PostSync hook, so it can race ahead). The idempotent
+        // re-seed attaches it once synced; a genuine typo just never resolves.
+        console.warn(`[agent-seed] skills not found for ${spec.name} (unsynced?): ${missing.join(', ')}`);
+      if (ids.length) { body.skills = ids; body.skills_enabled = true; }
+    }
     if (subagentNames && subagentNames.length) {
       const agent_ids = subagentNames.map((n) => idByName[n]).filter(Boolean);
       if (agent_ids.length !== subagentNames.length)
@@ -89,6 +115,16 @@ async function main() {
     await api('PUT', `/api/permissions/agent/${doc._id}`, token, { updated: [], removed: [], public: true, publicAccessRoleId: AGENT_VIEWER });
     return id;
   }
+
+  // Skill name -> ObjectId map. An agent's `skills` field stores skill _ids, not
+  // names; skills are synced from git by skillSync (a separate subsystem). Resolve
+  // the whole catalog once here so upsert() can map fleet `skills: [name]` -> ids.
+  const skillIdByName = {};
+  for (const sk of await mongoose.connection
+    .collection('skills')
+    .find({}, { projection: { _id: 1, name: 1 } })
+    .toArray())
+    if (sk && sk.name) skillIdByName[sk.name] = sk._id.toString();
 
   // Phase A: leaves (no subagents), Phase B: orchestrators (resolve names -> ids)
   for (const s of agents.filter((a) => !(a.subagentNames && a.subagentNames.length))) await upsert(s);
