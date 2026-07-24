@@ -587,6 +587,12 @@ config:
     modelSelect: true
     parameters: true
     presets: true
+    # Surface the per-model token/cost gauge in the composer (the TokenUsage
+    # indicator). Gates `includePricing` server-side so the endpoints' static
+    # tokenConfig prompt/completion/cacheRead rates (below) are actually shown
+    # as estimated cost — without this the rates sit dormant and only `context`
+    # (window size) is consumed for truncation.
+    contextCost: true
     agents:
       use: true
       create: true
@@ -883,6 +889,48 @@ config:
             - "adorsys-frontend-pro"
             - "adorsys-researcher"
           fetch: false
+        # Custom Endpoint Token Config (librechat.ai/docs/configuration/token_usage
+        # #custom-endpoint-token-config). LibreChat can't fetch tokenomics from an
+        # OpenAI-compatible /v1/models (no context/price fields there), so we declare
+        # them statically: `context` = the model's window (token truncation), and
+        # `prompt`/`completion`/`cacheRead` = USD-per-1M-token rates (context-cost
+        # display + balance accounting when enabled). Every model in models.default
+        # above MUST have an entry here.
+        # ⚠️ SOURCE OF TRUTH = charts/ai-models/values.yaml `models.<id>`:
+        #   context     ← info.contextLength
+        #   prompt      ← pricing.standard.inputPer1M
+        #   completion  ← pricing.standard.outputPer1M
+        #   cacheRead   ← pricing.standard.cachedInputPer1M (weighted prefix-cache hit)
+        # Keep in sync when a model's context/pricing changes there (no cross-chart
+        # auto-derivation) — same rule as the models.default list.
+        tokenConfig:
+          # ── General vendor chat models ──────────────────────────────────
+          "glm-5p2":                { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "glm-4.7-flash":          { context: 200000,  prompt: 0.06, completion: 0.40, cacheRead: 0.01 }
+          "minimax-m2.7":           { context: 196608,  prompt: 0.25, completion: 1.00, cacheRead: 0.05 }
+          "minimax-m2p5":           { context: 204800,  prompt: 0.15, completion: 1.15, cacheRead: 0.03 }
+          "kimi-k2.7-code":         { context: 262144,  prompt: 0.74, completion: 3.50, cacheRead: 0.15 }
+          "kimi-k2.5":              { context: 262144,  prompt: 0.45, completion: 2.25, cacheRead: 0.07 }
+          "deepseek-v4-flash":      { context: 1048576, prompt: 0.14, completion: 0.28, cacheRead: 0.028 }
+          "deepseek-v4-pro":        { context: 1048576, prompt: 1.30, completion: 2.60, cacheRead: 0.10 }
+          "qwen3p7-plus":           { context: 262144,  prompt: 0.40, completion: 1.60, cacheRead: 0.08 }
+          "gemma-4":                { context: 262144,  prompt: 0.07, completion: 0.34, cacheRead: 0.07 }
+          "gemini-3p1-flash-lite":  { context: 1048576, prompt: 0.25, completion: 1.50, cacheRead: 0.025 }
+          "reviewer":               { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          # ── Self-hosted (home GPU) ──────────────────────────────────────
+          "qwen3-5-4b-local":       { context: 131072,  prompt: 0.15, completion: 1.00, cacheRead: 0.03 }
+          "deepseek-r1-1-5b-local": { context: 32768,   prompt: 0.10, completion: 0.50, cacheRead: 0.02 }
+          "qwen2-vl-2b-local":      { context: 1048576, prompt: 0.15, completion: 1.00, cacheRead: 0.03 }
+          # ── Branded adorsys-* aliases (ADR-0044/0050) ───────────────────
+          "adorsys-planner":        { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "adorsys-planner-pro":    { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "adorsys-coder":          { context: 196608,  prompt: 0.25, completion: 1.00, cacheRead: 0.05 }
+          "adorsys-coder-pro":      { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "adorsys-reviewer":       { context: 196608,  prompt: 0.25, completion: 1.00, cacheRead: 0.05 }
+          "adorsys-reviewer-pro":   { context: 1048576, prompt: 0.93, completion: 3.00, cacheRead: 0.18 }
+          "adorsys-frontend":       { context: 262144,  prompt: 0.20, completion: 0.80, cacheRead: 0.04 }
+          "adorsys-frontend-pro":   { context: 262144,  prompt: 0.74, completion: 3.50, cacheRead: 0.15 }
+          "adorsys-researcher":     { context: 1048576, prompt: 0.14, completion: 0.28, cacheRead: 0.028 }
         iconURL: "https://s3.ssegning.me/ai-ops-backups/public/chicken-leg.png"
         titleConvo: false
         titleMethod: "completion"
