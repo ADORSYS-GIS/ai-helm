@@ -80,6 +80,27 @@ oidcAuth:
     - admin
   defaultPermission: "READ"
   sessionCookieSecure: true
+  # The mlflow-oidc-auth plugin keeps its OWN users/groups/permissions DB,
+  # SEPARATE from the tracking backendStore. Left unset it defaults to
+  # `sqlite:///auth.db` on the pod's (read-only) filesystem → every OIDC
+  # callback fails with `sqlite3.OperationalError: unable to open database
+  # file` → "Failed to update user/groups" (the Keycloak claim is correct;
+  # the plugin just can't persist the user). Found live during ADR-0085
+  # verification. Point it at the SAME lightbridge-main-db `mlflow` Postgres
+  # the tracking store already uses (the plugin creates its own tables there;
+  # the mlflow CNPG role owns the DB so it has DDL). No new egress needed —
+  # same host:port the backendStore already reaches.
+  database:
+    postgres:
+      enabled: true
+      host: "lightbridge-main-db-rw.converse.svc.cluster.local"
+      port: 5432
+      database: "mlflow"
+      driver: "psycopg2"
+      existingSecret:
+        name: mlflow-db-secret
+        usernameKey: username
+        passwordKey: password
 
 replicaCount: 1
 
