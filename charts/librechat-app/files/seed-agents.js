@@ -6,6 +6,8 @@
  * LibreChat JWT ({id}, signed with JWT_SECRET — what requireJwtAuth expects),
  * then GET-by-name → PATCH/POST each agent and grant PUBLIC view. Two-phase:
  * leaves first, then orchestrators whose `subagentNames` resolve to agent_ids.
+ * Finally prunes platform-authored agents no longer in the fleet (declarative:
+ * a rename or removal self-cleans; scoped to this author, never user agents).
  *
  * Env: MONGO_URI, JWT_SECRET, LIBRECHAT_URL, PLATFORM_USER_EMAIL, FLEET_PATH.
  * Fails closed (non-zero exit) on any error — the platform user must have logged
@@ -91,6 +93,23 @@ async function main() {
   // Phase A: leaves (no subagents), Phase B: orchestrators (resolve names -> ids)
   for (const s of agents.filter((a) => !(a.subagentNames && a.subagentNames.length))) await upsert(s);
   for (const s of agents.filter((a) => a.subagentNames && a.subagentNames.length)) await upsert(s);
+
+  // Prune: delete platform-authored agents no longer in the fleet, so the fleet
+  // is DECLARATIVE — a rename (name is the idempotency key, so a rename creates a
+  // new agent + orphans the old) or a removal self-cleans on the next seed. Scoped
+  // to `author == platform user` so it NEVER touches agents real users created
+  // (only the seed authors as this user). Runs after upserts so fleet agents exist.
+  const fleetNames = new Set(agents.map((a) => a.name));
+  const authored = await mongoose.connection
+    .collection('agents')
+    .find({ author: user._id })
+    .project({ id: 1, name: 1 })
+    .toArray();
+  for (const a of authored) {
+    if (fleetNames.has(a.name)) continue;
+    await api('DELETE', `/api/agents/${a.id}`, token);
+    console.log(`[agent-seed] pruned ${a.name} (${a.id})`);
+  }
 
   await mongoose.disconnect();
   console.log(`[agent-seed] done: ${Object.keys(idByName).length} agents`);
