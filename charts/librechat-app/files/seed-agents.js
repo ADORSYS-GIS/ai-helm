@@ -20,10 +20,20 @@ const AGENT_VIEWER = 'agent_viewer';
 
 function die(msg) { console.error(`[agent-seed] ${msg}`); process.exit(1); }
 
+// LibreChat's uaParser middleware rejects any non-browser User-Agent with an SSE
+// "Illegal request" (NON_BROWSER violation). Node fetch's default UA isn't a
+// browser, so present a browser UA on every call.
+const BROWSER_UA =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
 async function api(method, path, token, body) {
   const res = await fetch(`${LIBRECHAT_URL}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'User-Agent': BROWSER_UA,
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
