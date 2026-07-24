@@ -253,6 +253,24 @@ librechat:
           port: 8000
           targetPort: 8000
 
+  # Pod + container hardening so the LibreChat Deployment clears Trivy KSV-0118
+  # (non-default securityContext / "allows root"). The official
+  # ghcr.io/danny-avila/librechat image runs as USER node (uid/gid 1000, from
+  # node:24-alpine), so runAsNonRoot at 1000 is a no-op on the image's own user.
+  # fsGroup 1000 keeps the mounted config/CA (readOnly secrets/CMs) group-owned.
+  # NOTE: readOnlyRootFilesystem is intentionally NOT set — LibreChat writes
+  # winston logs + upload staging to its rootfs at runtime; a read-only rootfs
+  # would crashloop the live app (KSV-0014 is path-scoped-ignored in
+  # .trivyignore.yaml with that justification).
+  defaultPodOptions:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+
   controllers:
     librechat:
       type: deployment
@@ -265,6 +283,16 @@ librechat:
           app: librechat-app
       containers:
         librechat:
+          # Container hardening for KSV-0118. readOnlyRootFilesystem omitted on
+          # purpose (see defaultPodOptions note above + .trivyignore KSV-0014).
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           image:
             repository: ghcr.io/danny-avila/librechat
             tag: "{{ .Values.global.librechat.version }}"
