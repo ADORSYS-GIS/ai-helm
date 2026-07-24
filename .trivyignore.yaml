@@ -40,3 +40,16 @@ misconfigurations:
       control-plane and web containers keep readOnlyRootFilesystem:true.
     paths:
       - "lightbridge-code-intelligence/charts/lci/templates/common.yaml"
+  - id: KSV-0014
+    # KSV-0014 "readOnlyRootFilesystem" — the zimage-turbo seed Job container
+    # needs a WRITABLE rootfs: it runs `pip install huggingface_hub` which writes
+    # to /usr/local, so readOnlyRootFilesystem:true would crash it. The model
+    # weights are downloaded to the PVC (/models), not the rootfs. The model
+    # container DOES keep readOnlyRootFilesystem:true — only the seed is exempt.
+    # The seed Job is rendered by the bjw-template subchart (aliased modelServing).
+    statement: >-
+      Seed Job needs a writable rootfs (pip install writes to /usr/local);
+      model weights go to the PVC. Only the seed container is exempt — the model
+      container keeps readOnlyRootFilesystem:true.
+    paths:
+      - "model-serving-zimage-turbo/charts/modelServing/templates/common.yaml"
