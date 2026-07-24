@@ -9,6 +9,17 @@ permissions:
   contents: read
   pull-requests: write
 
+# NOTE on chart coverage: this gate delegates to the org-shared ai-ops
+# security-gates workflow, which does a bare `actions/checkout` and runs
+# `trivy config charts/` with NO `helm dependency build`. Every chart in this
+# repo that has a subchart dependency (all the model-serving/llm-d/librechat/…
+# charts) therefore FAILS to render ("missing in charts/ directory: …") and is
+# skipped here — so this job effectively scans only dependency-free charts and
+# gitleaks. The AUTHORITATIVE, deterministic chart-config scan (which builds
+# deps, renders with helm, and scans the static manifests) lives in
+# release-helm-charts.yml. We keep delegating here (org alignment); closing this
+# gap would mean forking an inline dep-build+render job away from the shared
+# workflow. See PR / .trivyignore.yaml header.
 jobs:
   scan:
     uses: ADORSYS-GIS/ai-ops/.github/workflows/security-gates.yml@v1.2.0
