@@ -313,6 +313,66 @@ applications:
   # point at `redis-ha-redis.redis-system.svc.cluster.local:6379`.
   # Do not re-add a redis Application here.
 
+  # --- GPU device plugin (Hetzner Robot GPU workers) ---
+  # NVIDIA k8s-device-plugin — advertises the `nvidia.com/gpu` extended
+  # resource to the kubelet on the hand-joined Hetzner Robot GPU workers
+  # (hetzner-k8s-gpu-*, RTX 4000 SFF Ada, Debian 13), so GPU workloads can be
+  # scheduled onto them. Lands on home-remote (the default destination) — this
+  # is the Hetzner cluster, NOT the home GPU that the `model-serving-*` apps
+  # target via `homeCluster` (ADR-0022).
+  #
+  # Replaces a manual `kubectl apply` DaemonSet (kube-system/nvidia-device-plugin)
+  # that predated GitOps — SAME name, so it MUST be deleted at cutover (see the
+  # PR's cutover note); the default syncPolicy's `Replace=true` is only a
+  # fallback for the adoption conflict.
+  #
+  # Pinned to the GPU workers via nodeSelector + a matching single-term
+  # affinity (the chart's default NFD/Tegra affinity is replaced — we run
+  # neither NFD nor GFD here), tolerates the taint, and runs under the
+  # k3s-autodetected `nvidia` RuntimeClass. The upstream chart also emits an
+  # idle `nvidia-device-plugin-mps-control-daemon` DaemonSet (gated only on
+  # devicePlugin.enabled); with no MPS config selected its init container just
+  # waits — no crash-loop, no GPU claimed.
+  - name: nvidia-device-plugin
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://nvidia.github.io/k8s-device-plugin
+      # 0.17.1 == appVersion 0.17.1 → image nvcr.io/nvidia/k8s-device-plugin:v0.17.1
+      # (matches the manual DaemonSet being replaced). Verify before bumping:
+      # `helm show chart nvidia-device-plugin --repo https://nvidia.github.io/k8s-device-plugin --version <v>`
+      targetRevision: 0.17.1
+      chart: nvidia-device-plugin
+      helm:
+        releaseName: nvidia-device-plugin
+        values: |
+          runtimeClassName: nvidia
+          # FAIL_ON_INIT_ERROR="false" — don't wedge the pod on a transient
+          # driver/init hiccup (matches the manual DaemonSet).
+          failOnInitError: false
+          priorityClassName: system-node-critical
+          nodeSelector:
+            nvidia.com/gpu.present: "true"
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: nvidia.com/gpu.present
+                        operator: In
+                        values: ["true"]
+          tolerations:
+            - key: nvidia.com/gpu
+              operator: Exists
+              effect: NoSchedule
+          # Privileged host access for the plugin socket at
+          # /var/lib/kubelet/device-plugins (matches the manual DaemonSet;
+          # overrides the chart's default drop-ALL context).
+          securityContext:
+            privileged: true
+    destination:
+      namespace: kube-system
+
   - name: aieg-crd
     finalizers:
       - resources-finalizer.argocd.argoproj.io
