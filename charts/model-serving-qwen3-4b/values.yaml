@@ -221,23 +221,23 @@ modelServing:
             repository: caddy
             tag: 2-alpine
             pullPolicy: IfNotPresent
-          # Sidecar hardening for KSV-0118. Caddy keeps the pod's root uid (it
-          # writes its autosave config to /config and /data on the rootfs), but
-          # drops ALL caps + disables privilege escalation. readOnlyRootFilesystem
-          # is intentionally omitted (those writable paths) — KSV-0014 is
-          # path-scoped-ignored in .trivyignore.yaml.
+          # ⚠️ caddy:2-alpine's /usr/bin/caddy carries FILE CAPABILITIES
+          # (cap_net_bind_service). The kernel refuses to exec a file-capability
+          # binary once no_new_privs is set (execve -> EPERM -> crashloop), and
+          # BOTH allowPrivilegeEscalation:false AND seccompProfile:RuntimeDefault
+          # (with CAP_SYS_ADMIN dropped) set no_new_privs. So the Caddy sidecar
+          # sets NEITHER: seccomp is Unconfined (overriding the pod's
+          # RuntimeDefault) and allowPrivilegeEscalation is left unset. Dropping
+          # ALL caps still clears KSV-0118 — Caddy runs as root and binds only
+          # the high port :8090, so it needs no capabilities. readOnlyRootFilesystem
+          # omitted (autosave to /config,/data) -> KSV-0014 path-scoped-ignored.
+          # (RuntimeDefault seccomp needs a custom image without the fcap — follow-up.)
           securityContext:
-          # NOTE: NO allowPrivilegeEscalation:false here. caddy:2-alpine's
-          # /usr/bin/caddy carries file-capabilities (cap_net_bind_service);
-          # allowPrivilegeEscalation:false sets no_new_privs, which makes the
-          # kernel REFUSE to exec a file-capability binary (EPERM -> crashloop).
-          # Caddy runs as root + binds only high ports, so dropping ALL caps +
-          # seccomp still clears KSV-0118 without breaking exec.
             capabilities:
               drop:
                 - ALL
             seccompProfile:
-              type: RuntimeDefault
+              type: Unconfined
           env:
             MODEL_API_KEY:
               secretKeyRef:
