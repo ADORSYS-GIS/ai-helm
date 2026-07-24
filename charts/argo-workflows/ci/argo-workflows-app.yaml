@@ -46,6 +46,21 @@
 crds:
   install: false
 
+# Run Argo in single-namespace mode (adds `--namespaced` to the server and
+# controller; they operate only in the install namespace `mlops`). WITHOUT
+# this the server runs cluster-scoped and the UI lists workflows across ALL
+# namespaces (namespace=""), which requires cluster-wide list permission —
+# but our SSO RBAC ServiceAccounts (environments/base/deps/argo-workflows/
+# rbac.yaml) are bound via *namespaced* RoleBindings (mlops only), so the UI
+# failed with `code:7 Permission denied, not allowed to list workflows in
+# namespace ""`. In namespaced mode the UI queries `mlops`, which the SSO
+# SAs are allowed. Verified live: the admin/viewer SAs CAN list workflows in
+# mlops but NOT --all-namespaces. The chart's admin/edit/view aggregate
+# ClusterRoles stay ClusterRoles under singleNamespace, so the rbac.yaml
+# RoleBindings (roleRef ClusterRole/argo-workflows-{admin,view}) are
+# unaffected. Found live during ADR-0085 verification.
+singleNamespace: true
+
 server:
   authModes:
     - sso
