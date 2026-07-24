@@ -92,6 +92,16 @@ modelServing:
       replicas: 1                            # always-on, single instance (one GPU)
       annotations:
         argocd.argoproj.io/sync-wave: "1"
+      pod:
+        # Pod-level hardening so the workload clears Trivy KSV-0118
+        # ("default security context"). The GPU model container needs root to
+        # initialise the GPU runtime; every container additionally drops
+        # ALL caps + disables privilege escalation.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
       containers:
         model:
           # Official llama.cpp CUDA-12 server image. Its entrypoint is llama-server,
@@ -182,11 +192,30 @@ modelServing:
         argocd.argoproj.io/sync-wave: "0"
       pod:
         restartPolicy: OnFailure
+        # Hardened for Trivy KSV-0118 (job- and container-level). The seed pip-installs
+        # huggingface_hub into system site-packages, so it runs as root; capabilities are
+        # dropped and privilege-escalation disabled. readOnlyRootFilesystem is intentionally
+        # omitted (pip writes to the rootfs) — KSV-0014 is path-scoped-ignored in .trivyignore.yaml.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
       job:
         backoffLimit: 6
         activeDeadlineSeconds: 3600
       containers:
         seed:
+          # Container hardening for KSV-0118 (see the pod securityContext note above).
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
           image:
             repository: python
             tag: "3.12-slim"
