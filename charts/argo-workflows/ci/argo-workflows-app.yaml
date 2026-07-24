@@ -27,6 +27,25 @@
 # workflows.argoproj.io/rbac-rule) is a follow-up once real usage patterns
 # emerge — do not over-build this now.
 
+# CRDs are managed OUT-OF-BAND, not by this chart. The chart's default
+# `crds.install: true` + `crds.full: true` ships the (very large) full CRDs
+# via a pre-install/pre-upgrade **hook Job** that `kubectl apply`s them
+# straight from raw.githubusercontent.com at EVERY sync. Under this cluster's
+# default-deny-egress Cilium baseline that Job is unworkable — it races
+# Cilium's FQDN-policy programming and timed out on `dial tcp
+# 185.199.x.x:443` for hours, failing the whole Application sync (found live
+# during ADR-0085 verification). The 8 argoproj.io CRDs are already installed
+# cluster-wide as full CRDs (and `keep: true` means an uninstall never
+# removes them), so the chart doesn't need to fetch them.
+#
+# ⚠️ Trade-off: a future argo-workflows chart-version bump that changes the
+# CRD schemas will NOT auto-apply them. When bumping the chart, manually
+# apply the new CRDs first from a host that has egress, e.g.:
+#   kubectl apply --server-side -f \
+#     https://raw.githubusercontent.com/argoproj/argo-helm/argo-workflows-<VER>/charts/argo-workflows/files/crds/full/
+crds:
+  install: false
+
 server:
   authModes:
     - sso
