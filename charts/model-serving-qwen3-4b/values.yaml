@@ -227,7 +227,12 @@ modelServing:
           # is intentionally omitted (those writable paths) — KSV-0014 is
           # path-scoped-ignored in .trivyignore.yaml.
           securityContext:
-            allowPrivilegeEscalation: false
+          # NOTE: NO allowPrivilegeEscalation:false here. caddy:2-alpine's
+          # /usr/bin/caddy carries file-capabilities (cap_net_bind_service);
+          # allowPrivilegeEscalation:false sets no_new_privs, which makes the
+          # kernel REFUSE to exec a file-capability binary (EPERM -> crashloop).
+          # Caddy runs as root + binds only high ports, so dropping ALL caps +
+          # seccomp still clears KSV-0118 without breaking exec.
             capabilities:
               drop:
                 - ALL
