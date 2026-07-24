@@ -10,10 +10,14 @@
 #    upstream/redirect via extraArgs, no chart-owned ingress).
 #
 # A DEDICATED instance for LakeFS (own Keycloak client `lakefs-proxy`, own
-# cookie secret) — NOT shared with any other app (ADR-0085). Gates ALL of
-# LakeFS via Traefik ForwardAuth (Middleware CR + oauth2 callback Ingress
-# shipped in the lakefs-app depsOverlay, pointing at THIS release's Service
-# `lakefs-auth-oauth2-proxy:80`).
+# cookie secret) — NOT shared with any other app (ADR-0085). Runs in full
+# REVERSE-PROXY mode: the depsOverlay ingress routes ALL of the LakeFS
+# hostname (`/`) to this release's Service `lakefs-auth-oauth2-proxy:80`, and
+# oauth2-proxy proxies authenticated traffic to `upstream` (the in-cluster
+# LakeFS Service) while redirecting unauthenticated document requests to
+# Keycloak. This replaced the earlier Traefik ForwardAuth + `errors`
+# middleware chain, which rewrote LakeFS's own API 401s into redirects and
+# broke the LakeFS login form with "Failed to fetch" (ADR-0085).
 
 config:
   existingSecret: lakefs-proxy-secret
