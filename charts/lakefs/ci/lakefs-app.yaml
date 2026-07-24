@@ -95,23 +95,14 @@ service:
   type: ClusterIP
   port: 80
 
+# The LakeFS chart does NOT own an ingress. All external traffic enters
+# through the lakefs-auth oauth2-proxy (reverse-proxy mode) via the ingress
+# shipped in the depsOverlay (environments/base/deps/lakefs/ingress.yaml),
+# which routes `/` → the oauth2-proxy Service; oauth2-proxy then proxies to
+# this chart's in-cluster `lakefs` Service. Exposing the chart's own ingress
+# too would bypass the SSO gate. (Previously this chart owned the ingress
+# with a ForwardAuth + `errors` middleware chain that rewrote LakeFS's own
+# API 401s to redirects → "Failed to fetch"; replaced by reverse-proxy mode,
+# ADR-0085.)
 ingress:
-  enabled: true
-  ingressClassName: traefik
-  annotations:
-    # Middleware chain shipped by the depsOverlay (ADR-0085). ORDER MATTERS:
-    # Traefik applies middlewares left-to-right on the request, so the
-    # FIRST one listed is outermost and sees the response LAST — it must be
-    # errors-first so it can catch/rewrite the 401 that forwardauth
-    # produces for unauthenticated requests. forwardauth alone (no errors
-    # middleware) returns a bare 401 with no redirect to login — found live
-    # during ADR-0085 verification.
-    traefik.ingress.kubernetes.io/router.middlewares: mlops-lakefs-oauth-errors@kubernetescrd,mlops-lakefs-forwardauth@kubernetescrd
-  hosts:
-    - host: lakefs.mlops.ai.camer.digital
-      paths:
-        - /
-  tls:
-    - secretName: lakefs-tls
-      hosts:
-        - lakefs.mlops.ai.camer.digital
+  enabled: false
