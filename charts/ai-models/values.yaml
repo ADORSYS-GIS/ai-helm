@@ -484,6 +484,24 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the home GPU — custom
+  # Rust/Candle server (no Python, no PyTorch, 6B params FP8). Different
+  # schema/prefix from the vLLM backends: the server natively speaks OpenAI
+  # /v1/images/generations at root (/). No server-side auth — the Envoy AI
+  # Gateway enforces the Bearer token. Distinct edge host MUST match
+  # charts/model-serving-zimage-turbo ingress host. DISABLED by default
+  # (one GPU → one model).
+  zimage-local-01:
+    schema: OpenAI
+    prefix: "/"
+    fqdn:
+      hostname: z-image-turbo--poc.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: z-image-turbo--poc.ssegning.com
+    resourceName: zimage-local-01-svc
+    secretRef:
+      name: zimage-local-api-key
   vllm-local-qwen2-vl-01:
     <<: *vllmLocalQwen2VlBackend
     resourceName: vllm-local-qwen2-vl-01-svc
@@ -621,7 +639,7 @@ models:
   # Cost (ADR-0028: cost-recovery for owned-hardware): same rate as the other
   # self-hosted models — the hardware cost is identical.
   qwen25-3b-awq-local:
-    enabled: true                    # CUTOVER — live on the home GPU (lmcache/vllm-openai:v0.5.1 + in-process LMCache).
+    enabled: false                   # DISABLED — swapped by z-image-turbo-local (one GPU). Re-enable to roll back.
     kind: text
     minBackends: 1
     timeout:
@@ -776,6 +794,24 @@ models:
         priority: 0
         modelNameOverride: "ministral-3b"
 
+  z-image-turbo-local:
+    enabled: true                  # LIVE — one GPU, one model.
+    kind: image
+    minBackends: 1
+    timeout:
+      requestTimeout: 120s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Z-Image-Turbo FP8 (self-hosted)"
+    pricing:
+      strategy: flatPerRequest
+      standard:
+        effectivePerRequest: 0.005
+    backends:
+      zimage-local-01:
+        ref: zimage-local-01
+        priority: 0
+        modelNameOverride: "z-image-turbo"
   qwen2-vl-2b-local:
     enabled: true
     kind: multimodal
