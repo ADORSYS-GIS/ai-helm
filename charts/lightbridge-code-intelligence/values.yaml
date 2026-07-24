@@ -370,16 +370,27 @@ lci:
             # argocd-image-updater owns — see charts/apps/values.yaml + the app repo.
             tag: "0.1.0"
             pullPolicy: IfNotPresent
-          env:
-            BIND_ADDR: "0.0.0.0:8080"
-            RUST_LOG: "info"
-            # OpenTelemetry tracing: export traces to Alloy collector (ADR-0046)
-            OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability.svc.cluster.local:4318"
-            # Sampling ratio (default 0.1 = 10% of traces)
-            OTEL_TRACES_SAMPLER_ARG: "0.1"
-            # File config (ADR-0021): read control-plane.json from the mounted ConfigMap (review
-            # labels/reactions + the embedding-dimension guard). Absent the file the binary uses env.
-            CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
+env:
+             BIND_ADDR: "0.0.0.0:8080"
+             RUST_LOG: "info"
+             # OpenTelemetry tracing: export traces to Alloy collector (ADR-0046)
+             OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability.svc.cluster.local:4318"
+             # Sampling ratio (default 0.1 = 10% of traces)
+             OTEL_TRACES_SAMPLER_ARG: "0.1"
+             # File config (ADR-0021): read control-plane.json from the mounted ConfigMap (review
+             # labels/reactions + the embedding-dimension guard). Absent the file the binary uses env.
+             CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
+           volumeMounts:
+             # Internal CA certificate for OTLP TLS validation (ADR-0046)
+             - name: internal-ca-trust
+               mountPath: /etc/otel-certs
+               readOnly: true
+           volumes:
+             # Internal CA certificate for OTLP TLS validation (ADR-0046)
+             - name: internal-ca-trust
+               secret:
+                 secretName: alloy-internal-ca
+                 optional: false
             # The @mention trigger handle (webhook.rs). Comments must start with `@<handle>`. A literal
             # (bjw renders env against the sub-chart scope where top-level `.Values` isn't visible).
             # DEPLOYMENT-SPECIFIC → ai-helm-values; keep in sync with `config.appHandle` + the web
@@ -673,17 +684,28 @@ lci:
             repository: ghcr.io/vymalo/lightbridge-control-plane
             tag: "0.1.0"
             pullPolicy: IfNotPresent
-          env:
-            CONTROL_PLANE_ROLE: "dispatcher"
-            RUST_LOG: "info"
-            METRICS_ADDR: "0.0.0.0:9090"
-            # OpenTelemetry tracing: export traces to Alloy collector (ADR-0046)
-            OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability.svc.cluster.local:4318"
-            # Sampling ratio (default 0.1 = 10% of traces)
-            OTEL_TRACES_SAMPLER_ARG: "0.1"
-            # File config (ADR-0021): control-plane.json drives the runner Job resources + dispatcher
-            # tuning; the binary falls back to the AGENT_*/defaults below when a field is absent.
-            CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
+env:
+             CONTROL_PLANE_ROLE: "dispatcher"
+             RUST_LOG: "info"
+             METRICS_ADDR: "0.0.0.0:9090"
+             # OpenTelemetry tracing: export traces to Alloy collector (ADR-0046)
+             OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability.svc.cluster.local:4318"
+             # Sampling ratio (default 0.1 = 10% of traces)
+             OTEL_TRACES_SAMPLER_ARG: "0.1"
+             # File config (ADR-0021): control-plane.json drives the runner Job resources + dispatcher
+             # tuning; the binary falls back to the AGENT_*/defaults below when a field is absent.
+             CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
+           volumeMounts:
+             # Internal CA certificate for OTLP TLS validation (ADR-0046)
+             - name: internal-ca-trust
+               mountPath: /etc/otel-certs
+               readOnly: true
+           volumes:
+             # Internal CA certificate for OTLP TLS validation (ADR-0046)
+             - name: internal-ca-trust
+               secret:
+                 secretName: alloy-internal-ca
+                 optional: false
             # ConfigMap (agents ns) the dispatcher mounts into each Job as agent.json (review model
             # params + prompt template); k8s.rs sets AGENT_CONFIG=/etc/lightbridge/agent.json there.
             # Literal (sub-chart env scope); keep in sync with `config.agentConfigMap`.
