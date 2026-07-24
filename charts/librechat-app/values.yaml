@@ -545,6 +545,30 @@ librechat:
                 failureThreshold: 30
                 periodSeconds: 5
 
+  # config-rollout — force the librechat pods to redeploy on a config change.
+  # The librechat.yaml `config:` object is a STANDALONE ConfigMap
+  # (templates/configmap.yaml, rendered from top-level .Values.config which now
+  # comes from ai-helm-values). bjw-s can't content-hash a ConfigMap it doesn't
+  # manage, and the config's subPath mount does NOT auto-update — so editing the
+  # config alone would silently keep the old config until the pod restarts for
+  # another reason. This tiny UNMOUNTED marker ConfigMap, listed in
+  # includeChecksumInControllers, makes bjw-s stamp a `checksum/configMaps`
+  # annotation on the librechat pods. ⚠️ Bump `data.generation` (overridden from
+  # ai-helm-values, co-located with the config) in the SAME commit as any
+  # `config:` change and the pods roll to pick it up. Pattern: ADR-0087 +
+  # lightbridge-code-intelligence.
+  configMaps:
+    config-rollout:
+      enabled: true
+      # Pin the name to <release>-config-rollout (else bjw-s collapses a lone
+      # managed configMap to the bare release name). The checksum hashes only
+      # `data`, so the suffix doesn't affect it.
+      suffix: config-rollout
+      includeChecksumInControllers:
+        - librechat
+      data:
+        generation: "1"
+
   persistence:
     config:
       enabled: true
