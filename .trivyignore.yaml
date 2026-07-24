@@ -68,22 +68,6 @@ misconfigurations:
       is exempt. The keycloak/lmcache entries are pre-existing hardening debt
       tracked as a follow-up.
     paths:
-<<<<<<< HEAD
-      - "lightbridge-code-intelligence/charts/lci/templates/common.yaml"
-  - id: KSV-0014
-    # KSV-0014 "readOnlyRootFilesystem" — the zimage-turbo seed Job container
-    # needs a WRITABLE rootfs: it runs `pip install huggingface_hub` which writes
-    # to /usr/local, so readOnlyRootFilesystem:true would crash it. The model
-    # weights are downloaded to the PVC (/models), not the rootfs. The model
-    # container DOES keep readOnlyRootFilesystem:true — only the seed is exempt.
-    # The seed Job is rendered by the bjw-template subchart (aliased modelServing).
-    statement: >-
-      Seed Job needs a writable rootfs (pip install writes to /usr/local);
-      model weights go to the PVC. Only the seed container is exempt — the model
-      container keeps readOnlyRootFilesystem:true.
-    paths:
-      - "model-serving-zimage-turbo/charts/modelServing/templates/common.yaml"
-=======
       - "llm-d.yaml"
       - "model-serving-deepseek-r1-1-5b.yaml"
       - "model-serving-ministral-3b.yaml"
@@ -92,6 +76,7 @@ misconfigurations:
       - "model-serving-qwen3-4b.yaml"
       - "model-serving-qwen3-5.yaml"
       - "model-serving-qwen3-8b.yaml"
+      - "model-serving-zimage-turbo.yaml"
       - "librechat-app.yaml"
       - "lightbridge-code-intelligence.yaml"
       - "keycloak-baseline.yaml"
@@ -125,4 +110,3 @@ misconfigurations:
       - "llm-d.yaml"
       - "keycloak-baseline.yaml"
       - "lmcache.yaml"
->>>>>>> 98e6d3572f07365afadfbff3ea48dcda0e42afbe
