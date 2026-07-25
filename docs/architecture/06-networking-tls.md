@@ -188,10 +188,13 @@ sequenceDiagram
 | Crashloops on boot-DNS / uses stale pod IPs after a pod cycles (`Layer4 timeout`) | `init-addr last,libc,none` + a `resolvers` (`parse-resolv-conf`) section + `resolve-prefer ipv4` |
 | `${ENV}` is **not** expanded inside `tcp-check send` → literal password sent → `+OK` times out | render the password into the config at startup (an `awk` literal substitution into tmpfs — never in the ConfigMap) |
 | `bind ssl crt` needs key+cert in one PEM | cert-manager `additionalOutputFormats: [{type: CombinedPEM}]` |
+| The k8s `livenessProbe`/`readinessProbe` are a bare `tcpSocket` against `:6379` → never completes the TLS handshake `bind ssl` requires → every probe tick logs `Connection closed during SSL handshake` (measured: ~93% of the pod's log volume, 2026-07-25) | give the kubelet a **separate cleartext `healthz` frontend** (`monitor-uri`, its own port) and point the probes there instead — leaves `:6379`'s TLS posture untouched since that port carries no redis traffic. Fixed in `home-os` [PR #116](https://github.com/WhyThatFunction/home-os/pull/116) / [issue #117](https://github.com/WhyThatFunction/home-os/issues/117). |
 
 **Verify** (`home-remote` kubeconfig): a replica showing `DOWN` is expected — only the
 master is `UP`; `backend 'redis_master' has no server available!` means no master is
-reachable (failover in progress, or a check regression — revisit the gotchas).
+reachable (failover in progress, or a check regression — revisit the gotchas). Also
+check for `Connection closed during SSL handshake` spam — see the probe gotcha above;
+a healthy haproxy pod should log essentially none of these.
 
 ```bash
 HP=$(kubectl -n redis-system get po -l app.kubernetes.io/controller=haproxy -o name | head -1)
