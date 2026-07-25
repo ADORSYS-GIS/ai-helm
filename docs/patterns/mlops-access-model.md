@@ -32,7 +32,7 @@ differently.
 |---|---|---|---|
 | **Human** | Keycloak SSO → the shared `admin` identity | Keycloak SSO → delegate SA (`admin` or `viewer` by claim) | Keycloak SSO → **real per-user identity** |
 | **Workload (in-cluster)** | Basic auth with the single platform key, direct to the Service | runs as SA `argo-workflow` (executor rights only) | Bearer token from `mlflow-automation` |
-| **External script / CI** | ❌ **not reachable** | short-lived k8s SA token (`--auth-mode=client`) | Bearer token from `mlflow-automation` |
+| **External script / CI** | Basic auth on `/api` (the platform key) | short-lived k8s SA token (`--auth-mode=client`) | Bearer token from `mlflow-automation` |
 | **Per-user identity inside the app?** | ❌ shared | ✅ two roles, but only two | ✅ genuine per-user |
 | **Can issue >1 credential?** | ❌ exactly one, ever | ✅ per-SA | ✅ per-client / per-user |
 
@@ -84,18 +84,33 @@ A workflow step authenticates with **HTTP Basic** against the in-cluster Service
 > the shim in the same change. Treat mounting it as a deliberate decision per workflow,
 > not a default.
 
-### External scripts — currently blocked
-oauth2-proxy fronts **every path** on `lakefs.mlops.ai.camer.digital`, so an API call
-from outside gets an HTML redirect, not a challenge it can answer:
+### External scripts — `/api` is exposed
+The Ingress has **two** routes on the one hostname: `/` goes to oauth2-proxy (the
+Keycloak-gated browser path) and **`/api` goes straight to the workload**, where LakeFS
+applies its own auth. Traefik prioritises the longer prefix.
+
+This exists because SSO is a redirect protocol: with the gate in front of everything, an
+unauthenticated API call got a `302` to Keycloak — an HTML redirect no CLI can satisfy —
+so `lakectl` and the SDKs simply could not reach the platform from a laptop. Verified
+live from outside the cluster:
 
 ```
-POST https://lakefs.mlops.ai.camer.digital/api/v1/auth/login  → 302 → Keycloak
+GET /api/v1/user          (no credentials)  → 401     ← LakeFS's own auth, not a redirect
+GET /api/v1/user          (Basic ak:sk)     → 200 {"user":{"id":"platform-admin"}}
+GET /api/v1/repositories  (Basic ak:sk)     → 200
+GET /                     (browser)         → 302 → Keycloak   ← gate intact
 ```
 
-`lakectl`, boto3 against the S3 gateway, and CI therefore cannot reach lakeFS from
-outside the cluster. This is a deliberate consequence of the single-root-credential
-constraint: exposing `/api/` would put an unrotatable root key on laptops. Run
-data-plane work **inside** the cluster (i.e. as an Argo workflow step) instead.
+So `lakectl` configures normally against `https://lakefs.mlops.ai.camer.digital` with the
+access-key/secret pair.
+
+> ⚠️ This puts the **single platform-wide root credential on the public internet**,
+> protected only by its own strength — no second factor, no per-consumer revocation, and
+> rotating it also breaks the SSO shim. That trade was made deliberately for CLI
+> ergonomics. Keep the exposure scoped to `/api`.
+
+**Still not exposed**: the S3 gateway (Host-routed on `s3.local.lakefs.io`), so
+boto3-style bulk data access remains in-cluster only.
 
 ---
 
@@ -226,7 +241,7 @@ policies select the named app pods only, which workflow pods don't match.
 | # | Limitation | Consequence |
 |---|---|---|
 | 1 | lakeFS has **one** credential, un-rotatable per-consumer, effectively root | No per-script keys; no per-user audit; sharing it with a workflow is a real risk |
-| 2 | lakeFS is **unreachable from outside** the cluster | No `lakectl`/boto3 from laptops or CI; data-plane work must run in-cluster |
+| 2 | lakeFS `/api` is **publicly reachable**, guarded only by the single root key | `lakectl`/CI work, but that one un-rotatable credential is internet-facing; the S3 gateway stays in-cluster only |
 | 3 | Argo SSO offers only **two** roles (admin / viewer) | No finer-grained human authorization without more delegate SAs |
 | 4 | `charts/keycloak-baseline` is **not reconciled by anything** | Every realm change here is manual and can drift silently |
 | 5 | `mlops` has **no NetworkPolicy baseline** | Pods egress anywhere; adding the baseline later is a breaking change |
