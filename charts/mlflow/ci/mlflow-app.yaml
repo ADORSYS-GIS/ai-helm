@@ -66,6 +66,26 @@ oidcAuth:
   existingSecret:
     name: mlflow-oidc
     clientSecretKey: client-secret
+  # ⚠️ SECURITY — LOAD-BEARING. Renders env `OIDC_AUDIENCE`, which is the ONLY
+  # thing that makes the plugin check the `aud` claim on a Bearer token.
+  #
+  # mlflow-oidc-auth v7.3.1 `config.py::_get_claims_options()` only adds
+  # `{"aud": {"essential": True, "value": <OIDC_AUDIENCE>}}` to the JWT
+  # validation options when OIDC_AUDIENCE is set; unset ⇒ the audience claim
+  # is not validated at all. The plugin still verifies the signature against
+  # the Keycloak JWKS — but the JWKS is REALM-wide, so with no audience check
+  # ANY valid token from the `camer-digital` realm was accepted. Verified live
+  # (2026-07): a client-credentials token minted for the unrelated
+  # `testing-client` (aud: ['coder','account'], no `mlflow_roles` claim) got
+  # HTTP 200 from `POST /api/2.0/mlflow/experiments/search` on the public
+  # ingress. The `groupName`/`adminGroupName` gate below does NOT close this —
+  # it runs on the browser OIDC callback path only, never on Bearer.
+  #
+  # Setting it means a token intended for MLflow must carry `mlflow` in `aud`
+  # (Keycloak: an audience mapper on the `mlflow` client / a dedicated client
+  # scope — see docs/playbooks/keycloak-audience-operations.md). It gates the
+  # BEARER path only; the browser session path is unaffected.
+  audience: "mlflow"
   # OAuth2/OIDC `scope` is SPACE-separated per spec — Keycloak rejected the
   # comma-separated form outright. Found live during ADR-0085 verification.
   scope: "openid email profile"
@@ -127,6 +147,13 @@ resources:
 ingress:
   enabled: true
   className: traefik
+  # gethomepage.dev/* — Homepage k8s auto-discovery (ai-helm ADR-0089,
+  # starter set). See ai-helm docs/integrations/homepage.md.
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "MLflow"
+    gethomepage.dev/group: "MLOps"
+    gethomepage.dev/icon: "mlflow.png"
   hosts:
     - host: mlflow.mlops.ai.camer.digital
       paths:
