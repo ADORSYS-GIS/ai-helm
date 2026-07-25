@@ -343,7 +343,7 @@ additive allow.**
 ⚠️ **Do not use `envFrom: [secretRef: …]` as a shortcut.** `envFrom` derives env
 *names* from the Secret *keys*, and these are hyphenated (`access-key-id`) —
 not valid environment-variable identifiers. Kubernetes **silently skips** them
-and only records an `InvalidVariableNames` event on the pod, so the step runs
+and only records an `InvalidEnvironmentVariableNames` event on the pod, so the step runs
 with no credential and fails with a 401 that looks like a bad key.
 
 ⚠️ **`optional: false` is not decoration.** Env from a `secretKeyRef` binds once
