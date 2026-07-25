@@ -30,6 +30,17 @@
 # allowed-group restrict it to users the operator explicitly grants the
 # `admin` client role to.
 
+# ─────────────────────────────────────────────────────────────────────────
+# Who can access the Longhorn UI — a Keycloak client role on the
+# `longhorn-proxy` client (charts/keycloak-baseline), read via the
+# longhorn_roles claim. Change ONLY this value to change who's allowed in;
+# it's referenced below via a YAML anchor (the upstream oauth2-proxy chart
+# has no dedicated field for this — extraArgs is its only config surface —
+# so this anchor is what gives the setting its own prominent, single-source
+# slot instead of being just another buried extraArgs line).
+# ─────────────────────────────────────────────────────────────────────────
+longhornAllowedGroup: &longhornAllowedGroup "admin"
+
 config:
   existingSecret: longhorn-proxy-secret
   cookieName: "_longhorn_proxy"
@@ -49,8 +60,8 @@ extraArgs:
   # Role restriction (ADR-0093): the longhorn_groups Keycloak client scope is
   # a DEFAULT client scope (charts/keycloak-baseline), so the longhorn_roles
   # claim is present in every token issued to this client regardless of what
-  # scope is requested. A user with no `admin` client role gets an
-  # empty/absent claim and --allowed-group rejects the login.
+  # scope is requested. A user without the longhornAllowedGroup role (above)
+  # gets an empty/absent claim and --allowed-group rejects the login.
   #
   # --scope is set explicitly (openid/email/profile are oauth2-proxy's own
   # defaults for this provider, restated here because --scope REPLACES the
@@ -60,7 +71,7 @@ extraArgs:
   # is set — a generic value unrelated to this client's actual scope).
   scope: "openid email profile longhorn_groups"
   oidc-groups-claim: "longhorn_roles"
-  allowed-group: "admin"
+  allowed-group: *longhornAllowedGroup
 
 # No chart-owned ingress — the depsOverlay Ingress routes the whole
 # hostname to this release's Service.
