@@ -19,3 +19,4 @@ categories.
 | [bifrost-comprehensive-report.md](bifrost-comprehensive-report.md) | Bifrost vs Envoy AI Gateway — technical comparison |
 | [2026-06-08-gpu-platform-procurement-comparison.md](2026-06-08-gpu-platform-procurement-comparison.md) | 🔬 GPU make-vs-buy research: A2000 vs 5×V100 vs Hetzner; TCO + ADR-0028 pricing |
 | [authorino-service-account-bypass.md](authorino-service-account-bypass.md) | **Historical** (OPA removed, ADR-0021): how SA tokens used to skip OPA in Authorino |
+| [mlops-access-model.md](mlops-access-model.md) | **Who can reach LakeFS / Argo Workflows / MLflow, and as what** — humans vs workloads vs external scripts, credential inventory, the end-to-end training-job path |
