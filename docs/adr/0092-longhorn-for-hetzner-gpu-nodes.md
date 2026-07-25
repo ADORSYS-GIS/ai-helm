@@ -53,12 +53,22 @@ adds a second, independent restriction: only nodes explicitly labeled
 get a default disk, so a future accidental `nvidia.com/gpu.present` relabel
 elsewhere can't silently hand Longhorn a data disk there too.
 
-Default StorageClass: `numberOfReplicas: 2` (one replica per GPU node — there are
-only two today; Longhorn doesn't use Raft/quorum, so a 2-node topology is not
-degraded, just less redundant than the chart's 3-replica default), V1
-(filesystem-backed) data engine only, `reclaimPolicy: Retain` (an accidental PVC
-delete shouldn't destroy an expensive-to-refetch model cache — the tradeoff is
-orphaned PVs need manual cleanup after a genuine decommission).
+The chart's own `longhorn` StorageClass is created but **explicitly NOT set as
+the cluster-default** (`persistence.defaultClass: false`) — `hcloud-csi`'s
+`hcloud-volumes` StorageClass already holds that role
+(`hetzner-k8s` `platform/helm-values/hcloud-csi-values.yaml`), and two default
+StorageClasses is an ambiguous, invalid cluster state that a PVC omitting
+`storageClassName` could resolve to either way. Workloads on the GPU nodes must
+explicitly set `storageClassName: longhorn`; every other workload in the
+cluster keeps landing on `hcloud-volumes` exactly as before — this decision
+must have zero effect on any PVC that doesn't opt in by name.
+
+`numberOfReplicas: 2` (one replica per GPU node — there are only two today;
+Longhorn doesn't use Raft/quorum, so a 2-node topology is not degraded, just
+less redundant than the chart's 3-replica default), V1 (filesystem-backed)
+data engine only, `reclaimPolicy: Retain` (an accidental PVC delete shouldn't
+destroy an expensive-to-refetch model cache — the tradeoff is orphaned PVs
+need manual cleanup after a genuine decommission).
 
 `longhorn-system` is added to `charts/apps` `global.namespacePodSecurity` as
 `privileged` — Longhorn's V1 engine needs hostPath + privileged host access
