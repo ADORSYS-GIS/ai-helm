@@ -189,6 +189,7 @@ flowchart TB
 | `lakefs` → `lakefs-secrets`/`-auth`/`-app` | Data-lake version control; S3 blockstore (Hetzner Object Storage); dedicated oauth2-proxy gate (LakeFS OSS has no functional OIDC) | App-of-Apps (ADR-0085) |
 | `argo-workflows` → `argo-workflows-secrets`/`-app` | Pipeline orchestration; native Keycloak SSO; S3 artifact repository | App-of-Apps (ADR-0085) |
 | `mlflow` → `mlflow-secrets`/`-app` | Experiment tracking + model registry; native Keycloak OIDC (bundled `mlflow-oidc-auth`); S3 artifact store | App-of-Apps (ADR-0085) |
+| `homepage` → `homepage-secrets`/`-auth`/`-app` | Central-hub dashboard for every app on the platform; hybrid curated + k8s-auto-discovery content; dedicated oauth2-proxy gate (Homepage has no login of its own — contrast with `lakefs`'s removed one, ADR-0085) | App-of-Apps (ADR-0089) |
 | `observability` → children | LGTM + Alloy + grafana-operator + redis-exporter | App-of-Apps (ADR-0020) |
 | `observability-dashboards` | Dashboards + folders + alerting as grafana-operator CRs (Python-generated) | Direct (ADR-0008/0059) |
 | `same-origin-proxy` | Generic Caddy serving external resources same-origin to dodge browser CORS | Direct (ADR-0061) |
@@ -468,6 +469,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0082 | release-please owns each chart's `MAJOR.MINOR` floor + `CHANGELOG.md` from Conventional Commits; publish (ADR-0055) still derives the deployed `PATCH` from commit-count |
 | 0083 | Re-introduce Coder as an App-of-Apps orchestrator (supersedes 0019/0027); reuses `lightbridge-main-db`, no dedicated CNPG |
 | 0085 | Self-hosted MLOps platform (LakeFS + Argo Workflows + MLflow): shared CNPG/S3 reuse, per-app auth (native SSO for Argo Workflows and MLflow's bundled `mlflow-oidc-auth`; dedicated oauth2-proxy for LakeFS, which has no functional OIDC in OSS) |
+| 0089 | Homepage central-hub dashboard, gated by a dedicated oauth2-proxy (Homepage has no auth of its own — not the redundant-second-login mistake removed from LakeFS in 0085); hybrid curated + k8s-auto-discovery content; uptime widget reuses the existing Mimir/Grafana stack |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 

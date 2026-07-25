@@ -1,0 +1,188 @@
+# Homepage (gethomepage.dev) — the central-hub dashboard. Leaf chart of the
+# homepage orchestrator (ADR-0089). Sits entirely behind the homepage-auth
+# oauth2-proxy reverse-proxy — no ingress, no auth of its own.
+#
+# Everything here is bjw-template (bjw-s app-template v4) native — Deployment/
+# Service, the ServiceAccount, the ClusterRole/ClusterRoleBinding (rbac.roles/
+# rbac.bindings), and the content ConfigMap (configMaps.content) all come from
+# the framework's own declarative blocks. No custom templates in this chart.
+#
+# NOTE on scope: bjw-template is consumed here as an ALIASED subchart (see
+# Chart.yaml), so everything below lives under the `homepage:` key — that
+# whole block IS the subchart's own `.Values` root. A `{{ .Values.x }}`
+# reference inside this block can only see siblings within `homepage:`, never
+# this file's top level or the parent release's values outside it. That's why
+# HOMEPAGE_ALLOWED_HOSTS below is a literal, not a template reference.
+homepage:
+  # ────────────────────────────────────────────────────────────────────────
+  # ServiceAccount — bjw v4 native registry (not a hand-rolled ServiceAccount
+  # object). Referenced by the controller below via `serviceAccount.identifier`
+  # and by the ClusterRoleBinding below via `subjects: [{identifier: homepage}]`.
+  # ────────────────────────────────────────────────────────────────────────
+  serviceAccount:
+    homepage:
+      enabled: true
+      name: homepage
+
+  # ────────────────────────────────────────────────────────────────────────
+  # RBAC — bjw v4 native `rbac.roles`/`rbac.bindings`. Read-only ClusterRole
+  # for Homepage's k8s service discovery: upstream's own documented shape
+  # (gethomepage.dev/installation/k8s/) — get/list only, on
+  # namespaces/pods/nodes/ingresses (extensions + networking.k8s.io)/
+  # httproutes+gateways (gateway.networking.k8s.io — this cluster's AI
+  # Gateway routes are Gateway API, not just Ingress). Deliberately omits
+  # traefik.io IngressRoutes and metrics.k8s.io (unused in this cluster).
+  # ────────────────────────────────────────────────────────────────────────
+  rbac:
+    roles:
+      discovery:
+        type: ClusterRole
+        name: '{{ .Release.Name }}-discovery'
+        rules:
+          - apiGroups: [""]
+            resources: ["namespaces", "pods", "nodes"]
+            verbs: ["get", "list"]
+          - apiGroups: ["extensions", "networking.k8s.io"]
+            resources: ["ingresses"]
+            verbs: ["get", "list"]
+          - apiGroups: ["gateway.networking.k8s.io"]
+            resources: ["httproutes", "gateways"]
+            verbs: ["get", "list"]
+    bindings:
+      discovery:
+        type: ClusterRoleBinding
+        name: '{{ .Release.Name }}-discovery'
+        roleRef:
+          identifier: discovery
+        subjects:
+          - identifier: homepage
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Content ConfigMap — bjw v4 native `configMaps:`. One entry per file
+  # Homepage expects at /app/config (mounted below via `persistence`). Data
+  # values are literal file contents (bjw's configMap class passes `data:`
+  # straight through — no toYaml'ing of a structured value), so real content
+  # overrides in ai-helm-values write YAML-as-a-string at this exact same
+  # path (`homepage.configMaps.content.data."services.yaml"`, etc.) rather
+  # than a structured `config.services:` list. Defaults below are minimal/
+  # empty so the chart renders cleanly in CI with no ai-helm-values override.
+  # kubernetes.yaml is NOT expected to vary per env, so it's set here, not in
+  # ai-helm-values: `mode: cluster` uses the in-cluster API + the RBAC above;
+  # `ingress: enabled: true` turns on Ingress/HTTPRoute-annotation discovery.
+  # ────────────────────────────────────────────────────────────────────────
+  configMaps:
+    content:
+      data:
+        services.yaml: |
+          []
+        bookmarks.yaml: |
+          []
+        widgets.yaml: |
+          []
+        settings.yaml: |
+          title: "Camer Digital AI — Hub"
+          headerStyle: underlined
+        kubernetes.yaml: |
+          mode: cluster
+          ingress:
+            enabled: true
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Deployment + Service. No chart-owned ingress (see Chart.yaml) and no
+  # `route:` (this isn't on the Envoy AI Gateway — it's a plain in-cluster
+  # ClusterIP behind oauth2-proxy).
+  # ────────────────────────────────────────────────────────────────────────
+  controllers:
+    main:
+      type: deployment
+      replicas: 1
+      strategy: RollingUpdate
+      # References the serviceAccount: registry entry above by identifier
+      # (validated to exist at render time — see bjw-common
+      # templates/lib/pod/fields/_serviceAccountName.tpl).
+      serviceAccount:
+        identifier: homepage
+      # No manual checksum annotation needed — because `configMaps.content`
+      # above is bjw v4's own native block (not an externally-created
+      # ConfigMap referenced by name, like ai-models-info's catalog
+      # ConfigMap), bjw-template computes a `checksum/configMaps` pod
+      # annotation for it automatically, so content edits
+      # (services/bookmarks/widgets/settings) roll the Deployment on their
+      # own — no `kubectl rollout restart` needed.
+      pod:
+        automountServiceAccountToken: true
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+      containers:
+        main:
+          image:
+            repository: ghcr.io/gethomepage/homepage
+            tag: "v1.13.2"
+            pullPolicy: IfNotPresent
+          # Hostname Homepage must accept on the `Host` header — it
+          # validates this itself and 403s anything not listed (including
+          # its own readiness probe if misconfigured). Override this exact
+          # key in ai-helm-values if the real hostname ever differs from the
+          # depsOverlay Ingress host.
+          env:
+            HOMEPAGE_ALLOWED_HOSTS: "hub.ai.camer.digital"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /api/healthcheck
+                  port: 3000
+                initialDelaySeconds: 10
+                periodSeconds: 30
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /api/healthcheck
+                  port: 3000
+                periodSeconds: 10
+                timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          enabled: true
+          port: 3000
+          targetPort: 3000
+          protocol: HTTP
+
+  # Mount the `content` ConfigMap above (by identifier, not by external
+  # literal name) at /app/config — each data key (services.yaml,
+  # bookmarks.yaml, widgets.yaml, settings.yaml, kubernetes.yaml) projects to
+  # a file of the same name, exactly what Homepage expects to find there.
+  persistence:
+    config:
+      enabled: true
+      type: configMap
+      identifier: content
+      advancedMounts:
+        main:
+          main:
+            - path: /app/config
+              readOnly: true

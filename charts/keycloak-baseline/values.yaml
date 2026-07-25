@@ -355,6 +355,43 @@ keycloak-config:
         - name: "viewer"
           description: "MLflow READ permission (default)"
 
+    # Homepage central-hub dashboard (ADR-0089): Homepage itself ships no
+    # authentication, so this client is consumed by a DEDICATED homepage-auth
+    # oauth2-proxy instance in reverse-proxy mode (mirrors the ADR-0085
+    # lakefs-auth shape) — a network gate only, no per-role behavior, so
+    # (unlike lakefsProxy before removal) this client gets no custom
+    # clientScope/role mapper.
+    homepageProxy:
+      enabled: true
+      clientId: "homepage-proxy"
+      name: "Homepage (oauth2-proxy)"
+      description: ""
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris:
+        - "https://hub.ai.camer.digital/oauth2/callback"
+      webOrigins:
+        - "https://hub.ai.camer.digital"
+      rootUrl: "https://hub.ai.camer.digital"
+      baseUrl: "/"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+
     selfServiceMcpApi:
       enabled: true
       clientId: "self-service-mcp-api"

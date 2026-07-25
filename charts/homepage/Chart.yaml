@@ -1,0 +1,39 @@
+apiVersion: v2
+name: homepage
+description: |
+  Homepage (gethomepage.dev) App-of-Apps orchestrator — the central-hub
+  dashboard listing every app on the platform, gated by a dedicated
+  oauth2-proxy (Homepage itself ships no authentication). Renders THREE
+  child Application CRs:
+
+    1. homepage-secrets — the oauth2-proxy Keycloak client credentials +
+                           cookie-signing secret (leaf chart, sync-wave 0)
+    2. homepage-auth    — upstream oauth2-proxy chart (classic Helm repo),
+                           reverse-proxy mode, own Keycloak client `homepage-proxy`
+                           (sync-wave 1)
+    3. homepage-app     — the Homepage workload (local leaf chart, OCI-floated)
+                           + RBAC for k8s auto-discovery (sync-wave 2)
+
+  Same App-of-Apps pattern as lightbridge/coder (ADR-0019 canonical). See
+  ADR-0089 for the oauth2-proxy-is-necessary-here-not-redundant reasoning
+  (contrast with ADR-0085's LakeFS removal).
+type: application
+version: 1.0.0
+appVersion: "1.13.2"
+keywords:
+  - homepage
+  - dashboard
+  - central-hub
+  - oauth2-proxy
+maintainers:
+  - name: ai-helm
+annotations:
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
