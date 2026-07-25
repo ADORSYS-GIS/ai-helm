@@ -1,0 +1,41 @@
+apiVersion: v2
+name: longhorn-auth
+description: |
+  oauth2-proxy front door for the Longhorn UI (Hetzner GPU-node storage) —
+  App-of-Apps orchestrator rendering TWO child Application CRs:
+
+    1. longhorn-secrets — the oauth2-proxy Keycloak client credentials +
+                           cookie-signing secret (leaf chart, sync-wave 0)
+    2. longhorn-auth    — upstream oauth2-proxy chart (classic Helm repo),
+                           reverse-proxy mode, own Keycloak client
+                           `longhorn-proxy`, gated to the `longhorn_roles`
+                           claim (sync-wave 1)
+
+  Deliberately only TWO children, unlike homepage's three — the Longhorn
+  workload itself is the separate, already-existing flat `aii-longhorn`
+  Application (ADR-0092); this orchestrator only adds the auth front door
+  in front of its UI, in the same `longhorn-system` namespace.
+
+  Same App-of-Apps-via-plain-Helm pattern as homepage/lightbridge/coder
+  (ADR-0019 canonical). See ADR-0093 for the Longhorn-UI-specific
+  reasoning (no native auth + destructive capability → role-restricted,
+  not just any-authenticated-user).
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - longhorn
+  - oauth2-proxy
+  - storage
+maintainers:
+  - name: ai-helm
+annotations:
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

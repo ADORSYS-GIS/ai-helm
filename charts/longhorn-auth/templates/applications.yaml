@@ -1,0 +1,79 @@
+{{- /*
+longhorn-auth App-of-Apps orchestrator — renders two child Application CRs:
+  • longhorn-secrets — local ExternalSecrets leaf chart (single source, OCI float).
+  • longhorn-auth    — upstream oauth2-proxy chart (classic Helm repo), reverse-
+                        proxy mode, own Keycloak client (second source: $values).
+Both target home-remote (ADR-0017 guard via longhorn-auth.argocd.destinationClusterRef),
+namespace longhorn-system — colocated with the existing, separate `aii-longhorn`
+Application (ADR-0092) whose UI this gates.
+Rendered as direct Application CRs rather than an ApplicationSet because the
+children are fixed + heterogeneous — see ADR-0019 (lightbridge is the
+canonical example). See ADR-0093 for the Longhorn-UI-specific auth decision.
+*/ -}}
+{{- $a := .Values.argocd -}}
+{{- if .Values.secrets.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.secrets.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.secrets.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  source:
+    # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
+    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.secrets.chartName | quote }}
+    chart: "."
+    targetRevision: {{ $a.chartVersionRange | quote }}
+    helm:
+      releaseName: {{ .Values.secrets.releaseName | quote }}
+  destination:
+    {{- include "longhorn-auth.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
+{{- if .Values.auth.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.auth.appName }}
+  namespace: {{ $a.namespace | default "argocd" | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.auth.syncWave | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  project: {{ $a.project | quote }}
+  sources:
+    # Source A — upstream oauth2-proxy chart (classic Helm repo, pinned — not
+    # floated). A DEDICATED instance for Longhorn (own Keycloak client, own
+    # cookie secret) — not shared with any other app's oauth2-proxy (ADR-0093,
+    # mirrors the ADR-0089 homepage-auth shape).
+    - repoURL: {{ .Values.auth.chart.repoURL | quote }}
+      chart: {{ .Values.auth.chart.name | quote }}
+      targetRevision: {{ .Values.auth.chart.targetRevision | quote }}
+      helm:
+        releaseName: {{ .Values.auth.releaseName | quote }}
+        valueFiles:
+          - $values/environments/{{ $a.env | default "prod" }}/values/longhorn-auth.yaml
+        ignoreMissingValueFiles: true
+    # Source B — $values ref: the workload values file (ai-helm-values, ADR-0056).
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      ref: values
+  destination:
+    {{- include "longhorn-auth.argocd.destinationClusterRef" $a.destination | nindent 4 }}
+    namespace: {{ $a.destination.namespace | quote }}
+  syncPolicy:
+    {{- toYaml $a.syncPolicy | nindent 4 }}
+{{- end }}
