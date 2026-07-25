@@ -62,8 +62,41 @@ crds:
 singleNamespace: true
 
 server:
+  # ⚠️ BOTH modes, deliberately. Each `authModes` entry becomes one
+  # `--auth-mode=<x>` arg on the server Deployment; argo-server tries the
+  # enabled modes in order against the incoming `Authorization` header
+  # (server/auth/mode.go, v4.0.7).
+  #
+  #  • sso    — the BROWSER path. It matches ONLY the prefix `Bearer v2:`, an
+  #             ENCRYPTED JWE that argo-server itself mints in its own
+  #             /oauth2/callback. Nothing outside argo-server can produce one.
+  #  • client — the PROGRAMMATIC path. A plain `Bearer <k8s-token>` matches
+  #             only this branch. With `sso` alone, every API call carrying a
+  #             ServiceAccount token was rejected
+  #             `{"code":16,"message":"token not valid..."}` (HTTP 401) — so no
+  #             CI job or script could submit or poll a Workflow at all
+  #             (verified live 2026-07).
+  #
+  # Why `client` and not `server`: in CLIENT mode argo-server builds a
+  # Kubernetes rest.Config FROM THE CALLER'S OWN TOKEN and acts AS that
+  # identity — ordinary namespaced k8s RBAC applies and every call is
+  # attributable. It is the LEAST-privileged of the three modes. (`server`
+  # mode is the dangerous one: every caller shares argo-server's own
+  # ServiceAccount and therefore its full permissions. Never enable it here.)
+  #
+  # Two caveats that bite:
+  #  (i) Callers MUST use SHORT-LIVED bound tokens —
+  #      `kubectl -n mlops create token argo-workflows-ci --duration=30m` —
+  #      NOT a long-lived `*.service-account-token` Secret (those never
+  #      expire; that is why no token Secret is created for the CI SA in
+  #      environments/base/deps/argo-workflows/rbac.yaml).
+  # (ii) An API client's ServiceAccount needs its OWN namespaced RBAC on the
+  #      argoproj.io resources in `mlops`. Client mode BYPASSES SSO RBAC
+  #      delegation entirely, so the permissions on the
+  #      argo-workflows-admin/-viewer delegate SAs do NOT transfer to it.
   authModes:
     - sso
+    - client
   sso:
     enabled: true
     issuer: "https://auth.verif.fyi/realms/camer-digital"
@@ -95,6 +128,13 @@ server:
   ingress:
     enabled: true
     ingressClassName: traefik
+    # gethomepage.dev/* — Homepage k8s auto-discovery (ai-helm ADR-0089,
+    # starter set). See ai-helm docs/integrations/homepage.md.
+    annotations:
+      gethomepage.dev/enabled: "true"
+      gethomepage.dev/name: "Argo Workflows"
+      gethomepage.dev/group: "MLOps"
+      gethomepage.dev/icon: "argo.png"
     hosts:
       - argo-workflows.mlops.ai.camer.digital
     tls:
@@ -110,7 +150,88 @@ server:
       cpu: 500m
       memory: 512Mi
 
+# ────────────────────────────────────────────────────────────────────────
+# Workflow POD identity + RBAC.
+#
+# This is NOT the SSO delegate RBAC (that lives in
+# environments/base/deps/argo-workflows/rbac.yaml and governs what the UI may
+# do). This governs what the *executor sidecar inside every workflow pod* may
+# do — and it is mandatory, not optional: the executor reports each node's
+# outcome by creating/patching a `workflowtaskresults.argoproj.io`, so without
+# the permission EVERY step fails even when its container exits 0.
+#
+# The chart's defaults are internally inconsistent: `workflow.rbac.create` is
+# `true` but `workflow.serviceAccount.create` is `false`, so out of the box it
+# renders a RoleBinding whose only subject is a ServiceAccount that is never
+# created. Verified live (2026-07): `kubectl -n mlops get sa argo-workflow` →
+# NotFound, while RoleBinding `argo-workflows-workflow` happily referenced it;
+# `auth can-i create workflowtaskresults.argoproj.io
+# --as=system:serviceaccount:mlops:default` → **no**.
+# ────────────────────────────────────────────────────────────────────────
+workflow:
+  serviceAccount:
+    # Create the SA the chart's own RoleBinding already points at.
+    create: true
+    name: argo-workflow
+    # No long-lived token Secret: workflow pods get a projected, expiring
+    # token from the kubelet. A `*.service-account-token` Secret would be a
+    # never-expiring credential for no benefit. (The SSO delegates DO need
+    # one — argo-server looks their token up by that hardcoded name — but a
+    # workflow pod does not.)
+    createSecret: false
+  rbac:
+    # Role + RoleBinding granting `workflowtaskresults` create/patch. Under
+    # `singleNamespace: true` these render namespace-less and land in the
+    # release namespace (`mlops`); the RoleBinding subject inherits the
+    # binding's namespace, which is why the existing (broken) binding still
+    # resolved to `mlops/argo-workflow`.
+    create: true
+
+    # Adds `workflowtasksets` list/watch + `workflowtasksets/status` patch.
+    # ENABLED. The Argo *agent* pod — the single pod Argo runs on behalf of
+    # `http`/`plugin` templates instead of one pod per step — cannot function
+    # without it. Calling the LakeFS / MLflow REST APIs from an `http`
+    # template is the natural glue for this platform (no container image
+    # needed), and the failure mode without the grant is not a clean 403 but a
+    # workflow that HANGS in Running until its deadline while the agent
+    # silently fails to watch its taskset. The grant itself is two verbs on
+    # one Argo-internal CRD, namespaced to mlops, readable only by the agent —
+    # no data access and no escalation surface.
+    agentPermissions: true
+
+    # Adds `workflowartifactgctasks` list/watch + `.../status` patch for the
+    # artifact-GC pod. ENABLED, and this one is the more important of the two.
+    # `artifactRepository.archiveLogs: true` (below) writes a log tarball per
+    # POD into the SHARED `ssegning-k8s-state` bucket, under a prefix with no
+    # lifecycle rule — `spec.artifactGC` is the only thing that ever deletes
+    # any of it. Worse, artifact GC is not merely best-effort: Argo puts a
+    # `workflows.argoproj.io/artifact-gc` FINALIZER on a workflow that
+    # declares it, and a GC pod that cannot reach its
+    # `workflowartifactgctasks` leaves that finalizer in place — the Workflow
+    # then sticks in Terminating and has to be unstuck by patching the
+    # finalizer off by hand. Granting up-front costs two verbs on one
+    # Argo-internal CRD and removes that footgun.
+    #
+    # NOTE both flags only create RBAC. They do not turn on any behaviour:
+    # the agent runs only for `http`/`plugin` templates, and GC runs only for
+    # a Workflow that sets `spec.artifactGC.strategy`.
+    artifactGC: true
+
 controller:
+  # Default `serviceAccountName` for every Workflow that does not set its own.
+  #
+  # ⚠️ Creating the `argo-workflow` SA above is necessary but NOT sufficient:
+  # Argo defaults a workflow pod to the namespace's `default` SA, which holds
+  # no argoproj.io permissions. Without this default, a plain
+  # `argo submit`/`kubectl create -f workflow.yaml` still fails on
+  # `workflowtaskresults` exactly as before — the caller would have to
+  # remember `spec.serviceAccountName: argo-workflow` every single time.
+  # `workflowDefaults` is merged INTO each Workflow, so an explicit
+  # `spec.serviceAccountName` in the Workflow still wins.
+  workflowDefaults:
+    spec:
+      serviceAccountName: argo-workflow
+
   resources:
     requests:
       cpu: 100m
@@ -132,3 +253,77 @@ artifactRepository:
     secretKeySecret:
       name: argo-workflows-s3-creds
       key: secretkey
+
+# ────────────────────────────────────────────────────────────────────────
+# Reaching LakeFS from a workflow step (documentation only — no resource).
+#
+# LakeFS OSS runs with `rbac: none`, which supports exactly ONE credential:
+# its credential-management API answers `501 Not Implemented`, so there is no
+# way to mint a per-workflow key. That single key pair already exists in this
+# namespace as Secret `lakefs-proxy-admin` (keys `access-key-id` /
+# `secret-access-key`, materialised by charts/lakefs-secrets from ssegning-aws
+# `ai/camer/digital/prod/env`). It is DELIBERATELY not duplicated for Argo —
+# a copy would be a second thing to rotate and would hide the blast radius.
+#
+# ⚠️ THIS KEY IS EFFECTIVELY LakeFS ROOT AND IS SHARED WITH THE SSO SHIM.
+#    • It is the LakeFS `admin` user. There is no lesser role to drop to.
+#    • The same pair is what `lakefs-proxy` (ADR-0090) logs in with to mint
+#      browser sessions, so a workflow that leaks it compromises LakeFS
+#      entirely AND rotating it means updating the shim's ASM properties and
+#      deleting the shim pod (its env binds once at pod start).
+#    ⇒ Mount it only into steps that genuinely talk to LakeFS, never into a
+#      step that runs untrusted or user-supplied code, and never echo it.
+#
+# Scripts authenticate to the LakeFS API with HTTP BASIC using the pair
+# (verified in-cluster). Workflow pods can reach
+# `http://lakefs.mlops.svc.cluster.local:80` directly — the only Cilium policy
+# in `mlops` (environments/prod/deps/argo-workflows/ciliumnetworkpolicy.yaml)
+# selects `app.kubernetes.io/instance: argo-workflows`, which workflow pods do
+# not carry, so they are not in enforcement mode. If a namespace-wide
+# default-deny is ever added to `mlops`, workflow pods will need their own
+# additive allow.
+#
+# Consumption pattern — explicit `secretKeyRef`, one key at a time:
+#
+#   - name: lakefs-commit
+#     container:
+#       image: alpine/curl:latest
+#       env:
+#         - name: LAKEFS_ACCESS_KEY_ID
+#           valueFrom:
+#             secretKeyRef:
+#               name: lakefs-proxy-admin
+#               key: access-key-id
+#               optional: false          # ⚠️ never `true` — see below
+#         - name: LAKEFS_SECRET_ACCESS_KEY
+#           valueFrom:
+#             secretKeyRef:
+#               name: lakefs-proxy-admin
+#               key: secret-access-key
+#               optional: false
+#       command: [sh, -c]
+#       args:
+#         - |
+#           curl -fsS -u "$LAKEFS_ACCESS_KEY_ID:$LAKEFS_SECRET_ACCESS_KEY" \
+#             http://lakefs.mlops.svc.cluster.local/api/v1/repositories
+#
+# ⚠️ Do NOT reach for `envFrom: [secretRef: {name: lakefs-proxy-admin}]` as a
+# shortcut. `envFrom` derives env NAMES from the Secret KEYS, and these are
+# hyphenated (`access-key-id`) — not valid environment-variable identifiers.
+# Kubernetes SILENTLY SKIPS them and only records an `InvalidVariableNames`
+# event on the pod, so the step starts with no credential at all and fails
+# with an unauthenticated 401 that looks like a bad key.
+#
+# ⚠️ `optional: false` is not decoration. Env from a secretKeyRef binds ONCE
+# at pod start and never refreshes; an optional ref lets a pod that beats ESO
+# capture an EMPTY credential and 401 forever against a key that is perfectly
+# valid (the context7 MCP_TOKEN incident — see ai-helm CLAUDE.md, and the same
+# reasoning behind lakefs-proxy's own env refs).
+#
+# For the S3 gateway (lakectl / boto / pandas `s3://`) use the SAME pair as
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY with endpoint
+# `http://lakefs.mlops.svc.cluster.local:80`.
+#
+# External access is not an option here: the only public route to LakeFS is
+# through oauth2-proxy + the shim, which is a browser-session path.
+# ────────────────────────────────────────────────────────────────────────
