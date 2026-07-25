@@ -19,3 +19,5 @@ to **do** something. See the [docs index](../README.md) for the other categories
 | [service-endpoint-decommission.md](service-endpoint-decommission.md) | Decommission checklist for cluster-internal service endpoints |
 | [opencode-sandboxing.md](opencode-sandboxing.md) | Why the opencode permission config is not a sandbox; containment options |
 | [cnpg-reconcile-stall.md](cnpg-reconcile-stall.md) | CNPG Managed role password not reconciled after secret change |
+| [lakefs-sso.md](lakefs-sso.md) | LakeFS Keycloak SSO via the `lakefs-proxy` session shim (ADR-0090): flow, config, admin-credential runbook, troubleshooting |
+| [mlops-app-auth.md](mlops-app-auth.md) | Argo Workflows SSO/RBAC (`code:7` vs `code:5`, the impersonation-token name) + MLflow OIDC (the plugin's own DB) |
