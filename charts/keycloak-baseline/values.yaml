@@ -155,9 +155,33 @@ keycloak-config:
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "argo-workflows"
 
-    # NOTE: the `lakefsProxy` clientScope was REMOVED (ADR-0085 revised) — the
-    # LakeFS oauth2-proxy gate was dropped (LakeFS OSS can't consume external
-    # SSO; native access-key login is used instead).
+    # LakeFS: consumed by the DEDICATED lakefs-auth oauth2-proxy instance in
+    # front of the lakefs-proxy SSO shim (ADR-0090). ⚠️ The `lakefs_roles`
+    # claim is NOT authorization-bearing today: LakeFS OSS (`rbac: none`) is
+    # single-user, so every SSO user lands on the one shared `admin` identity
+    # and LakeFS itself never sees this claim. It is kept so a future
+    # LakeFS-side RBAC (or a policy check in the shim) has a claim to read.
+    lakefsProxy:
+      name: "lakefs-proxy"
+      description: "LakeFS oauth2-proxy roles scope"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        - name: lakefs_roles
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "false"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "lakefs_roles"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "lakefs-proxy"
 
     mlflow:
       name: "mlflow"
@@ -309,11 +333,52 @@ keycloak-config:
         - name: "viewer"
           description: "Argo Workflows read-only"
 
-    # NOTE: the `lakefsProxy` client (LakeFS oauth2-proxy) was REMOVED
-    # (ADR-0085 revised). LakeFS OSS can't consume external SSO (Enterprise-
-    # only), so the oauth2-proxy gate was dropped in favour of LakeFS's native
-    # access-key login. (The manually-created live `lakefs_proxy` client can be
-    # deleted out-of-band; this realm config isn't currently reconciled.)
+    # LakeFS: OSS has no usable native OIDC (Enterprise/"Fluffy" only —
+    # `auth.oidc.*` is rejected at startup, ADR-0085/ADR-0090). This client is
+    # consumed by the DEDICATED lakefs-auth oauth2-proxy instance, which sits
+    # in front of the lakefs-proxy SSO shim (charts/lakefs-proxy). The shim
+    # then logs into LakeFS as the bootstrap admin — LakeFS's own IAM stays
+    # single-user, so this client authenticates people but does NOT give them
+    # distinct LakeFS identities (ADR-0090 consequences).
+    #
+    # ⚠️ This realm config is NOT currently reconciled by anything on-cluster
+    # (keycloak-config-cli isn't wired to it), so the LIVE `lakefs-proxy`
+    # client must be created/adjusted MANUALLY to match — in particular the
+    # redirect URI and web origin below.
+    lakefsProxy:
+      enabled: true
+      clientId: "lakefs-proxy"
+      name: "LakeFS (oauth2-proxy)"
+      description: ""
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris:
+        - "https://lakefs.mlops.ai.camer.digital/oauth2/callback"
+      webOrigins:
+        - "https://lakefs.mlops.ai.camer.digital"
+      rootUrl: "https://lakefs.mlops.ai.camer.digital"
+      baseUrl: "/"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - lakefs-proxy
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+      roles:
+        - name: "user"
+          description: "LakeFS gated access"
 
     # MLflow: this specific upstream chart bundles the mlflow-oidc-auth
     # plugin natively — real per-user Keycloak identity + group RBAC inside
