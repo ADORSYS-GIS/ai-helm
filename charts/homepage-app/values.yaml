@@ -146,6 +146,14 @@ homepage:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          # kubelet's httpGet probe connects to the pod IP directly and (with
+          # no explicit httpHeaders) sends that IP as the Host header — which
+          # HOMEPAGE_ALLOWED_HOSTS doesn't list, so Homepage's own host-header
+          # validation 400s the probe ("Host validation failed for:
+          # <pod-ip>:3000"), found live. Real browser traffic is unaffected
+          # (oauth2-proxy's reverse-proxy mode forwards the original
+          # hub.ai.camer.digital Host header) — this only fixes the probes,
+          # not a real request path.
           probes:
             liveness:
               enabled: true
@@ -154,6 +162,9 @@ homepage:
                 httpGet:
                   path: /api/healthcheck
                   port: 3000
+                  httpHeaders:
+                    - name: Host
+                      value: "hub.ai.camer.digital"
                 initialDelaySeconds: 10
                 periodSeconds: 30
                 timeoutSeconds: 5
@@ -164,6 +175,9 @@ homepage:
                 httpGet:
                   path: /api/healthcheck
                   port: 3000
+                  httpHeaders:
+                    - name: Host
+                      value: "hub.ai.camer.digital"
                 periodSeconds: 10
                 timeoutSeconds: 3
           resources:
