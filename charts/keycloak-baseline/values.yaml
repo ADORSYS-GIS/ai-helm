@@ -183,6 +183,41 @@ keycloak-config:
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "lakefs-proxy"
 
+    # Longhorn (Hetzner GPU-node storage UI): consumed by the DEDICATED
+    # longhorn-auth oauth2-proxy instance in front of the Longhorn UI
+    # (ADR-0093). Unlike lakefs_roles (currently inert), this claim IS
+    # authorization-bearing — oauth2-proxy's `--allowed-group=admin` +
+    # `--oidc-groups-claim=longhorn_roles` actually rejects login for a user
+    # without the `admin` client role, because the Longhorn UI grants full
+    # volume/node management (including delete) and has no native auth of
+    # its own.
+    longhornProxy:
+      name: "longhorn-proxy"
+      description: "Longhorn oauth2-proxy roles scope"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        - name: longhorn_roles
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            # MUST be multivalued — a bare string can't be matched by
+            # oauth2-proxy's --allowed-group against a JSON array claim (see
+            # the mlflow_roles comment above for the exact failure mode this
+            # avoids: ADR-0085 found multivalued:false silently rejects every
+            # login, even for a correctly-role-assigned user).
+            multivalued: "true"
+            userinfo.token.claim: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            claim.name: "longhorn_roles"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "longhorn-proxy"
+
     mlflow:
       name: "mlflow"
       description: "MLflow OIDC roles scope"
@@ -379,6 +414,48 @@ keycloak-config:
       roles:
         - name: "user"
           description: "LakeFS gated access"
+
+    # Longhorn (Hetzner GPU-node storage UI, ADR-0092/0093): the Longhorn UI
+    # ships no authentication of its own AND grants full volume/node
+    # management (including delete), so — unlike homepageProxy below — this
+    # is NOT a network-gate-only client: it carries a real client role
+    # (`admin`) mapped into the longhorn_roles claim, and oauth2-proxy
+    # actually enforces it (--allowed-group=admin). Grant the `admin` role
+    # only to operators who should be able to delete volumes.
+    longhornProxy:
+      enabled: true
+      clientId: "longhorn-proxy"
+      name: "Longhorn (oauth2-proxy)"
+      description: ""
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      redirectUris:
+        - "https://longhorn.ai.camer.digital/oauth2/callback"
+      webOrigins:
+        - "https://longhorn.ai.camer.digital"
+      rootUrl: "https://longhorn.ai.camer.digital"
+      baseUrl: "/"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - longhorn-proxy
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+      roles:
+        - name: "admin"
+          description: "Longhorn UI access (full volume/node management, including delete)"
 
     # MLflow: this specific upstream chart bundles the mlflow-oidc-auth
     # plugin natively — real per-user Keycloak identity + group RBAC inside

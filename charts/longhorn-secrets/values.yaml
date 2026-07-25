@@ -1,0 +1,38 @@
+# longhorn-secrets — ExternalSecrets for the Longhorn (Hetzner GPU nodes)
+# storage UI. Leaf chart of the longhorn-auth orchestrator (ADR-0093).
+# Resolves against the cluster-scoped `ssegning-aws` ClusterSecretStore.
+
+secretStore: ssegning-aws
+refreshInterval: 1h
+
+# Values-driven ExternalSecrets — see charts/coder-secrets/templates/externalsecret.yaml
+# for the full schema (data / literals / templateData / type).
+externalSecrets:
+  # oauth2-proxy (longhorn-auth) reverse-proxy instance — own Keycloak client
+  # `longhorn-proxy`, own cookie-signing secret (NOT shared with any other
+  # app's oauth2-proxy, mirrors homepage-proxy-secret). Matches the upstream
+  # oauth2-proxy chart's `config.existingSecret` schema, which reads all
+  # three keys from ONE Secret (config.requiredSecretKeys default).
+  #
+  # cookie-secret MUST base64-decode to exactly 16, 24, or 32 raw bytes
+  # (oauth2-proxy uses it as an AES cipher key) — generate with
+  # `openssl rand -base64 32` (no extra piping — see charts/lakefs-secrets'
+  # git history for the exact failure mode of a wrongly-sized value).
+  #
+  # Populate `longhorn_proxy_client_id` / `longhorn_proxy_client_secret` /
+  # `longhorn_proxy_cookie_secret` under key `ai/camer/digital/prod/env`
+  # (out-of-band, ssegning-aws) before this Secret can sync. The client
+  # itself must be created manually in Keycloak first — see ADR-0093 and
+  # charts/keycloak-baseline/values.yaml (`longhorn-proxy` client + the
+  # `longhorn_roles` client scope).
+  longhorn-proxy-secret:
+    data:
+      - secretKey: client-id
+        key: ai/camer/digital/prod/env
+        property: longhorn_proxy_client_id
+      - secretKey: client-secret
+        key: ai/camer/digital/prod/env
+        property: longhorn_proxy_client_secret
+      - secretKey: cookie-secret
+        key: ai/camer/digital/prod/env
+        property: longhorn_proxy_cookie_secret
