@@ -223,3 +223,17 @@ homepage:
         main:
           main:
             - path: /tmp
+    # Homepage's own app code (not just docker-entrypoint.sh) tries to
+    # `mkdir /app/config/logs` at runtime and crashes with ENOENT if it
+    # can't — found live. /app/config itself is the read-only ConfigMap
+    # mount above, so a plain writable emptyDir nested at this more
+    # specific subpath shadows just that one subdirectory (a standard k8s
+    # nested-mount pattern); the rest of /app/config stays the read-only
+    # projected content.
+    configLogs:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          main:
+            - path: /app/config/logs
