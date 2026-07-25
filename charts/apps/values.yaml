@@ -1257,6 +1257,26 @@ applications:
     destination:
       namespace: mlops
 
+  # --- Homepage central-hub App-of-Apps orchestrator (ADR-0089) ---
+  # Renders three child Application CRs (homepage-secrets wave 0,
+  # homepage-auth wave 1, homepage-app wave 2) from charts/homepage. As a
+  # control object (it emits Application CRs) this entry is
+  # controlPlane: true — the children themselves target home-remote. OCI
+  # mode (ADR-0055): orchestrator chart floats from OCI, as do both leaf
+  # charts (homepage-secrets, homepage-app — both this repo's own charts).
+  # homepage-auth is the one pinned classic-repo child (upstream
+  # oauth2-proxy), gating Homepage via a dedicated reverse-proxy instance —
+  # Homepage ships no authentication of its own, unlike LakeFS/MLflow/Argo
+  # Workflows (ADR-0085), so this is NOT a redundant second login.
+  - name: homepage
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: homepage
+    releaseName: homepage
+    destination:
+      namespace: homepage
+
   - name: mlflow
     finalizers:
       - resources-finalizer.argocd.argoproj.io
