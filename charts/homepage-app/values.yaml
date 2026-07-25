@@ -143,7 +143,7 @@ homepage:
             HOMEPAGE_ALLOWED_HOSTS: "hub.ai.camer.digital"
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           probes:
@@ -199,3 +199,13 @@ homepage:
           main:
             - path: /app/config
               readOnly: true
+    # readOnlyRootFilesystem: true above (Trivy KSV-0014) needs somewhere
+    # writable for Node/Next.js's own temp/cache use — a plain emptyDir at
+    # /tmp, same pattern ai-models-info uses for nginx's scratch dirs.
+    tmp:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          main:
+            - path: /tmp
