@@ -69,6 +69,17 @@ homepage:
   # kubernetes.yaml is NOT expected to vary per env, so it's set here, not in
   # ai-helm-values: `mode: cluster` uses the in-cluster API + the RBAC above;
   # `ingress: enabled: true` turns on Ingress/HTTPRoute-annotation discovery.
+  #
+  # ⚠️ ALL NINE of Homepage's own skeleton config files must be present
+  # here, not just the ones we actually populate. Found live: on startup
+  # Homepage checks each expected file under /app/config and, if missing,
+  # tries to self-heal by copying its own skeleton default in — which
+  # crashes the container (EROFS) since /app/config is the read-only
+  # ConfigMap mount below. docker.yaml/proxmox.yaml/custom.css/custom.js
+  # content below is copied verbatim from gethomepage/homepage's own
+  # src/skeleton/ (docker.yaml and proxmox.yaml are fully commented-out
+  # example config — functionally empty; custom.css/custom.js are
+  # genuinely empty files upstream too).
   # ────────────────────────────────────────────────────────────────────────
   configMaps:
     content:
@@ -86,6 +97,14 @@ homepage:
           mode: cluster
           ingress:
             enabled: true
+        docker.yaml: |
+          # For configuration options and examples, please see:
+          # https://gethomepage.dev/configs/docker/
+        proxmox.yaml: |
+          # For configuration options and examples, please see:
+          # https://gethomepage.dev/configs/proxmox/
+        custom.css: ""
+        custom.js: ""
 
   # ────────────────────────────────────────────────────────────────────────
   # Deployment + Service. No chart-owned ingress (see Chart.yaml) and no
