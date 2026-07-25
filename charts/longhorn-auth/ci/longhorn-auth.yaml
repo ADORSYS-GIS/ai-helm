@@ -46,11 +46,19 @@ extraArgs:
   skip-provider-button: "true"
   set-xauthrequest: "true"
   silence-ping-logging: "true"
-  # Role restriction (ADR-0093): the longhorn-proxy Keycloak client scope is
+  # Role restriction (ADR-0093): the longhorn_groups Keycloak client scope is
   # a DEFAULT client scope (charts/keycloak-baseline), so the longhorn_roles
-  # claim is present in every token issued to this client without needing an
-  # explicit --scope flag here. A user with no `admin` client role gets an
+  # claim is present in every token issued to this client regardless of what
+  # scope is requested. A user with no `admin` client role gets an
   # empty/absent claim and --allowed-group rejects the login.
+  #
+  # --scope is set explicitly (openid/email/profile are oauth2-proxy's own
+  # defaults for this provider, restated here because --scope REPLACES the
+  # whole list rather than adding to it) so the auth request carries the
+  # real, named longhorn_groups scope instead of oauth2-proxy's own implicit
+  # "groups" scope (auto-added only when --scope is unset AND allowed_group
+  # is set — a generic value unrelated to this client's actual scope).
+  scope: "openid email profile longhorn_groups"
   oidc-groups-claim: "longhorn_roles"
   allowed-group: "admin"
 
