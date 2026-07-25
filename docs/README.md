@@ -65,6 +65,9 @@ Step-by-step runbooks, setup guides, and break-glass recipes.
 | [`mongodb-restoration-guide.md`](playbooks/mongodb-restoration-guide.md) | Restore a MongoDB backup into the `librechat-db` StatefulSet |
 | [`service-endpoint-decommission.md`](playbooks/service-endpoint-decommission.md) | Decommission checklist for cluster-internal service endpoints |
 | [`opencode-sandboxing.md`](playbooks/opencode-sandboxing.md) | Why the opencode permission config is **not** a sandbox; the containment options + recommendation |
+| [`cnpg-reconcile-stall.md`](playbooks/cnpg-reconcile-stall.md) | CNPG `Managed` role password not reconciled after a secret change |
+| [`lakefs-sso.md`](playbooks/lakefs-sso.md) | **LakeFS Keycloak SSO** via the `lakefs-proxy` session shim (ADR-0090): why LakeFS OSS 1.83 has no OIDC and is single-user, the securecookie relay, the admin-credential runbook, symptom→fix table |
+| [`mlops-app-auth.md`](playbooks/mlops-app-auth.md) | **Argo Workflows SSO/RBAC + MLflow OIDC** (ADR-0085): `code:7` vs `code:5`, the `<sa>.service-account-token` name, Argo Events CRD stubs, the `mlflow-oidc-auth` plugin's dedicated DB |
 
 ---
 

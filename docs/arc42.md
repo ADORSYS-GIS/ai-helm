@@ -187,8 +187,9 @@ flowchart TB
 | `restate` | Durable-execution runtime (OCI chart) — foundation for the A2A agent platform (ADR-0081) | Direct |
 | `coder` → `coder-secrets`/`-app` | AI-agent dev-workspace platform, Keycloak OIDC | App-of-Apps (ADR-0083) |
 | `lakefs` → `lakefs-secrets`/`-app`/`-proxy`/`-auth` | Data-lake version control; S3 blockstore (Hetzner Object Storage); Keycloak SSO via oauth2-proxy → the first-party `lakefs-proxy` session shim → LakeFS (OSS rejects `auth.oidc.*` and is single-user — shared `admin` identity) | App-of-Apps (ADR-0085, ADR-0090) |
-| `argo-workflows` → `argo-workflows-secrets`/`-app` | Pipeline orchestration; native Keycloak SSO; S3 artifact repository | App-of-Apps (ADR-0085) |
-| `mlflow` → `mlflow-secrets`/`-app` | Experiment tracking + model registry; native Keycloak OIDC (bundled `mlflow-oidc-auth`); S3 artifact store | App-of-Apps (ADR-0085) |
+| `lakefs-proxy` | The LakeFS SSO session shim — first-party Rust/axum service (`ghcr.io/adorsys-gis/lakefs-proxy`, private, distroless, non-root): turns oauth2-proxy's `X-Auth-Request-Email` into a real LakeFS session by logging in as the bootstrap admin and relaying LakeFS's own unmintable `securecookie`; loop-guarded, ClusterIP-only ([playbook](./playbooks/lakefs-sso.md)) | Leaf, bjw-template (ADR-0090) |
+| `argo-workflows` → `argo-workflows-secrets`/`-app` | Pipeline orchestration; native Keycloak SSO (argo-server impersonates a delegate SA — RBAC + CRD stubs in the deps overlay); S3 artifact repository ([playbook](./playbooks/mlops-app-auth.md)) | App-of-Apps (ADR-0085) |
+| `mlflow` → `mlflow-secrets`/`-app` | Experiment tracking + model registry; native Keycloak OIDC (bundled `mlflow-oidc-auth`, own `mlflow_oidc` DB); S3 artifact store ([playbook](./playbooks/mlops-app-auth.md)) | App-of-Apps (ADR-0085) |
 | `homepage` → `homepage-secrets`/`-auth`/`-app` | Central-hub dashboard for every app on the platform; hybrid curated + k8s-auto-discovery content; dedicated oauth2-proxy gate (Homepage has no login of its own — contrast with `lakefs`, which needs a session shim behind the proxy, ADR-0090) | App-of-Apps (ADR-0089) |
 | `observability` → children | LGTM + Alloy + grafana-operator + redis-exporter | App-of-Apps (ADR-0020) |
 | `observability-dashboards` | Dashboards + folders + alerting as grafana-operator CRs (Python-generated) | Direct (ADR-0008/0059) |
@@ -510,6 +511,9 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Per-user chat-content trace attribution is structurally impossible** (ADR-0079) | No per-user Tempo content panel | Accepted; ext-proc precedes Authorino by design — don't re-attempt |
 | **A2A agent platform is Proposed, not built (ADR-0081)** | ~9–13+ wk of net-new Rust/Restate infra; several open questions | Restate runtime already deployed; crate-maturity + cost-model spikes pending |
 | **GitLab multi-forge repo-auth in progress** (Epics #588/#591) | CI auth + code review limited to GitHub until landed | Tickets #586–#590 scoped; values-repo-first |
+| **`charts/keycloak-baseline` is not reconciled by anything** | No ArgoCD app / keycloak-config-cli / `KeycloakRealmImport` — the `camer-digital` realm is manually managed, so the chart can drift silently from the live realm (live mlops clients are `argo_workflows` / `lakefs_proxy` / `mlflow`, underscores; the chart used hyphens) | Change Keycloak in the console, then mirror into the chart; documented in [`mlops-app-auth.md`](./playbooks/mlops-app-auth.md) |
+| **LakeFS in-app authorization + audit are shared** (ADR-0090) | Every SSO user acts as the one `admin` LakeFS identity; all commits attributed to `admin` | Accepted — LakeFS OSS is single-user; per-person record via the oauth2-proxy/shim logs. Closing it needs Enterprise or another product |
+| **Rust images scan empty under Trivy without `cargo-auditable`** | A green scan covers only the base OS — zero crates inspected | `lakefs-proxy` builds with `cargo-auditable` (Trivy then reports a `rustbinary` target); apply to any future Rust image |
 
 ---
 
