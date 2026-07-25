@@ -419,6 +419,24 @@ applications:
     destination:
       namespace: longhorn-system
 
+  # --- Longhorn UI auth front door (oauth2-proxy, App-of-Apps) ---
+  # The Longhorn UI ships no authentication of its own and grants full
+  # volume/node management (including delete) — gated by a dedicated
+  # oauth2-proxy instance (own Keycloak client `longhorn-proxy`), restricted
+  # to the `longhorn_roles` claim (NOT any authenticated user — contrast with
+  # homepage-auth). See ADR-0093. controlPlane: true — it emits Application
+  # CRs (2 children: longhorn-secrets + longhorn-auth), both targeting
+  # home-remote / longhorn-system (colocated with the existing, separate
+  # `aii-longhorn` Application, ADR-0092, whose UI this gates).
+  - name: longhorn-auth
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: longhorn-auth
+    releaseName: longhorn-auth
+    destination:
+      namespace: longhorn-system
+
   - name: aieg-crd
     finalizers:
       - resources-finalizer.argocd.argoproj.io
