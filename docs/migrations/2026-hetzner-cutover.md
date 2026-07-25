@@ -420,3 +420,48 @@ internal listener/cert/Service coming up, role→tier mapping value, Phase-4 met
 - converse-frontend image bumped `sha-df5d442 → sha-7b3a945` (ported from `main`'s
   King-Koufan commit, tag only — `main` is ~2.8k lines behind, pre-`ai-v2` migration;
   teammates' image bumps on `main` don't reach the cluster).
+
+## 2026-07-25 — Redis/LibreChat log-noise investigation: single-replica CoreDNS + haproxy probe spam
+
+Triggered by a user report that redis-ha and LibreChat were "complaining a lot." Two
+unrelated root causes, found in the same pass:
+
+### CoreDNS single replica → intermittent cluster-wide DNS outages ⚠️ live-only fix
+CoreDNS on the Hetzner cluster (`kube-system`, k3s-bundled addon) was running as a
+**single replica** and had crashed twice in one day (`connection refused` /
+`apiserver not ready` during a brief control-plane blip). Each crash is a
+full-cluster DNS outage until the one pod restarts. This is what made
+`redis-ha-sentinel` log repeated `Failed to resolve hostname
+redis-ha-{sentinel,redis}-1.*.svc.cluster.local` bursts, and correlated directly
+with LibreChat's `[RedisEventTransport] Failed to subscribe to stream:...:
+Connection is closed` errors (~15/day across both pods).
+
+Fix applied live: `kubectl -n kube-system scale deployment coredns --replicas=2`.
+CoreDNS's pod template already carries `topologySpreadConstraints`/anti-affinity,
+so the two replicas landed on different nodes (`cp-1`, `cp-3`) with no further
+changes needed. **This is NOT durable** — nothing in `hetzner-k8s` or `home-os`
+reconciles this Deployment's replica count, so a node rebuild/reprovision would
+silently drop it back to 1. If it recurs, either re-scale live again or add a
+proper fix to `install-platform.sh` (`hetzner-k8s`).
+
+### haproxy liveness/readiness probes spamming SSL-handshake errors ✅ fixed durably
+Separately (and much more frequently — continuous, not intermittent), the
+`redis-ha-haproxy` write-router's own k8s `livenessProbe`/`readinessProbe` were
+plain `tcpSocket: {port: 6379}` checks against the frontend's TLS-only bind
+(`bind *:6379 ssl ...`, see [06 Networking & TLS](../architecture/06-networking-tls.md)
+"Why the master-router"). A `tcpSocket` probe just opens and closes a raw TCP
+connection without completing the TLS handshake HAProxy expects there, so **every
+probe tick logged `Connection closed during SSL handshake`** — measured live at
+~93% of the deployment's total log volume (1200/1285 lines over a 2h window),
+drowning out real signal.
+
+Fixed durably in `home-os` (not this repo — redis-ha is deployed there, ai-helm
+only consumes it): [home-os#116](https://github.com/WhyThatFunction/home-os/pull/116)
+(tracking: [home-os#117](https://github.com/WhyThatFunction/home-os/issues/117))
+adds a dedicated cleartext `healthz` HTTP frontend (`monitor-uri /healthz` on a
+separate port, `:8404`) purely for the kubelet's own probes, leaving the real
+`:6379` write path's TLS posture (`self-signed-ca`) completely untouched. Verified
+`helm template` + `haproxy -c` + a live container test before merge; ArgoCD
+auto-synced (`redis-ha` app, `selfHeal: true`) and the rollout was confirmed live —
+90+ seconds of fresh logs across multiple probe cycles on both new pods showed
+zero SSL-handshake errors post-fix.
