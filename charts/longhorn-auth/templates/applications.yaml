@@ -67,7 +67,17 @@ spec:
         valueFiles:
           - $values/environments/{{ $a.env | default "prod" }}/values/longhorn-auth.yaml
         ignoreMissingValueFiles: true
-    # Source B — $values ref: the workload values file (ai-helm-values, ADR-0056).
+    {{- if .Values.auth.depsOverlay }}
+    # Source B — app-scoped deps (ingress Certificate) via the per-env
+    # kustomize overlay in ai-helm-values; issuer patched per environment.
+    # There is no "app" child in this orchestrator (unlike homepage) — the
+    # Longhorn workload is the separate aii-longhorn Application (ADR-0092),
+    # so the deps that route to THIS release's Service live here instead.
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      path: {{ .Values.auth.depsOverlay | quote }}
+    {{- end }}
+    # Source C — $values ref: the workload values file (ai-helm-values, ADR-0056).
     - repoURL: {{ $a.repoURL | quote }}
       targetRevision: {{ $a.targetRevision | quote }}
       ref: values
