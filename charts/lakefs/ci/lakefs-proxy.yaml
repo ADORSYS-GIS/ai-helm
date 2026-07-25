@@ -1,0 +1,40 @@
+# CI / reference values for this repo's own lakefs-proxy leaf chart
+# (charts/lakefs-proxy, the LakeFS SSO shim — ADR-0090).
+#
+# This file serves TWO purposes:
+# 1. Human reference copy — kept structurally in sync with the PRIVATE
+#    ai-helm-values repo file at environments/prod/values/lakefs-proxy.yaml
+#    (NOT auto-linted: the top-level repo CI loop only picks up
+#    charts/<chart>/ci/*-values.yaml, and this file is named *-proxy.yaml).
+# 2. Documentation of the deployed image tag + the exact bjw-template value
+#    paths the env override writes at.
+#
+# ⚠️ Everything nests under `lakefs-proxy:` — bjw-template is consumed as an
+# ALIASED subchart (charts/lakefs-proxy/Chart.yaml), so that key IS the
+# subchart's `.Values` root.
+
+lakefs-proxy:
+  controllers:
+    main:
+      containers:
+        main:
+          image:
+            repository: ghcr.io/adorsys-gis/lakefs-proxy
+            # PRIVATE package — pulled with the `lakefs-ghcr` dockerconfigjson
+            # materialised in `mlops` by charts/lakefs-secrets.
+            # `latest` only until the first real release tag exists; pin it
+            # here (this is the image-updater write-back target, ADR-0055).
+            tag: "latest"
+          env:
+            # In-cluster LakeFS Service: release `lakefs`, ns `mlops`,
+            # Service port 80 → container 8000.
+            LAKEFS_URL: http://lakefs.mlops.svc.cluster.local:80
+            LISTEN_ADDR: 0.0.0.0:8080
+            RUST_LOG: info
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
