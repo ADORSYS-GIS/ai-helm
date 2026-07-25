@@ -44,6 +44,18 @@ flowchart TB
 | `lightbridge-repo-auth` DB | CNPG Postgres | **repo-owned** Cluster (`charts/lightbridge-db`); reconciled by the external CNPG operator | the `lightbridge-db` `Cluster` CR + a `repoauth` `Database` CR + managed role (not a new pod) |
 | Metrics / logs / traces | Mimir / Loki / Tempo | in-chart (`observability`) | the charts (data → S3) |
 | Object storage | Hetzner S3 (Ceph-RGW) | Hetzner | bucket prefixes + creds reference |
+| Model-cache PVCs on the Hetzner GPU nodes | Longhorn (`aii-longhorn`) | in-chart (`charts/apps`, ADR-0092) | the Application entry, pinned to `hetzner-k8s-gpu-1/2` only |
+
+⚠️ **Two separate Longhorn instances exist, same product name, different clusters
+— do not conflate them:**
+- **This repo's `aii-longhorn`** (ADR-0092) — `home-remote`, pinned via
+  `nodeSelector`/tolerations to the two hand-joined Hetzner Robot GPU nodes only
+  (which have no hcloud-csi at all). Backs model-cache PVCs for workloads on
+  those nodes.
+- **The `admin@homeos`-cluster Longhorn** — backs the `model-serving-qwen3-4b`/
+  `model-serving-zimage-turbo` RWX PVCs (`docs/patterns/self-hosted-model-serving.md`,
+  `docs/models/qwen3-4b.md`). Provisioned outside `ai-helm` entirely, on the home
+  GPU node. Untouched by anything in this repo.
 
 ### Object storage layout (one bucket, prefixes per tenant)
 

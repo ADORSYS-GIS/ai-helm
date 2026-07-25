@@ -8,11 +8,18 @@ global:
   # `privileged`; a cluster with no Pod Security admission can ignore it;
   # per-env differences override via a $values multi-source (ADR-0018).
   #
-  # Empty today: the observability stack (the workload that needs elevation)
-  # is now the `observability` App-of-Apps orchestrator (ADR-0020), which
-  # carries its OWN `podSecurityEnforce` and labels its children. Add an entry
-  # here only for a privileged workload that stays a flat charts/apps app.
-  namespacePodSecurity: {}
+  # The observability stack (the other workload that needs elevation) is the
+  # `observability` App-of-Apps orchestrator (ADR-0020), which carries its OWN
+  # `podSecurityEnforce` and labels its children — it doesn't need an entry
+  # here. Add an entry here only for a privileged workload that stays a flat
+  # charts/apps app.
+  #
+  # `longhorn-system: privileged` — Longhorn's V1 data engine needs hostPath +
+  # privileged host access (/var/lib/longhorn, /dev, iSCSI) on the GPU nodes
+  # it's scoped to; k3s/Hetzner's baseline-enforced default forbids that
+  # without this elevation (ADR-0092).
+  namespacePodSecurity:
+    longhorn-system: privileged
 
 # ────────────────────────────────────────────────────────────────────────
 # ArgoCD destination — the home-remote cluster every generated Application
@@ -371,6 +378,46 @@ applications:
             privileged: true
     destination:
       namespace: kube-system
+
+  # --- Longhorn (Hetzner Robot GPU workers — model storage) ---
+  # Distributed block storage backing model-cache PVCs on the hand-joined
+  # Hetzner Robot GPU nodes (hetzner-k8s-gpu-1/2), which have no hcloud-csi at
+  # all — Robot boxes aren't hcloud cloud VMs, so the cloud CSI node plugin is
+  # deliberately excluded there (see hetzner-k8s docs/runbooks/add-gpu-node.md).
+  # See ADR-0092 for the full rationale, the node-scoping mechanism, and why
+  # this is a SEPARATE instance from the unrelated Longhorn already running on
+  # admin@homeos (backs model-serving-qwen3-4b/zimage-turbo RWX PVCs — see
+  # docs/patterns/self-hosted-model-serving.md). Lands on home-remote (the
+  # default destination) — this app is NOT homeCluster.
+  #
+  # Every component (Manager DaemonSet, Driver Deployer, UI, and Longhorn's own
+  # dynamically-created instance-manager/engine-image pods) is pinned to the
+  # 2 GPU nodes via global.nodeSelector/tolerations + the matching
+  # defaultSettings.taintToleration/systemManagedComponentsNodeSelector — see
+  # the values file for the full explanation. This app can never schedule onto
+  # cp/worker nodes, so it cannot interfere with the working hcloud-csi setup
+  # serving PVCs there.
+  #
+  # The V1 (filesystem) data engine needs hostPath + privileged host access
+  # (/var/lib/longhorn, /dev, iSCSI) — k3s/Hetzner enforces the `baseline` Pod
+  # Security Standard cluster-wide, which forbids that, so `longhorn-system`
+  # is elevated to `privileged` in global.namespacePodSecurity above (same
+  # mechanism the observability stack uses for Alloy/node-exporter).
+  - name: longhorn
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    # Workload Helm values live in ai-helm-values (ADR-0056) — see the file for
+    # the full nodeSelector/tolerations/replica-count/reclaim-policy rationale.
+    valuesFromRepo: true
+    source:
+      repoURL: https://charts.longhorn.io
+      # Verify before bumping: `helm show chart longhorn --repo https://charts.longhorn.io --version <v>`
+      targetRevision: "1.12.0"
+      chart: longhorn
+      helm:
+        releaseName: longhorn
+    destination:
+      namespace: longhorn-system
 
   - name: aieg-crd
     finalizers:
