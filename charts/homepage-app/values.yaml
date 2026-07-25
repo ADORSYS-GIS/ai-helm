@@ -111,8 +111,21 @@ homepage:
       # own — no `kubectl rollout restart` needed.
       pod:
         automountServiceAccountToken: true
+        # runAsUser/runAsGroup MUST be set explicitly alongside runAsNonRoot.
+        # The upstream image's Dockerfile ends on `USER root` (a symbolic,
+        # non-numeric declaration — its docker-entrypoint.sh self-drops via
+        # su-exec to $PUID/$PGID, default 0, only when asked), so kubelet
+        # can't verify non-root from the image alone and refuses to start
+        # the container ("image has non-numeric user (root), cannot verify
+        # user is non-root") unless we pin a UID here. 1000 matches the
+        # image's own baked-in ownership of /app (Dockerfile
+        # `--chown=1000:1000`); the entrypoint gracefully runs directly
+        # (skips su-exec) when it's not started as root, which is the case
+        # once Kubernetes starts the container at UID 1000 directly.
         securityContext:
           runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
           seccompProfile:
             type: RuntimeDefault
       containers:
