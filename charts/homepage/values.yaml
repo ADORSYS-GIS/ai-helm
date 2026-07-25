@@ -1,0 +1,82 @@
+# homepage App-of-Apps orchestrator — renders three child Application CRs
+# (homepage-secrets + homepage-auth + homepage-app). Follows the lightbridge
+# canonical pattern (ADR-0019). The chart owns no workload resources; it owns
+# the three child Applications.
+#
+# Homepage ships no authentication of its own — homepage-auth (a dedicated
+# oauth2-proxy, reverse-proxy mode) is the front door and the sole gate.
+# See ADR-0089.
+
+# ────────────────────────────────────────────────────────────────────────
+# Shared ArgoCD wiring for all child Applications.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  project: ai
+  # OCI chart-float (ADR-0055). Two sources of truth:
+  #  • chartRegistry/chartVersionRange — the secrets + app leaf charts float
+  #    from OCI (full chart path in repoURL + chart "."; template builds
+  #    `<chartRegistry>/<chartName>`).
+  #  • repoURL/targetRevision — homepage-auth's $values ref (Source B) +
+  #    homepage-app's cert/CNP overlay (Source B) + $values ref (Source C),
+  #    from ai-helm-values@main (where environments/ lives).
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  repoURL: https://github.com/adorsys-gis/ai-helm-values
+  targetRevision: main
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: homepage
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# ────────────────────────────────────────────────────────────────────────
+# homepage-secrets child — the ExternalSecrets leaf chart (this repo).
+# Lowest sync-wave: the oauth2-proxy client-id/secret/cookie must exist
+# before homepage-auth starts.
+# ────────────────────────────────────────────────────────────────────────
+secrets:
+  enabled: true
+  appName: homepage-secrets
+  chartName: homepage-secrets   # OCI chart name
+  releaseName: homepage-secrets
+  syncWave: "0"
+
+# ────────────────────────────────────────────────────────────────────────
+# homepage-auth child — a dedicated oauth2-proxy instance (own Keycloak
+# client `homepage-proxy`, own cookie secret — not shared with any other
+# app) gating Homepage via reverse-proxy mode. Upstream chart, classic Helm
+# repo, pinned — not floated.
+# ────────────────────────────────────────────────────────────────────────
+auth:
+  enabled: true
+  appName: homepage-auth
+  releaseName: homepage-auth
+  syncWave: "1"
+  chart:
+    repoURL: https://oauth2-proxy.github.io/manifests
+    name: oauth2-proxy
+    targetRevision: "10.7.0"
+
+# ────────────────────────────────────────────────────────────────────────
+# homepage-app child — this repo's own Homepage leaf chart (OCI-floated,
+# ADR-0055, like every other in-repo chart) + the ingress Certificate/
+# CiliumNetworkPolicy via the kustomize overlay. releaseName stays
+# `homepage` so workload resource names (Service, ServiceAccount) match
+# what homepage-auth's `upstream`/the CiliumNetworkPolicy expect.
+# ────────────────────────────────────────────────────────────────────────
+app:
+  enabled: true
+  appName: homepage-app
+  chartName: homepage-app   # OCI chart name
+  releaseName: homepage
+  syncWave: "2"
+  # App-scoped deps (ingress Certificate + CiliumNetworkPolicy) — kustomize
+  # overlay in ai-helm-values, added as a second source (issuer patched per
+  # env). ADR-0018 pattern.
+  depsOverlay: environments/prod/deps/homepage

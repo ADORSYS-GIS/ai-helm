@@ -1,0 +1,30 @@
+{{- /*
+Homepage's config directory (mounted at /app/config by the `homepage`
+bjw-template alias's persistence block, see values.yaml). One ConfigMap,
+one key per file Homepage expects to find there — each key projects to a
+file of the same name when mounted at a directory path (same pattern
+charts/ai-models-info uses for its own content ConfigMap).
+
+Content (services/bookmarks/widgets/settings) is real per-deployment config
+and lives in ai-helm-values (ADR-0056) via `.Values.config.*`; only
+kubernetes.yaml is static (no per-env variance) and is set directly in this
+chart's values.yaml.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-content
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+data:
+  services.yaml: |
+    {{- toYaml .Values.config.services | nindent 4 }}
+  bookmarks.yaml: |
+    {{- toYaml .Values.config.bookmarks | nindent 4 }}
+  widgets.yaml: |
+    {{- toYaml .Values.config.widgets | nindent 4 }}
+  settings.yaml: |
+    {{- toYaml .Values.config.settings | nindent 4 }}
+  kubernetes.yaml: |
+    {{- toYaml .Values.config.kubernetes | nindent 4 }}

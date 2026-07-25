@@ -1,0 +1,52 @@
+{{- /*
+ServiceAccount + read-only ClusterRole/ClusterRoleBinding for Homepage's
+Kubernetes service-discovery (k8s auto-discovery half of the hybrid content
+mode, ADR-0089). Rule set is upstream's own documented shape
+(https://gethomepage.dev/installation/k8s/) — get/list only, no write access
+anywhere. Deliberately omits `traefik.io` IngressRoutes and `metrics.k8s.io`
+(unused in this cluster — plain `Ingress` + no metrics-server-backed widgets).
+
+Kept as this chart's own template (not bjw-template's native serviceAccount:
+registry) so the ServiceAccount and the RBAC objects it needs stay in one
+file — see values.yaml `controllers.main.serviceAccount.name` for how the
+Deployment picks up this exact ServiceAccount by literal name.
+*/ -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccountName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-discovery
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["extensions", "networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes", "gateways"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-discovery
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-discovery
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}

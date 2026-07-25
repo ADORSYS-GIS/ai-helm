@@ -1,0 +1,53 @@
+# CI / reference values for the upstream oauth2-proxy chart
+# (https://oauth2-proxy.github.io/manifests, chart oauth2-proxy).
+#
+# This file serves TWO purposes:
+# 1. Human reference copy — kept structurally in sync with the PRIVATE
+#    ai-helm-values repo file at environments/prod/values/homepage-auth.yaml
+#    (NOT auto-linted: the top-level repo CI loop only picks up
+#    charts/<chart>/ci/*-values.yaml, and this file is named *-auth.yaml).
+# 2. Documentation of the exact chart schema decisions (config.existingSecret,
+#    upstream/redirect via extraArgs, no chart-owned ingress).
+#
+# A DEDICATED instance for Homepage (own Keycloak client `homepage-proxy`,
+# own cookie secret) — NOT shared with any other app (ADR-0089, mirrors the
+# ADR-0085 lakefs-auth shape — see that ADR + charts/lakefs git history for
+# the "reverse-proxy mode" vs "ForwardAuth" lesson: reverse-proxy mode is
+# required so oauth2-proxy never touches the upstream's own responses).
+# Runs in full REVERSE-PROXY mode: the depsOverlay ingress routes ALL of the
+# Homepage hostname (`/`) to this release's Service
+# `homepage-auth-oauth2-proxy:80`, and oauth2-proxy proxies authenticated
+# traffic to `upstream` (the in-cluster Homepage Service) while redirecting
+# unauthenticated document requests to Keycloak. Unlike LakeFS, Homepage has
+# NO native login of its own, so this is the sole auth gate — not a
+# redundant second one.
+
+config:
+  existingSecret: homepage-proxy-secret
+  cookieName: "_homepage_proxy"
+  emailDomains:
+    - "*"
+
+extraArgs:
+  provider: "keycloak-oidc"
+  oidc-issuer-url: "https://auth.verif.fyi/realms/camer-digital"
+  redirect-url: "https://hub.ai.camer.digital/oauth2/callback"
+  upstream: "http://homepage.homepage.svc.cluster.local:3000"
+  reverse-proxy: "true"
+  cookie-secure: "true"
+  skip-provider-button: "true"
+  set-xauthrequest: "true"
+  silence-ping-logging: "true"
+
+# No chart-owned ingress — the depsOverlay Ingress (base/deps/homepage/
+# ingress.yaml) routes the whole hostname to this release's Service.
+ingress:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

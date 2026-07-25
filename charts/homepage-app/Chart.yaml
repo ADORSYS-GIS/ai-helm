@@ -1,0 +1,36 @@
+apiVersion: v2
+name: homepage-app
+description: |
+  Homepage (gethomepage.dev) — the central-hub dashboard listing every app
+  on the platform, with live status widgets. Leaf chart of the homepage
+  App-of-Apps orchestrator (ADR-0089, sync-wave 2). Sits entirely behind the
+  homepage-auth oauth2-proxy reverse-proxy — this chart owns NO ingress.
+
+  Deployment/Service come from bjw-template (local fork of bjw-s
+  app-template@4.6.2); this chart's own templates/rbac.yaml adds the
+  ServiceAccount + ClusterRole/ClusterRoleBinding Homepage's Kubernetes
+  service-discovery needs (upstream's own documented shape,
+  gethomepage.dev/installation/k8s/ — get/list only, no write access).
+type: application
+version: 1.0.0
+appVersion: "1.13.2"
+keywords:
+  - homepage
+  - dashboard
+  - central-hub
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: bjw-template
+    version: '4.6.2'
+    repository: file://../bjw-template
+    alias: homepage
+
+  # `common` kept only for `common.labels.standard` used in templates/rbac.yaml.
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
