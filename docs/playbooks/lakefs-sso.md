@@ -121,6 +121,29 @@ change the realm. The live client is `lakefs_proxy` with an underscore; the
 chart's hyphenated `lakefs-proxy` never matched. Change Keycloak in the admin
 console, then mirror it into the chart so the two do not drift further apart.
 
+## The admin credential has a second consumer: Argo Workflows
+
+`lakefs-proxy-admin` is not only the shim's login. Because LakeFS OSS with
+`rbac: none` supports exactly **one** credential — its credential-management
+API answers `501 Not Implemented` — any Argo Workflows step that talks to
+LakeFS mounts *this same Secret*. It is deliberately not copied: a copy would
+be a second rotation target and would hide the blast radius.
+
+Two things follow:
+
+- **Rotating it affects more than the shim.** A workflow pod picks up the new
+  value on its next run, so workflows are self-healing here; the shim is not
+  (its env binds once at pod start), which is why the runbook below ends with
+  "delete the shim pod".
+- **Its blast radius now includes workflow code.** It is the LakeFS `admin`
+  user with no lesser role to drop to, so a workflow that leaks it compromises
+  LakeFS entirely. Mount it only into steps that genuinely talk to LakeFS.
+
+Consumption pattern (explicit `secretKeyRef`, `optional: false`, HTTP Basic
+against `http://lakefs.mlops.svc.cluster.local:80`) is documented in
+[`mlops-app-auth.md`](./mlops-app-auth.md)
+([ADR-0091](../adr/0091-mlops-programmatic-access-and-bearer-audience.md)).
+
 ## Runbook — rotate or recover the LakeFS admin credential
 
 The shim cannot log in without `lakefs_admin_access_key_id` /
