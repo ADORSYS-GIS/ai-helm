@@ -6,7 +6,7 @@
 #    (NOT auto-linted: the top-level repo CI loop only picks up
 #    charts/<chart>/ci/*-values.yaml, and this file is named *-app.yaml).
 # 2. Documentation of the exact chart schema decisions (existingSecret +
-#    secretKeys, S3 blockstore via extraEnvVars, ForwardAuth-gated ingress).
+#    secretKeys, S3 blockstore via extraEnvVars, no chart-owned ingress).
 #
 # Metadata DB: the existing lightbridge-main-db CNPG cluster (converse ns),
 # via the `lakefs` managed role/Database (charts/lightbridge-db). Blockstore:
@@ -14,11 +14,16 @@
 # ssegning-k8s-state bucket, reusing the platform's existing S3 credentials
 # (same material CNPG backups + LibreChat's S3 file storage use).
 #
-# Auth: LakeFS OSS has no functional native OIDC (Enterprise-only, ADR-0085)
-# — the whole app sits behind the lakefs-auth oauth2-proxy instance via a
-# Traefik ForwardAuth Middleware (attached below via ingress annotation, CR
-# shipped in the depsOverlay). LakeFS's own internal user/credential system
-# (access-key/secret-key) is untouched by this — see ADR-0085 consequences.
+# Auth: LakeFS OSS has no usable native OIDC (Enterprise/"Fluffy" only —
+# `auth.oidc.*` is rejected at startup, ADR-0085/ADR-0090). Keycloak SSO comes
+# from a two-hop chain in front of this workload:
+#   browser → lakefs-auth (oauth2-proxy, reverse-proxy mode)
+#           → lakefs-proxy (the SSO shim, charts/lakefs-proxy)
+#           → lakefs (this chart)
+# The shim logs into LakeFS as the bootstrap admin on the authenticated user's
+# behalf and relays LakeFS's own session cookie. LakeFS OSS with `rbac: none`
+# is single-user, so all SSO users share the one `admin` identity — see the
+# ADR-0090 consequences.
 
 # Single Secret (ESO-provisioned by charts/lakefs-secrets, key `lakefs-app-secret`)
 # carrying both sensitive values the chart natively supports pulling from an
@@ -95,19 +100,17 @@ service:
   type: ClusterIP
   port: 80
 
-# The LakeFS chart owns its ingress again — direct to the LakeFS Service, no
-# oauth2-proxy, no middlewares (ADR-0085 revised). Users authenticate with
-# LakeFS's native access-key/secret-key login. The TLS Certificate (lakefs-tls)
-# is still issued by the depsOverlay (environments/base/deps/lakefs/
-# certificate.yaml); this ingress just references the resulting secret.
+# The LakeFS chart owns NO ingress (ADR-0090). All external traffic for
+# lakefs.mlops.ai.camer.digital enters through the lakefs-auth oauth2-proxy
+# (reverse-proxy mode) via the Ingress shipped in the depsOverlay
+# (environments/base/deps/lakefs/ingress.yaml), which routes `/` → the
+# oauth2-proxy Service; oauth2-proxy proxies to lakefs-proxy (the SSO shim),
+# which in turn proxies to this chart's in-cluster `lakefs` Service.
+# Re-enabling this chart's own ingress would publish a second, unauthenticated
+# route straight to LakeFS and bypass the SSO gate entirely.
+#
+# The TLS Certificate (lakefs-tls) is still issued by the depsOverlay
+# (environments/base/deps/lakefs/certificate.yaml) — that Ingress references
+# the resulting secret.
 ingress:
-  enabled: true
-  ingressClassName: traefik
-  hosts:
-    - host: lakefs.mlops.ai.camer.digital
-      paths:
-        - /
-  tls:
-    - secretName: lakefs-tls
-      hosts:
-        - lakefs.mlops.ai.camer.digital
+  enabled: false

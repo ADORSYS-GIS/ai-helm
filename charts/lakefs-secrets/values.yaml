@@ -51,11 +51,86 @@ externalSecrets:
         key: prod/meta/test-app
         property: s3_backup_cnpg_secret
 
-  # NOTE: the oauth2-proxy `lakefs-proxy-secret` was REMOVED (ADR-0085,
-  # revised) — LakeFS OSS has no supported SSO into its own IAM (that's
-  # Enterprise/Fluffy only), so the oauth2-proxy gate only added a second
-  # login in front of LakeFS's native access-key login with no per-user
-  # benefit. LakeFS is now exposed on its native login (per-user access keys
-  # via `lakefs superuser` / the UI). The `lakefs_proxy_*` ASM properties and
-  # the manually-created `lakefs_proxy` Keycloak client are now unused and can
-  # be deleted out-of-band.
+  # Single Secret for the DEDICATED lakefs-auth oauth2-proxy instance (client
+  # `lakefs-proxy` — NOT shared with mlflow, ADR-0085/ADR-0090): Keycloak OIDC
+  # client credentials + the session cookie signing secret. Matches the
+  # upstream oauth2-proxy chart's config.existingSecret schema, which reads all
+  # three keys (client-id/client-secret/cookie-secret) from ONE Secret
+  # (config.requiredSecretKeys default).
+  #
+  # ⚠️ cookie-secret MUST base64-decode to exactly 16, 24 or 32 RAW BYTES
+  # (oauth2-proxy uses it as an AES cipher key). The safe generator is
+  #   openssl rand -hex 16       # → 32 ASCII chars = 32 raw bytes ✅
+  # A padded base64 value (44 chars, e.g. `openssl rand -base64 32` piped
+  # through anything that re-encodes it) is read as 44 bytes and oauth2-proxy
+  # refuses to start with
+  #   "cookie_secret must be 16, 24, or 32 bytes ... but is 44 bytes"
+  # — this exact failure already cost a live debug round here (see #712).
+  # `head -c 32` on base64 TEXT truncates the encoding and is equally wrong.
+  lakefs-proxy-secret:
+    data:
+      - secretKey: client-id
+        key: ai/camer/digital/prod/env
+        property: lakefs_proxy_client_id
+      - secretKey: client-secret
+        key: ai/camer/digital/prod/env
+        property: lakefs_proxy_client_secret
+      - secretKey: cookie-secret
+        key: ai/camer/digital/prod/env
+        property: lakefs_proxy_cookie_secret
+
+  # LakeFS bootstrap-admin credentials, consumed by the lakefs-proxy SSO shim
+  # (charts/lakefs-proxy, ADR-0090) as LAKEFS_ADMIN_ACCESS_KEY_ID /
+  # LAKEFS_ADMIN_SECRET_ACCESS_KEY. The shim logs into LakeFS with these on
+  # behalf of an oauth2-proxy-authenticated browser and relays LakeFS's own
+  # `internal_auth_session` cookie back to that browser.
+  #
+  # ⚠️ These are the credentials of the SINGLE `admin` user LakeFS OSS
+  # (`rbac: none`) supports — it cannot provision additional users, so every
+  # SSO user shares this one LakeFS identity (verified live; ADR-0090
+  # consequences). Treat the pair as a platform-wide credential: rotating it
+  # (`lakefs superuser` / the LakeFS UI) means updating both ASM properties.
+  #
+  # OPERATOR PREREQ — create `lakefs_admin_access_key_id` /
+  # `lakefs_admin_secret_access_key` under `ai/camer/digital/prod/env` in
+  # ssegning-aws BEFORE this chart syncs, or the Secret sits in
+  # SecretSyncedError and lakefs-proxy stays in ContainerCreating (by design —
+  # its env refs are deliberately NOT optional).
+  lakefs-proxy-admin:
+    data:
+      - secretKey: access-key-id
+        key: ai/camer/digital/prod/env
+        property: lakefs_admin_access_key_id
+      - secretKey: secret-access-key
+        key: ai/camer/digital/prod/env
+        property: lakefs_admin_secret_access_key
+
+  # GHCR pull secret for the PRIVATE ghcr.io/adorsys-gis/lakefs-proxy image.
+  # imagePullSecrets are NAMESPACE-scoped, so the `lightbridge-repo-auth-ghcr`
+  # copy that serves `converse` can't serve `mlops` — this is a second
+  # materialisation of the SAME org-wide credential (github_username/
+  # github_token @ ai/camer/digital/prod/env), keyed on the ghcr.io HOST so one
+  # PAT covers both the adorsys-gis and vymalo orgs. Consumed via bjw's
+  # defaultPodOptions.imagePullSecrets in charts/lakefs-proxy.
+  #
+  # Owned by THIS chart rather than a shared `mlops-ghcr` so ownership stays
+  # with the single consumer; a future mlops app needing a private image can
+  # reference this Secret by name or ship its own.
+  #
+  # mergePolicy Replace ⇒ the materialised Secret carries ONLY
+  # `.dockerconfigjson`, not the raw username/token it was assembled from.
+  # The `{{ … }}` below are ESO Go-template expressions evaluated by the
+  # OPERATOR, not by Helm — Helm never templates values files, so they pass
+  # through verbatim (same mechanism as lakefs-app-secret's templateData).
+  lakefs-ghcr:
+    type: kubernetes.io/dockerconfigjson
+    mergePolicy: Replace
+    templateData:
+      .dockerconfigjson: '{"auths":{"ghcr.io":{"username":"{{ .username }}","password":"{{ .token }}","auth":"{{ printf "%s:%s" .username .token | b64enc }}"}}}'
+    data:
+      - secretKey: username
+        key: ai/camer/digital/prod/env
+        property: github_username
+      - secretKey: token
+        key: ai/camer/digital/prod/env
+        property: github_token

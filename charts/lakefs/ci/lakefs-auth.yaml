@@ -1,0 +1,58 @@
+# CI / reference values for the upstream oauth2-proxy chart
+# (https://oauth2-proxy.github.io/manifests, chart oauth2-proxy).
+#
+# This file serves TWO purposes:
+# 1. Human reference copy — kept structurally in sync with the PRIVATE
+#    ai-helm-values repo file at environments/prod/values/lakefs-auth.yaml
+#    (NOT auto-linted: the top-level repo CI loop only picks up
+#    charts/<chart>/ci/*-values.yaml, and this file is named *-auth.yaml).
+# 2. Documentation of the exact chart schema decisions (config.existingSecret,
+#    upstream/redirect via extraArgs, no chart-owned ingress).
+#
+# A DEDICATED instance for LakeFS (own Keycloak client `lakefs-proxy`, own
+# cookie secret) — NOT shared with any other app (ADR-0085/ADR-0090). Runs in
+# full REVERSE-PROXY mode: the depsOverlay Ingress routes ALL of the LakeFS
+# hostname (`/`) to this release's Service `lakefs-auth-oauth2-proxy:80`, and
+# oauth2-proxy redirects unauthenticated document requests to Keycloak, then
+# proxies authenticated traffic to `upstream`.
+#
+# ⚠️ `upstream` is the lakefs-proxy SSO SHIM, **not** LakeFS itself. Pointing
+# oauth2-proxy straight at LakeFS was the earlier (reverted) shape: LakeFS OSS
+# can't consume the proxy's identity, so the user just met LakeFS's own login
+# form behind the Keycloak one. The shim converts `X-Auth-Request-Email` into a
+# real LakeFS session (ADR-0090). Chain:
+#   browser → lakefs-auth (this) → lakefs-proxy:80 → lakefs:80
+
+config:
+  existingSecret: lakefs-proxy-secret
+  cookieName: "_lakefs_proxy"
+  emailDomains:
+    - "*"
+
+extraArgs:
+  provider: "keycloak-oidc"
+  oidc-issuer-url: "https://auth.verif.fyi/realms/camer-digital"
+  redirect-url: "https://lakefs.mlops.ai.camer.digital/oauth2/callback"
+  # The SSO shim (charts/lakefs-proxy), NOT http://lakefs.mlops…:80.
+  upstream: "http://lakefs-proxy.mlops.svc.cluster.local:80"
+  reverse-proxy: "true"
+  cookie-secure: "true"
+  skip-provider-button: "true"
+  # Required: the shim keys off X-Auth-Request-Email, which only appears with
+  # set-xauthrequest enabled.
+  set-xauthrequest: "true"
+  silence-ping-logging: "true"
+
+# No chart-owned ingress — the depsOverlay Ingress (base/deps/lakefs/
+# ingress.yaml) routes the whole hostname to this release's Service. Traffic
+# from here on stays in-cluster.
+ingress:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

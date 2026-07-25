@@ -1,0 +1,47 @@
+apiVersion: v2
+name: lakefs-proxy
+description: |
+  lakefs-proxy — the SSO shim that gives LakeFS OSS a Keycloak login.
+
+  LakeFS OSS 1.83 has NO usable native OIDC (`auth.oidc.*` is rejected at
+  startup: "has invalid keys: enabled, client_id, url, callback_base_url" —
+  that provider is Enterprise/"Fluffy" only, ADR-0085/ADR-0090). This tiny
+  Rust reverse proxy closes the gap:
+
+    browser → lakefs-auth (oauth2-proxy, Keycloak OIDC)
+            → lakefs-proxy (this chart)
+            → lakefs (upstream chart)
+
+  oauth2-proxy authenticates the human against Keycloak and forwards
+  `X-Auth-Request-Email`. lakefs-proxy sees an authenticated request that
+  carries no `internal_auth_session` cookie, logs into LakeFS as the
+  bootstrap admin over the LakeFS API, RELAYS LakeFS's own `Set-Cookie`
+  (it's a Go `securecookie` value — it cannot be hand-minted), 302s back,
+  and from then on transparently reverse-proxies to LakeFS.
+
+  ⚠️ Accepted limitation (ADR-0090): LakeFS OSS with `rbac: none` is
+  single-user — it cannot provision additional users — so every SSO user
+  shares the ONE `admin` LakeFS identity. Authentication is genuinely
+  per-Keycloak-user; in-LakeFS authorization and audit are shared.
+
+  Leaf chart of the lakefs App-of-Apps orchestrator (ADR-0085, sync-wave 3).
+  Owns NO ingress — it is only ever reached from lakefs-auth in-cluster.
+  Fully bjw-template-native (bjw-s app-template v4, local fork): Deployment
+  + Service come from the framework's declarative blocks, no custom
+  templates.
+type: application
+version: 1.0.0
+appVersion: "0.1.0"
+keywords:
+  - lakefs
+  - oidc
+  - sso
+  - reverse-proxy
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: bjw-template
+    version: '4.6.2'
+    repository: file://../bjw-template
+    alias: lakefs-proxy

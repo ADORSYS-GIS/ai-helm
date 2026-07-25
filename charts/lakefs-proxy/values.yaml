@@ -1,0 +1,119 @@
+# lakefs-proxy — the LakeFS SSO shim (ADR-0090). Leaf chart of the lakefs
+# orchestrator (ADR-0085). Sits BETWEEN lakefs-auth (oauth2-proxy) and the
+# LakeFS workload: it turns "oauth2-proxy says this request is authenticated"
+# into "LakeFS thinks this browser is logged in" by logging into LakeFS as the
+# bootstrap admin and relaying LakeFS's own session cookie.
+#
+# No ingress and no `route:` here — the only client is lakefs-auth, in-cluster.
+#
+# NOTE on scope: bjw-template is consumed as an ALIASED subchart (see
+# Chart.yaml), so everything below lives under the `lakefs-proxy:` key — that
+# whole block IS the subchart's own `.Values` root. A `{{ .Values.x }}`
+# reference inside this block can only see siblings within `lakefs-proxy:`,
+# never this file's top level. Overrides in ai-helm-values
+# (environments/prod/values/lakefs-proxy.yaml) write at this same path.
+lakefs-proxy:
+  defaultPodOptions:
+    # The proxy never talks to the Kubernetes API — don't hand it a token.
+    automountServiceAccountToken: false
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      seccompProfile:
+        type: RuntimeDefault
+    # GHCR pull secret — ghcr.io/adorsys-gis/lakefs-proxy is a PRIVATE package
+    # (memory: "repos going private", 2026-07-10). The dockerconfigjson Secret
+    # is materialised in THIS namespace by charts/lakefs-secrets
+    # (`lakefs-ghcr`, github_username/github_token @ ssegning-aws) — pull
+    # secrets are namespace-scoped, so the `converse` copy the lightbridge
+    # stack uses can't serve mlops. The credential is keyed on the ghcr.io
+    # HOST, so the same PAT covers the adorsys-gis org.
+    # ⚠️ bjw-s resolves imagePullSecrets from defaultPodOptions/pod — NOT from
+    # `global.imagePullSecrets` (memory: "bjw = defaultPodOptions").
+    imagePullSecrets:
+      - name: lakefs-ghcr
+
+  controllers:
+    main:
+      type: deployment
+      replicas: 1
+      strategy: RollingUpdate
+      containers:
+        main:
+          image:
+            repository: ghcr.io/adorsys-gis/lakefs-proxy
+            # Default/fallback only — the deployed tag is pinned in
+            # ai-helm-values (environments/prod/values/lakefs-proxy.yaml) so an
+            # image-updater write-back or a manual bump lands there, not here
+            # (ADR-0055/ADR-0056).
+            tag: "latest"
+            pullPolicy: IfNotPresent
+          env:
+            # In-cluster LakeFS Service (release `lakefs`, ns `mlops`), port 80
+            # → container 8000. Overridable per env in ai-helm-values.
+            LAKEFS_URL: http://lakefs.mlops.svc.cluster.local:80
+            LISTEN_ADDR: 0.0.0.0:8080
+            RUST_LOG: info
+            # LakeFS bootstrap-admin credentials the proxy logs in with. From
+            # the `lakefs-proxy-admin` Secret (ESO, charts/lakefs-secrets).
+            # ⚠️ Deliberately NOT `optional: true`: env vars from a secretKeyRef
+            # bind once at pod start and never refresh, so an optional ref lets
+            # a pod that beats ESO capture an EMPTY credential and 401 forever
+            # (the context7 MCP_TOKEN incident, CLAUDE.md). Required ⇒ the pod
+            # waits in ContainerCreating until ESO has synced.
+            LAKEFS_ADMIN_ACCESS_KEY_ID:
+              valueFrom:
+                secretKeyRef:
+                  name: lakefs-proxy-admin
+                  key: access-key-id
+            LAKEFS_ADMIN_SECRET_ACCESS_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: lakefs-proxy-admin
+                  key: secret-access-key
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 8080
+                initialDelaySeconds: 5
+                periodSeconds: 30
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 8080
+                periodSeconds: 10
+                timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+  # ClusterIP only — lakefs-auth's `--upstream` target. Port 80 → 8080 so the
+  # oauth2-proxy upstream URL needs no explicit port suffix beyond `:80`.
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          enabled: true
+          port: 80
+          targetPort: 8080
+          protocol: HTTP
