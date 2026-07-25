@@ -7,9 +7,11 @@
 [Homepage](https://gethomepage.dev) is the platform's central-hub dashboard —
 `https://hub.ai.camer.digital`, gated by a dedicated `oauth2-proxy` (Homepage
 itself has no login of its own). Content is **hybrid**: hand-curated tiles
-(`environments/prod/values/homepage-app.yaml` in `ai-helm-values`, `config.services`/
-`config.bookmarks`) plus k8s auto-discovery via annotations on existing
-Ingress/HTTPRoute resources.
+(`environments/prod/values/homepage-app.yaml` in `ai-helm-values`,
+`homepage.configMaps.content.data."services.yaml"`/`"bookmarks.yaml"` —
+bjw-template v4's native `configMaps:` block, no custom chart templates)
+plus k8s auto-discovery via annotations on existing Ingress/HTTPRoute
+resources.
 
 ## Adding a new app to the hub (auto-discovery)
 
@@ -26,11 +28,11 @@ annotations:
 ```
 
 That's it — no `charts/homepage-app` change needed. Homepage's k8s connector
-(`config.kubernetes.mode: cluster`, `kubernetes.yaml`) re-scans on its own;
-a brand-new tile shows up without a restart (unlike a `config.services`/
-`config.bookmarks` edit, which needs a `kubectl rollout restart` — see
-`charts/homepage-app/values.yaml`'s comment on why no checksum-triggered
-rollout is wired for the ConfigMap).
+(`kubernetes.yaml`, `mode: cluster`) re-scans on its own; a brand-new tile
+shows up without a restart. A `services.yaml`/`bookmarks.yaml` content edit
+(ai-helm-values `homepage.configMaps.content.data.*`) rolls the Deployment
+automatically too — bjw-template v4's native `configMaps:` block computes a
+`checksum/configMaps` pod annotation for you.
 
 Current starter set (annotated as of ADR-0089): Grafana, MLflow, Argo
 Workflows, Coder. Everything else (LibreChat, model-serving endpoints, MCPs,
@@ -39,8 +41,9 @@ up; this was a deliberate starter set, not a full sweep.
 
 ## When to use a curated tile instead
 
-Reach for `config.services`/`config.bookmarks` (ai-helm-values) instead of
-an annotation when the target has **no in-cluster Ingress/HTTPRoute** to
+Reach for a curated tile (`homepage.configMaps.content.data."services.yaml"`/
+`"bookmarks.yaml"` in ai-helm-values) instead of an annotation when the
+target has **no in-cluster Ingress/HTTPRoute** to
 annotate — an external link, a doc site, or (as with the "Platform" group's
 "Cluster Health" tile) a status widget that isn't really "about" any single
 app's Ingress. Don't add BOTH an annotation and a curated tile for the same

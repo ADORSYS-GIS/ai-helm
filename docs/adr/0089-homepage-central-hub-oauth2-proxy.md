@@ -51,13 +51,14 @@ own namespace `homepage`), with three children:
    No chart-owned ingress — the depsOverlay Ingress owns the front door and
    routes the whole hostname to this Service.
 3. **`homepage-app`** (wave 2) — new local leaf chart `charts/homepage-app`,
-   OCI-floated like every other in-repo chart. `bjw-template` renders the
-   Deployment/Service; this chart's own `templates/rbac.yaml` adds the
-   ServiceAccount + read-only ClusterRole/ClusterRoleBinding Homepage's k8s
-   discovery needs (upstream's own documented shape,
+   OCI-floated like every other in-repo chart. Entirely `bjw-template`-native
+   (bjw-s app-template v4, no custom templates): the Deployment/Service, the
+   ServiceAccount, and the read-only ClusterRole/ClusterRoleBinding Homepage's
+   k8s discovery needs (upstream's own documented shape,
    gethomepage.dev/installation/k8s/ — `get`/`list` only, on
-   `namespaces`/`pods`/`nodes`/`ingresses`/`httproutes`+`gateways`); this
-   chart's own `templates/configmap.yaml` renders the `/app/config` files.
+   `namespaces`/`pods`/`nodes`/`ingresses`/`httproutes`+`gateways`) all come
+   from bjw v4's own declarative `serviceAccount:`/`rbac:` blocks, and the
+   `/app/config` content ConfigMap from its native `configMaps:` block.
 
 A new Keycloak client `homepage-proxy` (`charts/keycloak-baseline`) — unlike
 the removed `lakefsProxy`, no custom clientScope/role mapper, since
