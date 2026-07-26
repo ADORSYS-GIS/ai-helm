@@ -1,0 +1,69 @@
+{{- /*
+model-serving orchestrator — ONE ApplicationSet fans out to one `model-server`
+child Application per enabled catalog entry (ADR-0094).
+
+Pattern (identical to charts/ai-models): Helm pre-computes every element,
+including that child's fully-expanded values as a YAML string, and the
+ApplicationSet `template:` substitutes them at AppSet-controller time via
+goTemplate. The `{{ "{{ .field }}" }}` literal pattern emits `{{ .field }}` for
+the controller to evaluate rather than Helm.
+*/ -}}
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - list:
+        elements:
+{{- $enabled := dict }}
+{{- range $modelName, $modelConfig := .Values.models }}
+{{- if not (eq $modelConfig.enabled false) }}
+{{- $_ := set $enabled $modelName $modelConfig }}
+          # ── Model: {{ $modelName }} ({{ $modelConfig.engine }}) ──
+          - appName: {{ printf "%s-%s" $.Release.Name $modelName | quote }}
+            valuesYaml: |-
+{{ include "model-serving.childValues" (dict "root" $ "name" $modelName "cfg" $modelConfig) | indent 14 }}
+{{- end }}
+{{- end }}
+{{- if not $enabled }}
+          # No models enabled. An ApplicationSet with an empty List generator is
+          # valid and simply produces no children — the GPUs sit idle. This is
+          # the legitimate state between decommissioning one model and enabling
+          # the next, so it is NOT a render failure.
+          []
+{{- end }}
+  template:
+    metadata:
+      name: '{{ "{{ .appName }}" }}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: {{ .Values.argocd.project | quote }}
+      source:
+        # OCI chart-float (ADR-0055): full chart path in repoURL + chart "."
+        repoURL: {{ printf "%s/model-server" .Values.argocd.chartRegistry | quote }}
+        chart: "."
+        targetRevision: {{ .Values.argocd.chartVersionRange | quote }}
+        helm:
+          releaseName: '{{ "{{ .appName }}" }}'
+          values: |
+            {{ "{{ .valuesYaml | nindent 12 }}" }}
+      destination:
+        {{- include "model-serving.argocd.destinationClusterRef" .Values.argocd.destination | nindent 8 }}
+        namespace: {{ .Values.argocd.destination.namespace | quote }}
+      syncPolicy:
+        {{- with .Values.argocd.syncPolicy.syncOptions }}
+        syncOptions:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.argocd.syncPolicy.automated }}
+        automated:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
