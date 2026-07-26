@@ -142,9 +142,11 @@ defaults:
     # Prefer curl against a port-forward (see the inference-ops how-tos) and
     # leave this alone; if you do flip it, flip it back.
     disableWebUI: true
-    # llama.cpp defaults CORS to '*'. Nothing browser-based should call a model
-    # directly — it goes through the gateway — so pin the canonical gateway
-    # origin rather than leaving a wildcard.
+    # BOTH engines default CORS to '*' (llama.cpp `--cors-origins`, vLLM
+    # `--allowed-origins`). Nothing browser-based should call a model directly —
+    # it goes through the gateway — so pin the canonical gateway origin.
+    # ⚠️ Give a plain string here; the vLLM mapping JSON-encodes it, because that
+    # flag is typed json.loads and rejects a bare URL.
     corsOrigins: "https://api.ai.camer.digital"
 
   # ── Who may reach a model ─────────────────────────────────────────────────

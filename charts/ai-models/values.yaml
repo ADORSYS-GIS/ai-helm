@@ -531,6 +531,22 @@ backends:
   # ⚠️ `fqdn.hostname` MUST be `<name>.inference.svc.cluster.local`, where <name>
   # is the charts/model-serving catalog entry (also the Service name).
   # tools/check-model-catalogs.sh fails CI if it does not resolve to a live model.
+  # Fast tier — vLLM. Same cluster-local shape as openmythos below; `prefix: /v1`
+  # is vLLM's own OpenAI server (NOT KServe's /openai/v1).
+  qwen3-8b-fast-local:
+    schema: OpenAI
+    prefix: "/v1"
+    fqdn:
+      hostname: qwen3-8b-fast.inference.svc.cluster.local
+      port: 8080
+    securityType: APIKey
+    resourceName: qwen3-8b-fast-local-svc
+    secretRef:
+      name: qwen3-8b-fast-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
   openmythos-27b-local:
     schema: OpenAI
     prefix: "/v1"                  # llama-server, NOT KServe's /openai/v1
@@ -556,6 +572,49 @@ backends:
 #   flat            — one blended price for total tokens
 
 models:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Qwen3-8B-AWQ — the SPEED tier (vLLM + LMCache) on the second GPU.
+  #
+  # The counterpart to openmythos-27b: pick this for anything interactive or
+  # agentic, that one for considered analysis. Two cards means both are available
+  # at once, which is new (ADR-0094).
+  #
+  # Measured (inference-ops docs/benchmarks/2026-07-26-qwen3-8b-awq-vllm-rtx4000-ada.md):
+  #   45 tok/s decode (3x the 27B) · TTFT ~45ms · tool calling OK · 401 without key
+  #
+  # Pricing per ADR-0096: same €0.252/h node cost as the 27B, but 3x the token
+  # rate, so the per-token cost is ~1/3. Derivation:
+  #   €0.252/h ÷ (45 tok/s × 3600) = €1.56/1M output at saturation
+  #   × 3.45 duty-cycle uplift ⇒ €5.38/1M ⇒ ~$5.85, rounded to $5.85/$0.88/$0.18
+  #   at ADR-0028's 1 : 0.15 : 0.03 out/in/cached split.
+  # Still above most SaaS entries — rented hardware at low duty cycle is simply
+  # expensive — but a third of the 27B, which is the honest signal: prefer this
+  # tier unless the task needs the bigger model.
+  qwen3-8b-fast-local:
+    enabled: true
+    kind: text
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen3-8B (self-hosted, fast)"
+      # vLLM does NOT split --max-model-len across slots the way llama.cpp splits
+      # --ctx-size, so the configured 32768 IS the per-request window.
+      contextLength: 32768
+      maxOutputTokens: 8192
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 0.88
+        cachedInputPer1M: 0.18
+        outputPer1M: 5.85
+    backends:
+      qwen3-8b-fast-local:
+        ref: qwen3-8b-fast-local
+        priority: 0
+        modelNameOverride: "qwen3-8b-fast"   # = --served-model-name
 
   # ─────────────────────────────────────────────────────────────────────────
   # OpenMythos-27B — the first model on the Hetzner GPU fleet (ADR-0094/0095).

@@ -41,7 +41,7 @@ in the orchestrator's `_helpers.tpl`. Every engine we run must end up with:
 |---|---|---|
 | The engine checks a Bearer itself | `--api-key-file` | `VLLM_API_KEY` |
 | No browser UI or static-file surface | `--no-webui` | *n/a — ships no UI* |
-| No wildcard CORS | `--cors-origins <gateway origin>` | `--allowed-origins`, **not yet enabled** |
+| No wildcard CORS | `--cors-origins <gateway origin>` | `--allowed-origins '["<gateway origin>"]'` |
 
 Adding an engine means adding a row to that mapping; the policy statement does not
 change. Where an engine satisfies a policy by its own shape rather than by a flag
@@ -86,10 +86,11 @@ mis-edited, and it removes an engine warning that would otherwise be normalised.
 
 **Neutral / follow-ups**
 
-- ⚠️ **vLLM's `--allowed-origins` is specified but NOT enabled**, because it has
-  not been verified against a running vLLM pod on this fleet and a bad flag
-  crash-loops the engine. Verify at the Qwen3-8B-AWQ load gate, then promote it to
-  a fleet default.
+- ✅ **vLLM's `--allowed-origins` is now enabled**, verified against the live
+  v0.25.1 parser at the Qwen3-8B-AWQ load gate: vLLM defaults it to `['*']` just
+  like llama.cpp, and the flag is typed `json.loads`, so the value must be a JSON
+  **array** — a bare `https://host` is rejected outright and would have
+  crash-looped the pod. That is why it shipped disabled rather than guessed at.
 - The key reuses the long-standing `vllm_local_api_key` property, proven to
   resolve. A dedicated fleet property would be cleaner but must exist in AWS
   Secrets Manager *before* any model points at it — the binding is
