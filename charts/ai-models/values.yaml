@@ -955,7 +955,13 @@ models:
         priority: 0
         modelNameOverride: "z-image-turbo"
   qwen2-vl-2b-local:
-    enabled: true
+    # ⚠️ DISABLED 2026-07-27 — this was a DANGLING catalog entry. The model was
+    # advertised in /v1/models and /v1/models/info while its server
+    # (charts/apps `model-serving-qwen2-vl-2b`) has been enabled: false since the
+    # one-GPU swap, so every request returned `404 page not found` from a backend
+    # with nothing behind it. Verified live through the gateway before disabling.
+    # Re-enable together with its server, never alone.
+    enabled: false
     kind: multimodal
     minBackends: 1
     timeout:
