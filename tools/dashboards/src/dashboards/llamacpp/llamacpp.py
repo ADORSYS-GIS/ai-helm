@@ -117,8 +117,14 @@ def _timeseries_panel(*, title, unit, grid, targets, thresholds=None):
     )
     if thresholds is not None:
         panel = panel.thresholds(thresholds)
-    for t in targets:
-        panel = panel.with_target(t)
+    # Assign refIds positionally (A, B, C, ...) rather than trusting each call
+    # site to pass a unique one. Grafana rejects a panel whose targets share a
+    # refId with "Multiple queries using the same RefId is not allowed" and
+    # renders NOTHING — and since _prom_target defaults to "A", any panel with
+    # more than one target silently produced that unless the author remembered.
+    # Three panels shipped broken that way; doing it here makes it impossible.
+    for i, t in enumerate(targets):
+        panel = panel.with_target(t.ref_id(chr(ord("A") + i)))
     return panel
 
 
