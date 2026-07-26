@@ -511,6 +511,31 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # ── GPU fleet (cluster-local, ADR-0095) ──────────────────────────────────
+  # Everything above this line is either a SaaS provider or a legacy self-hosted
+  # model reached over the public internet at *--poc.ssegning.com. Backends below
+  # are models on the Hetzner GPU nodes, in THIS cluster — so they are reached at
+  # a ClusterIP Service over plain HTTP on the pod network.
+  #
+  # Note what is deliberately ABSENT and must stay absent:
+  #   securityType / secretRef / externalSecret — no credential. The model has no
+  #     route off the cluster; a CiliumNetworkPolicy in charts/model-server limits
+  #     ingress to envoy-gateway-system. A shared key would add a rotation surface
+  #     without closing a hole.
+  #   tlsHostname — no TLS. Traffic never leaves the cluster network.
+  # Adding either would break the model: it speaks plain HTTP and checks nothing.
+  #
+  # ⚠️ `fqdn.hostname` MUST be `<name>.inference.svc.cluster.local`, where <name>
+  # is the charts/model-serving catalog entry (also the Service name).
+  # tools/check-model-catalogs.sh fails CI if it does not resolve to a live model.
+  openmythos-27b-local:
+    schema: OpenAI
+    prefix: "/v1"                  # llama-server, NOT KServe's /openai/v1
+    fqdn:
+      hostname: openmythos-27b.inference.svc.cluster.local
+      port: 8080
+    resourceName: openmythos-27b-local-svc
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -522,6 +547,55 @@ backends:
 #   flat            — one blended price for total tokens
 
 models:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # OpenMythos-27B — the first model on the Hetzner GPU fleet (ADR-0094/0095).
+  # Security-analysis QUALITY tier, explicitly not a speed tier.
+  #
+  # Serving spec: charts/model-serving/values.yaml `openmythos-27b`.
+  # Load gate + every number below: inference-ops
+  # docs/benchmarks/2026-07-26-openmythos-27b-q4k-rtx4000-ada.md
+  #
+  # Measured on the card (llama.cpp build 10133, RTX 4000 SFF Ada):
+  #   decode 15.05 tok/s · prefill 625 tok/s · 17780/20475 MiB · tool calling OK
+  #
+  # ⚠️ contextLength is 16384 because that is `n_ctx_slot` — llama.cpp splits
+  # `--ctx-size 32768` across the 2 slots. Advertising 32768 would promise a
+  # window the model refuses.
+  #
+  # ⚠️ Thinking mode is disabled at the SERVER (`--chat-template-kwargs`), because
+  # on by default it turned an 0.2s answer into an 18.2s one and could return an
+  # EMPTY answer when max_tokens was small. A client that wants the reasoning
+  # trace opts in per request with chat_template_kwargs.enable_thinking=true —
+  # which is why `supportedParameters` does NOT advertise reasoning here.
+  #
+  # ⚠️ Pricing is deliberately high and is NOT a copy of the A2000 models'
+  # numbers: ADR-0096 derives it from €184/mo ÷ 730h ÷ the MEASURED 15.05 tok/s.
+  # A slow model on a rented card genuinely costs about an order of magnitude
+  # more per token than the SaaS entries in this catalog. That is the make-vs-buy
+  # signal ADR-0028 exists to surface — do not "fix" it by matching SaaS prices.
+  openmythos-27b-local:
+    enabled: true
+    kind: text
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      requestTimeout: 600s           # ~15 tok/s: a long answer legitimately runs minutes
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "OpenMythos-27B (self-hosted)"
+      contextLength: 16384           # = n_ctx_slot, NOT --ctx-size
+      maxOutputTokens: 8192
+    pricing:
+      strategy: weighted             # cost-recovery per ADR-0028, basis ADR-0096
+      standard:
+        inputPer1M: 2.55
+        cachedInputPer1M: 0.50
+        outputPer1M: 17.00
+    backends:
+      openmythos-27b-local:
+        ref: openmythos-27b-local
+        priority: 0
+        modelNameOverride: "openmythos-27b"   # = llama-server --alias
 
   # Self-hosted Qwen3-4B on the home RTX A2000 (ADR-0022). Routed exactly like a
   # SaaS model; pricing flat $0 (owned hardware) so no monthly-budget rule, but
