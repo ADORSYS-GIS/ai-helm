@@ -46,6 +46,10 @@ folders:
   - name: collectors
     title: "Collectors & Tracing"
     resyncPeriod: 5m
+  # Self-hosted model serving on the GPU fleet (ADR-0094/0095).
+  - name: model-serving
+    title: "Model Serving (GPU fleet)"
+    resyncPeriod: 5m
   - name: my-usage
     title: "My Usage"
     resyncPeriod: 5m
@@ -155,6 +159,27 @@ dashboards:
   - name: tempo-single-binary
     folderRef: collectors
     file: files/collectors/tempo-single-binary.json
+    resyncPeriod: 5m
+
+  # vLLM engine internals — latency (TTFT / inter-token / prefill / e2e), token
+  # throughput, queue depth, KV-cache usage, prefix-cache hit rate, preemptions.
+  # Covers the `vllm:*` exporter only, i.e. the qwen3-8b-fast tier — the
+  # llama.cpp tier publishes a disjoint `llamacpp:*` namespace and is NOT on this
+  # board. Scraped via each model's ServiceMonitor, which must authenticate
+  # because the engines require a Bearer on /metrics (ADR-0097).
+  - name: vllm-dashboard
+    folderRef: model-serving
+    file: files/vllm/vllm-dashboard.json
+    resyncPeriod: 5m
+
+  # llama.cpp engine — the other half of the fleet. Its exporter publishes a
+  # DISJOINT `llamacpp:*` namespace, so it cannot share the vLLM board.
+  # ⚠️ Two structural differences, both verified against live Mimir:
+  #   - it emits NO `model_name` label, so panels select on the scrape `job`;
+  #   - it exports no histograms, so latency panels are AVERAGES, not percentiles.
+  - name: llamacpp-dashboard
+    folderRef: model-serving
+    file: files/llamacpp/llamacpp-dashboard.json
     resyncPeriod: 5m
 
 # Future: datasources, contactPoints, alertRules can land here.

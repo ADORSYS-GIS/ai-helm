@@ -1,0 +1,1283 @@
+{
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "model_name",
+        "label": "Model",
+        "skipUrlSync": false,
+        "query": "label_values(vllm:request_success_total, model_name)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ],
+          "selected": true
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      }
+    ]
+  },
+  "annotations": {},
+  "uid": "vllm-perf-dashboard",
+  "title": "vLLM Inference - Comprehensive",
+  "description": "Comprehensive vLLM inference engine performance dashboard. Reads vLLM's built-in Prometheus exporter metrics (vllm:engine) via Mimir. Covers request success/error rates, generation/prompt token throughput, end-to-end latency + TTFT + inter-token + prefill latency (p50/p90/p95/p99), request queue depth, KV-cache usage, prefix-cache hit rate, and preemption counts. The model_name template variable filters every panel. GENERATED — source: tools/dashboards/src/dashboards/vllm/vllm.py.",
+  "tags": [
+    "vllm",
+    "llm",
+    "inference",
+    "gpu"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "vllm:request_success_total{model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Successful Requests",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "vllm:request_success_total{finished_reason=\"error\",model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Requests (Error)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(vllm:generation_tokens_total{model_name=~\"$model_name\"}[5m])",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Generation Tokens/s",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "tokens/s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(vllm:prompt_tokens_total{model_name=~\"$model_name\"}[5m])",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Prompt Tokens/s",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "tokens/s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(vllm:e2e_request_latency_seconds_sum{model_name=~\"$model_name\"}[5m]) / rate(vllm:e2e_request_latency_seconds_count{model_name=~\"$model_name\"}[5m])",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Avg E2E Latency",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "yellow"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(vllm:time_to_first_token_seconds_sum{model_name=~\"$model_name\"}[5m]) / rate(vllm:time_to_first_token_seconds_count{model_name=~\"$model_name\"}[5m])",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Avg TTFT",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 0.1,
+                "color": "yellow"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Latency",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, model_name) (rate(vllm:e2e_request_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum by (le, model_name) (rate(vllm:e2e_request_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "B",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p90",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, model_name) (rate(vllm:e2e_request_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "C",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, model_name) (rate(vllm:e2e_request_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "D",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "End-to-End Request Latency",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, model_name) (rate(vllm:time_to_first_token_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum by (le, model_name) (rate(vllm:time_to_first_token_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "B",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p90",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, model_name) (rate(vllm:time_to_first_token_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "C",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, model_name) (rate(vllm:time_to_first_token_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "D",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Time to First Token",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, model_name) (rate(vllm:inter_token_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum by (le, model_name) (rate(vllm:inter_token_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "B",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p90",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, model_name) (rate(vllm:inter_token_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "C",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, model_name) (rate(vllm:inter_token_latency_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "D",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Per-Token Latency (Inter-Token)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, model_name) (rate(vllm:request_prefill_time_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum by (le, model_name) (rate(vllm:request_prefill_time_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "B",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p90",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, model_name) (rate(vllm:request_prefill_time_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "C",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, model_name) (rate(vllm:request_prefill_time_seconds_bucket{model_name=~\"$model_name\"}[5m])))",
+          "refId": "D",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Prompt Processing Latency",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Throughput",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(vllm:generation_tokens_total{model_name=~\"$model_name\"}[5m])",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{model_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Generation Tokens/s",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "tokens/s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(vllm:prompt_tokens_total{model_name=~\"$model_name\"}[5m])",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{model_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Prompt Tokens/s",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "tokens/s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(vllm:request_success_total{model_name=~\"$model_name\"}[5m])",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "Success",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "vllm:request_success_total{finished_reason=\"error\",model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "Failed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Requests/s",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "vllm:num_requests_running{model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "Running",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "vllm:num_requests_waiting{model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "Waiting",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "vllm:num_requests_waiting{model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "Swapped",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Request Queue",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "Engine Internals",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "vllm:kv_cache_usage_perc{model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{model_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "GPU Cache Usage",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 70,
+                "color": "yellow"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(vllm:prefix_cache_hits_total{model_name=~\"$model_name\"}[5m])",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{model_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Prefix Cache Hits/s",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(vllm:prefix_cache_hits_total{model_name=~\"$model_name\"}[5m]) / (rate(vllm:prefix_cache_hits_total{model_name=~\"$model_name\"}[5m]) + rate(vllm:prefix_cache_queries_total{model_name=~\"$model_name\"}[5m]))",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{model_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Prefix Cache Hit Ratio",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 47
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 50,
+                "color": "yellow"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "vllm:kv_cache_usage_perc{model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "Usage %",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "vllm:num_preemptions_total{model_name=~\"$model_name\"}",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "Preemptions",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "KV Cache & Preemptions",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 47
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "id": 0,
+      "panels": [],
+      "title": "System Health (DCGM exporter not running - GPU metrics unavailable)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      }
+    }
+  ]
+}
