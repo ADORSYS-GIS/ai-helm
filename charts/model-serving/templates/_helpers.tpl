@@ -164,8 +164,14 @@ Output: a YAML list of strings.
     {{- $args = concat $args (list "--cors-origins" .) -}}
   {{- end -}}
 {{- else if eq .engine "vllm" -}}
+  {{- /* ⚠️ The model path is a POSITIONAL argument and must come FIRST. The
+         image's entrypoint is `vllm serve`, whose parser declares `model_tag`
+         positionally: passing it as `--model` fails at start-up with
+         "error: the following arguments are required: model_tag" and
+         crash-loops the pod. This matches the shape the legacy vLLM charts
+         actually ran with (`/mnt/models` as arg 0). */ -}}
   {{- $args = concat $args (list
-      "--model" $dir
+      $dir
       "--served-model-name" $name
       "--host" "0.0.0.0"
       "--port" "8080"

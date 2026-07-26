@@ -109,6 +109,19 @@ modelServing:
             - "2"
             - --metrics
             - --jinja
+            # Thinking default. `--reasoning on|off|auto` is the supported flag;
+            # --chat-template-kwargs '{"enable_thinking":...}' still works but is
+            # logged as deprecated at start-up.
+            - --reasoning
+            - "off"
+            # Hardening (ADR-0097). ⚠️ --api-key-file covers /metrics as well as
+            # /v1/*, so the ServiceMonitor below must present the same key;
+            # /health is exempt, which is why probes still pass.
+            - --api-key-file
+            - /etc/model-api-key/api_key
+            - --no-webui
+            - --cors-origins
+            - https://api.ai.camer.digital
           ports:
             - name: http
               containerPort: 8080
