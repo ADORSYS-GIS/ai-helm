@@ -72,6 +72,19 @@ is exactly the make-vs-buy signal ADR-0028 exists to surface. Two independent
 factors compound: the hardware costs 5× per hour, and the model produces tokens
 3.5× more slowly than the 4B it replaces.
 
+**Worked a second time, for the fast tier** (Qwen3-8B-AWQ, measured 45 tok/s on
+the same €0.252/h node):
+
+```
+saturated floor = €0.252/h ÷ (45 tok/s × 3600) = €1.56 per 1M output
+× 3.45 uplift ⇒ €5.38/1M ⇒ $5.85 / $0.88 / $0.18  (out / in / cached)
+```
+
+Same hardware cost, three times the token rate, one third of the price. That the
+formula reproduces that relationship without special-casing is the point of
+anchoring on a **measured** rate: a slow model is expensive because it is slow,
+and the catalog says so in the only units users act on.
+
 Every input remains a documented knob, re-tuned as real utilization data arrives.
 
 ## Consequences

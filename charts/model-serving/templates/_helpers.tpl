@@ -196,12 +196,15 @@ Output: a YAML list of strings.
          The API key arrives as VLLM_API_KEY (see childValues), enforced natively
          by vLLM's own OpenAI server — this is NOT kserve/huggingfaceserver, which
          ignores it and is deliberately not an engine profile (ADR-0022).
-         ⚠️ CORS: vLLM's `--allowed-origins` takes a JSON list and is applied only
-         when explicitly set, because it has NOT yet been verified against a
-         running vLLM pod on this fleet. Verify on the first deploy, then make it
-         a fleet default like the llama.cpp one. */ -}}
-  {{- with $s.allowedOrigins -}}
-    {{- $args = concat $args (list "--allowed-origins" .) -}}
+         CORS: vLLM defaults `--allowed-origins` to ['*'], exactly like llama.cpp,
+         so the same fleet policy applies. ⚠️ The flag is typed `json.loads`, so
+         the value MUST be a JSON array — a bare `https://host` is rejected by the
+         parser and crash-loops the pod. Verified against the live v0.25.1 parser:
+             --allowed-origins '["https://api.ai.camer.digital"]'  -> accepted
+             --allowed-origins 'https://api.ai.camer.digital'      -> REJECTED
+         `toJson (list ...)` produces the array form. */ -}}
+  {{- with $sec.corsOrigins -}}
+    {{- $args = concat $args (list "--allowed-origins" (toJson (list .))) -}}
   {{- end -}}
 {{- end -}}
 {{- $args = concat $args (default (list) $s.extraArgs) -}}
