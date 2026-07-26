@@ -426,23 +426,46 @@ internal listener/cert/Service coming up, role→tier mapping value, Phase-4 met
 Triggered by a user report that redis-ha and LibreChat were "complaining a lot." Two
 unrelated root causes, found in the same pass:
 
-### CoreDNS single replica → intermittent cluster-wide DNS outages ⚠️ live-only fix
+### CoreDNS single replica → intermittent cluster-wide DNS outages ✅ fixed durably (corrected 2026-07-26)
 CoreDNS on the Hetzner cluster (`kube-system`, k3s-bundled addon) was running as a
-**single replica** and had crashed twice in one day (`connection refused` /
-`apiserver not ready` during a brief control-plane blip). Each crash is a
+**single replica** and had crashed 7 times over ~3.4 days (`connection refused` /
+`apiserver not ready` during brief control-plane blips). Each crash is a
 full-cluster DNS outage until the one pod restarts. This is what made
 `redis-ha-sentinel` log repeated `Failed to resolve hostname
 redis-ha-{sentinel,redis}-1.*.svc.cluster.local` bursts, and correlated directly
 with LibreChat's `[RedisEventTransport] Failed to subscribe to stream:...:
 Connection is closed` errors (~15/day across both pods).
 
-Fix applied live: `kubectl -n kube-system scale deployment coredns --replicas=2`.
-CoreDNS's pod template already carries `topologySpreadConstraints`/anti-affinity,
-so the two replicas landed on different nodes (`cp-1`, `cp-3`) with no further
-changes needed. **This is NOT durable** — nothing in `hetzner-k8s` or `home-os`
-reconciles this Deployment's replica count, so a node rebuild/reprovision would
-silently drop it back to 1. If it recurs, either re-scale live again or add a
-proper fix to `install-platform.sh` (`hetzner-k8s`).
+Fix applied live: `kubectl -n kube-system scale deployment coredns --replicas=3`
+(scaled 1→2→3 across two interventions) — one replica per control-plane node
+(`cp-1`/`cp-2`/`cp-3`, matching how etcd/the API server are already one-per-CP).
+CoreDNS's pod template already carries a `topologySpreadConstraint` (max 1 pod
+per node), so the replicas spread across distinct nodes with no extra affinity
+needed — though note it merely *tolerates* the CP taint, it isn't affinitized to
+CP, so landing one-per-CP was the scheduler's own choice given free capacity at
+the time, not a guaranteed placement.
+
+**Correction to what this doc originally said:** it previously claimed this was
+"NOT durable" / would be silently reset by a node rebuild or k3s upgrade. That
+was wrong, and worth recording *why* it was wrong rather than just fixing it
+silently. Confirmed live via `kubectl get deploy coredns -o json
+--show-managed-fields`: k3s's own packaged-manifest reconciler (field manager
+`deploy@<node>`) does **not** claim `spec.replicas` on this Deployment. Per the
+[k3s v1.25.5+k3s1 changelog](https://github.com/k3s-io/k3s/releases/tag/v1.25.5%2Bk3s1):
+"Deployments for K3s packaged components now have consistent upgrade strategy and
+revisionHistoryLimit settings, and will not override scaling decisions by
+hardcoding the replica count." This cluster runs v1.35.3+k3s1, well past that fix.
+So a routine k3s restart/upgrade on an **already-bootstrapped** cluster does
+**not** reset this. The only real gap was a genuine from-scratch bootstrap (a
+brand-new cluster or full etcd wipe), where the Deployment doesn't exist yet to
+inherit the live scale — closed via `hetzner-k8s`
+[PR #30](https://github.com/stephane-segning/hetzner-k8s/pull/30), which adds an
+idempotent `apply_coredns_ha` step to `install-platform.sh` (runs after Cilium is
+up) plus a `docs/caveats-and-traps.md` §6.3 entry there. Deliberately did **not**
+go `--disable=coredns` + a hand-rolled ArgoCD-managed replacement — that would
+risk repeating the exact k3s-bundled-vs-GitOps name-collision trap this org
+already hit once with metrics-server (ADR-0054), for a problem a 3-line scale-out
+already solves.
 
 ### haproxy liveness/readiness probes spamming SSL-handshake errors ✅ fixed durably
 Separately (and much more frequently — continuous, not intermittent), the
