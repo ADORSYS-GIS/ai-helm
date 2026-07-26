@@ -206,6 +206,23 @@ Output: a YAML list of strings.
   {{- with $sec.corsOrigins -}}
     {{- $args = concat $args (list "--allowed-origins" (toJson (list .))) -}}
   {{- end -}}
+  {{- /* Thinking default — the same POLICY as the llama.cpp `--reasoning` flag,
+         expressed with vLLM's equivalent. Qwen3 reasons by default, and vLLM
+         emits the trace as raw `<think>` tags INSIDE `content` unless a
+         `--reasoning-parser` is configured, so a federated model returns visible
+         markup to users. `--default-chat-template-kwargs` is typed json.loads.
+         With `reasoning: on`, set `serving.reasoningParser` too (e.g. `qwen3`) or
+         the trace lands in content rather than `reasoning_content`. */ -}}
+  {{- if $s.reasoning -}}
+    {{- if eq (toString $s.reasoning) "off" -}}
+      {{- $args = concat $args (list "--default-chat-template-kwargs" "{\"enable_thinking\": false}") -}}
+    {{- else if eq (toString $s.reasoning) "on" -}}
+      {{- $args = concat $args (list "--default-chat-template-kwargs" "{\"enable_thinking\": true}") -}}
+      {{- with $s.reasoningParser -}}
+        {{- $args = concat $args (list "--reasoning-parser" .) -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
 {{- end -}}
 {{- $args = concat $args (default (list) $s.extraArgs) -}}
 {{- range $args }}
