@@ -164,6 +164,18 @@ match this page; they are correct for where they run.
   CPU pool.
 - **A context that does not fit fails minutes into loading**, as an allocation
   error that reads like a crash. Measure, don't guess.
+- **⚠️ llama.cpp `--ctx-size` is the TOTAL KV pool, split across `--parallel`
+  slots.** `--ctx-size 16384 --parallel 2` gives each *request* 8192 tokens, not
+  16384. Confirm from the startup log (`n_ctx_slot`) and advertise **that** number
+  as `contextLength` in `charts/ai-models`, or the gateway promises users a window
+  the model will refuse. `--kv-unified` shares one pool across slots instead.
+- **⚠️ A reasoning model's default can dominate the experience.** OpenMythos-27B
+  measured 18.2 s for "what is 17 × 23" with thinking on versus 0.2 s with it off,
+  and a short `max_tokens` returned an *empty* answer because the whole budget went
+  to `reasoning_content`. The fleet default is thinking **off** via
+  `--chat-template-kwargs '{"enable_thinking": false}'`, with clients opting back
+  in per request. `reasoning_budget: 0` as a *request* field was ignored by
+  llama.cpp build 10133 — it is not the lever.
 - **Deploy = brief downtime.** One replica on one card; the StatefulSet recreates
   its single pod. A CrashLooping pod blocks its own rollout — `kubectl delete pod`.
 - **Route timeout defaults to 60 s** and takes precedence over the upstream BTP, so
