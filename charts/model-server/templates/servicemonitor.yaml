@@ -32,4 +32,17 @@ spec:
       scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout | default "10s" }}
       # The engine reports metrics about ITSELF, so there are no foreign labels
       # to preserve — unlike kube-state-metrics, which needs honorLabels (CLAUDE.md).
+      {{- if .Values.apiKey.enabled }}
+      # ⚠️ Hardening (ADR-0097) covers /metrics too. llama-server exempts /health
+      # from the API key — so probes keep working and the pod stays Ready — but
+      # NOT /metrics, so an unauthenticated scrape gets a 401 and the metrics
+      # vanish silently while everything else looks healthy. The only visible
+      # symptom is a `unauthorized: Invalid API Key` line in the model's log at
+      # exactly the scrape interval. Give the scraper the same key.
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ .Values.apiKey.secretName | quote }}
+          key: {{ .Values.apiKey.dataKey | quote }}
+      {{- end }}
 {{- end }}

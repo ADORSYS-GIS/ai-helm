@@ -79,7 +79,9 @@ modelServing:
             tag: v0.7.0
             pullPolicy: IfNotPresent
           args:
-            - --model
+            # ⚠️ POSITIONAL and first — `vllm serve` declares model_tag
+            # positionally; as `--model` it exits with
+            # "the following arguments are required: model_tag".
             - /models/Fixture-Model-AWQ
             - --served-model-name
             - fixture-vllm

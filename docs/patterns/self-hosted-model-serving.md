@@ -169,6 +169,18 @@ match this page; they are correct for where they run.
   16384. Confirm from the startup log (`n_ctx_slot`) and advertise **that** number
   as `contextLength` in `charts/ai-models`, or the gateway promises users a window
   the model will refuse. `--kv-unified` shares one pool across slots instead.
+- **⚠️ Hardening the engine also locks `/metrics`.** llama-server exempts
+  `/health` from `--api-key-file` — so probes pass and the pod stays **Ready** —
+  but not `/metrics`. An unauthenticated ServiceMonitor then gets 401 and the
+  model's metrics vanish while everything looks healthy; the only symptom is
+  `unauthorized: Invalid API Key` in the model log at exactly the scrape
+  interval. The leaf chart gives the scraper the same key via the
+  ServiceMonitor's `authorization` block whenever `apiKey.enabled`.
+- **⚠️ vLLM's model path is a POSITIONAL argument and must come first.** The
+  image entrypoint is `vllm serve`, whose parser declares `model_tag`
+  positionally. Passing it as `--model` exits immediately with
+  `error: the following arguments are required: model_tag` and crash-loops the
+  pod — a failure that looks like a bad image rather than a bad flag.
 - **⚠️ A reasoning model's default can dominate the experience.** OpenMythos-27B
   measured 18.2 s for "what is 17 × 23" with thinking on versus 0.2 s with it off,
   and a short `max_tokens` returned an *empty* answer because the whole budget went
