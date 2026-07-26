@@ -1,0 +1,99 @@
+# charts/model-server — the generic self-hosted model leaf (ADR-0094).
+#
+# ⚠️ These defaults are deliberately EMPTY/structural. Real values are computed
+# per model by `charts/model-serving`'s helpers and passed in as the child
+# Application's inline values. Rendering this chart with defaults alone
+# fail-guards (see templates/_validate.tpl) — that is why Chart.yaml carries
+# `lint-mode: ci-values` and CI renders the ci/*-values.yaml fixtures instead.
+#
+# If you are here to add or change a model, you are in the wrong file:
+#   → charts/model-serving/values.yaml   (the catalog — one ~15-line entry)
+#   → charts/ai-models/values.yaml       (the gateway backend + model entry)
+# Everything else is machinery. See docs/patterns/self-hosted-model-serving.md.
+
+global:
+  labels: {}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Identity. `name` is the StatefulSet/Service name AND the served model id.
+# `storagePath` is the sub-directory of the weights volume the model lives in,
+# so one PVC could hold several sets of weights if that ever becomes useful.
+model:
+  name: ""
+  engine: ""            # llamacpp | vllm — informational here (args already expanded)
+  storagePath: ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Weights volume (templates/pvc.yaml). RWX so the seed Job and the model pod
+# co-mount it; Longhorn on the GPU nodes provides RWX (ADR-0092).
+# ⚠️ accessModes are IMMUTABLE — switching an existing RWO claim to RWX means
+# delete + recreate, and the weights re-seed on the next sync.
+pvc:
+  enabled: true
+  name: ""
+  storageClassName: longhorn
+  accessMode: ReadWriteMany
+  size: ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HuggingFace token for the seed Job — lifts the anonymous Hub rate limit that
+# otherwise stalls a multi-GB download partway through. Required for gated
+# repos, useful for everything else.
+hfToken:
+  enabled: false
+  secretName: hf-token
+  dataKey: token
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: hf_token
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Static API key at the model itself. OFF by default and it should stay off:
+# under ADR-0095 the model has no route off the cluster, and the NetworkPolicy
+# below is a stronger control than a shared secret. Kept as an escape hatch for
+# a future model that must be reachable from somewhere other than the gateway.
+apiKey:
+  enabled: false
+  secretName: ""
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CiliumNetworkPolicy — the real access control (templates/ciliumnetworkpolicy.yaml).
+# The `inference` namespace carries no deny-by-default baseline, so this policy
+# is what makes the model reachable ONLY from the gateway (and the metrics
+# scraper). ⚠️ Any CNP with ingress rules makes the selected pods deny-by-default
+# for ingress in Cilium, which is exactly the intent — but it also means the
+# kubelet's probe traffic must be allowed explicitly (fromEntities host /
+# remote-node / health), or every probe fails and the pod never goes Ready.
+networkPolicy:
+  enabled: true
+  allowFromNamespaces:
+    - envoy-gateway-system
+    - observability
+  allowFromEntities:
+    - host
+    - remote-node
+    - health
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Prometheus scrape of the engine's own /metrics (llama.cpp --metrics, vLLM
+# native). Alloy discovers ServiceMonitors cluster-wide (see CLAUDE.md).
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+
+# ─────────────────────────────────────────────────────────────────────────────
+# bjw-template subchart (alias `modelServing`) — the whole workload, assembled
+# by charts/model-serving. Empty here on purpose.
+modelServing: {}

@@ -1,9 +1,10 @@
 # 09 · Model serving
 
 How an OpenAI-compatible model id resolves to actual inference — provider
-fan-out for the cloud models, plus the one self-hosted model on the home GPU.
-Source ADRs: **0012** (orchestrator split), **0022/0028/0029/0030/0032**
-(self-hosted serving), **0035** (per-person budgets).
+fan-out for the cloud models, plus the self-hosted models on the Hetzner GPU fleet.
+Source ADRs: **0012** (orchestrator split), **0094/0095** (GPU-fleet serving +
+cluster-local federation), **0022/0028/0029/0030/0032** (the legacy home-GPU
+generation, still running on the other cluster), **0035** (per-person budgets).
 
 ## Fan-out: one model id → one route → one backend
 
@@ -21,8 +22,8 @@ flowchart TB
         FW["Fireworks · fw-01/02"]
         DI["DeepInfra · deepinfra-01/02"]
         GA["Google AI · google-ai-studio-01/02"]
-        VL["vllm-local-01 → Qwen3-4B (standby)"]
-        LL["llama-local-01 → Qwen3.5-4B 🟢"]
+        LOC["&lt;model&gt;.inference.svc<br/>GPU fleet, cluster-local"]
+        OLD["*--poc.ssegning.com<br/>legacy, other cluster"]
     end
 
     REQ --> AS --> ROUTE --> BUDGET --> backends
@@ -59,56 +60,66 @@ The plan tiers are the default; the per-model block wins where present.
 
 Cost is metered natively (`llmRequestCosts` token extraction) — no Python/Lua hop.
 
-## The self-hosted model (home GPU)
+## Self-hosted models — the GPU fleet (ADR-0094/0095)
 
-The **one** sanctioned `homeCluster: true` workload (ADR-0022): it must run on the
-cluster ArgoCD itself runs on because it needs the home GPU (A2000 12 GB).
+Two Hetzner Robot GPU nodes (RTX 4000 SFF Ada, 20 GiB each) joined **`home-remote`**
+— the same cluster as the gateway. So a self-hosted model is now an ordinary
+workload reached over the pod network: **no Ingress, no DNS record, no TLS
+certificate, no static API key, no auth-proxy sidecar**. A `CiliumNetworkPolicy` is
+the access control.
 
 ```mermaid
 flowchart TB
-    subgraph poc["ns: converse-poc (home GPU cluster)"]
-        subgraph ss["StatefulSet (bjw-template) — LIVE"]
-            LS["llama-server (llama.cpp)<br/>Qwen3.5-4B UD-Q4_K_XL GGUF<br/>native --api-key · /v1 · /health<br/>128k ctx · 4 slots · ~52 tok/s"]
+    subgraph orch2["charts/model-serving (ApplicationSet)"]
+        CAT["catalog: 1 entry per model<br/>engine profiles expand it"]
+    end
+    subgraph inf["ns: inference (home-remote, GPU nodes)"]
+        subgraph ss["StatefulSet (charts/model-server)"]
+            ENG["ONE container: llama-server | vLLM<br/>/v1 · /health · /metrics<br/>nvidia.com/gpu: 1"]
         end
-        PVC["RWX PVC (pre-seeded GGUF)"]
-        SEED["seed Job"]
-        ING["Ingress"]
-        SEED --> PVC --> LS
-        LS --> ING
+        PVC["RWX Longhorn PVC (pre-seeded weights)"]
+        SEED["seed Job (Sync hook)"]
+        CNP["CiliumNetworkPolicy<br/>ingress: gateway + observability<br/>+ host/remote-node/health (kubelet probes)"]
+        SEED --> PVC --> ENG
+        CNP -.guards.-> ENG
     end
-
-    GW["Envoy AI Gateway<br/>(home-remote)"]
-    ING -->|"federated as qwen3-5-4b-local (/v1)"| GW
-
+    GW["Envoy AI Gateway<br/>(envoy-gateway-system)"]
+    CAT --> ss
+    GW -->|"ClusterIP :8080 · plain HTTP"| ENG
 ```
 
-### Two engines, two shapes
+**Two GPUs ⇒ two concurrent models.** Placement is an `nvidia.com/gpu: 1` request,
+so a third enabled model queues as `Pending` rather than requiring a human to
+disable another. Adding a model is a ~15-line catalog entry — no new chart.
 
-```mermaid
-flowchart LR
-    subgraph llama["llama.cpp (LIVE · qwen3-5)"]
-        L1["ONE container<br/>llama-server"]
-        L2["native --api-key<br/>(no proxy needed)"]
-        L1 --- L2
-    end
-    subgraph vllm["vLLM (standby · qwen3-4b)"]
-        V1["huggingfaceserver (vLLM + LMCache)"]
-        V2["+ Caddy auth-proxy sidecar<br/>(huggingfaceserver ignores VLLM_API_KEY)"]
-        V1 --- V2
-    end
-```
+### Two engines, one container each
 
-| | llama.cpp (`model-serving-qwen3-5`) 🟢 | vLLM (`model-serving-qwen3-4b`) |
+| | `llamacpp` | `vllm` |
 |---|---|---|
-| Model | Qwen3.5-4B Q4 (GGUF) | Qwen3-4B (BF16) |
-| Containers | 1 (native `--api-key`) | 2 (vLLM + Caddy auth-proxy) |
-| Status | **LIVE** since 2026-06-08 | standby / rollback |
-| ADRs | 0030, 0032 | 0029, 0030 |
+| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` |
+| Weights | GGUF | safetensors (AWQ/GPTQ/FP8/BF16) |
+| Containers | **1** | **1** |
+| Optional key | native `--api-key-file` | native `VLLM_API_KEY` |
+| Extras | — | opt-in LMCache + `/dev/shm` |
+
+The weight format selects the engine (`inference-ops` ADR-0002) — GGUF on vLLM is
+~8× slower. **Neither engine has a Caddy sidecar**: that was only ever required by
+`kserve/huggingfaceserver`, which ignores `VLLM_API_KEY` (ADR-0022), and that
+wrapper is not an engine profile here.
+
+### Legacy generation
+
+Eight `charts/model-serving-*` charts still serve from the **other** cluster
+(`admin@homeos`) over a public edge with `homeCluster: true` — `zimage-turbo` is
+live there, the rest are its rollback set. Retained until that cluster is
+decommissioned; not a template for anything new.
 
 Pricing for owned hardware is **cost-recovery** (€/hour TCO → weighted per-token,
-ADR-0028), not flat-zero. The model-agnostic "deploy the next one" checklist and
-per-model capacity papers live in
-[`../self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) and
-[`../models/`](../models/qwen3.5-4b-q4.md).
+ADR-0028), not flat-zero.
+
+The GitOps *how* is [`../patterns/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md).
+The inference knowledge — VRAM budgeting, quantization, engine choice, benchmarks,
+runbooks — lives in the team's **`inference-ops`** repository. Legacy per-model
+papers: [`../models/`](../models/qwen3.5-4b-q4.md).
 
 → Related: [03 Gateway request path](03-gateway-components.md) · [05 Auth & tiers](05-auth-identity.md)

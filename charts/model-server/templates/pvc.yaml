@@ -1,0 +1,39 @@
+{{- /*
+The weights volume. Seeded once by the seed Job (the bjw `seed` controller),
+then mounted read-only by the model container — so pod starts never re-download
+multi-GB weights.
+
+**RWX** (ReadWriteMany): the seed Job and the model StatefulSet co-mount the
+same volume, and a future second reader (a second replica, a benchmark pod)
+costs nothing. Longhorn on the GPU nodes provides RWX (ADR-0092); it is NOT the
+cluster-default StorageClass, so `storageClassName` must be set explicitly or
+the claim silently lands on hcloud-volumes, which cannot bind on these nodes.
+
+⚠️ accessModes are IMMUTABLE — changing an existing claim from RWO to RWX means
+DELETE + recreate, and the weights re-seed on the next sync.
+
+Wave -1: after the ExternalSecrets, before the seed Job. Longhorn's StorageClass
+uses reclaimPolicy: Retain, so deleting this claim orphans (does not destroy)
+an expensive-to-refetch model cache.
+*/ -}}
+{{- include "model-server.validate" . -}}
+{{- if .Values.pvc.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.pvc.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  accessModes:
+    - {{ .Values.pvc.accessMode | default "ReadWriteMany" }}
+  {{- with .Values.pvc.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.pvc.size }}
+{{- end }}

@@ -951,7 +951,37 @@ applications:
     destination:
       namespace: converse
 
+  # --- Self-hosted model serving on the Hetzner GPU fleet (ADR-0094/0095) ---
+  # The orchestrator for every model that runs on hetzner-k8s-gpu-1/2. It emits
+  # ONE ApplicationSet with a child per entry in charts/model-serving/values.yaml,
+  # each sourcing the generic charts/model-server leaf from OCI.
+  #
+  # `controlPlane: true` because the ApplicationSet is a control object and must
+  # land in-cluster/argocd where the controller watches it (ADR-0017). The
+  # CHILDREN are ordinary workloads on home-remote, namespace `inference` — note
+  # that this is NOT `homeCluster: true`: these GPUs are in the same cluster as
+  # everything else, so the ADR-0022 exception simply does not apply any more. It
+  # remains in force only for the legacy `model-serving-*` apps below, which serve
+  # from the other cluster (admin@homeos) until it is decommissioned.
+  #
+  # To add, replace or remove a model, edit charts/model-serving/values.yaml —
+  # nothing here changes. See docs/patterns/self-hosted-model-serving.md.
+  - name: model-serving
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    controlPlane: true
+    chart: model-serving
+    releaseName: model-serving
+    destination:
+      namespace: converse
+
   # --- Self-hosted model on the home GPU (ADR-0022) ---
+  # ⚠️ LEGACY GENERATION (superseded by charts/model-serving above, ADR-0094).
+  # These per-model charts each serve one model from the OTHER cluster
+  # (admin@homeos) over a public Ingress. They are kept because zimage-turbo is
+  # still LIVE there and the rest are its rollback set; retiring them is a
+  # decommissioning exercise on that cluster, not a change here. Do NOT copy this
+  # shape for a new model — add a catalog entry to charts/model-serving instead.
   # KServe/Knative + vLLM + LMCache serving Qwen3-4B on the home RTX A2000.
   # `homeCluster: true` is the SINGLE sanctioned ADR-0017 exception: this
   # workload targets the cluster ArgoCD runs on (the home Talos cluster) — NOT

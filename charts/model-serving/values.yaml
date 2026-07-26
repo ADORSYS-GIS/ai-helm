@@ -1,0 +1,295 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  THE MODEL CATALOG — this is the file you edit to add, replace or remove a
+#  self-hosted model. One entry per model. Nothing else needs to change.
+#
+#  Full recipes (with the verification steps): the team's `inference-ops` repo,
+#  docs/how-to/add-a-model.md and docs/how-to/replace-a-model.md.
+#  The GitOps mechanics: docs/patterns/self-hosted-model-serving.md · ADR-0094.
+#
+#  Two things to know before you touch it:
+#
+#   1. A merge to `main` is a LIVE DEPLOY (ADR-0055 continuous delivery). There is
+#      no release tag to cut and no root to repoint. Roll back with `git revert`.
+#
+#   2. Serving a model and OFFERING it to users are two different steps. This file
+#      makes the model run on a GPU. To let users reach it through the gateway you
+#      also add a backend + model entry in `charts/ai-models/values.yaml` — and
+#      that is deliberate: it means you can deploy and measure a model before any
+#      user can see it. `tools/check-model-catalogs.sh` fails CI if an entry here
+#      is federated inconsistently there.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ────────────────────────────────────────────────────────────────────────
+# ArgoCD wiring — where the generated child Applications live.
+#
+# ⚠️ Two-tier (ADR-0017): the ApplicationSet this chart renders is a CONTROL
+# object and lives in-cluster/argocd (the charts/apps entry sets
+# `controlPlane: true`). The child Applications are WORKLOADS and target
+# home-remote, namespace `inference`, where the GPU nodes are.
+# ────────────────────────────────────────────────────────────────────────
+argocd:
+  namespace: argocd
+  project: ai
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  destination:
+    name: home-remote
+    allowInCluster: false
+    # Models get their own namespace: not `converse` (chat/gateway territory)
+    # and not the old `converse-poc` (that was the other cluster). No Pod
+    # Security elevation is needed — neither engine wants hostPath or host
+    # networking, so the cluster-wide `baseline` standard is satisfied.
+    namespace: inference
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  FLEET DEFAULTS — the shared machinery. You should rarely need to edit this
+#  section to add a model; it exists so a catalog entry can stay ~15 lines.
+# ═══════════════════════════════════════════════════════════════════════════════
+defaults:
+
+  # ── GPU access ────────────────────────────────────────────────────────────
+  # The two GPU nodes (hetzner-k8s-gpu-1/2) are tainted so nothing lands on them
+  # by accident. `count: 1` means each model claims one whole card; there is no
+  # MIG or time-slicing configured, and one model per GPU is the intent.
+  #
+  # Consequence worth internalising: with 2 cards, the 3rd enabled model sits
+  # Pending with `Insufficient nvidia.com/gpu` until you disable another. That is
+  # the queue working, not a bug — and it replaces the old routine of hunting
+  # down which chart to set `enabled: false` before enabling yours.
+  gpu:
+    count: 1
+    runtimeClassName: nvidia
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+
+  # ── Weights storage ───────────────────────────────────────────────────────
+  # Longhorn, which on this cluster exists ONLY on the GPU nodes (ADR-0092) and
+  # is NOT the cluster default StorageClass — so it must be named explicitly or
+  # the claim lands on hcloud-volumes and never binds. reclaimPolicy is Retain:
+  # deleting a claim orphans rather than destroys an expensive weight cache.
+  storageClassName: longhorn
+
+  seedImage:
+    repository: python
+    tag: "3.12-slim"
+
+  # ── HuggingFace token for the seed Job ────────────────────────────────────
+  # Lifts the anonymous Hub rate limit that otherwise stalls a multi-GB download
+  # partway through, and is required for gated repos.
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: true
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
+
+  # ── Who may reach a model ─────────────────────────────────────────────────
+  # See charts/model-server/templates/ciliumnetworkpolicy.yaml for why the
+  # entities matter (kubelet probes) and why there is no egress block (seeding).
+  networkPolicy:
+    enabled: true
+    allowFromNamespaces:
+      - envoy-gateway-system   # the Envoy AI Gateway data plane — the only caller
+      - observability          # Alloy, scraping /metrics
+    allowFromEntities:
+      - host
+      - remote-node
+      - health
+
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    path: /metrics
+
+  # ── LMCache (vLLM only) ───────────────────────────────────────────────────
+  # KV-cache offload to host RAM for prefix reuse. Values carried over from the
+  # combination this repo actually ran (charts/model-serving-qwen25-3b-awq).
+  # ⚠️ LMCACHE_MAX_LOCAL_CPU_SIZE is in GiB of HOST RAM and is NOT accounted for
+  # by the container memory limit automatically — raise `resources.memoryLimit`
+  # above it or the pod gets OOM-killed mid-cache.
+  lmcacheEnv:
+    LMCACHE_USE_EXPERIMENTAL: "False"   # connector is activated by --kv-transfer-config alone
+    LMCACHE_CHUNK_SIZE: "256"
+    LMCACHE_LOCAL_CPU: "True"
+    LMCACHE_MAX_LOCAL_CPU_SIZE: "4"
+    LMCACHE_SAVE_DECODE_CACHE: "False"
+    LMCACHE_MIN_RETRIEVE_TOKENS: "64"
+    LMCACHE_LOG_LEVEL: "INFO"
+
+  # ── Engine profiles ───────────────────────────────────────────────────────
+  # Which engine to pick is an inference decision, documented in inference-ops
+  # ADR-0002. The short version:
+  #   GGUF weights, or a brand-new architecture → llamacpp
+  #   safetensors (AWQ/GPTQ/FP8), want throughput/prefix-reuse → vllm
+  # Serving a GGUF on vLLM is a known ~8x throughput regression; do not.
+  engines:
+
+    llamacpp:
+      # The image entrypoint IS llama-server, so `args` are bare flags.
+      # ⚠️ NOT `server-cuda13`: these cards run driver 550 / CUDA 12.4, and the
+      # CUDA-13 build needs a newer driver (it also regressed on some GPUs,
+      # ggml-org/llama.cpp#22561). Pin a digest once a model is load-gated.
+      image:
+        repository: ghcr.io/ggml-org/llama.cpp
+        tag: server-cuda
+        pullPolicy: IfNotPresent
+      # 503 while loading, 200 once the weights are in — exactly what a startup
+      # probe needs.
+      healthPath: /health
+      # TODO(hardening): both engines currently run as root with ALL capabilities
+      # dropped and privilege escalation disabled. That is what clears Trivy
+      # KSV-0118 and is what has actually shipped; a previous attempt to pin
+      # runAsUser 1000 was never verified against a real GPU rollout. Tighten to
+      # non-root per engine once confirmed on the fleet, and record it.
+      podSecurityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+            - ALL
+
+    vllm:
+      # The LMCache-paired build of vLLM's OpenAI server. ⚠️ vLLM↔LMCache skew is
+      # image-pinned — test before bumping this tag.
+      image:
+        repository: lmcache/vllm-openai
+        tag: v0.7.0
+        pullPolicy: IfNotPresent
+      healthPath: /health
+      podSecurityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+            - ALL
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  THE MODELS. Add yours here.
+#
+#  Minimal entry:
+#
+#    my-model:
+#      enabled: true
+#      engine: llamacpp                    # or vllm
+#      weights:
+#        hfRepo: org/Some-Model-GGUF
+#        revision: <full commit sha>        # NEVER a branch name — see below
+#        include: "Some-Model-Q4_K_M.gguf"  # llamacpp only: which file to fetch
+#        sizeGi: 20                         # PVC size, comfortably above the file
+#      serving:
+#        contextSize: 32768
+#
+#  `revision` must be a commit SHA, not `main`. Weights are mutable on the Hub:
+#  a pinned SHA means the bytes you measured are the bytes you serve, and it is
+#  also what makes the seed stamp meaningful (change the SHA → weights re-seed).
+#  Get it with:
+#      curl -s https://huggingface.co/api/models/<org>/<repo> | jq -r .sha
+#
+#  Optional per-model knobs:
+#
+#    lmcache: { enabled: true }        # vllm only — KV offload to host RAM
+#    apiKey:                           # engine-enforced Bearer, normally OFF
+#      enabled: true
+#      property: my_model_api_key      # property in ssegning-aws
+#
+#  On `apiKey`: you almost certainly do not want it. A model is cluster-local
+#  (ADR-0095) and the CiliumNetworkPolicy already limits ingress to the gateway,
+#  so a shared secret in the pod adds a rotation surface without closing a hole.
+#  It exists for a model that must be reachable from somewhere other than the
+#  gateway. When it IS on, BOTH engines enforce it natively and NEITHER grows a
+#  proxy sidecar — llama-server via `--api-key-file`, vLLM via `VLLM_API_KEY`.
+#  (The Caddy sidecar in the legacy charts was never a vLLM limitation: it was
+#  required only by `kserve/huggingfaceserver`, KServe's wrapper, which ignores
+#  VLLM_API_KEY entirely — ADR-0022. That wrapper is not an engine option here.)
+# ═══════════════════════════════════════════════════════════════════════════════
+models:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # OpenMythos-27B (Q4_K GGUF, llama.cpp) — the security-analysis quality tier.
+  # The first model on the Hetzner GPU fleet.
+  #
+  # A fine-tune of Qwen/Qwen3.6-27B (`qwen35` architecture), Apache-2.0,
+  # published GGUF-only — which is why llama.cpp rather than vLLM: there is no
+  # safetensors release to quantize for a Marlin/AWQ kernel, and vLLM's GGUF
+  # loader is the slow path (~93 vs ~741 tok/s measured in docs/models/qwen3.5-4b-q4.md).
+  #
+  # VRAM: Q4_K is 16.5 GB (~15.4 GiB) of a 20475 MiB card, leaving ~4 GiB for KV
+  # plus compute buffers. Q5_K (19.2 GB) and Q6_K (22.1 GB) do NOT fit. Expect
+  # ~12–15 tok/s decode: 280 GB/s of memory bandwidth divided by the weights is
+  # the hard ceiling, and no amount of tuning moves it. This is a quality tier,
+  # not a speed tier.
+  #
+  # The KV side is friendlier than the number of parameters suggests: Qwen3.6-27B
+  # is a HYBRID — only 16 of its 65 layers keep a KV cache, the other 48 are
+  # linear attention — so KV grows roughly a quarter as fast as a full-attention
+  # 27B would. That is why 16k below is a floor to start from and not a ceiling;
+  # the load gate should walk it up and record where it actually stops.
+  #
+  # ⚠️ Provenance: `jabbatheduck` is an unknown uploader, the quant is unsigned,
+  # and the in-repo seceval numbers are self-reported. Accepted deliberately for
+  # a security-analysis PoC and mitigated by the pinned SHA, no secret mounts,
+  # and the NetworkPolicy. See docs/models/openmythos-27b-q4.md.
+  #
+  # ⚠️ NOT YET FEDERATED — there is intentionally no charts/ai-models entry until
+  # the load gate passes (inference-ops how-to/measure-a-model.md). Until then it
+  # runs and can be measured, but no user can route to it.
+  openmythos-27b:
+    enabled: true
+    engine: llamacpp
+    weights:
+      hfRepo: jabbatheduck/OpenMythos-GGUF
+      revision: 4a1a1f97fbfc621d6f33cebc9f3ecc5c12e8c7d7
+      include: "OpenMythos-27B-Q4_K.gguf"
+      sizeGi: 30
+    serving:
+      # Conservative starting point. The load gate walks this up and records
+      # where it stops; do not raise it on a hunch — an over-large KV pool fails
+      # at allocation time, minutes into a load, and looks like a crash.
+      contextSize: 16384
+      # Few slots on purpose: KV is shared across slots, and at ~13 tok/s
+      # concurrency is not what this tier is for.
+      parallel: 2
+      # Levers to try during the load gate, in this order, one at a time:
+      #   --flash-attn                     (check the flag's arity in the build)
+      #   --cache-type-k q8_0 --cache-type-v q8_0   (halves KV, needs FA)
+      #   --no-mmap                        (if page cache pressures the memory limit)
+      extraArgs: []
+    resources:
+      cpuRequest: "2"
+      cpuLimit: "8"
+      memoryRequest: 8Gi
+      # Host RAM, not VRAM: llama.cpp mmaps the 16.5 GB GGUF, so its page cache
+      # counts against this limit.
+      memoryLimit: 24Gi

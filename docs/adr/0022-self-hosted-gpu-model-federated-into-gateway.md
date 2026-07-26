@@ -4,6 +4,18 @@
 **Date:** 2026-06-05
 **Deciders:** @stephane-segning
 
+> ⚠️ **Amended by [ADR-0095](0095-cluster-local-model-federation.md) (2026-07-26).**
+> The federation model below stands — a self-hosted model is still just another
+> OpenAI-compatible backend behind the gateway, inheriting ADR-0021 auth, budgets
+> and metering. What no longer applies is the **public edge** this ADR required
+> (Traefik Ingress + `cert-cloudflare` certificate + DNS record + static API key +
+> Caddy auth-proxy sidecar) and the `homeCluster: true` destination. Those existed
+> only because the GPU lived on a different cluster from the gateway. The Hetzner
+> GPU nodes are on `home-remote` itself, so models deployed by
+> `charts/model-serving` are reached at a ClusterIP Service and guarded by a
+> CiliumNetworkPolicy instead. This ADR's shape remains accurate for the legacy
+> `charts/model-serving-*` applications still serving from `admin@homeos`.
+
 > **Accepted 2026-06-07 — serving end-to-end, with one design correction.** The
 > original "expose via a public Knative FQDN; the vLLM API key is the sole gate"
 > is **WRONG**: KServe's huggingfaceserver serves the OpenAI API itself and

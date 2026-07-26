@@ -1,0 +1,60 @@
+{{- /*
+The real access control for a cluster-local model (ADR-0095).
+
+Under the old design the model sat behind a public Traefik Ingress and was
+protected by a static Bearer the engine checked. Now it has no route off the
+cluster at all, and this policy is what says who may talk to it: the Envoy AI
+Gateway data plane, and the metrics scraper. Nothing else in the cluster can
+reach the inference port, so a compromised pod elsewhere cannot quietly burn
+GPU time or exfiltrate completions.
+
+⚠️ Two Cilium behaviours this depends on, both easy to get wrong:
+
+  1. Policy is enforced PER DIRECTION. This policy declares `ingress` only, so
+     the pods keep unrestricted EGRESS — which the seed Job needs to reach
+     huggingface.co. Do not add an `egress:` block here without also allowing
+     DNS + the Hub, or seeding breaks.
+
+  2. Any CNP with ingress rules makes the selected pods deny-by-default for
+     ingress. That includes the KUBELET's probe traffic, which arrives with the
+     `host` (same node) or `remote-node` identity — NOT from a pod namespace. If
+     those entities are not allowed, every startup/readiness probe fails and the
+     model never goes Ready, which reads exactly like a crash-looping engine.
+     `health` covers Cilium's own health checks.
+
+A plain k8s NetworkPolicy would NOT work here: node IPs carry `remote-node`/`host`
+identity in Cilium and an `ipBlock` never matches them (see CLAUDE.md).
+*/ -}}
+{{- include "model-server.validate" . -}}
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ .Values.model.name }}-allow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+  annotations:
+    # Wave 0: in place before the model pod (wave 1) starts serving.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  description: >-
+    Ingress to the {{ .Values.model.name }} inference port is restricted to the AI gateway
+    data plane and the metrics scraper; kubelet probe traffic is allowed explicitly.
+  endpointSelector:
+    matchLabels:
+      ai-helm.adorsys-gis.github.io/model: {{ .Values.model.name }}
+  ingress:
+    {{- with .Values.networkPolicy.allowFromNamespaces }}
+    - fromEndpoints:
+        {{- range . }}
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- with .Values.networkPolicy.allowFromEntities }}
+    # Kubelet probes + Cilium health. Without this the pod never goes Ready.
+    - fromEntities:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+{{- end }}

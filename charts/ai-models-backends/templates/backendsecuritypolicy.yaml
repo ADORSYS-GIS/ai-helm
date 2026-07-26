@@ -3,8 +3,20 @@
 Audit fix from the pre-split chart: gate on `enabled: false` to avoid
 emitting a security policy that references a non-existent AIServiceBackend
 when a backend is disabled.
+
+Second gate (ADR-0095): emit nothing at all for a backend that carries NO
+credential. Cluster-local model backends are the case — a self-hosted model on
+the GPU fleet is reachable only from the gateway (CiliumNetworkPolicy) and
+speaks plain HTTP over the pod network, so there is no key to present. Without
+this gate such a backend rendered a BackendSecurityPolicy whose spec had
+targetRefs and nothing else: a credential-less policy that declares no type,
+which is not a meaningful object to hand the controller.
+
+A backend therefore opts IN to a security policy by setting `type:
+GCPCredentials` or `securityType: APIKey`; anything else gets no policy.
 */ -}}
-{{- if not (eq $backendConfig.enabled false) }}
+{{- $hasCredential := or (eq ($backendConfig.type | default "") "GCPCredentials") (eq ($backendConfig.securityType | default "") "APIKey") -}}
+{{- if and (not (eq $backendConfig.enabled false)) $hasCredential }}
 ---
 apiVersion: aigateway.envoyproxy.io/v1beta1
 kind: BackendSecurityPolicy
@@ -15,7 +27,7 @@ spec:
     - group: aigateway.envoyproxy.io
       kind: AIServiceBackend
       name: {{ $backendConfig.resourceName }}
-  {{- if eq $backendConfig.type "GCPCredentials" }}
+  {{- if eq ($backendConfig.type | default "") "GCPCredentials" }}
   type: GCPCredentials
   gcpCredentials:
     projectName: {{ $backendConfig.gcpCredentials.projectName }}
@@ -26,7 +38,7 @@ spec:
         {{- if $backendConfig.gcpCredentials.credentialsFile.secretRef.key }}
         key: {{ $backendConfig.gcpCredentials.credentialsFile.secretRef.key }}
         {{- end }}
-  {{- else if eq $backendConfig.securityType "APIKey" }}
+  {{- else }}
   type: APIKey
   apiKey:
     secretRef:

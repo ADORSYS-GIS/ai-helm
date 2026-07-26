@@ -1,0 +1,232 @@
+# CI fixture — the vLLM + LMCache engine path.
+#
+# See ci/llamacpp-values.yaml for why these fixtures exist. This one covers the
+# pieces unique to the vllm profile: the /dev/shm emptyDir, the LMCACHE_* env,
+# the --kv-transfer-config arg, and safetensors seeding (no --include glob, so no
+# model.gguf symlink).
+
+model:
+  name: fixture-vllm
+  engine: vllm
+  storagePath: Fixture-Model-AWQ
+
+pvc:
+  enabled: true
+  name: fixture-vllm-weights
+  storageClassName: longhorn
+  accessMode: ReadWriteMany
+  size: 20Gi
+
+hfToken:
+  enabled: true
+  secretName: hf-token
+  dataKey: token
+  externalSecret:
+    enabled: true
+    secretStore: ssegning-aws
+    refreshInterval: 1h
+    key: ai/camer/digital/prod/env
+    property: hf_token
+
+apiKey:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  allowFromNamespaces:
+    - envoy-gateway-system
+    - observability
+  allowFromEntities:
+    - host
+    - remote-node
+    - health
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+
+modelServing:
+  global:
+    fullnameOverride: fixture-vllm
+  defaultPodOptions:
+    runtimeClassName: nvidia
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+    labels:
+      ai-helm.adorsys-gis.github.io/model: fixture-vllm
+  controllers:
+    main:
+      type: statefulset
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      pod:
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
+      containers:
+        model:
+          image:
+            repository: lmcache/vllm-openai
+            tag: v0.7.0
+            pullPolicy: IfNotPresent
+          args:
+            - --model
+            - /models/Fixture-Model-AWQ
+            - --served-model-name
+            - fixture-vllm
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8080"
+            - --max-model-len
+            - "32768"
+            - --max-num-seqs
+            - "4"
+            - --gpu-memory-utilization
+            - "0.9"
+            - --quantization
+            - awq
+            - --dtype
+            - float16
+            - --enable-auto-tool-choice
+            - --tool-call-parser
+            - hermes
+            - --kv-transfer-config
+            - '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+          env:
+            LMCACHE_USE_EXPERIMENTAL: "False"
+            LMCACHE_CHUNK_SIZE: "256"
+            LMCACHE_LOCAL_CPU: "True"
+            LMCACHE_MAX_LOCAL_CPU_SIZE: "4"
+            LMCACHE_SAVE_DECODE_CACHE: "False"
+            LMCACHE_MIN_RETRIEVE_TOKENS: "64"
+            LMCACHE_LOG_LEVEL: "INFO"
+          ports:
+            - name: http
+              containerPort: 8080
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /health, port: 8080 }
+                periodSeconds: 15
+                failureThreshold: 120
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /health, port: 8080 }
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "2"
+              memory: 8Gi
+            limits:
+              cpu: "8"
+              memory: 16Gi
+              nvidia.com/gpu: 1
+    seed:
+      type: job
+      annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+        argocd.argoproj.io/sync-wave: "0"
+      pod:
+        restartPolicy: OnFailure
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
+      job:
+        backoffLimit: 6
+        activeDeadlineSeconds: 7200
+      containers:
+        seed:
+          image:
+            repository: python
+            tag: "3.12-slim"
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              echo "fixture — the real script is generated by charts/model-serving"
+          env:
+            HF_TOKEN:
+              secretKeyRef:
+                name: hf-token
+                key: token
+                optional: false
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits:   { cpu: "2", memory: 6Gi }
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      labels:
+        ai-helm.adorsys-gis.github.io/model: fixture-vllm
+      ports:
+        http:
+          port: 8080
+          targetPort: 8080
+  persistence:
+    model-store:
+      enabled: true
+      existingClaim: fixture-vllm-weights
+      advancedMounts:
+        main:
+          model:
+            - path: /models
+              readOnly: true
+        seed:
+          seed:
+            - path: /models
+    dshm:
+      enabled: true
+      type: emptyDir
+      medium: Memory
+      sizeLimit: 2Gi
+      advancedMounts:
+        main:
+          model:
+            - path: /dev/shm

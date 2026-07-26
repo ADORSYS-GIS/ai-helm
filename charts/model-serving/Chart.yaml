@@ -1,0 +1,44 @@
+apiVersion: v2
+name: model-serving
+description: |
+  Orchestrator for every self-hosted model on the GPU fleet (ADR-0094).
+
+  Emits ONE ApplicationSet whose List generator produces one child Application
+  per enabled entry in `models:`, each sourcing the generic `model-server` leaf
+  chart from OCI. Same orchestrator-plus-leaves shape as charts/ai-models
+  (ADR-0012) — including the goTemplate literal-escaping convention.
+
+  This chart is where the ENGINE PROFILES live: `templates/_helpers.tpl` expands
+  a compact ~15-line catalog entry into the full bjw-template workload block
+  (engine image, server args, seed script, probes, GPU scheduling, mounts) that
+  the leaf receives. It has to happen here rather than in the leaf, because a
+  Helm parent cannot compute SUBCHART values at render time — the reason every
+  old per-model chart hardcoded its seed repo/glob with a "keep in sync" comment.
+
+  Adding or replacing a model is one entry in values.yaml. No new chart, no new
+  Application, no ADR. See docs/patterns/self-hosted-model-serving.md and the
+  team's inference-ops repo (how-to/add-a-model.md).
+
+  The ApplicationSet is a CONTROL object, so the charts/apps entry sets
+  `controlPlane: true` and it lands in-cluster/argocd (ADR-0017); the CHILDREN
+  it generates target home-remote, namespace `inference`.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+keywords:
+  - llm
+  - inference
+  - gpu
+  - applicationset
+  - orchestrator
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
