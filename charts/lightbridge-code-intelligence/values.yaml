@@ -483,6 +483,16 @@ lci:
             runAsUser: 1000
             capabilities:
               drop: [ALL]
+          volumeMounts:
+            # Internal CA certificate for OTLP TLS validation
+            - name: internal-ca-trust
+              mountPath: /etc/otel-certs
+              readOnly: true
+          volumes:
+            # Internal CA certificate for OTLP TLS validation
+            - name: internal-ca-trust
+              secret:
+                secretName: alloy-internal-ca
 
     # Next.js web console: Keycloak OIDC client (Authorization-Code + PKCE; ADR-0014).
     web:
@@ -760,6 +770,16 @@ lci:
             runAsUser: 1000
             capabilities:
               drop: [ALL]
+          volumeMounts:
+            # Internal CA certificate for OTLP TLS validation
+            - name: internal-ca-trust
+              mountPath: /etc/otel-certs
+              readOnly: true
+          volumes:
+            # Internal CA certificate for OTLP TLS validation
+            - name: internal-ca-trust
+              secret:
+                secretName: alloy-internal-ca
 
     # Reconciler (ADR-0058/0059): a SINGLE replica that owns ALL GitHub egress — it drains the
     # github_outbox and delivers reviews/replies/reactions/failure-notices, AND runs the feedback poll
