@@ -14,6 +14,11 @@ Helm charts + ArgoCD GitOps for the Camer Digital AI platform. **Not an applicat
 > **Maintainer:** @stephane-segning. Use this handle in ADR `Deciders:` lines and any maintainer-attribution context. Don't substitute branch names.
 
 > **Companion repos:** `home-os` (shared cluster infra ai-helm only *consumes* — cert-manager + ClusterIssuers, redis-ha, CNPG + Barman, Traefik, ESO; local `/Users/selast/dev/personal/home-os`) and `hetzner-k8s` (Terraform nodes/network/CNI/LB + the platform bootstrap; local `/Users/selast/dev/personal/hetzner-k8s`). The old "ai-gitops" deployment-state repo was never built under that name — it exists now as the PRIVATE **`adorsys-gis/ai-helm-values`** (ADR-0055/0056), which holds per-app workload values + image tags + the `environments/` deps overlays. **Chart logic + templates live here in `ai-helm`; everything that is *deployed* (values, tags, per-env CRs) lives in `ai-helm-values`** (see the "ai-helm ↔ ai-helm-values" section below + `ai-helm-values/README.md`). The root `ai-apps-v2` Application is pinned in **`home-os`** `charts/cd`.
+**`inference-ops`** is the team's inference knowledge base (Diátaxis + ADRs +
+immutable benchmark reports) — VRAM budgeting, quantization, engine selection,
+the add/replace/roll-back/measure recipes and the model-serving runbooks live
+there, NOT in ai-helm. ai-helm ADRs own the GitOps shape; inference-ops ADRs own
+the inference decisions.
 
 ## Read these first when changing anything architectural
 
@@ -174,7 +179,7 @@ The historical **tag-based** model (ADR-0031, `release-YYYY.MM.DD` + `release.sh
 - **Workloads → `home-remote`.** Driven by `argocd.destination` (`name` / `server` / `allowInCluster`) in `charts/{apps,ai-models,librechart}/values.yaml`. Never use ArgoCD's built-in in-cluster handle (`name: in-cluster` / `server: https://kubernetes.default.svc`) for a workload — even if it resolves to the same physical cluster, it's a different ArgoCD destination. The helper `<chart>.argocd.destinationClusterRef` (each chart's `templates/_helpers.tpl`) **hard-fails the render** if a workload destination resolves to the in-cluster handle unless `allowInCluster: true`.
 - **Control objects → local cluster / argocd.** In `charts/apps`, an app whose deployed content is itself a control object (an orchestrator emitting an ApplicationSet — `models`→`charts/ai-models`, `librechat`→`charts/librechart`) sets **`controlPlane: true`** on its entry. The template then targets `argocd.inClusterServer` (**`server: https://kubernetes.default.svc`** — the canonical local-cluster ref, used instead of the `name: in-cluster` handle which depends on that registration existing) / `argocd.controlPlaneNamespace` (`argocd`) and bypasses the guard. The orchestrators' ApplicationSet `template.spec.destination` (the **child** Applications) stays `home-remote`.
 - **The root `ai-apps-v2` Application** (its `targetRevision` pinned in `home-os` `charts/cd/values.yaml` — there is no `ai-gitops`) deploys `charts/apps` and **must itself target in-cluster/argocd** so the generated Application CRs land where the controller watches.
-- **`homeCluster: true` — the ONE sanctioned ADR-0017 exception (ADR-0022).** A *workload* (not a control object) that must run on the cluster ArgoCD itself runs on — today `model-serving-qwen3-4b` (LLM: vLLM on home GPU) and `model-serving-zimage-turbo` (image generation: Rust/Candle on home GPU). Both need the local RTX A2000. They target `argocd.inClusterServer` but keep their own workload namespace (unlike `controlPlane`, which forces `argocd`), and the destination guard is called with `allowInCluster: true`. Don't add more `homeCluster` apps without an ADR — the default for every workload is still `home-remote`.
+- **`homeCluster: true` — the ONE sanctioned ADR-0017 exception (ADR-0022), now LEGACY-ONLY (ADR-0095).** A *workload* (not a control object) that must run on the cluster ArgoCD itself runs on — the `model-serving-*` apps needing the home RTX A2000 (`model-serving-zimage-turbo` is the live one). They target `argocd.inClusterServer` but keep their own workload namespace (unlike `controlPlane`, which forces `argocd`), and the destination guard is called with `allowInCluster: true`. ⚠️ **New GPU workloads must NOT use this** — the Hetzner GPU nodes are on `home-remote`, so `charts/model-serving` children are ordinary workloads. The exception is scoped to the `admin@homeos` generation and retires with it. Don't add more `homeCluster` apps without an ADR.
 
 Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone). The render-time guard is complemented out-of-band by the `ai` AppProject's `destinations:` allowlist. See ADR-0017.
 
@@ -351,18 +356,51 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 > 6. **`CLAUDE.md`** (this file) — if a convention/contract/gotcha changed.
 > 7. **User memory** — if it's a durable preference or hard-won lesson.
 
-**Self-hosted models/agents:** the model-agnostic pattern + the "deploy the next one"
-checklist live in [`docs/patterns/self-hosted-model-serving.md`](docs/patterns/self-hosted-model-serving.md)
-§8 (vLLM-vs-llama.cpp engine choice; pricing per ADR-0028). **Per-model papers** are
-under [`docs/models/`](docs/models/) — `qwen3.5-4b-q4.md`
-(llama.cpp/Q4, **LIVE** = the active model, ADR-0032, chart `charts/model-serving-qwen3-5`;
-§6 = measured capacity/perf), `qwen3-4b.md` (vLLM, chart `charts/model-serving-qwen3-4b`,
-now standby/rollback), `qwen3.5-4b.md` (vLLM/BF16, studied-not-chosen).
-Also `z-image-turbo.md` (Rust/Candle, chart `charts/model-serving-zimage-turbo`,
-FP8, image generation on home GPU). Follow the guide when adding a model —
-don't reinvent the cluster-local + edge-auth exposure (huggingfaceserver ignores
-`VLLM_API_KEY`; llama-server has native `--api-key`) or the €/hour-TCO → cost-recovery
-pricing.
+**Self-hosted models — the GPU fleet (ADR-0094/0095).** ⚠️ **Two generations exist;
+do not mix them up.**
+
+*Current.* Two Hetzner Robot GPU nodes (`hetzner-k8s-gpu-1/2`, RTX 4000 SFF Ada,
+**20475 MiB**, driver 550/**CUDA 12.4**, Ada ⇒ **FP8 IS supported here**) are on
+**`home-remote`** — the same cluster as the gateway. So a model is an ORDINARY
+workload: **NOT `homeCluster`**, no Ingress, no cert, no DNS, no static API key, no
+Caddy sidecar. `charts/model-serving` (orchestrator) + `charts/model-server`
+(generic leaf) serve them in ns `inference`; the gateway `Backend` points at
+`<model>.inference.svc.cluster.local:8080` and a `CiliumNetworkPolicy` is the
+control. **Adding/replacing a model = ONE ~15-line entry in
+`charts/model-serving/values.yaml`** (+ its `charts/ai-models` backend + model
+entry to make it user-reachable). Do NOT create a new chart per model.
+- Engine profiles live in the ORCHESTRATOR's `_helpers.tpl` — a Helm parent can't
+  compute SUBCHART values at render time, which is why the old charts hardcoded
+  their seed repo/glob. Both `llamacpp` and `vllm` (opt-in LMCache) render **ONE
+  container**; the optional `apiKey` is enforced natively by each engine
+  (`--api-key-file` / `VLLM_API_KEY`). **Caddy was only ever needed for
+  `kserve/huggingfaceserver`**, which ignores `VLLM_API_KEY` (ADR-0022) and is
+  deliberately not an engine profile — don't reintroduce a proxy sidecar.
+- GPU placement is a `nvidia.com/gpu: 1` REQUEST (+ toleration/nodeSelector/
+  runtimeClass). 2 cards ⇒ 2 models; a 3rd queues `Pending`. ⚠️ The **seed Job**
+  needs the same nodeSelector/toleration despite needing no GPU — Longhorn runs
+  only on the GPU nodes (ADR-0092), and `storageClassName: longhorn` is mandatory
+  (not the cluster default; omitting it silently targets `hcloud-volumes` and never
+  binds). ⚠️ The CNP MUST allow `fromEntities: [host, remote-node, health]` or
+  KUBELET PROBES fail and the pod never goes Ready (looks like a crash-loop).
+- `tools/check-model-catalogs.sh` (in `helm-lint` CI) fails if a cluster-local
+  gateway backend has no server behind it. Serving *without* federating is allowed
+  on purpose — that's how a model is load-gated before users can reach it.
+
+*Legacy.* The eight `charts/model-serving-*` charts serve from the OTHER cluster
+(`admin@homeos`) over a public edge with `homeCluster: true`. `zimage-turbo` is
+LIVE there; the rest are its rollback set. **Retained, not deleted** — don't copy
+their shape, and don't "fix" them to match the new pattern. Papers:
+[`docs/models/`](docs/models/).
+
+*Where the knowledge lives.* The GitOps *how* is
+[`docs/patterns/self-hosted-model-serving.md`](docs/patterns/self-hosted-model-serving.md).
+The **inference** knowledge — VRAM budgeting, quantization, engine selection,
+benchmarks, runbooks, the add/replace/roll-back/measure recipes — lives in the
+team's **`inference-ops`** repo (checked out alongside this one; Diátaxis + ADRs +
+immutable benchmark reports). Put inference knowledge THERE, not here;
+ai-helm ADRs own the GitOps shape, inference-ops ADRs own the inference decisions.
+Pricing stays €/hour-TCO → cost-recovery (ADR-0028).
 
 ## When you finish substantive work
 
