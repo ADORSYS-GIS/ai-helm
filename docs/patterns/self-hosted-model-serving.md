@@ -176,6 +176,18 @@ match this page; they are correct for where they run.
   `unauthorized: Invalid API Key` in the model log at exactly the scrape
   interval. The leaf chart gives the scraper the same key via the
   ServiceMonitor's `authorization` block whenever `apiKey.enabled`.
+- **⚠️ A crash-looping pod blocks its own fix.** A single-replica StatefulSet's
+  RollingUpdate waits for the current pod to become Ready before replacing it, so
+  a pod that never becomes Ready pins the old revision indefinitely — the chart
+  fix merges, syncs, and appears to do nothing. Confirm with
+  `kubectl get sts <name> -o jsonpath='{.status.currentRevision}{"\n"}{.status.updateRevision}'`:
+  if they differ, the rollout is stuck, and `kubectl delete pod` applies it.
+- **⚠️ Engine image tags can be older than their version number suggests.**
+  `lmcache/vllm-openai:v0.7.0` was published 2025-02, `v0.5.2` in 2026-07 — the
+  numbering scheme changed, so the "newer" tag is eighteen months stale and
+  predates Qwen3 (`ValueError: ... model type 'qwen3' but Transformers does not
+  recognize this architecture`). Sort tags by **date**, and prefer plain tags over
+  `-cu129` on this fleet (driver 550 / CUDA 12.4).
 - **⚠️ vLLM's model path is a POSITIONAL argument and must come first.** The
   image entrypoint is `vllm serve`, whose parser declares `model_tag`
   positionally. Passing it as `--model` exits immediately with
