@@ -98,6 +98,55 @@ defaults:
       key: ai/camer/digital/prod/env
       property: hf_token
 
+  # ── Engine hardening (ADR-0097) ───────────────────────────────────────────
+  # Engine-agnostic POLICY; the per-engine mapping lives in _helpers.tpl. Every
+  # engine we run must end up with: no unauthenticated surface beyond the
+  # inference API, no browser UI, no wildcard CORS, and a Bearer it checks
+  # itself. Adding an engine means adding its flags to that mapping — the policy
+  # here does not change.
+  #
+  # ⚠️ This is DEFENCE IN DEPTH, not the primary control. The primary control is
+  # still the CiliumNetworkPolicy below: verified live 2026-07-26 that a pod in
+  # the same namespace times out reaching the model, and only the gateway gets
+  # through. The key matters if that policy is ever mis-edited, and it silences
+  # llama-server's own start-up warning ("CORS is set to allow all origins and
+  # no API key is set").
+  security:
+    apiKey:
+      # Enforced natively by BOTH engines — llama.cpp `--api-key-file`, vLLM
+      # `VLLM_API_KEY`. No proxy sidecar, ever (see the Chart.yaml note).
+      enabled: true
+      secretStore: ssegning-aws
+      key: ai/camer/digital/prod/env
+      # ⚠️ OUT-OF-BAND-SECRET-FIRST. The env binding is `optional: false`, so a
+      # property missing from the store leaves the pod in ContainerCreating
+      # rather than starting unauthenticated. Reusing the long-standing
+      # `vllm_local_api_key` property, which is proven to resolve (the converse
+      # ns has synced it for months) — do NOT point a model at a new property
+      # until it exists in AWS Secrets Manager.
+      property: vllm_local_api_key
+    # llama-server ships a full chat Web UI + static file server, ENABLED BY
+    # DEFAULT, on the same port as the API. It is an unauthenticated surface we
+    # have no use for on a backend. No-op for engines that ship no UI (vLLM).
+    #
+    # This costs nothing in the normal path — the NetworkPolicy already makes the
+    # UI unreachable from a browser, so the only way to see it at all is
+    # `kubectl port-forward`. It is therefore the ONE hardening knob with real
+    # debugging value, and it is overridable PER MODEL:
+    #
+    #   models:
+    #     my-model:
+    #       security:
+    #         disableWebUI: false     # temporarily, for hands-on debugging
+    #
+    # Prefer curl against a port-forward (see the inference-ops how-tos) and
+    # leave this alone; if you do flip it, flip it back.
+    disableWebUI: true
+    # llama.cpp defaults CORS to '*'. Nothing browser-based should call a model
+    # directly — it goes through the gateway — so pin the canonical gateway
+    # origin rather than leaving a wildcard.
+    corsOrigins: "https://api.ai.camer.digital"
+
   # ── Who may reach a model ─────────────────────────────────────────────────
   # See charts/model-server/templates/ciliumnetworkpolicy.yaml for why the
   # entities matter (kubelet probes) and why there is no egress block (seeding).
@@ -287,18 +336,19 @@ models:
       # Few slots on purpose: the pool is split between them, and at ~15 tok/s
       # concurrency is not what this tier is for.
       parallel: 2
-      extraArgs:
-        # Thinking is ON in this model's chat template, and it dominates short
-        # responses: "what is 17 * 23" measured 18.2s / 274 tokens with it on
-        # versus 0.2s / 4 tokens with it off, and a 512-token cap returned an
-        # EMPTY answer because the whole budget went to reasoning. Most clients
-        # will never set this themselves, so the server default is off and a
-        # caller opts back in per request with
-        #   "chat_template_kwargs": {"enable_thinking": true}
-        # ⚠️ `reasoning_budget: 0` as a REQUEST field is ignored by build 10133 —
-        # this is the lever that actually works.
-        - --chat-template-kwargs
-        - '{"enable_thinking": false}'
+      # Thinking is ON in this model's chat template and it dominates short
+      # responses: "what is 17 * 23" measured 18.2s / 274 tokens with it on
+      # versus 0.2s / 4 tokens with it off, and a 512-token cap returned an
+      # EMPTY answer because the whole budget went to reasoning. Most clients
+      # will never disable it themselves, so the server default is off and a
+      # caller opts back in per request with
+      #   "chat_template_kwargs": {"enable_thinking": true}   (measured: 9.8s)
+      #
+      # ⚠️ Was `--chat-template-kwargs '{"enable_thinking": false}'`, which works
+      # but llama-server logs as DEPRECATED at start-up ("Use --reasoning on /
+      # --reasoning off instead"). `reasoning_budget: 0` as a REQUEST field is
+      # ignored by build 10133 and is NOT the lever.
+      reasoning: "off"
       # Further levers if VRAM ever gets tight, one at a time, re-measuring:
       #   --flash-attn                     (check the flag's arity in the build)
       #   --cache-type-k q8_0 --cache-type-v q8_0   (halves KV, needs FA)
@@ -310,3 +360,58 @@ models:
       # Host RAM, not VRAM: llama.cpp mmaps the 16.5 GB GGUF, so its page cache
       # counts against this limit.
       memoryLimit: 24Gi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Qwen3-8B-AWQ (vLLM + LMCache) — the SPEED tier, on the second GPU.
+  #
+  # Deliberately the counterpart to openmythos-27b: that model is a 27B chosen
+  # for quality at ~15 tok/s; this is an 8B chosen for responsiveness. Two cards
+  # means we no longer have to pick one — which is the whole point of ADR-0094's
+  # scheduler-assigned placement.
+  #
+  # Engine is vLLM because the weights are safetensors AWQ-INT4 (inference-ops
+  # ADR-0002: the format selects the engine). That also brings continuous
+  # batching and LMCache prefix reuse, which the llama.cpp tier does not have.
+  #
+  # VRAM budget: ~6.1 GB (~5.7 GiB) of weights against a 19.99 GiB card leaves
+  # ~13.5 GiB for KV, CUDA graphs and the LMCache pool — comfortable, unlike the
+  # 27B's 2.6 GiB. Predicted decode ~33–40 tok/s (280 GB/s ÷ 5.7 GiB × 0.7–0.85),
+  # i.e. roughly 2.5× the 27B. ⚠️ PREDICTED, not measured — run the load gate
+  # (inference-ops how-to/measure-a-model.md) and file a benchmark report before
+  # federating this into charts/ai-models.
+  #
+  # ⚠️ NOT federated yet, on purpose. Same discipline as OpenMythos: it runs and
+  # can be measured while no user can route to it.
+  #
+  # ⚠️ Unlike the 27B, `--enforce-eager` is NOT set. It was a VRAM-saving measure
+  # on the old 12 GB A2000; here CUDA graphs are affordable and materially faster.
+  # Add it to extraArgs only if VRAM turns out tight.
+  qwen3-8b-fast:
+    enabled: true
+    engine: vllm
+    weights:
+      hfRepo: Qwen/Qwen3-8B-AWQ
+      revision: 4da05a8edb55c6046cce958586c33b61da07bb79
+      # No `include`: vLLM needs the whole repo (safetensors shards + tokenizer
+      # + config), so the seed fetches everything and writes no model.gguf link.
+      sizeGi: 20
+    serving:
+      # vLLM does NOT split this across slots the way llama.cpp splits --ctx-size;
+      # --max-model-len is the per-request window directly. 32768 is Qwen3-8B's
+      # native context (YaRN would extend it, at a quality cost we have not tested).
+      contextSize: 32768
+      parallel: 4
+      quantization: awq
+      dtype: float16
+      # Qwen3 uses Hermes-style tool calls. Verify with a real tools request at
+      # the load gate — it is the first thing a bad quantization breaks.
+      toolCallParser: hermes
+    lmcache:
+      enabled: true
+    resources:
+      cpuRequest: "2"
+      cpuLimit: "8"
+      memoryRequest: 8Gi
+      # Must exceed LMCACHE_MAX_LOCAL_CPU_SIZE (4 GiB) with room to spare, or the
+      # pod is OOM-killed mid-cache rather than evicting.
+      memoryLimit: 16Gi

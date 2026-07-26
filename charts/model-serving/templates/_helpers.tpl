@@ -130,6 +130,7 @@ Output: a YAML list of strings.
 {{- $s := .serving | default dict -}}
 {{- $dir := .dir -}}
 {{- $apiKey := .apiKey -}}
+{{- $sec := .security | default dict -}}
 {{- $args := list -}}
 {{- if eq .engine "llamacpp" -}}
   {{- $args = concat $args (list
@@ -144,9 +145,23 @@ Output: a YAML list of strings.
   {{- if ne (default true $s.jinja) false -}}
     {{- $args = append $args "--jinja" -}}
   {{- end -}}
-  {{- /* llama-server enforces the Bearer itself, from a FILE. No sidecar, ever. */ -}}
+  {{- /* Thinking default. `--reasoning on|off|auto` is the supported flag;
+         setting `enable_thinking` through --chat-template-kwargs still works but
+         llama-server logs it as DEPRECATED at start-up. */ -}}
+  {{- with $s.reasoning -}}
+    {{- $args = concat $args (list "--reasoning" .) -}}
+  {{- end -}}
+  {{- /* ── Hardening (ADR-0097). llama-server enforces the Bearer itself, from a
+         FILE — no sidecar, ever. The Web UI and the '*' CORS default are the two
+         surfaces its own start-up warning complains about. */ -}}
   {{- if $apiKey -}}
     {{- $args = concat $args (list "--api-key-file" "/etc/model-api-key/api_key") -}}
+  {{- end -}}
+  {{- if ne (default true $sec.disableWebUI) false -}}
+    {{- $args = append $args "--no-webui" -}}
+  {{- end -}}
+  {{- with $sec.corsOrigins -}}
+    {{- $args = concat $args (list "--cors-origins" .) -}}
   {{- end -}}
 {{- else if eq .engine "vllm" -}}
   {{- $args = concat $args (list
@@ -168,6 +183,19 @@ Output: a YAML list of strings.
   {{- end -}}
   {{- if .lmcache -}}
     {{- $args = concat $args (list "--kv-transfer-config" "{\"kv_connector\":\"LMCacheConnectorV1\",\"kv_role\":\"kv_both\"}") -}}
+  {{- end -}}
+  {{- /* Hardening (ADR-0097). vLLM ships NO browser UI, so disableWebUI is a
+         no-op here — the policy is satisfied by the engine's own shape rather
+         than by a flag, which is the point of expressing it engine-agnostically.
+         The API key arrives as VLLM_API_KEY (see childValues), enforced natively
+         by vLLM's own OpenAI server — this is NOT kserve/huggingfaceserver, which
+         ignores it and is deliberately not an engine profile (ADR-0022).
+         ⚠️ CORS: vLLM's `--allowed-origins` takes a JSON list and is applied only
+         when explicitly set, because it has NOT yet been verified against a
+         running vLLM pod on this fleet. Verify on the first deploy, then make it
+         a fleet default like the llama.cpp one. */ -}}
+  {{- with $s.allowedOrigins -}}
+    {{- $args = concat $args (list "--allowed-origins" .) -}}
   {{- end -}}
 {{- end -}}
 {{- $args = concat $args (default (list) $s.extraArgs) -}}
@@ -214,7 +242,11 @@ KServe's wrapper, which IGNORES `VLLM_API_KEY` (ADR-0022 verified: unauthenticat
 and wrong-key both returned 200). That wrapper is not an engine option here, so
 the sidecar has nothing to come back for.
 */ -}}
-{{- $ak := $cfg.apiKey | default dict -}}
+{{- /* Fleet security policy (ADR-0097), with a per-model override so one model
+       can relax a knob — in practice `disableWebUI: false` while debugging —
+       without weakening the fleet. Per-model wins key-by-key. */ -}}
+{{- $sec := merge (deepCopy ($cfg.security | default dict)) (deepCopy ($d.security | default dict)) -}}
+{{- $ak := merge (deepCopy ($cfg.apiKey | default dict)) (deepCopy ($sec.apiKey | default dict)) -}}
 {{- $apiKey := default false $ak.enabled -}}
 {{- $apiKeySecret := printf "%s-api-key" $name -}}
 model:
@@ -296,7 +328,7 @@ modelServing:
             tag: {{ $eng.image.tag | quote }}
             pullPolicy: {{ $eng.image.pullPolicy | default "IfNotPresent" | quote }}
           args:
-            {{- include "model-serving.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey) | trim | nindent 12 }}
+            {{- include "model-serving.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec) | trim | nindent 12 }}
           {{- if or $lmcache (and $apiKey (eq $engine "vllm")) }}
           env:
             {{- if $lmcache }}

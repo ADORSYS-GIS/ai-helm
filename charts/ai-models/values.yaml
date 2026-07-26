@@ -517,13 +517,16 @@ backends:
   # are models on the Hetzner GPU nodes, in THIS cluster — so they are reached at
   # a ClusterIP Service over plain HTTP on the pod network.
   #
-  # Note what is deliberately ABSENT and must stay absent:
-  #   securityType / secretRef / externalSecret — no credential. The model has no
-  #     route off the cluster; a CiliumNetworkPolicy in charts/model-server limits
-  #     ingress to envoy-gateway-system. A shared key would add a rotation surface
-  #     without closing a hole.
-  #   tlsHostname — no TLS. Traffic never leaves the cluster network.
-  # Adding either would break the model: it speaks plain HTTP and checks nothing.
+  # ⚠️ `tlsHostname` is deliberately ABSENT and must stay absent — traffic never
+  # leaves the cluster network, so there is no TLS and no BackendTLSPolicy.
+  # Adding one would break the backend: the model speaks plain HTTP.
+  #
+  # `securityType: APIKey` IS set, and must stay in lockstep with the fleet
+  # security policy (ADR-0097): the model enforces the same Bearer natively
+  # (llama.cpp `--api-key-file`), so a backend that omits the key gets 401 on
+  # every request, and one that sends a key to a model with hardening disabled
+  # is merely harmless. Both sides read the SAME ssegning-aws property.
+  # The NetworkPolicy remains the primary control; this is defence in depth.
   #
   # ⚠️ `fqdn.hostname` MUST be `<name>.inference.svc.cluster.local`, where <name>
   # is the charts/model-serving catalog entry (also the Service name).
@@ -534,7 +537,13 @@ backends:
     fqdn:
       hostname: openmythos-27b.inference.svc.cluster.local
       port: 8080
+    securityType: APIKey
     resourceName: openmythos-27b-local-svc
+    secretRef:
+      name: openmythos-27b-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
 
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
