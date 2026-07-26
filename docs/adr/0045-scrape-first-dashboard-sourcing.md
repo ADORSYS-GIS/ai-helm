@@ -4,6 +4,18 @@
 **Date:** 2026-06-12
 **Deciders:** @stephane-segning
 
+> ⚠️ **Decision §4 is obsolete as of 2026-07-26.** It states that model serving
+> "runs on the home GPU cluster (ADR-0022) with no path into this Mimir" and that
+> its observability is "blocked on a remote-write/federation decision". That is no
+> longer true: the GPU fleet moved onto `home-remote` (ADR-0092/0094/0095), so the
+> models are scraped by the same Alloy into the same Mimir as everything else. No
+> federation was ever needed — the constraint dissolved rather than being solved.
+> Both engines now have dashboards, and GPU telemetry follows via dcgm-exporter.
+> The other three points — scrape-first, verified community boards for commodity
+> services, dashboards-as-code only for bespoke domain boards — stand, and were
+> followed for that work: metrics were confirmed present in Mimir, and every query
+> was run against live data, before any board was imported.
+
 ## Context
 
 Epic [#341](https://github.com/ADORSYS-GIS/ai-helm/issues/341) asked which

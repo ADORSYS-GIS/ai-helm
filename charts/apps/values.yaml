@@ -379,6 +379,54 @@ applications:
     destination:
       namespace: kube-system
 
+  # NVIDIA DCGM exporter — GPU telemetry (utilisation, VRAM, temperature, power,
+  # SM occupancy, throttling) for the two Hetzner Robot GPU workers. Until this
+  # existed the fleet had NO GPU metrics at all: the model dashboards showed
+  # engine-level throughput but nothing about the card underneath, and VRAM was
+  # only obtainable by hand with `nvidia-smi` in the device-plugin pod.
+  #
+  # Same shape and namespace as nvidia-device-plugin above — a node-level system
+  # component pinned to the GPU nodes — so the two GPU DaemonSets live together.
+  #
+  # ⚠️ `tolerations` REPLACES the chart default (which tolerates control-plane
+  # nodes, not ours). Lists replace wholesale in a Helm values merge — the same
+  # trap that silently dropped the ARC runners' `command` (CLAUDE.md).
+  #
+  # ⚠️ SYS_ADMIN + the /var/lib/kubelet/pod-resources hostPath are required, the
+  # first for the DCGM_FI_PROF_* profiling metrics and the second so samples can
+  # be attributed to the pod using the GPU. Both are chart defaults, kept
+  # deliberately — that is also why this lands in kube-system, which permits them
+  # (the cluster-wide `baseline` Pod Security Standard forbids hostPath).
+  - name: dcgm-exporter
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    source:
+      repoURL: https://nvidia.github.io/dcgm-exporter/helm-charts
+      # Verify before bumping:
+      # `helm show chart dcgm-exporter --repo https://nvidia.github.io/dcgm-exporter/helm-charts --version <v>`
+      targetRevision: "4.*"
+      chart: dcgm-exporter
+      helm:
+        releaseName: dcgm-exporter
+        values: |
+          runtimeClassName: nvidia
+          nodeSelector:
+            nvidia.com/gpu.present: "true"
+          tolerations:
+            - key: nvidia.com/gpu
+              operator: Exists
+              effect: NoSchedule
+          # Scraped by Alloy, which discovers ServiceMonitors cluster-wide.
+          # honorLabels stays false: DCGM reports on ITSELF and the pod it
+          # attributes to, so there are no foreign labels to preserve (unlike
+          # kube-state-metrics, which needs honorLabels — CLAUDE.md).
+          serviceMonitor:
+            enabled: true
+            interval: 30s
+            scrapeTimeout: 25s
+    destination:
+      namespace: kube-system
+
   # --- Longhorn (Hetzner Robot GPU workers — model storage) ---
   # Distributed block storage backing model-cache PVCs on the hand-joined
   # Hetzner Robot GPU nodes (hetzner-k8s-gpu-1/2), which have no hcloud-csi at
