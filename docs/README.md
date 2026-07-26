@@ -145,6 +145,7 @@ Operational subsystems with several files keep their own directory + local index
 | [`mcp/`](./mcp/) | Envoy MCP research + routing background |
 | [`solutions-team/`](./solutions-team/) | Solutions-team runbooks (e.g. graphify setup) |
 | [`mlops-access-model.md`](patterns/mlops-access-model.md) | **MLOps access model** (ADR-0085/0090/0091): who can reach LakeFS / Argo Workflows / MLflow and as what — humans vs in-cluster workloads vs external scripts, the credential inventory, the end-to-end training-job path, and the known limitations |
+| [`mlops-platform-consumer-guide.md`](integrations/mlops-platform-consumer-guide.md) | **Consuming the MLOps platform from another team/repo** (ADR-0085/0090/0091): endpoints, machine auth per app, the training-job recipe, and what to request from the maintainer |
 
 ---
 
