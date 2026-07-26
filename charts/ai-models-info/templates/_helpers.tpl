@@ -72,9 +72,18 @@ Output: dict-as-JSON.
 {{/*
 ai-models-info.catalog — render the OpenRouter-shape catalog as JSON.
 
-Walks .Values.models, skips entries whose `kind` is in .Values.excludeKinds
-or whose `enabled: false`. Emits one object per remaining model under
-`data: [...]`.
+Walks .Values.models, skips entries whose `kind` is in .Values.excludeKinds,
+whose `enabled: false`, or whose `disableExternal: true`. Emits one object per
+remaining model under `data: [...]`.
+
+⚠️ The `disableExternal` skip is not cosmetic. This catalog is served on the
+PUBLIC host (api.ai.camer.digital), while a `disableExternal: true` model is
+deliberately attached only to the `api-internal` listener — reachable from
+LibreChat and other in-cluster callers, not from outside. Advertising it here
+told external clients about models they cannot use: selecting one returned
+`404 No matching route found`, which reads as a broken model rather than an
+intentional restriction. Verified live 2026-07-27: 6 of 31 advertised models
+were internal-only in exactly this way.
 
 Output: full JSON string `{"data":[...]}`.
 */}}
@@ -87,7 +96,7 @@ Output: full JSON string `{"data":[...]}`.
 {{- $entries := list -}}
 {{- range $name, $cfg := .Values.models -}}
   {{- $kind := default "text" $cfg.kind -}}
-  {{- if and (not (eq $cfg.enabled false)) (not (has $kind $excluded)) -}}
+  {{- if and (not (eq $cfg.enabled false)) (not (has $kind $excluded)) (not (eq (default false $cfg.disableExternal) true)) -}}
     {{- $info := default (dict) $cfg.info -}}
     {{- $entry := dict
         "id"      $name
