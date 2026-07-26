@@ -417,13 +417,21 @@ applications:
               operator: Exists
               effect: NoSchedule
           # Scraped by Alloy, which discovers ServiceMonitors cluster-wide.
-          # honorLabels stays false: DCGM reports on ITSELF and the pod it
-          # attributes to, so there are no foreign labels to preserve (unlike
-          # kube-state-metrics, which needs honorLabels — CLAUDE.md).
+          #
+          # ⚠️ honorLabels MUST be true — same reason as kube-state-metrics
+          # (CLAUDE.md). DCGM does not only report on itself: it attributes each
+          # sample to the POD currently using the GPU (`pod`, `namespace`,
+          # `container`), which are labels about ANOTHER object. Without
+          # honorLabels the scrape's own labels win, the model pod is buried in
+          # `exported_pod`/`exported_namespace`, and every series claims to be
+          # the dcgm-exporter pod in kube-system — so "which model is burning
+          # this GPU" becomes unanswerable and every community DCGM dashboard
+          # that groups by pod shows nothing.
           serviceMonitor:
             enabled: true
             interval: 30s
             scrapeTimeout: 25s
+            honorLabels: true
     destination:
       namespace: kube-system
 
