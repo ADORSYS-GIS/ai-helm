@@ -182,6 +182,32 @@ dashboards:
     file: files/llamacpp/llamacpp-dashboard.json
     resyncPeriod: 5m
 
+  # GPU fleet ↔ model attribution. Bespoke (ADR-0045 §3) because no community
+  # board can know which of OUR models is on which card. The join works only
+  # because the dcgm-exporter ServiceMonitor sets honorLabels: true, so DCGM's
+  # own pod/namespace labels — describing the WORKLOAD, not the exporter —
+  # survive the scrape.
+  - name: gpu-fleet
+    folderRef: model-serving
+    file: files/gpu/gpu-fleet.json
+    resyncPeriod: 5m
+
+  # Commodity per-card health (clocks, temperature, power, utilisation).
+  # ADOPTED community board (ADR-0045 §2): grafana.com gnetId 12239 revision 2,
+  # "NVIDIA DCGM Exporter Dashboard" — NVIDIA's own, ~38M downloads. Verified
+  # before adoption: all 6 metrics it queries exist in our Mimir, and it selects
+  # on `instance`/`gpu` rather than the 2.x-era capitalised `Hostname` that DCGM
+  # 4.x no longer emits, so its legends actually resolve. All 8 queries returned
+  # live data.
+  # ⚠️ VENDORED, not gnetId-imported: this chart has no gnetId source, so the
+  # export was patched at vendor time — ${DS_PROMETHEUS} replaced with the mimir
+  # UID and the __inputs/__requires import scaffolding stripped, since only
+  # Grafana's UI importer resolves those. Re-apply that patch if you re-vendor.
+  - name: nvidia-dcgm-12239
+    folderRef: model-serving
+    file: files/gpu/nvidia-dcgm-12239.json
+    resyncPeriod: 5m
+
 # Future: datasources, contactPoints, alertRules can land here.
 datasources: []
 
@@ -330,6 +356,65 @@ alerting:
           labels:
             team: model-serving
           summary: "vLLM KV cache above 90% for 15m — requests will start being preempted, degrading latency."
+
+    # GPU hardware. Thresholds are set against measured idle behaviour on these
+    # cards (38–42 °C, ~12 W idle, 70 W cap) — not copied from a generic board.
+    - name: model-serving-gpu
+      folderRef: model-serving
+      interval: 1m
+      rules:
+        - uid: ms-gpu-temp
+          title: GPU — temperature high
+          datasourceUid: mimir
+          expr: "max(DCGM_FI_DEV_GPU_TEMP) or vector(0)"
+          fromSeconds: 600
+          op: gt
+          threshold: 85
+          for: 10m
+          severity: warning
+          labels:
+            team: model-serving
+          summary: "A GPU has been above 85°C for 10m — Ada throttles near 88°C, so throughput will drop before anything errors."
+        - uid: ms-gpu-vram
+          title: GPU — VRAM nearly exhausted
+          datasourceUid: mimir
+          expr: "max(DCGM_FI_DEV_FB_USED) or vector(0)"
+          fromSeconds: 900
+          op: gt
+          threshold: 19500
+          for: 15m
+          severity: warning
+          labels:
+            team: model-serving
+          summary: "A GPU is above 19500 of 20475 MiB — no headroom left; the next model restart or context increase will fail to allocate."
+        # Remapped rows are the early warning for failing VRAM. On rented
+        # hardware this is the signal to open a Hetzner ticket, not to tune.
+        - uid: ms-gpu-mem-faults
+          title: GPU — uncorrectable memory faults
+          datasourceUid: mimir
+          expr: "max(DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS) or vector(0)"
+          fromSeconds: 600
+          op: gt
+          threshold: 0
+          for: 5m
+          severity: critical
+          labels:
+            team: model-serving
+          summary: "Uncorrectable VRAM rows remapped — the card's memory is degrading. Rented hardware: raise it with Hetzner."
+        # `count() or vector(0)` rather than a bare gauge: if dcgm-exporter dies
+        # the series vanish, and noDataState: OK would keep this green.
+        - uid: ms-gpu-telemetry-down
+          title: GPU — telemetry missing
+          datasourceUid: mimir
+          expr: "count(DCGM_FI_DEV_GPU_TEMP) or vector(0)"
+          fromSeconds: 900
+          op: lt
+          threshold: 2
+          for: 15m
+          severity: warning
+          labels:
+            team: model-serving
+          summary: "Fewer than 2 GPUs are reporting DCGM telemetry — dcgm-exporter is down on a node, or a card has dropped off the bus."
 
     - name: model-serving-errors
       folderRef: model-serving
