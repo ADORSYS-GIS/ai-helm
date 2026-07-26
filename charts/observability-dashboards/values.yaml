@@ -198,29 +198,156 @@ alerting:
   enabled: true
   resyncPeriod: 5m
 
-  contactPoint:
-    name: discord
-    type: discord
-    settings:
-      title: "{{ .CommonLabels.alertname }} [{{ .Status }}]"
-      message: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}"
+  # Contact points. The FIRST is the default receiver for everything; later ones
+  # are reached only via `notificationPolicy.routes` matchers below.
+  contactPoints:
+    # Default — unchanged from the single-contact-point setup (ADR-0059).
+    - name: discord
+      type: discord
+      settings:
+        title: "{{ .CommonLabels.alertname }} [{{ .Status }}]"
+        message: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}"
+      webhookSecret:
+        enabled: true
+        secretName: grafana-discord-webhook
+        key: url
+        secretStore: ssegning-aws
+        remoteKey: ai/camer/digital/prod/env
+        property: grafana_discord_webhook_url
+        refreshInterval: 1h
 
-  webhookSecret:
-    enabled: true
-    secretName: grafana-discord-webhook
-    key: url
-    secretStore: ssegning-aws
-    remoteKey: ai/camer/digital/prod/env
-    property: grafana_discord_webhook_url
-    refreshInterval: 1h
+    # GPU fleet / model serving — its own Discord channel, so a GPU alert is not
+    # buried among gateway alerts and can be muted independently.
+    #
+    # ⚠️ OUT-OF-BAND-SECRET-FIRST: this delivers nothing until
+    # `grafana_discord_webhook_url_gpu` exists in ssegning-aws at
+    # ai/camer/digital/prod/env. Until then the ExternalSecret sits in
+    # SecretSyncedError and the contact point keeps the "${url}" placeholder —
+    # rules still evaluate and still fire to the UI, they just do not deliver
+    # here. Nothing else breaks, and the default `discord` route is unaffected.
+    - name: discord-gpu
+      type: discord
+      settings:
+        title: "[GPU] {{ .CommonLabels.alertname }} [{{ .Status }}]"
+        message: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}"
+      webhookSecret:
+        enabled: true
+        secretName: grafana-discord-webhook-gpu
+        key: url
+        secretStore: ssegning-aws
+        remoteKey: ai/camer/digital/prod/env
+        property: grafana_discord_webhook_url_gpu
+        refreshInterval: 1h
 
   notificationPolicy:
     groupBy: [grafana_folder, alertname]
     groupWait: 30s
     groupInterval: 5m
     repeatInterval: 4h
+    # Child routes. A rule opts in by carrying the label — routing follows the
+    # RULE, not the folder, so a model-serving alert authored anywhere still
+    # lands in the GPU channel.
+    routes:
+      - receiver: discord-gpu
+        objectMatchers:
+          - ["team", "=", "model-serving"]
 
   ruleGroups:
+    # ── Model serving on the GPU fleet (ADR-0094/0095) ────────────────────
+    # Every rule here carries `team: model-serving`, which is what routes it to
+    # the discord-gpu contact point (notificationPolicy.routes above). The label
+    # is the routing key — drop it and the alert silently goes to the default
+    # channel instead.
+    #
+    # Expressions were each run against live Mimir before being written here;
+    # an alert on a metric that does not exist is worse than no alert, because
+    # noDataState: OK makes it permanently, invisibly green.
+    - name: model-serving-health
+      folderRef: model-serving
+      interval: 1m
+      rules:
+        # `up` is namespace-scoped rather than a list of job names so a model
+        # added tomorrow is covered without touching this rule. `or vector(0)`
+        # handles the case where the scrape targets vanish entirely (namespace
+        # or ServiceMonitors gone) — bare min() would return no data, and
+        # noDataState: OK would keep the very alert meant to catch that green.
+        - uid: ms-model-down
+          title: Model serving — a model is down
+          datasourceUid: mimir
+          expr: 'min(up{namespace="inference"}) or vector(0)'
+          fromSeconds: 600
+          op: lt
+          threshold: 1
+          for: 5m
+          severity: critical
+          labels:
+            team: model-serving
+          summary: "A model on the GPU fleet is not being scraped — the pod is down, crash-looping, or its metrics endpoint is unreachable."
+          description: "One model per GPU and no HA, so this is a full outage of that tier. Check `kubectl get pods -n inference` and the model-wont-load-or-oom runbook."
+
+    - name: model-serving-saturation
+      folderRef: model-serving
+      interval: 1m
+      rules:
+        # llama.cpp defers a request when every slot is busy. Sustained
+        # deferral means the tier is saturated — and there is no autoscaling,
+        # so it will not clear itself.
+        - uid: ms-llamacpp-queueing
+          title: Model serving — llama.cpp requests queueing
+          datasourceUid: mimir
+          expr: "max(llamacpp:requests_deferred) or vector(0)"
+          fromSeconds: 900
+          op: gt
+          threshold: 0
+          for: 15m
+          severity: warning
+          labels:
+            team: model-serving
+          summary: "llama.cpp has been deferring requests for 15m — every slot busy; the quality tier is saturated."
+        - uid: ms-vllm-queueing
+          title: Model serving — vLLM requests waiting
+          datasourceUid: mimir
+          expr: "max(vllm:num_requests_waiting) or vector(0)"
+          fromSeconds: 900
+          op: gt
+          threshold: 0
+          for: 15m
+          severity: warning
+          labels:
+            team: model-serving
+          summary: "vLLM has had requests waiting in queue for 15m — the fast tier is saturated."
+        # KV cache full forces preemption, which shows up to users as latency
+        # rather than errors — worth knowing before they report it.
+        - uid: ms-vllm-kv-pressure
+          title: Model serving — vLLM KV cache near full
+          datasourceUid: mimir
+          expr: "max(vllm:kv_cache_usage_perc) or vector(0)"
+          fromSeconds: 900
+          op: gt
+          threshold: 0.9
+          for: 15m
+          severity: warning
+          labels:
+            team: model-serving
+          summary: "vLLM KV cache above 90% for 15m — requests will start being preempted, degrading latency."
+
+    - name: model-serving-errors
+      folderRef: model-serving
+      interval: 1m
+      rules:
+        - uid: ms-vllm-errors
+          title: Model serving — vLLM request errors
+          datasourceUid: mimir
+          expr: 'sum(rate(vllm:request_success_total{finished_reason="error"}[10m])) or vector(0)'
+          fromSeconds: 600
+          op: gt
+          threshold: 0
+          for: 10m
+          severity: warning
+          labels:
+            team: model-serving
+          summary: "vLLM is finishing requests with finished_reason=error — check the model pod logs."
+
     - name: ai-gateway-health
       folderRef: ai-gateway
       interval: 1m

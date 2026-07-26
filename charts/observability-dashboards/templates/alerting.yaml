@@ -18,12 +18,20 @@ Gated on .Values.alerting.enabled.
 {{- $a := .Values.alerting }}
 {{- $sel := include "observability-dashboards.instanceSelectorYaml" . }}
 {{- $labels := include "observability-dashboards.labels" . }}
+{{- /*
+  One GrafanaContactPoint per entry in `alerting.contactPoints`. Was a single
+  hardcoded contact point; generalised so alert traffic can be split by
+  destination — GPU/model-serving alerts to their own Discord channel rather
+  than drowning in the gateway's. The FIRST entry is the default receiver;
+  later ones are reached by the matcher routes in the notification policy below.
+*/ -}}
+{{- range $cp := $a.contactPoints }}
 ---
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaContactPoint
 metadata:
-  name: {{ $a.contactPoint.name }}
-  namespace: {{ .Release.Namespace }}
+  name: {{ $cp.name }}
+  namespace: {{ $.Release.Namespace }}
   labels:
     {{- $labels | nindent 4 }}
 spec:
@@ -32,25 +40,26 @@ spec:
   {{- with $a.resyncPeriod }}
   resyncPeriod: {{ . | quote }}
   {{- end }}
-  name: {{ $a.contactPoint.name }}
+  name: {{ $cp.name }}
   # Modern receivers[] form (the top-level type/settings/valuesFrom are
   # deprecated). The webhook is injected into settings.url via valuesFrom —
   # targetPath is relative to the receiver's `settings`, so it's "url" (NOT
   # "settings.url", which would write settings.settings.url and never deliver).
   receivers:
-    - type: {{ $a.contactPoint.type | default "discord" }}
+    - type: {{ $cp.type | default "discord" }}
       disableResolveMessage: false
       settings:
         url: "${url}"   # placeholder; replaced at reconcile by valuesFrom below
-        {{- with $a.contactPoint.settings }}
+        {{- with $cp.settings }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       valuesFrom:
         - targetPath: url
           valueFrom:
             secretKeyRef:
-              name: {{ $a.webhookSecret.secretName }}
-              key: {{ $a.webhookSecret.key | default "url" }}
+              name: {{ $cp.webhookSecret.secretName }}
+              key: {{ $cp.webhookSecret.key | default "url" }}
+{{- end }}
 ---
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaNotificationPolicy
@@ -66,11 +75,30 @@ spec:
   resyncPeriod: {{ . | quote }}
   {{- end }}
   route:
-    receiver: {{ $a.contactPoint.name }}
+    receiver: {{ (first $a.contactPoints).name }}
     group_by: {{ toYaml ($a.notificationPolicy.groupBy | default (list "grafana_folder" "alertname")) | nindent 6 }}
     group_wait: {{ $a.notificationPolicy.groupWait | default "30s" | quote }}
     group_interval: {{ $a.notificationPolicy.groupInterval | default "5m" | quote }}
     repeat_interval: {{ $a.notificationPolicy.repeatInterval | default "4h" | quote }}
+    {{- /*
+      Child routes, evaluated in order; the first match wins unless `continue`.
+      `object_matchers` is [[label, op, value]]. An alert rule opts into a route
+      by carrying the matching LABEL (see ruleGroups[].rules[].labels), so
+      routing is a property of the rule, not of where it happens to live.
+    */ -}}
+    {{- with $a.notificationPolicy.routes }}
+    routes:
+      {{- range $r := . }}
+      - receiver: {{ $r.receiver }}
+        object_matchers: {{ toYaml $r.objectMatchers | nindent 10 }}
+        {{- with $r.groupBy }}
+        group_by: {{ toYaml . | nindent 10 }}
+        {{- end }}
+        group_wait: {{ $r.groupWait | default $a.notificationPolicy.groupWait | default "30s" | quote }}
+        group_interval: {{ $r.groupInterval | default $a.notificationPolicy.groupInterval | default "5m" | quote }}
+        repeat_interval: {{ $r.repeatInterval | default $a.notificationPolicy.repeatInterval | default "4h" | quote }}
+      {{- end }}
+    {{- end }}
 {{- range $g := $a.ruleGroups }}
 ---
 apiVersion: grafana.integreatly.org/v1beta1
