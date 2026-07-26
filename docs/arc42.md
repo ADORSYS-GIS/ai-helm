@@ -176,7 +176,8 @@ flowchart TB
 | `kuadrant-policies` / `security-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy (values in `ai-helm-values`) | Direct |
 | `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget) | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
-| `model-serving-*` (qwen3-5, qwen3-4b, deepseek-r1-1-5b, qwen25-3b-awq, qwen3-8b, ministral-3b) | Self-hosted models on the home GPU; Qwen3.5-4B Q4 via llama.cpp is the designated GPU model (ADR-0032); bjw-template, `homeCluster: true` | Hybrid bjw (ADR-0022/0029/0030/0032) |
+| `model-serving` → `model-server` | Orchestrator ApplicationSet → one Application per self-hosted model on the Hetzner GPU fleet (`inference` ns, `home-remote`). Engine profiles (llama.cpp / vLLM+LMCache) expand a ~15-line catalog entry into the workload. Cluster-local: no Ingress, cert, API key or proxy sidecar | Orchestrator + leaves (ADR-0094/0095) |
+| `model-serving-*` (qwen3-5, qwen3-4b, deepseek-r1-1-5b, qwen25-3b-awq, qwen3-8b, ministral-3b, qwen2-vl-2b, zimage-turbo) | ⚠️ **LEGACY** — per-model charts serving from the *other* cluster (`admin@homeos`) over a public edge; `homeCluster: true`. Retained for `zimage-turbo` + rollback; superseded by `model-serving` for anything new | Hybrid bjw (ADR-0022/0029/0030/0032) |
 | `ai-models-info` | OpenRouter-shape `/v1/models/info` catalog (nginx static) | Direct (ADR-0015) |
 | `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI (converse) + Mongo + Meili + opencode discovery/agents | Orchestrator + leaves (ADR-0014) |
 | `mcps` → `mcp` | MCP tool servers (self-hosted + proxiedExternal); opt-in v1.0 tool-filter / CEL authz / header-forward | Orchestrator + leaves (ADR-0038/0040/0041/0069) |
@@ -473,6 +474,10 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0089 | Homepage central-hub dashboard, gated by a dedicated oauth2-proxy (Homepage has no auth of its own — not the redundant-second-login mistake removed from LakeFS in 0085); hybrid curated + k8s-auto-discovery content; uptime widget reuses the existing Mimir/Grafana stack |
 | 0090 | Keycloak SSO for LakeFS via the first-party `lakefs-proxy` session shim (amends 0085): oauth2-proxy → shim → LakeFS, the shim relaying LakeFS's own unmintable session cookie. LakeFS OSS rejects `auth.oidc.*` and is single-user, so authentication is per-user but in-LakeFS authorization/audit stay shared on `admin` |
 | 0091 | MLflow bearer tokens gated on `aud`, plus a least-privileged programmatic path to Argo Workflows (amends 0085). `oidcAuth.audience: mlflow` — the realm JWKS is shared, so an unset `OIDC_AUDIENCE` accepted ANY realm token on the API; workflow pods get the `argo-workflow` SA **and** `controller.workflowDefaults.spec.serviceAccountName`; `server.authModes: [sso, client]` plus a dedicated `argo-workflows-ci` SA with no long-lived token Secret. LakeFS-from-workflows is documented, not templated — the one `lakefs-proxy-admin` key is shared with the 0090 shim |
+| 0092 | Longhorn scoped to the Hetzner Robot GPU nodes only (they carry a foreign `providerID` so hcloud-csi ignores them, leaving no CSI at all); pinned by nodeSelector/toleration **and** Longhorn's own `systemManagedComponentsNodeSelector`, and deliberately not the cluster-default StorageClass |
+| 0093 | Longhorn UI gated by a dedicated, role-restricted oauth2-proxy (`longhorn_roles` multivalued claim) |
+| 0094 | Generic model-serving orchestrator + leaf replaces the eight copy-pasted per-model charts. Engine profiles (llama.cpp / vLLM+LMCache) live in the ORCHESTRATOR because a Helm parent cannot compute subchart values at render time — the constraint that made every old chart hardcode its seed repo/glob. Adding a model = one ~15-line catalog entry; GPU placement becomes an `nvidia.com/gpu: 1` request so extra models queue instead of needing a manual swap |
+| 0095 | Self-hosted models federated over the CLUSTER NETWORK, not a public edge: no Ingress/cert/DNS/API key/Caddy sidecar, a `Backend` pointing at `<model>.inference.svc.cluster.local`, and a CiliumNetworkPolicy (incl. the `host`/`remote-node`/`health` entities kubelet probes need) as the control. Amends 0022; narrows the 0017 `homeCluster` exception to the legacy `admin@homeos` generation |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
@@ -490,6 +495,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Security** | Forged/expired JWT | Rejected at Authorino; no backend reached | Enforced |
 | **Cost** | User exceeds monthly budget | Budget bucket denies; alert at threshold | Enforced + alerted (ADR-0021/0059) |
 | **Operability** | Add a model | List edit in `ai-models` values → new Application | Mechanical |
+| **Operability** | Add a *self-hosted* model | ~15-line entry in `model-serving` values → new Application; GPU assigned by the scheduler (ADR-0094) | Mechanical |
 
 ---
 

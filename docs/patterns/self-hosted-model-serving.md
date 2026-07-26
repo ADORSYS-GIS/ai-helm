@@ -1,236 +1,202 @@
-# Self-hosted model serving on the home GPU — the pattern
+# Self-hosted model serving — the pattern
 
-**The reusable pattern for serving *any* self-hosted model/agent on the home GPU**,
-federated into the Hetzner Envoy AI Gateway like a SaaS backend. This guide is
-**model-agnostic**; each concrete deployment has its own paper:
+**How a model gets onto the GPU fleet and in front of users.** This page is the
+*how* for this repo; the *why* is in the ADRs it links, and the *inference
+knowledge* — VRAM budgeting, quantization, engine choice, benchmarks, runbooks —
+lives in the team's **`inference-ops`** repository, which is the source of truth
+for all of it. Do not duplicate that material here.
 
-| Paper | Engine | Status |
-|---|---|---|
-| [**Qwen3.5-4B Q4 (llama.cpp)**](../models/qwen3.5-4b-q4.md) | llama.cpp (`llama-server`), UD-Q4_K_XL GGUF | 🟢 **LIVE** — the active model; ~52 tok/s decode, 4 slots, 128k ctx |
-| [**Qwen3-4B**](../models/qwen3-4b.md) | vLLM (`huggingfaceserver`) + LMCache, BF16 | 🟦 standby (disabled 2026-06-08; rollback; the reference build) |
-| [**Qwen3.5-4B (vLLM/BF16)**](../models/qwen3.5-4b.md) | vLLM, BF16 | 📋 studied, not chosen (documented alternative) |
-
-The *why* of the pattern: [ADR-0022](../adr/0022-self-hosted-gpu-model-federated-into-gateway.md)
-(federation + exposure) · [ADR-0028](../adr/0028-owned-hardware-model-pricing.md)
-(owned-hardware pricing) · [ADR-0029](../adr/0029-self-hosted-model-plain-deployment.md)
-(off Knative) · [ADR-0030](../adr/0030-merge-model-and-proxy-into-one-statefulset-bjw.md)
-(one StatefulSet via bjw-template) · [ADR-0032](../adr/0032-llama-cpp-engine-for-self-hosted-models.md)
-(llama.cpp as a 2nd engine). **Adding the next model → the checklist in §8.**
-
-> Per-cluster facts assumed live (do not re-create): the **home GPU node**
-> (`gpu-node: "true"`, `RuntimeClass nvidia`, nvidia-device-plugin), **Longhorn**
-> (RWX), **Traefik** + the `cert-cloudflare` ClusterIssuer (DNS-01) + Cloudflare-
-> proxied `*.ssegning.com`, and the **Hetzner gateway** with its ADR-0021 auth /
-> budgets / metering. The model runs on `admin@homeos`; the gateway on `home-remote`.
+> **Rewritten 2026-07-26** for the Hetzner GPU fleet (ADR-0094/0095). The previous
+> version of this page described the one-chart-per-model, public-edge pattern on
+> the `admin@homeos` cluster. That generation still runs and is described in
+> [§7](#7-the-legacy-generation-adminhomeos) — but nothing new should be built
+> that way.
 
 ---
 
-## 1. The picture
+## 1. The shape
 
 ```
- USER ─TLS + Keycloak JWT─▶  HETZNER (home-remote)              HOME Talos (admin@homeos, GPU)
-                            ┌──────────────────────────┐       ┌─────────────────────────────────┐
-                            │ Envoy AI Gateway          │ HTTPS │ bjw StatefulSet (always-on)     │
-                            │  JWT (ADR-0021) + budgets  │ +key  │  model server (vLLM | llama.cpp) │
-                            │  Backend <model>-local ────┼──────▶│  [+ Caddy auth-proxy if vLLM]   │
-                            │  rate-limit + metering     │       │  pre-seeded PVC · RTX A2000 12GB │
-                            └──────────────────────────┘       └─────────────────────────────────┘
-                                                                 plain Ingress (traefik) + cert-cloudflare
-                                                                 at <model>--poc.ssegning.com
+ USER ─TLS + Keycloak JWT─▶  Envoy AI Gateway  ──HTTP, pod network──▶  model pod
+                             (envoy-gateway-system)                    (inference ns)
+                             auth · budgets · rate limits              1 GPU · 1 model
+                             metering (ADR-0021)                       CiliumNetworkPolicy
 ```
 
-From the gateway's point of view a self-hosted model is **identical to any SaaS
-backend**: an OpenAI-compatible FQDN over TLS with an API key. All the novelty is on
-the home side (the engine on the GPU). It inherits Keycloak JWT, budgets, rate
-limits, and metering centrally.
+Everything is on **one cluster** (`home-remote`). The gateway reaches a model at
+`<model>.inference.svc.cluster.local:8080`. There is no public route to a model,
+no TLS between gateway and model, and no API key — the network policy is the
+control (ADR-0095).
 
----
+From the gateway's point of view a self-hosted model is identical to a SaaS
+backend: an OpenAI-compatible endpoint. All identity, budget and metering policy
+is applied before the request reaches it.
 
-## 2. VRAM budgeting (RTX A2000, 12 GB, Ampere)
+## 2. The charts
 
-**Ampere has no hardware FP8** — never deploy FP8 checkpoints / `--kv-cache-dtype=fp8`
-(dlpack BufferError every prefill). Use BF16/FP16 or a 4-bit quant.
+| Chart | Role |
+|---|---|
+| **`charts/model-serving`** | Orchestrator. One ApplicationSet, one child per catalog entry. `controlPlane: true`. **Holds the engine profiles.** |
+| **`charts/model-server`** | Generic leaf. One model's resources: bjw-template renders the StatefulSet + seed Job + Service; own templates render PVC, ExternalSecrets, CiliumNetworkPolicy, ServiceMonitor. |
+| **`charts/ai-models`** | Unchanged. The gateway catalog — a backend entry + a model entry federate a served model to users. |
 
-Budget = `12 GB × util(0.90) ≈ 10.8 GB − weights − ~1 GB overhead = on-GPU KV`. The
-two levers that change the equation:
+**Adding a model is one ~15-line entry** in `charts/model-serving/values.yaml`
+(plus its `charts/ai-models` entries to make it user-reachable). No new chart, no
+new Application, no ADR. The step-by-step recipe with verification is
+`inference-ops` → `docs/how-to/add-a-model.md`.
 
-- **Quant** shrinks weights: BF16 4B ≈ 8 GB → only ~1.5–2 GB KV (≈10–14k tokens);
-  a **Q4/AWQ-INT4** 4B ≈ 2.5–2.7 GB → ~5+ GB freed for KV/concurrency.
-- **Attention type** changes how fast KV grows: full-softmax KV is fat (a 4B at 131k
-  ≈ 12–19 GB/request — infeasible); **linear-attention / Gated-DeltaNet** KV barely
-  grows → long context becomes cheap (see the Qwen3.5 papers).
+### Why the engine profiles live in the orchestrator
 
-Prove the budget *before* committing: weights + ~1 GB + KV at your target context
-must fit. One model per GPU (§7) — a 2nd concurrent model needs a 2nd GPU.
+A Helm parent **cannot compute subchart values at render time**. The workload comes
+from the `bjw-template` subchart, so the leaf cannot derive its seed command from
+`model.hfRepo`. Every per-model chart worked around this by hardcoding the seed
+repo and glob under a `⚠️ keep in sync` comment — one careless edit from serving
+one set of weights while downloading another.
 
----
+The orchestrator writes each child's values as a YAML string, so it *can* derive
+everything from one source of truth. That is the whole reason the pair is split
+this way (ADR-0094).
 
-## 3. The chart — `charts/model-serving-<model>` (targets the home cluster)
+To see what a catalog entry actually expands into:
 
-A **hybrid `bjw-template` chart** (like `charts/librechat-app`): `Chart.yaml` deps
-`bjw-template` (alias `modelServing`) which renders the **whole workload** — the
-model **StatefulSet** (`replicas: 1`, always-on), the **seed `Job`** (a bjw `job`
-controller, ArgoCD Sync hook), the **Service**, and the **Ingress**. The chart's
-**own `templates/`** render only what bjw doesn't do natively: the weights **PVC**,
-the **ExternalSecrets**, and (vLLM only) the **Caddyfile ConfigMap**.
+```bash
+helm template chk charts/model-serving | awk '/valuesYaml: \|-/{f=1;next} f' | sed 's/^              //' > /tmp/child.yaml
+helm template x charts/model-server -f /tmp/child.yaml -n inference
+```
 
-- **Weights via a pre-seeded RWX PVC, not a per-start download.** The seed Job
-  downloads once (`hf download …`, `huggingface_hub[hf_xet]` + `HF_TOKEN` to lift the
-  rate limit; **no** `HF_XET_HIGH_PERFORMANCE` — it OOM-killed a 2Gi pod). The model
-  mounts it read-only. **RWX** (Longhorn) so seed + model can co-mount; accessModes
-  are immutable (RWO→RWX = delete+recreate). The seed Job **must** be an ArgoCD Sync
-  hook (`hook: Sync`, `hook-delete-policy: BeforeHookCreation`) — a plain tracked Job
-  goes perpetually OutOfSync. ⚠️ the seed repo/path are **hardcoded in the bjw seed
-  args** (subchart scope can't read the parent `.Values.model.*`) — keep in sync.
-- **Public route = a plain k8s `Ingress`** (`className: traefik`) with
-  `cert-manager.io/cluster-issuer: cert-cloudflare` (ingress-shim issues the TLS cert;
-  no `IngressRoute`/`Certificate` CR). Host `<model>--poc.ssegning.com` — **must
-  match** the `ai-models` backend hostname; add the DNS record.
-- **GPU access** via `runtimeClassName: nvidia` + `nodeSelector: gpu-node` (bjw
-  `defaultPodOptions`) — **no `nvidia.com/gpu` resource** (the PoC node has no device
-  plugin advertising it).
-- **App wiring** (`charts/apps/values.yaml`): the one sanctioned ADR-0017 exception —
-  `homeCluster: true` points the Application at `argocd.inClusterServer` (the home GPU
-  cluster) with `allowInCluster: true`, keeping its own namespace. Renders as
-  `aii-model-serving-<model>`.
+## 3. Engines
 
-### Engine choice — vLLM vs llama.cpp
-
-| | **vLLM** (`kserve/huggingfaceserver`) | **llama.cpp** (`ghcr.io/ggml-org/llama.cpp:server-cuda`) |
+| | `llamacpp` | `vllm` |
 |---|---|---|
-| Best for | safetensors BF16/AWQ; high throughput/concurrency; LMCache prefix reuse | GGUF (Q4_K_M etc.); new/turbulent architectures; simpler, lower idle |
-| Auth | ⚠️ **ignores `VLLM_API_KEY`** → needs the Caddy auth-proxy sidecar | **native `--api-key-file`** → no sidecar |
-| Endpoint | `/openai/v1` | `/v1` |
-| Probe | `httpGet /v2/health/ready` (binds `:8080` early — see §7) | `httpGet /health` (503→200) |
-| Caveat | LMCache↔vLLM version skew is image-pinned (test before bumping) | use a **recent** build for new arch ops; `server-cuda` (CUDA 12), **not** `server-cuda13` |
+| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` |
+| Weights | GGUF (one file via `include`) | safetensors (AWQ/GPTQ/FP8/BF16) |
+| Prefix / health | `/v1` · `/health` | `/v1` · `/health` |
+| Extras | — | opt-in LMCache, `/dev/shm` volume |
+| Containers | **1** | **1** |
 
-Pick per model (see the per-model papers for the worked decision).
+**The weight format selects the engine, not preference** — `inference-ops`
+ADR-0002. Do not serve GGUF on vLLM (~8× throughput regression).
 
----
+⚠️ **CUDA 12 only.** The fleet runs driver 550 / CUDA 12.4, so `server-cuda13`
+will not run.
 
-## 4. Gateway wiring (`charts/ai-models`, on Hetzner)
+### On the Caddy sidecar (it is gone, and why it existed)
 
-One **backend** + one **model** entry, exactly like a SaaS backend:
+Neither engine profile has a proxy sidecar. If a model opts into
+`apiKey.enabled`, **both engines enforce the Bearer themselves**: llama.cpp via
+`--api-key-file` (Secret mounted at `/etc/model-api-key`), vLLM via
+`VLLM_API_KEY`.
 
-- **Backend** `<model>-local`: `schema: OpenAI`, `prefix:` (`/openai/v1` for vLLM,
-  `/v1` for llama.cpp), `fqdn.hostname` = the edge host, `securityType: APIKey`,
-  `tlsHostname` (System CA — the cert is publicly-trusted), an API-key ExternalSecret
-  (`vllm_local_api_key` under `ai/camer/digital/prod/env`). Renders the usual five
-  CRs (Backend, AIServiceBackend, BackendSecurityPolicy, BackendTLSPolicy, ESO).
-- **Model** `<model>-local`: `info` (displayName, contextLength, maxOutputTokens,
-  `supportedParameters`), `minBackends: 1`, **pricing per ADR-0028** (derive €/h TCO
-  → cost-recovery weighted price), `modelNameOverride` = the served name, and a
-  `timeout.requestTimeout` (route-scoped BTP; **600 s** — a model route otherwise
-  falls back to Envoy's ~15 s default and 504s on long generations / reload windows).
+The Caddy auth-proxy in the legacy charts was never a vLLM limitation. It was
+required only by **`kserve/huggingfaceserver`**, KServe's wrapper, which ignores
+`VLLM_API_KEY` outright — ADR-0022 verified that unauthenticated *and* wrong-key
+requests both returned 200. That wrapper is deliberately not an engine profile
+here, so the sidecar has nothing to come back for.
 
-Clients call `POST /v1/chat/completions` + `x-ai-eg-model: <model>-local` + the JWT.
+The key itself is off by default: a cluster-local model has no bypass to defend.
 
-**Cilium egress:** not needed — the Envoy data-plane in `envoy-gateway-system` is not
-under the deny-egress baseline, so it reaches the home FQDN freely (like every SaaS
-backend).
+## 4. GPU scheduling
 
----
+Placement is a **resource request**, not a hand-assignment:
 
-## 5. Security model
+```yaml
+nodeSelector:     { nvidia.com/gpu.present: "true" }
+runtimeClassName: nvidia
+tolerations:      [{ key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }]
+resources.limits: { nvidia.com/gpu: 1 }
+```
 
-The home edge is internet-reachable, so two enforcement points:
+Two cards ⇒ two concurrent models. A third enabled model sits `Pending` with
+`Insufficient nvidia.com/gpu` — a legible queue that replaces the old "disable that
+model to enable this one" dance across four files.
 
-1. **Keycloak JWT at the gateway** (identity, budgets, rate limits, metering — the
-   real policy; ADR-0021).
-2. **A static API key at the home edge** so direct hits to the home domain can't
-   bypass the gateway — enforced by the engine's own auth (llama.cpp `--api-key-file`)
-   or the **Caddy auth-proxy sidecar** (vLLM, whose image ignores the key). Plus
-   publicly-trusted TLS (`cert-cloudflare`).
+⚠️ The **seed Job carries the same nodeSelector and toleration** despite needing no
+GPU: Longhorn runs only on the GPU nodes (ADR-0092), so a pod elsewhere could not
+mount the weights volume at all.
 
-Hardening if needed: a Traefik IP-allowlist scoped to the Hetzner LB egress IP, or
-Cloudflare Access on `*.ssegning.com`. Secrets are by-name from `ssegning-aws`, never
-embedded.
+## 5. Weights
 
----
+A one-time seed Job downloads into an RWX Longhorn volume; the model mounts it
+read-only, so pod restarts never re-download.
 
-## 6. Sync waves (this Application's resources, on the home cluster)
+- **`storageClassName: longhorn` is mandatory** — it is not the cluster default and
+  cannot bind outside the GPU nodes. Omit it and the claim silently targets
+  `hcloud-volumes` and stays `Pending`.
+- **`revision` must be a commit SHA.** Hub repos are mutable; the pin is what makes
+  the measured bytes the served bytes.
+- The Job is an **ArgoCD Sync hook** (`hook: Sync`,
+  `hook-delete-policy: BeforeHookCreation`) — a plain tracked Job goes perpetually
+  OutOfSync. It writes a `.seeded` stamp of `revision|include`, so repeat syncs are
+  no-ops and a changed revision re-seeds.
+- `accessModes` are immutable; RWO→RWX means delete + recreate.
+- `reclaimPolicy: Retain` — a deleted PVC orphans, not destroys, the weights.
 
-`-2` ExternalSecret(s) → `-1` PVC → `0` seed Job (Sync hook) → `1` StatefulSet +
-Service + Ingress.
+## 6. Sync waves
 
----
+`-2` ExternalSecrets → `-1` PVC → `0` seed Job + CiliumNetworkPolicy → `1`
+StatefulSet + Service + ServiceMonitor.
 
-## 7. Cross-cutting gotchas (reusable lessons)
+## 7. The legacy generation (`admin@homeos`)
 
-- **One model per GPU.** `replicas: 1` always-on; the single-replica StatefulSet
-  rolling-update recreates the one pod (never two on the 12 GB card). A deploy =
-  ~1–2 min downtime; single GPU = no HA. A CrashLooping pod blocks its own rollout →
-  `kubectl delete pod` to force the new revision.
-- **Probes for a slow loader.** A model server that binds its port *before* weights
-  finish loading will pass a `tcpSocket` probe in seconds → startup stops gating →
-  readiness/liveness kill a still-loading pod in a loop. Use an **httpGet
-  readiness endpoint** that only 200s once loaded (vLLM `/v2/health/ready`,
-  llama.cpp `/health`); startup = that endpoint with a long budget
-  (`failureThreshold × periodSeconds ≈ 30 min`); liveness = `tcpSocket` (kernel-level,
-  won't false-fail a busy-but-loaded server), gated by startup. With bjw, set
-  `custom: true` or it derives the probe from the Service port.
-- **Ampere = no FP8** (above).
-- **Pin/test the engine image.** vLLM↔LMCache skew is image-pinned (test before
-  bumping); a new architecture needs a **recent** llama.cpp build (`server-cuda`,
-  not `server-cuda13`).
-- **Deploy-time timeout at BOTH hops** — the gateway BTP (600 s) *and* the home edge
-  (Caddy `response_header_timeout`, or Traefik Ingress annotations if no Caddy) must
-  exceed a long generation + a reload window, or you get 504s.
-- **SSA is strict** — a malformed field (e.g. a bare `livenessProbe.path` instead of
-  `httpGet.path`) fails the *whole* apply; the pod never starts.
-- **DNS/host is manual** — the edge host + the `ai-models` hostname must be set
-  together, and the DNS record must point at the home cluster.
-- **Host RAM** is the box's, not the pod cap — size pod memory above any CPU-offload
-  pool (LMCache) or it OOM-kills mid-cache.
+Eight `charts/model-serving-<model>` charts serve from the **other** cluster over
+a public Traefik Ingress with `cert-cloudflare` TLS, a static API key, and
+`homeCluster: true` (ADR-0022). `zimage-turbo` is live there; the rest are its
+rollback set.
 
----
+They are **retained, not deleted** — retiring them is a decommissioning exercise on
+that cluster. Do not copy their shape for a new model, and do not "fix" them to
+match this page; they are correct for where they run.
 
-## 8. Deploying another self-hosted model / agent (checklist)
+`homeCluster: true` is now scoped to that generation and should retire with it.
 
-Today each model is a **copy of the chart** (`charts/model-serving-<model>`) — the
-orchestrator-plus-leaves generalization is only worth it at ~3+ models (§9).
+## 8. Gotchas that survived the redesign
 
-**A. Pick the model & prove the VRAM budget (§2).** No FP8 on Ampere. Choose the
-engine (§3 table) and quant. One model per GPU.
+- **Probes must gate on a real readiness endpoint.** An engine that binds its port
+  before weights finish loading passes a `tcpSocket` probe in seconds; startup then
+  stops gating and liveness kills a still-loading pod in a loop. Use `httpGet
+  /health` with a long startup budget, `tcpSocket` for liveness only.
+- **The NetworkPolicy must allow kubelet probes** (`fromEntities: host,
+  remote-node, health`). Without them every probe fails and the pod never goes
+  Ready — indistinguishable from a crash-looping engine. A plain `NetworkPolicy`
+  `ipBlock` does not work; node IPs carry `remote-node`/`host` identity in Cilium.
+- **Memory limits are host RAM, not VRAM.** llama.cpp mmaps the GGUF, so its page
+  cache counts against the container limit; vLLM needs headroom above any LMCache
+  CPU pool.
+- **A context that does not fit fails minutes into loading**, as an allocation
+  error that reads like a crash. Measure, don't guess.
+- **Deploy = brief downtime.** One replica on one card; the StatefulSet recreates
+  its single pod. A CrashLooping pod blocks its own rollout — `kubectl delete pod`.
+- **Route timeout defaults to 60 s** and takes precedence over the upstream BTP, so
+  a slow model needs an explicit `timeout.requestTimeout` in `charts/ai-models`
+  or long generations 504 (ADR-0034).
+- **Ampere-era "no FP8" notes are hardware history.** These Ada cards have hardware
+  FP8. FP8 is still 8 bits/weight, so it suits small models here, not a 27B.
 
-**B. Serve it** — copy `charts/model-serving-<ref>` → `charts/model-serving-<model>`,
-set `model.{name,hfRepo,storagePath}` + the seed args (hardcoded), the engine
-container (image + args + probes per §3/§7), and keep the **edge auth** (engine
-native or Caddy).
+## 9. Verification
 
-**C. Wire the gateway (§4)** — one `backends:` entry (right `prefix:`) + one
-`models:` entry (`info`, `minBackends: 1`, ADR-0028 pricing, `timeout`). Edge host =
-backend hostname; add DNS.
+```bash
+helm dep build charts/model-serving && helm dep build charts/model-server
+helm lint charts/model-serving --strict
+for f in charts/model-server/ci/*-values.yaml; do
+  helm lint charts/model-server --strict -f "$f" && helm template x charts/model-server -f "$f" --dry-run >/dev/null
+done
+./tools/check-model-catalogs.sh
+```
 
-**D. Document it — "document" means *all* of these (per CLAUDE.md):**
-1. **A per-model paper** under `docs/models/` (model card, as-built, cost, gotchas).
-2. **An ADR** *only if it introduces a new pattern* (new runtime, exposure, pricing
-   basis) — e.g. the llama.cpp engine. A same-pattern model is a release note.
-3. **arc42** (§5 building-block table if the chart is new; §9 if there's an ADR).
-4. **`docs/README.md`** + **`docs/adr/README.md`** indexes.
-5. **Memory** (`self-hosted-gpu-model.md`).
+`check-model-catalogs.sh` (wired into `helm-lint` CI) enforces the one cross-chart
+invariant: a cluster-local gateway backend must have a running model behind it.
+Serving *without* federating is allowed on purpose — that is how a model is
+measured before users can reach it.
 
-**E. Verify** — edge 401 without key / 200 with; model cluster-local (no public
-route bypass); a completion **with `tools`** if agentic; the gateway path (JWT +
-model header) returns tokens; cost CEL emits non-zero micro-USD. (Per-model runbooks
-in their papers.)
+## 10. Where the rest lives
 
-### 9. When to generalize the chart (model #3+)
-
-Convert to the **orchestrator-plus-leaves** pattern (ADR-0012/0014 style): an
-ApplicationSet List generator with one `model-serving-<name>` leaf per model. Worth
-the indirection only once 3+ models share the lifecycle; until then, copy-the-chart
-is less machinery. When that day comes, write the ADR and update arc42 §5/§9.
-
-### 10. Choosing the *hardware* for the next model
-
-When the next model outgrows the home A2000, the platform comparison —
-**A2000 vs eBay 5×V100 vs Hetzner GEX44/GEX131** (deployability, concurrency,
-12/24/36-mo TCO, and the [ADR-0028](../adr/0028-owned-hardware-model-pricing.md)
-cost-recovery price of each) — is worked through in
-[`2026-06-08-gpu-platform-procurement-comparison.md`](2026-06-08-gpu-platform-procurement-comparison.md).
-Short version: A2000 for the live small tier; the **already-owned Cameroon 2×4070
-(~€0.16/kWh) for ≤30B — including the 30B-A3B coding MoEs (GLM-4.7-Flash) that GEX44
-can't hold** — try it *before* renting/buying; GEX44 only for managed multimodal
-small models; GEX131 or the Cameroon 5×V100 box for dense-70B / 122B-MoE. ⚠️ Owned
-boxes: count **maintenance/ops** (the comparison's §6.5) — it flips the 70B verdict.
+| Topic | Where |
+|---|---|
+| VRAM budgeting, quantization, engine choice | `inference-ops` `docs/explanation/`, ADR-0002 |
+| Add / replace / roll back / measure a model | `inference-ops` `docs/how-to/` |
+| Operational failures | `inference-ops` `docs/runbooks/` |
+| Hardware facts, model catalog | `inference-ops` `docs/reference/` |
+| Measured performance | `inference-ops` `docs/benchmarks/` |
+| GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage) |
+| Pricing basis | ADR-0028 |
+| Per-model papers (this repo) | [`../models/`](../models/) — legacy generation |

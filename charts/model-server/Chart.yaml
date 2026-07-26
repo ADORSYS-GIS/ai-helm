@@ -1,0 +1,63 @@
+apiVersion: v2
+name: model-server
+description: |
+  The GENERIC self-hosted model server leaf — one Application's worth of
+  resources for exactly one model on one GPU. Replaces the per-model
+  `charts/model-serving-<model>` copies (ADR-0094).
+
+  Never deployed directly: `charts/model-serving` (the orchestrator) emits one
+  ApplicationSet child per catalog entry and hands this chart a fully-expanded
+  values block. Everything model-specific — engine image, server args, seed
+  script, probes, resources — is computed by the orchestrator's helpers, because
+  a Helm parent cannot compute SUBCHART values at render time (which is exactly
+  why the old per-model charts had to hardcode their seed repo/glob and keep it
+  manually "in sync"). That whole class of bug is gone here.
+
+  Shape (ADR-0030 hybrid): `bjw-template` (alias `modelServing`) renders the
+  workload — the model StatefulSet, the weight-seed Job, and the Service. This
+  chart's own templates/ render only what bjw does not: the weights PVC, the
+  optional HF-token / API-key ExternalSecrets, the CiliumNetworkPolicy that
+  keeps the model reachable ONLY from the gateway, and the ServiceMonitor.
+
+  Exposure is CLUSTER-LOCAL (ADR-0095): no Ingress, no public host, no
+  cert-manager Certificate, no static API key, no Caddy auth-proxy sidecar. The
+  GPU nodes live on the same cluster as the Envoy AI Gateway now, so the gateway
+  reaches the model at <name>.<ns>.svc.cluster.local:8080 and remains the single
+  place identity, budgets, rate limits and metering are enforced (ADR-0021).
+
+  Engines: `llamacpp` (GGUF) and `vllm` (safetensors, optional LMCache). See
+  charts/model-serving for the catalog and the engine profiles.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+annotations:
+  # Render-only leaf: templates fail-guard on values the orchestrator injects,
+  # so a default (empty-values) lint/template aborts by design. CI lints AND
+  # renders each ci/*-values.yaml fixture instead — one per engine profile, so
+  # both paths stay covered. See CLAUDE.md "Tool quirks to remember".
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
+keywords:
+  - llm
+  - inference
+  - gpu
+  - llama.cpp
+  - vllm
+  - lmcache
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  # bjw-template (forked bjw-s app-template, ADR-0016) renders the WORKLOAD:
+  # the model StatefulSet, the seed Job, and the Service. Values arrive under
+  # the `modelServing:` key, fully assembled by charts/model-serving.
+  - name: bjw-template
+    version: "4.6.2"
+    repository: "file://../bjw-template"
+    alias: modelServing
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common

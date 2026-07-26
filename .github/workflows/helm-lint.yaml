@@ -107,6 +107,13 @@ jobs:
             echo "✅ $chart_name OK"
           done
 
+      # Cross-chart invariant that no single chart's render can catch: a model
+      # federated into the gateway (charts/ai-models) must have a server behind
+      # it on the GPU fleet (charts/model-serving). Getting this wrong produces a
+      # green sync and 503s at request time. See ADR-0094.
+      - name: Check the model catalogs agree
+        run: ./tools/check-model-catalogs.sh
+
       - name: Summary
         if: always()
         run: echo "📊 Helm linting completed with status:${{ job.status }}"

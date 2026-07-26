@@ -1,0 +1,35 @@
+{{- /*
+Scrape the engine's own metrics. llama.cpp exposes /metrics behind `--metrics`;
+vLLM exposes it natively. Alloy discovers ServiceMonitors cluster-wide (see the
+alloy child in charts/observability), so this is all that is needed to get
+tokens/s, queue depth, KV-cache utilisation and request latency into Mimir.
+
+The Service is rendered by bjw (service.main), named after the model, and the
+port is named `http` — see the orchestrator's expansion.
+*/ -}}
+{{- include "model-server.validate" . -}}
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.model.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      ai-helm.adorsys-gis.github.io/model: {{ .Values.model.name }}
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path | default "/metrics" }}
+      interval: {{ .Values.serviceMonitor.interval | default "30s" }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout | default "10s" }}
+      # The engine reports metrics about ITSELF, so there are no foreign labels
+      # to preserve — unlike kube-state-metrics, which needs honorLabels (CLAUDE.md).
+{{- end }}
