@@ -274,18 +274,35 @@ models:
       include: "OpenMythos-27B-Q4_K.gguf"
       sizeGi: 30
     serving:
-      # Conservative starting point. The load gate walks this up and records
-      # where it stops; do not raise it on a hunch — an over-large KV pool fails
-      # at allocation time, minutes into a load, and looks like a crash.
-      contextSize: 16384
-      # Few slots on purpose: KV is shared across slots, and at ~13 tok/s
+      # ⚠️ `--ctx-size` is the TOTAL KV pool, divided across `--parallel` slots
+      # when kv_unified is false (the default). At 32768 / 2 slots each REQUEST
+      # gets 16384 tokens — that per-slot number, not this one, is what you
+      # advertise as contextLength in charts/ai-models.
+      #
+      # Raised from 16384 after the load gate: at 16384 total the model used
+      # 16748 MiB of 20475 (3.6 GiB headroom) with KV + buffers costing only
+      # ~1 GiB, because Qwen3.6-27B keeps a KV cache on just 16 of its 65 layers.
+      # Doubling should cost ~1 GiB more. Re-measure VRAM after this lands.
+      contextSize: 32768
+      # Few slots on purpose: the pool is split between them, and at ~15 tok/s
       # concurrency is not what this tier is for.
       parallel: 2
-      # Levers to try during the load gate, in this order, one at a time:
+      extraArgs:
+        # Thinking is ON in this model's chat template, and it dominates short
+        # responses: "what is 17 * 23" measured 18.2s / 274 tokens with it on
+        # versus 0.2s / 4 tokens with it off, and a 512-token cap returned an
+        # EMPTY answer because the whole budget went to reasoning. Most clients
+        # will never set this themselves, so the server default is off and a
+        # caller opts back in per request with
+        #   "chat_template_kwargs": {"enable_thinking": true}
+        # ⚠️ `reasoning_budget: 0` as a REQUEST field is ignored by build 10133 —
+        # this is the lever that actually works.
+        - --chat-template-kwargs
+        - '{"enable_thinking": false}'
+      # Further levers if VRAM ever gets tight, one at a time, re-measuring:
       #   --flash-attn                     (check the flag's arity in the build)
       #   --cache-type-k q8_0 --cache-type-v q8_0   (halves KV, needs FA)
       #   --no-mmap                        (if page cache pressures the memory limit)
-      extraArgs: []
     resources:
       cpuRequest: "2"
       cpuLimit: "8"
