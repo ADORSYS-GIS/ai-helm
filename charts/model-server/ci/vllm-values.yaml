@@ -62,7 +62,11 @@ modelServing:
       ai-helm.adorsys-gis.github.io/model: fixture-vllm
   controllers:
     main:
-      type: statefulset
+      # Deployment + Recreate, not StatefulSet (ADR-0098): OrderedReady lets a
+      # crash-looping pod block its own replacement. Recreate also guarantees the
+      # single-GPU invariant by fully terminating the old pod first.
+      type: deployment
+      strategy: Recreate
       replicas: 1
       annotations:
         argocd.argoproj.io/sync-wave: "1"

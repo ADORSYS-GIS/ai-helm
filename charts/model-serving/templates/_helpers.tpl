@@ -316,11 +316,33 @@ modelServing:
   controllers:
     # ── The model server ─────────────────────────────────────────────────────
     main:
-      type: statefulset
-      # One model, one GPU, always on. A single-replica StatefulSet recreates its
-      # one pod on update, so two pods never contend for the same card — at the
-      # cost of ~1–2 min of downtime per deploy. A CrashLooping pod blocks its own
-      # rollout; `kubectl delete pod` forces the new revision.
+      # Deployment + `Recreate`, NOT a StatefulSet (ADR-0098, amending ADR-0030).
+      #
+      # `Recreate` is required, not cosmetic: it terminates the old pod fully
+      # before creating the new one, so two pods never contend for the single
+      # `nvidia.com/gpu: 1`. Under RollingUpdate with any surge the new pod would
+      # sit Pending forever waiting for a card the old pod still holds, while the
+      # old pod waits for the new one to be Ready — a deadlock.
+      #
+      # Why not a StatefulSet: it gave the same single-instance guarantee but
+      # defaults to `podManagementPolicy: OrderedReady`, under which the
+      # controller refuses to replace a pod that is not Ready. A CRASH-LOOPING
+      # POD THEREFORE BLOCKS ITS OWN FIX — the corrected chart merges and syncs,
+      # `.spec.template` holds the new args, and the pod keeps running the old
+      # ones indefinitely (currentRevision != updateRevision) until somebody runs
+      # `kubectl delete pod`. This is documented Kubernetes behaviour, not a bug:
+      # see the StatefulSet "Forced rollback" docs. A Deployment has no such
+      # gate — it deletes the old pod and moves on, so a bad config self-heals on
+      # the next merge.
+      #
+      # We use no StatefulSet-only feature: no volumeClaimTemplates (the weights
+      # PVC is our own RWX claim, mounted by existingClaim), no ordinal identity,
+      # no stable network name. So the gate bought us nothing and cost us a
+      # manual step during exactly the incidents where it hurts most.
+      type: deployment
+      strategy: Recreate
+      # One model, one GPU, always on. A deploy is ~1–2 min of downtime while the
+      # replacement loads its weights; single GPU means no HA by construction.
       replicas: 1
       annotations:
         argocd.argoproj.io/sync-wave: "1"

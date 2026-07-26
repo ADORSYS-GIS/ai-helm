@@ -37,7 +37,7 @@ is applied before the request reaches it.
 | Chart | Role |
 |---|---|
 | **`charts/model-serving`** | Orchestrator. One ApplicationSet, one child per catalog entry. `controlPlane: true`. **Holds the engine profiles.** |
-| **`charts/model-server`** | Generic leaf. One model's resources: bjw-template renders the StatefulSet + seed Job + Service; own templates render PVC, ExternalSecrets, CiliumNetworkPolicy, ServiceMonitor. |
+| **`charts/model-server`** | Generic leaf. One model's resources: bjw-template renders the Deployment + seed Job + Service; own templates render PVC, ExternalSecrets, CiliumNetworkPolicy, ServiceMonitor. |
 | **`charts/ai-models`** | Unchanged. The gateway catalog — a backend entry + a model entry federate a served model to users. |
 
 **Adding a model is one ~15-line entry** in `charts/model-serving/values.yaml`
@@ -134,7 +134,7 @@ read-only, so pod restarts never re-download.
 ## 6. Sync waves
 
 `-2` ExternalSecrets → `-1` PVC → `0` seed Job + CiliumNetworkPolicy → `1`
-StatefulSet + Service + ServiceMonitor.
+Deployment + Service + ServiceMonitor.
 
 ## 7. The legacy generation (`admin@homeos`)
 
@@ -176,12 +176,16 @@ match this page; they are correct for where they run.
   `unauthorized: Invalid API Key` in the model log at exactly the scrape
   interval. The leaf chart gives the scraper the same key via the
   ServiceMonitor's `authorization` block whenever `apiKey.enabled`.
-- **⚠️ A crash-looping pod blocks its own fix.** A single-replica StatefulSet's
-  RollingUpdate waits for the current pod to become Ready before replacing it, so
-  a pod that never becomes Ready pins the old revision indefinitely — the chart
-  fix merges, syncs, and appears to do nothing. Confirm with
-  `kubectl get sts <name> -o jsonpath='{.status.currentRevision}{"\n"}{.status.updateRevision}'`:
-  if they differ, the rollout is stuck, and `kubectl delete pod` applies it.
+- **A crash-looping pod NO LONGER blocks its own fix** — but know why, because
+  the old behaviour is what most Kubernetes docs describe. As a StatefulSet
+  (`podManagementPolicy: OrderedReady`, the default) the controller refused to
+  replace a not-Ready pod, so a merged chart fix appeared to do nothing while
+  `.status.currentRevision` != `.status.updateRevision`, and only
+  `kubectl delete pod` applied it. The workload is now a **Deployment with
+  `strategy: Recreate`** (ADR-0098), which has no such gate: bad configs
+  self-heal on the next merge. `Recreate` is also what keeps the single-GPU
+  invariant — under RollingUpdate the new pod would wait for a card the old pod
+  still holds.
 - **⚠️ Engine image tags can be older than their version number suggests.**
   `lmcache/vllm-openai:v0.7.0` was published 2025-02, `v0.5.2` in 2026-07 — the
   numbering scheme changed, so the "newer" tag is eighteen months stale and
@@ -200,8 +204,8 @@ match this page; they are correct for where they run.
   `--chat-template-kwargs '{"enable_thinking": false}'`, with clients opting back
   in per request. `reasoning_budget: 0` as a *request* field was ignored by
   llama.cpp build 10133 — it is not the lever.
-- **Deploy = brief downtime.** One replica on one card; the StatefulSet recreates
-  its single pod. A CrashLooping pod blocks its own rollout — `kubectl delete pod`.
+- **Deploy = brief downtime.** One replica on one card; `Recreate` terminates the
+  old pod before starting the new one.
 - **Route timeout defaults to 60 s** and takes precedence over the upstream BTP, so
   a slow model needs an explicit `timeout.requestTimeout` in `charts/ai-models`
   or long generations 504 (ADR-0034).
