@@ -516,7 +516,7 @@ modelServing:
               spec:
                 httpGet: { path: {{ $eng.healthPath | quote }}, port: 8080 }
                 periodSeconds: 15
-                failureThreshold: {{ $s.startupFailureThreshold | default 120 }}
+                failureThreshold: {{ $s.startupFailureThreshold | default $eng.startupFailureThreshold | default 120 }}
                 timeoutSeconds: 5
             readiness:
               enabled: true

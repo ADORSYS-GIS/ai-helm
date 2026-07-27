@@ -339,6 +339,26 @@ defaults:
         repository: quay.io/go-skynet/local-ai
         tag: v4.7.1-gpu-nvidia-cuda-12
         pullPolicy: IfNotPresent
+      # ⚠️ A FOUR-HOUR startup budget, and it is not paranoia. This engine does
+      # ALL of its fetching after the container starts, so a cold boot is:
+      #   • download the backend            4.2 GiB compressed
+      #   • EXTRACT it onto Longhorn        7.3 GiB — measured at ~2 GiB per
+      #                                     11 min on the RWX volume, so ~35 min
+      #                                     on its own
+      #   • download the model              ~33 GB for the diffusers entry
+      #
+      # The fleet default of 120 × 15s = 30 min does not cover the extraction
+      # alone. And the failure is not a slow start — it is an INFINITE one: the
+      # startup probe kills the container mid-download, the replacement starts
+      # over, and it can never finish. LocalAI's own health handler warns about
+      # precisely this ("a long startup preload must not read as a hung process,
+      # or an orchestrator restarts the pod mid-download and the preload can
+      # never finish"), which is why /healthz is always-200 and only /readyz
+      # gates.
+      #
+      # 960 × 15s = 4h. Only the FIRST boot pays it: BACKENDS_PATH and
+      # MODELS_PATH are both on the PVC, so a restart skips straight to loading.
+      startupFailureThreshold: 960
       # `/readyz` — and it means what we need it to mean. Verified in LocalAI's
       # handler: it answers **503 `startup preload in progress`** until the
       # preload completes, and 200 after, while `/healthz` is always-200 for
