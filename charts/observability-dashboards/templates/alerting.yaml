@@ -26,6 +26,7 @@ Gated on .Values.alerting.enabled.
   later ones are reached by the matcher routes in the notification policy below.
 */ -}}
 {{- range $cp := $a.contactPoints }}
+{{- if ne $cp.enabled false }}
 ---
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaContactPoint
@@ -60,6 +61,7 @@ spec:
               name: {{ $cp.webhookSecret.secretName }}
               key: {{ $cp.webhookSecret.key | default "url" }}
 {{- end }}
+{{- end }}
 ---
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaNotificationPolicy
@@ -75,7 +77,9 @@ spec:
   resyncPeriod: {{ . | quote }}
   {{- end }}
   route:
-    receiver: {{ (first $a.contactPoints).name }}
+    {{- $defaultReceiver := "" }}
+    {{- range $cp := $a.contactPoints }}{{- if and (ne $cp.enabled false) (eq $defaultReceiver "") }}{{- $defaultReceiver = $cp.name }}{{- end }}{{- end }}
+    receiver: {{ required "alerting: at least one contactPoint must be enabled" $defaultReceiver }}
     group_by: {{ toYaml ($a.notificationPolicy.groupBy | default (list "grafana_folder" "alertname")) | nindent 6 }}
     group_wait: {{ $a.notificationPolicy.groupWait | default "30s" | quote }}
     group_interval: {{ $a.notificationPolicy.groupInterval | default "5m" | quote }}
@@ -86,7 +90,13 @@ spec:
       by carrying the matching LABEL (see ruleGroups[].rules[].labels), so
       routing is a property of the rule, not of where it happens to live.
     */ -}}
-    {{- with $a.notificationPolicy.routes }}
+    {{- $liveReceivers := list }}
+    {{- range $cp := $a.contactPoints }}{{- if ne $cp.enabled false }}{{- $liveReceivers = append $liveReceivers $cp.name }}{{- end }}{{- end }}
+    {{- $liveRoutes := list }}
+    {{- range $r := ($a.notificationPolicy.routes | default list) }}
+      {{- if has $r.receiver $liveReceivers }}{{- $liveRoutes = append $liveRoutes $r }}{{- end }}
+    {{- end }}
+    {{- with $liveRoutes }}
     routes:
       {{- range $r := . }}
       - receiver: {{ $r.receiver }}
