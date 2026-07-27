@@ -297,6 +297,14 @@ do not "fix" them to match this page; they are correct for where they ran.
       | python3 -c 'import sys,json;print(sum((f.get("lfs") or {}).get("size",f.get("size",0)) for f in json.load(sys.stdin))/1e9,"GB")'
   done
   ```
+- **⚠️ Seed-Job memory is sized by the LARGEST SHARD × workers, not by repo size.**
+  `hf download` fans out over **8 workers by default** and hf_xet buffers per
+  file, so a repo of three ~10 GB safetensors shards needs several times what a
+  single 16 GB GGUF needs — the fleet's 6 GiB default `OOMKilled` (exit 137) the
+  Z-Image-Turbo seed four times in six minutes, while every earlier model passed
+  comfortably. Two knobs, and use both: `weights.seedMaxWorkers` bounds the peak
+  (the real fix) and `weights.seedMemoryLimit` is the margin. Capping workers
+  costs little here — Hub bandwidth is the bottleneck, not concurrency.
 - **⚠️ A server that loads its model LAZILY deadlocks against a readiness gate.**
   If `/health` is 503 until the weights are loaded, and the weights load on the
   first request, then: not-Ready ⇒ no Service endpoint ⇒ no request ⇒ never
