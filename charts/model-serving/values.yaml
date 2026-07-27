@@ -283,63 +283,67 @@ defaults:
           drop:
             - ALL
 
-    # ── zimage — IMAGE GENERATION, and the only FIRST-PARTY engine here ──────
-    # A Rust + Candle server we build ourselves (source: images/z-image-turbo-server,
-    # ADR-0100). Text engines are a commodity; a diffusion model serving the
-    # OpenAI `/v1/images/generations` shape is not — neither llama.cpp nor vLLM
-    # does diffusion at all, so this is the only way an image model joins the
-    # fleet without a second serving stack.
+    # ── localai — IMAGE GENERATION, off the shelf (ADR-0102) ─────────────────
+    # LocalAI (github.com/mudler/LocalAI) is an OpenAI-compatible server that
+    # serves diffusion models natively at `/v1/images/generations`. It replaced a
+    # first-party Rust + Candle server we briefly maintained; see ADR-0102 for
+    # why that was the wrong call and how the survey that led to it was
+    # incomplete. The short version: this is a commodity, we should not have been
+    # building one, and the ecosystem serves this exact model through gallery
+    # entries that already exist.
     #
-    # ⚠️⚠️ THE IMAGE MUST EXIST BEFORE THIS SYNCS. Nothing in CI builds it: it is
-    # built and pushed out-of-band, exactly like ghcr.io/adorsys-gis/lakefs-proxy.
-    # Same discipline as "values-repo-first" and "secret-first" elsewhere in this
-    # repo — build and push the tag FIRST, then merge the catalog entry, or the
-    # pod sits in ImagePullBackOff.
+    # ⚠️ PIN THE CUDA-12 TAG. The `master`/`latest` tags are built against
+    # **CUDA 13**, and these nodes run driver 550 / CUDA 12.4 — the same trap
+    # CLAUDE.md records for llama.cpp's `server-cuda13` and vLLM's `-cu129`.
+    # Versioned CUDA-12 tags exist and are what we use:
+    #     quay.io/go-skynet/local-ai:v4.7.1-gpu-nvidia-cuda-12
     #
-    # ⚠️ And it must be built FOR THESE CARDS. Candle bakes kernels for ONE CUDA
-    # compute capability at build time; the fleet is RTX 4000 SFF Ada = sm_89
-    # (`CUDA_COMPUTE_CAP=89`, set in the Dockerfile) on driver 550 / CUDA 12.4.
-    # The v0.1.0 image was built for the old home A2000 (sm_86) and would fail at
-    # first inference — after the pod went Ready — with "no kernel image is
-    # available for execution on the device". Hence v0.2.0, a fresh build.
-    zimage:
+    # ⚠️ LocalAI MANAGES ITS OWN DOWNLOADS. Unlike the two text engines, it pulls
+    # both the model (from its model gallery) and its inference BACKEND (from its
+    # backend gallery, `AUTOLOAD_BACKEND_GALLERIES` defaults true) at start-up.
+    # Two consequences the other engines do not have:
+    #   • there is NO seed Job — `seedJob: false` below — and no HF token;
+    #   • the weights volume must be WRITABLE, and must hold `backends/` as well
+    #     as `models/`, or every pod restart re-downloads both.
+    # First start is therefore slow (backend + weights), which is what the long
+    # startup-probe budget is for. Subsequent restarts read from the PVC.
+    localai:
       image:
-        repository: ghcr.io/adorsys-gis/z-image-turbo-server
-        tag: v0.2.0
+        repository: quay.io/go-skynet/local-ai
+        tag: v4.7.1-gpu-nvidia-cuda-12
         pullPolicy: IfNotPresent
-      # 503 `model_loading` → 200 once the weights are on the GPU. The server
-      # pre-loads at start-up rather than on first request precisely so this
-      # probe means something (v0.2.0 — the lazy path deadlocked: a pod that is
-      # never Ready gets no traffic, and traffic was what triggered the load).
-      healthPath: /health
+      # `/readyz` (there is also `/healthz`). Both are served by the same app.
+      healthPath: /readyz
+      # `LOCALAI_API_KEY,API_KEY` — the same env var the previous engine used, so
+      # the fleet's ADR-0097 key policy carries over untouched.
       apiKey:
         mode: env
         envName: API_KEY
-      # ⚠️ No Prometheus endpoint. The server exposes /health, /v1/models and
-      # /v1/images/generations and nothing else, so a ServiceMonitor would scrape
-      # a 404 forever. Declared here rather than as a per-model override so the
-      # fact lives with the engine that owns it. GPU-level telemetry still comes
-      # from DCGM, so the card is not unobserved — only the server is.
-      metrics: false
-      # ⚠️ `security.corsOrigins` CANNOT be honoured: the server hardcodes
-      # `Cors::default().allow_any_origin()` with no flag to pin it. Recorded as
-      # a known gap in ADR-0100 rather than silently ignored. It is contained by
-      # the CiliumNetworkPolicy — nothing browser-based can reach the pod at all
-      # — and by there being no cookie or credential the origin could protect.
-      corsConfigurable: false
-      # Unlike the two upstream engines, this image is ours, so it is non-root
-      # with a read-only rootfs: the process writes nothing outside the weights
-      # mount, which is itself mounted read-only. No .trivyignore entry needed.
+      # ⚠️ Metrics are BACK. LocalAI serves `/metrics` unless
+      # DISABLE_METRICS_ENDPOINT is set, so this engine gets a ServiceMonitor
+      # like the text tiers — closing the observability gap the first-party
+      # server had. Note the route sits behind LocalAI's admin middleware, so the
+      # scrape must present the API key; charts/model-server's ServiceMonitor
+      # already does that whenever `apiKey.enabled` (same situation as
+      # llama-server, where --api-key-file also covers /metrics).
+      metrics: true
+      # LocalAI downloads models and backends itself; no seed Job, no HF token.
+      seedJob: false
+      # …and therefore needs the volume read-write.
+      writableModelStore: true
+      # Upstream image, run like the other two upstream engines: root with all
+      # capabilities dropped and privilege escalation off. It writes backends and
+      # weights into the mount at runtime, so no read-only rootfs (KSV-0014 is
+      # path-scoped in .trivyignore.yaml for the serving fleet).
       podSecurityContext:
-        runAsNonRoot: true
-        runAsUser: 1002
+        runAsNonRoot: false
+        runAsUser: 0
         seccompProfile:
           type: RuntimeDefault
       containerSecurityContext:
         allowPrivilegeEscalation: false
-        runAsNonRoot: true
-        runAsUser: 1002
-        readOnlyRootFilesystem: true
+        runAsNonRoot: false
+        runAsUser: 0
         seccompProfile:
           type: RuntimeDefault
         capabilities:
@@ -388,95 +392,57 @@ defaults:
 models:
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Z-Image-Turbo — IMAGE GENERATION. The fleet's first non-text model, and the
-  # reason the `zimage` engine profile exists (ADR-0100).
+  # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102).
   #
-  # Tongyi-MAI/Z-Image-Turbo: 6B-parameter distilled DiT, 8 sampling steps,
-  # 1024×1024, Apache-2.0. Answers the OpenAI `POST /v1/images/generations`
-  # shape, so it federates into the gateway like any other model — but with
-  # `kind: image` and `flatPerRequest` pricing, because tokens are always 0 for
-  # image generation (charts/ai-model skips the token metadata and the
-  # tokens/min burst rule for image models).
+  # Tongyi-MAI/Z-Image-Turbo: 6B distilled DiT, 8 sampling steps, 1024×1024,
+  # Apache-2.0. Answers OpenAI `POST /v1/images/generations`, so it federates
+  # like any other model — with `kind: image` + `flatPerRequest` pricing, because
+  # tokens are always 0 for image generation.
   #
-  # ⚠️ It is NOT FP8 and NOT ~8 GB, whatever the original PR called it. The
-  # published repo ships FP32 safetensors — transformer 24.62 GB, text encoder
-  # 8.05 GB, VAE 0.17 GB, ~33 GB total. That is why `sizeGi: 45` and not the 20
-  # the legacy chart used: at 20 the seed simply runs out of volume part-way
-  # through, hours in. Loaded at BF16 it becomes ~12.4 GB GPU-resident
-  # (transformer + VAE) with the ~4 GB text encoder held in HOST RAM — hence the
-  # large `memoryLimit` below, which is not GPU memory.
+  # ⚠️ This entry was ~20 lines of bespoke server configuration a day ago. It is
+  # now a gallery name, because LocalAI already ships four Z-Image entries and we
+  # should never have been maintaining an inference server for this. ADR-0102
+  # records how that survey went wrong; the practical lesson is in the numbers
+  # below.
   #
-  # VRAM: ~12.4 GB of a 20475 MiB card leaves ~7 GiB for activations. Roomy —
-  # this model did not fit comfortably on the 12 GB A2000 it was first written
-  # for, and fitting it there is what all the CPU-offload machinery in the
-  # server is about. On these cards that machinery is now insurance, not need.
+  # LocalAI downloads BOTH the model and its inference backend at start-up, so
+  # unlike every other entry here there is no `weights:` block, no HF revision to
+  # pin and no seed Job — the engine profile sets `seedJob: false` and the volume
+  # is mounted writable. What we give up is the pinned-SHA guarantee that the
+  # bytes measured are the bytes served; what we get back is not owning a server.
   #
-  # ⚠️ NOT LOAD-GATED. No images/hour, no p50 latency, no measured VRAM figure
-  # exists for this model on this hardware — the numbers above are derived from
-  # file sizes and arithmetic, not observation. Its price is therefore carried
-  # over unchanged from the home-GPU deployment ($0.005/image) and is a
-  # PLACEHOLDER: ADR-0096 cost recovery needs a measured images/hour before it
-  # can produce a real number. Run inference-ops how-to/measure-a-model.md and
-  # file the report before treating the price as anything but provisional.
+  # ⚠️ NOT LOAD-GATED, and NOT FEDERATED (ADR-0101). `z-image-turbo-local` is
+  # `enabled: false` in charts/ai-models until a report exists. Two things the
+  # gate must settle first, neither of which rendering can:
+  #   1. the exact `galleryModel` string LocalAI accepts (see the engine profile);
+  #   2. that the diffusers backend it pulls runs on driver 550 / CUDA 12.4.
   z-image-turbo:
     enabled: true
-    engine: zimage
-    weights:
-      hfRepo: Tongyi-MAI/Z-Image-Turbo
-      revision: f332072aa78be7aecdf3ee76d5c247082da564a6
-      # No `include`: the server needs the whole repo — transformer/, vae/,
-      # text_encoder/ (3 shards each for the first two) plus tokenizer/ and the
-      # per-component config.json files it reads at load. A glob here would seed
-      # a directory that fails validation at start-up.
-      # ⚠️ ~2× the repo, MEASURED the hard way. `hf download --local-dir` stages
-      # the entire download into `<dir>/.cache/huggingface` and only then
-      # materialises the real files, so peak disk is repo + staging copy, not
-      # repo. At 45Gi this volume hit 100% full with 44 GB sitting in `.cache`
-      # and the model directories still empty. The seed now deletes the staging
-      # area once the stamp is written, so the steady state is ~33 GB — but the
-      # volume still has to survive the peak, and Longhorn can grow a PVC but
-      # never shrink one.
-      #
-      # Every other model on the fleet is small enough that 2× never mattered.
-      sizeGi: 100
-      # ~33 GB over a cold Hub connection. The 2h fleet default is uncomfortably
-      # close; 3h costs nothing when the stamp makes re-runs a no-op.
-      seedDeadlineSeconds: 10800
-      # ⚠️ MEASURED, not guessed: the fleet-default 6Gi seed limit OOM-killed
-      # this download (exit 137, four restarts in six minutes) on 2026-07-27.
-      # What blows the limit is the LARGEST SHARD × concurrent workers, not the
-      # repo total — this repo has three ~10 GB safetensors shards and
-      # `hf download` fans out over 8 workers by default, each buffering through
-      # hf_xet. Every other model on the fleet is one 16 GB GGUF or a set of
-      # small shards, which is why nothing hit this before.
-      #
-      # Both knobs, not one: capping workers is the real fix (it bounds peak
-      # memory) and the raised limit is the margin. 2 workers also costs little
-      # throughput here — the bottleneck is Hub bandwidth, not concurrency.
-      seedMaxWorkers: 2
-      seedMemoryLimit: 16Gi
+    engine: localai
     serving:
-      # No `contextSize` — that is a language-model concept. The zimage profile
-      # takes image geometry and sampling parameters instead, and the server
-      # validates them at start-up (dimensions must divide by 16, steps 1..50,
-      # guidance 0..20) rather than failing per request.
-      maxImageSize: 1024
-      defaultWidth: 1024
-      defaultHeight: 1024
-      # 8 steps is the whole point of the "Turbo" distillation; raising it buys
-      # little and costs linearly.
-      numSteps: 8
-      guidanceScale: 5.0
+      # The LocalAI gallery entry. `z-image-turbo-diffusers` is the diffusers
+      # backend against Tongyi-MAI/Z-Image-Turbo; the gallery also carries
+      # `Z-Image-Turbo` (ggml/GGUF) and `vllm-omni-z-image-turbo`, which are the
+      # obvious fallbacks if this one misbehaves — the GGUF variants are a
+      # fraction of the size (4.5–6.2 GB against ~33 GB of FP32 safetensors).
+      galleryModel: z-image-turbo-diffusers
+    weights:
+      # No hfRepo/revision: LocalAI fetches from its own gallery. `sizeGi` still
+      # applies — the volume holds the weights AND the downloaded backend.
+      #
+      # 40Gi is deliberate slack, not arithmetic: the diffusers entry pulls the
+      # FP32 repo (~33 GB) plus a backend, and the staging-copy behaviour that
+      # bit us at 45Gi is huggingface_hub's, which LocalAI also uses. If the gate
+      # picks a GGUF variant instead this drops to ~15Gi — but Longhorn grows a
+      # PVC and never shrinks one, so start where a switch is still possible.
+      sizeGi: 40
     resources:
-      # Text encoding runs on the CPU by design (that is what keeps ~4 GB off
-      # the card), so this model wants real CPU — unlike the text engines, where
-      # the CPU is mostly idle while the GPU works.
+      # Text encoding for this model runs on CPU in most backends, so it wants
+      # real CPU — unlike the text tiers, where the CPU idles while the GPU works.
       cpuRequest: "4"
       cpuLimit: "12"
       memoryRequest: 12Gi
-      # HOST RAM, not VRAM: the ~4 GB BF16 text encoder plus the page cache of
-      # ~33 GB of mmapped safetensors during load. Page cache is reclaimable, so
-      # this is headroom rather than a reservation.
+      # HOST RAM, not VRAM.
       memoryLimit: 32Gi
 
   # ─────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,264 @@
+# CI fixture — the localai (image-generation) engine path (ADR-0102).
+#
+# charts/model-server is a render-only leaf: its templates fail-guard on values
+# the orchestrator injects, so linting it with default (empty) values aborts by
+# design. Chart.yaml carries `lint-mode: ci-values`, so CI lints AND renders each
+# fixture in this directory instead.
+#
+# Generated from the real orchestrator expansion, then renamed — the
+# authoritative check that the two agree is still
+# `helm template x charts/model-serving`.
+#
+# What this fixture covers that the other two do not:
+#   • NO seed Job — LocalAI downloads its own model and backend at start-up.
+#   • therefore NO hfToken, and a WRITABLE /models mount (the text engines mount
+#     it read-only and rely on a seed Job to have filled it).
+#   • configuration by ENV rather than args: MODELS / MODELS_PATH / BACKENDS_PATH.
+#   • no `args:` key at all — an empty one is YAML null and would blank the
+#     image's own command.
+
+model:
+  name: "fixture-localai"
+  engine: "localai"
+  storagePath: "fixture-localai"
+
+pvc:
+  enabled: true
+  name: "fixture-localai-weights"
+  storageClassName: "longhorn"
+  accessMode: ReadWriteMany
+  size: "40Gi"
+
+hfToken:
+  # No seed Job for this engine — it downloads its own weights, so there is no
+  # Hub pull of ours to authenticate.
+  enabled: false
+
+apiKey:
+  enabled: true
+  secretName: "fixture-localai-api-key"
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: "ssegning-aws"
+    refreshInterval: 1h
+    key: "ai/camer/digital/prod/env"
+    property: "vllm_local_api_key"
+
+networkPolicy:
+  allowFromEntities:
+  - host
+  - remote-node
+  - health
+  allowFromNamespaces:
+  - envoy-gateway-system
+  - observability
+  enabled: true
+
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  path: /metrics
+  scrapeTimeout: 10s
+
+# ── bjw-template: the workload ────────────────────────────────────────────────
+modelServing:
+  global:
+    fullnameOverride: "fixture-localai"
+
+  defaultPodOptions:
+    # GPU scheduling is expressed as a RESOURCE REQUEST (see the model container
+    # below), not a hand-assignment to a named node: the scheduler picks a GPU
+    # node with a free card. With N GPUs, the N+1st enabled model simply sits
+    # Pending with `Insufficient nvidia.com/gpu` — a legible queue instead of the
+    # manual "disable that model to enable this one" dance the old charts needed.
+    #
+    # The nodeSelector/toleration are still required, and they apply to the SEED
+    # Job too — not for the GPU, but because Longhorn only runs on the GPU nodes
+    # (ADR-0092), so a pod elsewhere could not mount the weights volume at all.
+    runtimeClassName: "nvidia"
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+    tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
+    labels:
+      # Selector for the CiliumNetworkPolicy, the ServiceMonitor and the Service.
+      ai-helm.adorsys-gis.github.io/model: "fixture-localai"
+
+  controllers:
+    # ── The model server ─────────────────────────────────────────────────────
+    main:
+      # Deployment + `Recreate`, NOT a StatefulSet (ADR-0098, amending ADR-0030).
+      #
+      # `Recreate` is required, not cosmetic: it terminates the old pod fully
+      # before creating the new one, so two pods never contend for the single
+      # `nvidia.com/gpu: 1`. Under RollingUpdate with any surge the new pod would
+      # sit Pending forever waiting for a card the old pod still holds, while the
+      # old pod waits for the new one to be Ready — a deadlock.
+      #
+      # Why not a StatefulSet: it gave the same single-instance guarantee but
+      # defaults to `podManagementPolicy: OrderedReady`, under which the
+      # controller refuses to replace a pod that is not Ready. A CRASH-LOOPING
+      # POD THEREFORE BLOCKS ITS OWN FIX — the corrected chart merges and syncs,
+      # `.spec.template` holds the new args, and the pod keeps running the old
+      # ones indefinitely (currentRevision != updateRevision) until somebody runs
+      # `kubectl delete pod`. This is documented Kubernetes behaviour, not a bug:
+      # see the StatefulSet "Forced rollback" docs. A Deployment has no such
+      # gate — it deletes the old pod and moves on, so a bad config self-heals on
+      # the next merge.
+      #
+      # We use no StatefulSet-only feature: no volumeClaimTemplates (the weights
+      # PVC is our own RWX claim, mounted by existingClaim), no ordinal identity,
+      # no stable network name. So the gate bought us nothing and cost us a
+      # manual step during exactly the incidents where it hurts most.
+      type: deployment
+      strategy: Recreate
+      # One model, one GPU, always on. A deploy is ~1–2 min of downtime while the
+      # replacement loads its weights; single GPU means no HA by construction.
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      pod:
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
+      containers:
+        model:
+          image:
+            repository: "quay.io/go-skynet/local-ai"
+            tag: "v4.7.1-gpu-nvidia-cuda-12"
+            pullPolicy: "IfNotPresent"
+          env:
+            # LocalAI is configured entirely by environment (ADR-0102).
+            #
+            # MODELS is the gallery entry to install and serve at start-up. ⚠️ The
+            # exact accepted form for a gallery reference is the FIRST thing the
+            # load gate must confirm — it is read by InstallModels(... models
+            # ...string) and cannot be settled by rendering.
+            MODELS: "fixture-localai-diffusers"
+            # Both paths live on the weights PVC, so neither the model nor the
+            # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
+            # the one that is easy to forget: LocalAI pulls its inference backend
+            # from a gallery at boot, and without persistence that repeats every
+            # time the pod moves.
+            MODELS_PATH: "/models/fixture-localai/models"
+            BACKENDS_PATH: "/models/fixture-localai/backends"
+            # The engine enforces this itself — no auth-proxy sidecar, for any
+            # engine. `optional: false` so the pod waits for ESO rather than
+            # starting with an empty key and accepting every request.
+            API_KEY:
+              secretKeyRef:
+                name: "fixture-localai-api-key"
+                key: api_key
+                optional: false
+          ports:
+            - name: http
+              containerPort: 8080
+          # A model server that binds its port before the weights finish loading
+          # passes a tcpSocket probe in seconds — startup then stops gating and
+          # readiness/liveness kill a still-loading pod in a loop. So: httpGet on
+          # an endpoint that only 200s once loaded, with a long startup budget;
+          # liveness is tcpSocket (kernel-level, won't false-fail a busy server)
+          # and only runs once startup has succeeded. `custom: true` or bjw
+          # derives its own probe from the Service port.
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: "/readyz", port: 8080 }
+                periodSeconds: 15
+                failureThreshold: 120
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: "/readyz", port: 8080 }
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: "4"
+              memory: "12Gi"
+            limits:
+              cpu: "12"
+              # Host RAM, not VRAM. llama.cpp mmaps the GGUF, so the page cache
+              # counts against this limit — size it comfortably above the weights
+              # file, or add --no-mmap. vLLM needs headroom for any LMCache CPU pool.
+              memory: "32Gi"
+              # The GPU itself. Extended resources are requested via limits.
+              nvidia.com/gpu: 1
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      labels:
+        ai-helm.adorsys-gis.github.io/model: "fixture-localai"
+      ports:
+        http:
+          port: 8080
+          targetPort: 8080
+
+  persistence:
+    # ⚠️ WRITABLE, and mounted only by the model. This engine downloads its own
+    # weights AND its inference backend at start-up, so a read-only mount would
+    # fail on first boot — and without persistence it would re-download both on
+    # every restart. There is no seed Job to co-mount it.
+    model-store:
+      enabled: true
+      existingClaim: "fixture-localai-weights"
+      advancedMounts:
+        main:
+          model:
+            - path: /models
+  template:
+    metadata:
+      name: '{{ .appName }}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: "ai"
+      source:
+        # OCI chart-float (ADR-0055): full chart path in repoURL + chart "."
+        repoURL: "oci://ghcr.io/adorsys-gis/charts/model-server"
+        chart: "."
+        targetRevision: ">=0.0.0"
+        helm:
+          releaseName: '{{ .appName }}'
+          values: |
+            {{ .valuesYaml | nindent 12 }}
+      destination:
+        name: "home-remote"
+        namespace: "inference"
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        automated:
+          prune: true
+          selfHeal: true
