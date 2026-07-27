@@ -271,6 +271,35 @@ month" still needs manual arithmetic.
 
 ---
 
+### 4.1 LocalAI's inference backend is unpinned and unverified ⚠️ new 2026-07-28
+
+Observed on the image tier's first successful boot, and not visible before it ran:
+
+```text
+installing OCI backend without signature verification
+  backend="cuda12-diffusers"
+  uri="quay.io/go-skynet/local-ai-backends:latest-gpu-nvidia-cuda-12-diffusers"
+```
+
+Two problems, one line:
+
+1. **The backend tag is `latest`.** We pin the LocalAI *server*
+   (`v4.7.1-gpu-nvidia-cuda-12`), but LocalAI resolves the thing that actually
+   executes the model at runtime, unpinned. A backend published tomorrow is what
+   a pod restarting tomorrow runs. It selects cuda12 correctly today — it reads
+   the host capability — so this is unpinned, not broken.
+2. **No signature verification**, stated by LocalAI itself as a WARN. This repo
+   cosign-gates first-party images (ADR-0055); that gate does not reach here, and
+   no chart knob changes it.
+
+Both follow from choosing an engine that manages its own runtime (ADR-0102) — a
+cost that trade did not anticipate. Options, none free: pre-populate
+`BACKENDS_PATH` from an image we control, wait for upstream pinning, or accept it
+explicitly for a cluster-local model behind a NetworkPolicy. **Worth a decision,
+not a silent default.**
+
+---
+
 ## Related
 
 - ADRs: [0094](../adr/0094-generic-model-serving-orchestrator.md) ·
