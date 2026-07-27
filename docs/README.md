@@ -119,6 +119,7 @@ and point-in-time audits. When you make a one-way change, add a file here.
 
 | File | What changed |
 |---|---|
+| [`2026-07-27-gpu-fleet-followups.md`](migrations/2026-07-27-gpu-fleet-followups.md) | **Open punch-list after the GPU-fleet build-out** (ADR-0094–0099): what still needs a human (the GPU Discord webhook — secret FIRST, or the whole notification policy breaks; the z-image-turbo 500), what we are currently guessing (no concurrency benchmarks, LMCache unproven and possibly harmful, the inherited 3.45× duty-cycle uplift), and known limits (`/v1/models` cannot be filtered; any `grafana.ini` change wipes all dashboards and needs a grafana-operator restart) |
 | [`phoenix-to-tempo.md`](migrations/phoenix-to-tempo.md) | Arize Phoenix removed; LLM tracing now served by Grafana Tempo (ADR-0002) |
 | [`2026-linode-to-hetzner-cutover.md`](migrations/2026-linode-to-hetzner-cutover.md) | Linode→Hetzner production cutover + domain rename `ai-v2`→`ai` (ADR-0025): DNS-gated sequence, the Mongo migration script, rollback |
 | [`2026-hetzner-cutover.md`](migrations/2026-hetzner-cutover.md) | Hetzner cutover change-log (ADR-0018/19/20, domain switch, per-cluster knobs) + live fix-verification status + open items |
