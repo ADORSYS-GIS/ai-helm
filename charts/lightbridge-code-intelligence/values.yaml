@@ -379,7 +379,7 @@ lci:
             pullPolicy: IfNotPresent
           env:
             BIND_ADDR: "0.0.0.0:8080"
-            RUST_LOG: "info"
+            RUST_LOG: "info,opentelemetry_sdk=debug,opentelemetry_otlp=debug,reqwest=debug"
             # File config (ADR-0021): read control-plane.json from the mounted ConfigMap (review
             # labels/reactions + the embedding-dimension guard). Absent the file the binary uses env.
             CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
@@ -678,7 +678,7 @@ lci:
             pullPolicy: IfNotPresent
           env:
             CONTROL_PLANE_ROLE: "dispatcher"
-            RUST_LOG: "info"
+            RUST_LOG: "info,opentelemetry_sdk=debug,opentelemetry_otlp=debug,reqwest=debug"
             METRICS_ADDR: "0.0.0.0:9090"
             # File config (ADR-0021): control-plane.json drives the runner Job resources + dispatcher
             # tuning; the binary falls back to the AGENT_*/defaults below when a field is absent.
@@ -786,7 +786,7 @@ lci:
             pullPolicy: IfNotPresent
           env:
             CONTROL_PLANE_ROLE: "reconciler"
-            RUST_LOG: "info"
+            RUST_LOG: "info,opentelemetry_sdk=debug,opentelemetry_otlp=debug,reqwest=debug"
             METRICS_ADDR: "0.0.0.0:9090"
             # File config: control-plane.json provides GitLab project config.
             CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
@@ -876,7 +876,7 @@ lci:
             pullPolicy: IfNotPresent
           env:
             CONTROL_PLANE_ROLE: "a2a"
-            RUST_LOG: "info"
+            RUST_LOG: "info,opentelemetry_sdk=debug,opentelemetry_otlp=debug,reqwest=debug"
             # The A2A HTTP surface (card + protected bindings). :8080 is the role default; the a2a
             # Service + Ingress (below) route to it.
             A2A_BIND: "0.0.0.0:8080"
