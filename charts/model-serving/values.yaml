@@ -304,141 +304,52 @@ defaults:
 # ═══════════════════════════════════════════════════════════════════════════════
 models:
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # OpenMythos-27B (Q4_K GGUF, llama.cpp) — the security-analysis quality tier.
-  # The first model on the Hetzner GPU fleet.
-  #
-  # A fine-tune of Qwen/Qwen3.6-27B (`qwen35` architecture), Apache-2.0,
-  # published GGUF-only — which is why llama.cpp rather than vLLM: there is no
-  # safetensors release to quantize for a Marlin/AWQ kernel, and vLLM's GGUF
-  # loader is the slow path (~93 vs ~741 tok/s measured in docs/models/qwen3.5-4b-q4.md).
-  #
-  # VRAM: Q4_K is 16.5 GB (~15.4 GiB) of a 20475 MiB card, leaving ~4 GiB for KV
-  # plus compute buffers. Q5_K (19.2 GB) and Q6_K (22.1 GB) do NOT fit. Expect
-  # ~12–15 tok/s decode: 280 GB/s of memory bandwidth divided by the weights is
-  # the hard ceiling, and no amount of tuning moves it. This is a quality tier,
-  # not a speed tier.
-  #
-  # The KV side is friendlier than the number of parameters suggests: Qwen3.6-27B
-  # is a HYBRID — only 16 of its 65 layers keep a KV cache, the other 48 are
-  # linear attention — so KV grows roughly a quarter as fast as a full-attention
-  # 27B would. That is why 16k below is a floor to start from and not a ceiling;
-  # the load gate should walk it up and record where it actually stops.
-  #
-  # ⚠️ Provenance: `jabbatheduck` is an unknown uploader, the quant is unsigned,
-  # and the in-repo seceval numbers are self-reported. Accepted deliberately for
-  # a security-analysis PoC and mitigated by the pinned SHA, no secret mounts,
-  # and the NetworkPolicy. See docs/models/openmythos-27b-q4.md.
-  #
-  # ⚠️ NOT YET FEDERATED — there is intentionally no charts/ai-models entry until
-  # the load gate passes (inference-ops how-to/measure-a-model.md). Until then it
-  # runs and can be measured, but no user can route to it.
-  openmythos-27b:
-    enabled: true
-    engine: llamacpp
-    weights:
-      hfRepo: jabbatheduck/OpenMythos-GGUF
-      revision: 4a1a1f97fbfc621d6f33cebc9f3ecc5c12e8c7d7
-      include: "OpenMythos-27B-Q4_K.gguf"
-      sizeGi: 30
-    serving:
-      # ⚠️ `--ctx-size` is the TOTAL KV pool, divided across `--parallel` slots
-      # when kv_unified is false (the default). At 32768 / 2 slots each REQUEST
-      # gets 16384 tokens — that per-slot number, not this one, is what you
-      # advertise as contextLength in charts/ai-models.
-      #
-      # Raised from 16384 after the load gate: at 16384 total the model used
-      # 16748 MiB of 20475 (3.6 GiB headroom) with KV + buffers costing only
-      # ~1 GiB, because Qwen3.6-27B keeps a KV cache on just 16 of its 65 layers.
-      # Doubling should cost ~1 GiB more. Re-measure VRAM after this lands.
-      contextSize: 32768
-      # Few slots on purpose: the pool is split between them, and at ~15 tok/s
-      # concurrency is not what this tier is for.
-      parallel: 2
-      # Thinking is ON in this model's chat template and it dominates short
-      # responses: "what is 17 * 23" measured 18.2s / 274 tokens with it on
-      # versus 0.2s / 4 tokens with it off, and a 512-token cap returned an
-      # EMPTY answer because the whole budget went to reasoning. Most clients
-      # will never disable it themselves, so the server default is off and a
-      # caller opts back in per request with
-      #   "chat_template_kwargs": {"enable_thinking": true}   (measured: 9.8s)
-      #
-      # ⚠️ Was `--chat-template-kwargs '{"enable_thinking": false}'`, which works
-      # but llama-server logs as DEPRECATED at start-up ("Use --reasoning on /
-      # --reasoning off instead"). `reasoning_budget: 0` as a REQUEST field is
-      # ignored by build 10133 and is NOT the lever.
-      reasoning: "off"
-      # Further levers if VRAM ever gets tight, one at a time, re-measuring:
-      #   --flash-attn                     (check the flag's arity in the build)
-      #   --cache-type-k q8_0 --cache-type-v q8_0   (halves KV, needs FA)
-      #   --no-mmap                        (if page cache pressures the memory limit)
-    resources:
-      cpuRequest: "2"
-      cpuLimit: "8"
-      memoryRequest: 8Gi
-      # Host RAM, not VRAM: llama.cpp mmaps the 16.5 GB GGUF, so its page cache
-      # counts against this limit.
-      memoryLimit: 24Gi
+   # ─────────────────────────────────────────────────────────────────────────
+   # OpenMythos-27B (Q4_K GGUF, llama.cpp) — DISABLED.
+   # Was the first model on the Hetzner GPU fleet. Disabled to make way for
+   # Z-Image-Turbo as the sole GPU model. Re-enable to roll back.
+   # ─────────────────────────────────────────────────────────────────────────
+   openmythos-27b:
+     enabled: false
+     engine: llamacpp
+     weights:
+       hfRepo: jabbatheduck/OpenMythos-GGUF
+       revision: 4a1a1f97fbfc621d6f33cebc9f3ecc5c12e8c7d7
+       include: "OpenMythos-27B-Q4_K.gguf"
+       sizeGi: 30
+     serving:
+       contextSize: 32768
+       parallel: 2
+       reasoning: "off"
+     resources:
+       cpuRequest: "2"
+       cpuLimit: "8"
+       memoryRequest: 8Gi
+       memoryLimit: 24Gi
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # Qwen3-8B-AWQ (vLLM + LMCache) — the SPEED tier, on the second GPU.
-  #
-  # Deliberately the counterpart to openmythos-27b: that model is a 27B chosen
-  # for quality at ~15 tok/s; this is an 8B chosen for responsiveness. Two cards
-  # means we no longer have to pick one — which is the whole point of ADR-0094's
-  # scheduler-assigned placement.
-  #
-  # Engine is vLLM because the weights are safetensors AWQ-INT4 (inference-ops
-  # ADR-0002: the format selects the engine). That also brings continuous
-  # batching and LMCache prefix reuse, which the llama.cpp tier does not have.
-  #
-  # VRAM budget: ~6.1 GB (~5.7 GiB) of weights against a 19.99 GiB card leaves
-  # ~13.5 GiB for KV, CUDA graphs and the LMCache pool — comfortable, unlike the
-  # 27B's 2.6 GiB. Predicted decode ~33–40 tok/s (280 GB/s ÷ 5.7 GiB × 0.7–0.85),
-  # i.e. roughly 2.5× the 27B. ⚠️ PREDICTED, not measured — run the load gate
-  # (inference-ops how-to/measure-a-model.md) and file a benchmark report before
-  # federating this into charts/ai-models.
-  #
-  # ⚠️ NOT federated yet, on purpose. Same discipline as OpenMythos: it runs and
-  # can be measured while no user can route to it.
-  #
-  # ⚠️ Unlike the 27B, `--enforce-eager` is NOT set. It was a VRAM-saving measure
-  # on the old 12 GB A2000; here CUDA graphs are affordable and materially faster.
-  # Add it to extraArgs only if VRAM turns out tight.
-  qwen3-8b-fast:
-    enabled: true
-    engine: vllm
-    weights:
-      hfRepo: Qwen/Qwen3-8B-AWQ
-      revision: 4da05a8edb55c6046cce958586c33b61da07bb79
-      # No `include`: vLLM needs the whole repo (safetensors shards + tokenizer
-      # + config), so the seed fetches everything and writes no model.gguf link.
-      sizeGi: 20
-    serving:
-      # vLLM does NOT split this across slots the way llama.cpp splits --ctx-size;
-      # --max-model-len is the per-request window directly. 32768 is Qwen3-8B's
-      # native context (YaRN would extend it, at a quality cost we have not tested).
-      contextSize: 32768
-      parallel: 4
-      quantization: awq
-      dtype: float16
-      # Qwen3 uses Hermes-style tool calls. Verified working at the load gate —
-      # it is the first thing a bad quantization breaks.
-      toolCallParser: hermes
-      # Qwen3 reasons by default, and vLLM emits the trace as raw `<think>` tags
-      # INSIDE `content` unless a --reasoning-parser is set — so a federated model
-      # returned visible markup to users ("<think>\nOkay, the user wants..."),
-      # caught only when the gateway path was finally exercised end-to-end.
-      # This is the SPEED tier; thinking defeats its purpose. Same policy as the
-      # 27B, via vLLM's equivalent flag (--default-chat-template-kwargs).
-      # Callers opt in per request with chat_template_kwargs.enable_thinking=true.
-      reasoning: "off"
-    lmcache:
-      enabled: true
-    resources:
-      cpuRequest: "2"
-      cpuLimit: "8"
-      memoryRequest: 8Gi
-      # Must exceed LMCACHE_MAX_LOCAL_CPU_SIZE (4 GiB) with room to spare, or the
-      # pod is OOM-killed mid-cache rather than evicting.
-      memoryLimit: 16Gi
+   # ─────────────────────────────────────────────────────────────────────────
+   # Qwen3-8B-AWQ (vLLM + LMCache) — DISABLED.
+   # Was the SPEED tier on the second GPU. Disabled to make way for
+   # Z-Image-Turbo as the sole GPU model. Re-enable to roll back.
+   # ─────────────────────────────────────────────────────────────────────────
+   qwen3-8b-fast:
+     enabled: false
+     engine: vllm
+     weights:
+       hfRepo: Qwen/Qwen3-8B-AWQ
+       revision: 4da05a8edb55c6046cce958586c33b61da07bb79
+       sizeGi: 20
+     serving:
+       contextSize: 32768
+       parallel: 4
+       quantization: awq
+       dtype: float16
+       toolCallParser: hermes
+       reasoning: "off"
+     lmcache:
+       enabled: true
+     resources:
+       cpuRequest: "2"
+       cpuLimit: "8"
+       memoryRequest: 8Gi
+       memoryLimit: 16Gi
