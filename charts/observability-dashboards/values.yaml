@@ -344,8 +344,14 @@ alerting:
         # handles the case where the scrape targets vanish entirely (namespace
         # or ServiceMonitors gone) — bare min() would return no data, and
         # noDataState: OK would keep the very alert meant to catch that green.
+        #
+        # ⚠️ COVERS ONLY MODELS THAT EXPOSE /metrics. Since ADR-0100 that is no
+        # longer every model: the `zimage` engine has no Prometheus endpoint, so
+        # it has no ServiceMonitor, so it contributes no `up` series and this
+        # rule is structurally blind to it. That is why the second rule below
+        # exists — do not delete it as a duplicate.
         - uid: ms-model-down
-          title: Model serving — a model is down
+          title: Model serving — a scraped model is down
           datasourceUid: mimir
           expr: 'min(up{namespace="inference"}) or vector(0)'
           fromSeconds: 600
@@ -358,6 +364,31 @@ alerting:
           summary: "A model on the GPU fleet is not being scraped — the pod is down, crash-looping, or its metrics endpoint is unreachable."
           description: "One model per GPU and no HA, so this is a full outage of that tier. Check `kubectl get pods -n inference` and the model-wont-load-or-oom runbook."
 
+        # Liveness for EVERY model, including the ones with no /metrics, read
+        # from kube-state-metrics instead of from the engine. One series per
+        # model Deployment; 1 when the pod is Ready, 0 when it is not.
+        #
+        # ⚠️ Deployment-scoped on purpose. `kube_pod_status_ready` looked like
+        # the obvious metric and is WRONG here: it also reports the completed
+        # seed Job pods, which sit at 0 forever, so a `min()` over it would be
+        # permanently firing. Verified against live Mimir before writing:
+        # `kube_deployment_status_replicas_available{namespace="inference"}`
+        # returns exactly the model Deployments (openmythos-27b-main,
+        # qwen3-8b-fast-main at the time of writing) and nothing else.
+        - uid: ms-model-unavailable
+          title: Model serving — a model has no available replica
+          datasourceUid: mimir
+          expr: 'min(kube_deployment_status_replicas_available{namespace="inference"}) or vector(0)'
+          fromSeconds: 600
+          op: lt
+          threshold: 1
+          for: 5m
+          severity: critical
+          labels:
+            team: model-serving
+          summary: "A model Deployment on the GPU fleet has zero available replicas — it is down, crash-looping, or stuck waiting for a GPU."
+          description: "Engine-independent, so it catches image-generation models too (they publish no /metrics). One model per GPU and no HA, so this is a full outage of that tier. Check `kubectl get pods -n inference`, then the model-wont-load-or-oom and model-pod-pending-no-gpu runbooks."
+
     - name: model-serving-saturation
       folderRef: model-serving
       interval: 1m
@@ -365,6 +396,12 @@ alerting:
         # llama.cpp defers a request when every slot is busy. Sustained
         # deferral means the tier is saturated — and there is no autoscaling,
         # so it will not clear itself.
+        #
+        # ⚠️ DORMANT since 2026-07-27: no model currently runs on llama.cpp
+        # (OpenMythos-27B was the only one, ADR-0100). `or vector(0)` keeps this
+        # a harmless flat zero rather than no-data, and it starts working again
+        # by itself the moment a GGUF model is added back. Same for the
+        # llamacpp-dashboard, which is intentionally empty until then.
         - uid: ms-llamacpp-queueing
           title: Model serving — llama.cpp requests queueing
           datasourceUid: mimir
