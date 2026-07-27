@@ -1,0 +1,268 @@
+# Local / minikube values for lightbridge-code-intelligence.
+#
+# Mirrors the docker-compose setup (compose.yaml + deploy/keycloak/realm-lightbridge.json):
+#   - Postgres+pgvector (lightbridge/lightbridge/lightbridge)
+#   - Neo4j (neo4j/lightbridge)
+#   - Keycloak 26 (admin/admin, imports the `lightbridge` realm)
+#   - Jaeger (in-cluster OTLP collector & quick query UI)
+#   - Alloy + Tempo (full prod-like OTLP pipeline: control-plane → Alloy → Tempo)
+#   - Control plane + web run against those deps
+#
+# Prerequisites (one-time setup, run before deploy-local.sh):
+#   kubectl apply -f deploy/local/observability.yaml         # Alloy + Tempo in observability ns
+#   kubectl apply -f deploy/local/alloy-internal-ca-placeholder.yaml  # empty CA secret for volume mount
+#
+# Usage:
+#   minikube image load lightbridge-control-plane:local
+#   minikube image load lightbridge-web:local
+#   minikube image load lightbridge-agent-runner:local
+#   minikube image load lightbridge-agent-review:local
+#   helm upgrade --install lightbridge-ci charts/lightbridge-code-intelligence \
+#     --namespace converse --create-namespace \
+#     --values charts/lightbridge-code-intelligence/values.yaml \
+#     --values charts/lightbridge-code-intelligence/values-local.yaml
+#
+# Then access:
+#   1. Add to /etc/hosts:  127.0.0.1  lightbridge-ci-keycloak
+#   2. kubectl port-forward -n converse svc/lightbridge-ci-keycloak 8080:8080
+#   3. kubectl port-forward -n converse svc/lightbridge-ci-web 3000:3000
+#   4. kubectl port-forward -n converse svc/lightbridge-ci-jaeger 16686:16686
+#   5. kubectl port-forward -n observability svc/alloy 12345:12345  # Alloy admin UI
+#   6. kubectl port-forward -n observability svc/tempo 3200:3200    # Tempo query API
+#   → Keycloak admin: http://localhost:8080  (admin/admin)
+#   → Web:            http://localhost:3000  (login: dev / password)
+#   → Jaeger UI:      http://localhost:16686
+#   → Alloy UI:       http://localhost:12345
+#   → Tempo:          http://localhost:3200/ready
+
+# ── Local Keycloak (replaces the external IdP) ────────────────────────────────
+keycloak:
+  enabled: true
+  serviceType: ClusterIP
+  oidcIssuer: "http://lightbridge-ci-keycloak:8080/realms/lightbridge"
+
+# ── Local Postgres+pgvector (replaces the CNPG cluster) ──────────────────────
+postgres:
+  enabled: true
+
+# ── Local Jaeger OTLP Collector + UI ─────────────────────────────────────────
+jaeger:
+  enabled: true
+  serviceType: ClusterIP
+
+# ── Direct Secrets (no ExternalSecrets Operator on minikube) ──────────────────
+secrets:
+  secretStore: ""  # keep empty → ExternalSecrets template emits nothing
+  direct:
+    enabled: true
+    data:
+      github:
+        webhookSecret: "my-secret"
+        appId: "4209427"
+        appPrivateKey: |
+          -----BEGIN RSA PRIVATE KEY-----
+          MIIEpQIBAAKCAQEAozMsHn6W+J3BwblbunXetuHygXfUqSJ8duoFUAeDTTaGs6ad
+          /sDEuE278JEHVGIWuwytOGykCl2LMCt8DAL4fzly/o1g4O8foCjnKUwJ0PGRnN9c
+          WGopj2+7l09nxBxsBKJ9G+ZoImg1Dsx2cDxoWND21zEtdnZkmZn79sUR9AYoERn0
+          YfLr4Vh6lcYBDdJWuSG0xWjhQ+NLM/dTEQQa1cTeYWcXKwkGfXtrU8uXKNty95l7
+          39aFrUaHV+JQZUoTVpFTWH48sEzSDOQ2riS8NHUAI1Qd5D/Q3p7fMsz3xRdn3aDu
+          w9sRDABuOVayNl4QRkGbq7JBEJO/iX64gtFKeQIDAQABAoIBAQCb9LbgnVBgXUFf
+          g2apFSKz2dAI8R6EUrRmXtSc2dEb5FNtMnghjs1u4roK9kzu0p2uOjr+hLNuRF5S
+          tftg7yXRTnEZ2LkPuvOZ9fyRdlybE353TuvMggcdT0URH4yl2BNRioXMN66j0rmB
+          Xtp//vooheidVB2B6znPn1stQr4ZVpIBSjmFKPlgmSjLBNddT685TDQ2TakDjHXf
+          JL/J2Ad0BEPDPgiotbsv3WqZGjnArwQCAHE29r7hQb2cOmDxeCe8E58HtYWcLId7
+          8FpeRe+wMkqyQPlDwEKzFt/L8d7J4jfqOE55AIkAC2eDV6jSOdMSfOpplHTUpBTv
+          4mDYuBgBAoGBANG8+9tzLIwB/7gvZTrIeex6iKIxL5YurpYydwJ9JiB1fctrztzc
+          ug/s1fnRsyqxqT2JWvU6y9POrcGZHKAAkah5+QbPqd3yfNoarod8hjhmUdwXNtVQ
+          2SkRgqMBLBJSWr4jiVrsNVfdUSQXLZb432JeKfWyVVS7+Al3d3ig8005AoGBAMcy
+          XoHGVHM5m4d40JHPRA5y33SS4Bqhnjo7QcMWBJe3hm7mertZasJqrYsNwhTQoVtP
+          hRC1+yd+v11B4xUc/Had5LE1FHmdYWySiyOZR7wTMZlkihDAjgzZnKxIDfnKC2qD
+          mE1h9d2LJS24q6HDuMRz46qXUEY8zFTI9e5tfydBAoGAPf/cf6GLQJPysNKp3PeY
+          OxR5wWBCzeVczJ98WKsAE0ZH+lMTImzJP53mHuQjT3KXMc6hqa5IxILrEDifopio
+          diIgQCgw8aAV0i9i+kAQOSnd9u6R0fsFRsObV24oRf48Psqods0uc5vDuaR0YJWP
+          CzgEtVGTMeoix0GeenUxltkCgYEAmH7bEwa+iCfGBYRcSAQg2d7fauM2Zazs8S+E
+          PNGSWoPJiwUvWFYwAP6iNR4nQsAlhz3tZMmsqKPD5KUYL4WtUTG3bmJwdlohx3i4
+          xFwIKteW1RO/Duwa04OVCd9vs5cV/kkYQ8WG8EAiCkqiOokX3m3KEUMd1WeeFhpz
+          DEEPYwECgYEAkCem8XA8sVvEZfCE0ITsgb+TPhZ6c1iHitJ7iN97IWqY/r6Ca1nJ
+          cPcLvCmOm/d6tynxpErnAE8GIhkfU9F7+EsV4BDN0ZJKC8ec9U1vP9wneMikiqoH
+          Fr7j8LHnYUXoMx3bf4Uq++xdECWVB5FnYmD0au5LfU1hEuyJS0vnCUM=
+          -----END RSA PRIVATE KEY-----
+      gitlab:
+        apiToken: "dummy"
+        webhookSecret: "dummy"
+      auth:
+        betterAuthSecret: "local-dev-better-auth-secret"
+      neo4jAuth:
+        password: "lightbridge"
+      agent:
+        runnerToken: "local-runner-token"
+      agentAi:
+        apiKey: "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJaNGVuSDdicXJ0eWllQkhtc3FjU1ZQeFotMkR5czBMczVrNzJZOXRyMmprIn0.eyJleHAiOjE3OTM4MDIxMDYsImlhdCI6MTc4MzQzNDEwNiwianRpIjoibnRydHRlOmJjNWUwODE1LWEyZTAtZDMyOC0yM2Y0LWI3N2RkNDE1NzE4MCIsImlzcyI6Imh0dHBzOi8vYXV0aC52ZXJpZi5meWkvcmVhbG1zL2NhbWVyLWRpZ2l0YWwiLCJhdWQiOiJsaWdodGJyaWRnZS1hcGkta2V5Iiwic3ViIjoiMWMxMTE4N2QtYjNiNy00NDVmLTk2MTktYWE2NTEyZDM4MTM4IiwidHlwIjoiQmVhcmVyIiwiYXpwIjoibGlnaHRicmlkZ2UtYXBpLWtleSIsInNpZCI6IlZiZTNpeEhDV0kybF9aVElpVE1qQzV4SyIsInNjb3BlIjoicHJvZmlsZSBlbWFpbCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQ2hyaXN0aWFuIExlZ2hhZGpldSIsInByZWZlcnJlZF91c2VybmFtZSI6ImxlZ29jaHJpc3RpYW5hcnRodXJAZ21haWwuY29tIiwiZ2l2ZW5fbmFtZSI6IkNocmlzdGlhbiIsImZhbWlseV9uYW1lIjoiTGVnaGFkamV1IiwiZW1haWwiOiJsZWdvY2hyaXN0aWFuYXJ0aHVyQGdtYWlsLmNvbSJ9.Smppblgd6Lq8DKQJlgH3PpUSHkGjNtGmOoiRDWO50ioD0ZnvUjRJcQlZWVZdJ1pKVmDyv-O8LzyHwBOTeWg1gYwf4JvwgFBqtHxIWAzlpefp1G3Sdw_-11EHLCfWC0ZwIZtQG4kMLqhEtEFazBDIUlwsQ-YXFGWcdcku48cBcQVVMhm65xaIbbL4qr_K6VRe-9lYwqPEwTBvYi-cGgXQPGbLoQ3PKfP2KFDozrNWaj-jiSYOKNHcLkchtDjJQUPUioxI9rGiEvX22m4HEOMggYNzQvHbkNjLHTddvy-2I0Hd0DYXuDLV6OLBbySMB3FSImgf8O8fuojL3NkKvUGGNw"
+      dbRole:
+        password: "lightbridge"
+
+# ── Agent execution ───────────────────────────────────────────────────────────
+agents:
+  enabled: true
+  caSecret: ""
+  embeddings:
+    baseUrl: "https://api.ai.camer.digital"
+    model: "qwen3-embedding-8b"
+  llm:
+    enabled: true
+    baseUrl: "https://api.ai.camer.digital/v1"
+    model: "kimi-k2.5"
+
+# ── Config ────────────────────────────────────────────────────────────────────
+config:
+  appHandle: "lightbridge-ai"
+  gitlab:
+    enabled: true
+    defaultApiUrl: "https://gitlab.com/api/v4"
+    defaultBotHandle: "lightbridge-ai"
+    projects:
+      - projectId: 84194683
+        accessToken: "glpat-mKe-gyD_gw7qwUFzf3J5UmM6MQpvOjEKdTpudmZwdg8.01.170fx2duq"
+        webhookSecret: "my-secret"
+      - projectId: 84143685
+        accessToken: "glpat-dw0rI0H-PtZWWyxP4thqYWM6MQpvOjEKdTpvMDUyeA8.01.1717p69v9"
+        webhookSecret: "a-secret"
+  # OpenCode Task Configuration (ADR-0099 operator OpenCode overlay from ai-helm-values)
+  model:
+    deep:
+      opencode:
+        tools:
+          task: true
+        provider:
+          eaig:
+            models:
+              file-scout:
+                id: glm-4.7-flash
+                name: "eaig file-scout (glm-4.7-flash)"
+        agent:
+          explore:
+            tools:
+              lightbridge_read_file: true
+              lightbridge_vector_semantic_search: true
+              lightbridge_graph_find_symbol: true
+  reviewSystemPrompt: |
+    # Role
+    You are a senior code reviewer. You review THIS change (the diff), not the whole repository.
+    Your job: find real bugs, security flaws, and broken assumptions before they reach production,
+    and give an honest verdict a human can act on. You advise; the human merges.
+
+    # Ground rules
+    - Review only the diff. A problem in code this PR does not touch is NOT a finding on this PR.
+    - Cite or don't claim. Every factual statement rests on a tool result. If you can't cite it,
+      don't say it.
+    - An empty tool result means "could not verify," never "absent." Confirm with `read_file`
+      or say you couldn't verify it.
+    - You are allowed to say "I don't know."
+
+    # How to review
+    1. Orient: read the diff and the PR description.
+    2. Build a risk map: where could this break (auth, data, callers, concurrency, error paths)?
+    3. Investigate high-risk areas with tool calls. State a hypothesis before each batch.
+    4. For each confirmed problem, record a finding via `add_review_comment` with: severity
+       (P0/P1/P2), file, line, the concrete failure mode, impact, cited evidence, and a fix.
+    5. Refute your own P0/P1 blockers before finishing.
+    6. Call `finish` exactly once with an honest verdict that reflects findings at every priority.
+
+    # Severity
+    - P0: must fix before merge (security, data loss, crash).
+    - P1: should fix before merge (likely bug, broken contract).
+    - P2: record but don't block (quality, maintainability).
+
+    # Output
+    - Record every real finding (including P2s) via `add_review_comment` — never narrate a
+      finding in prose.
+    - The verdict reflects findings at every priority; never reduce it to "no P0/P1 findings."
+    - One channel per PR. Comment on the code, not the author.
+
+# ── Metrics: OFF (no monitoring CRDs on minikube) ─────────────────────────────
+metrics:
+  serviceMonitors:
+    enabled: false
+
+# ── bjw-s controllers ─────────────────────────────────────────────────────────
+lci:
+  controllers:
+    control-plane:
+      containers:
+        main:
+          image:
+            repository: lightbridge-control-plane
+            tag: "local22"
+          env:
+            OIDC_ISSUER: "http://lightbridge-ci-keycloak:8080/realms/lightbridge"
+            OIDC_AUDIENCE: "lightbridge-api"
+            GITHUB_APP_HANDLE: "lightbridge-ai"
+            DATABASE_URL:
+              dependsOn: DB_PASSWORD
+              value: "postgres://lightbridge:$(DB_PASSWORD)@lightbridge-ci-postgres:5432/lightbridge"
+            NEO4J_URI:
+              value: "bolt://lightbridge-ci-neo4j:7687"
+            # OpenTelemetry tracing: send to Alloy (mirrors prod: control-plane → Alloy → Tempo).
+            # Apply deploy/local/observability.yaml first to run Alloy + Tempo locally.
+            OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability.svc.cluster.local:4318"
+            OTEL_TRACES_SAMPLER_ARG: "1.0"
+            # Local-only: verbose OTLP + HTTP connection debug logs. Override prod's plain `info`.
+            # opentelemetry_sdk/otlp=debug: batch flush events + export HTTP status.
+            # reqwest=debug: logs each new TCP connection to alloy.observability.svc.cluster.local.
+            RUST_LOG: "info,opentelemetry_sdk=debug,opentelemetry_otlp=debug,reqwest=debug"
+    web:
+      containers:
+        main:
+          image:
+            repository: lightbridge-web
+            tag: "local"
+          env:
+            OIDC_ISSUER: "http://lightbridge-ci-keycloak:8080/realms/lightbridge"
+            OIDC_CLIENT_ID: "lightbridge-web"
+            OIDC_REDIRECT_URI: "http://localhost:3000/api/auth/callback"
+            OIDC_POST_LOGOUT_REDIRECT_URI: "http://localhost:3000"
+            AUTH_BACKEND_URL: "http://lightbridge-ci-control-plane:8080"
+            BETTER_AUTH_URL: "http://localhost:3000"
+
+    dispatcher:
+      containers:
+        main:
+          image:
+            repository: lightbridge-control-plane
+            tag: "local22"
+          env:
+            DATABASE_URL:
+              dependsOn: DB_PASSWORD
+              value: "postgres://lightbridge:$(DB_PASSWORD)@lightbridge-ci-postgres:5432/lightbridge"
+            AGENT_CA_SECRET: ""
+            AGENT_RUNNER_IMAGE: "lightbridge-agent-runner:local"
+            AGENT_REVIEW_RUNNER_IMAGE: "lightbridge-agent-review:local"
+            # OpenTelemetry tracing: send to Alloy (mirrors prod: dispatcher → Alloy → Tempo).
+            OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability.svc.cluster.local:4318"
+            OTEL_TRACES_SAMPLER_ARG: "1.0"
+            # Local-only: verbose OTLP + HTTP connection debug logs.
+            RUST_LOG: "info,opentelemetry_sdk=debug,opentelemetry_otlp=debug,reqwest=debug"
+
+    reconciler:
+      containers:
+        main:
+          image:
+            repository: lightbridge-control-plane
+            tag: "local22"
+          env:
+            DATABASE_URL:
+              dependsOn: DB_PASSWORD
+              value: "postgres://lightbridge:$(DB_PASSWORD)@lightbridge-ci-postgres:5432/lightbridge"
+
+    neo4j:
+      containers:
+        main:
+          probes:
+            liveness:
+              spec:
+                initialDelaySeconds: 90
+                periodSeconds: 20
+                failureThreshold: 6
+            readiness:
+              spec:
+                initialDelaySeconds: 30
