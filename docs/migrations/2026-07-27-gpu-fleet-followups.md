@@ -12,27 +12,38 @@ to be discovered. Ordered by what blocks whom.
 
 ## 1. Needs a human — nobody else can do these
 
-### 1.1 Discord webhook for GPU alerts ⚠️ blocks GPU alert delivery
+### 1.1 Discord webhooks ⚠️ blocks the channel switchover
 
-Add to `ssegning-aws`, key `ai/camer/digital/prod/env`:
+**Updated 2026-07-27:** the plan changed. The channel originally added for GPU
+alerts is now the **default receiver for everything**, and the project lead's
+personal webhook moves aside under its own name:
 
-```
-grafana_discord_webhook_url_gpu = https://discord.com/api/webhooks/...
-```
+| Contact point | Destination | State |
+|---|---|---|
+| `discord` | the **team** channel — default receiver, catch-all | enabled; still delivering to the lead's webhook until the property value is updated |
+| `discord-stephane` | the project lead's webhook | **disabled** until its property exists |
 
-**Then** flip `contactPoints[].enabled` to `true` for `discord-gpu` in
-`charts/observability-dashboards/values.yaml`.
+Two actions in `ssegning-aws`, key `ai/camer/digital/prod/env`:
 
-⚠️ **Order matters and is not cosmetic.** Doing it the other way round is what
-caused a live alerting outage on 2026-07-27: a notification-policy route naming
-a receiver whose secret is missing makes Grafana reject the **entire policy
-tree**, so the default `discord` route stopped working too and nothing routed
-anywhere. The chart now guards against this — a disabled contact point is skipped
-along with any route referencing it — but the secret-first order is still the
-rule.
+1. **UPDATE** `grafana_discord_webhook_url` → the **team** webhook URL.
+   (The property is deliberately reused so the default receiver is never pointed
+   at something that does not exist. Nothing breaks in the meantime — alerts
+   simply keep arriving where they do today.)
+2. **CREATE** `grafana_discord_webhook_url_stephane` → the lead's existing
+   webhook URL. Then set `discord-stephane` to `enabled: true` in
+   `charts/observability-dashboards/values.yaml`.
 
-Until then: the nine model/GPU rules evaluate and fire in the Grafana UI; they
-just do not reach Discord.
+⚠️ **Order matters, and this is not theoretical.** Enabling a contact point whose
+secret is missing makes Grafana reject the **entire notification policy tree**,
+which stopped *all* alert delivery on 2026-07-27 — the default route included.
+The chart now skips disabled contact points and any route referencing them, so
+the failure is contained, but the rule stands: **secret first, then flip the
+flag.**
+
+There is no route to `discord-stephane` today; the team channel being the
+default means everything already lands there. The nine model/GPU rules keep their
+`team: model-serving` label for silences and filters, and re-adding a route is a
+three-line change documented in the values file.
 
 ### 1.2 `z-image-turbo-local` returns HTTP 500 ⚠️ user-visible
 
