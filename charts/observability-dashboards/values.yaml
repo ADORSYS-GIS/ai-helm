@@ -240,7 +240,20 @@ alerting:
   # Contact points. The FIRST is the default receiver for everything; later ones
   # are reached only via `notificationPolicy.routes` matchers below.
   contactPoints:
-    # Default — unchanged from the single-contact-point setup (ADR-0059).
+    # ── The DEFAULT receiver: the team channel ──────────────────────────────
+    # Renamed 2026-07-27. `discord` used to be the project lead's personal
+    # webhook; it is now the TEAM channel, and his moved to `discord-stephane`
+    # below. The canonical name follows the canonical destination.
+    #
+    # It deliberately keeps the existing k8s Secret and ssegning-aws property, so
+    # the switchover is a VALUE change in Secrets Manager rather than a rename
+    # here: nothing is ever pointed at a property that does not exist, and there
+    # is no window where the default receiver is missing and the whole policy
+    # tree collapses (which is exactly what happened on 2026-07-27).
+    #
+    # ⚠️ ACTION: update `grafana_discord_webhook_url` in ssegning-aws to the TEAM
+    # webhook. Until that value changes, alerts keep going to the lead's channel —
+    # i.e. today's behaviour, not an outage.
     - name: discord
       type: discord
       settings:
@@ -255,44 +268,35 @@ alerting:
         property: grafana_discord_webhook_url
         refreshInterval: 1h
 
-    # GPU fleet / model serving — its own Discord channel, so a GPU alert is not
-    # buried among gateway alerts and can be muted independently.
+    # ── The project lead's personal channel ─────────────────────────────────
+    # Was `discord` (the default) until 2026-07-27. Kept as a named destination
+    # so a future route can target it deliberately; nothing routes here today.
     #
-    # ⚠️ OUT-OF-BAND-SECRET-FIRST: this delivers nothing until
-    # `grafana_discord_webhook_url_gpu` exists in ssegning-aws at
-    # ai/camer/digital/prod/env. Until then the ExternalSecret sits in
-    # SecretSyncedError and the contact point keeps the "${url}" placeholder —
-    # rules still evaluate and still fire to the UI, they just do not deliver
-    # here. Nothing else breaks, and the default `discord` route is unaffected.
-    - name: discord-gpu
-      # ⚠️ DISABLED until `grafana_discord_webhook_url_gpu` exists in ssegning-aws.
-      #
-      # This is not merely "GPU alerts don't deliver yet". A GrafanaContactPoint
-      # whose secret is missing goes InvalidSpec, and a notification-policy route
-      # naming a receiver that does not exist makes Grafana reject the ENTIRE
-      # policy tree:
-      #     [PUT /v1/provisioning/policies][400]
-      #     receiver 'discord-gpu' does not exist
-      # — which takes the DEFAULT discord route down with it, so nothing routes
-      # anywhere. Observed live 2026-07-27.
-      #
-      # The chart now skips a disabled contact point, its ExternalSecret, and any
-      # route pointing at it, so the policy stays valid without it.
-      #
-      # TO ENABLE: add the property to ssegning-aws, then flip this to true.
-      # Secret first, always — the reverse order is what caused the outage above.
+    # ⚠️ DISABLED until `grafana_discord_webhook_url_stephane` exists in
+    # ssegning-aws at ai/camer/digital/prod/env. This is not merely "it will not
+    # deliver": a GrafanaContactPoint whose secret is missing goes InvalidSpec,
+    # and a notification-policy route naming a receiver that does not exist makes
+    # Grafana reject the ENTIRE policy tree —
+    #     [PUT /v1/provisioning/policies][400] receiver '...' does not exist
+    # — taking the default route down with it and stopping ALL alert delivery.
+    # Observed live on 2026-07-27. The chart now skips a disabled contact point,
+    # its ExternalSecret and any route referencing it, so the policy stays valid
+    # without it; the secret-first order still applies.
+    #
+    # TO ENABLE: create the property, then flip this to true.
+    - name: discord-stephane
       enabled: false
       type: discord
       settings:
-        title: "[GPU] {{ .CommonLabels.alertname }} [{{ .Status }}]"
+        title: "{{ .CommonLabels.alertname }} [{{ .Status }}]"
         message: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}"
       webhookSecret:
         enabled: true
-        secretName: grafana-discord-webhook-gpu
+        secretName: grafana-discord-webhook-stephane
         key: url
         secretStore: ssegning-aws
         remoteKey: ai/camer/digital/prod/env
-        property: grafana_discord_webhook_url_gpu
+        property: grafana_discord_webhook_url_stephane
         refreshInterval: 1h
 
   notificationPolicy:
@@ -300,13 +304,23 @@ alerting:
     groupWait: 30s
     groupInterval: 5m
     repeatInterval: 4h
-    # Child routes. A rule opts in by carrying the label — routing follows the
-    # RULE, not the folder, so a model-serving alert authored anywhere still
-    # lands in the GPU channel.
-    routes:
-      - receiver: discord-gpu
-        objectMatchers:
-          - ["team", "=", "model-serving"]
+    # No child routes today: the team channel is now the DEFAULT receiver, so
+    # everything already lands there and a `team: model-serving` route pointing at
+    # the same destination would be redundant.
+    #
+    # The nine model/GPU rules still carry `team: model-serving`. That is not
+    # dead weight — it is what silences and dashboard filters key on, and adding a
+    # route later is a three-line change:
+    #
+    #   routes:
+    #     - receiver: discord-stephane
+    #       objectMatchers:
+    #         - ["team", "=", "model-serving"]
+    #
+    # ⚠️ A route may only name an ENABLED contact point. The chart filters routes
+    # to enabled receivers precisely because one dangling reference invalidates
+    # the whole policy tree.
+    routes: []
 
   ruleGroups:
     # ── Model serving on the GPU fleet (ADR-0094/0095) ────────────────────
