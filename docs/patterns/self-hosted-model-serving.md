@@ -297,6 +297,16 @@ do not "fix" them to match this page; they are correct for where they ran.
       | python3 -c 'import sys,json;print(sum((f.get("lfs") or {}).get("size",f.get("size",0)) for f in json.load(sys.stdin))/1e9,"GB")'
   done
   ```
+- **⚠️ The weights PVC must fit ~2× the repo, not 1×.** `hf download --local-dir`
+  stages the entire download into `<dir>/.cache/huggingface` and only then
+  materialises the real files, so peak disk is repo **plus** staging copy — and
+  the staging copy is kept afterwards unless something removes it. A 45 GiB
+  volume for a 33 GB repo hit **100% full with 44 GB in `.cache` and the model
+  directories still empty**, which reads like a much bigger download than it is.
+  The seed script now `rm -rf`s the staging area *after* writing the `.seeded`
+  stamp (after, so an interrupted run stays resumable), but the volume still has
+  to survive the peak. Size for 2× + margin. Longhorn can grow a PVC and can
+  never shrink one, so err high.
 - **⚠️ Seed-Job memory is sized by the LARGEST SHARD × workers, not by repo size.**
   `hf download` fans out over **8 workers by default** and hf_xet buffers per
   file, so a repo of three ~10 GB safetensors shards needs several times what a
