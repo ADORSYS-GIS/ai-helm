@@ -299,7 +299,10 @@ lci:
             pullPolicy: IfNotPresent
           env:
             BIND_ADDR: "0.0.0.0:8080"
-            RUST_LOG: "info"
+            # Verbose OTLP export + HTTP connection logging (ADR-0046).
+            # opentelemetry_sdk/otlp=debug: batch flush events and export POST status.
+            # reqwest=debug: logs each TCP connection to the Alloy collector endpoint.
+            RUST_LOG: "info,opentelemetry_sdk=debug,opentelemetry_otlp=debug,reqwest=debug"
             # File config (ADR-0021): read control-plane.json from the mounted ConfigMap (review
             # labels/reactions + the embedding-dimension guard). Absent the file the binary uses env.
             CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
@@ -590,7 +593,8 @@ lci:
             pullPolicy: IfNotPresent
           env:
             CONTROL_PLANE_ROLE: "dispatcher"
-            RUST_LOG: "info"
+            # Verbose OTLP export + HTTP connection logging (ADR-0046).
+            RUST_LOG: "info,opentelemetry_sdk=debug,opentelemetry_otlp=debug,reqwest=debug"
             METRICS_ADDR: "0.0.0.0:9090"
             # File config (ADR-0021): control-plane.json drives the runner Job resources + dispatcher
             # tuning; the binary falls back to the AGENT_*/defaults below when a field is absent.
