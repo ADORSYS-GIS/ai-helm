@@ -3,9 +3,11 @@
 //! Replaces the Python FastAPI server with a Rust binary for smaller image
 //! size, faster startup, and better memory safety.
 //!
-//! # Memory optimisation for RTX A2000 (12 GB VRAM)
+//! # Memory strategy
 //!
-//! See [`inference::engine`] for details on the memory management strategy.
+//! Runs on one RTX 4000 SFF Ada (20475 MiB) of the Hetzner GPU fleet. The text
+//! encoder stays on CPU and only the transformer + VAE are GPU-resident; see
+//! [`inference::engine`] for the numbers.
 //!
 //! # Usage
 //!
@@ -29,11 +31,12 @@ use actix_cors::Cors;
 use actix_web::{web, App, HttpServer, middleware};
 use clap::Parser;
 use std::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::api::routes::{AppState, generate_images, health, list_models};
 use crate::config::Config;
 use crate::error::ServerError;
+use crate::inference::engine::InferenceEngine;
 
 #[actix_web::main]
 async fn main() -> Result<(), ServerError> {
@@ -65,11 +68,58 @@ async fn main() -> Result<(), ServerError> {
         );
     }
 
-    // ── Build shared state (model loaded lazily on first request) ─────────
+    // ── Build shared state ────────────────────────────────────────────────
     let state = web::Data::new(AppState {
         engine: Mutex::new(None),
         config: config.clone(),
     });
+
+    // ── Pre-load the model, off the async runtime ─────────────────────────
+    //
+    // ⚠️ This is load-bearing under Kubernetes, not an optimisation.
+    //
+    // `GET /health` answers 503 until the engine is loaded and 200 after — which
+    // is exactly the signal a startup/readiness probe wants. But the engine used
+    // to be loaded LAZILY, on the first `/v1/images/generations`. Under a
+    // readiness-gated Service that deadlocks: the pod never becomes Ready, so it
+    // is never added to the Service endpoints, so no request ever arrives, so
+    // the model is never loaded, so /health never turns 200. The pod sits
+    // not-Ready until the startup probe's budget runs out and then restarts,
+    // forever, with nothing in the log to explain it.
+    //
+    // So: kick the load off here, on a plain OS thread (loading is synchronous,
+    // CUDA-bound and takes minutes — it must not sit on an actix worker), and
+    // let the server bind immediately so probes get their 503s in the meantime.
+    // The lazy path in `generate_images` is kept as a fallback and is now a
+    // no-op in practice.
+    //
+    // A failed load EXITS the process rather than leaving a permanently
+    // not-Ready pod: a crash-loop with the reason in the log is far easier to
+    // diagnose than a silent readiness failure, and the Deployment's `Recreate`
+    // strategy means a corrected config self-heals on the next sync.
+    {
+        let state = state.clone();
+        let load_config = config.clone();
+        std::thread::Builder::new()
+            .name("model-load".into())
+            .spawn(move || match InferenceEngine::load(&load_config) {
+                Ok(engine) => match state.engine.lock() {
+                    Ok(mut guard) => {
+                        *guard = Some(engine);
+                        info!("Model pre-loaded — /health now reports ready");
+                    }
+                    Err(e) => {
+                        error!("Model lock poisoned while storing the engine: {e}");
+                        std::process::exit(1);
+                    }
+                },
+                Err(e) => {
+                    error!("Model load failed: {e:#}");
+                    std::process::exit(1);
+                }
+            })
+            .map_err(|e| ServerError::Internal(format!("Failed to spawn loader: {e}")))?;
+    }
 
     // ── Start HTTP server ─────────────────────────────────────────────────
     let bind_addr = format!("{}:{}", config.host, config.port);

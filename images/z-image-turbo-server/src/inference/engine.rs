@@ -1,17 +1,27 @@
 //! Z-Image-Turbo inference engine powered by Candle.
 //!
-//! # Memory management (RTX A2000 — 12 GB VRAM)
+//! # Memory management (RTX 4000 SFF Ada — 20475 MiB)
 //!
-//! The model has ~15.8 GB of weights in BF16 (transformer ~11.4 GB, text encoder
-//! ~3.9 GB, VAE ~0.5 GB). To fit in 12 GB VRAM we:
+//! ⚠️ The published repo is **not** FP8 and not 8 GB, whatever the model's
+//! marketing says. `Tongyi-MAI/Z-Image-Turbo` ships FP32 safetensors:
+//! transformer 24.62 GB, text encoder 8.05 GB, VAE 0.17 GB — ~33 GB on disk,
+//! which is also why the weights PVC is sized at 45 GiB and not 20.
+//!
+//! Loaded at BF16 (`VarBuilder` converts on load) that becomes ~12.3 GB of
+//! transformer + ~0.09 GB of VAE on the GPU and ~4.0 GB of text encoder in host
+//! RAM. So:
 //!
 //! 1. Keep the **text encoder on CPU** always — its weights live in system RAM.
 //!    Text encoding runs on CPU (acceptable latency for short prompts), and only
 //!    the output embeddings tensor (~1 MB) is moved to GPU.
 //! 2. Keep the **transformer and VAE on GPU** — they need GPU for fast inference.
-//! 3. Use **BF16 precision** everywhere (2× memory savings vs FP32).
+//! 3. Use **BF16 precision** everywhere (2× memory saving vs the FP32 on disk).
 //! 4. Enforce **max 1024×1024 resolution** at default; 512×512 for tight memory.
 //! 5. Use **single-request serialization** via Mutex — only one inference at a time.
+//!
+//! ~12.4 GB resident of a 20 GiB card leaves ~7 GiB for activations, which is
+//! comfortable at 1024×1024 — unlike the 12 GB A2000 this server was first
+//! written for, where it did not fit without offload gymnastics.
 
 use std::path::{Path, PathBuf};
 
@@ -264,13 +274,15 @@ impl InferenceEngine {
         let latent_h = 2 * (height / vae_align);
         let latent_w = 2 * (width / vae_align);
 
-        // Check estimated VRAM usage for RTX A2000 (12 GB)
+        // Check estimated VRAM usage against the fleet card (20475 MiB). The
+        // threshold is 18 GiB, i.e. warn while there is still ~2 GiB of slack
+        // rather than after the allocation has already failed.
         if !cfg.cpu {
             let estimated_mib = self.estimate_vram_usage(latent_h, latent_w) as f64 / (1024.0 * 1024.0);
-            if estimated_mib > 10240.0 {
+            if estimated_mib > 18432.0 {
                 warn!(
                     estimated_vram_mib = estimated_mib,
-                    "Estimated VRAM exceeds 10 GiB — risk of OOM on RTX A2000"
+                    "Estimated VRAM exceeds 18 GiB — risk of OOM on a 20 GiB RTX 4000 SFF Ada"
                 );
             }
         }
@@ -490,21 +502,22 @@ impl InferenceEngine {
     }
 
     /// Estimate VRAM usage for given latent dimensions.
+    ///
+    /// Rough by design — it exists to log a warning before an allocation fails,
+    /// not to budget precisely. Replace the constant with a measured figure once
+    /// the load gate has run (inference-ops `how-to/measure-a-model.md`).
     fn estimate_vram_usage(&self, latent_h: usize, latent_w: usize) -> u64 {
-        // Z-Image-Turbo has ~6.15B params. In BF16 that's ~12.3 GB for weights.
-        // Text encoder (~1-2 GB) is on CPU, saving that much VRAM.
+        // GPU-resident weights: transformer 24.62 GB + VAE 0.17 GB of FP32 on
+        // disk, loaded at BF16 ⇒ ~12.4 GB. The text encoder (8.05 GB FP32 ⇒
+        // ~4.0 GB BF16) stays on CPU and costs no VRAM at all.
         // Activations scale with image_seq_len = (latent_h/2) * (latent_w/2).
-        // For 1024×1024: latent 128×128, seq_len=64×64=4096 → ~2 GB activations.
-        // Total: ~10 GB GPU weights + ~1.5 GB activations ≈ 11.5 GB.
-        // For 512×512: latent 64×64, seq_len=32×32=1024 → ~0.5 GB activations.
-        // Total: ~10 GB GPU weights + ~0.5 GB activations ≈ 10.5 GB.
+        // For 1024×1024: latent 128×128, seq_len=64×64=4096 → ~0.1 GB.
         let _patches_h = latent_h / 2; // patch_size=2
         let _patches_w = latent_w / 2;
         let image_seq_len = _patches_h * _patches_w;
-        // Activation memory: seq_len * 4096 (hidden_dim) * 2 bytes (BF16) * ~2 (KV cache)
+        // Activation memory: seq_len * 4096 (hidden_dim) * 2 bytes (BF16) * ~2
         let activation_bytes = (image_seq_len * 4096 * 2 * 2) as u64;
-        // Weights on GPU: transformer + VAE ≈ 10 GB in BF16
-        let weights_bytes = 10_000_000_000u64;
+        let weights_bytes = 12_400_000_000u64;
         weights_bytes + activation_bytes
     }
 
