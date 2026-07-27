@@ -174,14 +174,22 @@ this hardware nobody has measured:
   on sm_89, and that the gateway backend's `prefix: /v1` actually reaches
   `/v1/images/generations` (the legacy backend used `/`).
 
-It is federated without the gate **deliberately**: users already had this model,
-so this is a migration, not a new offering, and pulling it during the move would
-be a visible regression. That is a different call from `qwen3-8b-fast`, which was
-served unfederated until measured — and the difference is worth stating rather
-than blurring. Treat the first production request as the gate, and watch it.
+⚠️ **UPDATED same day — it is no longer federated (ADR-0101).** It briefly was,
+on the argument that a migration is not a new offering. That was wrong: the model
+had never been built, seeded or loaded on this hardware, so federation preserved a
+route to a backend with nothing behind it. Two of the three size estimates then
+failed on the first sync (§1.2 note, and the seed/disk fixes in PRs #792/#793)
+while users could still select the model. The third — that ~12.4 GB fits a
+20475 MiB card — is derived exactly the same way and decides whether the model
+runs at all.
 
-Recipe: `inference-ops` `docs/how-to/measure-a-model.md` (§ image models). File
-the report in `inference-ops` `docs/benchmarks/`, then re-derive the price.
+`z-image-turbo-local` is now `enabled: false` in `charts/ai-models`, with the
+serving entry left enabled so the model still deploys and can be measured. This
+is the item that brings image generation back.
+
+Recipe: `inference-ops` `docs/how-to/measure-a-model.md` §8. File the report in
+`inference-ops` `docs/benchmarks/`, re-derive the price from measured
+images/hour, and only then flip `z-image-turbo-local` back to `enabled: true`.
 
 ---
 
@@ -259,6 +267,7 @@ month" still needs manual arithmetic.
   [0097](../adr/0097-engine-agnostic-serving-hardening.md) ·
   [0098](../adr/0098-deployment-recreate-instead-of-statefulset.md) ·
   [0099](../adr/0099-grafana-branding-within-oss-limits.md) ·
-  [0100](../adr/0100-image-generation-on-the-gpu-fleet.md)
+  [0100](../adr/0100-image-generation-on-the-gpu-fleet.md) ·
+  [0101](../adr/0101-load-gate-before-federation-no-exceptions.md)
 - Pattern: [`../patterns/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md)
 - Inference knowledge, runbooks and benchmark reports: the **`inference-ops`** repo
