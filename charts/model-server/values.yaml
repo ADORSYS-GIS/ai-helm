@@ -20,7 +20,7 @@ global:
 # so one PVC could hold several sets of weights if that ever becomes useful.
 model:
   name: ""
-  engine: ""            # llamacpp | vllm — informational here (args already expanded)
+  engine: ""            # llamacpp | vllm | zimage — informational here (args already expanded)
   storagePath: ""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -87,6 +87,9 @@ networkPolicy:
 # ─────────────────────────────────────────────────────────────────────────────
 # Prometheus scrape of the engine's own /metrics (llama.cpp --metrics, vLLM
 # native). Alloy discovers ServiceMonitors cluster-wide (see CLAUDE.md).
+# ⚠️ Not every engine has one: the orchestrator sets `enabled: false` for engines
+# whose profile declares `metrics: false` (zimage), because a ServiceMonitor
+# against a server with no /metrics scrapes a 404 forever.
 serviceMonitor:
   enabled: true
   interval: 30s
