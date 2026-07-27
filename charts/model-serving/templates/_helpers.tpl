@@ -83,6 +83,11 @@ Input: dict "weights" <weights> "dir" <modelDir>
 {{- $dir := .dir -}}
 {{- $rev := $w.revision | default "main" -}}
 {{- $include := $w.include | default "" -}}
+{{- /* `hf download` fans out over EIGHT workers by default, and hf_xet buffers
+       per file. On a repo whose shards are ~10 GB each that is what decides
+       whether the Job fits in its memory limit — not the total repo size. Cap it
+       for big-shard repos; see `weights.seedMaxWorkers`. */ -}}
+{{- $workers := $w.seedMaxWorkers | default 0 -}}
 MODEL_DIR="{{ $dir }}"
 STAMP="{{ $rev }}|{{ $include }}"
 mkdir -p "$MODEL_DIR"
@@ -99,7 +104,7 @@ if [ -z "$GGUF" ]; then echo "FATAL: no .gguf matched {{ $include }}"; exit 1; f
 ln -sf "$GGUF" "$MODEL_DIR/model.gguf"
 echo "Linked $GGUF -> $MODEL_DIR/model.gguf"
 {{- else }}
-hf download {{ $w.hfRepo }} --revision {{ $rev }} --local-dir "$MODEL_DIR"
+hf download {{ $w.hfRepo }} --revision {{ $rev }}{{ if $workers }} --max-workers {{ $workers }}{{ end }} --local-dir "$MODEL_DIR"
 {{- end }}
 printf '%s' "$STAMP" > "$MODEL_DIR/.seeded"
 echo "Seed complete."
@@ -559,9 +564,18 @@ modelServing:
           {{- end }}
           resources:
             requests: { cpu: "1", memory: 1Gi }
-            # hf_xet is memory-hungry on large files; 2Gi OOM-killed a seed pod
-            # historically. Do NOT set HF_XET_HIGH_PERFORMANCE.
-            limits:   { cpu: "2", memory: 6Gi }
+            # ⚠️ Sized by the repo's LARGEST SHARD × concurrent workers, not by
+            # its total size. hf_xet buffers per file and `hf download` fans out
+            # over 8 workers by default, so a repo of three ~10 GB shards can
+            # need several times what a single 16 GB GGUF needs.
+            #
+            # 6Gi was the fleet default and it OOM-killed the Z-Image-Turbo seed
+            # (exit 137, four times in six minutes) — the first model whose
+            # shards are that large. It is now a per-model knob; raise
+            # `weights.seedMemoryLimit` AND cap `weights.seedMaxWorkers` rather
+            # than only throwing RAM at it.
+            # Do NOT set HF_XET_HIGH_PERFORMANCE.
+            limits:   { cpu: "2", memory: {{ $w.seedMemoryLimit | default "6Gi" | quote }} }
 
   service:
     main:
