@@ -107,6 +107,13 @@ echo "Linked $GGUF -> $MODEL_DIR/model.gguf"
 hf download {{ $w.hfRepo }} --revision {{ $rev }}{{ if $workers }} --max-workers {{ $workers }}{{ end }} --local-dir "$MODEL_DIR"
 {{- end }}
 printf '%s' "$STAMP" > "$MODEL_DIR/.seeded"
+# ⚠️ Reclaim the staging area. `hf download --local-dir` writes the whole repo
+# into <dir>/.cache/huggingface first and then materialises the real files, so
+# PEAK disk is roughly TWICE the repo size — and the staging copy is kept
+# afterwards, doubling the volume forever. Removing it only after the stamp is
+# written keeps a failed or interrupted run resumable (which matters at 33 GB)
+# while making the steady state just the weights.
+rm -rf "$MODEL_DIR/.cache"
 echo "Seed complete."
 {{- end -}}
 
