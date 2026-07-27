@@ -71,7 +71,17 @@ The judgement call in the original entry was the right one. Leaving a broken
 model advertised is what kept the bug visible long enough to be traced to its
 source instead of silently disabled and forgotten.
 
-### 1.3 Build and push `z-image-turbo-server:v0.2.0` ⚠️ blocks the deploy
+### 1.3 ~~Build and push `z-image-turbo-server:v0.2.0`~~ → GONE (ADR-0102)
+
+**Closed 2026-07-28 by deleting the problem.** The image tier is now **LocalAI**,
+an off-the-shelf OpenAI-compatible server with a pinnable CUDA-12 tag. There is
+no first-party image to build, so the build-first rule, the `CUDA_COMPUTE_CAP`
+trap and the `cargo-auditable` gap all disappear with it. ADR-0100's survey had
+missed the entire category of OpenAI-compatible multi-backend servers; ADR-0102
+records how.
+
+<details><summary>The original entry, kept because the CUDA-compute-cap trap
+generalises to any Candle/CUDA image we might build later</summary>
 
 Nothing in CI builds our first-party images. Until this tag exists in GHCR the
 `z-image-turbo` pod sits in `ImagePullBackOff` and the federated model 503s.
@@ -90,6 +100,8 @@ CUDA toolkit; it does not need a GPU.
 ⚠️ Same ordering rule as values-repo-first and secret-first: **push, then merge.**
 If the catalog entry lands first, the symptom is an ImagePullBackOff rather than
 anything subtler — annoying, not dangerous.
+
+</details>
 
 ### 1.4 Confirm the €184/month figure
 

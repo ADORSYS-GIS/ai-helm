@@ -134,9 +134,10 @@ vLLM: `lmcache/vllm-openai` is the LMCache-paired build of the OpenAI server —
   measure on the 12 GB A2000; on a 20 GiB Ada card CUDA graphs are affordable
   and materially faster. Add it via extraArgs if a model is tight on VRAM.
 
-zimage: our own Rust/Candle image-generation server (images/z-image-turbo-server,
-  ADR-0100). Bare flags again, but the vocabulary is image geometry and sampling
-  rather than context and slots — there is no `contextSize` to require here.
+localai: LocalAI (ADR-0102) is configured ENTIRELY BY ENVIRONMENT, not by flags —
+  which model to serve, where to keep weights and backends, and the API key all
+  arrive as env vars (see childValues). It therefore contributes no args at all,
+  and `extraArgs` remains available for the rare case.
 
 Input: dict "name" <name> "engine" <engine> "serving" <serving> "dir" <modelDir> "lmcache" <lmcache>
 Output: a YAML list of strings.
@@ -239,29 +240,10 @@ Output: a YAML list of strings.
       {{- end -}}
     {{- end -}}
   {{- end -}}
-{{- else if eq .engine "zimage" -}}
-  {{- /* Image generation (ADR-0100). The image's entrypoint IS the server
-         binary, so these are bare flags — same shape as llama.cpp, different
-         vocabulary: there is no context window, no parallel slots and no
-         reasoning here, only image geometry and sampling.
-
-         ⚠️ The server VALIDATES these at start-up and exits non-zero if they are
-         inconsistent (dimensions must divide by 16, defaults must not exceed
-         --max-size, steps 1..50, guidance 0..20). That is deliberate: a bad
-         geometry fails the deploy loudly instead of 400-ing every request.
-
-         The Bearer arrives as API_KEY in the environment (see the engine's
-         `apiKey.mode`), so it never appears on the command line. CORS is NOT
-         configurable in this server — see the profile in values.yaml. */ -}}
-  {{- $args = concat $args (list
-      "--model-dir" $dir
-      "--host" "0.0.0.0"
-      "--port" "8080"
-      "--max-size" (toString (default 1024 $s.maxImageSize))
-      "--default-width" (toString (default 1024 $s.defaultWidth))
-      "--default-height" (toString (default 1024 $s.defaultHeight))
-      "--num-steps" (toString (default 8 $s.numSteps))
-      "--guidance-scale" (toString (default 5.0 $s.guidanceScale))) -}}
+{{- else if eq .engine "localai" -}}
+  {{- /* Nothing. LocalAI is env-configured (MODELS / MODELS_PATH / BACKENDS_PATH
+         / API_KEY), and its entrypoint already starts the server. Passing flags
+         here would only override that. */ -}}
 {{- end -}}
 {{- $args = concat $args (default (list) $s.extraArgs) -}}
 {{- range $args }}
@@ -281,20 +263,43 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
 {{- $name := .name -}}
 {{- $cfg := .cfg -}}
 {{- $d := $root.Values.defaults -}}
-{{- $engine := required (printf "model %s: `engine` is required (llamacpp|vllm|zimage)" $name) $cfg.engine -}}
-{{- if not (has $engine (list "llamacpp" "vllm" "zimage")) -}}
-{{- fail (printf "model %s: unknown engine %q — expected llamacpp, vllm or zimage. Add a profile in charts/model-serving/templates/_helpers.tpl if you mean to introduce one." $name $engine) -}}
+{{- $engine := required (printf "model %s: `engine` is required (llamacpp|vllm|localai)" $name) $cfg.engine -}}
+{{- if not (has $engine (list "llamacpp" "vllm" "localai")) -}}
+{{- fail (printf "model %s: unknown engine %q — expected llamacpp, vllm or localai. Add a profile in charts/model-serving/templates/_helpers.tpl if you mean to introduce one." $name $engine) -}}
 {{- end -}}
 {{- $eng := index $d.engines $engine -}}
 {{- /* Per-model image override, merged key-by-key over the engine profile's.
        Lets a catalog entry pin a digest once the model is load-gated, or run a
        one-off build, without forking the profile for every other model on it. */ -}}
 {{- $image := merge (deepCopy ($cfg.image | default dict)) (deepCopy $eng.image) -}}
-{{- $w := required (printf "model %s: `weights` is required" $name) $cfg.weights -}}
+{{- /* Does this engine fetch its own weights? LocalAI pulls both the model and
+       its inference backend from its galleries at start-up, so there is no seed
+       Job, no HF token, and the volume must be writable. The two text engines
+       are the other way round: a seed Job pre-places the weights and the model
+       mounts them read-only. */ -}}
+{{- /* ⚠️ `hasKey`, NOT `default true $eng.seedJob` — `default` treats `false` as
+       empty and hands back `true`, so a profile that opts OUT would still get a
+       seed Job. Same trap as `metrics` below; it is easy to write and silent to
+       get wrong. */ -}}
+{{- $seed := not (and (hasKey $eng "seedJob") (not $eng.seedJob)) -}}
+{{- $w := $cfg.weights | default dict -}}
+{{- if and $seed (not $cfg.weights) -}}
+{{- fail (printf "model %s: `weights` is required for engine %s (it is seeded by a Job; only self-downloading engines may omit it)" $name $engine) -}}
+{{- end -}}
 {{- $s := $cfg.serving | default dict -}}
 {{- $res := $cfg.resources | default dict -}}
 {{- $gpu := $d.gpu -}}
-{{- $storagePath := include "model-serving.storagePath" $w -}}
+{{- /* Self-downloading engines have no HF repo to derive a directory from, so
+       the model name is the storage path — it is already unique per model. */ -}}
+{{- /* ⚠️ NOT `ternary`: it evaluates BOTH arms eagerly, so the seeded branch's
+       `required "weights.hfRepo is required"` fires even for an engine that has
+       no HF repo at all. */ -}}
+{{- $storagePath := "" -}}
+{{- if $seed -}}
+{{- $storagePath = include "model-serving.storagePath" $w -}}
+{{- else -}}
+{{- $storagePath = $w.storagePath | default $name -}}
+{{- end -}}
 {{- $dir := printf "/models/%s" $storagePath -}}
 {{- $lmcache := and (eq $engine "vllm") (default false ($cfg.lmcache | default dict).enabled) -}}
 {{- $pvcName := printf "%s-weights" $name -}}
@@ -344,7 +349,13 @@ pvc:
   size: {{ printf "%dGi" (int (required (printf "model %s: weights.sizeGi is required" $name) $w.sizeGi)) | quote }}
 
 hfToken:
+{{- if $seed }}
 {{- toYaml $d.hfToken | nindent 2 }}
+{{- else }}
+  # No seed Job for this engine — it downloads its own weights, so there is no
+  # Hub pull of ours to authenticate.
+  enabled: false
+{{- end }}
 
 apiKey:
   enabled: {{ $apiKey }}
@@ -442,10 +453,35 @@ modelServing:
             repository: {{ $image.repository | quote }}
             tag: {{ $image.tag | quote }}
             pullPolicy: {{ $image.pullPolicy | default "IfNotPresent" | quote }}
+          {{- /* Omit the key entirely when an engine contributes no args (LocalAI
+                 is env-configured). An empty `args:` is YAML null, which bjw
+                 still renders — blanking the image's own command. */ -}}
+          {{- $serverArgs := include "model-serving.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath) | trim }}
+          {{- with $serverArgs }}
           args:
-            {{- include "model-serving.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath) | trim | nindent 12 }}
-          {{- if or $lmcache (and $apiKey (eq $akMode "env")) }}
+            {{- . | nindent 12 }}
+          {{- end }}
+          {{- if or $lmcache (and $apiKey (eq $akMode "env")) (eq $engine "localai") }}
           env:
+            {{- if eq $engine "localai" }}
+            # LocalAI is configured entirely by environment (ADR-0102).
+            #
+            # MODELS is the gallery entry to install and serve at start-up. ⚠️ The
+            # exact accepted form for a gallery reference is the FIRST thing the
+            # load gate must confirm — it is read by InstallModels(... models
+            # ...string) and cannot be settled by rendering.
+            MODELS: {{ required (printf "model %s: serving.galleryModel is required for the localai engine" $name) $s.galleryModel | quote }}
+            # Both paths live on the weights PVC, so neither the model nor the
+            # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
+            # the one that is easy to forget: LocalAI pulls its inference backend
+            # from a gallery at boot, and without persistence that repeats every
+            # time the pod moves.
+            MODELS_PATH: {{ printf "%s/models" $dir | quote }}
+            BACKENDS_PATH: {{ printf "%s/backends" $dir | quote }}
+            {{- with $s.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- end }}
             {{- if $lmcache }}
             {{- toYaml $d.lmcacheEnv | nindent 12 }}
             {{- with ($cfg.lmcache | default dict).env }}
@@ -513,6 +549,7 @@ modelServing:
               # The GPU itself. Extended resources are requested via limits.
               nvidia.com/gpu: {{ $gpu.count | default 1 }}
 
+{{- if $seed }}
     # ── The weight seed Job ──────────────────────────────────────────────────
     # An ArgoCD Sync HOOK, not a tracked resource: a plain Job goes perpetually
     # OutOfSync once it completes (its pod template is immutable but its status
@@ -584,6 +621,8 @@ modelServing:
             # Do NOT set HF_XET_HIGH_PERFORMANCE.
             limits:   { cpu: "2", memory: {{ $w.seedMemoryLimit | default "6Gi" | quote }} }
 
+{{- end }}
+
   service:
     main:
       controller: main
@@ -596,6 +635,7 @@ modelServing:
           targetPort: 8080
 
   persistence:
+{{- if $seed }}
     # The pre-seeded RWX weights volume: writable for the seed Job, read-only
     # for the model.
     model-store:
@@ -609,6 +649,19 @@ modelServing:
         seed:
           seed:
             - path: /models
+{{- else }}
+    # ⚠️ WRITABLE, and mounted only by the model. This engine downloads its own
+    # weights AND its inference backend at start-up, so a read-only mount would
+    # fail on first boot — and without persistence it would re-download both on
+    # every restart. There is no seed Job to co-mount it.
+    model-store:
+      enabled: true
+      existingClaim: {{ $pvcName | quote }}
+      advancedMounts:
+        main:
+          model:
+            - path: /models
+{{- end }}
     {{- if and $apiKey (eq $akMode "file") }}
     # This engine reads the Bearer from a FILE (llama.cpp's --api-key-file), so
     # the Secret is mounted rather than passed as an env var.

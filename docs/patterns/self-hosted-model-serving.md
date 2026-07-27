@@ -66,102 +66,76 @@ helm template x charts/model-server -f /tmp/child.yaml -n inference
 
 ## 3. Engines
 
-| | `llamacpp` | `vllm` | `zimage` |
+| | `llamacpp` | `vllm` | `localai` |
 |---|---|---|---|
 | Serves | text | text | **images** |
-| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `ghcr.io/adorsys-gis/z-image-turbo-server` — **ours** |
-| Weights | GGUF (one file via `include`) | safetensors (AWQ/GPTQ/FP8/BF16) | the whole diffusers repo |
-| Prefix / health | `/v1` · `/health` | `/v1` · `/health` | `/v1` · `/health` |
+| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `quay.io/go-skynet/local-ai` ⚠️ pin `-gpu-nvidia-cuda-12` |
+| Weights | GGUF (one file via `include`) | safetensors (AWQ/GPTQ/FP8/BF16) | fetched by the engine from its gallery |
+| Seed Job | yes | yes | **no** — and the mount is writable |
+| Prefix / health | `/v1` · `/health` | `/v1` · `/health` | `/v1` · `/readyz` |
 | API key | file (`--api-key-file`) | env `VLLM_API_KEY` | env `API_KEY` |
-| `/metrics` | yes (`llamacpp:*`) | yes (`vllm:*`) | **no** — no ServiceMonitor |
-| Extras | — | opt-in LMCache, `/dev/shm` volume | — |
+| `/metrics` | yes (`llamacpp:*`) | yes (`vllm:*`) | yes (behind its admin key) |
+| Configured by | flags | flags | **environment** |
 | Containers | **1** | **1** | **1** |
 
 **The weight format selects the engine, not preference** — `inference-ops`
-ADR-0002 for text, ADR-0003 for images. Do not serve GGUF on vLLM (~8× throughput
+ADR-0002 for text, ADR-0004 for images. Do not serve GGUF on vLLM (~8× throughput
 regression), and do not look for a diffusion path in either text engine — there
 isn't one.
 
 ⚠️ **CUDA 12 only.** The fleet runs driver 550 / CUDA 12.4, so `server-cuda13`
 will not run.
 
-### `zimage` is ours, and that changes the rules (ADR-0100)
+### `localai` is off the shelf — and that was a correction (ADR-0102)
 
-The two text engines are upstream images we merely configure. `zimage` is a
-first-party Rust + Candle server whose source lives in
-**`images/z-image-turbo-server/`** — moved there deliberately, out of the legacy
-chart it was written in, so that retiring that chart cannot delete the source of
-a running image.
+The image tier is **LocalAI** (`quay.io/go-skynet/local-ai`), an OpenAI-compatible
+multi-backend server that serves diffusion models natively. It replaced a
+first-party Rust + Candle server we maintained for one day; ADR-0102 records why
+that was the wrong call and how the survey missed it.
 
-⚠️ **BUILD-FIRST.** Nothing in CI builds it (same situation as
-`ghcr.io/adorsys-gis/lakefs-proxy`). Push the tag **before** merging a catalog
-entry that references it, or the pod sits in `ImagePullBackOff`. Same class of
-ordering rule as values-repo-first (ADR-0056) and out-of-band-secret-first.
+⚠️ **Pin the CUDA-12 tag.** `master`/`latest` are built against **CUDA 13** and
+these nodes run driver 550 / CUDA 12.4 — the same trap as `server-cuda13` and
+`-cu129`. Use `v4.7.1-gpu-nvidia-cuda-12`.
 
-```bash
-cd images/z-image-turbo-server
-docker build -t ghcr.io/adorsys-gis/z-image-turbo-server:v0.2.0 .
-docker push  ghcr.io/adorsys-gis/z-image-turbo-server:v0.2.0
-```
+**It is not shaped like the text engines**, and the profile says so as data:
 
-⚠️ **And it must be built for THESE cards.** Candle bakes CUDA kernels for ONE
-compute capability at build time, defaulting to the build host's GPU. The fleet
-is sm_89 (RTX 4000 SFF Ada) — `CUDA_COMPUTE_CAP=89` is pinned in the Dockerfile.
-An image built elsewhere fails at *first inference*, long after the pod went
-Ready, with `no kernel image is available for execution on the device`. This is
-the same family of trap as `server-cuda13` and `-cu129`.
+| | text engines | `localai` |
+|---|---|---|
+| Weights | a **seed Job** pre-places them, pinned to a commit SHA | the engine downloads them itself from its gallery |
+| `/models` mount | **read-only** | **writable** (`writableModelStore: true`) |
+| HF token | required | none — no Hub pull of ours |
+| Backend | in the image | **downloaded at boot** into `BACKENDS_PATH`, which must be on the PVC or it repeats every restart |
+| Configuration | flags | **environment** (`MODELS`, `MODELS_PATH`, `BACKENDS_PATH`, `API_KEY`) |
 
-Two accepted gaps, both recorded rather than hidden:
-
-- **No `/metrics`.** The engine profile declares `metrics: false`, so the
-  orchestrator emits `serviceMonitor.enabled: false` — scraping a server with no
-  Prometheus endpoint plants a permanently-down target in Mimir, which is worse
-  than none. Liveness for image models is covered by the engine-independent
-  `ms-model-unavailable` alert (kube-state-metrics), not by `up{namespace="inference"}`.
-- **CORS cannot be pinned.** The server hardcodes `allow_any_origin()`, so the
-  ADR-0097 `security.corsOrigins` policy is unenforceable here
-  (`corsConfigurable: false`). Contained by the NetworkPolicy; fixable in our own
-  source on the next rebuild.
-
-An image model's catalog entry takes **geometry and sampling** where a text model
-takes `contextSize`/`parallel`:
+A catalog entry is a gallery name rather than a repo, a revision and a glob:
 
 ```yaml
   z-image-turbo:
     enabled: true
-    engine: zimage
-    weights:
-      hfRepo: Tongyi-MAI/Z-Image-Turbo
-      revision: <sha>
-      sizeGi: 45                # ~33 GB on disk — FP32 safetensors, not "FP8"
+    engine: localai
     serving:
-      maxImageSize: 1024
-      defaultWidth: 1024
-      defaultHeight: 1024
-      numSteps: 8
-      guidanceScale: 5.0
+      galleryModel: z-image-turbo-diffusers   # also: Z-Image-Turbo (ggml), vllm-omni-z-image-turbo
+    weights:
+      sizeGi: 40                              # weights AND the downloaded backend
 ```
 
-On the gateway side it needs **`kind: image`** and **`pricing.strategy: flatPerRequest`**
-in `charts/ai-models`: `charts/ai-model` then drops the Input/Output/TotalToken
-cost metadata and the tokens-per-minute burst rule, both of which are dead weight
-when every response carries zero tokens.
+⚠️ **Two traps specific to this engine:**
 
-### On the Caddy sidecar (it is gone, and why it existed)
+- **`deploy/<model>-main` does not exist.** With no seed Job there is a single
+  controller, and bjw-template then names the Deployment `<model>` — not
+  `<model>-main`, which ADR-0098 standardised every runbook on. Nothing
+  functional depends on it (Service and CiliumNetworkPolicy select on the
+  `ai-helm…/model` label), but your `kubectl logs deploy/<model>-main` will just
+  say `NotFound`.
+- **The gallery reference is not a pin.** A seed Job fetched an exact commit, so
+  the bytes measured were the bytes served. A gallery entry can move under us.
+  The pinned *image* tag and the load gate are what stand in for it; if that
+  proves too loose, mount a model config file we own into `MODELS_PATH`.
 
-No engine profile has a proxy sidecar. If a model opts into `apiKey.enabled`,
-**every engine enforces the Bearer itself** — how it takes the key is profile
-data (`engines.<name>.apiKey.mode`), not a special case in the template:
-llama.cpp reads a mounted file (`--api-key-file`, `/etc/model-api-key`), vLLM and
-zimage read an environment variable (`VLLM_API_KEY`, `API_KEY`).
-
-The Caddy auth-proxy in the legacy charts was never a vLLM limitation. It was
-required only by **`kserve/huggingfaceserver`**, KServe's wrapper, which ignores
-`VLLM_API_KEY` outright — ADR-0022 verified that unauthenticated *and* wrong-key
-requests both returned 200. That wrapper is deliberately not an engine profile
-here, so the sidecar has nothing to come back for.
-
-The key itself is off by default: a cluster-local model has no bypass to defend.
+On the gateway side an image model needs **`kind: image`** and
+**`pricing.strategy: flatPerRequest`** in `charts/ai-models`: `charts/ai-model`
+then drops the Input/Output/TotalToken cost metadata and the tokens-per-minute
+burst rule, both dead weight when every response carries zero tokens.
 
 ## 4. GPU scheduling
 
@@ -349,7 +323,6 @@ measured before users can reach it.
 | Operational failures | `inference-ops` `docs/runbooks/` |
 | Hardware facts, model catalog | `inference-ops` `docs/reference/` |
 | Measured performance | `inference-ops` `docs/benchmarks/` |
-| GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage), ADR-0100 (image generation) |
+| GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage), ADR-0100/0102 (image generation), ADR-0101 (federation gate) |
 | Pricing basis | ADR-0028 |
-| The first-party image server | `images/z-image-turbo-server/` — build it before you deploy it |
 | Per-model papers (this repo) | [`../models/`](../models/) — legacy generation |
