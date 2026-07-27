@@ -430,12 +430,23 @@ models:
       # No hfRepo/revision: LocalAI fetches from its own gallery. `sizeGi` still
       # applies — the volume holds the weights AND the downloaded backend.
       #
-      # 40Gi is deliberate slack, not arithmetic: the diffusers entry pulls the
-      # FP32 repo (~33 GB) plus a backend, and the staging-copy behaviour that
-      # bit us at 45Gi is huggingface_hub's, which LocalAI also uses. If the gate
-      # picks a GGUF variant instead this drops to ~15Gi — but Longhorn grows a
-      # PVC and never shrinks one, so start where a switch is still possible.
-      sizeGi: 40
+      # ⚠️ 100Gi because THE VOLUME IS ALREADY 100Gi. It was expanded to that in
+      # the staging-disk fix, and `spec.resources.requests.storage` may never be
+      # less than `status.capacity` — a shrink is rejected outright:
+      #
+      #   PersistentVolumeClaim "z-image-turbo-weights" is invalid:
+      #   spec.resources.requests.storage: Forbidden: field can not be less than
+      #   status.capacity
+      #
+      # This entry briefly said 40Gi, which is the right size for the workload
+      # and an impossible size for this claim; the app went Degraded on sync.
+      # Reclaiming the difference means deleting the PVC (reclaimPolicy Retain,
+      # so it orphans a PV) — not worth it against ~1.6 TiB free per GPU node.
+      #
+      # For a NEW image model, ~40Gi is the number to start from: the diffusers
+      # gallery entry pulls the FP32 repo (~33 GB) plus a backend, and a GGUF
+      # variant would need ~15Gi. Err high — this direction only goes one way.
+      sizeGi: 100
     resources:
       # Text encoding for this model runs on CPU in most backends, so it wants
       # real CPU — unlike the text tiers, where the CPU idles while the GPU works.
