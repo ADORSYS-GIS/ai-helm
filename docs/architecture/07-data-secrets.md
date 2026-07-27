@@ -52,10 +52,13 @@ flowchart TB
   `nodeSelector`/tolerations to the two hand-joined Hetzner Robot GPU nodes only
   (which have no hcloud-csi at all). Backs model-cache PVCs for workloads on
   those nodes.
-- **The `admin@homeos`-cluster Longhorn** — backs the `model-serving-qwen3-4b`/
+- **The `admin@homeos`-cluster Longhorn** — backed the `model-serving-qwen3-4b`/
   `model-serving-zimage-turbo` RWX PVCs (`docs/patterns/self-hosted-model-serving.md`,
   `docs/models/qwen3-4b.md`). Provisioned outside `ai-helm` entirely, on the home
-  GPU node. Untouched by anything in this repo.
+  GPU node. Untouched by anything in this repo. ⚠️ Since ADR-0100 every app that
+  used it is `enabled: false` (`zimage-turbo` was the last, and moved to the
+  fleet), so those volumes are orphaned data awaiting that cluster's
+  decommissioning — not live storage.
 
 ### Object storage layout (one bucket, prefixes per tenant)
 

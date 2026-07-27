@@ -371,11 +371,32 @@ control. **Adding/replacing a model = ONE ~15-line entry in
 entry to make it user-reachable). Do NOT create a new chart per model.
 - Engine profiles live in the ORCHESTRATOR's `_helpers.tpl` — a Helm parent can't
   compute SUBCHART values at render time, which is why the old charts hardcoded
-  their seed repo/glob. Both `llamacpp` and `vllm` (opt-in LMCache) render **ONE
-  container**; the optional `apiKey` is enforced natively by each engine
-  (`--api-key-file` / `VLLM_API_KEY`). **Caddy was only ever needed for
+  their seed repo/glob. **THREE profiles: `llamacpp`, `vllm` (opt-in LMCache) and
+  `zimage` (IMAGE GENERATION, ADR-0100)**, each rendering **ONE container**; the
+  optional `apiKey` is enforced natively by every engine, and *how* it is taken is
+  profile DATA (`engines.<name>.apiKey.mode: file|env`), not a template branch —
+  same for `metrics` and `devShm`. **Caddy was only ever needed for
   `kserve/huggingfaceserver`**, which ignores `VLLM_API_KEY` (ADR-0022) and is
   deliberately not an engine profile — don't reintroduce a proxy sidecar.
+- **⚠️ `zimage` is OUR image (`images/z-image-turbo-server/`, Rust + Candle) and
+  NOTHING IN CI BUILDS IT** — same as `ghcr.io/adorsys-gis/lakefs-proxy`. So the
+  deploy is **BUILD-FIRST**: `docker build && docker push` the tag *before*
+  merging the catalog entry, or the pod sits in `ImagePullBackOff` (same class of
+  rule as values-repo-first and out-of-band-secret-first). It must be built with
+  `CUDA_COMPUTE_CAP=89` — Candle bakes kernels for ONE compute cap at build time,
+  and an image built elsewhere fails at FIRST INFERENCE (after the pod is Ready)
+  with "no kernel image is available for execution on the device". Two accepted
+  gaps: no `/metrics` (so `serviceMonitor.enabled: false`, and liveness comes
+  from the engine-independent `ms-model-unavailable` alert over
+  kube-state-metrics, NOT `up{namespace="inference"}`), and the ADR-0097 CORS pin
+  is unenforceable (the server hardcodes `allow_any_origin()`).
+- **⚠️ Two traps an image model taught us the hard way (ADR-0100).** (1) A model's
+  advertised precision is marketing — Z-Image-Turbo is documented everywhere as
+  "FP8, ~8 GB"; the published repo is **FP32, ~33 GB**, so a PVC sized from the
+  marketing number fills up hours into the seed. Size `weights.sizeGi` from the
+  HF tree API. (2) A server that loads its model **lazily** deadlocks against a
+  readiness-gated `/health`: not-Ready ⇒ no endpoint ⇒ no request ⇒ never loads.
+  Every fleet engine must pre-load at start-up.
 - GPU placement is a `nvidia.com/gpu: 1` REQUEST (+ toleration/nodeSelector/
   runtimeClass). 2 cards ⇒ 2 models; a 3rd queues `Pending`. ⚠️ The **seed Job**
   needs the same nodeSelector/toleration despite needing no GPU — Longhorn runs
@@ -387,10 +408,13 @@ entry to make it user-reachable). Do NOT create a new chart per model.
   gateway backend has no server behind it. Serving *without* federating is allowed
   on purpose — that's how a model is load-gated before users can reach it.
 
-*Legacy.* The eight `charts/model-serving-*` charts serve from the OTHER cluster
-(`admin@homeos`) over a public edge with `homeCluster: true`. `zimage-turbo` is
-LIVE there; the rest are its rollback set. **Retained, not deleted** — don't copy
-their shape, and don't "fix" them to match the new pattern. Papers:
+*Legacy.* The eight `charts/model-serving-*` charts targeted the OTHER cluster
+(`admin@homeos`) over a public edge with `homeCluster: true`. ⚠️ **Since
+2026-07-27 (ADR-0100) ALL EIGHT are `enabled: false`** — `zimage-turbo` was the
+last live one and moved to the fleet, so the generation is now a rollback surface
+only and ADR-0094's reason for retaining it is spent. **Retained, not deleted**
+(deleting them is a decommissioning exercise on that cluster) — don't copy their
+shape, and don't "fix" them to match the new pattern. Papers:
 [`docs/models/`](docs/models/).
 
 *Where the knowledge lives.* The GitOps *how* is

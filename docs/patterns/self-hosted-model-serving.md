@@ -66,26 +66,94 @@ helm template x charts/model-server -f /tmp/child.yaml -n inference
 
 ## 3. Engines
 
-| | `llamacpp` | `vllm` |
-|---|---|---|
-| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` |
-| Weights | GGUF (one file via `include`) | safetensors (AWQ/GPTQ/FP8/BF16) |
-| Prefix / health | `/v1` · `/health` | `/v1` · `/health` |
-| Extras | — | opt-in LMCache, `/dev/shm` volume |
-| Containers | **1** | **1** |
+| | `llamacpp` | `vllm` | `zimage` |
+|---|---|---|---|
+| Serves | text | text | **images** |
+| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `ghcr.io/adorsys-gis/z-image-turbo-server` — **ours** |
+| Weights | GGUF (one file via `include`) | safetensors (AWQ/GPTQ/FP8/BF16) | the whole diffusers repo |
+| Prefix / health | `/v1` · `/health` | `/v1` · `/health` | `/v1` · `/health` |
+| API key | file (`--api-key-file`) | env `VLLM_API_KEY` | env `API_KEY` |
+| `/metrics` | yes (`llamacpp:*`) | yes (`vllm:*`) | **no** — no ServiceMonitor |
+| Extras | — | opt-in LMCache, `/dev/shm` volume | — |
+| Containers | **1** | **1** | **1** |
 
 **The weight format selects the engine, not preference** — `inference-ops`
-ADR-0002. Do not serve GGUF on vLLM (~8× throughput regression).
+ADR-0002 for text, ADR-0003 for images. Do not serve GGUF on vLLM (~8× throughput
+regression), and do not look for a diffusion path in either text engine — there
+isn't one.
 
 ⚠️ **CUDA 12 only.** The fleet runs driver 550 / CUDA 12.4, so `server-cuda13`
 will not run.
 
+### `zimage` is ours, and that changes the rules (ADR-0100)
+
+The two text engines are upstream images we merely configure. `zimage` is a
+first-party Rust + Candle server whose source lives in
+**`images/z-image-turbo-server/`** — moved there deliberately, out of the legacy
+chart it was written in, so that retiring that chart cannot delete the source of
+a running image.
+
+⚠️ **BUILD-FIRST.** Nothing in CI builds it (same situation as
+`ghcr.io/adorsys-gis/lakefs-proxy`). Push the tag **before** merging a catalog
+entry that references it, or the pod sits in `ImagePullBackOff`. Same class of
+ordering rule as values-repo-first (ADR-0056) and out-of-band-secret-first.
+
+```bash
+cd images/z-image-turbo-server
+docker build -t ghcr.io/adorsys-gis/z-image-turbo-server:v0.2.0 .
+docker push  ghcr.io/adorsys-gis/z-image-turbo-server:v0.2.0
+```
+
+⚠️ **And it must be built for THESE cards.** Candle bakes CUDA kernels for ONE
+compute capability at build time, defaulting to the build host's GPU. The fleet
+is sm_89 (RTX 4000 SFF Ada) — `CUDA_COMPUTE_CAP=89` is pinned in the Dockerfile.
+An image built elsewhere fails at *first inference*, long after the pod went
+Ready, with `no kernel image is available for execution on the device`. This is
+the same family of trap as `server-cuda13` and `-cu129`.
+
+Two accepted gaps, both recorded rather than hidden:
+
+- **No `/metrics`.** The engine profile declares `metrics: false`, so the
+  orchestrator emits `serviceMonitor.enabled: false` — scraping a server with no
+  Prometheus endpoint plants a permanently-down target in Mimir, which is worse
+  than none. Liveness for image models is covered by the engine-independent
+  `ms-model-unavailable` alert (kube-state-metrics), not by `up{namespace="inference"}`.
+- **CORS cannot be pinned.** The server hardcodes `allow_any_origin()`, so the
+  ADR-0097 `security.corsOrigins` policy is unenforceable here
+  (`corsConfigurable: false`). Contained by the NetworkPolicy; fixable in our own
+  source on the next rebuild.
+
+An image model's catalog entry takes **geometry and sampling** where a text model
+takes `contextSize`/`parallel`:
+
+```yaml
+  z-image-turbo:
+    enabled: true
+    engine: zimage
+    weights:
+      hfRepo: Tongyi-MAI/Z-Image-Turbo
+      revision: <sha>
+      sizeGi: 45                # ~33 GB on disk — FP32 safetensors, not "FP8"
+    serving:
+      maxImageSize: 1024
+      defaultWidth: 1024
+      defaultHeight: 1024
+      numSteps: 8
+      guidanceScale: 5.0
+```
+
+On the gateway side it needs **`kind: image`** and **`pricing.strategy: flatPerRequest`**
+in `charts/ai-models`: `charts/ai-model` then drops the Input/Output/TotalToken
+cost metadata and the tokens-per-minute burst rule, both of which are dead weight
+when every response carries zero tokens.
+
 ### On the Caddy sidecar (it is gone, and why it existed)
 
-Neither engine profile has a proxy sidecar. If a model opts into
-`apiKey.enabled`, **both engines enforce the Bearer themselves**: llama.cpp via
-`--api-key-file` (Secret mounted at `/etc/model-api-key`), vLLM via
-`VLLM_API_KEY`.
+No engine profile has a proxy sidecar. If a model opts into `apiKey.enabled`,
+**every engine enforces the Bearer itself** — how it takes the key is profile
+data (`engines.<name>.apiKey.mode`), not a special case in the template:
+llama.cpp reads a mounted file (`--api-key-file`, `/etc/model-api-key`), vLLM and
+zimage read an environment variable (`VLLM_API_KEY`, `API_KEY`).
 
 The Caddy auth-proxy in the legacy charts was never a vLLM limitation. It was
 required only by **`kserve/huggingfaceserver`**, KServe's wrapper, which ignores
@@ -140,12 +208,17 @@ Deployment + Service + ServiceMonitor.
 
 Eight `charts/model-serving-<model>` charts serve from the **other** cluster over
 a public Traefik Ingress with `cert-cloudflare` TLS, a static API key, and
-`homeCluster: true` (ADR-0022). `zimage-turbo` is live there; the rest are its
-rollback set.
+`homeCluster: true` (ADR-0022).
 
-They are **retained, not deleted** — retiring them is a decommissioning exercise on
-that cluster. Do not copy their shape for a new model, and do not "fix" them to
-match this page; they are correct for where they run.
+> **⚠️ As of 2026-07-27 (ADR-0100) every one of them is `enabled: false`.**
+> `zimage-turbo` was the last live one, and it moved to the fleet. The generation
+> is now dead code kept only as a rollback surface — and ADR-0094's stated reason
+> for retaining it ("zimage-turbo is live there") no longer applies. Deleting the
+> eight charts is a decommissioning exercise on that cluster, tracked as a
+> follow-up.
+
+They are **retained, not deleted**. Do not copy their shape for a new model, and
+do not "fix" them to match this page; they are correct for where they ran.
 
 `homeCluster: true` is now scoped to that generation and should retire with it.
 
@@ -211,6 +284,27 @@ match this page; they are correct for where they run.
   or long generations 504 (ADR-0034).
 - **Ampere-era "no FP8" notes are hardware history.** These Ada cards have hardware
   FP8. FP8 is still 8 bits/weight, so it suits small models here, not a 27B.
+- **⚠️ A model's advertised precision is marketing until you check the repo.**
+  Z-Image-Turbo is described everywhere — including in the PR that first deployed
+  it — as "FP8, ~8 GB". The published `Tongyi-MAI/Z-Image-Turbo` weights are
+  **FP32**: transformer 24.62 GB, text encoder 8.05 GB, VAE 0.17 GB, **~33 GB**
+  on disk. A PVC sized from the marketing number fails hours into the seed, with
+  a full volume. Size `weights.sizeGi` from the actual file sizes:
+
+  ```bash
+  for d in transformer text_encoder vae; do
+    curl -s "https://huggingface.co/api/models/<org>/<repo>/tree/main/$d" \
+      | python3 -c 'import sys,json;print(sum((f.get("lfs") or {}).get("size",f.get("size",0)) for f in json.load(sys.stdin))/1e9,"GB")'
+  done
+  ```
+- **⚠️ A server that loads its model LAZILY deadlocks against a readiness gate.**
+  If `/health` is 503 until the weights are loaded, and the weights load on the
+  first request, then: not-Ready ⇒ no Service endpoint ⇒ no request ⇒ never
+  loads ⇒ never Ready. The pod restarts forever and the log says nothing,
+  because nothing has gone wrong. Every engine on this fleet must load
+  **eagerly at start-up** — the two upstream engines do; ours was fixed to
+  (ADR-0100). Suspect this whenever a startup probe burns its whole budget with
+  a quiet, idle process behind it.
 
 ## 9. Verification
 
@@ -232,11 +326,12 @@ measured before users can reach it.
 
 | Topic | Where |
 |---|---|
-| VRAM budgeting, quantization, engine choice | `inference-ops` `docs/explanation/`, ADR-0002 |
+| VRAM budgeting, quantization, engine choice | `inference-ops` `docs/explanation/`, ADR-0002 (text), ADR-0003 (image) |
 | Add / replace / roll back / measure a model | `inference-ops` `docs/how-to/` |
 | Operational failures | `inference-ops` `docs/runbooks/` |
 | Hardware facts, model catalog | `inference-ops` `docs/reference/` |
 | Measured performance | `inference-ops` `docs/benchmarks/` |
-| GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage) |
+| GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage), ADR-0100 (image generation) |
 | Pricing basis | ADR-0028 |
+| The first-party image server | `images/z-image-turbo-server/` — build it before you deploy it |
 | Per-model papers (this repo) | [`../models/`](../models/) — legacy generation |
