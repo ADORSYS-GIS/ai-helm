@@ -428,7 +428,17 @@ models:
       # text_encoder/ (3 shards each for the first two) plus tokenizer/ and the
       # per-component config.json files it reads at load. A glob here would seed
       # a directory that fails validation at start-up.
-      sizeGi: 45
+      # ⚠️ ~2× the repo, MEASURED the hard way. `hf download --local-dir` stages
+      # the entire download into `<dir>/.cache/huggingface` and only then
+      # materialises the real files, so peak disk is repo + staging copy, not
+      # repo. At 45Gi this volume hit 100% full with 44 GB sitting in `.cache`
+      # and the model directories still empty. The seed now deletes the staging
+      # area once the stamp is written, so the steady state is ~33 GB — but the
+      # volume still has to survive the peak, and Longhorn can grow a PVC but
+      # never shrink one.
+      #
+      # Every other model on the fleet is small enough that 2× never mattered.
+      sizeGi: 100
       # ~33 GB over a cold Hub connection. The 2h fleet default is uncomfortably
       # close; 3h costs nothing when the stamp makes re-runs a no-op.
       seedDeadlineSeconds: 10800
