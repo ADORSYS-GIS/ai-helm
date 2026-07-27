@@ -432,6 +432,19 @@ models:
       # ~33 GB over a cold Hub connection. The 2h fleet default is uncomfortably
       # close; 3h costs nothing when the stamp makes re-runs a no-op.
       seedDeadlineSeconds: 10800
+      # ⚠️ MEASURED, not guessed: the fleet-default 6Gi seed limit OOM-killed
+      # this download (exit 137, four restarts in six minutes) on 2026-07-27.
+      # What blows the limit is the LARGEST SHARD × concurrent workers, not the
+      # repo total — this repo has three ~10 GB safetensors shards and
+      # `hf download` fans out over 8 workers by default, each buffering through
+      # hf_xet. Every other model on the fleet is one 16 GB GGUF or a set of
+      # small shards, which is why nothing hit this before.
+      #
+      # Both knobs, not one: capping workers is the real fix (it bounds peak
+      # memory) and the raised limit is the margin. 2 workers also costs little
+      # throughput here — the bottleneck is Hub bandwidth, not concurrency.
+      seedMaxWorkers: 2
+      seedMemoryLimit: 16Gi
     serving:
       # No `contextSize` — that is a language-model concept. The zimage profile
       # takes image geometry and sampling parameters instead, and the server
