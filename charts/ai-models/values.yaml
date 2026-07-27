@@ -630,14 +630,36 @@ models:
   # where the high per-token price is a deliberate, derived make-vs-buy signal —
   # this number is a placeholder. Re-derive it from the load-gate report.
   #
-  # ⚠️ NOT LOAD-GATED on this hardware. It is federated anyway, deliberately:
-  # users already had this model on the home GPU and this is a MIGRATION, not a
-  # new offering — pulling it while the backend moves would be a visible
-  # regression. That is a different situation from qwen3-8b-fast, which was
-  # served unfederated until it had been measured. Treat the first production
-  # request as the gate and watch it.
+  # ⚠️ DISABLED PENDING THE LOAD GATE (ADR-0101, amending ADR-0100).
+  #
+  # This entry was briefly `enabled: true` on the argument that a MIGRATION is
+  # not a new offering, so pulling the model while its backend moved would be a
+  # visible regression. That argument was wrong: the model had never been built,
+  # seeded or loaded on this hardware, so what federation preserved was a route
+  # to a backend with nothing behind it. Two size estimates failed on the first
+  # sync (seed memory, then staging disk) while users could still select it.
+  #
+  # A third estimate is still outstanding and it is the one that decides whether
+  # this model runs at all: ~12.4 GB GPU-resident of 20475 MiB, because the
+  # transformer + VAE load at BF16 while the ~4 GB text encoder stays on the CPU.
+  # Derived from file sizes and the loader's dtype, exactly like the two that
+  # just failed.
+  #
+  # RE-ENABLE when the report exists in inference-ops docs/benchmarks/ — and
+  # re-derive `effectivePerRequest` from measured images/hour at the same time
+  # (ADR-0096) instead of carrying the placeholder below forward.
+  #
+  # The serving entry in charts/model-serving stays ENABLED: the model still
+  # deploys and can be measured, which is the whole point of the split.
+  #
+  # The `z-image-turbo-local` BACKEND below stays enabled too. Nothing routes to
+  # it with this model disabled — the AIGatewayRoute goes with the model entry —
+  # so it costs an unused AIServiceBackend CR and makes re-federating one flag.
+  # ⚠️ Note that check-model-catalogs.sh therefore still counts this as
+  # "federated": its invariant is backend→server, and it keys on backends, not on
+  # model entries. It will NOT print the served-but-unfederated note here.
   z-image-turbo-local:
-    enabled: true
+    enabled: false
     kind: image
     minBackends: 1                   # one GPU, one backend, by design
     timeout:
