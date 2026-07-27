@@ -1279,14 +1279,14 @@ applications:
         prune: true
         selfHeal: true
 
-  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the home GPU (ADR-0022).
+  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the Hetzner GPU fleet (ADR-0094/0095).
   # 6B params, FP8 quantized (~8 GB VRAM), 1024×1024, 8-step distilled DiT.
-  # LIVE on the home GPU. See docs/patterns/self-hosted-model-serving.md.
+  # Served by a custom Rust/Actix server (ghcr.io/adorsys-gis/z-image-turbo-server).
+  # Deployed on the Hetzner GPU nodes via the model-serving orchestrator pattern.
   - name: model-serving-zimage-turbo
-    enabled: true                  # LIVE — one GPU, one model.
+    enabled: true
     finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    homeCluster: true
+      - resources-finalizer.argoproj.io
     source:
       # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
       repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-zimage-turbo
@@ -1296,7 +1296,7 @@ applications:
         releaseName: model-serving-zimage-turbo
         valuesObject: { }
     destination:
-      namespace: converse-poc
+      namespace: inference
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
