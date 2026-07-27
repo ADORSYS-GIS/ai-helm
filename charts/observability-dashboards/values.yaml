@@ -665,3 +665,134 @@ alerting:
           for: 10m
           severity: warning
           summary: "A node is using >92% of memory for 10m (baseline runs ~87%)."
+        # Disk pressure — the cluster-health group already covers CPU/mem; disk
+        # fills slowly and silently until pods start failing to write. Fires
+        # before kubelet's own NodeHasDiskPressure condition (default 85% per
+        # `--node-status-update-frequency` + `--eviction-hard`), giving us a
+        # lead time to clean up before pods get evicted.
+        - uid: node-disk-pressure
+          title: Node disk pressure
+          datasourceUid: mimir
+          expr: max(1 - node_filesystem_avail_bytes{fstype!="tmpfs",mountpoint="/"} / node_filesystem_size_bytes{fstype!="tmpfs",mountpoint="/"})
+          fromSeconds: 600
+          op: gt
+          threshold: 0.85
+          for: 15m
+          severity: warning
+          summary: "A node's root filesystem is >85% full for 15m — kubelet will start evicting pods soon."
+
+    # ── Grafana self-health (ADR-0100) ──────────────────────────────────────
+    # Watches Grafana's own /metrics endpoint (scraped into Mimir as
+    # job="grafana"). These rules catch the case where Grafana ITSELF is the
+    # broken thing — the dashboards are fine, the datasources are fine, but
+    # the UI is down or the alerting subsystem is wedged. Without these, a
+    # Grafana outage is invisible: the dashboards that would show it can't
+    # render, and the alerting rules that would fire can't evaluate.
+    - name: grafana-self-health
+      folderRef: platform
+      interval: 1m
+      rules:
+        # `up` is the canonical scrape-health signal. `or vector(0)` so a
+        # vanished scrape target (ServiceMonitor deleted, namespace gone)
+        # doesn't noDataState-OK this alert green.
+        - uid: grafana-down
+          title: Grafana itself is down
+          datasourceUid: mimir
+          expr: 'min(up{job="grafana"}) or vector(0)'
+          fromSeconds: 600
+          op: lt
+          threshold: 1
+          for: 5m
+          severity: critical
+          summary: "Grafana's /metrics endpoint has been unreachable for 5m — the UI is down or the pod is crash-looping."
+        # Datasource query failures: grafana_datasource_request_total has a
+        # `result` label (success/error). A sustained error rate means a
+        # datasource is broken (Mimir/Loki/Tempo down, auth rotated, etc.)
+        # and every dashboard panel that uses it is silently empty.
+        - uid: grafana-datasource-errors
+          title: Grafana datasource query errors
+          datasourceUid: mimir
+          expr: 'sum by (ds_type, ds_uid) (rate(grafana_datasource_request_duration_seconds_count{result="error"}[5m])) or vector(0)'
+          fromSeconds: 600
+          op: gt
+          threshold: 0.1
+          for: 10m
+          severity: warning
+          summary: "A Grafana datasource is returning errors at >0.1/s for 10m — dashboards backed by it are silently broken."
+        # Too many firing alerts is itself an alertable condition: usually
+        # means a rule is misconfigured (threshold too low, wrong label
+        # match) and is spamming the contact point. Threshold is generous
+        # (50) — normal steady-state is single digits.
+        - uid: grafana-too-many-alerts
+          title: Grafana has too many firing alerts
+          datasourceUid: mimir
+          expr: 'max(grafana_alerting_active_alerts) or vector(0)'
+          fromSeconds: 600
+          op: gt
+          threshold: 50
+          for: 10m
+          severity: warning
+          summary: "Grafana has >50 alerts in the firing state for 10m — likely a misconfigured rule spamming the contact point."
+
+    # ── User activity (ADR-0100) ─────────────────────────────────────────────
+    # Per-user / per-actor anomaly detection on the AI gateway. The cost
+    # guardrails above (ai-gateway-cost) catch aggregate spend; this group
+    # catches INDIVIDUAL users doing unusual things — burst traffic, auth
+    # failures, token spikes — which aggregate rules smooth away.
+    - name: user-activity
+      folderRef: ai-gateway
+      interval: 1m
+      rules:
+        # Per-actor request burst: a single user suddenly doing >> their
+        # baseline. `sum by (email)` over a 1m window vs the 1h baseline;
+        # ratio > 10x for 5m means either a runaway script or a stolen
+        # token. The 10x threshold is deliberately generous to avoid
+        # paging on normal weekday-vs-weekend swings.
+        - uid: user-request-burst
+          title: AI Gateway — single user request burst
+          datasourceUid: mimir
+          expr: >-
+            sum by (email, display_name) (rate(loki_process_custom_gen_ai_requests[1m]))
+            /
+            clamp_min(sum by (email, display_name) (rate(loki_process_custom_gen_ai_requests[1h])) / 60, 0.01)
+          fromSeconds: 600
+          op: gt
+          threshold: 10
+          for: 5m
+          severity: warning
+          summary: >-
+            ⚠️ {{ $labels.display_name }} ({{ $labels.email }}) is doing >10x their baseline request rate — possible runaway script or compromised token.
+        # Per-actor token spike: same shape, but on tokens rather than
+        # request count. Catches a single user burning through context
+        # (huge prompts, long conversations) even if their request count
+        # looks normal.
+        - uid: user-token-spike
+          title: AI Gateway — single user token spike
+          datasourceUid: mimir
+          expr: >-
+            sum by (email, display_name) (rate(loki_process_custom_gen_ai_usage_total_tokens[1m]))
+            /
+            clamp_min(sum by (email, display_name) (rate(loki_process_custom_gen_ai_usage_total_tokens[1h])) / 60, 0.01)
+          fromSeconds: 600
+          op: gt
+          threshold: 10
+          for: 5m
+          severity: warning
+          summary: >-
+            ⚠️ {{ $labels.display_name }} ({{ $labels.email }}) is consuming >10x their baseline token rate — possible runaway script or compromised token.
+        # Auth failures from the gateway: 401/403 responses are the
+        # gateway rejecting bad/expired tokens. A burst from a single IP
+        # is the classic credential-stuffing / token-guessing signal.
+        # Loki query against the gateway access logs (same shape as the
+        # 5xx rule above).
+        - uid: user-auth-failures
+          title: AI Gateway — auth failure burst
+          datasourceUid: loki
+          datasourceType: loki
+          expr: 'sum(rate({service_name="envoy-ai-gateway"} | json | response_code=~"401|403"[5m]))'
+          fromSeconds: 600
+          op: gt
+          threshold: 1
+          for: 10m
+          severity: warning
+          summary: "AI Gateway 401/403 rate > 1/s for 10m — possible credential stuffing or token-guessing attack."
