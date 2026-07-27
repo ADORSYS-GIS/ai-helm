@@ -298,6 +298,33 @@ defaults:
     # Versioned CUDA-12 tags exist and are what we use:
     #     quay.io/go-skynet/local-ai:v4.7.1-gpu-nvidia-cuda-12
     #
+    # ⚠️⚠️ PINNING THIS IMAGE DOES NOT PIN WHAT RUNS THE MODEL. Observed live on
+    # first boot, and it is the thing to know about this engine:
+    #
+    #   installing OCI backend without signature verification
+    #     backend="cuda12-diffusers"
+    #     uri="quay.io/go-skynet/local-ai-backends:latest-gpu-nvidia-cuda-12-diffusers"
+    #
+    # Two separate problems in one line.
+    #
+    #   1. The BACKEND TAG IS `latest`. LocalAI picks its inference backend at
+    #      runtime from its backend gallery, and the reference it resolves is not
+    #      version-pinned — so the CUDA-12 tag we pin below fixes the SERVER and
+    #      leaves the thing that actually executes the model floating. A backend
+    #      published tomorrow is what a pod restarting tomorrow will run. It DID
+    #      select cuda12 correctly (it reads the host capability, logged as
+    #      `nvidia-cuda-12`), so this is not currently broken — it is unpinned.
+    #
+    #   2. NO SIGNATURE VERIFICATION. LocalAI says so itself, in a WARN. This
+    #      repo cosign-gates its own first-party images (ADR-0055); that gate does
+    #      not extend here, and there is no knob in this chart that changes it.
+    #
+    # Both are consequences of choosing an engine that manages its own runtime
+    # (ADR-0102) and neither was visible until it ran. Pinning them means either
+    # pre-populating BACKENDS_PATH ourselves or an upstream feature; tracked as a
+    # follow-up rather than papered over. Do not read the pinned server tag as
+    # meaning the whole stack is pinned.
+    #
     # ⚠️ LocalAI MANAGES ITS OWN DOWNLOADS. Unlike the two text engines, it pulls
     # both the model (from its model gallery) and its inference BACKEND (from its
     # backend gallery, `AUTOLOAD_BACKEND_GALLERIES` defaults true) at start-up.
