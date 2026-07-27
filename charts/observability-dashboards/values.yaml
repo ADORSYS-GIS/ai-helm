@@ -265,6 +265,23 @@ alerting:
     # rules still evaluate and still fire to the UI, they just do not deliver
     # here. Nothing else breaks, and the default `discord` route is unaffected.
     - name: discord-gpu
+      # ⚠️ DISABLED until `grafana_discord_webhook_url_gpu` exists in ssegning-aws.
+      #
+      # This is not merely "GPU alerts don't deliver yet". A GrafanaContactPoint
+      # whose secret is missing goes InvalidSpec, and a notification-policy route
+      # naming a receiver that does not exist makes Grafana reject the ENTIRE
+      # policy tree:
+      #     [PUT /v1/provisioning/policies][400]
+      #     receiver 'discord-gpu' does not exist
+      # — which takes the DEFAULT discord route down with it, so nothing routes
+      # anywhere. Observed live 2026-07-27.
+      #
+      # The chart now skips a disabled contact point, its ExternalSecret, and any
+      # route pointing at it, so the policy stays valid without it.
+      #
+      # TO ENABLE: add the property to ssegning-aws, then flip this to true.
+      # Secret first, always — the reverse order is what caused the outage above.
+      enabled: false
       type: discord
       settings:
         title: "[GPU] {{ .CommonLabels.alertname }} [{{ .Status }}]"
