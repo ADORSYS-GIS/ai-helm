@@ -484,24 +484,6 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
-  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the home GPU — custom
-  # Rust/Candle server (no Python, no PyTorch, 6B params FP8). Different
-  # schema/prefix from the vLLM backends: the server natively speaks OpenAI
-  # /v1/images/generations at root (/). No server-side auth — the Envoy AI
-  # Gateway enforces the Bearer token. Distinct edge host MUST match
-  # charts/model-serving-zimage-turbo ingress host. DISABLED by default
-  # (one GPU → one model).
-  zimage-local-01:
-    schema: OpenAI
-    prefix: "/"
-    fqdn:
-      hostname: z-image-turbo--poc.ssegning.com
-      port: 443
-    securityType: APIKey
-    tlsHostname: z-image-turbo--poc.ssegning.com
-    resourceName: zimage-local-01-svc
-    secretRef:
-      name: zimage-local-api-key
   vllm-local-qwen2-vl-01:
     <<: *vllmLocalQwen2VlBackend
     resourceName: vllm-local-qwen2-vl-01-svc
@@ -531,8 +513,8 @@ backends:
   # ⚠️ `fqdn.hostname` MUST be `<name>.inference.svc.cluster.local`, where <name>
   # is the charts/model-serving catalog entry (also the Service name).
   # tools/check-model-catalogs.sh fails CI if it does not resolve to a live model.
-  # Fast tier — vLLM. Same cluster-local shape as openmythos below; `prefix: /v1`
-  # is vLLM's own OpenAI server (NOT KServe's /openai/v1).
+  # Fast tier — vLLM. `prefix: /v1` is vLLM's own OpenAI server (NOT KServe's
+  # /openai/v1).
   qwen3-8b-fast-local:
     schema: OpenAI
     prefix: "/v1"
@@ -547,16 +529,24 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
-  openmythos-27b-local:
+  # Image generation — our own Rust/Candle server (ADR-0100), not an upstream
+  # engine. Same cluster-local shape as the text backends above; the difference
+  # is what it serves, not how it is reached.
+  #
+  # ⚠️ `prefix: /v1` — the server registers `/v1/images/generations` and
+  # `/v1/models`. The legacy home-GPU backend used `/`, which would strip the
+  # version segment and 404. Confirm end-to-end at the load gate: this and the
+  # image tag are the two things that cannot be proven by rendering.
+  z-image-turbo-local:
     schema: OpenAI
-    prefix: "/v1"                  # llama-server, NOT KServe's /openai/v1
+    prefix: "/v1"
     fqdn:
-      hostname: openmythos-27b.inference.svc.cluster.local
+      hostname: z-image-turbo.inference.svc.cluster.local
       port: 8080
     securityType: APIKey
-    resourceName: openmythos-27b-local-svc
+    resourceName: z-image-turbo-local-svc
     secretRef:
-      name: openmythos-27b-api-key
+      name: z-image-turbo-api-key
     externalSecret:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
@@ -576,9 +566,10 @@ models:
   # ─────────────────────────────────────────────────────────────────────────
   # Qwen3-8B-AWQ — the SPEED tier (vLLM + LMCache) on the second GPU.
   #
-  # The counterpart to openmythos-27b: pick this for anything interactive or
-  # agentic, that one for considered analysis. Two cards means both are available
-  # at once, which is new (ADR-0094).
+  # Since OpenMythos-27B was retired on 2026-07-27 this is the fleet's ONLY
+  # self-hosted text model — the other card now runs image generation. Pick it
+  # for anything interactive or agentic; route considered long-form analysis to
+  # a SaaS model rather than to a second local tier, until one comes back.
   #
   # Measured (inference-ops docs/benchmarks/2026-07-26-qwen3-8b-awq-vllm-rtx4000-ada.md):
   #   45 tok/s decode (3x the 27B) · TTFT ~45ms · tool calling OK · 401 without key
@@ -617,53 +608,59 @@ models:
         modelNameOverride: "qwen3-8b-fast"   # = --served-model-name
 
   # ─────────────────────────────────────────────────────────────────────────
-  # OpenMythos-27B — the first model on the Hetzner GPU fleet (ADR-0094/0095).
-  # Security-analysis QUALITY tier, explicitly not a speed tier.
+  # Z-Image-Turbo — IMAGE GENERATION, on the GPU fleet (ADR-0100).
   #
-  # Serving spec: charts/model-serving/values.yaml `openmythos-27b`.
-  # Load gate + every number below: inference-ops
-  # docs/benchmarks/2026-07-26-openmythos-27b-q4k-rtx4000-ada.md
+  # Moved here 2026-07-27 from the old home RTX A2000, where it was reached over
+  # a public `*--poc.ssegning.com` edge with a static Bearer. It is now an
+  # ordinary cluster-local backend like every other fleet model: ClusterIP,
+  # CiliumNetworkPolicy, no Ingress, no certificate, no DNS record.
   #
-  # Measured on the card (llama.cpp build 10133, RTX 4000 SFF Ada):
-  #   decode 15.05 tok/s · prefill 625 tok/s · 17780/20475 MiB · tool calling OK
+  # Serving spec: charts/model-serving/values.yaml `z-image-turbo`.
   #
-  # ⚠️ contextLength is 16384 because that is `n_ctx_slot` — llama.cpp splits
-  # `--ctx-size 32768` across the 2 slots. Advertising 32768 would promise a
-  # window the model refuses.
+  # `kind: image` is load-bearing in charts/ai-model: it drops the InputToken /
+  # OutputToken / TotalToken cost metadata and the tokens-per-minute burst rule,
+  # both of which are meaningless here — an image response carries zero tokens,
+  # so a tokens/min limit would never bind and the metadata slots would be spent
+  # on constant zeroes.
   #
-  # ⚠️ Thinking mode is disabled at the SERVER (`--chat-template-kwargs`), because
-  # on by default it turned an 0.2s answer into an 18.2s one and could return an
-  # EMPTY answer when max_tokens was small. A client that wants the reasoning
-  # trace opts in per request with chat_template_kwargs.enable_thinking=true —
-  # which is why `supportedParameters` does NOT advertise reasoning here.
+  # ⚠️ PRICING IS PROVISIONAL. $0.005/image is carried over unchanged from the
+  # home-GPU deployment and has NO cost basis on this hardware: ADR-0096 derives
+  # a fleet price from €/hour ÷ measured throughput, and nobody has measured
+  # images/hour for this model on an RTX 4000 SFF Ada. Unlike the text tiers —
+  # where the high per-token price is a deliberate, derived make-vs-buy signal —
+  # this number is a placeholder. Re-derive it from the load-gate report.
   #
-  # ⚠️ Pricing is deliberately high and is NOT a copy of the A2000 models'
-  # numbers: ADR-0096 derives it from €184/mo ÷ 730h ÷ the MEASURED 15.05 tok/s.
-  # A slow model on a rented card genuinely costs about an order of magnitude
-  # more per token than the SaaS entries in this catalog. That is the make-vs-buy
-  # signal ADR-0028 exists to surface — do not "fix" it by matching SaaS prices.
-  openmythos-27b-local:
+  # ⚠️ NOT LOAD-GATED on this hardware. It is federated anyway, deliberately:
+  # users already had this model on the home GPU and this is a MIGRATION, not a
+  # new offering — pulling it while the backend moves would be a visible
+  # regression. That is a different situation from qwen3-8b-fast, which was
+  # served unfederated until it had been measured. Treat the first production
+  # request as the gate and watch it.
+  z-image-turbo-local:
     enabled: true
-    kind: text
+    kind: image
     minBackends: 1                   # one GPU, one backend, by design
     timeout:
-      requestTimeout: 600s           # ~15 tok/s: a long answer legitimately runs minutes
+      # 8 distilled steps at 1024×1024 should be seconds, not minutes — but the
+      # model holds a Mutex and serves ONE request at a time, so a queued caller
+      # waits for those ahead of it. 300s rides a short queue; it does NOT need
+      # to ride a cold start, because the server pre-loads its weights before it
+      # reports Ready, so no request ever meets a loading model.
+      requestTimeout: 300s
       connectionIdleTimeout: 1h
     info:
-      displayName: "OpenMythos-27B (self-hosted)"
-      contextLength: 16384           # = n_ctx_slot, NOT --ctx-size
-      maxOutputTokens: 8192
+      # NOT "FP8" — the published weights are FP32, served at BF16. The old
+      # display name advertised a quantization this model has never had.
+      displayName: "Z-Image-Turbo (self-hosted, image generation)"
     pricing:
-      strategy: weighted             # cost-recovery per ADR-0028, basis ADR-0096
+      strategy: flatPerRequest
       standard:
-        inputPer1M: 2.55
-        cachedInputPer1M: 0.50
-        outputPer1M: 17.00
+        effectivePerRequest: 0.005
     backends:
-      openmythos-27b-local:
-        ref: openmythos-27b-local
+      z-image-turbo-local:
+        ref: z-image-turbo-local
         priority: 0
-        modelNameOverride: "openmythos-27b"   # = llama-server --alias
+        modelNameOverride: "z-image-turbo"
 
   # Self-hosted Qwen3-4B on the home RTX A2000 (ADR-0022). Routed exactly like a
   # SaaS model; pricing flat $0 (owned hardware) so no monthly-budget rule, but
@@ -936,24 +933,6 @@ models:
         priority: 0
         modelNameOverride: "ministral-3b"
 
-  z-image-turbo-local:
-    enabled: true                  # LIVE — one GPU, one model.
-    kind: image
-    minBackends: 1
-    timeout:
-      requestTimeout: 120s
-      connectionIdleTimeout: 1h
-    info:
-      displayName: "Z-Image-Turbo FP8 (self-hosted)"
-    pricing:
-      strategy: flatPerRequest
-      standard:
-        effectivePerRequest: 0.005
-    backends:
-      zimage-local-01:
-        ref: zimage-local-01
-        priority: 0
-        modelNameOverride: "z-image-turbo"
   qwen2-vl-2b-local:
     # ⚠️ DISABLED 2026-07-27 — this was a DANGLING catalog entry. The model was
     # advertised in /v1/models and /v1/models/info while its server
