@@ -283,9 +283,12 @@ alerting:
     # its ExternalSecret and any route referencing it, so the policy stays valid
     # without it; the secret-first order still applies.
     #
-    # TO ENABLE: create the property, then flip this to true.
+    # ENABLED 2026-07-27, in the safe order: the property was created in
+    # ssegning-aws and its ExternalSecret confirmed `SecretSynced=True` FIRST,
+    # then this flag was flipped. Verifying that precondition is exactly why the
+    # ExternalSecret renders independently of this flag.
     - name: discord-stephane
-      enabled: false
+      enabled: true
       type: discord
       settings:
         title: "{{ .CommonLabels.alertname }} [{{ .Status }}]"
