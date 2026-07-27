@@ -1,0 +1,352 @@
+{
+  "schemaVersion": 39,
+  "templating": {},
+  "annotations": {},
+  "uid": "adorsys-platform-home",
+  "title": "adorsys · AI Platform",
+  "description": "Landing page for the AI platform. Orientation first: where the dashboards are and where things are documented, plus the handful of figures that answer 'is it up?'. Set as the Grafana home page via grafana.ini [users] home_page — org preferences cannot be used because this Grafana is stateless (ADR-0023). GENERATED — source: tools/dashboards/src/dashboards/platform/home.py.",
+  "tags": [
+    "platform",
+    "home",
+    "adorsys"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "transparent": false,
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "mode": "markdown",
+        "content": "\n<div style=\"display:flex;align-items:center;gap:16px\">\n  <img src=\"https://avatars.githubusercontent.com/u/1760904?s=280&v=4\"\n       alt=\"adorsys\" style=\"height:56px;border-radius:8px\"/>\n  <div>\n    <div style=\"font-size:22px;font-weight:600;line-height:1.2\">adorsys · AI Platform</div>\n    <div style=\"opacity:.7\">Camer Digital — gateway, models and the GPU fleet</div>\n  </div>\n</div>\n"
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(up{namespace=\"inference\"} == 1) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Models serving",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(DCGM_FI_DEV_GPU_TEMP) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "GPUs reporting",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 4
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 2,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "max(DCGM_FI_DEV_GPU_TEMP) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Hottest GPU",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 4
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 75,
+                "color": "yellow"
+              },
+              {
+                "value": 85,
+                "color": "#e2001a"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "max(DCGM_FI_DEV_FB_USED) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "title": "Busiest card (VRAM)",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 4
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 17000,
+                "color": "yellow"
+              },
+              {
+                "value": 19500,
+                "color": "#e2001a"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "text",
+      "title": "",
+      "transparent": false,
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "repeatDirection": "h",
+      "options": {
+        "mode": "markdown",
+        "content": "\n### Model serving\n\n- [**GPU Fleet** — cards and the models on them](/d/gpu-fleet-attribution/)\n- [**vLLM Inference**](/d/vllm-perf-dashboard/) — the fast tier\n- [**llama.cpp Inference**](/d/llamacpp-perf-dashboard/) — the quality tier\n- [**NVIDIA DCGM**](/d/nvidia-dcgm-12239/) — per-card health\n\nTwo GPUs, one model each. A third enabled model queues rather than sharing a card.\n"
+      }
+    },
+    {
+      "type": "text",
+      "title": "",
+      "transparent": false,
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "repeatDirection": "h",
+      "options": {
+        "mode": "markdown",
+        "content": "\n### Gateway & usage\n\n- [**My usage**](/d/my-usage/) — your own spend\n- [**Cost by model**](/d/envoy-ai-gateway-cost-by-model/) · [**Users: tokens & cost**](/d/envoy-ai-gateway-user-tokens-cost/)\n- [**Chat overview**](/d/envoy-ai-gateway-chat-overview/) · [**Chats by user**](/d/envoy-ai-gateway-chats-by-user/)\n- [**Rate-limit quota**](/d/envoy-ai-gateway-ratelimit-quota/) — live budget counters\n- [**App scoreboard**](/d/envoy-ai-gateway-scoreboard/) · [**User directory**](/d/envoy-ai-gateway-user-directory/)\n\nEvery model — SaaS or self-hosted — is reached through one gateway, which is where\nidentity, budgets, rate limits and metering are applied.\n"
+      }
+    },
+    {
+      "type": "text",
+      "title": "",
+      "transparent": false,
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "repeatDirection": "h",
+      "options": {
+        "mode": "markdown",
+        "content": "\n### Where things are documented\n\n- **`inference-ops`** — how to add, replace, measure or roll back a model;\n  runbooks; benchmark reports; the GPU fleet reference.\n- **`ai-helm`** — the charts and the ADRs behind them.\n\nA model is a ~15-line catalog entry (ADR-0094). If you are about to copy a chart,\nstop and read that ADR first.\n"
+      }
+    }
+  ]
+}

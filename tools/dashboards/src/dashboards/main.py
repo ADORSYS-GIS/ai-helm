@@ -44,6 +44,7 @@ _DASHBOARD_MODULES: tuple[str, ...] = (
     "dashboards.vllm.vllm",
     "dashboards.llamacpp.llamacpp",
     "dashboards.gpu.gpu_fleet",
+    "dashboards.platform.home",
 )
 
 

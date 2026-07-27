@@ -43,6 +43,11 @@ folders:
   # for our single-binary/DaemonSet deployment, since the upstream Alloy (jsonnet
   # only) and Tempo (distributed-oriented) mixins don't fit. (GitOps/ArgoCD folder
   # removed — ArgoCD runs on the homeos cluster, not here.)
+  # Landing page. Referenced by grafana.ini [users] home_page in ai-helm-values,
+  # so its folder and UID are a cross-repo contract (ADR-0099).
+  - name: platform
+    title: "adorsys Platform"
+    resyncPeriod: 5m
   - name: collectors
     title: "Collectors & Tracing"
     resyncPeriod: 5m
@@ -167,6 +172,14 @@ dashboards:
   # llama.cpp tier publishes a disjoint `llamacpp:*` namespace and is NOT on this
   # board. Scraped via each model's ServiceMonitor, which must authenticate
   # because the engines require a Bearer on /metrics (ADR-0097).
+  # Grafana's home page (ADR-0099). ⚠️ uid `adorsys-platform-home` is referenced
+  # by grafana.ini [users] home_page in ai-helm-values — renaming it silently
+  # breaks the landing page for everyone.
+  - name: platform-home
+    folderRef: platform
+    file: files/platform/home.json
+    resyncPeriod: 5m
+
   - name: vllm-dashboard
     folderRef: model-serving
     file: files/vllm/vllm-dashboard.json
