@@ -113,8 +113,10 @@ defaults:
   # no API key is set").
   security:
     apiKey:
-      # Enforced natively by BOTH engines — llama.cpp `--api-key-file`, vLLM
-      # `VLLM_API_KEY`. No proxy sidecar, ever (see the Chart.yaml note).
+      # Enforced natively by EVERY engine — llama.cpp `--api-key-file`, vLLM
+      # `VLLM_API_KEY`, zimage `API_KEY`. How a given engine takes the key is
+      # part of its profile (`engines.<name>.apiKey.mode`), not a knob here.
+      # No proxy sidecar, ever (see the Chart.yaml note).
       enabled: true
       secretStore: ssegning-aws
       key: ai/camer/digital/prod/env
@@ -185,10 +187,14 @@ defaults:
 
   # ── Engine profiles ───────────────────────────────────────────────────────
   # Which engine to pick is an inference decision, documented in inference-ops
-  # ADR-0002. The short version:
+  # ADR-0002 (text) and ADR-0003 (image). The short version:
   #   GGUF weights, or a brand-new architecture → llamacpp
   #   safetensors (AWQ/GPTQ/FP8), want throughput/prefix-reuse → vllm
+  #   a DIFFUSION model answering /v1/images/generations → zimage
   # Serving a GGUF on vLLM is a known ~8x throughput regression; do not.
+  #
+  # The first two are upstream images we merely configure. The third is OURS —
+  # see its profile for what that costs (no CI build, no /metrics, no CORS knob).
   engines:
 
     llamacpp:
@@ -203,6 +209,12 @@ defaults:
       # 503 while loading, 200 once the weights are in — exactly what a startup
       # probe needs.
       healthPath: /health
+      # llama-server reads the Bearer from a FILE, so the Secret is mounted
+      # rather than passed as an env var. `path` is the mount point; the key
+      # inside it is always `api_key`.
+      apiKey:
+        mode: file
+        path: /etc/model-api-key
       # TODO(hardening): both engines currently run as root with ALL capabilities
       # dropped and privilege escalation disabled. That is what clears Trivy
       # KSV-0118 and is what has actually shipped; a previous attempt to pin
@@ -248,6 +260,14 @@ defaults:
         tag: v0.5.2
         pullPolicy: IfNotPresent
       healthPath: /health
+      # vLLM's own OpenAI server reads the Bearer from the environment.
+      apiKey:
+        mode: env
+        envName: VLLM_API_KEY
+      # vLLM's worker processes talk over shared memory; the 64 MB default
+      # /dev/shm is not enough and the failure mode is an opaque hang during
+      # engine start. No other engine needs this.
+      devShm: true
       podSecurityContext:
         runAsNonRoot: false
         runAsUser: 0
@@ -263,6 +283,69 @@ defaults:
           drop:
             - ALL
 
+    # ── zimage — IMAGE GENERATION, and the only FIRST-PARTY engine here ──────
+    # A Rust + Candle server we build ourselves (source: images/z-image-turbo-server,
+    # ADR-0100). Text engines are a commodity; a diffusion model serving the
+    # OpenAI `/v1/images/generations` shape is not — neither llama.cpp nor vLLM
+    # does diffusion at all, so this is the only way an image model joins the
+    # fleet without a second serving stack.
+    #
+    # ⚠️⚠️ THE IMAGE MUST EXIST BEFORE THIS SYNCS. Nothing in CI builds it: it is
+    # built and pushed out-of-band, exactly like ghcr.io/adorsys-gis/lakefs-proxy.
+    # Same discipline as "values-repo-first" and "secret-first" elsewhere in this
+    # repo — build and push the tag FIRST, then merge the catalog entry, or the
+    # pod sits in ImagePullBackOff.
+    #
+    # ⚠️ And it must be built FOR THESE CARDS. Candle bakes kernels for ONE CUDA
+    # compute capability at build time; the fleet is RTX 4000 SFF Ada = sm_89
+    # (`CUDA_COMPUTE_CAP=89`, set in the Dockerfile) on driver 550 / CUDA 12.4.
+    # The v0.1.0 image was built for the old home A2000 (sm_86) and would fail at
+    # first inference — after the pod went Ready — with "no kernel image is
+    # available for execution on the device". Hence v0.2.0, a fresh build.
+    zimage:
+      image:
+        repository: ghcr.io/adorsys-gis/z-image-turbo-server
+        tag: v0.2.0
+        pullPolicy: IfNotPresent
+      # 503 `model_loading` → 200 once the weights are on the GPU. The server
+      # pre-loads at start-up rather than on first request precisely so this
+      # probe means something (v0.2.0 — the lazy path deadlocked: a pod that is
+      # never Ready gets no traffic, and traffic was what triggered the load).
+      healthPath: /health
+      apiKey:
+        mode: env
+        envName: API_KEY
+      # ⚠️ No Prometheus endpoint. The server exposes /health, /v1/models and
+      # /v1/images/generations and nothing else, so a ServiceMonitor would scrape
+      # a 404 forever. Declared here rather than as a per-model override so the
+      # fact lives with the engine that owns it. GPU-level telemetry still comes
+      # from DCGM, so the card is not unobserved — only the server is.
+      metrics: false
+      # ⚠️ `security.corsOrigins` CANNOT be honoured: the server hardcodes
+      # `Cors::default().allow_any_origin()` with no flag to pin it. Recorded as
+      # a known gap in ADR-0100 rather than silently ignored. It is contained by
+      # the CiliumNetworkPolicy — nothing browser-based can reach the pod at all
+      # — and by there being no cookie or credential the origin could protect.
+      corsConfigurable: false
+      # Unlike the two upstream engines, this image is ours, so it is non-root
+      # with a read-only rootfs: the process writes nothing outside the weights
+      # mount, which is itself mounted read-only. No .trivyignore entry needed.
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 1002
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        runAsUser: 1002
+        readOnlyRootFilesystem: true
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+            - ALL
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  THE MODELS. Add yours here.
 #
@@ -270,7 +353,7 @@ defaults:
 #
 #    my-model:
 #      enabled: true
-#      engine: llamacpp                    # or vllm
+#      engine: llamacpp                    # or vllm, or zimage (image generation)
 #      weights:
 #        hfRepo: org/Some-Model-GGUF
 #        revision: <full commit sha>        # NEVER a branch name — see below
@@ -305,81 +388,107 @@ defaults:
 models:
 
   # ─────────────────────────────────────────────────────────────────────────
-  # OpenMythos-27B (Q4_K GGUF, llama.cpp) — the security-analysis quality tier.
-  # The first model on the Hetzner GPU fleet.
+  # Z-Image-Turbo — IMAGE GENERATION. The fleet's first non-text model, and the
+  # reason the `zimage` engine profile exists (ADR-0100).
   #
-  # A fine-tune of Qwen/Qwen3.6-27B (`qwen35` architecture), Apache-2.0,
-  # published GGUF-only — which is why llama.cpp rather than vLLM: there is no
-  # safetensors release to quantize for a Marlin/AWQ kernel, and vLLM's GGUF
-  # loader is the slow path (~93 vs ~741 tok/s measured in docs/models/qwen3.5-4b-q4.md).
+  # Tongyi-MAI/Z-Image-Turbo: 6B-parameter distilled DiT, 8 sampling steps,
+  # 1024×1024, Apache-2.0. Answers the OpenAI `POST /v1/images/generations`
+  # shape, so it federates into the gateway like any other model — but with
+  # `kind: image` and `flatPerRequest` pricing, because tokens are always 0 for
+  # image generation (charts/ai-model skips the token metadata and the
+  # tokens/min burst rule for image models).
   #
-  # VRAM: Q4_K is 16.5 GB (~15.4 GiB) of a 20475 MiB card, leaving ~4 GiB for KV
-  # plus compute buffers. Q5_K (19.2 GB) and Q6_K (22.1 GB) do NOT fit. Expect
-  # ~12–15 tok/s decode: 280 GB/s of memory bandwidth divided by the weights is
-  # the hard ceiling, and no amount of tuning moves it. This is a quality tier,
-  # not a speed tier.
+  # ⚠️ It is NOT FP8 and NOT ~8 GB, whatever the original PR called it. The
+  # published repo ships FP32 safetensors — transformer 24.62 GB, text encoder
+  # 8.05 GB, VAE 0.17 GB, ~33 GB total. That is why `sizeGi: 45` and not the 20
+  # the legacy chart used: at 20 the seed simply runs out of volume part-way
+  # through, hours in. Loaded at BF16 it becomes ~12.4 GB GPU-resident
+  # (transformer + VAE) with the ~4 GB text encoder held in HOST RAM — hence the
+  # large `memoryLimit` below, which is not GPU memory.
   #
-  # The KV side is friendlier than the number of parameters suggests: Qwen3.6-27B
-  # is a HYBRID — only 16 of its 65 layers keep a KV cache, the other 48 are
-  # linear attention — so KV grows roughly a quarter as fast as a full-attention
-  # 27B would. That is why 16k below is a floor to start from and not a ceiling;
-  # the load gate should walk it up and record where it actually stops.
+  # VRAM: ~12.4 GB of a 20475 MiB card leaves ~7 GiB for activations. Roomy —
+  # this model did not fit comfortably on the 12 GB A2000 it was first written
+  # for, and fitting it there is what all the CPU-offload machinery in the
+  # server is about. On these cards that machinery is now insurance, not need.
   #
-  # ⚠️ Provenance: `jabbatheduck` is an unknown uploader, the quant is unsigned,
-  # and the in-repo seceval numbers are self-reported. Accepted deliberately for
-  # a security-analysis PoC and mitigated by the pinned SHA, no secret mounts,
-  # and the NetworkPolicy. See docs/models/openmythos-27b-q4.md.
-  #
-  # ⚠️ NOT YET FEDERATED — there is intentionally no charts/ai-models entry until
-  # the load gate passes (inference-ops how-to/measure-a-model.md). Until then it
-  # runs and can be measured, but no user can route to it.
-  openmythos-27b:
+  # ⚠️ NOT LOAD-GATED. No images/hour, no p50 latency, no measured VRAM figure
+  # exists for this model on this hardware — the numbers above are derived from
+  # file sizes and arithmetic, not observation. Its price is therefore carried
+  # over unchanged from the home-GPU deployment ($0.005/image) and is a
+  # PLACEHOLDER: ADR-0096 cost recovery needs a measured images/hour before it
+  # can produce a real number. Run inference-ops how-to/measure-a-model.md and
+  # file the report before treating the price as anything but provisional.
+  z-image-turbo:
     enabled: true
-    engine: llamacpp
+    engine: zimage
     weights:
-      hfRepo: jabbatheduck/OpenMythos-GGUF
-      revision: 4a1a1f97fbfc621d6f33cebc9f3ecc5c12e8c7d7
-      include: "OpenMythos-27B-Q4_K.gguf"
-      sizeGi: 30
+      hfRepo: Tongyi-MAI/Z-Image-Turbo
+      revision: f332072aa78be7aecdf3ee76d5c247082da564a6
+      # No `include`: the server needs the whole repo — transformer/, vae/,
+      # text_encoder/ (3 shards each for the first two) plus tokenizer/ and the
+      # per-component config.json files it reads at load. A glob here would seed
+      # a directory that fails validation at start-up.
+      sizeGi: 45
+      # ~33 GB over a cold Hub connection. The 2h fleet default is uncomfortably
+      # close; 3h costs nothing when the stamp makes re-runs a no-op.
+      seedDeadlineSeconds: 10800
     serving:
-      # ⚠️ `--ctx-size` is the TOTAL KV pool, divided across `--parallel` slots
-      # when kv_unified is false (the default). At 32768 / 2 slots each REQUEST
-      # gets 16384 tokens — that per-slot number, not this one, is what you
-      # advertise as contextLength in charts/ai-models.
-      #
-      # Raised from 16384 after the load gate: at 16384 total the model used
-      # 16748 MiB of 20475 (3.6 GiB headroom) with KV + buffers costing only
-      # ~1 GiB, because Qwen3.6-27B keeps a KV cache on just 16 of its 65 layers.
-      # Doubling should cost ~1 GiB more. Re-measure VRAM after this lands.
-      contextSize: 32768
-      # Few slots on purpose: the pool is split between them, and at ~15 tok/s
-      # concurrency is not what this tier is for.
-      parallel: 2
-      # Thinking is ON in this model's chat template and it dominates short
-      # responses: "what is 17 * 23" measured 18.2s / 274 tokens with it on
-      # versus 0.2s / 4 tokens with it off, and a 512-token cap returned an
-      # EMPTY answer because the whole budget went to reasoning. Most clients
-      # will never disable it themselves, so the server default is off and a
-      # caller opts back in per request with
-      #   "chat_template_kwargs": {"enable_thinking": true}   (measured: 9.8s)
-      #
-      # ⚠️ Was `--chat-template-kwargs '{"enable_thinking": false}'`, which works
-      # but llama-server logs as DEPRECATED at start-up ("Use --reasoning on /
-      # --reasoning off instead"). `reasoning_budget: 0` as a REQUEST field is
-      # ignored by build 10133 and is NOT the lever.
-      reasoning: "off"
-      # Further levers if VRAM ever gets tight, one at a time, re-measuring:
-      #   --flash-attn                     (check the flag's arity in the build)
-      #   --cache-type-k q8_0 --cache-type-v q8_0   (halves KV, needs FA)
-      #   --no-mmap                        (if page cache pressures the memory limit)
+      # No `contextSize` — that is a language-model concept. The zimage profile
+      # takes image geometry and sampling parameters instead, and the server
+      # validates them at start-up (dimensions must divide by 16, steps 1..50,
+      # guidance 0..20) rather than failing per request.
+      maxImageSize: 1024
+      defaultWidth: 1024
+      defaultHeight: 1024
+      # 8 steps is the whole point of the "Turbo" distillation; raising it buys
+      # little and costs linearly.
+      numSteps: 8
+      guidanceScale: 5.0
     resources:
-      cpuRequest: "2"
-      cpuLimit: "8"
-      memoryRequest: 8Gi
-      # Host RAM, not VRAM: llama.cpp mmaps the 16.5 GB GGUF, so its page cache
-      # counts against this limit.
-      memoryLimit: 24Gi
+      # Text encoding runs on the CPU by design (that is what keeps ~4 GB off
+      # the card), so this model wants real CPU — unlike the text engines, where
+      # the CPU is mostly idle while the GPU works.
+      cpuRequest: "4"
+      cpuLimit: "12"
+      memoryRequest: 12Gi
+      # HOST RAM, not VRAM: the ~4 GB BF16 text encoder plus the page cache of
+      # ~33 GB of mmapped safetensors during load. Page cache is reclaimable, so
+      # this is headroom rather than a reservation.
+      memoryLimit: 32Gi
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # RETIRED 2026-07-27 — OpenMythos-27B, the fleet's first model, has been
+  # removed to free its card for z-image-turbo above. Two cards, two models.
+  #
+  # It was not a failure: it was deployed, load-gated at 15.05 tok/s decode /
+  # 625 tok/s prefill / 16748 MiB, priced by ADR-0096 and served to users
+  # (tickets #475/#476/#477). It was retired because an image model was worth
+  # more to us than a second text tier, and because retiring it costs exactly
+  # this — deleting an entry.
+  #
+  # To bring it back, restore the entry below plus its `charts/ai-models`
+  # backend + model (`openmythos-27b-local`). The pinned SHA still resolves, so
+  # the weights it re-seeds are byte-identical to the ones that were measured.
+  # Report: inference-ops docs/benchmarks/2026-07-26-openmythos-27b-q4k-rtx4000-ada.md
+  #
+  #   openmythos-27b:
+  #     enabled: true
+  #     engine: llamacpp
+  #     weights:
+  #       hfRepo: jabbatheduck/OpenMythos-GGUF
+  #       revision: 4a1a1f97fbfc621d6f33cebc9f3ecc5c12e8c7d7
+  #       include: "OpenMythos-27B-Q4_K.gguf"
+  #       sizeGi: 30
+  #     serving:
+  #       contextSize: 32768        # total pool; ⇒ 16384 per request at parallel 2
+  #       parallel: 2
+  #       reasoning: "off"          # thinking on cost ~90× wall clock on short answers
+  #     resources:
+  #       cpuRequest: "2"
+  #       cpuLimit: "8"
+  #       memoryRequest: 8Gi
+  #       memoryLimit: 24Gi
+  #
   # ─────────────────────────────────────────────────────────────────────────
   # Qwen3-8B-AWQ (vLLM + LMCache) — the SPEED tier, on the second GPU.
   #

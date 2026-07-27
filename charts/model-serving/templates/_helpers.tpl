@@ -122,6 +122,10 @@ vLLM: `lmcache/vllm-openai` is the LMCache-paired build of the OpenAI server —
   measure on the 12 GB A2000; on a 20 GiB Ada card CUDA graphs are affordable
   and materially faster. Add it via extraArgs if a model is tight on VRAM.
 
+zimage: our own Rust/Candle image-generation server (images/z-image-turbo-server,
+  ADR-0100). Bare flags again, but the vocabulary is image geometry and sampling
+  rather than context and slots — there is no `contextSize` to require here.
+
 Input: dict "name" <name> "engine" <engine> "serving" <serving> "dir" <modelDir> "lmcache" <lmcache>
 Output: a YAML list of strings.
 */}}
@@ -155,7 +159,7 @@ Output: a YAML list of strings.
          FILE — no sidecar, ever. The Web UI and the '*' CORS default are the two
          surfaces its own start-up warning complains about. */ -}}
   {{- if $apiKey -}}
-    {{- $args = concat $args (list "--api-key-file" "/etc/model-api-key/api_key") -}}
+    {{- $args = concat $args (list "--api-key-file" (printf "%s/api_key" (.apiKeyPath | default "/etc/model-api-key"))) -}}
   {{- end -}}
   {{- if ne (default true $sec.disableWebUI) false -}}
     {{- $args = append $args "--no-webui" -}}
@@ -223,6 +227,29 @@ Output: a YAML list of strings.
       {{- end -}}
     {{- end -}}
   {{- end -}}
+{{- else if eq .engine "zimage" -}}
+  {{- /* Image generation (ADR-0100). The image's entrypoint IS the server
+         binary, so these are bare flags — same shape as llama.cpp, different
+         vocabulary: there is no context window, no parallel slots and no
+         reasoning here, only image geometry and sampling.
+
+         ⚠️ The server VALIDATES these at start-up and exits non-zero if they are
+         inconsistent (dimensions must divide by 16, defaults must not exceed
+         --max-size, steps 1..50, guidance 0..20). That is deliberate: a bad
+         geometry fails the deploy loudly instead of 400-ing every request.
+
+         The Bearer arrives as API_KEY in the environment (see the engine's
+         `apiKey.mode`), so it never appears on the command line. CORS is NOT
+         configurable in this server — see the profile in values.yaml. */ -}}
+  {{- $args = concat $args (list
+      "--model-dir" $dir
+      "--host" "0.0.0.0"
+      "--port" "8080"
+      "--max-size" (toString (default 1024 $s.maxImageSize))
+      "--default-width" (toString (default 1024 $s.defaultWidth))
+      "--default-height" (toString (default 1024 $s.defaultHeight))
+      "--num-steps" (toString (default 8 $s.numSteps))
+      "--guidance-scale" (toString (default 5.0 $s.guidanceScale))) -}}
 {{- end -}}
 {{- $args = concat $args (default (list) $s.extraArgs) -}}
 {{- range $args }}
@@ -242,11 +269,15 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
 {{- $name := .name -}}
 {{- $cfg := .cfg -}}
 {{- $d := $root.Values.defaults -}}
-{{- $engine := required (printf "model %s: `engine` is required (llamacpp|vllm)" $name) $cfg.engine -}}
-{{- if not (has $engine (list "llamacpp" "vllm")) -}}
-{{- fail (printf "model %s: unknown engine %q — expected llamacpp or vllm. Add a profile in charts/model-serving/templates/_helpers.tpl if you mean to introduce one." $name $engine) -}}
+{{- $engine := required (printf "model %s: `engine` is required (llamacpp|vllm|zimage)" $name) $cfg.engine -}}
+{{- if not (has $engine (list "llamacpp" "vllm" "zimage")) -}}
+{{- fail (printf "model %s: unknown engine %q — expected llamacpp, vllm or zimage. Add a profile in charts/model-serving/templates/_helpers.tpl if you mean to introduce one." $name $engine) -}}
 {{- end -}}
 {{- $eng := index $d.engines $engine -}}
+{{- /* Per-model image override, merged key-by-key over the engine profile's.
+       Lets a catalog entry pin a digest once the model is load-gated, or run a
+       one-off build, without forking the profile for every other model on it. */ -}}
+{{- $image := merge (deepCopy ($cfg.image | default dict)) (deepCopy $eng.image) -}}
 {{- $w := required (printf "model %s: `weights` is required" $name) $cfg.weights -}}
 {{- $s := $cfg.serving | default dict -}}
 {{- $res := $cfg.resources | default dict -}}
@@ -275,6 +306,19 @@ the sidecar has nothing to come back for.
 {{- $ak := merge (deepCopy ($cfg.apiKey | default dict)) (deepCopy ($sec.apiKey | default dict)) -}}
 {{- $apiKey := default false $ak.enabled -}}
 {{- $apiKeySecret := printf "%s-api-key" $name -}}
+{{- /* HOW this engine takes the key — a property of the engine, not of the
+       model. `file` mounts the Secret and the args point at it (llama.cpp);
+       `env` passes it as a named variable (vLLM, zimage). Expressed as profile
+       data so a new engine does not add another `eq $engine "..."` branch. */ -}}
+{{- $akMode := ($eng.apiKey | default dict).mode | default "file" -}}
+{{- if and $apiKey (not (has $akMode (list "file" "env"))) -}}
+{{- fail (printf "engine %s: apiKey.mode must be file or env, got %q" $engine $akMode) -}}
+{{- end -}}
+{{- $akEnvName := ($eng.apiKey | default dict).envName -}}
+{{- if and $apiKey (eq $akMode "env") (not $akEnvName) -}}
+{{- fail (printf "engine %s: apiKey.envName is required when apiKey.mode is env" $engine) -}}
+{{- end -}}
+{{- $akPath := ($eng.apiKey | default dict).path | default "/etc/model-api-key" -}}
 model:
   name: {{ $name | quote }}
   engine: {{ $engine | quote }}
@@ -306,8 +350,19 @@ apiKey:
 networkPolicy:
 {{- toYaml $d.networkPolicy | nindent 2 }}
 
+{{/* An engine profile may declare `metrics: false` when the server exposes no
+     Prometheus endpoint at all (zimage). Scraping it anyway would poll a 404
+     every 30s forever and put a permanently-down target in Mimir, which is worse
+     than no target: it trains people to ignore a red panel. Expressed on the
+     engine rather than per model because it is a property of the server, and
+     `hasKey` rather than `default` because `default true false` is true — the
+     classic Helm boolean trap. */}}
 serviceMonitor:
+{{- if and (hasKey $eng "metrics") (not $eng.metrics) }}
+  enabled: false
+{{- else }}
 {{- toYaml $d.serviceMonitor | nindent 2 }}
+{{- end }}
 
 # ── bjw-template: the workload ────────────────────────────────────────────────
 modelServing:
@@ -372,12 +427,12 @@ modelServing:
       containers:
         model:
           image:
-            repository: {{ $eng.image.repository | quote }}
-            tag: {{ $eng.image.tag | quote }}
-            pullPolicy: {{ $eng.image.pullPolicy | default "IfNotPresent" | quote }}
+            repository: {{ $image.repository | quote }}
+            tag: {{ $image.tag | quote }}
+            pullPolicy: {{ $image.pullPolicy | default "IfNotPresent" | quote }}
           args:
-            {{- include "model-serving.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec) | trim | nindent 12 }}
-          {{- if or $lmcache (and $apiKey (eq $engine "vllm")) }}
+            {{- include "model-serving.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath) | trim | nindent 12 }}
+          {{- if or $lmcache (and $apiKey (eq $akMode "env")) }}
           env:
             {{- if $lmcache }}
             {{- toYaml $d.lmcacheEnv | nindent 12 }}
@@ -385,11 +440,11 @@ modelServing:
             {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- end }}
-            {{- if and $apiKey (eq $engine "vllm") }}
-            # vLLM's own OpenAI server enforces this itself — no auth-proxy
-            # sidecar. `optional: false` so the pod waits for ESO rather than
+            {{- if and $apiKey (eq $akMode "env") }}
+            # The engine enforces this itself — no auth-proxy sidecar, for any
+            # engine. `optional: false` so the pod waits for ESO rather than
             # starting with an empty key and accepting every request.
-            VLLM_API_KEY:
+            {{ $akEnvName }}:
               secretKeyRef:
                 name: {{ $apiKeySecret | quote }}
                 key: api_key
@@ -533,9 +588,9 @@ modelServing:
         seed:
           seed:
             - path: /models
-    {{- if and $apiKey (eq $engine "llamacpp") }}
-    # llama-server reads the Bearer from a FILE (--api-key-file), so the Secret
-    # is mounted rather than passed as an env var.
+    {{- if and $apiKey (eq $akMode "file") }}
+    # This engine reads the Bearer from a FILE (llama.cpp's --api-key-file), so
+    # the Secret is mounted rather than passed as an env var.
     api-key:
       enabled: true
       type: secret
@@ -543,10 +598,10 @@ modelServing:
       advancedMounts:
         main:
           model:
-            - path: /etc/model-api-key
+            - path: {{ $akPath | quote }}
               readOnly: true
     {{- end }}
-    {{- if eq $engine "vllm" }}
+    {{- if $eng.devShm }}
     # vLLM's worker processes talk over shared memory; the 64 MB default /dev/shm
     # is not enough and the failure mode is an opaque hang during engine start.
     dshm:
