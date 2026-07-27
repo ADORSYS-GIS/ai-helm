@@ -92,26 +92,37 @@ flowchart TB
 so a third enabled model queues as `Pending` rather than requiring a human to
 disable another. Adding a model is a ~15-line catalog entry — no new chart.
 
-### Two engines, one container each
+### Three engines, one container each
 
-| | `llamacpp` | `vllm` |
-|---|---|---|
-| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` |
-| Weights | GGUF | safetensors (AWQ/GPTQ/FP8/BF16) |
-| Containers | **1** | **1** |
-| Optional key | native `--api-key-file` | native `VLLM_API_KEY` |
-| Extras | — | opt-in LMCache + `/dev/shm` |
+| | `llamacpp` | `vllm` | `zimage` |
+|---|---|---|---|
+| Serves | text | text | **images** (`/v1/images/generations`) |
+| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `ghcr.io/adorsys-gis/z-image-turbo-server` (**first-party**) |
+| Weights | GGUF | safetensors (AWQ/GPTQ/FP8/BF16) | diffusers repo |
+| Containers | **1** | **1** | **1** |
+| Optional key | native `--api-key-file` | native `VLLM_API_KEY` | native `API_KEY` |
+| `/metrics` | `llamacpp:*` | `vllm:*` | **none** |
+| Extras | — | opt-in LMCache + `/dev/shm` | — |
 
-The weight format selects the engine (`inference-ops` ADR-0002) — GGUF on vLLM is
-~8× slower. **Neither engine has a Caddy sidecar**: that was only ever required by
-`kserve/huggingfaceserver`, which ignores `VLLM_API_KEY` (ADR-0022), and that
+The weight format selects the engine (`inference-ops` ADR-0002 for text, ADR-0003
+for images) — GGUF on vLLM is ~8× slower, and neither text engine can do
+diffusion at all. **No engine has a Caddy sidecar**: that was only ever required
+by `kserve/huggingfaceserver`, which ignores `VLLM_API_KEY` (ADR-0022), and that
 wrapper is not an engine profile here.
+
+`zimage` is the one engine we build ourselves (source: `images/z-image-turbo-server/`,
+ADR-0100). Two consequences that do not apply to the upstream engines: the image
+is **built out-of-band, so it must be pushed before the catalog entry merges**,
+and it publishes no Prometheus metrics — liveness for image models comes from the
+engine-independent `ms-model-unavailable` alert over kube-state-metrics, not from
+`up{namespace="inference"}`.
 
 ### Legacy generation
 
-Eight `charts/model-serving-*` charts still serve from the **other** cluster
-(`admin@homeos`) over a public edge with `homeCluster: true` — `zimage-turbo` is
-live there, the rest are its rollback set. Retained until that cluster is
+Eight `charts/model-serving-*` charts targeted the **other** cluster
+(`admin@homeos`) over a public edge with `homeCluster: true`. **All are
+`enabled: false` since 2026-07-27** (ADR-0100): `zimage-turbo`, the last live
+one, moved to the fleet. Retained as a rollback surface until that cluster is
 decommissioned; not a template for anything new.
 
 Pricing for owned hardware is **cost-recovery** (€/hour TCO → weighted per-token,
