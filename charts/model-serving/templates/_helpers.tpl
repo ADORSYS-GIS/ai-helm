@@ -453,6 +453,47 @@ modelServing:
       pod:
         securityContext:
           {{- toYaml $eng.podSecurityContext | nindent 10 }}
+      {{- if $s.modelConfig }}
+      initContainers:
+        # ⚠️ Install our model config INTO MODELS_PATH — the only place LocalAI
+        # was ever reading one from.
+        #
+        # We first tried to inject it via MODELS_CONFIG_FILE and the engine
+        # loaded the model NAME but not `parameters.model`, handing the backend a
+        # model id where it expected a weights file. Inspecting the volume showed
+        # why: a gallery install writes a plain `<name>.yaml` into MODELS_PATH,
+        # and that file — 249 bytes — is what actually drives the backend. So we
+        # write the same file, with our tuning instead of the gallery's.
+        #
+        # Runs before the engine, and overwrites deliberately: the gallery marker
+        # (`._gallery_<name>.yaml`) makes LocalAI skip re-installing an entry it
+        # has already installed, so our version survives start-up.
+        model-config:
+          image:
+            repository: busybox
+            tag: "1.36"
+            pullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              DEST="{{ $dir }}/models/{{ $s.modelConfigFile | default (printf "%s.yaml" $name) }}"
+              mkdir -p "$(dirname "$DEST")"
+              cp /config/models.yaml "$DEST"
+              echo "installed model config -> $DEST"
+              cat "$DEST"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests: { cpu: "50m", memory: 32Mi }
+            limits:   { cpu: "200m", memory: 64Mi }
+      {{- end }}
       containers:
         model:
           image:
@@ -476,36 +517,19 @@ modelServing:
             # exact accepted form for a gallery reference is the FIRST thing the
             # load gate must confirm — it is read by InstallModels(... models
             # ...string) and cannot be settled by rendering.
-            {{- if $s.modelConfig }}
-            # We supply the model config ourselves, so there is no gallery entry
-            # to install — `MODELS` is deliberately unset (ADR-0103).
             #
-            # ⚠️ MODELS_CONFIG_FILE, *not* PRELOAD_MODELS_CONFIG. The names read
-            # as synonyms and are not: PRELOAD_MODELS_CONFIG is a list of GALLERY
-            # SOURCES, each requiring a `url`, and feeding it raw model configs
-            # fails at boot with `unsupported protocol scheme ""` — it is
-            # reporting a missing URL, not a malformed config. MODELS_CONFIG_FILE
-            # is documented as "YAML file containing a list of model backend
-            # configs", which is what we mount.
-            MODELS_CONFIG_FILE: "/config/models.yaml"
+            # ⚠️ `MODELS` STAYS SET even when we supply our own config. The gallery
+            # install is what puts the WEIGHTS and the BACKEND on the volume; it is
+            # not merely a way of naming a model. Dropping it once left LocalAI
+            # preferring a CUDA backend variant that was never installed, whose
+            # failure then put the model into a cooldown that poisoned every
+            # fallback in the same pass — so the log blamed a cooldown for a
+            # missing backend. Our tuning is applied by overwriting the config
+            # file the install writes (see the model-config initContainer), which
+            # LocalAI skips re-installing thanks to its `._gallery_*` marker.
+            MODELS: {{ required (printf "model %s: serving.galleryModel is required for the localai engine" $name) $s.galleryModel | quote }}
             {{- with $s.backends }}
-            # ⚠️ INSTALL THE BACKEND EXPLICITLY. Naming a gallery MODEL used to
-            # pull its backend as a side effect; supplying our own config
-            # (ADR-0103) removes that step, so LocalAI is left with whatever a
-            # previous run happened to leave on the PVC.
-            #
-            # It then makes things worse in a way worth knowing: it prefers the
-            # CUDA variant (`cuda12-stablediffusion-ggml`), and when that is not
-            # installed the failure puts the model into a COOLDOWN that poisons
-            # every fallback in the same pass —
-            #   Attempting to load backend="cuda12-stablediffusion-ggml" → exit -1
-            #   [stablediffusion-ggml]: load is in cooldown, retry after 10s
-            # — so the backend that would have worked is never tried, and the
-            # log blames the cooldown rather than the missing backend.
             EXTERNAL_BACKENDS: {{ join "," . | quote }}
-            {{- end }}
-            {{- else }}
-            MODELS: {{ required (printf "model %s: serving.galleryModel or serving.modelConfig is required for the localai engine" $name) $s.galleryModel | quote }}
             {{- end }}
             # Both paths live on the weights PVC, so neither the model nor the
             # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
@@ -723,6 +747,10 @@ modelServing:
         main:
           model:
             - path: /models
+{{- if $s.modelConfig }}
+          model-config:
+            - path: /models
+{{- end }}
 {{- end }}
     {{- if and $apiKey (eq $akMode "file") }}
     # This engine reads the Bearer from a FILE (llama.cpp's --api-key-file), so
@@ -747,7 +775,7 @@ modelServing:
       name: {{ printf "%s-config" $name | quote }}
       advancedMounts:
         main:
-          model:
+          model-config:
             - path: /config
               readOnly: true
     {{- end }}

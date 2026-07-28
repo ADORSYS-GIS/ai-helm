@@ -519,6 +519,29 @@ models:
       # use. Both are real waste and both are recorded as follow-ups. Service
       # first; the optimisation is worth having but not worth an outage.
       galleryModel: Z-Image-Turbo
+      # ⚠️ OVERWRITE the file the gallery install writes, so the name and the
+      # weights stay the gallery's and only the TUNING is ours. LocalAI reads
+      # this 249-byte file from MODELS_PATH; that is the mechanism, confirmed by
+      # reading the volume, and the reason the MODELS_CONFIG_FILE attempts failed.
+      modelConfigFile: Z-Image-Turbo.yaml
+      modelConfig: |
+        backend: stablediffusion-ggml
+        name: Z-Image-Turbo
+        cfg_scale: 1
+        # ⚠️ 8, not the gallery's 25. Z-Image-**Turbo** is distilled for 8 steps;
+        # 25 is ~3x the sampling work for no quality gain, and step count is the
+        # dominant term in image latency. Measured at 25: 94.2 s per 1024x1024.
+        step: 8
+        options:
+            - diffusion_model
+            - llm_path:Qwen3-4B.Q4_K_M.gguf
+            - vae_path:ae.safetensors
+            # ⚠️ `offload_params_to_cpu:true` is DELIBERATELY ABSENT. The gallery
+            # sets it for small cards; on ours it left 815 MiB of 20475 MiB in
+            # use while parameters streamed over PCIe every step. ~7 GB of
+            # quantized weights fit the card many times over — put them on it.
+        parameters:
+            model: z_image_turbo-Q4_0.gguf
     weights:
       # No hfRepo/revision: LocalAI fetches from its own gallery. `sizeGi` still
       # applies — the volume holds the weights AND the downloaded backend.
