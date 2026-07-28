@@ -119,6 +119,13 @@ gatewayRef:
   # listener so in-cluster callers reach the same backends. Keep in sync with
   # core-gateway gateway.internal.enabled (the listener must exist).
   internalSectionName: api-internal
+  # AI Gateway's synthesized `/v1/models` scopes its response per AIGatewayRoute
+  # Host header match (spec.hostnames), NOT per parentRef/listener attachment —
+  # a route with no hostnames set is advertised on every host regardless of
+  # which listener it's actually parented to. `disableExternal: true` models set
+  # `hostnames: [this]` on their route so they stop appearing on the external
+  # host's /v1/models. Keep in sync with core-gateway gateway.internal.hostname.
+  internalHostname: core-gateway-internal.envoy-gateway-system.svc.cluster.local
 
 # ────────────────────────────────────────────────────────────────────────
 # Models-info endpoint (charts/ai-models-info). Adds a sync-wave 1
