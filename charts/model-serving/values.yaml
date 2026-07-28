@@ -384,12 +384,14 @@ defaults:
       # already does that whenever `apiKey.enabled` (same situation as
       # llama-server, where --api-key-file also covers /metrics).
       metrics: true
-    # ⚠️ READY DOES NOT MEAN LOADED, for this engine. `/readyz` gates on the
-    # model INSTALL (the download), not on the backend having loaded it onto the
-    # GPU — that happens lazily, on the first request, and takes many minutes for
-    # a large diffusion model. So a green ArgoCD tree, a Ready pod and a scraping
-    # /metrics endpoint are all compatible with a model that cannot serve. The
-    # ONLY check that means anything is generating an image; do not skip it.
+    # ⚠️ READY MEANS LOADED — but only because we force it to. Out of the box
+    # `/readyz` gates on the model INSTALL (the download) while the backend loads
+    # lazily on the FIRST REQUEST, so a green ArgoCD tree, a Ready pod and a
+    # scraping /metrics endpoint were all compatible with a model that returned
+    # 500 with 5 MiB of VRAM in use. `LOAD_TO_MEMORY` (see the env block in
+    # _helpers.tpl) moves the load into the startup sequence readiness waits on.
+    # Do not remove it thinking it is an optimisation — it is what makes the
+    # probe honest. Verify with a real generation anyway.
     #
     # LocalAI downloads models and backends itself; no seed Job, no HF token.
       seedJob: false

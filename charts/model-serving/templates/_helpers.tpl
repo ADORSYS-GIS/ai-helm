@@ -487,6 +487,19 @@ modelServing:
             # At half precision it is ~16.5 GB and fits, which is exactly what
             # the server this replaced did by forcing BF16.
             F16: {{ default "true" (toString ($s.f16 | default "")) | quote }}
+            # ⚠️ EAGER LOAD. Without this the backend loads on the FIRST REQUEST,
+            # and `/readyz` — which gates on the model INSTALL, i.e. the download
+            # — reports the pod Ready long before it can serve anything. That is
+            # how a fully green ArgoCD tree sat in front of a model that returned
+            # 500, with 5 MiB of VRAM in use.
+            #
+            # `LOAD_TO_MEMORY` moves the load into the startup sequence readiness
+            # actually waits on, which restores the contract the text engines
+            # give us: Ready means loaded. It is also why the startup budget
+            # below is hours — the load now happens BEFORE Ready, not after.
+            #
+            # WATCHDOG_IDLE defaults to false, so once loaded it stays loaded.
+            LOAD_TO_MEMORY: {{ required (printf "model %s: serving.galleryModel is required for the localai engine" $name) $s.galleryModel | quote }}
             {{- with $s.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
