@@ -65,7 +65,7 @@ modelServing:
   defaultPodOptions:
     runtimeClassName: nvidia
     nodeSelector:
-      gpu-node: "true"
+      nvidia.com/gpu.present: "true"
     securityContext:
       runAsNonRoot: true
       runAsUser: 1002
@@ -129,11 +129,12 @@ modelServing:
                 - ALL
           resources:
             requests:
-              cpu: "6"
-              memory: 6Gi
+              cpu: "8"
+              memory: 12Gi
             limits:
-              cpu: "6"
+              cpu: "8"
               memory: 16Gi
+              nvidia.com/gpu: 1
 
     seed:
       type: job
@@ -172,8 +173,8 @@ modelServing:
                 name: hf-token
                 key: token
           resources:
-            requests: { cpu: "1", memory: 2Gi }
-            limits:   { cpu: "2", memory: 4Gi }
+            requests: { cpu: "4", memory: 6Gi }
+            limits:   { cpu: "8", memory: 10Gi }
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: false

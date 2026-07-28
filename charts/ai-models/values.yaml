@@ -393,163 +393,129 @@ backends:
       key: ai/camer/digital/prod/env
       property: google_ai_studio_api_key_02
 
-#   # Self-hosted Qwen3-4B on the home GPU (ADR-0022). Same API key value as the
-#   # model pod's VLLM_API_KEY (both pull ssegning-aws → vllm_local_api_key); this
-#   # Secret lives on Hetzner/ns converse for the BackendSecurityPolicy, the other
-#   # on the home cluster/ns converse-poc for the pod — different clusters, no
-#   # collision. The ai-models-backends ExternalSecret writes it under the default
-#   # `apiKey` data key (what the BSP expects).
-#   vllm-local-01:
-#     <<: *vllmLocalBackend
-#     resourceName: vllm-local-01-svc
-#     secretRef:
-#       name: vllm-local-api-key
-#     externalSecret:
-#       key: ai/camer/digital/prod/env
-#       property: vllm_local_api_key
-#
-#   # Self-hosted Qwen3.5-4B (Q4_K_M GGUF) via llama.cpp llama-server. Like
-#   # vllm-local-01 but `prefix: /v1` (llama-server, NOT KServe's /openai/v1) and a
-#   # distinct edge host. STAGED — only referenced by the (disabled) qwen3-5-4b-local
-#   # model, so these CRs render but route nothing until cutover. ⚠️ host MUST match
-#   # charts/model-serving-qwen3-5 ingress host. Engine: ADR-0032; paper:
-#   # docs/models/qwen3.5-4b-q4.md. Reuses the vllm_local_api_key SM property for now.
-#   llama-local-01:
-#     schema: OpenAI
-#     prefix: "/v1"
-#     fqdn:
-#       hostname: qwen3-5-4b--poc.ssegning.com
-#       port: 443
-#     securityType: APIKey
-#     tlsHostname: qwen3-5-4b--poc.ssegning.com
-#     resourceName: llama-local-01-svc
-#     secretRef:
-#       name: llama-local-api-key
-#     externalSecret:
-#       key: ai/camer/digital/prod/env
-#       property: vllm_local_api_key
-#
-#   # Self-hosted Qwen2.5-3B-AWQ on the home GPU — vLLM via KServe's
-#   # huggingfaceserver (AWQ 4-bit quantized). Same API key as the other local
-#   # vLLM models. Distinct edge host MUST match charts/model-serving-qwen25-3b-awq
-#   # ingress host. DISABLED until cutover (one GPU → one model).
-#   vllm-local-awq-01:
-#     <<: *vllmLocalAwqBackend
-#     resourceName: vllm-local-awq-01-svc
-#     secretRef:
-#       name: vllm-local-awq-api-key
-#     externalSecret:
-#       key: ai/camer/digital/prod/env
-#       property: vllm_local_api_key
-#
-#   # Self-hosted DeepSeek-R1-Distill-Qwen-1.5B on the home GPU — vLLM via KServe's
-#   # huggingfaceserver (BF16 reasoning model). Same API key as the other local
-#   # vLLM models. Distinct edge host MUST match charts/model-serving-deepseek-r1-1-5b
-#   # ingress host. DISABLED by default (one GPU → one model).
-#   vllm-deepseek-01:
-#     <<: *vllmDeepseekBackend
-#     resourceName: vllm-deepseek-01-svc
-#     secretRef:
-#       name: vllm-local-api-key
-#     externalSecret:
-#       key: ai/camer/digital/prod/env
-#       property: vllm_local_api_key
-#
-#   # Self-hosted Qwen3-8B-AWQ on the home GPU — vLLM via KServe's
-#   # huggingfaceserver (AWQ 4-bit quantized, 8.2B params). Same API key as the
-#   # other local vLLM models. Distinct edge host MUST match
-#   # charts/model-serving-qwen3-8b ingress host. DISABLED by default (one GPU →
-#   # one model).
-#   vllm-local-8b-01:
-#     <<: *vllmLocal8bBackend
-#     resourceName: vllm-local-8b-01-svc
-#     secretRef:
-#       name: vllm-local-8b-api-key
-#     externalSecret:
-#       key: ai/camer/digital/prod/env
-#       property: vllm_local_api_key
-#
-#   # Self-hosted Ministral-3B-Instruct-2410 (AWQ) on the home GPU — vLLM via
-#   # KServe's huggingfaceserver (AWQ 4-bit quantized, 3B params, ~2 GB). Same
-#   # API key as the other local vLLM models. Distinct edge host MUST match
-#   # charts/model-serving-ministral-3b ingress host. DISABLED by default (one
-#   # GPU → one model). ⚠️ Tool calling requires the official gated repo or a
-#   # chat-template override — the community AWQ repo strips tool-call tokens.
-#   vllm-local-ministral-01:
-#     <<: *vllmLocalMinistralBackend
-#     resourceName: vllm-local-ministral-01-svc
-#     secretRef:
-#       name: vllm-local-ministral-api-key
-#     externalSecret:
-#       key: ai/camer/digital/prod/env
-#       property: vllm_local_api_key
-#
-#   vllm-local-qwen2-vl-01:
-#     <<: *vllmLocalQwen2VlBackend
-#     resourceName: vllm-local-qwen2-vl-01-svc
-#     secretRef:
-#       name: vllm-local-api-key
-#     externalSecret:
-#       key: ai/camer/digital/prod/env
-#       property: vllm_local_api_key
-#
-  # ── GPU fleet (cluster-local, ADR-0095) ──────────────────────────────────
-  # Everything above this line is either a SaaS provider or a legacy self-hosted
-  # model reached over the public internet at *--poc.ssegning.com. Backends below
-  # are models on the Hetzner GPU nodes, in THIS cluster — so they are reached at
-  # a ClusterIP Service over plain HTTP on the pod network.
-  #
-  # ⚠️ `tlsHostname` is deliberately ABSENT and must stay absent — traffic never
-  # leaves the cluster network, so there is no TLS and no BackendTLSPolicy.
-  # Adding one would break the backend: the model speaks plain HTTP.
-  #
-  # `securityType: APIKey` IS set, and must stay in lockstep with the fleet
-  # security policy (ADR-0097): the model enforces the same Bearer natively
-  # (llama.cpp `--api-key-file`), so a backend that omits the key gets 401 on
-  # every request, and one that sends a key to a model with hardening disabled
-  # is merely harmless. Both sides read the SAME ssegning-aws property.
-  # The NetworkPolicy remains the primary control; this is defence in depth.
-  #
-  # ⚠️ `fqdn.hostname` MUST be `<name>.inference.svc.cluster.local`, where <name>
-  # is the charts/model-serving catalog entry (also the Service name).
-  # tools/check-model-catalogs.sh fails CI if it does not resolve to a live model.
-  # Fast tier — vLLM. `prefix: /v1` is vLLM's own OpenAI server (NOT KServe's
-  # /openai/v1).
-  qwen3-8b-fast-local:
-    schema: OpenAI
-    prefix: "/v1"
-    fqdn:
-      hostname: qwen3-8b-fast.inference.svc.cluster.local
-      port: 8080
-    securityType: APIKey
-    resourceName: qwen3-8b-fast-local-svc
+  # Self-hosted Qwen3-4B on the home GPU (ADR-0022). Same API key value as the
+  # model pod's VLLM_API_KEY (both pull ssegning-aws → vllm_local_api_key); this
+  # Secret lives on Hetzner/ns converse for the BackendSecurityPolicy, the other
+  # on the home cluster/ns converse-poc for the pod — different clusters, no
+  # collision. The ai-models-backends ExternalSecret writes it under the default
+  # `apiKey` data key (what the BSP expects).
+  vllm-local-01:
+    <<: *vllmLocalBackend
+    resourceName: vllm-local-01-svc
     secretRef:
-      name: qwen3-8b-fast-api-key
+      name: vllm-local-api-key
     externalSecret:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
-  # Image generation — our own Rust/Candle server (ADR-0100), not an upstream
-  # engine. Same cluster-local shape as the text backends above; the difference
-  # is what it serves, not how it is reached.
-  #
-  # ⚠️ `prefix: /v1` — the server registers `/v1/images/generations` and
-  # `/v1/models`. The legacy home-GPU backend used `/`, which would strip the
-  # version segment and 404. Confirm end-to-end at the load gate: this and the
-  # image tag are the two things that cannot be proven by rendering.
-  z-image-turbo-local:
+  # Self-hosted Qwen3.5-4B (Q4_K_M GGUF) via llama.cpp llama-server. Like
+  # vllm-local-01 but `prefix: /v1` (llama-server, NOT KServe's /openai/v1) and a
+  # distinct edge host. STAGED — only referenced by the (disabled) qwen3-5-4b-local
+  # model, so these CRs render but route nothing until cutover. ⚠️ host MUST match
+  # charts/model-serving-qwen3-5 ingress host. Engine: ADR-0032; paper:
+  # docs/models/qwen3.5-4b-q4.md. Reuses the vllm_local_api_key SM property for now.
+  llama-local-01:
     schema: OpenAI
     prefix: "/v1"
     fqdn:
-      hostname: z-image-turbo.inference.svc.cluster.local
-      port: 8080
+      hostname: qwen3-5-4b--poc.ssegning.com
+      port: 443
     securityType: APIKey
-    resourceName: z-image-turbo-local-svc
+    tlsHostname: qwen3-5-4b--poc.ssegning.com
+    resourceName: llama-local-01-svc
     secretRef:
-      name: z-image-turbo-api-key
+      name: llama-local-api-key
     externalSecret:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
+
+  # Self-hosted Qwen2.5-3B-AWQ on the home GPU — vLLM via KServe's
+  # huggingfaceserver (AWQ 4-bit quantized). Same API key as the other local
+  # vLLM models. Distinct edge host MUST match charts/model-serving-qwen25-3b-awq
+  # ingress host. DISABLED until cutover (one GPU → one model).
+  vllm-local-awq-01:
+    <<: *vllmLocalAwqBackend
+    resourceName: vllm-local-awq-01-svc
+    secretRef:
+      name: vllm-local-awq-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
+  # Self-hosted DeepSeek-R1-Distill-Qwen-1.5B on the home GPU — vLLM via KServe's
+  # huggingfaceserver (BF16 reasoning model). Same API key as the other local
+  # vLLM models. Distinct edge host MUST match charts/model-serving-deepseek-r1-1-5b
+  # ingress host. DISABLED by default (one GPU → one model).
+  vllm-deepseek-01:
+    <<: *vllmDeepseekBackend
+    resourceName: vllm-deepseek-01-svc
+    secretRef:
+      name: vllm-local-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
+  # Self-hosted Qwen3-8B-AWQ on the home GPU — vLLM via KServe's
+  # huggingfaceserver (AWQ 4-bit quantized, 8.2B params). Same API key as the
+  # other local vLLM models. Distinct edge host MUST match
+  # charts/model-serving-qwen3-8b ingress host. DISABLED by default (one GPU →
+  # one model).
+  vllm-local-8b-01:
+    <<: *vllmLocal8bBackend
+    resourceName: vllm-local-8b-01-svc
+    secretRef:
+      name: vllm-local-8b-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
+  # Self-hosted Ministral-3B-Instruct-2410 (AWQ) on the home GPU — vLLM via
+  # KServe's huggingfaceserver (AWQ 4-bit quantized, 3B params, ~2 GB). Same
+  # API key as the other local vLLM models. Distinct edge host MUST match
+  # charts/model-serving-ministral-3b ingress host. DISABLED by default (one
+  # GPU → one model). ⚠️ Tool calling requires the official gated repo or a
+  # chat-template override — the community AWQ repo strips tool-call tokens.
+  vllm-local-ministral-01:
+    <<: *vllmLocalMinistralBackend
+    resourceName: vllm-local-ministral-01-svc
+    secretRef:
+      name: vllm-local-ministral-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
+  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the home GPU — custom
+  # Rust/Candle server (no Python, no PyTorch, 6B params FP8). Different
+  # schema/prefix from the vLLM backends: the server natively speaks OpenAI
+  # /v1/images/generations at root (/). No server-side auth — the Envoy AI
+  # Gateway enforces the Bearer token. Distinct edge host MUST match
+  # charts/model-serving-zimage-turbo ingress host. DISABLED by default
+  # (one GPU → one model).
+  zimage-local-01:
+    schema: OpenAI
+    prefix: "/"
+    fqdn:
+      hostname: z-image-turbo--poc.ssegning.com
+      port: 443
+    securityType: APIKey
+    tlsHostname: z-image-turbo--poc.ssegning.com
+    resourceName: zimage-local-01-svc
+    secretRef:
+      name: zimage-local-api-key
+  vllm-local-qwen2-vl-01:
+    <<: *vllmLocalQwen2VlBackend
+    resourceName: vllm-local-qwen2-vl-01-svc
+    secretRef:
+      name: vllm-local-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # GPU fleet (cluster-local, ADR-0095) — backends for enabled models only.
+  # Backends for disabled models are removed to keep the catalog consistent
+  # with charts/model-serving/values.yaml (check-model-catalogs.sh).
+  # ─────────────────────────────────────────────────────────────────────────
 
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
@@ -627,7 +593,7 @@ models:
   # expensive — but a third of the 27B, which is the honest signal: prefer this
   # tier unless the task needs the bigger model.
   qwen3-8b-fast-local:
-    enabled: true
+    enabled: false
     kind: text
     minBackends: 1                   # one GPU, one backend, by design
     timeout:
@@ -674,12 +640,47 @@ models:
   # so a tokens/min limit would never bind and the metadata slots would be spent
   # on constant zeroes.
   #
-  # ⚠️ PRICING IS PROVISIONAL. $0.005/image is carried over unchanged from the
-  # home-GPU deployment and has NO cost basis on this hardware: ADR-0096 derives
-  # a fleet price from €/hour ÷ measured throughput, and nobody has measured
-  # images/hour for this model on an RTX 4000 SFF Ada. Unlike the text tiers —
-  # where the high per-token price is a deliberate, derived make-vs-buy signal —
-  # this number is a placeholder. Re-derive it from the load-gate report.
+  # ⚠️ Thinking mode is disabled at the SERVER (`--chat-template-kwargs`), because
+  # on by default it turned an 0.2s answer into an 18.2s one and could return an
+  # EMPTY answer when max_tokens was small. A client that wants the reasoning
+  # trace opts in per request with chat_template_kwargs.enable_thinking=true —
+  # which is why `supportedParameters` does NOT advertise reasoning here.
+  #
+  # ⚠️ Pricing is deliberately high and is NOT a copy of the A2000 models'
+  # numbers: ADR-0096 derives it from €184/mo ÷ 730h ÷ the MEASURED 15.05 tok/s.
+  # A slow model on a rented card genuinely costs about an order of magnitude
+  # more per token than the SaaS entries in this catalog. That is the make-vs-buy
+  # signal ADR-0028 exists to surface — do not "fix" it by matching SaaS prices.
+  openmythos-27b-local:
+    enabled: false
+    kind: text
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      requestTimeout: 600s           # ~15 tok/s: a long answer legitimately runs minutes
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "OpenMythos-27B (self-hosted)"
+      contextLength: 16384           # = n_ctx_slot, NOT --ctx-size
+      maxOutputTokens: 8192
+    pricing:
+      strategy: weighted             # cost-recovery per ADR-0028, basis ADR-0096
+      standard:
+        inputPer1M: 2.55
+        cachedInputPer1M: 0.50
+        outputPer1M: 17.00
+    backends:
+      openmythos-27b-local:
+        ref: openmythos-27b-local
+        priority: 0
+        modelNameOverride: "openmythos-27b"   # = llama-server --alias
+
+  # Self-hosted Qwen3-4B on the home RTX A2000 (ADR-0022). Routed exactly like a
+  # SaaS model; pricing flat $0 (owned hardware) so no monthly-budget rule, but
+  # the per-plan burst req/min + tokens/min limits still apply. The backend
+  # serves under the name set by the runtime's --model_name (qwen3-4b), so
+  # modelNameOverride rewrites the route id → that. ⚠️ Confirm `qwen3-4b` matches
+  # the served-model-name on the first test call; adjust if huggingfaceserver
+  # advertises the HF path instead.
   #
   # ✅ LOAD-GATED AND FEDERATED 2026-07-28. Measured on hetzner-k8s-gpu-*, served
   # by LocalAI's `Z-Image-Turbo` ggml entry (ADR-0102), verified end to end by
@@ -736,7 +737,7 @@ models:
         effectivePerRequest: 0.0100
     backends:
       z-image-turbo-local:
-        ref: z-image-turbo-local
+        ref: zimage-local-01
         priority: 0
         # ⚠️ The id the ENGINE serves, read off /v1/models — not the catalog key.
         # `z-image-turbo` (lowercase) because we now serve OUR OWN config file

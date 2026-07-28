@@ -1284,29 +1284,14 @@ applications:
         prune: true
         selfHeal: true
 
-  # Self-hosted Tongyi-MAI Z-Image-Turbo on the home GPU (ADR-0022).
-  # 6B-parameter distilled DiT, 1024×1024, 8 sampling steps.
-  #
-  # ⚠️ RETIRED 2026-07-27 (ADR-0100). This model MOVED to the Hetzner GPU fleet
-  # and is now a catalog entry — `z-image-turbo` in charts/model-serving/values.yaml
-  # — reached cluster-locally instead of over a public `*--poc.ssegning.com`
-  # edge. The gateway backend was repointed in the same change, so leaving this
-  # enabled would only hold an A2000 hostage on the other cluster serving traffic
-  # nobody routes to it any more.
-  #
-  # Rollback (only if the fleet deployment has to be abandoned): set this back to
-  # enabled: true, disable the `z-image-turbo` catalog entry, and repoint the
-  # `z-image-turbo-local` backend in charts/ai-models to
-  # `z-image-turbo--poc.ssegning.com:443` with `prefix: "/"` +
-  # `tlsHostname` + `secretRef.name: zimage-local-api-key`. Note that the home
-  # deployment has its own unresolved problems (a 20Gi PVC for ~33 GB of
-  # weights, a lazy model load that deadlocks against readiness) — it is a
-  # rollback target on paper, not a known-good one.
+  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the Hetzner GPU fleet (ADR-0094/0095).
+  # 6B params, FP8 quantized (~8 GB VRAM), 1024×1024, 8-step distilled DiT.
+  # Served by a custom Rust/Actix server (ghcr.io/adorsys-gis/z-image-turbo-server).
+  # Deployed on the Hetzner GPU nodes via the model-serving orchestrator pattern.
   - name: model-serving-zimage-turbo
-    enabled: false                 # RETIRED — moved to the GPU fleet (ADR-0100).
+    enabled: true
     finalizers:
       - resources-finalizer.argocd.argoproj.io
-    homeCluster: true
     source:
       # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
       repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-zimage-turbo
@@ -1316,7 +1301,7 @@ applications:
         releaseName: model-serving-zimage-turbo
         valuesObject: { }
     destination:
-      namespace: converse-poc
+      namespace: inference
     syncPolicy:
       syncOptions:
         - CreateNamespace=true
