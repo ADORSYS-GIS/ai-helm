@@ -28,7 +28,7 @@ Three things, in order:
 | OpenMythos-27B | **Retired** — two cards, two models, so this was a swap |
 | The fleet | `qwen3-8b-fast` (vLLM, text) + `z-image-turbo` (LocalAI, images) |
 | Legacy generation | All eight `charts/model-serving-*` charts now disabled |
-| New ADRs | **0100** image generation on the fleet · **0101** the load gate has no exceptions · **0102** LocalAI instead of a first-party server · **0103** own the model config · **0104** the GPU cost basis was ~18% wrong |
+| New ADRs | **0100** image generation on the fleet · **0101** the load gate has no exceptions · **0102** LocalAI instead of a first-party server · **0103** own the model config · **0104** the GPU cost basis was ~18% wrong · **0105** pin and verify the backend |
 | `inference-ops` | ADR-0003 (superseded) → **ADR-0004**, plus a new explanation page on diffusion inference |
 
 Tickets #475 and #476 closed as won't-do/done-by-other-means; #477 closed as
@@ -251,23 +251,40 @@ measurement; `qwen3-8b-fast` untouched throughout, at corrected prices;
 `ms-model-unavailable` alert, because `up{namespace="inference"}` cannot see an
 engine that publishes nothing.
 
-Also done in passing: all six internal-only models now carry an **`-internal`
-suffix** so external clients can tell them apart in `/v1/models` (a coordinated
-cross-repo rename — the id is the routing key), and **31 GB of abandoned FP32
-download** reclaimed from the weights volume.
+Also done: the **model id now tells a client what a model is for**, which it did
+not before. Three shapes, and only three:
+
+| Suffix | Meaning | Count |
+|---|---|---|
+| *(none)* | SaaS — anyone may use it | 22 |
+| `-internal` | internal listener only; an external client gets a 404 | 6 |
+| `-local` | **our GPU fleet** | 2 |
+
+`-local` used to mean "self-hosted somewhere", spanning two clusters and a public
+edge. The seven home-GPU models and their seven backends are **commented out**,
+not `enabled: false` — a disabled entry reads as something you could switch back
+on, and those servers no longer exist. The `-internal` rename was a coordinated
+cross-repo change, because the id **is** the routing key consumers send as
+`x-ai-eg-model`.
+
+And the image tier's supply chain is pinned end to end (ADR-0105): server,
+backend gallery, backend image, and every weight file by sha256 — which recovered
+the pinned-bytes guarantee ADR-0102 had written off. Plus **31 GB of abandoned
+FP32 download** reclaimed from the volume.
 
 **Open:**
 
 1. **The 3.45× duty-cycle uplift** is the only guessed term left in the pricing
    formula — inherited from the old A2000, never measured here. And $234 is a
    list price, not an invoice.
-2. **`/v1/models` lists two image models** — the gallery's `Z-Image-Turbo`
-   (unused) alongside our `z-image-turbo` (served). The gateway pins ours.
-   Closing it means dropping the gallery install and carrying `download_files`
-   ourselves, which is where ADR-0103 was heading.
-3. **The backend is unpinned and unverified.** LocalAI resolves it at runtime
-   from a `latest` tag, without signature verification. Our pinned *server* tag
-   does not cover the thing that actually executes the model.
+2. **The cosign identity is unproven.** The backend was already on the volume
+   when verification was enabled, so it will not be exercised until a fresh one —
+   meaning a wrong identity regex fails at the worst possible moment. Same for
+   `download_files`: first-class in the schema, untested here because the volume
+   was already populated. **The next fresh-volume boot is the real test of both.**
+3. **`requireBackendIntegrity` is unset** — the correct end state, deliberately
+   deferred because it turns a missing policy anywhere into a hard boot failure.
+   Flip it after (2) passes.
 4. **Delete the eight legacy `model-serving-*` charts** — unblocked since the
    whole generation is disabled.
 
@@ -280,13 +297,17 @@ download** reclaimed from the weights volume.
 - Know **which stage** your readiness probe measures.
 - The gallery's defaults are for someone else's hardware.
 - Read what a flag **does**.
+- **Pinning one component is not pinning the stack.** We pinned the server image
+  with care and left the thing that executes the model on `latest`, unsigned.
 
 ## Related
 
 - ADRs: [0100](../adr/0100-image-generation-on-the-gpu-fleet.md) ·
   [0101](../adr/0101-load-gate-before-federation-no-exceptions.md) ·
   [0102](../adr/0102-localai-instead-of-a-first-party-image-server.md) ·
-  [0103](../adr/0103-own-the-localai-model-config.md)
+  [0103](../adr/0103-own-the-localai-model-config.md) ·
+  [0104](../adr/0104-gpu-cost-basis-correction.md) ·
+  [0105](../adr/0105-pin-and-verify-the-localai-backend.md)
 - Pattern: [`../patterns/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md)
 - Open punch-list: [`2026-07-27-gpu-fleet-followups.md`](2026-07-27-gpu-fleet-followups.md)
 - Inference knowledge: `inference-ops` — ADR-0004, `explanation/diffusion-vs-autoregressive.md`
