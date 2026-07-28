@@ -479,7 +479,15 @@ modelServing:
             {{- if $s.modelConfig }}
             # We supply the model config ourselves, so there is no gallery entry
             # to install — `MODELS` is deliberately unset (ADR-0103).
-            PRELOAD_MODELS_CONFIG: "/config/models.yaml"
+            #
+            # ⚠️ MODELS_CONFIG_FILE, *not* PRELOAD_MODELS_CONFIG. The names read
+            # as synonyms and are not: PRELOAD_MODELS_CONFIG is a list of GALLERY
+            # SOURCES, each requiring a `url`, and feeding it raw model configs
+            # fails at boot with `unsupported protocol scheme ""` — it is
+            # reporting a missing URL, not a malformed config. MODELS_CONFIG_FILE
+            # is documented as "YAML file containing a list of model backend
+            # configs", which is what we mount.
+            MODELS_CONFIG_FILE: "/config/models.yaml"
             {{- else }}
             MODELS: {{ required (printf "model %s: serving.galleryModel or serving.modelConfig is required for the localai engine" $name) $s.galleryModel | quote }}
             {{- end }}
