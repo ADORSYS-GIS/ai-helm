@@ -103,9 +103,18 @@ anything subtler — annoying, not dangerous.
 
 </details>
 
-### 1.4 ⚠️ The €184/month figure is WRONG — every fleet price under-recovers
+### 1.4 ~~The €184/month figure is WRONG~~ → CORRECTED (ADR-0104)
 
-**Confirmed 2026-07-28.** ADR-0096 derives every self-hosted price from
+**Closed 2026-07-28** by ADR-0104, which supersedes 0096 on the basis (the method
+is unchanged). €/hour goes 0.2521 → **0.2968**; `qwen3-8b-fast` re-derived from
+its measured 45 tok/s rather than scaled by 1.18. The image model's price waits
+on a re-measure of the tuned config, since two corrections land on it at once.
+
+⚠️ The **3.45× duty-cycle uplift** (§2.3) is now the largest unverified term in
+the formula — inherited from the old A2000, never measured here. And $234 is
+still a **list price**, not an invoice.
+
+**Original entry, 2026-07-28.** ADR-0096 derives every self-hosted price from
 **€184/month** for a GEX44. The actual cost is **~$234/month** — about 18%
 higher. That is not a rounding error and it is not scoped to one model: every
 per-token price for `qwen3-8b-fast`, every retired OpenMythos number, and the
