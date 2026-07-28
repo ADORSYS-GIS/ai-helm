@@ -486,12 +486,24 @@ models:
     enabled: true
     engine: localai
     serving:
-      # The LocalAI gallery entry. `z-image-turbo-diffusers` is the diffusers
-      # backend against Tongyi-MAI/Z-Image-Turbo; the gallery also carries
-      # `Z-Image-Turbo` (ggml/GGUF) and `vllm-omni-z-image-turbo`, which are the
-      # obvious fallbacks if this one misbehaves — the GGUF variants are a
-      # fraction of the size (4.5–6.2 GB against ~33 GB of FP32 safetensors).
-      galleryModel: z-image-turbo-diffusers
+      # The LocalAI gallery entry. `Z-Image-Turbo` is the **ggml/GGUF** one
+      # (`backend: stablediffusion-ggml`), and it is the right choice here for
+      # reasons that only became clear by trying the other:
+      #
+      #   • It FITS. ~7 GB of quantized weights — z_image_turbo-Q4_K.gguf, a
+      #     Q4_K_M Qwen3-4B text encoder and a VAE — against the ~33 GB of FP32
+      #     the `z-image-turbo-diffusers` entry pulls. That entry cannot load on
+      #     a 20475 MiB card at its published precision, and there is no fp16
+      #     variant to ask for (see the F16 note in _helpers.tpl).
+      #   • Its files are **sha256-pinned in the gallery**, which recovers some
+      #     of the reproducibility ADR-0102 recorded as given up.
+      #   • `offload_params_to_cpu: true` in its config, so it is designed for
+      #     exactly this kind of card.
+      #
+      # ⚠️ Its gallery config sets `step: 25`, which is not what a model distilled
+      # for 8 steps wants — that is a latency knob for the load gate to settle,
+      # not a blocker. `vllm-omni-z-image-turbo` remains the other fallback.
+      galleryModel: Z-Image-Turbo
     weights:
       # No hfRepo/revision: LocalAI fetches from its own gallery. `sizeGi` still
       # applies — the volume holds the weights AND the downloaded backend.
