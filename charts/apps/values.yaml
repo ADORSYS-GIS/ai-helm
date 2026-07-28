@@ -1299,7 +1299,21 @@ applications:
       targetRevision: ">=0.0.0"
       helm:
         releaseName: model-serving-zimage-turbo
-        valuesObject: { }
+
+        # Tolerations and nodeSelector added inline to enable scheduling on GPU nodes with nvidia.com/gpu taints.
+        # Note: ValuesObject tolerations override chart defaults (nvidia.com/gpu Exists/NoSchedule+NoExecute).
+        valuesObject:
+          modelServing:
+            defaultPodOptions:
+              nodeSelector:
+                nvidia.com/gpu.present: "true"
+              tolerations:
+                - key: nvidia.com/gpu
+                  operator: Exists
+                  effect: NoSchedule
+                - key: nvidia.com/gpu
+                  operator: Exists
+                  effect: NoExecute
     destination:
       namespace: inference
     syncPolicy:
