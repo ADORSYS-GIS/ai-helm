@@ -47,22 +47,7 @@ wellKnown:
     # subagents, so no primary carries the 27 browser_* schemas every turn.
     default_agent: assistant
     plugin:
-      # opencode auto-installs each via `bun install` at startup; cached
-      # under ~/.cache/opencode/node_modules/. No user action needed.
-      #
-      # VERSION-PINNED on purpose. opencode treats a `name@x.y.z` spec as an
-      # exact pin — it installs that version and runs NO stale/latest checks,
-      # whereas a bare `name` floats to @latest and silently refreshes when
-      # the cache goes stale (per opencode's plugin install spec). Pinning
-      # makes this org-wide push deterministic: every user runs the same
-      # plugin code we validated, and a publish upstream can't change
-      # behaviour under us mid-rollout. Bump these deliberately (and
-      # re-validate) rather than letting them drift. The four @vymalo/*
-      # plugins share one version line (released together, currently 0.8.0 —
-      # the "OpenCode Toolbelt" suite; see ADR-0050 for the 0.7.3→0.8.0 bump).
-      # The lone exception is opencode-skills-collection (kept @latest — see
-      # its note below).
-      - "@vymalo/opencode-oauth2@0.8.0"
+      - "@vymalo/opencode-oauth2@0.10.0"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
       - "@vymalo/opencode-models-info@0.8.0"
