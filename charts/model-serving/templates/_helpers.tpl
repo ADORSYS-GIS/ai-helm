@@ -567,7 +567,7 @@ modelServing:
             # briefly used the catalog key and asked LocalAI to preload a model
             # that did not exist, which surfaces as the same opaque
             # "load is in cooldown" cascade as a missing backend.
-            LOAD_TO_MEMORY: {{ $s.galleryModel | default $name | quote }}
+            LOAD_TO_MEMORY: {{ $s.servedModel | default $s.galleryModel | default $name | quote }}
             {{- with $s.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

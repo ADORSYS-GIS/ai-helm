@@ -523,10 +523,24 @@ models:
       # weights stay the gallery's and only the TUNING is ours. LocalAI reads
       # this 249-byte file from MODELS_PATH; that is the mechanism, confirmed by
       # reading the volume, and the reason the MODELS_CONFIG_FILE attempts failed.
-      modelConfigFile: Z-Image-Turbo.yaml
+      # ⚠️ A DIFFERENT FILENAME FROM THE GALLERY'S, deliberately. Overwriting
+      # `Z-Image-Turbo.yaml` does not work: LocalAI logs `installing model` on
+      # EVERY start and rewrites it, so the initContainer's version survived
+      # exactly until the engine booted. Measured proof — latency and VRAM were
+      # bit-identical to the untuned run (95.6 s, 815 MiB). The `._gallery_*`
+      # marker does not prevent the rewrite.
+      #
+      # So we write our own file under our own name. The gallery install still
+      # runs and still guarantees the WEIGHTS and the BACKEND on a fresh volume;
+      # it just no longer has anything of ours to clobber.
+      modelConfigFile: z-image-turbo.yaml
+      # The name LocalAI serves and preloads. Must equal `name:` in modelConfig
+      # below, and `modelNameOverride` in charts/ai-models. It cannot be derived
+      # — modelConfig is an opaque string to Helm.
+      servedModel: z-image-turbo
       modelConfig: |
         backend: stablediffusion-ggml
-        name: Z-Image-Turbo
+        name: z-image-turbo
         cfg_scale: 1
         # ⚠️ 8, not the gallery's 25. Z-Image-**Turbo** is distilled for 8 steps;
         # 25 is ~3x the sampling work for no quality gain, and step count is the
