@@ -44,6 +44,30 @@ apiKey:
     refreshInterval: 1h
     key: "ai/camer/digital/prod/env"
     property: "vllm_local_api_key"
+# Our own LocalAI model config (ADR-0103): our tuning, our pinned checksums.
+modelConfig: |
+  - name: fixture-localai
+    backend: stablediffusion-ggml
+    # Distilled model: low guidance is correct, and 8 steps is the design.
+    cfg_scale: 1
+    step: 8
+    options:
+      - diffusion_model
+      - llm_path:Qwen3-4B.Q4_K_M.gguf
+      - vae_path:ae.safetensors
+    parameters:
+      model: z_image_turbo-Q4_0.gguf
+    download_files:
+      - filename: z_image_turbo-Q4_0.gguf
+        sha256: 14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd
+        uri: https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_K.gguf
+      - filename: Qwen3-4B.Q4_K_M.gguf
+        sha256: a37931937683a723ae737a0c6fc67dab7782fd8a1b9dea2ca445b7a1dbd5ca3a
+        uri: huggingface://MaziyarPanahi/Qwen3-4B-GGUF/Qwen3-4B.Q4_K_M.gguf
+      - filename: ae.safetensors
+        sha256: afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38
+        uri: https://huggingface.co/ChuckMcSneed/FLUX.1-dev/resolve/main/ae.safetensors
+  
 
 networkPolicy:
   allowFromEntities:
@@ -140,7 +164,9 @@ modelServing:
             # exact accepted form for a gallery reference is the FIRST thing the
             # load gate must confirm — it is read by InstallModels(... models
             # ...string) and cannot be settled by rendering.
-            MODELS: "Z-Image-Turbo"
+            # We supply the model config ourselves, so there is no gallery entry
+            # to install — `MODELS` is deliberately unset (ADR-0103).
+            PRELOAD_MODELS_CONFIG: "/config/models.yaml"
             # Both paths live on the weights PVC, so neither the model nor the
             # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
             # the one that is easy to forget: LocalAI pulls its inference backend
@@ -159,7 +185,7 @@ modelServing:
             # below is hours — the load now happens BEFORE Ready, not after.
             #
             # WATCHDOG_IDLE defaults to false, so once loaded it stays loaded.
-            LOAD_TO_MEMORY: "Z-Image-Turbo"
+            LOAD_TO_MEMORY: "fixture-localai"
             # The engine enforces this itself — no auth-proxy sidecar, for any
             # engine. `optional: false` so the pod waits for ESO rather than
             # starting with an empty key and accepting every request.
@@ -248,6 +274,18 @@ modelServing:
         main:
           model:
             - path: /models
+    # Our LocalAI model config. Mounted read-only OUTSIDE the weights volume:
+    # MODELS_PATH is writable and LocalAI owns it, so a config living there would
+    # be fighting the engine for the same directory.
+    model-config:
+      enabled: true
+      type: configMap
+      name: "fixture-localai-config"
+      advancedMounts:
+        main:
+          model:
+            - path: /config
+              readOnly: true
   template:
     metadata:
       name: '{{ .appName }}'
