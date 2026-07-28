@@ -123,18 +123,23 @@ data:
 {{- if $cfg.model.extra }}{{- $_ := set $rev "extra" $cfg.model.extra }}{{- end }}
 {{- /* NB: review.fallback_model is intentionally NOT mapped — the review failover model was removed
        (lightbridge-ci ADR-0053 / #208); a single model + retry/backoff + circuit breaker replaces it. */}}
-{{- /* Two-tier review (lightbridge-ci ADR-0062) → agent.json review.fast / review.deep. Each tier is a
-       COMPLETE, independent block: it shares the gateway (env) + system prompt (mounted file), and carries
-       its OWN model + generation/budget knobs. Set per tier in ai-helm-values (config.model.fast.* /
-       config.model.deep.*); `fast` is the automatic PR-opened pass (cheap model, single diff-only turn —
-       the runner enforces 1 turn + no retrieval regardless of maxTurns), `deep` is the `@mention` run
-       (strong model, long timeout). When a tier is unset the runner falls back to the flat review.* above.
-       ⚠️ REQUIRES a runner image carrying review.fast/review.deep (lightbridge-ci #233) before these are
-       set, else deny_unknown_fields fails every Job (ship the runner first). */}}
+{{- /* Named review presets (lightbridge-code-intelligence ADR-0103) → agent.json review.presets.<name>.
+       Each preset is a COMPLETE, independent block: it shares the gateway (env) + system prompt (mounted
+       file), and carries its OWN model + generation/budget knobs. Set per tier in ai-helm-values
+       (config.model.fast.* / config.model.deep.*) — the values key names are unchanged by ADR-0103,
+       only the rendered JSON's nesting moved under `presets`. `fast` is the automatic PR-opened pass
+       (cheap model, single diff-only turn — the runner enforces 1 turn + no retrieval regardless of
+       maxTurns), `deep` is the `@mention` run (strong model, long timeout). A preset absent from
+       `presets` falls back to the flat review.* above.
+       ⚠️ REQUIRES a runner image carrying review.presets (lightbridge-code-intelligence #527) before
+       this is set, else deny_unknown_fields fails every Job — a runner older than #527 instead expects
+       these nested directly under review.fast/review.deep (ship the runner first when bumping either
+       shape). */}}
 {{- /* Truthiness guards (NOT `ne (toString …) ""`): an unset key in a `{}` tier block is nil, and
        `toString nil` is "<nil>" (≠ ""), which would emit a JSON `null` the runner rejects. Truthiness
        skips nil / "" / 0 / false cleanly. The whole tier is gated on a non-empty `model` so the default
        (empty `fast: {}` / `deep: {}`) emits nothing → the runner uses the flat review.* (back-compat). */}}
+{{- $presets := dict }}
 {{- range $tier := list "fast" "deep" }}
 {{- $tv := index $cfg.model $tier }}
 {{- if and $tv $tv.model }}
@@ -191,9 +196,10 @@ data:
        plugin dropped). REQUIRES a runner image carrying review.<tier>.opencode
        (lightbridge-code-intelligence #464) before this is set, else deny_unknown_fields fails every Job. */}}
 {{- if $tv.opencode }}{{- $_ := set $t "opencode" $tv.opencode }}{{- end }}
-{{- $_ := set $rev $tier $t }}
+{{- $_ := set $presets $tier $t }}
 {{- end }}
 {{- end }}
+{{- if $presets }}{{- $_ := set $rev "presets" $presets }}{{- end }}
 {{- $_ := set $ag "review" $rev }}
 {{- /* Deterministic SAST pass (lightbridge-ci ADR-0061) → agent.json `sast`. opengrep scans the PR's
        changed files in the runner; findings ride the EXISTING review buffer (no second poster) and the
