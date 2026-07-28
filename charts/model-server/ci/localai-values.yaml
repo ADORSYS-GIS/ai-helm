@@ -27,7 +27,7 @@ pvc:
   name: "fixture-localai-weights"
   storageClassName: "longhorn"
   accessMode: ReadWriteMany
-  size: "40Gi"
+  size: "100Gi"
 
 hfToken:
   # No seed Job for this engine — it downloads its own weights, so there is no
@@ -140,14 +140,26 @@ modelServing:
             # exact accepted form for a gallery reference is the FIRST thing the
             # load gate must confirm — it is read by InstallModels(... models
             # ...string) and cannot be settled by rendering.
-            MODELS: "fixture-localai-diffusers"
+            MODELS: "Z-Image-Turbo"
             # Both paths live on the weights PVC, so neither the model nor the
             # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
             # the one that is easy to forget: LocalAI pulls its inference backend
             # from a gallery at boot, and without persistence that repeats every
             # time the pod moves.
             MODELS_PATH: "/models/fixture-localai/models"
-            BACKENDS_PATH: "/models/fixture-localai/backends"
+            BACKENDS_PATH: "/models/fixture-localai/backends"# ⚠️ EAGER LOAD. Without this the backend loads on the FIRST REQUEST,
+            # and `/readyz` — which gates on the model INSTALL, i.e. the download
+            # — reports the pod Ready long before it can serve anything. That is
+            # how a fully green ArgoCD tree sat in front of a model that returned
+            # 500, with 5 MiB of VRAM in use.
+            #
+            # `LOAD_TO_MEMORY` moves the load into the startup sequence readiness
+            # actually waits on, which restores the contract the text engines
+            # give us: Ready means loaded. It is also why the startup budget
+            # below is hours — the load now happens BEFORE Ready, not after.
+            #
+            # WATCHDOG_IDLE defaults to false, so once loaded it stays loaded.
+            LOAD_TO_MEMORY: "Z-Image-Turbo"
             # The engine enforces this itself — no auth-proxy sidecar, for any
             # engine. `optional: false` so the pod waits for ESO rather than
             # starting with an empty key and accepting every request.
@@ -173,7 +185,7 @@ modelServing:
               spec:
                 httpGet: { path: "/readyz", port: 8080 }
                 periodSeconds: 15
-                failureThreshold: 120
+                failureThreshold: 960
                 timeoutSeconds: 5
             readiness:
               enabled: true

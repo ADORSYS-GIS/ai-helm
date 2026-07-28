@@ -478,15 +478,15 @@ modelServing:
             # time the pod moves.
             MODELS_PATH: {{ printf "%s/models" $dir | quote }}
             BACKENDS_PATH: {{ printf "%s/backends" $dir | quote }}
-            # ⚠️ HALF PRECISION, OR IT CANNOT FIT THE CARD. LocalAI's runtime
-            # auto-tuning logs `f16=false`, and the diffusers backend then loads
-            # the published FP32 weights as FP32 — for Z-Image-Turbo that is
-            # ~33 GB against a 20475 MiB card. Observed live: the backend sat at
-            # 14.5 GB of HOST RAM and climbing with **5 MiB of VRAM in use**,
-            # because nothing had reached the GPU yet and nothing was going to.
-            # At half precision it is ~16.5 GB and fits, which is exactly what
-            # the server this replaced did by forcing BF16.
-            F16: {{ default "true" (toString ($s.f16 | default "")) | quote }}
+            {{- /* ⚠️ DO NOT SET F16 HERE. It looks like a dtype knob and is not:
+                   LocalAI maps it to diffusers' `variant="fp16"`, which selects
+                   differently-NAMED files (`*.fp16.safetensors`). A repo that
+                   publishes only FP32, as Tongyi-MAI/Z-Image-Turbo does, has no
+                   such variant and the backend dies at load with
+                   "You are trying to load model files of the `variant=fp16`,
+                   but no such modeling files are available". Casting dtype is a
+                   different thing entirely. Precision on this fleet comes from
+                   the QUANTIZATION in the gallery entry instead. */ -}}
             # ⚠️ EAGER LOAD. Without this the backend loads on the FIRST REQUEST,
             # and `/readyz` — which gates on the model INSTALL, i.e. the download
             # — reports the pod Ready long before it can serve anything. That is
