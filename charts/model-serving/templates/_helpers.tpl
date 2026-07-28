@@ -478,6 +478,15 @@ modelServing:
             # time the pod moves.
             MODELS_PATH: {{ printf "%s/models" $dir | quote }}
             BACKENDS_PATH: {{ printf "%s/backends" $dir | quote }}
+            # ⚠️ HALF PRECISION, OR IT CANNOT FIT THE CARD. LocalAI's runtime
+            # auto-tuning logs `f16=false`, and the diffusers backend then loads
+            # the published FP32 weights as FP32 — for Z-Image-Turbo that is
+            # ~33 GB against a 20475 MiB card. Observed live: the backend sat at
+            # 14.5 GB of HOST RAM and climbing with **5 MiB of VRAM in use**,
+            # because nothing had reached the GPU yet and nothing was going to.
+            # At half precision it is ~16.5 GB and fits, which is exactly what
+            # the server this replaced did by forcing BF16.
+            F16: {{ default "true" (toString ($s.f16 | default "")) | quote }}
             {{- with $s.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
