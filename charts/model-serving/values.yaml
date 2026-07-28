@@ -486,53 +486,39 @@ models:
     enabled: true
     engine: localai
     serving:
-      # ⚠️ WE OWN THIS CONFIG — no `galleryModel` (ADR-0103). It is copied from
-      # LocalAI's `Z-Image-Turbo` ggml entry and then CORRECTED in two places
-      # that cost real latency, plus one that cost reproducibility:
+      # ⚠️ REVERTED TO THE GALLERY ENTRY 2026-07-28. ADR-0103 (own the model
+      # config) is a good idea that does not work yet, and this is the
+      # known-good configuration: it generated images at 94.2 s / 1024x1024.
       #
-      #   step: 25 → 8        The gallery ships 25 steps for a model DISTILLED
-      #                       FOR 8. That is ~3x the work for no quality gain —
-      #                       the whole point of the "Turbo" variant.
-      #   offload_params_to_cpu  REMOVED. It keeps parameters in host RAM and
-      #                       streams them to the card: measured 815 MiB of VRAM
-      #                       used out of 20475, i.e. the GPU sitting idle while
-      #                       the PCIe bus did the work. Sensible on a small
-      #                       card, wasteful on ours.
-      #   sha256 per file     Now pinned BY US, in git. ADR-0102 recorded losing
-      #                       the pinned-SHA guarantee as the main cost of
-      #                       adopting LocalAI; `download_files` takes checksums,
-      #                       so writing the config ourselves gets it back.
+      # What went wrong: with `MODELS_CONFIG_FILE` pointing at our own config,
+      # LocalAI read the model NAME but not `parameters.model` —
+      #     BackendLoader starting model="z-image-turbo"        (ours, broken)
+      #     BackendLoader starting model="z_image_turbo-Q4_0.gguf"  (gallery, works)
+      # — so the backend was handed the model id where it expected a weights
+      # file and failed with a bare `rpc error: could not load model`. Installing
+      # the backend explicitly (EXTERNAL_BACKENDS) did not change it.
       #
-      # The URIs and checksums are the gallery's (verified against
-      # gallery/index.yaml); the tuning is ours.
-      # Installed at boot from LocalAI's BACKEND gallery. Required because we
-      # supply the model config ourselves: naming a gallery model used to pull
-      # its backend as a side effect, and we no longer name one. LocalAI prefers
-      # the CUDA variant, so that is what we install.
-      backends:
-        - cuda12-stablediffusion-ggml
-      modelConfig: |
-        - name: z-image-turbo
-          backend: stablediffusion-ggml
-          # Distilled model: low guidance is correct, and 8 steps is the design.
-          cfg_scale: 1
-          step: 8
-          options:
-            - diffusion_model
-            - llm_path:Qwen3-4B.Q4_K_M.gguf
-            - vae_path:ae.safetensors
-          parameters:
-            model: z_image_turbo-Q4_0.gguf
-          download_files:
-            - filename: z_image_turbo-Q4_0.gguf
-              sha256: 14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd
-              uri: https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_K.gguf
-            - filename: Qwen3-4B.Q4_K_M.gguf
-              sha256: a37931937683a723ae737a0c6fc67dab7782fd8a1b9dea2ca445b7a1dbd5ca3a
-              uri: huggingface://MaziyarPanahi/Qwen3-4B-GGUF/Qwen3-4B.Q4_K_M.gguf
-            - filename: ae.safetensors
-              sha256: afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38
-              uri: https://huggingface.co/ChuckMcSneed/FLUX.1-dev/resolve/main/ae.safetensors
+      # ⚠️ THIS IS A PAUSE, NOT A VERDICT — and the likely fix is known.
+      #
+      # The gallery's `config_file:` block IS a model config; LocalAI writes it
+      # as a YAML file INTO `MODELS_PATH` and reads it from there. We tried to
+      # inject the same content by a different route — MODELS_CONFIG_FILE, which
+      # takes a LIST — and `parameters.model` did not survive that path. The next
+      # attempt should put our config where the engine already looks: an
+      # initContainer copying the ConfigMap to `MODELS_PATH/<model>.yaml`, i.e.
+      # exactly what the gallery does, with our values instead of theirs.
+      #
+      # We stopped here because the model was DOWN and FEDERATED for 95 minutes,
+      # not because the idea is wrong. The mechanism stays in the charts
+      # (`serving.modelConfig`, `serving.backends`) and is exercised by the CI
+      # fixture, so re-enabling it is a values change plus that initContainer.
+      #
+      # ⚠️ COST OF THE REVERT: back to the gallery's tuning — `step: 25` on a
+      # model distilled for 8 (~3x the work for nothing) and
+      # `offload_params_to_cpu: true`, which left 815 MiB of a 20475 MiB card in
+      # use. Both are real waste and both are recorded as follow-ups. Service
+      # first; the optimisation is worth having but not worth an outage.
+      galleryModel: Z-Image-Turbo
     weights:
       # No hfRepo/revision: LocalAI fetches from its own gallery. `sizeGi` still
       # applies — the volume holds the weights AND the downloaded backend.
