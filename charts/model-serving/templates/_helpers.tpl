@@ -559,11 +559,15 @@ modelServing:
             # below is hours — the load now happens BEFORE Ready, not after.
             #
             # WATCHDOG_IDLE defaults to false, so once loaded it stays loaded.
-            {{- if $s.modelConfig }}
-            LOAD_TO_MEMORY: {{ $name | quote }}
-            {{- else }}
+            #
+            # ⚠️ This is the name INSIDE the model config — `name:` — not the
+            # catalog key. They are usually different: LocalAI serves a model
+            # under whatever DEFINES it, so a gallery entry is served under the
+            # gallery's name (`Z-Image-Turbo`), not ours (`z-image-turbo`). This
+            # briefly used the catalog key and asked LocalAI to preload a model
+            # that did not exist, which surfaces as the same opaque
+            # "load is in cooldown" cascade as a missing backend.
             LOAD_TO_MEMORY: {{ $s.galleryModel | default $name | quote }}
-            {{- end }}
             {{- with $s.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

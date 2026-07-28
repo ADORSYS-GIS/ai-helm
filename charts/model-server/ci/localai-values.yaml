@@ -228,7 +228,15 @@ modelServing:
             # below is hours — the load now happens BEFORE Ready, not after.
             #
             # WATCHDOG_IDLE defaults to false, so once loaded it stays loaded.
-            LOAD_TO_MEMORY: "fixture-localai"
+            #
+            # ⚠️ This is the name INSIDE the model config — `name:` — not the
+            # catalog key. They are usually different: LocalAI serves a model
+            # under whatever DEFINES it, so a gallery entry is served under the
+            # gallery's name (`Z-Image-Turbo`), not ours (`fixture-localai`). This
+            # briefly used the catalog key and asked LocalAI to preload a model
+            # that did not exist, which surfaces as the same opaque
+            # "load is in cooldown" cascade as a missing backend.
+            LOAD_TO_MEMORY: "Z-Image-Turbo"
             # The engine enforces this itself — no auth-proxy sidecar, for any
             # engine. `optional: false` so the pod waits for ESO rather than
             # starting with an empty key and accepting every request.
