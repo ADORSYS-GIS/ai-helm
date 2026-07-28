@@ -24,11 +24,11 @@ Three things, in order:
 
 | | |
 |---|---|
-| Image generation | **Live on the fleet**, served by **LocalAI**, federated through the gateway |
+| Image generation | **Live on the fleet**, served by **LocalAI**, federated, **tuned** — 32.4 s per 1024×1024 |
 | OpenMythos-27B | **Retired** — two cards, two models, so this was a swap |
 | The fleet | `qwen3-8b-fast` (vLLM, text) + `z-image-turbo` (LocalAI, images) |
 | Legacy generation | All eight `charts/model-serving-*` charts now disabled |
-| New ADRs | **0100** image generation on the fleet · **0101** the load gate has no exceptions · **0102** LocalAI instead of a first-party server · **0103** own the model config |
+| New ADRs | **0100** image generation on the fleet · **0101** the load gate has no exceptions · **0102** LocalAI instead of a first-party server · **0103** own the model config · **0104** the GPU cost basis was ~18% wrong |
 | `inference-ops` | ADR-0003 (superseded) → **ADR-0004**, plus a new explanation page on diffusion inference |
 
 Tickets #475 and #476 closed as won't-do/done-by-other-means; #477 closed as
@@ -149,21 +149,41 @@ work for no quality gain) and `offload_params_to_cpu: true` — which produced
 **815 MiB of VRAM used out of 20475**, i.e. a 20 GiB card sitting idle while the
 PCIe bus did the work.
 
-**Fix (ADR-0103):** own the model config. `serving.modelConfig` renders a
-ConfigMap applied via `MODELS_CONFIG_FILE`. As a bonus this **recovers the
-pinned-SHA guarantee** ADR-0102 recorded as the main cost of adopting LocalAI —
-`download_files` takes a `sha256` per file, so the bytes are pinned by us, in
-git.
+**Fix (ADR-0103), and it took four attempts to land.** Owning the config is
+right; reaching the engine with it was not obvious:
+
+| Attempt | Result |
+|---|---|
+| `PRELOAD_MODELS_CONFIG` | It is a list of **gallery sources** needing a `url` — died with `unsupported protocol scheme ""` |
+| `MODELS_CONFIG_FILE` | Read the model NAME but not `parameters.model` |
+| initContainer overwriting `Z-Image-Turbo.yaml` | LocalAI logs `installing model` on **every** start and rewrote it — measured proof: latency and VRAM bit-identical to untuned |
+| **initContainer writing `z-image-turbo.yaml`** | ✅ Works — our own filename, which the gallery has no reason to touch |
+
+The engine reads plain `<name>.yaml` files from `MODELS_PATH`. That is the only
+mechanism; the first three attempts were ways of trying to reach it sideways.
+
+**Result: 94.2 s → 32.4 s per 1024×1024 (2.9×), VRAM 815 MiB → 7985 MiB.** The
+output is visibly *better*, not merely faster — 8 steps is what this model was
+distilled for. The VRAM jump is the parameters moving onto the card instead of
+streaming over PCIe on every step.
+
+⚠️ The third attempt is the one worth remembering: it deployed green, the pod was
+healthy, the initContainer log showed the right config — and the tuning was
+silently discarded. Only re-measuring caught it.
 
 ### 4.9 The pricing basis was wrong fleet-wide
 
-ADR-0096 derives **every** self-hosted price from **€184/month** for a GEX44. The
-real figure is **~$234/month** — about 18% higher. That under-recovers on
-`qwen3-8b-fast` too. It needs an ADR superseding 0096; it is not a values edit.
+ADR-0096 derived **every** self-hosted price from **€184/month** for a GEX44. The
+real figure is **~$234/month ≈ €217** — about 18% higher — so *every* price was
+under-recovering, `qwen3-8b-fast` included. Fixed by **ADR-0104**, which
+supersedes 0096 on the basis (the method is unchanged) and sets a rule:
+**re-derive from measured throughput, never scale the old number.** Scaling a
+stale measurement by a corrected basis produces a figure that looks fixed and is
+not.
 
-Compounding it: ADR-0096 also applies a **3.45× duty-cycle uplift** inherited
-from the old A2000 that has never been measured on this fleet. One input
-confirmed wrong, another unverified, in the same formula.
+⚠️ Still unverified: the **3.45× duty-cycle uplift**, inherited from the old
+A2000 and never measured here. It is the only guessed term left in the formula,
+and $234 is a list price rather than an invoice.
 
 ## 5. How LocalAI actually works
 
@@ -224,26 +244,32 @@ Two things only the gate could have caught:
 
 ## 7. Where things stand
 
-**Working:** image generation live and federated; `qwen3-8b-fast` untouched
-throughout; `/metrics` restored for the image tier; alerting extended with an
-engine-independent `ms-model-unavailable` rule (because `up{namespace="inference"}`
-cannot see an engine that publishes nothing).
+**Working, measured, and federated:** image generation at **32.4 s per
+1024×1024** (median of three), priced at **$0.0100/image** derived from that
+measurement; `qwen3-8b-fast` untouched throughout, at corrected prices;
+`/metrics` restored for the image tier; an engine-independent
+`ms-model-unavailable` alert, because `up{namespace="inference"}` cannot see an
+engine that publishes nothing.
+
+Also done in passing: all six internal-only models now carry an **`-internal`
+suffix** so external clients can tell them apart in `/v1/models` (a coordinated
+cross-repo rename — the id is the routing key), and **31 GB of abandoned FP32
+download** reclaimed from the weights volume.
 
 **Open:**
 
-1. **Re-measure and re-price.** Both inputs changed at once — the hardware cost
-   ($234 not €184) and the latency (`step: 25 → 8`, params moved to the GPU).
-   The current `0.0246` is the last honestly-measured figure, carried with its
-   provenance written down.
-2. **An ADR superseding 0096** for the pricing basis.
-3. **Stale model configs on the PVC** from the two abandoned approaches
-   (`z-image-turbo-diffusers`, `Z-Image-Turbo`) are still advertised in
-   `/v1/models`. The gateway cannot reach them; the diffusers one is
-   known-broken.
-4. **The backend is unpinned and unverified.** LocalAI resolves it at runtime
+1. **The 3.45× duty-cycle uplift** is the only guessed term left in the pricing
+   formula — inherited from the old A2000, never measured here. And $234 is a
+   list price, not an invoice.
+2. **`/v1/models` lists two image models** — the gallery's `Z-Image-Turbo`
+   (unused) alongside our `z-image-turbo` (served). The gateway pins ours.
+   Closing it means dropping the gallery install and carrying `download_files`
+   ourselves, which is where ADR-0103 was heading.
+3. **The backend is unpinned and unverified.** LocalAI resolves it at runtime
    from a `latest` tag, without signature verification. Our pinned *server* tag
    does not cover the thing that actually executes the model.
-5. **Delete the eight legacy `model-serving-*` charts** — now unblocked.
+4. **Delete the eight legacy `model-serving-*` charts** — unblocked since the
+   whole generation is disabled.
 
 ## 8. If you read nothing else
 

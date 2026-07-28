@@ -687,23 +687,28 @@ models:
       # display name advertised a quantization this model has never had.
       displayName: "Z-Image-Turbo (self-hosted, image generation)"
     pricing:
-      # ⚠️ PROVISIONAL — pending a re-measure. Two inputs changed at once:
+      # ✅ MEASURED ON THE TUNED CONFIGURATION, 2026-07-28. Both corrections that
+      # were pending have now landed, and they pull in opposite directions:
       #
-      #   1. ✅ THE HARDWARE COST — now FIXED by ADR-0104. The basis was €184/mo
-      #      for a GEX44; the machine is ~$234/mo (€217), so €/hour is 0.2968 and
-      #      every fleet price was ~18% low. Corrected for the text tier; this
-      #      entry still waits on (2).
-      #   2. `step: 25 → 8` and params moved off the CPU (ADR-0103), which should
-      #      cut latency substantially. The 94.2 s that produced 0.0246 was
-      #      measured on the OLD config and is now stale.
+      #   basis  €184 → €217/mo (ADR-0104)      pushes the price UP
+      #   tuning step 25 → 8, params on the GPU  pushes it DOWN, harder
       #
-      # Left at 0.0246 deliberately: it is the last honestly-measured number, and
-      # under-pricing a model nobody has re-measured is worse than carrying a
-      # figure with its provenance written down. Re-derive as
-      # ($234/730h) ÷ (3600/measured_seconds) × 3.45 once the new latency is known.
+      #   €217/mo ÷ 730 h           = €0.2973/hour
+      #   3600 ÷ 32.4 s             = 111.1 images/hour
+      #   €0.2973 ÷ 111.1           = €0.00268/image raw
+      #   × 3.45 duty-cycle uplift  = €0.00923  ≈ $0.0100
+      #
+      # Latency measured three times at 1024x1024: 34.30 / 32.18 / 32.38 s,
+      # median 32.4 — against 94.2 s before the tuning. 2.9x, and the output is
+      # visibly better, not merely faster: 8 steps is what this model was
+      # distilled for. VRAM went 815 MiB → 7985 MiB, which is the parameters
+      # moving onto the card instead of streaming over PCIe every step.
+      #
+      # ⚠️ The 3.45x duty-cycle uplift is still INHERITED, not measured on this
+      # fleet (ADR-0104). It is now the only unverified term left in this figure.
       strategy: flatPerRequest
       standard:
-        effectivePerRequest: 0.0246
+        effectivePerRequest: 0.0100
     backends:
       z-image-turbo-local:
         ref: z-image-turbo-local
