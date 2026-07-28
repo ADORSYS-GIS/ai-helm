@@ -302,12 +302,76 @@ FP32 download** reclaimed from the volume.
 
 ## Related
 
-- ADRs: [0100](../adr/0100-image-generation-on-the-gpu-fleet.md) ·
-  [0101](../adr/0101-load-gate-before-federation-no-exceptions.md) ·
-  [0102](../adr/0102-localai-instead-of-a-first-party-image-server.md) ·
-  [0103](../adr/0103-own-the-localai-model-config.md) ·
-  [0104](../adr/0104-gpu-cost-basis-correction.md) ·
-  [0105](../adr/0105-pin-and-verify-the-localai-backend.md)
-- Pattern: [`../patterns/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md)
-- Open punch-list: [`2026-07-27-gpu-fleet-followups.md`](2026-07-27-gpu-fleet-followups.md)
-- Inference knowledge: `inference-ops` — ADR-0004, `explanation/diffusion-vs-autoregressive.md`
+### Written this session
+
+| ADR | Decision |
+|---|---|
+| [0100](../adr/0100-image-generation-on-the-gpu-fleet.md) | Image generation joins the fleet as a third engine profile; OpenMythos-27B retired to free the card |
+| [0101](../adr/0101-load-gate-before-federation-no-exceptions.md) | The load gate has **no migration exception** — a model is federated only once measured on the hardware it runs on |
+| [0102](../adr/0102-localai-instead-of-a-first-party-image-server.md) | Serve images with **LocalAI**; delete the first-party Rust server. *Supersedes 0100's engine choice* |
+| [0103](../adr/0103-own-the-localai-model-config.md) | Own the model config — the gallery's tuning is for someone else's hardware |
+| [0104](../adr/0104-gpu-cost-basis-correction.md) | The GPU cost basis was **~18% low, fleet-wide**. *Supersedes [0096](../adr/0096-gex44-fleet-cost-recovery-pricing.md)* |
+| [0105](../adr/0105-pin-and-verify-the-localai-backend.md) | Pin **and verify** the backend; define the model ourselves. *Closes 0102's two recorded gaps* |
+
+`inference-ops`: [ADR-0004](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/adr/0004-off-the-shelf-image-serving.md)
+— survey the *servers*, not the libraries and UIs. *Supersedes its ADR-0003.*
+
+### The serving decisions this stands on
+
+Read these before changing how a model is served — every one of them constrained
+something above.
+
+| ADR | Why it matters here |
+|---|---|
+| [0094](../adr/0094-generic-model-serving-orchestrator.md) | The orchestrator + generic leaf, and the **engine-profile contract**: an engine is a profile plus a `ci/` fixture. ADR-0100 was a test of whether that held for a non-text engine |
+| [0095](../adr/0095-cluster-local-model-federation.md) | Cluster-local federation — no Ingress, cert, DNS or public edge. Why moving off the home GPU was the point, not a detail |
+| [0097](../adr/0097-engine-agnostic-serving-hardening.md) | Hardening as fleet **policy** with a per-engine mapping. The first-party server could not honour its CORS pin; LocalAI can |
+| [0098](../adr/0098-deployment-recreate-instead-of-statefulset.md) | `Deployment` + `Recreate`. Why a crash-looping pod self-heals on merge — which mattered a great deal tonight |
+| [0092](../adr/0092-longhorn-for-hetzner-gpu-nodes.md) | Longhorn on the GPU nodes only, and **not** the default StorageClass. The volume every disk lesson here happened on |
+| [0022](../adr/0022-self-hosted-gpu-model-federated-into-gateway.md) | The **previous generation** — public edge, static Bearer, `homeCluster: true`. Superseded in shape; useful for reading the commented-out entries |
+
+`inference-ops`: [ADR-0002](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/adr/0002-engine-selection-matrix.md)
+— the weight format selects the engine, for **language** models. ADR-0004 extends
+it: read the model *family* first.
+
+### Cost and pricing
+
+| ADR | Why it matters here |
+|---|---|
+| [0028](../adr/0028-owned-hardware-model-pricing.md) | The **method**: cost recovery on owned hardware, €/hour ÷ measured throughput. Unchanged by anything this session |
+| [0096](../adr/0096-gex44-fleet-cost-recovery-pricing.md) | The original fleet basis. **Superseded by 0104** — the method was right, the €184 was not |
+| [0104](../adr/0104-gpu-cost-basis-correction.md) | The correction, and the rule that came with it: **re-derive from measured throughput, never scale the old number** |
+
+### The documents that changed, and what each is for
+
+**In this repo** — *how to render and deploy*:
+
+| Document | Why you would open it |
+|---|---|
+| [`../patterns/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) | **Start here to add or change a model.** The three-engine table, the catalog-entry shapes, and the gotcha list every failure below was added to |
+| [`charts/model-serving/values.yaml`](../../charts/model-serving/values.yaml) | The catalog itself. Densely commented on purpose — the engine profiles carry the reasoning next to the knob |
+| [`charts/ai-models/values.yaml`](../../charts/ai-models/values.yaml) | The gateway catalog, and the **id-suffix convention** (`-internal` / `-local`) at the top |
+| [`2026-07-27-gpu-fleet-followups.md`](2026-07-27-gpu-fleet-followups.md) | The live punch-list. Entries are closed in place with what actually happened, not deleted |
+| [`../architecture/09-model-serving.md`](../architecture/09-model-serving.md) | The subsystem map — engines, placement, the legacy generation |
+| [`../architecture/07-data-secrets.md`](../architecture/07-data-secrets.md) | Storage: the two unrelated Longhorns, and why the home one now holds orphaned data |
+| [`../arc42.md`](../arc42.md) | §5 building blocks · §9 decisions · §11 **risks** — the four new ones are worth a read on their own |
+| [`../README.md`](../README.md) · [`../adr/README.md`](../adr/README.md) | The indexes. Every ADR summary above is expanded there |
+| [`../../CLAUDE.md`](../../CLAUDE.md) | The agent/contributor contract. Carries the rules that are cheap to state and expensive to rediscover — build-first, CUDA-12, "Ready does not mean loaded" |
+| [`tools/check-model-catalogs.sh`](../../tools/check-model-catalogs.sh) | The CI guard that a federated model has a server behind it. Note what it does **not** witness — it keys on backends, not model entries |
+
+**In `inference-ops`** — *the inference knowledge; put it there, not here*:
+
+| Document | Why you would open it |
+|---|---|
+| [`explanation/diffusion-vs-autoregressive.md`](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/explanation/diffusion-vs-autoregressive.md) | **Read before proposing an image model.** Why there is no KV cache, why the published precision is not the served precision, why latency is a fixed cost |
+| [`how-to/measure-a-model.md`](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/how-to/measure-a-model.md) | The load gate. **§8 is the image-model gate** — and says to look at the image, because a well-formed response can be noise |
+| [`how-to/add-a-model.md`](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/how-to/add-a-model.md) | The recipe, family-first: diffusion → LocalAI, GGUF → llama.cpp, safetensors → vLLM |
+| [`reference/model-catalog.md`](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/reference/model-catalog.md) | What is deployed and what was measured. OpenMythos's record is preserved under *Retired* |
+| [`reference/observability.md`](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/reference/observability.md) | Dashboards, metrics and alert rules — including why `up{namespace="inference"}` is not enough |
+| [`runbooks/model-wont-load-or-oom.md`](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/runbooks/model-wont-load-or-oom.md) | Symptom → cause. Gained the lazy-load deadlock and the wrong-compute-capability failure |
+| [`watchlist.md`](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/watchlist.md) | Ecosystem triage — CUDA-13 default tags, `vllm-omni` gaining diffusion, and *survey the servers* |
+| [`reference/glossary.md`](https://github.com/ADORSYS-GIS/inference-ops/blob/main/docs/reference/glossary.md) | DiT, VAE, latent, CFG, distilled steps — added the week they were first used |
+
+> **The split, since it is easy to get wrong:** ai-helm ADRs own the **GitOps
+> shape**; `inference-ops` ADRs own the **inference decisions**. Chart mechanics
+> here, VRAM and quantization and benchmarks there.
