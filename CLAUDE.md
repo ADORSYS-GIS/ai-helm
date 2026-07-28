@@ -179,7 +179,7 @@ The historical **tag-based** model (ADR-0031, `release-YYYY.MM.DD` + `release.sh
 - **Workloads → `home-remote`.** Driven by `argocd.destination` (`name` / `server` / `allowInCluster`) in `charts/{apps,ai-models,librechart}/values.yaml`. Never use ArgoCD's built-in in-cluster handle (`name: in-cluster` / `server: https://kubernetes.default.svc`) for a workload — even if it resolves to the same physical cluster, it's a different ArgoCD destination. The helper `<chart>.argocd.destinationClusterRef` (each chart's `templates/_helpers.tpl`) **hard-fails the render** if a workload destination resolves to the in-cluster handle unless `allowInCluster: true`.
 - **Control objects → local cluster / argocd.** In `charts/apps`, an app whose deployed content is itself a control object (an orchestrator emitting an ApplicationSet — `models`→`charts/ai-models`, `librechat`→`charts/librechart`) sets **`controlPlane: true`** on its entry. The template then targets `argocd.inClusterServer` (**`server: https://kubernetes.default.svc`** — the canonical local-cluster ref, used instead of the `name: in-cluster` handle which depends on that registration existing) / `argocd.controlPlaneNamespace` (`argocd`) and bypasses the guard. The orchestrators' ApplicationSet `template.spec.destination` (the **child** Applications) stays `home-remote`.
 - **The root `ai-apps-v2` Application** (its `targetRevision` pinned in `home-os` `charts/cd/values.yaml` — there is no `ai-gitops`) deploys `charts/apps` and **must itself target in-cluster/argocd** so the generated Application CRs land where the controller watches.
-- **`homeCluster: true` — the ONE sanctioned ADR-0017 exception (ADR-0022), now LEGACY-ONLY (ADR-0095).** A *workload* (not a control object) that must run on the cluster ArgoCD itself runs on — the `model-serving-*` apps needing the home RTX A2000 (`model-serving-zimage-turbo` is the live one). They target `argocd.inClusterServer` but keep their own workload namespace (unlike `controlPlane`, which forces `argocd`), and the destination guard is called with `allowInCluster: true`. ⚠️ **New GPU workloads must NOT use this** — the Hetzner GPU nodes are on `home-remote`, so `charts/model-serving` children are ordinary workloads. The exception is scoped to the `admin@homeos` generation and retires with it. Don't add more `homeCluster` apps without an ADR.
+- **`homeCluster: true` — the ONE sanctioned ADR-0017 exception (ADR-0022), now LEGACY-ONLY (ADR-0095).** A *workload* (not a control object) that must run on the cluster ArgoCD itself runs on — the `model-serving-*` apps needing the home RTX A2000 (all now `enabled: false`). They target `argocd.inClusterServer` but keep their own workload namespace (unlike `controlPlane`, which forces `argocd`), and the destination guard is called with `allowInCluster: true`. ⚠️ **New GPU workloads must NOT use this** — the Hetzner GPU nodes are on `home-remote`, so `charts/model-serving` children are ordinary workloads. The exception is scoped to the `admin@homeos` generation and retires with it. Don't add more `homeCluster` apps without an ADR.
 
 Don't re-hardcode a cluster name in the templates (the old `lke560142-ctx` magic string is gone). The render-time guard is complemented out-of-band by the `ai` AppProject's `destinations:` allowlist. See ADR-0017.
 
@@ -371,11 +371,34 @@ control. **Adding/replacing a model = ONE ~15-line entry in
 entry to make it user-reachable). Do NOT create a new chart per model.
 - Engine profiles live in the ORCHESTRATOR's `_helpers.tpl` — a Helm parent can't
   compute SUBCHART values at render time, which is why the old charts hardcoded
-  their seed repo/glob. Both `llamacpp` and `vllm` (opt-in LMCache) render **ONE
-  container**; the optional `apiKey` is enforced natively by each engine
-  (`--api-key-file` / `VLLM_API_KEY`). **Caddy was only ever needed for
+  their seed repo/glob. **THREE profiles: `llamacpp`, `vllm` (opt-in LMCache) and
+  `localai` (IMAGE GENERATION, ADR-0100/0102)**, each rendering **ONE container**; the
+  optional `apiKey` is enforced natively by every engine, and *how* it is taken is
+  profile DATA (`engines.<name>.apiKey.mode: file|env`), not a template branch —
+  same for `metrics` and `devShm`. **Caddy was only ever needed for
   `kserve/huggingfaceserver`**, which ignores `VLLM_API_KEY` (ADR-0022) and is
   deliberately not an engine profile — don't reintroduce a proxy sidecar.
+- **⚠️ The image engine is `localai` — OFF THE SHELF (ADR-0102).** We briefly
+  maintained a first-party Rust/Candle server for this and should not have: the
+  ADR-0100 survey missed OpenAI-compatible multi-backend servers entirely.
+  `quay.io/go-skynet/local-ai` — **pin the `-gpu-nvidia-cuda-12` tag**, because
+  `master`/`latest` are CUDA 13 against our driver 550 (same trap as
+  `server-cuda13` / `-cu129`). It is shaped differently from the text engines and
+  the profile says so as DATA: `seedJob: false` (LocalAI downloads its own model
+  AND its inference backend, so no seed Job, no HF token, no pinned SHA) and
+  `writableModelStore: true` (so `/models` is mounted RW and must persist
+  `backends/`). Configured by ENV (`MODELS`, `MODELS_PATH`, `BACKENDS_PATH`,
+  `API_KEY`), not flags. ⚠️ With no seed Job there is one controller, so bjw names
+  the Deployment `<model>` and **`deploy/<model>-main` does not exist** for image
+  models. ⚠️ A gallery reference is NOT a pin — the bytes can move under us.
+- **⚠️ Two traps an image model taught us the hard way.** (1) A model's advertised
+  precision is marketing — Z-Image-Turbo is documented everywhere as "FP8, ~8 GB";
+  the diffusers repo is **FP32, ~33 GB**. (2) A server that loads its model
+  **lazily** deadlocks against a readiness-gated `/health`: not-Ready ⇒ no
+  endpoint ⇒ no request ⇒ never loads. Every fleet engine must pre-load at
+  start-up. Both were discovered the expensive way; both are why ADR-0101 says a
+  model is federated only once MEASURED on the hardware it runs on — "it worked
+  on the old hardware" is not evidence.
 - GPU placement is a `nvidia.com/gpu: 1` REQUEST (+ toleration/nodeSelector/
   runtimeClass). 2 cards ⇒ 2 models; a 3rd queues `Pending`. ⚠️ The **seed Job**
   needs the same nodeSelector/toleration despite needing no GPU — Longhorn runs
@@ -387,10 +410,13 @@ entry to make it user-reachable). Do NOT create a new chart per model.
   gateway backend has no server behind it. Serving *without* federating is allowed
   on purpose — that's how a model is load-gated before users can reach it.
 
-*Legacy.* The eight `charts/model-serving-*` charts serve from the OTHER cluster
-(`admin@homeos`) over a public edge with `homeCluster: true`. `zimage-turbo` is
-LIVE there; the rest are its rollback set. **Retained, not deleted** — don't copy
-their shape, and don't "fix" them to match the new pattern. Papers:
+*Legacy.* The eight `charts/model-serving-*` charts targeted the OTHER cluster
+(`admin@homeos`) over a public edge with `homeCluster: true`. ⚠️ **Since
+2026-07-27 (ADR-0100) ALL EIGHT are `enabled: false`** — `zimage-turbo` was the
+last live one and moved to the fleet, so the generation is now a rollback surface
+only and ADR-0094's reason for retaining it is spent. **Retained, not deleted**
+(deleting them is a decommissioning exercise on that cluster) — don't copy their
+shape, and don't "fix" them to match the new pattern. Papers:
 [`docs/models/`](docs/models/).
 
 *Where the knowledge lives.* The GitOps *how* is

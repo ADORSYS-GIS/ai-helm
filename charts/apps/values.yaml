@@ -1034,10 +1034,15 @@ applications:
   # --- Self-hosted model on the home GPU (ADR-0022) ---
   # ⚠️ LEGACY GENERATION (superseded by charts/model-serving above, ADR-0094).
   # These per-model charts each serve one model from the OTHER cluster
-  # (admin@homeos) over a public Ingress. They are kept because zimage-turbo is
-  # still LIVE there and the rest are its rollback set; retiring them is a
-  # decommissioning exercise on that cluster, not a change here. Do NOT copy this
-  # shape for a new model — add a catalog entry to charts/model-serving instead.
+  # (admin@homeos) over a public Ingress.
+  #
+  # ⚠️ As of 2026-07-27 (ADR-0100) EVERY ONE OF THEM IS DISABLED: zimage-turbo,
+  # the last live one, moved to the GPU fleet. The whole generation is now dead
+  # code retained only as a rollback surface, and the reason ADR-0094 gave for
+  # keeping it ("zimage-turbo is live there") no longer holds. Deleting the eight
+  # charts is a decommissioning exercise on that cluster, tracked as a follow-up
+  # — not a change here. Do NOT copy this shape for a new model; add a catalog
+  # entry to charts/model-serving instead.
   # KServe/Knative + vLLM + LMCache serving Qwen3-4B on the home RTX A2000.
   # `homeCluster: true` is the SINGLE sanctioned ADR-0017 exception: this
   # workload targets the cluster ArgoCD runs on (the home Talos cluster) — NOT

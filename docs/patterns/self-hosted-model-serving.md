@@ -66,34 +66,76 @@ helm template x charts/model-server -f /tmp/child.yaml -n inference
 
 ## 3. Engines
 
-| | `llamacpp` | `vllm` |
-|---|---|---|
-| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` |
-| Weights | GGUF (one file via `include`) | safetensors (AWQ/GPTQ/FP8/BF16) |
-| Prefix / health | `/v1` · `/health` | `/v1` · `/health` |
-| Extras | — | opt-in LMCache, `/dev/shm` volume |
-| Containers | **1** | **1** |
+| | `llamacpp` | `vllm` | `localai` |
+|---|---|---|---|
+| Serves | text | text | **images** |
+| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `quay.io/go-skynet/local-ai` ⚠️ pin `-gpu-nvidia-cuda-12` |
+| Weights | GGUF (one file via `include`) | safetensors (AWQ/GPTQ/FP8/BF16) | fetched by the engine from its gallery |
+| Seed Job | yes | yes | **no** — and the mount is writable |
+| Prefix / health | `/v1` · `/health` | `/v1` · `/health` | `/v1` · `/readyz` |
+| API key | file (`--api-key-file`) | env `VLLM_API_KEY` | env `API_KEY` |
+| `/metrics` | yes (`llamacpp:*`) | yes (`vllm:*`) | yes (behind its admin key) |
+| Configured by | flags | flags | **environment** |
+| Containers | **1** | **1** | **1** |
 
 **The weight format selects the engine, not preference** — `inference-ops`
-ADR-0002. Do not serve GGUF on vLLM (~8× throughput regression).
+ADR-0002 for text, ADR-0004 for images. Do not serve GGUF on vLLM (~8× throughput
+regression), and do not look for a diffusion path in either text engine — there
+isn't one.
 
 ⚠️ **CUDA 12 only.** The fleet runs driver 550 / CUDA 12.4, so `server-cuda13`
 will not run.
 
-### On the Caddy sidecar (it is gone, and why it existed)
+### `localai` is off the shelf — and that was a correction (ADR-0102)
 
-Neither engine profile has a proxy sidecar. If a model opts into
-`apiKey.enabled`, **both engines enforce the Bearer themselves**: llama.cpp via
-`--api-key-file` (Secret mounted at `/etc/model-api-key`), vLLM via
-`VLLM_API_KEY`.
+The image tier is **LocalAI** (`quay.io/go-skynet/local-ai`), an OpenAI-compatible
+multi-backend server that serves diffusion models natively. It replaced a
+first-party Rust + Candle server we maintained for one day; ADR-0102 records why
+that was the wrong call and how the survey missed it.
 
-The Caddy auth-proxy in the legacy charts was never a vLLM limitation. It was
-required only by **`kserve/huggingfaceserver`**, KServe's wrapper, which ignores
-`VLLM_API_KEY` outright — ADR-0022 verified that unauthenticated *and* wrong-key
-requests both returned 200. That wrapper is deliberately not an engine profile
-here, so the sidecar has nothing to come back for.
+⚠️ **Pin the CUDA-12 tag.** `master`/`latest` are built against **CUDA 13** and
+these nodes run driver 550 / CUDA 12.4 — the same trap as `server-cuda13` and
+`-cu129`. Use `v4.7.1-gpu-nvidia-cuda-12`.
 
-The key itself is off by default: a cluster-local model has no bypass to defend.
+**It is not shaped like the text engines**, and the profile says so as data:
+
+| | text engines | `localai` |
+|---|---|---|
+| Weights | a **seed Job** pre-places them, pinned to a commit SHA | the engine downloads them itself from its gallery |
+| `/models` mount | **read-only** | **writable** (`writableModelStore: true`) |
+| HF token | required | none — no Hub pull of ours |
+| Backend | in the image | **downloaded at boot** into `BACKENDS_PATH`, which must be on the PVC or it repeats every restart |
+| Configuration | flags | **environment** (`MODELS`, `MODELS_PATH`, `BACKENDS_PATH`, `API_KEY`) |
+
+A catalog entry is a gallery name rather than a repo, a revision and a glob:
+
+```yaml
+  z-image-turbo:
+    enabled: true
+    engine: localai
+    serving:
+      galleryModel: z-image-turbo-diffusers   # also: Z-Image-Turbo (ggml), vllm-omni-z-image-turbo
+    weights:
+      sizeGi: 40                              # weights AND the downloaded backend
+```
+
+⚠️ **Two traps specific to this engine:**
+
+- **`deploy/<model>-main` does not exist.** With no seed Job there is a single
+  controller, and bjw-template then names the Deployment `<model>` — not
+  `<model>-main`, which ADR-0098 standardised every runbook on. Nothing
+  functional depends on it (Service and CiliumNetworkPolicy select on the
+  `ai-helm…/model` label), but your `kubectl logs deploy/<model>-main` will just
+  say `NotFound`.
+- **The gallery reference is not a pin.** A seed Job fetched an exact commit, so
+  the bytes measured were the bytes served. A gallery entry can move under us.
+  The pinned *image* tag and the load gate are what stand in for it; if that
+  proves too loose, mount a model config file we own into `MODELS_PATH`.
+
+On the gateway side an image model needs **`kind: image`** and
+**`pricing.strategy: flatPerRequest`** in `charts/ai-models`: `charts/ai-model`
+then drops the Input/Output/TotalToken cost metadata and the tokens-per-minute
+burst rule, both dead weight when every response carries zero tokens.
 
 ## 4. GPU scheduling
 
@@ -140,12 +182,17 @@ Deployment + Service + ServiceMonitor.
 
 Eight `charts/model-serving-<model>` charts serve from the **other** cluster over
 a public Traefik Ingress with `cert-cloudflare` TLS, a static API key, and
-`homeCluster: true` (ADR-0022). `zimage-turbo` is live there; the rest are its
-rollback set.
+`homeCluster: true` (ADR-0022).
 
-They are **retained, not deleted** — retiring them is a decommissioning exercise on
-that cluster. Do not copy their shape for a new model, and do not "fix" them to
-match this page; they are correct for where they run.
+> **⚠️ As of 2026-07-27 (ADR-0100) every one of them is `enabled: false`.**
+> `zimage-turbo` was the last live one, and it moved to the fleet. The generation
+> is now dead code kept only as a rollback surface — and ADR-0094's stated reason
+> for retaining it ("zimage-turbo is live there") no longer applies. Deleting the
+> eight charts is a decommissioning exercise on that cluster, tracked as a
+> follow-up.
+
+They are **retained, not deleted**. Do not copy their shape for a new model, and
+do not "fix" them to match this page; they are correct for where they ran.
 
 `homeCluster: true` is now scoped to that generation and should retire with it.
 
@@ -211,6 +258,45 @@ match this page; they are correct for where they run.
   or long generations 504 (ADR-0034).
 - **Ampere-era "no FP8" notes are hardware history.** These Ada cards have hardware
   FP8. FP8 is still 8 bits/weight, so it suits small models here, not a 27B.
+- **⚠️ A model's advertised precision is marketing until you check the repo.**
+  Z-Image-Turbo is described everywhere — including in the PR that first deployed
+  it — as "FP8, ~8 GB". The published `Tongyi-MAI/Z-Image-Turbo` weights are
+  **FP32**: transformer 24.62 GB, text encoder 8.05 GB, VAE 0.17 GB, **~33 GB**
+  on disk. A PVC sized from the marketing number fails hours into the seed, with
+  a full volume. Size `weights.sizeGi` from the actual file sizes:
+
+  ```bash
+  for d in transformer text_encoder vae; do
+    curl -s "https://huggingface.co/api/models/<org>/<repo>/tree/main/$d" \
+      | python3 -c 'import sys,json;print(sum((f.get("lfs") or {}).get("size",f.get("size",0)) for f in json.load(sys.stdin))/1e9,"GB")'
+  done
+  ```
+- **⚠️ The weights PVC must fit ~2× the repo, not 1×.** `hf download --local-dir`
+  stages the entire download into `<dir>/.cache/huggingface` and only then
+  materialises the real files, so peak disk is repo **plus** staging copy — and
+  the staging copy is kept afterwards unless something removes it. A 45 GiB
+  volume for a 33 GB repo hit **100% full with 44 GB in `.cache` and the model
+  directories still empty**, which reads like a much bigger download than it is.
+  The seed script now `rm -rf`s the staging area *after* writing the `.seeded`
+  stamp (after, so an interrupted run stays resumable), but the volume still has
+  to survive the peak. Size for 2× + margin. Longhorn can grow a PVC and can
+  never shrink one, so err high.
+- **⚠️ Seed-Job memory is sized by the LARGEST SHARD × workers, not by repo size.**
+  `hf download` fans out over **8 workers by default** and hf_xet buffers per
+  file, so a repo of three ~10 GB safetensors shards needs several times what a
+  single 16 GB GGUF needs — the fleet's 6 GiB default `OOMKilled` (exit 137) the
+  Z-Image-Turbo seed four times in six minutes, while every earlier model passed
+  comfortably. Two knobs, and use both: `weights.seedMaxWorkers` bounds the peak
+  (the real fix) and `weights.seedMemoryLimit` is the margin. Capping workers
+  costs little here — Hub bandwidth is the bottleneck, not concurrency.
+- **⚠️ A server that loads its model LAZILY deadlocks against a readiness gate.**
+  If `/health` is 503 until the weights are loaded, and the weights load on the
+  first request, then: not-Ready ⇒ no Service endpoint ⇒ no request ⇒ never
+  loads ⇒ never Ready. The pod restarts forever and the log says nothing,
+  because nothing has gone wrong. Every engine on this fleet must load
+  **eagerly at start-up** — the two upstream engines do; ours was fixed to
+  (ADR-0100). Suspect this whenever a startup probe burns its whole budget with
+  a quiet, idle process behind it.
 
 ## 9. Verification
 
@@ -232,11 +318,11 @@ measured before users can reach it.
 
 | Topic | Where |
 |---|---|
-| VRAM budgeting, quantization, engine choice | `inference-ops` `docs/explanation/`, ADR-0002 |
+| VRAM budgeting, quantization, engine choice | `inference-ops` `docs/explanation/`, ADR-0002 (text), ADR-0003 (image) |
 | Add / replace / roll back / measure a model | `inference-ops` `docs/how-to/` |
 | Operational failures | `inference-ops` `docs/runbooks/` |
 | Hardware facts, model catalog | `inference-ops` `docs/reference/` |
 | Measured performance | `inference-ops` `docs/benchmarks/` |
-| GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage) |
+| GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage), ADR-0100/0102 (image generation), ADR-0101 (federation gate) |
 | Pricing basis | ADR-0028 |
 | Per-model papers (this repo) | [`../models/`](../models/) — legacy generation |

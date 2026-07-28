@@ -1,0 +1,388 @@
+# CI fixture — the localai (image-generation) engine path (ADR-0102).
+#
+# charts/model-server is a render-only leaf: its templates fail-guard on values
+# the orchestrator injects, so linting it with default (empty) values aborts by
+# design. Chart.yaml carries `lint-mode: ci-values`, so CI lints AND renders each
+# fixture in this directory instead.
+#
+# Generated from the real orchestrator expansion, then renamed — the
+# authoritative check that the two agree is still
+# `helm template x charts/model-serving`.
+#
+# What this fixture covers that the other two do not:
+#   • NO seed Job — LocalAI downloads its own model and backend at start-up.
+#   • therefore NO hfToken, and a WRITABLE /models mount (the text engines mount
+#     it read-only and rely on a seed Job to have filled it).
+#   • configuration by ENV rather than args: MODELS / MODELS_PATH / BACKENDS_PATH.
+#   • no `args:` key at all — an empty one is YAML null and would blank the
+#     image's own command.
+
+model:
+  name: "fixture-localai"
+  engine: "localai"
+  storagePath: "fixture-localai"
+
+pvc:
+  enabled: true
+  name: "fixture-localai-weights"
+  storageClassName: "longhorn"
+  accessMode: ReadWriteMany
+  size: "100Gi"
+
+hfToken:
+  # No seed Job for this engine — it downloads its own weights, so there is no
+  # Hub pull of ours to authenticate.
+  enabled: false
+
+apiKey:
+  enabled: true
+  secretName: "fixture-localai-api-key"
+  dataKey: api_key
+  externalSecret:
+    enabled: true
+    secretStore: "ssegning-aws"
+    refreshInterval: 1h
+    key: "ai/camer/digital/prod/env"
+    property: "vllm_local_api_key"
+# Our own LocalAI model config (ADR-0103): our tuning, our pinned checksums.
+modelConfig: |
+  backend: stablediffusion-ggml
+  name: fixture-localai
+  cfg_scale: 1
+  # ⚠️ 8, not the gallery's 25. Z-Image-**Turbo** is distilled for 8 steps;
+  # 25 is ~3x the sampling work for no quality gain, and step count is the
+  # dominant term in image latency. Measured at 25: 94.2 s per 1024x1024.
+  step: 8
+  options:
+      - diffusion_model
+      - llm_path:Qwen3-4B.Q4_K_M.gguf
+      - vae_path:ae.safetensors
+      # ⚠️ `offload_params_to_cpu:true` is DELIBERATELY ABSENT. The gallery
+      # sets it for small cards; on ours it left 815 MiB of 20475 MiB in
+      # use while parameters streamed over PCIe every step. ~7 GB of
+      # quantized weights fit the card many times over — put them on it.
+  parameters:
+      model: z_image_turbo-Q4_0.gguf
+  # sha256-pinned, so the bytes measured at the load gate are the bytes
+  # served. Digests are the LocalAI gallery's; verified against its
+  # index.yaml rather than trusted from a summary.
+  download_files:
+      - filename: z_image_turbo-Q4_0.gguf
+        sha256: 14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd
+        uri: https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_K.gguf
+      - filename: Qwen3-4B.Q4_K_M.gguf
+        sha256: a37931937683a723ae737a0c6fc67dab7782fd8a1b9dea2ca445b7a1dbd5ca3a
+        uri: huggingface://MaziyarPanahi/Qwen3-4B-GGUF/Qwen3-4B.Q4_K_M.gguf
+      - filename: ae.safetensors
+        sha256: afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38
+        uri: https://huggingface.co/ChuckMcSneed/FLUX.1-dev/resolve/main/ae.safetensors
+  
+
+networkPolicy:
+  allowFromEntities:
+  - host
+  - remote-node
+  - health
+  allowFromNamespaces:
+  - envoy-gateway-system
+  - observability
+  enabled: true
+
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  path: /metrics
+  scrapeTimeout: 10s
+
+# ── bjw-template: the workload ────────────────────────────────────────────────
+modelServing:
+  global:
+    fullnameOverride: "fixture-localai"
+
+  defaultPodOptions:
+    # GPU scheduling is expressed as a RESOURCE REQUEST (see the model container
+    # below), not a hand-assignment to a named node: the scheduler picks a GPU
+    # node with a free card. With N GPUs, the N+1st enabled model simply sits
+    # Pending with `Insufficient nvidia.com/gpu` — a legible queue instead of the
+    # manual "disable that model to enable this one" dance the old charts needed.
+    #
+    # The nodeSelector/toleration are still required, and they apply to the SEED
+    # Job too — not for the GPU, but because Longhorn only runs on the GPU nodes
+    # (ADR-0092), so a pod elsewhere could not mount the weights volume at all.
+    runtimeClassName: "nvidia"
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+    tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
+    labels:
+      # Selector for the CiliumNetworkPolicy, the ServiceMonitor and the Service.
+      ai-helm.adorsys-gis.github.io/model: "fixture-localai"
+
+  controllers:
+    # ── The model server ─────────────────────────────────────────────────────
+    main:
+      # Deployment + `Recreate`, NOT a StatefulSet (ADR-0098, amending ADR-0030).
+      #
+      # `Recreate` is required, not cosmetic: it terminates the old pod fully
+      # before creating the new one, so two pods never contend for the single
+      # `nvidia.com/gpu: 1`. Under RollingUpdate with any surge the new pod would
+      # sit Pending forever waiting for a card the old pod still holds, while the
+      # old pod waits for the new one to be Ready — a deadlock.
+      #
+      # Why not a StatefulSet: it gave the same single-instance guarantee but
+      # defaults to `podManagementPolicy: OrderedReady`, under which the
+      # controller refuses to replace a pod that is not Ready. A CRASH-LOOPING
+      # POD THEREFORE BLOCKS ITS OWN FIX — the corrected chart merges and syncs,
+      # `.spec.template` holds the new args, and the pod keeps running the old
+      # ones indefinitely (currentRevision != updateRevision) until somebody runs
+      # `kubectl delete pod`. This is documented Kubernetes behaviour, not a bug:
+      # see the StatefulSet "Forced rollback" docs. A Deployment has no such
+      # gate — it deletes the old pod and moves on, so a bad config self-heals on
+      # the next merge.
+      #
+      # We use no StatefulSet-only feature: no volumeClaimTemplates (the weights
+      # PVC is our own RWX claim, mounted by existingClaim), no ordinal identity,
+      # no stable network name. So the gate bought us nothing and cost us a
+      # manual step during exactly the incidents where it hurts most.
+      type: deployment
+      strategy: Recreate
+      # One model, one GPU, always on. A deploy is ~1–2 min of downtime while the
+      # replacement loads its weights; single GPU means no HA by construction.
+      replicas: 1
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      pod:
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            type: RuntimeDefault
+      initContainers:
+        # ⚠️ Install our model config INTO MODELS_PATH — the only place LocalAI
+        # was ever reading one from.
+        #
+        # We first tried to inject it via MODELS_CONFIG_FILE and the engine
+        # loaded the model NAME but not `parameters.model`, handing the backend a
+        # model id where it expected a weights file. Inspecting the volume showed
+        # why: a gallery install writes a plain `<name>.yaml` into MODELS_PATH,
+        # and that file — 249 bytes — is what actually drives the backend. So we
+        # write the same file, with our tuning instead of the gallery's.
+        #
+        # Runs before the engine, and overwrites deliberately: the gallery marker
+        # (`._gallery_<name>.yaml`) makes LocalAI skip re-installing an entry it
+        # has already installed, so our version survives start-up.
+        model-config:
+          image:
+            repository: busybox
+            tag: "1.36"
+            pullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              DEST="/models/fixture-localai/models/fixture-localai.yaml"
+              mkdir -p "$(dirname "$DEST")"
+              cp /config/models.yaml "$DEST"
+              echo "installed model config -> $DEST"
+              cat "$DEST"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests: { cpu: "50m", memory: 32Mi }
+            limits:   { cpu: "200m", memory: 64Mi }
+      containers:
+        model:
+          image:
+            repository: "quay.io/go-skynet/local-ai"
+            tag: "v4.7.1-gpu-nvidia-cuda-12"
+            pullPolicy: "IfNotPresent"
+          env:
+            # LocalAI is configured entirely by environment (ADR-0102).
+            #
+            # MODELS is the gallery entry to install and serve at start-up. ⚠️ The
+            # exact accepted form for a gallery reference is the FIRST thing the
+            # load gate must confirm — it is read by InstallModels(... models
+            # ...string) and cannot be settled by rendering.
+            #
+            # ⚠️ `MODELS` STAYS SET even when we supply our own config. The gallery
+            # install is what puts the WEIGHTS and the BACKEND on the volume; it is
+            # not merely a way of naming a model. Dropping it once left LocalAI
+            # preferring a CUDA backend variant that was never installed, whose
+            # failure then put the model into a cooldown that poisoned every
+            # fallback in the same pass — so the log blamed a cooldown for a
+            # missing backend. Our tuning is applied by overwriting the config
+            # file the install writes (see the model-config initContainer), which
+            # LocalAI skips re-installing thanks to its `._gallery_*` marker.
+            EXTERNAL_BACKENDS: "cuda12-stablediffusion-ggml"
+            # Pins the backend IMAGE tag. Defaults to `latest`, which meant the
+            # component that actually executes the model floated while the server
+            # image was pinned (ADR-0105).
+            BACKEND_IMAGES_RELEASE_TAG: "v4.7.1"
+            # Pins the backend GALLERY (default `@master`) and carries the
+            # keyless-cosign verification policy. A gallery without a
+            # `verification` block installs with no signature check at all.
+            BACKEND_GALLERIES: "[{\"name\":\"localai\",\"url\":\"github:mudler/LocalAI/backend/index.yaml@v4.7.1\",\"verification\":{\"identity_regex\":\"^https://github\\\\.com/mudler/local-ai-backends/\\\\.github/workflows/build\\\\.yaml@refs/heads/master$\",\"issuer\":\"https://token.actions.githubusercontent.com\",\"not_before\":\"2026-05-01T00:00:00Z\"}}]"
+            # Both paths live on the weights PVC, so neither the model nor the
+            # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
+            # the one that is easy to forget: LocalAI pulls its inference backend
+            # from a gallery at boot, and without persistence that repeats every
+            # time the pod moves.
+            MODELS_PATH: "/models/fixture-localai/models"
+            BACKENDS_PATH: "/models/fixture-localai/backends"# ⚠️ EAGER LOAD. Without this the backend loads on the FIRST REQUEST,
+            # and `/readyz` — which gates on the model INSTALL, i.e. the download
+            # — reports the pod Ready long before it can serve anything. That is
+            # how a fully green ArgoCD tree sat in front of a model that returned
+            # 500, with 5 MiB of VRAM in use.
+            #
+            # `LOAD_TO_MEMORY` moves the load into the startup sequence readiness
+            # actually waits on, which restores the contract the text engines
+            # give us: Ready means loaded. It is also why the startup budget
+            # below is hours — the load now happens BEFORE Ready, not after.
+            #
+            # WATCHDOG_IDLE defaults to false, so once loaded it stays loaded.
+            #
+            # ⚠️ This is the name INSIDE the model config — `name:` — not the
+            # catalog key. They are usually different: LocalAI serves a model
+            # under whatever DEFINES it, so a gallery entry is served under the
+            # gallery's name (`Z-Image-Turbo`), not ours (`fixture-localai`). This
+            # briefly used the catalog key and asked LocalAI to preload a model
+            # that did not exist, which surfaces as the same opaque
+            # "load is in cooldown" cascade as a missing backend.
+            LOAD_TO_MEMORY: "fixture-localai"
+            # The engine enforces this itself — no auth-proxy sidecar, for any
+            # engine. `optional: false` so the pod waits for ESO rather than
+            # starting with an empty key and accepting every request.
+            API_KEY:
+              secretKeyRef:
+                name: "fixture-localai-api-key"
+                key: api_key
+                optional: false
+          ports:
+            - name: http
+              containerPort: 8080
+          # A model server that binds its port before the weights finish loading
+          # passes a tcpSocket probe in seconds — startup then stops gating and
+          # readiness/liveness kill a still-loading pod in a loop. So: httpGet on
+          # an endpoint that only 200s once loaded, with a long startup budget;
+          # liveness is tcpSocket (kernel-level, won't false-fail a busy server)
+          # and only runs once startup has succeeded. `custom: true` or bjw
+          # derives its own probe from the Service port.
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: "/readyz", port: 8080 }
+                periodSeconds: 15
+                failureThreshold: 960
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: "/readyz", port: 8080 }
+                periodSeconds: 15
+                timeoutSeconds: 10
+                failureThreshold: 3
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket: { port: 8080 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: false
+            runAsUser: 0
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: "4"
+              memory: "12Gi"
+            limits:
+              cpu: "12"
+              # Host RAM, not VRAM. llama.cpp mmaps the GGUF, so the page cache
+              # counts against this limit — size it comfortably above the weights
+              # file, or add --no-mmap. vLLM needs headroom for any LMCache CPU pool.
+              memory: "32Gi"
+              # The GPU itself. Extended resources are requested via limits.
+              nvidia.com/gpu: 1
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      labels:
+        ai-helm.adorsys-gis.github.io/model: "fixture-localai"
+      ports:
+        http:
+          port: 8080
+          targetPort: 8080
+
+  persistence:
+    # ⚠️ WRITABLE, and mounted only by the model. This engine downloads its own
+    # weights AND its inference backend at start-up, so a read-only mount would
+    # fail on first boot — and without persistence it would re-download both on
+    # every restart. There is no seed Job to co-mount it.
+    model-store:
+      enabled: true
+      existingClaim: "fixture-localai-weights"
+      advancedMounts:
+        main:
+          model:
+            - path: /models
+          model-config:
+            - path: /models
+    # Our LocalAI model config. Mounted read-only OUTSIDE the weights volume:
+    # MODELS_PATH is writable and LocalAI owns it, so a config living there would
+    # be fighting the engine for the same directory.
+    model-config:
+      enabled: true
+      type: configMap
+      name: "fixture-localai-config"
+      advancedMounts:
+        main:
+          model-config:
+            - path: /config
+              readOnly: true
+  template:
+    metadata:
+      name: '{{ .appName }}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: "ai"
+      source:
+        # OCI chart-float (ADR-0055): full chart path in repoURL + chart "."
+        repoURL: "oci://ghcr.io/adorsys-gis/charts/model-server"
+        chart: "."
+        targetRevision: ">=0.0.0"
+        helm:
+          releaseName: '{{ .appName }}'
+          values: |
+            {{ .valuesYaml | nindent 12 }}
+      destination:
+        name: "home-remote"
+        namespace: "inference"
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        automated:
+          prune: true
+          selfHeal: true

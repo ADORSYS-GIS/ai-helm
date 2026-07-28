@@ -10,8 +10,8 @@ Same convention as charts/ai-model's guards; see that chart's aigatewayroute.yam
 {{- if not .Values.model.name -}}
 {{- fail "model-server: .Values.model.name is required (the StatefulSet/Service name and the served model id). This chart is not meant to be deployed directly — add an entry to charts/model-serving/values.yaml instead." -}}
 {{- end -}}
-{{- if not (has .Values.model.engine (list "llamacpp" "vllm")) -}}
-{{- fail (printf "model-server: .Values.model.engine must be one of [llamacpp vllm], got %q" .Values.model.engine) -}}
+{{- if not (has .Values.model.engine (list "llamacpp" "vllm" "localai")) -}}
+{{- fail (printf "model-server: .Values.model.engine must be one of [llamacpp vllm localai], got %q" .Values.model.engine) -}}
 {{- end -}}
 {{- if not .Values.model.storagePath -}}
 {{- fail "model-server: .Values.model.storagePath is required (the sub-directory of the weights volume holding this model)" -}}

@@ -1,0 +1,34 @@
+{{- /*
+Our own LocalAI model configuration, mounted and applied at start-up via
+PRELOAD_MODELS_CONFIG.
+
+Why we own this instead of naming a gallery entry (ADR-0103):
+
+  • The gallery's tuning is not ours. Its Z-Image-Turbo entry sets `step: 25` for
+    a model DISTILLED FOR 8, and `offload_params_to_cpu: true` — sensible
+    defaults for a small card, wrong for a 20 GiB one with a ~7 GB quantized
+    model. Both cost latency we do not need to spend.
+  • A gallery reference is not a content pin. ADR-0102 recorded losing the
+    pinned-SHA guarantee as the main cost of adopting LocalAI. `download_files`
+    takes a `sha256` per file, so writing the config ourselves gets it back —
+    the bytes are pinned by US, in git, not by an entry upstream can move.
+
+The file is a LIST of model configs (LocalAI applies each at start-up and
+downloads any `download_files` that are missing).
+*/ -}}
+{{- include "model-server.validate" . -}}
+{{- with .Values.modelConfig }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $.Values.model.name }}-config
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" $ | nindent 4 }}
+  annotations:
+    # Before the model pod (wave 1) — it is mounted at start-up.
+    argocd.argoproj.io/sync-wave: "0"
+data:
+  models.yaml: |
+    {{- . | nindent 4 }}
+{{- end }}
