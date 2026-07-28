@@ -596,11 +596,18 @@ models:
       contextLength: 32768
       maxOutputTokens: 8192
     pricing:
+      # ⚠️ Basis corrected by ADR-0104. Every self-hosted price derived from
+      # ADR-0096's €184/mo for a GEX44; the machine is ~$234/mo (€217), so the
+      # €/hour term goes 0.2521 → 0.2968 and EVERY fleet price was ~18% low —
+      # this one included, not just the image model that prompted the check.
+      #
+      # Re-derived from this model's MEASURED 45 tok/s, not scaled by 1.18:
+      # scaling a stale measurement into a corrected basis only looks like a fix.
       strategy: weighted
       standard:
-        inputPer1M: 0.88
-        cachedInputPer1M: 0.18
-        outputPer1M: 5.85
+        inputPer1M: 1.04
+        cachedInputPer1M: 0.21
+        outputPer1M: 6.89
     backends:
       qwen3-8b-fast-local:
         ref: qwen3-8b-fast-local
@@ -663,11 +670,10 @@ models:
     pricing:
       # ⚠️ PROVISIONAL — pending a re-measure. Two inputs changed at once:
       #
-      #   1. THE HARDWARE COST WAS WRONG FLEET-WIDE. ADR-0096 derives every
-      #      self-hosted price from €184/month for a GEX44. The actual figure is
-      #      ~$234/month — roughly 18% higher — so EVERY fleet price is
-      #      under-recovering, not just this one. That needs an ADR superseding
-      #      0096, not a quiet edit here (see the follow-ups doc).
+      #   1. ✅ THE HARDWARE COST — now FIXED by ADR-0104. The basis was €184/mo
+      #      for a GEX44; the machine is ~$234/mo (€217), so €/hour is 0.2968 and
+      #      every fleet price was ~18% low. Corrected for the text tier; this
+      #      entry still waits on (2).
       #   2. `step: 25 → 8` and params moved off the CPU (ADR-0103), which should
       #      cut latency substantially. The 94.2 s that produced 0.0246 was
       #      measured on the OLD config and is now stale.
