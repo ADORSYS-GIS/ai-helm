@@ -371,6 +371,20 @@ landed and the UI showed the plain normalized label. Listing `name` lets the
 endpoint value replace it; a field only changes when the endpoint actually
 provides one.
 
+`meta.modelsInfoHideTextOnly: true` (models-info plugin ≥ 0.10.0,
+[vymalo/opencode-oauth2@802ce44..cc8fce1](https://github.com/vymalo/opencode-oauth2/commit/cc8fce1eaa62383ac6b6692b37061972e6a77a19))
+makes `/v1/models/info` authoritative for which models the opencode picker
+even offers, not just their metadata: a model is hard-deleted from
+`provider.models` when the catalog reports it as exactly text-in/text-out, or
+when the catalog has no matching entry at all. We turn this on so oauth2's
+`/v1/models` discovery gets a second, plugin-side check that a model actually
+belongs in the picker — on top of the server-side `disableExternal`/`-internal`
+exclusion `charts/ai-model` (AIGatewayRoute `hostnames`) and
+`charts/ai-models-info` (the catalog helper) already apply. ⚠️ Broad blast
+radius: this hides every plain-text chat model, not just the internal ones —
+only multimodal/image models (and any the catalog explicitly reports as
+non-text-only) survive in the picker.
+
 ## Prerequisites the cluster must satisfy
 
 The chart deploys the endpoint, but two things must exist in Keycloak
