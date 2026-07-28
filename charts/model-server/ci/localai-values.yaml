@@ -47,7 +47,7 @@ apiKey:
 # Our own LocalAI model config (ADR-0103): our tuning, our pinned checksums.
 modelConfig: |
   backend: stablediffusion-ggml
-  name: Z-Image-Turbo
+  name: fixture-localai
   cfg_scale: 1
   # ⚠️ 8, not the gallery's 25. Z-Image-**Turbo** is distilled for 8 steps;
   # 25 is ~3x the sampling work for no quality gain, and step count is the
@@ -169,7 +169,7 @@ modelServing:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              DEST="/models/fixture-localai/models/Z-Image-Turbo.yaml"
+              DEST="/models/fixture-localai/models/fixture-localai.yaml"
               mkdir -p "$(dirname "$DEST")"
               cp /config/models.yaml "$DEST"
               echo "installed model config -> $DEST"
@@ -236,7 +236,7 @@ modelServing:
             # briefly used the catalog key and asked LocalAI to preload a model
             # that did not exist, which surfaces as the same opaque
             # "load is in cooldown" cascade as a missing backend.
-            LOAD_TO_MEMORY: "Z-Image-Turbo"
+            LOAD_TO_MEMORY: "fixture-localai"
             # The engine enforces this itself — no auth-proxy sidecar, for any
             # engine. `optional: false` so the pod waits for ESO rather than
             # starting with an empty key and accepting every request.
