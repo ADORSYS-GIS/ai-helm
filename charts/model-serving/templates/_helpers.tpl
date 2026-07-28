@@ -370,6 +370,12 @@ apiKey:
     property: {{ required (printf "model %s: apiKey.property is required when apiKey.enabled" $name) $ak.property | quote }}
 {{- end }}
 
+{{- with $s.modelConfig }}
+# Our own LocalAI model config (ADR-0103): our tuning, our pinned checksums.
+modelConfig: |
+{{- . | nindent 2 }}
+{{- end }}
+
 networkPolicy:
 {{- toYaml $d.networkPolicy | nindent 2 }}
 
@@ -470,7 +476,13 @@ modelServing:
             # exact accepted form for a gallery reference is the FIRST thing the
             # load gate must confirm — it is read by InstallModels(... models
             # ...string) and cannot be settled by rendering.
-            MODELS: {{ required (printf "model %s: serving.galleryModel is required for the localai engine" $name) $s.galleryModel | quote }}
+            {{- if $s.modelConfig }}
+            # We supply the model config ourselves, so there is no gallery entry
+            # to install — `MODELS` is deliberately unset (ADR-0103).
+            PRELOAD_MODELS_CONFIG: "/config/models.yaml"
+            {{- else }}
+            MODELS: {{ required (printf "model %s: serving.galleryModel or serving.modelConfig is required for the localai engine" $name) $s.galleryModel | quote }}
+            {{- end }}
             # Both paths live on the weights PVC, so neither the model nor the
             # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
             # the one that is easy to forget: LocalAI pulls its inference backend
@@ -499,7 +511,11 @@ modelServing:
             # below is hours — the load now happens BEFORE Ready, not after.
             #
             # WATCHDOG_IDLE defaults to false, so once loaded it stays loaded.
-            LOAD_TO_MEMORY: {{ required (printf "model %s: serving.galleryModel is required for the localai engine" $name) $s.galleryModel | quote }}
+            {{- if $s.modelConfig }}
+            LOAD_TO_MEMORY: {{ $name | quote }}
+            {{- else }}
+            LOAD_TO_MEMORY: {{ $s.galleryModel | default $name | quote }}
+            {{- end }}
             {{- with $s.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -695,6 +711,20 @@ modelServing:
         main:
           model:
             - path: {{ $akPath | quote }}
+              readOnly: true
+    {{- end }}
+    {{- if $s.modelConfig }}
+    # Our LocalAI model config. Mounted read-only OUTSIDE the weights volume:
+    # MODELS_PATH is writable and LocalAI owns it, so a config living there would
+    # be fighting the engine for the same directory.
+    model-config:
+      enabled: true
+      type: configMap
+      name: {{ printf "%s-config" $name | quote }}
+      advancedMounts:
+        main:
+          model:
+            - path: /config
               readOnly: true
     {{- end }}
     {{- if $eng.devShm }}

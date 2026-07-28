@@ -103,11 +103,21 @@ anything subtler — annoying, not dangerous.
 
 </details>
 
-### 1.4 Confirm the €184/month figure
+### 1.4 ⚠️ The €184/month figure is WRONG — every fleet price under-recovers
 
-ADR-0096's pricing derives from Hetzner's **published list price** for GEX44, not
-a confirmed invoice. Setup fees, IPv4 charges or a negotiated rate would shift
-every per-token number proportionally. Check billing, then re-tune.
+**Confirmed 2026-07-28.** ADR-0096 derives every self-hosted price from
+**€184/month** for a GEX44. The actual cost is **~$234/month** — about 18%
+higher. That is not a rounding error and it is not scoped to one model: every
+per-token price for `qwen3-8b-fast`, every retired OpenMythos number, and the
+image model's per-image price all inherit it.
+
+Needs an **ADR superseding 0096**, because the basis is the thing that changed,
+not the arithmetic. Until then the catalog under-recovers by ~18% and the entries
+say so.
+
+Compounding it: ADR-0096 also applies a **3.45× duty-cycle uplift** inherited
+from the old A2000 (§2.3) that has never been measured on this fleet. So one
+input is confirmed wrong and another is unverified, in the same formula.
 
 ### 1.5 Colleagues seeing `glm-5p1` in Kilo Code
 

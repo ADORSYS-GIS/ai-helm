@@ -661,19 +661,21 @@ models:
       # display name advertised a quantization this model has never had.
       displayName: "Z-Image-Turbo (self-hosted, image generation)"
     pricing:
-      # DERIVED, not carried over. ADR-0096 basis applied to the measurement:
-      #   €184/mo ÷ 730 h            = €0.2521/hour
-      #   3600 ÷ 94.2 s              = 38.2 images/hour
-      #   €0.2521 ÷ 38.2             = €0.0066/image raw
-      #   × 3.45 duty-cycle uplift   = €0.0228  ≈ $0.0246
+      # ⚠️ PROVISIONAL — pending a re-measure. Two inputs changed at once:
       #
-      # The $0.005 placeholder inherited from the home GPU was ~5× too low.
+      #   1. THE HARDWARE COST WAS WRONG FLEET-WIDE. ADR-0096 derives every
+      #      self-hosted price from €184/month for a GEX44. The actual figure is
+      #      ~$234/month — roughly 18% higher — so EVERY fleet price is
+      #      under-recovering, not just this one. That needs an ADR superseding
+      #      0096, not a quiet edit here (see the follow-ups doc).
+      #   2. `step: 25 → 8` and params moved off the CPU (ADR-0103), which should
+      #      cut latency substantially. The 94.2 s that produced 0.0246 was
+      #      measured on the OLD config and is now stale.
       #
-      # ⚠️ This price is a function of a CONFIGURATION WE KNOW IS WRONG. LocalAI's
-      # gallery entry sets `step: 25` for a model distilled for 8 steps. Fixing
-      # that should cut latency ~3× and the price with it — so treat 0.0246 as an
-      # honest ceiling for today's config, not a settled number, and re-derive
-      # when the steps are tuned.
+      # Left at 0.0246 deliberately: it is the last honestly-measured number, and
+      # under-pricing a model nobody has re-measured is worse than carrying a
+      # figure with its provenance written down. Re-derive as
+      # ($234/730h) ÷ (3600/measured_seconds) × 3.45 once the new latency is known.
       strategy: flatPerRequest
       standard:
         effectivePerRequest: 0.0246
