@@ -166,7 +166,15 @@ modelServing:
             # ...string) and cannot be settled by rendering.
             # We supply the model config ourselves, so there is no gallery entry
             # to install — `MODELS` is deliberately unset (ADR-0103).
-            PRELOAD_MODELS_CONFIG: "/config/models.yaml"
+            #
+            # ⚠️ MODELS_CONFIG_FILE, *not* PRELOAD_MODELS_CONFIG. The names read
+            # as synonyms and are not: PRELOAD_MODELS_CONFIG is a list of GALLERY
+            # SOURCES, each requiring a `url`, and feeding it raw model configs
+            # fails at boot with `unsupported protocol scheme ""` — it is
+            # reporting a missing URL, not a malformed config. MODELS_CONFIG_FILE
+            # is documented as "YAML file containing a list of model backend
+            # configs", which is what we mount.
+            MODELS_CONFIG_FILE: "/config/models.yaml"
             # Both paths live on the weights PVC, so neither the model nor the
             # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
             # the one that is easy to forget: LocalAI pulls its inference backend

@@ -684,10 +684,11 @@ models:
         ref: z-image-turbo-local
         priority: 0
         # ⚠️ The id the ENGINE serves, read off /v1/models — not the catalog key.
-        # LocalAI serves a gallery entry under the gallery's own name, so this is
-        # `Z-Image-Turbo` (capitalised). It was `z-image-turbo`, which would have
-        # 404'd every request.
-        modelNameOverride: "Z-Image-Turbo"
+        # Now `z-image-turbo`: since ADR-0103 we supply LocalAI's model config
+        # ourselves and it carries `name: z-image-turbo`. It was `Z-Image-Turbo`
+        # while we used the gallery entry, which serves under the GALLERY's name.
+        # Re-read /v1/models after any change to how the model is defined.
+        modelNameOverride: "z-image-turbo"
 
   # Self-hosted Qwen3-4B on the home RTX A2000 (ADR-0022). Routed exactly like a
   # SaaS model; pricing flat $0 (owned hardware) so no monthly-budget rule, but
