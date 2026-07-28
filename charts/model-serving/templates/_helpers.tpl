@@ -282,6 +282,15 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
        seed Job. Same trap as `metrics` below; it is easy to write and silent to
        get wrong. */ -}}
 {{- $seed := not (and (hasKey $eng "seedJob") (not $eng.seedJob)) -}}
+{{- /* Defining the model ourselves removes the gallery install, and with it the
+       BACKEND install it performed as a side effect. Fail at render rather than
+       let LocalAI discover it at boot, where a missing backend surfaces as a
+       cooldown cascade that names every backend except the one that is absent. */ -}}
+{{- if and (eq $engine "localai") ($cfg.serving).modelConfig (not ($cfg.serving).galleryModel) -}}
+{{- if not ($cfg.serving).backends -}}
+{{- fail (printf "model %s: serving.backends is required when serving.modelConfig is set without serving.galleryModel — nothing else installs the inference backend" $name) -}}
+{{- end -}}
+{{- end -}}
 {{- $w := $cfg.weights | default dict -}}
 {{- if and $seed (not $cfg.weights) -}}
 {{- fail (printf "model %s: `weights` is required for engine %s (it is seeded by a Job; only self-downloading engines may omit it)" $name $engine) -}}
@@ -527,9 +536,28 @@ modelServing:
             # missing backend. Our tuning is applied by overwriting the config
             # file the install writes (see the model-config initContainer), which
             # LocalAI skips re-installing thanks to its `._gallery_*` marker.
-            MODELS: {{ required (printf "model %s: serving.galleryModel is required for the localai engine" $name) $s.galleryModel | quote }}
+            {{- if $s.galleryModel }}
+            MODELS: {{ $s.galleryModel | quote }}
+            {{- else if not $s.modelConfig }}
+            {{- fail (printf "model %s: the localai engine needs either serving.galleryModel (install from the gallery) or serving.modelConfig (define it ourselves)" $name) }}
+            {{- end }}
             {{- with $s.backends }}
             EXTERNAL_BACKENDS: {{ join "," . | quote }}
+            {{- end }}
+            {{- with $eng.backendImagesReleaseTag }}
+            # Pins the backend IMAGE tag. Defaults to `latest`, which meant the
+            # component that actually executes the model floated while the server
+            # image was pinned (ADR-0105).
+            BACKEND_IMAGES_RELEASE_TAG: {{ . | quote }}
+            {{- end }}
+            {{- with $eng.backendGalleries }}
+            # Pins the backend GALLERY (default `@master`) and carries the
+            # keyless-cosign verification policy. A gallery without a
+            # `verification` block installs with no signature check at all.
+            BACKEND_GALLERIES: {{ toJson . | quote }}
+            {{- end }}
+            {{- if $eng.requireBackendIntegrity }}
+            REQUIRE_BACKEND_INTEGRITY: "true"
             {{- end }}
             # Both paths live on the weights PVC, so neither the model nor the
             # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
