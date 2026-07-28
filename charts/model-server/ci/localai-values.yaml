@@ -175,6 +175,20 @@ modelServing:
             # is documented as "YAML file containing a list of model backend
             # configs", which is what we mount.
             MODELS_CONFIG_FILE: "/config/models.yaml"
+            # ⚠️ INSTALL THE BACKEND EXPLICITLY. Naming a gallery MODEL used to
+            # pull its backend as a side effect; supplying our own config
+            # (ADR-0103) removes that step, so LocalAI is left with whatever a
+            # previous run happened to leave on the PVC.
+            #
+            # It then makes things worse in a way worth knowing: it prefers the
+            # CUDA variant (`cuda12-stablediffusion-ggml`), and when that is not
+            # installed the failure puts the model into a COOLDOWN that poisons
+            # every fallback in the same pass —
+            #   Attempting to load backend="cuda12-stablediffusion-ggml" → exit -1
+            #   [stablediffusion-ggml]: load is in cooldown, retry after 10s
+            # — so the backend that would have worked is never tried, and the
+            # log blames the cooldown rather than the missing backend.
+            EXTERNAL_BACKENDS: "cuda12-stablediffusion-ggml"
             # Both paths live on the weights PVC, so neither the model nor the
             # downloaded backend is re-fetched on a pod restart. BACKENDS_PATH is
             # the one that is easy to forget: LocalAI pulls its inference backend
