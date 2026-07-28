@@ -384,7 +384,14 @@ defaults:
       # already does that whenever `apiKey.enabled` (same situation as
       # llama-server, where --api-key-file also covers /metrics).
       metrics: true
-      # LocalAI downloads models and backends itself; no seed Job, no HF token.
+    # ⚠️ READY DOES NOT MEAN LOADED, for this engine. `/readyz` gates on the
+    # model INSTALL (the download), not on the backend having loaded it onto the
+    # GPU — that happens lazily, on the first request, and takes many minutes for
+    # a large diffusion model. So a green ArgoCD tree, a Ready pod and a scraping
+    # /metrics endpoint are all compatible with a model that cannot serve. The
+    # ONLY check that means anything is generating an image; do not skip it.
+    #
+    # LocalAI downloads models and backends itself; no seed Job, no HF token.
       seedJob: false
       # …and therefore needs the volume read-write.
       writableModelStore: true
