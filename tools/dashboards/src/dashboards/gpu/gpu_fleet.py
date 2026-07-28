@@ -138,7 +138,7 @@ def _row(title, *, y):
 
 
 # Legend showing node + the attributed workload, e.g.
-# "hetzner-k8s-gpu-1 · openmythos-27b-main-...". `pod` is DCGM's own label,
+# "hetzner-k8s-gpu-1 · qwen3-8b-fast-main-...". `pod` is DCGM's own label,
 # preserved by honorLabels.
 _LEGEND = "{{hostname}} · {{pod}}"
 

@@ -113,8 +113,10 @@ defaults:
   # no API key is set").
   security:
     apiKey:
-      # Enforced natively by BOTH engines — llama.cpp `--api-key-file`, vLLM
-      # `VLLM_API_KEY`. No proxy sidecar, ever (see the Chart.yaml note).
+      # Enforced natively by EVERY engine — llama.cpp `--api-key-file`, vLLM
+      # `VLLM_API_KEY`, zimage `API_KEY`. How a given engine takes the key is
+      # part of its profile (`engines.<name>.apiKey.mode`), not a knob here.
+      # No proxy sidecar, ever (see the Chart.yaml note).
       enabled: true
       secretStore: ssegning-aws
       key: ai/camer/digital/prod/env
@@ -185,10 +187,14 @@ defaults:
 
   # ── Engine profiles ───────────────────────────────────────────────────────
   # Which engine to pick is an inference decision, documented in inference-ops
-  # ADR-0002. The short version:
+  # ADR-0002 (text) and ADR-0003 (image). The short version:
   #   GGUF weights, or a brand-new architecture → llamacpp
   #   safetensors (AWQ/GPTQ/FP8), want throughput/prefix-reuse → vllm
+  #   a DIFFUSION model answering /v1/images/generations → zimage
   # Serving a GGUF on vLLM is a known ~8x throughput regression; do not.
+  #
+  # The first two are upstream images we merely configure. The third is OURS —
+  # see its profile for what that costs (no CI build, no /metrics, no CORS knob).
   engines:
 
     llamacpp:
@@ -203,6 +209,12 @@ defaults:
       # 503 while loading, 200 once the weights are in — exactly what a startup
       # probe needs.
       healthPath: /health
+      # llama-server reads the Bearer from a FILE, so the Secret is mounted
+      # rather than passed as an env var. `path` is the mount point; the key
+      # inside it is always `api_key`.
+      apiKey:
+        mode: file
+        path: /etc/model-api-key
       # TODO(hardening): both engines currently run as root with ALL capabilities
       # dropped and privilege escalation disabled. That is what clears Trivy
       # KSV-0118 and is what has actually shipped; a previous attempt to pin
@@ -248,6 +260,184 @@ defaults:
         tag: v0.5.2
         pullPolicy: IfNotPresent
       healthPath: /health
+      # vLLM's own OpenAI server reads the Bearer from the environment.
+      apiKey:
+        mode: env
+        envName: VLLM_API_KEY
+      # vLLM's worker processes talk over shared memory; the 64 MB default
+      # /dev/shm is not enough and the failure mode is an opaque hang during
+      # engine start. No other engine needs this.
+      devShm: true
+      podSecurityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+            - ALL
+
+    # ── localai — IMAGE GENERATION, off the shelf (ADR-0102) ─────────────────
+    # LocalAI (github.com/mudler/LocalAI) is an OpenAI-compatible server that
+    # serves diffusion models natively at `/v1/images/generations`. It replaced a
+    # first-party Rust + Candle server we briefly maintained; see ADR-0102 for
+    # why that was the wrong call and how the survey that led to it was
+    # incomplete. The short version: this is a commodity, we should not have been
+    # building one, and the ecosystem serves this exact model through gallery
+    # entries that already exist.
+    #
+    # ⚠️ PIN THE CUDA-12 TAG. The `master`/`latest` tags are built against
+    # **CUDA 13**, and these nodes run driver 550 / CUDA 12.4 — the same trap
+    # CLAUDE.md records for llama.cpp's `server-cuda13` and vLLM's `-cu129`.
+    # Versioned CUDA-12 tags exist and are what we use:
+    #     quay.io/go-skynet/local-ai:v4.7.1-gpu-nvidia-cuda-12
+    #
+    # ⚠️⚠️ PINNING THIS IMAGE DOES NOT PIN WHAT RUNS THE MODEL. Observed live on
+    # first boot, and it is the thing to know about this engine:
+    #
+    #   installing OCI backend without signature verification
+    #     backend="cuda12-diffusers"
+    #     uri="quay.io/go-skynet/local-ai-backends:latest-gpu-nvidia-cuda-12-diffusers"
+    #
+    # Two separate problems in one line.
+    #
+    #   1. The BACKEND TAG IS `latest`. LocalAI picks its inference backend at
+    #      runtime from its backend gallery, and the reference it resolves is not
+    #      version-pinned — so the CUDA-12 tag we pin below fixes the SERVER and
+    #      leaves the thing that actually executes the model floating. A backend
+    #      published tomorrow is what a pod restarting tomorrow will run. It DID
+    #      select cuda12 correctly (it reads the host capability, logged as
+    #      `nvidia-cuda-12`), so this is not currently broken — it is unpinned.
+    #
+    #   2. NO SIGNATURE VERIFICATION. LocalAI says so itself, in a WARN. This
+    #      repo cosign-gates its own first-party images (ADR-0055); that gate does
+    #      not extend here, and there is no knob in this chart that changes it.
+    #
+    # Both are consequences of choosing an engine that manages its own runtime
+    # (ADR-0102) and neither was visible until it ran. Pinning them means either
+    # pre-populating BACKENDS_PATH ourselves or an upstream feature; tracked as a
+    # follow-up rather than papered over. Do not read the pinned server tag as
+    # meaning the whole stack is pinned.
+    #
+    # ⚠️ LocalAI MANAGES ITS OWN DOWNLOADS. Unlike the two text engines, it pulls
+    # both the model (from its model gallery) and its inference BACKEND (from its
+    # backend gallery, `AUTOLOAD_BACKEND_GALLERIES` defaults true) at start-up.
+    # Two consequences the other engines do not have:
+    #   • there is NO seed Job — `seedJob: false` below — and no HF token;
+    #   • the weights volume must be WRITABLE, and must hold `backends/` as well
+    #     as `models/`, or every pod restart re-downloads both.
+    # First start is therefore slow (backend + weights), which is what the long
+    # startup-probe budget is for. Subsequent restarts read from the PVC.
+    localai:
+      image:
+        repository: quay.io/go-skynet/local-ai
+        tag: v4.7.1-gpu-nvidia-cuda-12
+        pullPolicy: IfNotPresent
+      # ⚠️ A FOUR-HOUR startup budget, and it is not paranoia. This engine does
+      # ALL of its fetching after the container starts, so a cold boot is:
+      #   • download the backend            4.2 GiB compressed
+      #   • EXTRACT it onto Longhorn        7.3 GiB — measured at ~2 GiB per
+      #                                     11 min on the RWX volume, so ~35 min
+      #                                     on its own
+      #   • download the model              ~33 GB for the diffusers entry
+      #
+      # The fleet default of 120 × 15s = 30 min does not cover the extraction
+      # alone. And the failure is not a slow start — it is an INFINITE one: the
+      # startup probe kills the container mid-download, the replacement starts
+      # over, and it can never finish. LocalAI's own health handler warns about
+      # precisely this ("a long startup preload must not read as a hung process,
+      # or an orchestrator restarts the pod mid-download and the preload can
+      # never finish"), which is why /healthz is always-200 and only /readyz
+      # gates.
+      #
+      # 960 × 15s = 4h. Only the FIRST boot pays it: BACKENDS_PATH and
+      # MODELS_PATH are both on the PVC, so a restart skips straight to loading.
+      startupFailureThreshold: 960
+      # `/readyz` — and it means what we need it to mean. Verified in LocalAI's
+      # handler: it answers **503 `startup preload in progress`** until the
+      # preload completes, and 200 after, while `/healthz` is always-200 for
+      # liveness ("a long startup preload must not read as a hung process, or an
+      # orchestrator restarts the pod mid-download"). That is the same contract
+      # llama.cpp and vLLM give us, so the fleet's probe design carries over
+      # unchanged — startup/readiness on this path, liveness on tcpSocket.
+      #
+      # ⚠️ Which makes `MODELS` load-bearing for READINESS, not just for serving:
+      # readiness gates on the preload, so an empty or unrecognised model
+      # reference risks a pod that reports Ready with nothing loaded.
+      healthPath: /readyz
+      # `LOCALAI_API_KEY,API_KEY` — the same env var the previous engine used, so
+      # the fleet's ADR-0097 key policy carries over untouched.
+      apiKey:
+        mode: env
+        envName: API_KEY
+      # ⚠️ Metrics are BACK. LocalAI serves `/metrics` unless
+      # DISABLE_METRICS_ENDPOINT is set, so this engine gets a ServiceMonitor
+      # like the text tiers — closing the observability gap the first-party
+      # server had. Note the route sits behind LocalAI's admin middleware, so the
+      # scrape must present the API key; charts/model-server's ServiceMonitor
+      # already does that whenever `apiKey.enabled` (same situation as
+      # llama-server, where --api-key-file also covers /metrics).
+      metrics: true
+    # ⚠️ READY MEANS LOADED — but only because we force it to. Out of the box
+    # `/readyz` gates on the model INSTALL (the download) while the backend loads
+    # lazily on the FIRST REQUEST, so a green ArgoCD tree, a Ready pod and a
+    # scraping /metrics endpoint were all compatible with a model that returned
+    # 500 with 5 MiB of VRAM in use. `LOAD_TO_MEMORY` (see the env block in
+    # _helpers.tpl) moves the load into the startup sequence readiness waits on.
+    # Do not remove it thinking it is an optimisation — it is what makes the
+    # probe honest. Verify with a real generation anyway.
+    #
+    # ── Backend supply chain (closes the ADR-0102 gap) ────────────────────
+    # LocalAI resolves its inference BACKEND at runtime from a gallery, and by
+    # default BOTH halves float — confirmed from the binary's own --help:
+    #
+    #   --backend-galleries  github:mudler/LocalAI/backend/index.yaml@master
+    #   --backend-images-release-tag  latest
+    #
+    # So pinning the SERVER image pinned the thing that answers HTTP and left the
+    # thing that EXECUTES THE MODEL floating. Seen live as:
+    #   "installing OCI backend without signature verification
+    #    uri=...local-ai-backends:latest-gpu-nvidia-cuda-12-diffusers"
+    #
+    # Both now pin to the same release as the server image, so the server and its
+    # backend move together or not at all.
+      backendImagesReleaseTag: v4.7.1
+      backendGalleries:
+        - name: localai
+          # `@v4.7.1`, not `@master` — the gallery index itself is versioned.
+          url: "github:mudler/LocalAI/backend/index.yaml@v4.7.1"
+          # ⚠️ Keyless-cosign policy. A gallery WITHOUT this block installs with
+          # NO signature check; adding it is what turns verification on. The
+          # identity is LocalAI's own documented shape for this repo — re-check
+          # against upstream when bumping, because a wrong identity rejects every
+          # backend install.
+          #
+          # `not_before` is the revocation lever: keyless certs are ephemeral and
+          # there is no CA-side revocation, so advancing this date is how a known
+          # compromise window gets invalidated.
+          verification:
+            issuer: "https://token.actions.githubusercontent.com"
+            identity_regex: '^https://github\.com/mudler/local-ai-backends/\.github/workflows/build\.yaml@refs/heads/master$'
+            not_before: "2026-05-01T00:00:00Z"
+    # ⚠️ `requireBackendIntegrity` deliberately NOT set. It rejects ANY backend
+    # install lacking a verification policy — the right end state, but it turns a
+    # missing policy anywhere into a hard boot failure and wants one fresh-volume
+    # test first. The gallery above is verified either way.
+    #
+    # LocalAI downloads models and backends itself; no seed Job, no HF token.
+      seedJob: false
+      # …and therefore needs the volume read-write.
+      writableModelStore: true
+      # Upstream image, run like the other two upstream engines: root with all
+      # capabilities dropped and privilege escalation off. It writes backends and
+      # weights into the mount at runtime, so no read-only rootfs (KSV-0014 is
+      # path-scoped in .trivyignore.yaml for the serving fleet).
       podSecurityContext:
         runAsNonRoot: false
         runAsUser: 0
@@ -270,7 +460,7 @@ defaults:
 #
 #    my-model:
 #      enabled: true
-#      engine: llamacpp                    # or vllm
+#      engine: llamacpp                    # or vllm, or zimage (image generation)
 #      weights:
 #        hfRepo: org/Some-Model-GGUF
 #        revision: <full commit sha>        # NEVER a branch name — see below
