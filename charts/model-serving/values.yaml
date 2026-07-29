@@ -495,6 +495,77 @@ defaults:
 models:
 
    # ─────────────────────────────────────────────────────────────────────────
+   # Qwen3-VL-4B-Thinking (dense, BF16, vLLM) — VISION-LANGUAGE, both fleet GPUs
+   # currently idle (openmythos-27b and qwen3-8b-fast are both disabled below;
+   # z-image-turbo was retired entirely, see #803/#804).
+   #
+   # First multimodal model on the NEW orchestrator (ADR-0094) — the earlier
+   # Qwen2-VL-2B was served on the LEGACY per-model-chart generation with a
+   # Caddy sidecar (ADR-0022-era). No sidecar needed here: vLLM's own OpenAI
+   # server handles `image_url` content parts natively for the Qwen-VL family.
+   #
+   # Apache-2.0, official Qwen/Alibaba org — verified via the HF API, not the
+   # model card (`https://huggingface.co/api/models/Qwen/Qwen3-VL-4B-Thinking`
+   # → `cardData.license: apache-2.0`). Dense 4B, BF16 safetensors, ~8.9 GB on
+   # disk (2 shards, 4.97 + 3.91 GB — confirmed via the HF tree API, not
+   # guessed from the model card, per the Z-Image-Turbo lesson).
+   #
+   # ⚠️ NOT LOAD-GATED, and NOT FEDERATED (ADR-0101). `enabled: true` here only
+   # deploys it onto a fleet GPU so it CAN be measured — federating it into
+   # charts/ai-models/values.yaml is a separate step, after someone has
+   # actually sent it an image and looked at the response.
+   #
+   # ⚠️ `gpuMemoryUtilization: 0.60` is a deliberate ceiling, not vLLM's 0.90
+   # fleet default: this model is going on a shared 20 GiB card and the budget
+   # for it is 60% (~12 GiB) for weights + KV cache, leaving the rest for
+   # overhead and whatever runs alongside it. At ~8.9 GB of BF16 weights that
+   # leaves ~3 GiB of KV cache in-budget — likely tight for a VISION model
+   # (image tokens are expensive), so `contextSize`/`parallel` below are
+   # deliberately conservative starting points, to be tuned at the load gate
+   # rather than assumed.
+   #
+   # ⚠️ The "Thinking" variant reasons by default and vLLM emits the trace as
+   # raw `<think>` tags in `content` unless a reasoning parser is set — hence
+   # `reasoning: on` + `reasoningParser: qwen3` together (see the `serving.reasoning`
+   # comment in templates/_helpers.tpl). This is a deliberate choice for this
+   # model, unlike the fleet's text tiers, which disable thinking for latency.
+   qwen3-vl-4b-thinking:
+     enabled: true
+     engine: vllm
+     weights:
+       hfRepo: Qwen/Qwen3-VL-4B-Thinking
+       # Pinned via `curl -s https://huggingface.co/api/models/Qwen/Qwen3-VL-4B-Thinking | jq -r .sha`
+       revision: 1de27d8c51f12e819435303b9e84c4e25ba8401e
+       # No `include`: vLLM needs the whole repo (safetensors shards + tokenizer
+       # + processor config), not a single file.
+       #
+       # ~2.2x the measured ~8.9 GB repo — matches the qwen3-8b-fast precedent
+       # (also sizeGi: 20 for a similarly-sized whole-repo vLLM download) and
+       # comfortably survives the "hf download stages the whole repo twice"
+       # peak (charts/model-serving/templates/_helpers.tpl already reclaims the
+       # `.cache` staging directory after a successful download — the fix from
+       # the Z-Image-Turbo disk-space incident, #802).
+       sizeGi: 20
+       # Largest shard here is ~5 GB, well under the ~10 GB threshold that
+       # OOM-killed the Z-Image-Turbo seed at the fleet-default 6Gi limit — no
+       # seedMaxWorkers/seedMemoryLimit override needed.
+     serving:
+       contextSize: 32768
+       parallel: 2
+       dtype: bfloat16
+       toolCallParser: hermes
+       reasoning: "on"
+       reasoningParser: qwen3
+       gpuMemoryUtilization: 0.60
+     resources:
+       cpuRequest: "2"
+       cpuLimit: "8"
+       memoryRequest: 8Gi
+       # A bit above the fleet's text-tier default: image preprocessing
+       # (decode/resize) runs on host CPU/RAM before tokens ever reach the GPU.
+       memoryLimit: 20Gi
+
+   # ─────────────────────────────────────────────────────────────────────────
    # OpenMythos-27B (Q4_K GGUF, llama.cpp) — DISABLED.
    # Was the first model on the Hetzner GPU fleet. Disabled to make way for
    # Z-Image-Turbo as the sole GPU model. Re-enable to roll back.
