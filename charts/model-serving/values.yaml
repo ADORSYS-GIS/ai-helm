@@ -554,11 +554,12 @@ models:
    # ⚠️ `gpuMemoryUtilization: 0.60` is a deliberate ceiling, not vLLM's 0.90
    # fleet default: this model is going on a shared 20 GiB card and the budget
    # for it is 60% (~12 GiB) for weights + KV cache, leaving the rest for
-   # overhead and whatever runs alongside it. At ~8.9 GB of BF16 weights that
-   # leaves ~3 GiB of KV cache in-budget — likely tight for a VISION model
-   # (image tokens are expensive), so `contextSize`/`parallel` below are
-   # deliberately conservative starting points, to be tuned at the load gate
-   # rather than assumed.
+   # overhead and whatever runs alongside it. MEASURED live: 8.6 GiB of that
+   # goes to weights (matches the ~8.9 GB on-disk estimate), leaving only
+   # ~1.14 GiB of actual usable KV-cache memory after CUDA context/activation/
+   # vision-encoder-cache overhead — vLLM's own admission check rejected the
+   # first `contextSize` attempt (32768) outright. See `serving.contextSize`
+   # below for the corrected, measured number.
    #
    # ⚠️ The "Thinking" variant reasons by default and vLLM emits the trace as
    # raw `<think>` tags in `content` unless a reasoning parser is set — hence
@@ -599,7 +600,21 @@ models:
        seedMaxWorkers: 2
        seedMemoryLimit: 10Gi
      serving:
-       contextSize: 32768
+       # ⚠️ CORRECTED 2026-07-29, live: 32768 didn't fit. vLLM's own KV-cache
+       # admission check rejected it at boot:
+       #     To serve at least one request with the models's max seq len
+       #     (32768), (4.5 GiB KV cache is needed, which is larger than the
+       #     available KV cache memory (1.14 GiB). ... the estimated maximum
+       #     model length is 8288.
+       # Weights loaded exactly as predicted (8.6 GiB), but at the deliberate
+       # `gpuMemoryUtilization: 0.60` ceiling there's only ~1.14 GiB left for
+       # KV cache once CUDA context, activation buffers and the vision encoder
+       # cache are accounted for — nowhere near enough for a full 32768-token
+       # sequence. 8192 is comfortably under vLLM's own reported ceiling
+       # (8288) and keeps this within the 60% VRAM budget rather than relaxing
+       # it — raising `gpuMemoryUtilization` instead was the other option
+       # vLLM suggested, deliberately not taken here.
+       contextSize: 8192
        parallel: 2
        dtype: bfloat16
        toolCallParser: hermes
