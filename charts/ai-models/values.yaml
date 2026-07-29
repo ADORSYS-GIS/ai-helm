@@ -503,7 +503,7 @@ backends:
   # ─────────────────────────────────────────────────────────────────────────
   # GPU fleet (cluster-local, ADR-0095) — backends for enabled models only.
   # Backends for disabled models are removed to keep the catalog consistent
-  # with charts/model-serving/values.yaml (check-model-catalogs.sh).
+  # with charts/inference/values.yaml (check-model-catalogs.sh).
   # ─────────────────────────────────────────────────────────────────────────
 
   # Qwen3-VL-4B-Thinking — the fleet's first VISION-LANGUAGE backend (ADR-0094
@@ -540,7 +540,7 @@ backends:
   # at `z-image-turbo--poc.ssegning.com` — the OLD home-cluster edge host, dead
   # since the model moved onto the fleet, resolving through Cloudflare with no
   # origin behind it. #814 was right to remove it; this is not that backend. It
-  # is the cluster-local Service the `z-image-turbo` model-serving entry creates,
+  # is the cluster-local Service the `z-image-turbo` inference entry creates,
   # which is what the LocalAI deployment served from before PR #790 deleted it.
   #
   # ⚠️ `prefix: /v1` — LocalAI registers `/v1/images/generations` and `/v1/models`.
@@ -680,7 +680,7 @@ models:
   # Reasons by default ("Thinking" variant) — the reasoning trace arrives in
   # `reasoning_content`/`reasoning`, not inline in `content` (verified at the
   # load gate). `contextLength: 8192` is what actually fits this model's VRAM
-  # budget on this card (see charts/model-serving/values.yaml for the KV-cache
+  # budget on this card (see charts/inference/values.yaml for the KV-cache
   # math) — well under the model's native 256K, and a real constraint, not a
   # rounding choice.
   #
@@ -723,7 +723,7 @@ models:
   # ordinary cluster-local backend like every other fleet model: ClusterIP,
   # CiliumNetworkPolicy, no Ingress, no certificate, no DNS record.
   #
-  # Serving spec: charts/model-serving/values.yaml `z-image-turbo`.
+  # Serving spec: charts/inference/values.yaml `z-image-turbo`.
   #
   # `kind: image` is load-bearing in charts/ai-model: it drops the InputToken /
   # OutputToken / TotalToken cost metadata and the tokens-per-minute burst rule,
@@ -773,7 +773,7 @@ models:
   # re-enabling this one." #814 removed an entry pointing at the dead home-cluster
   # edge host; this one points at the cluster-local LocalAI Service.
   #
-  # Serving spec: charts/model-serving/values.yaml `z-image-turbo`.
+  # Serving spec: charts/inference/values.yaml `z-image-turbo`.
   #
   # `kind: image` is load-bearing in charts/ai-model: it drops the InputToken /
   # OutputToken / TotalToken cost metadata and the tokens-per-minute burst rule,
@@ -837,7 +837,7 @@ models:
         # our own filename (ADR-0105); it was `Z-Image-Turbo` while we served the
         # gallery entry directly, because LocalAI serves a model under the name of
         # whatever DEFINES it. Must equal `serving.servedModel` in
-        # charts/model-serving. Re-read /v1/models after any change to how the
+        # charts/inference. Re-read /v1/models after any change to how the
         # model is defined — it is not derivable from the catalog key.
         modelNameOverride: "z-image-turbo"
 
@@ -910,7 +910,7 @@ models:
 #   # the home GPU (one GPU → one model, so it SWAPS qwen3-4b-local at cutover).
 #   # STAGED: enabled:false until a recent server-cuda build is proven to load the
 #   # GGUF on the A2000 (docs/models/qwen3.5-4b-q4.md §5). CUTOVER = set this
-#   # enabled:true + qwen3-4b-local enabled:false + the model-serving apps likewise,
+#   # enabled:true + qwen3-4b-local enabled:false + the model-serving-* apps likewise,
 #   # then cut a release + repoint root. Engine/decisions: ADR-0032.
 #   #
 #   # Model card (Qwen/Qwen3.5-4B · Apache-2.0): Gated DeltaNet + sparse-MoE hybrid,

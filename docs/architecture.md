@@ -33,7 +33,7 @@ flowchart LR
 | Networking, Cilium, TLS | [suite · 06 Networking & TLS](architecture/06-networking-tls.md) |
 | Data, secrets, object storage | [suite · 07 Data & secrets](architecture/07-data-secrets.md) |
 | The observability pipeline | [suite · 08 Observability](architecture/08-observability.md) |
-| Model fan-out + the GPU model | [suite · 09 Model serving](architecture/09-model-serving.md) |
+| Model fan-out + the GPU model | [suite · 09 Model serving](architecture/09-inference.md) |
 | MCP routing + proxies | [suite · 10 MCP](architecture/10-mcp.md) |
 
 ## Cluster topology (the one-glance view)

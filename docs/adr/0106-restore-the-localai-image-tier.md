@@ -53,7 +53,7 @@ outright rather than leaving it disabled.**
 
 Concretely:
 
-- `charts/model-serving/values.yaml` regains the `z-image-turbo` catalog entry —
+- `charts/inference/values.yaml` regains the `z-image-turbo` catalog entry —
   `engine: localai`, our own `modelConfig` under our own filename, the pinned
   `cuda12-stablediffusion-ggml` backend, `step: 8`, and no
   `offload_params_to_cpu`. This is the *tuned* configuration, the one the numbers
@@ -158,4 +158,4 @@ own history. The 29 commits it undid were all visible in that diff.
 - Pricing basis [0104](0104-gpu-cost-basis-correction.md); method [0028](0028-owned-hardware-model-pricing.md)
 - Orchestrator [0094](0094-generic-model-serving-orchestrator.md); federation shape [0095](0095-cluster-local-model-federation.md)
 - Issue [#803](https://github.com/ADORSYS-GIS/ai-helm/issues/803)
-- Charts: `charts/model-serving/values.yaml`, `charts/ai-models/values.yaml`, `charts/apps/values.yaml`
+- Charts: `charts/inference/values.yaml`, `charts/ai-models/values.yaml`, `charts/apps/values.yaml`

@@ -152,7 +152,7 @@ defaults:
     corsOrigins: "https://api.ai.camer.digital"
 
   # ── Who may reach a model ─────────────────────────────────────────────────
-  # See charts/model-server/templates/ciliumnetworkpolicy.yaml for why the
+  # See charts/inference-server/templates/ciliumnetworkpolicy.yaml for why the
   # entities matter (kubelet probes) and why there is no egress block (seeding).
   networkPolicy:
     enabled: true
@@ -416,7 +416,7 @@ defaults:
       # DISABLE_METRICS_ENDPOINT is set, so this engine gets a ServiceMonitor
       # like the text tiers — closing the observability gap the first-party
       # server had. Note the route sits behind LocalAI's admin middleware, so the
-      # scrape must present the API key; charts/model-server's ServiceMonitor
+      # scrape must present the API key; charts/inference-server's ServiceMonitor
       # already does that whenever `apiKey.enabled` (same situation as
       # llama-server, where --api-key-file also covers /metrics).
       metrics: true

@@ -1,13 +1,13 @@
 # CI fixture — the localai (image-generation) engine path (ADR-0102).
 #
-# charts/model-server is a render-only leaf: its templates fail-guard on values
+# charts/inference-server is a render-only leaf: its templates fail-guard on values
 # the orchestrator injects, so linting it with default (empty) values aborts by
 # design. Chart.yaml carries `lint-mode: ci-values`, so CI lints AND renders each
 # fixture in this directory instead.
 #
 # Generated from the real orchestrator expansion, then renamed — the
 # authoritative check that the two agree is still
-# `helm template x charts/model-serving`.
+# `helm template x charts/inference`.
 #
 # What this fixture covers that the other two do not:
 #   • NO seed Job — LocalAI downloads its own model and backend at start-up.
@@ -369,7 +369,7 @@ modelServing:
       project: "ai"
       source:
         # OCI chart-float (ADR-0055): full chart path in repoURL + chart "."
-        repoURL: "oci://ghcr.io/adorsys-gis/charts/model-server"
+        repoURL: "oci://ghcr.io/adorsys-gis/charts/inference-server"
         chart: "."
         targetRevision: ">=0.0.0"
         helm:

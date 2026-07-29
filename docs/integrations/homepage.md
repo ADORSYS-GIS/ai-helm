@@ -35,7 +35,7 @@ automatically too — bjw-template v4's native `configMaps:` block computes a
 `checksum/configMaps` pod annotation for you.
 
 Current starter set (annotated as of ADR-0089): Grafana, MLflow, Argo
-Workflows, Coder. Everything else (LibreChat, model-serving endpoints, MCPs,
+Workflows, Coder. Everything else (LibreChat, inference endpoints, MCPs,
 LakeFS) is not yet annotated — add the same four lines to each as they come
 up; this was a deliberate starter set, not a full sweep.
 

@@ -1,11 +1,11 @@
-# model-server — the generic self-hosted model leaf
+# inference-server — the generic self-hosted model leaf
 
 One model, one GPU, one Application's worth of resources. **Never deployed
-directly**: [`charts/model-serving`](../model-serving) generates a child per
+directly**: [`charts/inference`](../inference) generates a child per
 catalog entry and hands this chart a fully-expanded values block.
 
 > Looking for where to add or change a model? That is
-> [`charts/model-serving/values.yaml`](../model-serving/values.yaml). Nothing in
+> [`charts/inference/values.yaml`](../inference/values.yaml). Nothing in
 > this directory needs to change to deploy a new model.
 
 Replaces the per-model `charts/model-serving-<model>` copies
@@ -62,12 +62,12 @@ renders `ci/llamacpp-values.yaml` and `ci/vllm-values.yaml` instead — one per
 engine profile, so both paths stay covered.
 
 ```bash
-for f in charts/model-server/ci/*-values.yaml; do
-  helm lint charts/model-server --strict -f "$f"
-  helm template x charts/model-server -f "$f" --dry-run > /dev/null
+for f in charts/inference-server/ci/*-values.yaml; do
+  helm lint charts/inference-server --strict -f "$f"
+  helm template x charts/inference-server -f "$f" --dry-run > /dev/null
 done
 ```
 
 The fixtures are representative, not authoritative. The real check that the leaf
 and the orchestrator agree is rendering the orchestrator — see
-[`../model-serving/README.md`](../model-serving/README.md#verification).
+[`../inference/README.md`](../inference/README.md#verification).

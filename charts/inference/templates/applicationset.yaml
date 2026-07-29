@@ -1,5 +1,5 @@
 {{- /*
-model-serving orchestrator — ONE ApplicationSet fans out to one `model-server`
+inference orchestrator — ONE ApplicationSet fans out to one `inference-server`
 child Application per enabled catalog entry (ADR-0094).
 
 Pattern (identical to charts/ai-models): Helm pre-computes every element,
@@ -29,7 +29,7 @@ spec:
           # ── Model: {{ $modelName }} ({{ $modelConfig.engine }}) ──
           - appName: {{ printf "%s-%s" $.Release.Name $modelName | quote }}
             valuesYaml: |-
-{{ include "model-serving.childValues" (dict "root" $ "name" $modelName "cfg" $modelConfig) | indent 14 }}
+{{ include "inference.childValues" (dict "root" $ "name" $modelName "cfg" $modelConfig) | indent 14 }}
 {{- end }}
 {{- end }}
 {{- if not $enabled }}
@@ -48,7 +48,7 @@ spec:
       project: {{ .Values.argocd.project | quote }}
       source:
         # OCI chart-float (ADR-0055): full chart path in repoURL + chart "."
-        repoURL: {{ printf "%s/model-server" .Values.argocd.chartRegistry | quote }}
+        repoURL: {{ printf "%s/inference-server" .Values.argocd.chartRegistry | quote }}
         chart: "."
         targetRevision: {{ .Values.argocd.chartVersionRange | quote }}
         helm:
@@ -56,7 +56,7 @@ spec:
           values: |
             {{ "{{ .valuesYaml | nindent 12 }}" }}
       destination:
-        {{- include "model-serving.argocd.destinationClusterRef" .Values.argocd.destination | nindent 8 }}
+        {{- include "inference.argocd.destinationClusterRef" .Values.argocd.destination | nindent 8 }}
         namespace: {{ .Values.argocd.destination.namespace | quote }}
       syncPolicy:
         {{- with .Values.argocd.syncPolicy.syncOptions }}

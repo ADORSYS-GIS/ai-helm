@@ -157,4 +157,4 @@ sequenceDiagram
 | Zero-cut rollout | 60 s drain (`minDrainDuration` 15 s); PDB `maxUnavailable: 1` | `EnvoyProxy` |
 | Cost metering | Native `llmRequestCosts` token extraction (no Lua/Python hop) | `AIGatewayRoute` |
 
-→ Subsystems: [05 Auth](05-auth-identity.md) · [09 Model serving](09-model-serving.md) · [08 Observability](08-observability.md)
+→ Subsystems: [05 Auth](05-auth-identity.md) · [09 Model serving](09-inference.md) · [08 Observability](08-observability.md)

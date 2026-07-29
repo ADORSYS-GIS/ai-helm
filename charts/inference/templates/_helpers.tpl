@@ -1,10 +1,10 @@
 {{/*
 ═══════════════════════════════════════════════════════════════════════════════
- model-serving helpers — the ENGINE PROFILES.
+ inference helpers — the ENGINE PROFILES.
 
  This file is the machinery that lets a ~15-line catalog entry become a complete
  model deployment. It expands one `models:` entry into the full values block the
- `model-server` leaf (and its bjw-template subchart) needs.
+ `inference-server` leaf (and its bjw-template subchart) needs.
 
  Why here and not in the leaf: a Helm parent cannot compute SUBCHART values at
  render time. The old per-model charts hit that wall and worked around it by
@@ -15,12 +15,12 @@
  exactly once, from one source of truth.
 
  Adding an engine = adding a profile here + a `ci/<engine>-values.yaml` fixture
- in charts/model-server. Nothing else in the repo changes.
+ in charts/inference-server. Nothing else in the repo changes.
 ═══════════════════════════════════════════════════════════════════════════════
 */}}
 
 {{/*
-model-serving.argocd.destinationClusterRef
+inference.argocd.destinationClusterRef
 
 Emits the ArgoCD destination cluster identity line and HARD-FAILS if it resolves
 to the in-cluster API server without an explicit opt-in. Enforces ADR-0017: the
@@ -31,7 +31,7 @@ in. Identical contract to `ai-models.argocd.destinationClusterRef`.
 lands in-cluster/argocd (via the charts/apps `controlPlane: true` entry); the
 CHILD Applications it generates are workloads and come through this guard.
 */}}
-{{- define "model-serving.argocd.destinationClusterRef" -}}
+{{- define "inference.argocd.destinationClusterRef" -}}
 {{- $d := . | default dict -}}
 {{- $name := $d.name | default "" -}}
 {{- $server := $d.server | default "" -}}
@@ -50,18 +50,18 @@ name: {{ $name | default "home-remote" | quote }}
 
 
 {{/*
-model-serving.storagePath — the sub-directory of the weights volume for a model.
+inference.storagePath — the sub-directory of the weights volume for a model.
 Defaults to the HF repo's last path segment, so `jabbatheduck/OpenMythos-GGUF`
 becomes `OpenMythos-GGUF`. Overridable per model.
 Input: the model's `weights` dict.
 */}}
-{{- define "model-serving.storagePath" -}}
+{{- define "inference.storagePath" -}}
 {{- .storagePath | default (last (splitList "/" (required "weights.hfRepo is required" .hfRepo))) -}}
 {{- end -}}
 
 
 {{/*
-model-serving.seedScript — the weight-download script for the seed Job.
+inference.seedScript — the weight-download script for the seed Job.
 
 Two shapes, one per engine family:
   llamacpp → fetch the ONE matching GGUF and symlink it to a stable
@@ -78,7 +78,7 @@ stamp no longer matches, so the weights re-seed — which is exactly what
 
 Input: dict "weights" <weights> "dir" <modelDir>
 */}}
-{{- define "model-serving.seedScript" -}}
+{{- define "inference.seedScript" -}}
 {{- $w := .weights -}}
 {{- $dir := .dir -}}
 {{- $rev := $w.revision | default "main" -}}
@@ -119,7 +119,7 @@ echo "Seed complete."
 
 
 {{/*
-model-serving.serverArgs — the engine command line.
+inference.serverArgs — the engine command line.
 
 llama.cpp: the image's entrypoint IS llama-server, so these are bare flags.
   -ngl 99 offloads every layer to the GPU; --jinja enables tool calling via the
@@ -142,7 +142,7 @@ localai: LocalAI (ADR-0102) is configured ENTIRELY BY ENVIRONMENT, not by flags 
 Input: dict "name" <name> "engine" <engine> "serving" <serving> "dir" <modelDir> "lmcache" <lmcache>
 Output: a YAML list of strings.
 */}}
-{{- define "model-serving.serverArgs" -}}
+{{- define "inference.serverArgs" -}}
 {{- $name := .name -}}
 {{- $s := .serving | default dict -}}
 {{- $dir := .dir -}}
@@ -253,19 +253,19 @@ Output: a YAML list of strings.
 
 
 {{/*
-model-serving.childValues — the whole values block for one model-server child.
+inference.childValues — the whole values block for one inference-server child.
 
 Input: dict "root" $ "name" <modelName> "cfg" <modelConfig>
 Output: YAML (unindented; the caller indents it into the ApplicationSet element).
 */}}
-{{- define "model-serving.childValues" -}}
+{{- define "inference.childValues" -}}
 {{- $root := .root -}}
 {{- $name := .name -}}
 {{- $cfg := .cfg -}}
 {{- $d := $root.Values.defaults -}}
 {{- $engine := required (printf "model %s: `engine` is required (llamacpp|vllm|localai)" $name) $cfg.engine -}}
 {{- if not (has $engine (list "llamacpp" "vllm" "localai")) -}}
-{{- fail (printf "model %s: unknown engine %q — expected llamacpp, vllm or localai. Add a profile in charts/model-serving/templates/_helpers.tpl if you mean to introduce one." $name $engine) -}}
+{{- fail (printf "model %s: unknown engine %q — expected llamacpp, vllm or localai. Add a profile in charts/inference/templates/_helpers.tpl if you mean to introduce one." $name $engine) -}}
 {{- end -}}
 {{- $eng := index $d.engines $engine -}}
 {{- /* Per-model image override, merged key-by-key over the engine profile's.
@@ -305,7 +305,7 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
        no HF repo at all. */ -}}
 {{- $storagePath := "" -}}
 {{- if $seed -}}
-{{- $storagePath = include "model-serving.storagePath" $w -}}
+{{- $storagePath = include "inference.storagePath" $w -}}
 {{- else -}}
 {{- $storagePath = $w.storagePath | default $name -}}
 {{- end -}}
@@ -512,7 +512,7 @@ modelServing:
           {{- /* Omit the key entirely when an engine contributes no args (LocalAI
                  is env-configured). An empty `args:` is YAML null, which bjw
                  still renders — blanking the image's own command. */ -}}
-          {{- $serverArgs := include "model-serving.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath) | trim }}
+          {{- $serverArgs := include "inference.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath) | trim }}
           {{- with $serverArgs }}
           args:
             {{- . | nindent 12 }}
@@ -711,7 +711,7 @@ modelServing:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              {{- include "model-serving.seedScript" (dict "weights" $w "dir" $dir) | nindent 14 }}
+              {{- include "inference.seedScript" (dict "weights" $w "dir" $dir) | nindent 14 }}
           {{- if $d.hfToken.enabled }}
           env:
             HF_TOKEN:

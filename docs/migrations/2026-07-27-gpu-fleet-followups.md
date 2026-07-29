@@ -1,7 +1,7 @@
 # GPU fleet — open follow-ups (as of 2026-07-27)
 
 Punch-list left after bringing the two Hetzner GPU nodes into service: the
-generic model-serving charts (ADR-0094/0095), OpenMythos-27B and Qwen3-8B-AWQ,
+generic inference charts (ADR-0094/0095), OpenMythos-27B and Qwen3-8B-AWQ,
 engine hardening (ADR-0097), the Deployment switch (ADR-0098), GPU telemetry,
 dashboards, alerting, and Grafana branding (ADR-0099).
 

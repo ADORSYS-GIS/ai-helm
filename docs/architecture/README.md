@@ -58,7 +58,7 @@ flowchart TB
 | 06 | [Networking & TLS](06-networking-tls.md) | infra | Ingress, the Hetzner LB, Cilium deny-egress, certificate issuance |
 | 07 | [Data & secrets](07-data-secrets.md) | infra | Mongo, CNPG, Redis, object storage, the ESO secret flow |
 | 08 | [Observability](08-observability.md) | platform | The LGTM pipeline, Alloy collection, per-user attribution |
-| 09 | [Model serving](09-model-serving.md) | platform | Provider fan-out + the self-hosted GPU model; budget tiers |
+| 09 | [Model serving](09-inference.md) | platform | Provider fan-out + the self-hosted GPU model; budget tiers |
 | 10 | [MCP servers](10-mcp.md) | platform | MCP routing, the OAuth carve-out, the external-proxy modes |
 
 ## C4 ↔ arc42 ↔ this suite

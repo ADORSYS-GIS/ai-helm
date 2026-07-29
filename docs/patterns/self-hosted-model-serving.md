@@ -36,11 +36,11 @@ is applied before the request reaches it.
 
 | Chart | Role |
 |---|---|
-| **`charts/model-serving`** | Orchestrator. One ApplicationSet, one child per catalog entry. `controlPlane: true`. **Holds the engine profiles.** |
-| **`charts/model-server`** | Generic leaf. One model's resources: bjw-template renders the Deployment + seed Job + Service; own templates render PVC, ExternalSecrets, CiliumNetworkPolicy, ServiceMonitor. |
+| **`charts/inference`** | Orchestrator. One ApplicationSet, one child per catalog entry. `controlPlane: true`. **Holds the engine profiles.** |
+| **`charts/inference-server`** | Generic leaf. One model's resources: bjw-template renders the Deployment + seed Job + Service; own templates render PVC, ExternalSecrets, CiliumNetworkPolicy, ServiceMonitor. |
 | **`charts/ai-models`** | Unchanged. The gateway catalog — a backend entry + a model entry federate a served model to users. |
 
-**Adding a model is one ~15-line entry** in `charts/model-serving/values.yaml`
+**Adding a model is one ~15-line entry** in `charts/inference/values.yaml`
 (plus its `charts/ai-models` entries to make it user-reachable). No new chart, no
 new Application, no ADR. The step-by-step recipe with verification is
 `inference-ops` → `docs/how-to/add-a-model.md`.
@@ -60,8 +60,8 @@ this way (ADR-0094).
 To see what a catalog entry actually expands into:
 
 ```bash
-helm template chk charts/model-serving | awk '/valuesYaml: \|-/{f=1;next} f' | sed 's/^              //' > /tmp/child.yaml
-helm template x charts/model-server -f /tmp/child.yaml -n inference
+helm template chk charts/inference | awk '/valuesYaml: \|-/{f=1;next} f' | sed 's/^              //' > /tmp/child.yaml
+helm template x charts/inference-server -f /tmp/child.yaml -n inference
 ```
 
 ## 3. Engines
@@ -350,10 +350,10 @@ and do not "fix" them to match this page; they are correct for where they ran.
 ## 9. Verification
 
 ```bash
-helm dep build charts/model-serving && helm dep build charts/model-server
-helm lint charts/model-serving --strict
-for f in charts/model-server/ci/*-values.yaml; do
-  helm lint charts/model-server --strict -f "$f" && helm template x charts/model-server -f "$f" --dry-run >/dev/null
+helm dep build charts/inference && helm dep build charts/inference-server
+helm lint charts/inference --strict
+for f in charts/inference-server/ci/*-values.yaml; do
+  helm lint charts/inference-server --strict -f "$f" && helm template x charts/inference-server -f "$f" --dry-run >/dev/null
 done
 ./tools/check-model-catalogs.sh
 ```

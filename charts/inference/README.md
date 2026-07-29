@@ -1,6 +1,6 @@
-# model-serving — the self-hosted model orchestrator
+# inference — the self-hosted model orchestrator
 
-Emits **one ApplicationSet** with a child `model-server` Application per enabled
+Emits **one ApplicationSet** with a child `inference-server` Application per enabled
 entry in [`values.yaml`](./values.yaml) `models:`. Same orchestrator-plus-leaves
 shape as [`ai-models`](../ai-models) (ADR-0012); the decision to generalise is
 [ADR-0094](../../docs/adr/0094-generic-model-serving-orchestrator.md).
@@ -16,7 +16,7 @@ values.yaml models.<name>          (~15 lines you write)
         │
         └─ _helpers.tpl expands it ─────────────────────────────────┐
                                                                     ▼
-   ApplicationSet child `model-serving-<name>` → charts/model-server (OCI)
+   ApplicationSet child `inference-<name>` → charts/inference-server (OCI)
                                                                     │
         ┌───────────────────────────────────────────────────────────┘
         ▼
@@ -70,9 +70,9 @@ regression versus a Marlin/AWQ kernel.
 ## Verification
 
 ```bash
-helm dep build charts/model-serving && helm dep build charts/model-server
-helm lint charts/model-serving --strict
-helm template chk charts/model-serving --dry-run > /dev/null
+helm dep build charts/inference && helm dep build charts/inference-server
+helm lint charts/inference --strict
+helm template chk charts/inference --dry-run > /dev/null
 ./tools/check-model-catalogs.sh
 ```
 
@@ -80,6 +80,6 @@ To render what a child will actually receive — the check worth doing after
 editing `_helpers.tpl`, since it exercises the orchestrator *and* the leaf:
 
 ```bash
-helm template chk charts/model-serving | awk '/valuesYaml: \|-/{f=1;next} f' | sed 's/^              //' > /tmp/child.yaml
-helm template x charts/model-server -f /tmp/child.yaml -n inference
+helm template chk charts/inference | awk '/valuesYaml: \|-/{f=1;next} f' | sed 's/^              //' > /tmp/child.yaml
+helm template x charts/inference-server -f /tmp/child.yaml -n inference
 ```

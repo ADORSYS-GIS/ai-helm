@@ -70,11 +70,11 @@ the access control.
 
 ```mermaid
 flowchart TB
-    subgraph orch2["charts/model-serving (ApplicationSet)"]
+    subgraph orch2["charts/inference (ApplicationSet)"]
         CAT["catalog: 1 entry per model<br/>engine profiles expand it"]
     end
     subgraph inf["ns: inference (home-remote, GPU nodes)"]
-        subgraph ss["StatefulSet (charts/model-server)"]
+        subgraph ss["StatefulSet (charts/inference-server)"]
             ENG["ONE container: llama-server | vLLM<br/>/v1 · /health · /metrics<br/>nvidia.com/gpu: 1"]
         end
         PVC["RWX Longhorn PVC (pre-seeded weights)"]
