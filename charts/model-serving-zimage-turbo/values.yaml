@@ -29,7 +29,17 @@ pvc:
   name: zimage-models
   storageClassName: longhorn
   accessMode: ReadWriteMany
-  size: 20Gi
+  # ⚠️ Tongyi-MAI/Z-Image-Turbo publishes FP32 weights (~33 GB: transformer
+  # 24.62 + text_encoder 8.05 + VAE 0.17), not the "FP8, ~8 GB" the model card
+  # implies. `hf download --local-dir` also stages the whole repo into
+  # `.cache/huggingface` before materialising the real files, so peak disk is
+  # ~2× the repo — a 20Gi PVC filled solid with the model directories still
+  # near-empty. 100Gi is 2x the repo plus margin (this is exactly the sizing
+  # ai-helm's own charts/model-serving orchestrator converged on for this same
+  # download — see docs/adr/0100-image-generation-on-the-gpu-fleet.md and
+  # docs/migrations/2026-07-27-gpu-fleet-followups.md). Longhorn can grow a PVC
+  # in place but never shrink one, so err high rather than resize twice.
+  size: 100Gi
 
 seedJob:
   enabled: true
@@ -172,7 +182,22 @@ modelServing:
               mkdir -p "$MODEL_DIR"
               echo "Seeding Tongyi-MAI/Z-Image-Turbo -> $MODEL_DIR (skips files already present)"
               pip install --no-cache-dir -q --root-user-action=ignore "huggingface_hub[hf_xet]>=1.0"
-              hf download Tongyi-MAI/Z-Image-Turbo --local-dir "$MODEL_DIR"
+              # --max-workers 2: `hf download` fans out over 8 workers by
+              # default and hf_xet buffers per file, so peak seed memory tracks
+              # the LARGEST SHARD (this repo has three ~10 GB safetensors
+              # shards) × concurrent workers, not the repo total. 8 workers on
+              # 10 GB shards OOM-killed this exact download at a 6-10Gi limit
+              # elsewhere in the fleet; capping fan-out is the real fix (Hub
+              # bandwidth, not concurrency, is the bottleneck here anyway).
+              hf download Tongyi-MAI/Z-Image-Turbo --max-workers 2 --local-dir "$MODEL_DIR"
+              # Reclaim the staging area. `hf download --local-dir` stages the
+              # whole repo into $MODEL_DIR/.cache/huggingface before
+              # materialising the real files, so it doubles steady-state disk
+              # usage forever unless removed. Only after a successful download
+              # (this script is `sh -ec`, so an earlier failure exits before
+              # reaching this line) — an interrupted run keeps its staging area
+              # and stays resumable rather than re-fetching 33 GB from scratch.
+              rm -rf "$MODEL_DIR/.cache"
               echo "Seed complete."
           env:
             HF_TOKEN:
@@ -181,7 +206,9 @@ modelServing:
                 key: token
           resources:
             requests: { cpu: "4", memory: 6Gi }
-            limits:   { cpu: "8", memory: 10Gi }
+            # 16Gi, not the fleet-typical 6-10Gi: sized for the largest-shard ×
+            # worker-count math above, not the repo total.
+            limits:   { cpu: "8", memory: 16Gi }
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: false
