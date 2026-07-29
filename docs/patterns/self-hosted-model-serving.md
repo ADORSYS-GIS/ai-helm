@@ -160,9 +160,19 @@ a 20 GiB card idle while parameters streamed over PCIe every step.
   gallery entry can move under us, and LocalAI resolves its inference **backend**
   separately at runtime (default `…/index.yaml@master` at tag `latest`, unsigned),
   so pinning the server pins the thing that answers HTTP but not the thing that
-  executes the model. Fixed in ADR-0105 by pinning gallery + backend image to the
-  server's own release, adding a keyless-cosign policy, and defining the model
-  ourselves with a `sha256` per file.
+  executes the model. ADR-0105 tried to fix all of it; **on a fresh volume, two
+  thirds of that turned out not to work** (ADR-0108):
+  - ✅ the **gallery index** pin (`…/index.yaml@v4.7.1`) works, and the model's
+    weights are genuinely pinned by a `sha256` per file in `download_files`;
+  - ❌ the **backend image tag** was never pinned — the gallery index hardcodes
+    `uri: …:latest-…` and LocalAI uses it verbatim, so
+    `--backend-images-release-tag` never applies;
+  - ❌ the **cosign policy** was unsatisfiable — upstream signs in the legacy
+    cosign format, LocalAI v4.7.1's verifier reads only the new Sigstore bundle
+    format, and the mismatch hard-fails the pod at boot
+    (`no Sigstore bundle referrer … signed with --new-bundle-format?`).
+    Do not re-add it expecting the identity regex to be the problem; it is never
+    reached. The backend binary is currently unverified and floating.
 - **Do not overwrite the gallery's config file.** LocalAI logs `installing model`
   on **every** start and rewrites it, so an initContainer's version survives
   exactly until the engine boots — measured proof: latency and VRAM came back

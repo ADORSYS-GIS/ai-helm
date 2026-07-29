@@ -124,9 +124,15 @@ profile data rather than engine-name branches: it has **no seed Job** (it fetche
 its own weights and its own inference backend at start-up), and its weights volume
 is therefore **writable**. The pinned-bytes guarantee the other engines get from a
 pinned HF revision comes instead from a `sha256` per file in `download_files`, and
-the backend gallery, backend image tag and cosign policy are all pinned alongside
-the server (ADR-0105) — pinning the server alone does **not** pin what executes
-the model.
+the gallery **index** is pinned alongside the server (ADR-0105) — pinning the
+server alone does **not** pin what executes the model.
+
+⚠️ ADR-0105 also claimed the backend **image tag** was pinned and its signature
+verified. Neither held (**ADR-0108**): the gallery index hardcodes `latest` in the
+entry's `uri`, and upstream signs with legacy cosign while LocalAI v4.7.1 verifies
+only the new Sigstore bundle format — a mismatch that hard-failed the pod on its
+first fresh volume. The `verification:` policy is removed; the backend binary is
+currently **unverified and unpinned**. The model's weights remain sha256-pinned.
 
 ### Legacy generation
 
