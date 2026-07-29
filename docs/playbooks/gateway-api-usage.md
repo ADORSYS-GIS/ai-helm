@@ -28,9 +28,26 @@ listener only — picking one externally returns `404 No matching route found`.
 
 ## Image generation — `z-image-turbo-local`
 
-⚠️ **Always pass `"response_format": "b64_json"`.** The default returns
-`{"url": "http://127.0.0.1:8080/generated-images/….png"}` — the model's own
-in-pod address, which is not reachable from anywhere you'd run this.
+> ⚠️ **KNOWN LIMITATION (2026-07-29): only ≤512×512 works through the gateway.**
+> Anything larger fails with `HTTP 500` / `Internal Server Error`. It is not your
+> request — Envoy's ext_proc buffers the whole response body to extract usage and
+> rejects it above ~1 MiB:
+>
+> ```
+> response_code_details: response_payload_too_large
+> ```
+>
+> Measured: 512×512 → 801 KB → 200. 768×768 → ~1.8 MB → 500. 1024×1024 → 500.
+> The listener (500 MiB) and cluster (100 MiB) buffer limits are NOT the cause —
+> both were checked. The same 1024×1024 request succeeds when sent directly to
+> the pod in-cluster, so the model is fine; the limit is in the gateway.
+>
+> **`response_format: "url"` is not a workaround.** It returns 200 at any size
+> with a small body, but the URL it hands back
+> (`https://api.ai.camer.digital/generated-images/….png`) **404s** — the gateway
+> routes `/v1/*` only, and nothing serves `/generated-images/*`.
+>
+> Until this is fixed, generate at 512×512.
 
 ```bash
 curl -s $AI_BASE/v1/images/generations \
@@ -39,7 +56,7 @@ curl -s $AI_BASE/v1/images/generations \
   -d '{
     "model": "z-image-turbo-local",
     "prompt": "a red bicycle leaning on a blue wall",
-    "size": "1024x1024",
+    "size": "512x512",
     "n": 1,
     "response_format": "b64_json"
   }' | jq -r '.data[0].b64_json' | base64 -d > out.png
@@ -47,8 +64,8 @@ curl -s $AI_BASE/v1/images/generations \
 
 | | |
 |---|---|
-| 1024×1024 | **~32 s** |
-| 512×512 | **~4.8 s** |
+| 512×512 | **~4.8 s** in-cluster, ~8.7 s via gateway — the only size that works end to end today |
+| 1024×1024 | **~32 s** — generates fine, but the response cannot be returned (see the limitation above) |
 | Concurrency | **one at a time** — the model holds a mutex, so a second caller queues |
 | Timeout | 300 s request / 1 h idle — rides a short queue, not a cold start |
 | Billing | flat **$0.0100/image**, tokens always 0 (ADR-0104) |
@@ -113,7 +130,8 @@ curl -s $AI_BASE/v1/embeddings \
 | `404 No matching route found` | the model id doesn't exist, or it is `-internal` and you're on the external host |
 | `429` | plan burst (req/min or tokens/min) or the monthly µ$ budget — see the ratelimit-quota dashboard |
 | `503` on a `*-local` model | its GPU pod isn't Ready — `kubectl -n inference get pods` |
-| image `url` unreachable | you omitted `response_format: b64_json` (see above) |
+| `500` on image generation | response >~1 MiB — generate at 512×512 (see the limitation above). Confirm with `response_code_details: response_payload_too_large` in the gateway access log |
+| image `url` 404s | expected today — nothing serves `/generated-images/*` through the gateway |
 
 Related: [`../patterns/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) ·
 [`../architecture/09-model-serving.md`](../architecture/09-model-serving.md)
