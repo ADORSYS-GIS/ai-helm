@@ -539,13 +539,18 @@ models:
        # No `include`: vLLM needs the whole repo (safetensors shards + tokenizer
        # + processor config), not a single file.
        #
-       # ~2.2x the measured ~8.9 GB repo — matches the qwen3-8b-fast precedent
-       # (also sizeGi: 20 for a similarly-sized whole-repo vLLM download) and
-       # comfortably survives the "hf download stages the whole repo twice"
-       # peak (charts/model-serving/templates/_helpers.tpl already reclaims the
-       # `.cache` staging directory after a successful download — the fix from
-       # the Z-Image-Turbo disk-space incident, #802).
-       sizeGi: 20
+       # ⚠️ CORRECTED 2026-07-29, live: 20Gi (the qwen3-8b-fast precedent) was too
+       # tight. `hf download --local-dir` stages the WHOLE repo into `.cache`
+       # before materialising it (peak ~2x the ~8.9 GB repo = ~17.8 GB), which
+       # already left only ~2.2 GB margin in a 20Gi volume — and every OOM-killed
+       # attempt (see seedMaxWorkers below) staged its own partial copy in
+       # `.cache` without reaching the post-success cleanup, so the volume hit
+       # 100% full / 0 bytes free purely from crash debris, before a single
+       # complete download. Same mechanism as the Z-Image-Turbo incident (#802),
+       # just at 1/4 the scale. 30Gi ~= 2x the repo plus real margin. Longhorn
+       # grows a PVC in place but never shrinks one, so this errs high rather
+       # than resize twice.
+       sizeGi: 30
        # ⚠️ CORRECTED 2026-07-29, live: this DID OOM (exit 137) at the
        # fleet-default 6Gi seed limit with the default 8-way `hf download`
        # fan-out, at 12/14 files. The earlier assumption here — "largest shard
