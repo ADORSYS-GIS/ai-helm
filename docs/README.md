@@ -41,7 +41,7 @@ Every diagram is mermaid (uncolored, client-rendered); start at the hub and zoom
 | [`architecture/06-networking-tls.md`](./architecture/06-networking-tls.md) | infra | Ingress, Hetzner LB, Cilium deny-egress, TLS issuance |
 | [`architecture/07-data-secrets.md`](./architecture/07-data-secrets.md) | infra | Mongo/CNPG/Redis/S3, the ESO secret flow, ownership split |
 | [`architecture/08-observability.md`](./architecture/08-observability.md) | platform | LGTM pipeline, per-user attribution, dashboards-as-code |
-| [`architecture/09-model-serving.md`](./architecture/09-model-serving.md) | platform | Provider fan-out + the self-hosted GPU model; budget tiers |
+| [`architecture/09-inference.md`](./architecture/09-inference.md) | platform | Provider fan-out + the self-hosted GPU model; budget tiers |
 | [`architecture/10-mcp.md`](./architecture/10-mcp.md) | platform | MCP routing, the OAuth carve-out, external-proxy modes |
 
 ---
@@ -96,7 +96,7 @@ Reusable patterns, concept explainers, and reference/research write-ups.
 
 | File | What it covers |
 |---|---|
-| [`self-hosted-model-serving.md`](patterns/self-hosted-model-serving.md) | **The GitOps pattern for serving models on the Hetzner GPU fleet** (ADR-0094/0095): the `model-serving` orchestrator + generic `model-server` leaf, THREE engine profiles (llama.cpp / vLLM+LMCache / **LocalAI** for image generation — ADR-0102, which replaced the short-lived first-party Rust server of ADR-0100), GPU-as-a-resource-request scheduling, weight seeding, and cluster-local federation — no Ingress, cert, API key or proxy sidecar. Also documents the **legacy** per-model charts from `admin@homeos`, now all disabled (and `zimage-turbo`'s deleted outright, ADR-0106). ⚠️ The *inference* knowledge (VRAM budgeting, quantization, engine choice, benchmarks, runbooks) lives in the team's **`inference-ops`** repo, not here. Legacy per-model papers: [`models/`](./models/) |
+| [`self-hosted-model-serving.md`](patterns/self-hosted-model-serving.md) | **The GitOps pattern for serving models on the Hetzner GPU fleet** (ADR-0094/0095): the `inference` orchestrator + generic `inference-server` leaf, THREE engine profiles (llama.cpp / vLLM+LMCache / **LocalAI** for image generation — ADR-0102, which replaced the short-lived first-party Rust server of ADR-0100), GPU-as-a-resource-request scheduling, weight seeding, and cluster-local federation — no Ingress, cert, API key or proxy sidecar. Also documents the **legacy** per-model charts from `admin@homeos`, now all disabled (and `zimage-turbo`'s deleted outright, ADR-0106). ⚠️ The *inference* knowledge (VRAM budgeting, quantization, engine choice, benchmarks, runbooks) lives in the team's **`inference-ops`** repo, not here. Legacy per-model papers: [`models/`](./models/) |
 | [`per-user-observability.md`](patterns/per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki `user_id`/`azp` labels |
 | [`cost-observability.md`](patterns/cost-observability.md) | **AI-gateway cost observability** (ADR-0058/0059/0060): the Mimir metrics backbone (Alloy `stage.metrics`), the cost dashboards + gamified scoreboard, Discord alerting, the backfill, and the operator runbook |
 | [`ratelimit-quota-observability.md`](patterns/ratelimit-quota-observability.md) | **Rate-limit quota from the limiter's LIVE Redis counters** (ADR-0070): the key shape (`rule-2`=free/`rule-7`=pro, `<window>`=bucket epoch), the exporter→Mimir leaderboard + the `redis-datasource` tmscan census (`tlsAuth:true` gotcha) |

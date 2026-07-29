@@ -151,7 +151,7 @@ These are recorded here for completeness; they are not ai-helm changes.
 3. **P1:** Keycloak metrics + 23338; envoy-ratelimit custom panels (data
    already in Mimir); Authorino scrape + small custom board; MongoDB
    exporter + Percona board.
-4. **P2 & cross-repo:** as listed; model-serving observability needs its
+4. **P2 & cross-repo:** as listed; inference observability needs its
    own remote-write ADR before any dashboard work.
 
 ## 6. How findings were verified (repeatable)

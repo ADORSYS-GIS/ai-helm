@@ -96,7 +96,7 @@
 - **P1** — Keycloak (metrics + ServiceMonitor + gnetId 23338);
   envoy-ratelimit custom board (counters already in Mimir); Authorino
   (scrape + custom board); MongoDB (`mongodb_exporter` + Percona board);
-  model-serving remote-write **decision** (ADR needed before any build).
+  inference remote-write **decision** (ADR needed before any build).
 - **P2** — everything else marked P2 above, plus the two findings:
   Keycloak traces dropped at the `debug` exporter; knative-serving
   decommission-or-document.

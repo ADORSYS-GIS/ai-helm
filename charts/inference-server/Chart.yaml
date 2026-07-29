@@ -1,11 +1,11 @@
 apiVersion: v2
-name: model-server
+name: inference-server
 description: |
   The GENERIC self-hosted model server leaf — one Application's worth of
   resources for exactly one model on one GPU. Replaces the per-model
   `charts/model-serving-<model>` copies (ADR-0094).
 
-  Never deployed directly: `charts/model-serving` (the orchestrator) emits one
+  Never deployed directly: `charts/inference` (the orchestrator) emits one
   ApplicationSet child per catalog entry and hands this chart a fully-expanded
   values block. Everything model-specific — engine image, server args, seed
   script, probes, resources — is computed by the orchestrator's helpers, because
@@ -26,7 +26,7 @@ description: |
   place identity, budgets, rate limits and metering are enforced (ADR-0021).
 
   Engines: `llamacpp` (GGUF) and `vllm` (safetensors, optional LMCache). See
-  charts/model-serving for the catalog and the engine profiles.
+  charts/inference for the catalog and the engine profiles.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
@@ -50,7 +50,7 @@ maintainers:
 dependencies:
   # bjw-template (forked bjw-s app-template, ADR-0016) renders the WORKLOAD:
   # the model StatefulSet, the seed Job, and the Service. Values arrive under
-  # the `modelServing:` key, fully assembled by charts/model-serving.
+  # the `modelServing:` key, fully assembled by charts/inference.
   - name: bjw-template
     version: "4.6.2"
     repository: "file://../bjw-template"

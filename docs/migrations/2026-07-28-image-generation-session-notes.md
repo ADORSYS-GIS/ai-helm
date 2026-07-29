@@ -6,7 +6,7 @@ throughout. It exists because the *route* we took is more instructive than the
 destination, and because most of the useful knowledge here was bought by getting
 things wrong in public.
 
-Read this if you are going to add a model, touch `charts/model-serving`, or price
+Read this if you are going to add a model, touch `charts/inference`, or price
 anything on the fleet.
 
 ---
@@ -349,10 +349,10 @@ it: read the model *family* first.
 | Document | Why you would open it |
 |---|---|
 | [`../patterns/self-hosted-model-serving.md`](../patterns/self-hosted-model-serving.md) | **Start here to add or change a model.** The three-engine table, the catalog-entry shapes, and the gotcha list every failure below was added to |
-| [`charts/model-serving/values.yaml`](../../charts/model-serving/values.yaml) | The catalog itself. Densely commented on purpose — the engine profiles carry the reasoning next to the knob |
+| [`charts/inference/values.yaml`](../../charts/inference/values.yaml) | The catalog itself. Densely commented on purpose — the engine profiles carry the reasoning next to the knob |
 | [`charts/ai-models/values.yaml`](../../charts/ai-models/values.yaml) | The gateway catalog, and the **id-suffix convention** (`-internal` / `-local`) at the top |
 | [`2026-07-27-gpu-fleet-followups.md`](2026-07-27-gpu-fleet-followups.md) | The live punch-list. Entries are closed in place with what actually happened, not deleted |
-| [`../architecture/09-model-serving.md`](../architecture/09-model-serving.md) | The subsystem map — engines, placement, the legacy generation |
+| [`../architecture/09-inference.md`](../architecture/09-inference.md) | The subsystem map — engines, placement, the legacy generation |
 | [`../architecture/07-data-secrets.md`](../architecture/07-data-secrets.md) | Storage: the two unrelated Longhorns, and why the home one now holds orphaned data |
 | [`../arc42.md`](../arc42.md) | §5 building blocks · §9 decisions · §11 **risks** — the four new ones are worth a read on their own |
 | [`../README.md`](../README.md) · [`../adr/README.md`](../adr/README.md) | The indexes. Every ADR summary above is expanded there |

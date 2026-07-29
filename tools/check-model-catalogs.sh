@@ -2,11 +2,11 @@
 # check-model-catalogs.sh — guard the two halves of a self-hosted model deployment.
 #
 # A model needs entries in TWO places, and that split is deliberate (see the
-# header of charts/model-serving/values.yaml):
+# header of charts/inference/values.yaml):
 #
-#   charts/model-serving/values.yaml  models:    → it RUNS on a GPU
-#   charts/ai-models/values.yaml      models:    → users can ROUTE to it
-#                                     backends:  → where the gateway sends traffic
+#   charts/inference/values.yaml   models:    → it RUNS on a GPU
+#   charts/ai-models/values.yaml   models:    → users can ROUTE to it
+#                                  backends:  → where the gateway sends traffic
 #
 # Serving without federating is a legitimate and useful state: it is how a model
 # gets deployed and measured before anyone can reach it. The reverse is not. A
@@ -18,7 +18,7 @@
 # Enforced — ONE invariant, chosen because it needs no exception list:
 #
 #   Every enabled ai-models backend whose hostname is in the `inference`
-#   namespace must resolve to a Service that an enabled charts/model-serving
+#   namespace must resolve to a Service that an enabled charts/inference
 #   entry actually creates.
 #
 # That single rule catches every direction of drift that matters: a federation
@@ -27,7 +27,7 @@
 # backend declared") is already a hard render failure in charts/ai-model, via its
 # `backendsInventory` guard — no need to duplicate it here.
 #
-# Deliberately NOT enforced: "every `*-local` model has a model-serving entry".
+# Deliberately NOT enforced: "every `*-local` model has an inference entry".
 # The legacy `model-serving-*` charts still serve several `*-local` models from
 # the OTHER cluster (admin@homeos) with public `*--poc.ssegning.com` backends, so
 # that rule would fail permanently on a correct repo. Scoping to cluster-local
@@ -41,9 +41,9 @@
 
 set -eu
 
-SERVING_CHART="charts/model-serving"
+SERVING_CHART="charts/inference"
 AI_MODELS_CHART="charts/ai-models"
-# Must match charts/model-serving/values.yaml argocd.destination.namespace.
+# Must match charts/inference/values.yaml argocd.destination.namespace.
 INFERENCE_NS="inference"
 # Fixed release name so the generated child-app prefix is predictable.
 REL="chk"
@@ -78,14 +78,14 @@ locals=$(printf '%s\n' "$aimodels_out" \
 for svc in $locals; do
   if ! printf '%s\n' "$served" | grep -qx "$svc"; then
     note "ai-models has a backend pointing at '$svc.$INFERENCE_NS.svc.cluster.local',
-    but no enabled charts/model-serving entry creates a Service named '$svc'.
+    but no enabled charts/inference entry creates a Service named '$svc'.
     The model name must match the backend hostname exactly."
   fi
 done
 
 if [ "$fail" -ne 0 ]; then
   printf '\ncheck-model-catalogs: the serving catalog and the gateway catalog disagree.\n' >&2
-  printf 'See charts/model-serving/values.yaml and inference-ops how-to/add-a-model.md.\n' >&2
+  printf 'See charts/inference/values.yaml and inference-ops how-to/add-a-model.md.\n' >&2
   exit 1
 fi
 

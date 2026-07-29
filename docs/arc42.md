@@ -176,7 +176,7 @@ flowchart TB
 | `kuadrant-policies` / `security-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy (values in `ai-helm-values`) | Direct |
 | `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget) | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
-| `model-serving` → `model-server` | Orchestrator ApplicationSet → one Application per self-hosted model on the Hetzner GPU fleet (`inference` ns, `home-remote`). THREE engine profiles (llama.cpp / vLLM+LMCache / **LocalAI**, image generation) expand a ~15-line catalog entry into the workload. Cluster-local: no Ingress, cert, API key or proxy sidecar | Orchestrator + leaves (ADR-0094/0095/0100/0102) |
+| `inference` → `inference-server` | Orchestrator ApplicationSet → one Application per self-hosted model on the Hetzner GPU fleet (`inference` ns, `home-remote`). THREE engine profiles (llama.cpp / vLLM+LMCache / **LocalAI**, image generation) expand a ~15-line catalog entry into the workload. Cluster-local: no Ingress, cert, API key or proxy sidecar | Orchestrator + leaves (ADR-0094/0095/0100/0102) |
 | `model-serving-*` (qwen3-5, qwen3-4b, deepseek-r1-1-5b, qwen25-3b-awq, qwen3-8b, ministral-3b, qwen2-vl-2b) | ⚠️ **LEGACY, ALL DISABLED since 2026-07-27 (ADR-0100)** — per-model charts targeting the *other* cluster (`admin@homeos`) over a public edge; `homeCluster: true`. `zimage-turbo` was the last live one, moved to the fleet, and its chart was **deleted** by ADR-0106; the rest are a rollback surface only | Hybrid bjw (ADR-0022/0029/0030/0032) |
 | `ai-models-info` | OpenRouter-shape `/v1/models/info` catalog (nginx static) | Direct (ADR-0015) |
 | `librechart` → `librechat-app` / `librechat-search` / `librechat-opencode-wellknown` | Chat UI (converse) + Mongo + Meili + opencode discovery/agents | Orchestrator + leaves (ADR-0014) |
@@ -397,7 +397,7 @@ flowchart LR
 | **Identity** | Keycloak JWT (RS256); 3 surfaces: human/browser, human/API, service account (CI via GHA OIDC). `x-oidc-*` contract (ADR-0011); synthetic named identities for known service callers (ADR-0068). | [05](./architecture/05-auth-identity.md) |
 | **Authorization** | JWT validity = entry; per-host AuthConfig differentiates plane/plan; no OPA in path. | [05](./architecture/05-auth-identity.md) |
 | **Multi-tenancy** | `x-account-id` (user), `x-org-id`, `x-billing-plan` (Keycloak claim) → rate-limit tiers. | [05](./architecture/05-auth-identity.md) |
-| **Quota** | Burst + monthly USD budget (both per-person, ADR-0035) in `BackendTrafficPolicy`; Redis counters read live (ADR-0070). | [09](./architecture/09-model-serving.md) |
+| **Quota** | Burst + monthly USD budget (both per-person, ADR-0035) in `BackendTrafficPolicy`; Redis counters read live (ADR-0070). | [09](./architecture/09-inference.md) |
 | **Observability** | LGTM + Alloy; per-user Loki labels; Mimir usage counters (ADR-0058); dashboards-as-code; traces + chat content via Tempo/OpenInference (ADR-0077). | [08](./architecture/08-observability.md) |
 | **Alerting** | Grafana-native unified alerting → Discord as grafana-operator CRs (ADR-0059). | [08](./architecture/08-observability.md) |
 | **Secrets** | ESO + `ssegning-aws`; chart-owned ExternalSecrets; app vs platform split. | [07](./architecture/07-data-secrets.md) |
@@ -476,7 +476,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0091 | MLflow bearer tokens gated on `aud`, plus a least-privileged programmatic path to Argo Workflows (amends 0085). `oidcAuth.audience: mlflow` — the realm JWKS is shared, so an unset `OIDC_AUDIENCE` accepted ANY realm token on the API; workflow pods get the `argo-workflow` SA **and** `controller.workflowDefaults.spec.serviceAccountName`; `server.authModes: [sso, client]` plus a dedicated `argo-workflows-ci` SA with no long-lived token Secret. LakeFS-from-workflows is documented, not templated — the one `lakefs-proxy-admin` key is shared with the 0090 shim |
 | 0092 | Longhorn scoped to the Hetzner Robot GPU nodes only (they carry a foreign `providerID` so hcloud-csi ignores them, leaving no CSI at all); pinned by nodeSelector/toleration **and** Longhorn's own `systemManagedComponentsNodeSelector`, and deliberately not the cluster-default StorageClass |
 | 0093 | Longhorn UI gated by a dedicated, role-restricted oauth2-proxy (`longhorn_roles` multivalued claim) |
-| 0094 | Generic model-serving orchestrator + leaf replaces the eight copy-pasted per-model charts. Engine profiles (llama.cpp / vLLM+LMCache) live in the ORCHESTRATOR because a Helm parent cannot compute subchart values at render time — the constraint that made every old chart hardcode its seed repo/glob. Adding a model = one ~15-line catalog entry; GPU placement becomes an `nvidia.com/gpu: 1` request so extra models queue instead of needing a manual swap |
+| 0094 | Generic inference orchestrator + leaf replaces the eight copy-pasted per-model charts. Engine profiles (llama.cpp / vLLM+LMCache) live in the ORCHESTRATOR because a Helm parent cannot compute subchart values at render time — the constraint that made every old chart hardcode its seed repo/glob. Adding a model = one ~15-line catalog entry; GPU placement becomes an `nvidia.com/gpu: 1` request so extra models queue instead of needing a manual swap |
 | 0095 | Self-hosted models federated over the CLUSTER NETWORK, not a public edge: no Ingress/cert/DNS/API key/Caddy sidecar, a `Backend` pointing at `<model>.inference.svc.cluster.local`, and a CiliumNetworkPolicy (incl. the `host`/`remote-node`/`health` entities kubelet probes need) as the control. Amends 0022; narrows the 0017 `homeCluster` exception to the legacy `admin@homeos` generation |
 | 0096 | Cost-recovery pricing for the GEX44 GPU fleet derived from €/hour TCO ÷ MEASURED throughput, not from SaaS comparables |
 | 0097 | Engine-agnostic serving hardening: no browser UI, no wildcard CORS, an engine-enforced Bearer — expressed as fleet POLICY, with the per-engine flag mapping in the orchestrator's helpers |
@@ -489,6 +489,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0104 | The GPU cost basis was wrong by ~18% fleet-wide (€184 → €217/mo): supersedes 0096's BASIS, not its method. Three commitments — cite an invoice not a list price, re-derive from measured throughput rather than scaling, and keep the inherited 3.45× duty-cycle uplift flagged as unmeasured |
 | 0105 | Pin and verify the LocalAI **backend**, and define the model entirely ourselves. Pinning the server does not pin what executes the model — the backend gallery floated at `@master`/`latest`, unsigned. Now gallery + image tag pinned to the server's own release, keyless-cosign policy, and `download_files` sha256 per file, which restores the pinned-bytes guarantee 0102 gave up |
 | 0106 | Restore the LocalAI image tier and **delete** the chart that displaced it. A stale branch merged cleanly and silently reverted 0100–0105, resurrecting a chart whose image does not exist; three follow-up PRs treated symptoms. Takes issue #803's path (b) — restore the already-measured LocalAI config (32.4 s / 1024×1024, 7985 MiB) and delete `model-serving-zimage-turbo` outright, because a disabled chart is a resurrection surface |
+| 0107 | `model-serving`/`model-server` charts renamed to **`inference`/`inference-server`** — the two differed by two characters, and the seven LEGACY `model-serving-<model>` charts read as variants of the first rather than a different generation. `inference` matches the workload namespace and the `inference-ops` repo. Legacy charts keep the old name (now the legacy marker); accepted ADRs keep their historical paths. ⚠️ Child Applications are recreated, so qwen3-vl's weights re-seed once |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
@@ -506,7 +507,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Security** | Forged/expired JWT | Rejected at Authorino; no backend reached | Enforced |
 | **Cost** | User exceeds monthly budget | Budget bucket denies; alert at threshold | Enforced + alerted (ADR-0021/0059) |
 | **Operability** | Add a model | List edit in `ai-models` values → new Application | Mechanical |
-| **Operability** | Add a *self-hosted* model | ~15-line entry in `model-serving` values → new Application; GPU assigned by the scheduler (ADR-0094) | Mechanical |
+| **Operability** | Add a *self-hosted* model | ~15-line entry in `inference` values → new Application; GPU assigned by the scheduler (ADR-0094) | Mechanical |
 
 ---
 

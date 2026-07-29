@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | **Status** | 🟦 **STANDBY** — was the live self-hosted model (shipped 2026-06-07); **disabled 2026-06-08** when [Qwen3.5-4B Q4 (llama.cpp)](./qwen3.5-4b-q4.md) took the GPU. Kept wired (`enabled: false` on the app + `qwen3-4b-local` model) for instant rollback. Everything below is the as-built truth of this build. |
-| **Chart** | `charts/model-serving-qwen3-4b` (renamed from `model-serving` 2026-06-08) |
+| **Chart** | `charts/model-serving-qwen3-4b` (renamed from `inference` 2026-06-08) |
 | **Engine** | vLLM via `kserve/huggingfaceserver:v0.18.0-gpu` + in-pod **LMCache** |
 | **Quant** | BF16 (official weights, `Qwen/Qwen3-4B`) |
 | **Gateway model-id** | `qwen3-4b-local` · backend `vllm-local-01` (`prefix: /openai/v1`) |
