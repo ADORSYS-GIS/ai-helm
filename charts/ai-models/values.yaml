@@ -786,7 +786,26 @@ models:
   # looking at it, not by checking for HTTP 200:
   #
   #   1024x1024   32.4 s median (34.30 / 32.18 / 32.38)   HTTP 200, PNG, matches prompt
-  #   peak VRAM   7985 MiB of 20475
+  #   VRAM        7985 MiB of 20475 resident
+  #
+  # ✅ RE-CONFIRMED 2026-07-29 on the fresh volume (ADR-0106's outstanding gate):
+  # 1024x1024 in 32.03 s, HTTP 200, a valid 1024x1024 PNG matching the prompt and
+  # looked at; 512x512 in 4.76 s, twice, identical. Resident VRAM measured at
+  # 7985 MiB and held there across 190 s of idle — the 2026-07-28 figures
+  # reproduce exactly, on both latency and memory.
+  #
+  # Two refinements, neither of which changes the numbers above:
+  #   - 7985 MiB is the RESIDENT footprint. A 1024x1024 generation transiently
+  #     peaks at 14643 MiB (1 Hz sampling) — the extra ~6.6 GiB is activations,
+  #     released afterwards. Budget the peak, not the resident, when sizing a
+  #     co-tenant for this card: real headroom mid-generation is ~5.8 GiB.
+  #   - ⚠️ VRAM was 5 MiB until the FIRST SUCCESSFUL REQUEST, then jumped to 7985
+  #     and stayed. So the weights reach the card on first use rather than at
+  #     start-up, which is what `LOAD_TO_MEMORY` is supposed to prevent — readiness
+  #     may be reporting Ready before anything is loaded. It self-heals after one
+  #     request and did NOT cost latency here, but it is worth confirming
+  #     separately; do not assume the preload is doing its job because the model
+  #     works.
   #
   # ⚠️ Everything above was FALSE of the configuration that preceded it, which had
   # a green ArgoCD tree, a Ready pod and a scraping /metrics endpoint while

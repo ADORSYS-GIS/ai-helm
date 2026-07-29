@@ -407,6 +407,39 @@ defaults:
       # readiness gates on the preload, so an empty or unrecognised model
       # reference risks a pod that reports Ready with nothing loaded.
       healthPath: /readyz
+      # ⚠️ …AND `/readyz` IS NOT ENOUGH — but NOT because LOAD_TO_MEMORY is
+      # broken. Measured on the fleet 2026-07-29: at Ready, `/readyz` 200s and
+      # the `stablediffusion-ggml` backend process IS running, while nvidia-smi
+      # reports 5 MiB used. `LOAD_TO_MEMORY` → `PreloadModelByName` →
+      # `ml.Load()` does spawn the backend and open the model exactly as
+      # documented; what defers is stable-diffusion.cpp's upload of tensors to
+      # the GPU, which happens at first inference — BELOW LocalAI's abstraction,
+      # so no LocalAI setting reaches it. The weights land on the FIRST REQUEST
+      # and the first user paid for it (32.03s cold vs 29.23s warm, 1024x1024).
+      # The watchdog is not the cause; it defaults to off and we leave it off.
+      # Keep LOAD_TO_MEMORY set — it is correct and does its half of the job.
+      #
+      # `warmup` makes the startup probe perform a real generation, so the pod
+      # gets a Service endpoint only after it has actually served one. Declared
+      # as profile DATA (like apiKey.mode and metrics) rather than a template
+      # branch — an engine that needs no warmup simply omits this key and keeps
+      # the plain httpGet startup probe.
+      #
+      # 256x256 is deliberate: resolution does not change WHICH weights load, so
+      # the cheapest size that exercises the full path is the right one — ~3.8s,
+      # against ~29s for a 1024x1024. `model` is injected by the helper from
+      # serving.servedModel.
+      warmup:
+        path: /v1/images/generations
+        timeoutSeconds: 60
+        body:
+          prompt: warmup
+          size: 256x256
+          # ⚠️ QUOTED. Unquoted `n` is a YAML 1.1 boolean, so `n: 1` becomes the
+          # key `false` and the request loses its image count. Caught in the
+          # render as `{"false":1,…}`.
+          "n": 1
+          response_format: b64_json
       # `LOCALAI_API_KEY,API_KEY` — the same env var the previous engine used, so
       # the fleet's ADR-0097 key policy carries over untouched.
       apiKey:
@@ -725,7 +758,10 @@ models:
              # use while parameters streamed over PCIe every step. ~6.7 GB of
              # quantized weights fit the card many times over — put them on it.
              # Removing it is what moved VRAM 815 MiB → 7985 MiB and latency
-             # 94.2 s → 32.4 s.
+             # 94.2 s → 32.4 s. Both reproduced on 2026-07-29: 7985 MiB resident,
+             # held across 190 s of idle. A 1024x1024 generation transiently
+             # peaks at 14643 MiB (activations, released afterwards) — budget the
+             # peak when sizing a co-tenant for this card.
          parameters:
              model: z_image_turbo-Q4_0.gguf
          # sha256-pinned, so the bytes measured at the load gate are the bytes

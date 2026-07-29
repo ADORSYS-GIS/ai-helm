@@ -5,6 +5,7 @@ to **do** something. See the [docs index](../README.md) for the other categories
 
 | File | When you'd open it |
 |---|---|
+| [gateway-api-usage.md](gateway-api-usage.md) | You need the actual curl to hit a model through the public gateway — images, chat, vision, embeddings |
 | [observability-stack.md](observability-stack.md) | Mimir / Loki / Tempo / Alloy / Grafana topology, sync-wave ordering, data flow |
 | [observability-dashboards.md](observability-dashboards.md) | Per-subsystem dashboard inventory and instrumentation plan |
 | [observability-storage-retention.md](observability-storage-retention.md) | Retention windows, S3 bucket layout, cost trade-offs |

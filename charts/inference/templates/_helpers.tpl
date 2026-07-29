@@ -632,10 +632,51 @@ modelServing:
               enabled: true
               custom: true
               spec:
+                {{- if $eng.warmup }}
+                {{- /*
+                  ⚠️ READY MUST MEAN LOADED, and for this engine a health endpoint
+                  cannot tell us that. MEASURED on the fleet 2026-07-29: at Ready,
+                  with LOAD_TO_MEMORY set and no watchdog, `/readyz` returns 200
+                  while nvidia-smi reports 5 MiB used and NO GPU PROCESS AT ALL.
+                  The weights reach the card only on the first real request, so
+                  the first user paid the load (32.03s vs 29.23s warm on 1024x1024).
+
+                  So the startup gate performs an actual generation. It is the
+                  only probe that proves the model can serve, which is what the
+                  endpoint is about to promise. A 256x256 warmup costs ~3.8s and
+                  loads the same resident weights as any other resolution
+                  (verified: 5 MiB -> 7505 MiB, and it stays).
+
+                  Cheap failure path: before the HTTP server listens (including
+                  the ~3min first-boot backend download) curl fails instantly with
+                  connection-refused, so the expensive branch only runs once the
+                  server is actually up.
+                */}}
+                exec:
+                  command:
+                    - /bin/sh
+                    - -c
+                    - |
+                      curl -sf -m {{ $eng.warmup.timeoutSeconds | default 60 | int }} -o /dev/null \
+                        -X POST -H 'Content-Type: application/json' \
+                        {{- /* Same condition as the API_KEY env var above — the
+                             engine enforces the Bearer natively, so the warmup
+                             must present it or every probe 401s and the pod
+                             never goes Ready. */}}
+                        {{- if and $apiKey (eq $akMode "env") }}
+                        -H "Authorization: Bearer ${{ "{" }}{{ $akEnvName }}{{ "}" }}" \
+                        {{- end }}
+                        -d '{{ merge (dict "model" ($s.servedModel | default $s.galleryModel | default $name)) (deepCopy $eng.warmup.body) | toJson }}' \
+                        http://127.0.0.1:8080{{ $eng.warmup.path }}
+                periodSeconds: 15
+                failureThreshold: {{ $s.startupFailureThreshold | default $eng.startupFailureThreshold | default 120 }}
+                timeoutSeconds: {{ add ($eng.warmup.timeoutSeconds | default 60 | int) 10 }}
+                {{- else }}
                 httpGet: { path: {{ $eng.healthPath | quote }}, port: 8080 }
                 periodSeconds: 15
                 failureThreshold: {{ $s.startupFailureThreshold | default $eng.startupFailureThreshold | default 120 }}
                 timeoutSeconds: 5
+                {{- end }}
             readiness:
               enabled: true
               custom: true
