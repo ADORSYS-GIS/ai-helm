@@ -775,8 +775,19 @@ models:
   # ⚠️ Everything above was FALSE of the previous configuration, which had a
   # green ArgoCD tree, a Ready pod and a scraping /metrics endpoint while
   # returning 500. Read the numbers, not the dashboard (ADR-0101).
+  #
+  # ⚠️⚠️ DISABLED 2026-07-29 — this backend (`zimage-local-01` below) points at
+  # the retired home-GPU public edge (`z-image-turbo--poc.ssegning.com`),
+  # itself a casualty of PR #790's regression (see #803/#804): that hostname
+  # resolves through Cloudflare but has no origin behind it anymore (bare 404,
+  # no Ingress) — confirmed live with a direct curl, not assumed. The model
+  # was still being advertised at `/v1/models` and would 401/fail on every
+  # real request. Re-enable once #803 lands a working image-generation
+  # deployment again and repoint `backends.z-image-turbo-local` at it —
+  # unlike the fully-retired ADR-0100 generation, this one has a real path
+  # back, so `enabled: false` rather than commenting the entry out.
   z-image-turbo-local:
-    enabled: true
+    enabled: false
     kind: image
     minBackends: 1                   # one GPU, one backend, by design
     timeout:
