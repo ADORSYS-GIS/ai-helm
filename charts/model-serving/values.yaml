@@ -114,7 +114,7 @@ defaults:
   security:
     apiKey:
       # Enforced natively by EVERY engine — llama.cpp `--api-key-file`, vLLM
-      # `VLLM_API_KEY`, zimage `API_KEY`. How a given engine takes the key is
+      # `VLLM_API_KEY`, localai `API_KEY`. How a given engine takes the key is
       # part of its profile (`engines.<name>.apiKey.mode`), not a knob here.
       # No proxy sidecar, ever (see the Chart.yaml note).
       enabled: true
@@ -190,11 +190,12 @@ defaults:
   # ADR-0002 (text) and ADR-0003 (image). The short version:
   #   GGUF weights, or a brand-new architecture → llamacpp
   #   safetensors (AWQ/GPTQ/FP8), want throughput/prefix-reuse → vllm
-  #   a DIFFUSION model answering /v1/images/generations → zimage
+  #   a DIFFUSION model answering /v1/images/generations → localai (ADR-0102)
   # Serving a GGUF on vLLM is a known ~8x throughput regression; do not.
   #
-  # The first two are upstream images we merely configure. The third is OURS —
-  # see its profile for what that costs (no CI build, no /metrics, no CORS knob).
+  # The first two are upstream images we merely configure. The third is
+  # upstream too — LocalAI serves the model from its gallery, no CI build,
+  # no /metrics gap, no CORS knob. See the localai profile below.
   engines:
 
     llamacpp:
@@ -335,6 +336,10 @@ defaults:
     # First start is therefore slow (backend + weights), which is what the long
     # startup-probe budget is for. Subsequent restarts read from the PVC.
     localai:
+      # NO seed Job — LocalAI downloads its own model + backend from galleries
+      # at start-up. Without this flag the template would require `weights.*`
+      # and create a seed InitContainer that has nothing to do.
+      seedJob: false
       image:
         repository: quay.io/go-skynet/local-ai
         tag: v4.7.1-gpu-nvidia-cuda-12
@@ -460,7 +465,7 @@ defaults:
 #
 #    my-model:
 #      enabled: true
-#      engine: llamacpp                    # or vllm, or zimage (image generation)
+#      engine: llamacpp                    # or vllm, or localai (image generation)
 #      weights:
 #        hfRepo: org/Some-Model-GGUF
 #        revision: <full commit sha>        # NEVER a branch name — see below
@@ -542,4 +547,30 @@ models:
        cpuRequest: "2"
        cpuLimit: "8"
        memoryRequest: 8Gi
+       memoryLimit: 16Gi
+
+   # ── Z-Image-Turbo (image generation) — ADR-0102 ───────────────────
+   # Served by LocalAI (upstream, not first-party). Gallery entry
+   # installs the model + its inference backend automatically.
+   # No seed Job, no HF token, no pinned revision — the gallery
+   # manages the weights. The PVC must be writable so LocalAI can
+   # persist both the model and its backend across restarts.
+   #
+   # Backend: diffusers (Python, PyTorch, BF16 natif).
+   #   Le modèle est téléchargé depuis HuggingFace (public, Apache 2.0).
+   #   Aucune image privée GHCR à gérer — tout vient de l'écosystème HF.
+   #   VRAM ~14-16 GB BF16, tient sur les RTX 4000 SFF Ada 20 GB.
+   #   Alternative (non retenue) : Z-Image-GGML (stablediffusion-ggml,
+   #   C++, Q4_0, ~3.5 GB) — qualité moindre, backend moins mature.
+   #   Cf. ADR-0102, ADR-0105.
+   z-image-turbo:
+     enabled: true
+     engine: localai
+     serving:
+       galleryModel: z-image-turbo-diffusers
+       writableModelStore: true
+     resources:
+       cpuRequest: "8"
+       cpuLimit: "8"
+       memoryRequest: 12Gi
        memoryLimit: 16Gi

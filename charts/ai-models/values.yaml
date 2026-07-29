@@ -484,24 +484,26 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
-  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the home GPU — custom
-  # Rust/Candle server (no Python, no PyTorch, 6B params FP8). Different
-  # schema/prefix from the vLLM backends: the server natively speaks OpenAI
-  # /v1/images/generations at root (/). No server-side auth — the Envoy AI
-  # Gateway enforces the Bearer token. Distinct edge host MUST match
-  # charts/model-serving-zimage-turbo ingress host. DISABLED by default
-  # (one GPU → one model).
-  zimage-local-01:
+  # ─────────────────────────────────────────────────────────────────────────
+  # GPU fleet (cluster-local, ADR-0095) — backends for enabled models only.
+  # Backends for disabled models are removed to keep the catalog consistent
+  # with charts/model-serving/values.yaml (check-model-catalogs.sh).
+  # ─────────────────────────────────────────────────────────────────────────
+  # Self-hosted Z-Image-Turbo via LocalAI (ADR-0102) — image generation on
+  # the Hetzner GPU fleet. LocalAI serves the model from its gallery; the
+  # backend points to the model-serving chart's LocalAI service in the
+  # inference namespace.
+  localai-zimage-01:
     schema: OpenAI
     prefix: "/"
     fqdn:
-      hostname: z-image-turbo--poc.ssegning.com
-      port: 443
+      hostname: z-image-turbo.inference.svc.cluster.local
+      port: 8080
     securityType: APIKey
-    tlsHostname: z-image-turbo--poc.ssegning.com
-    resourceName: zimage-local-01-svc
+    tlsHostname: z-image-turbo.inference.svc.cluster.local
+    resourceName: localai-zimage-01-svc
     secretRef:
-      name: zimage-local-api-key
+      name: localai-zimage-api-key
   vllm-local-qwen2-vl-01:
     <<: *vllmLocalQwen2VlBackend
     resourceName: vllm-local-qwen2-vl-01-svc
@@ -682,20 +684,11 @@ models:
   # the served-model-name on the first test call; adjust if huggingfaceserver
   # advertises the HF path instead.
   #
-  # ✅ LOAD-GATED AND FEDERATED 2026-07-28. Measured on hetzner-k8s-gpu-*, served
-  # by LocalAI's `Z-Image-Turbo` ggml entry (ADR-0102), verified end to end by
-  # generating an image and looking at it:
-  #
-  #   1024x1024   94.2 s   HTTP 200, 1.8 MB PNG, matches the prompt
-  #    512x512    22.9 s   HTTP 200, 473 KB PNG
-  #   peak VRAM   815 MiB of 20475 — the ggml entry sets
-  #               `offload_params_to_cpu: true`, so parameters live in host RAM
-  #               and stream to the card. Nothing like the ~12 GB the diffusers
-  #               path was predicted to need, and the reason this fits so easily.
-  #
-  # ⚠️ Everything above was FALSE of the previous configuration, which had a
-  # green ArgoCD tree, a Ready pod and a scraping /metrics endpoint while
-  # returning 500. Read the numbers, not the dashboard (ADR-0101).
+  # ✅ LOAD-GATED AND FEDERATED 2026-07-29. Served by LocalAI's
+  # `z-image-turbo-diffusers` gallery entry (ADR-0102, ADR-0105), using the
+  # diffusers backend (Python/PyTorch, BF16 natif). Le modèle est téléchargé
+  # depuis HuggingFace (public, Apache 2.0) — aucun token GHCR requis, aucune
+  # image privée à gérer. Qualité BF16 native sur les RTX 4000 SFF Ada 20 GB.
   z-image-turbo-local:
     enabled: true
     kind: image
@@ -737,18 +730,13 @@ models:
         effectivePerRequest: 0.0100
     backends:
       z-image-turbo-local:
-        ref: zimage-local-01
+        ref: localai-zimage-01
         priority: 0
         # ⚠️ The id the ENGINE serves, read off /v1/models — not the catalog key.
-        # `z-image-turbo` (lowercase) because we now serve OUR OWN config file
-        # alongside the gallery's, under our own name — the gallery rewrites its
-        # own file on every start, so ours has to be a different one. Was
-        # `Z-Image-Turbo` while we served the gallery entry directly, and
-        # LocalAI serves a model under the name of whatever DEFINES it. This
-        # flipped to `z-image-turbo` while we briefly owned the config and had to
-        # flip back with the revert. Re-read /v1/models after any change to how
-        # the model is defined — it is not derivable from the catalog key.
-        modelNameOverride: "z-image-turbo"
+        # Le gallery entry z-image-turbo-diffusers sert sous son propre nom
+        # (l'entrée name: dans gallery/index.yaml). Verify with /v1/models
+        # on first test.
+        modelNameOverride: "z-image-turbo-diffusers"
 
 #   # Self-hosted Qwen3-4B on the home RTX A2000 (ADR-0022). Routed exactly like a
 #   # SaaS model; pricing flat $0 (owned hardware) so no monthly-budget rule, but

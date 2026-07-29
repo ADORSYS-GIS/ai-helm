@@ -73,7 +73,7 @@ The `ai-helm` project addresses all three constraints by hosting AI inference on
 This cluster hosts:
 - **4 LLM models** (including Qwen3.5-4B, Qwen3-8B, Ministral-3B, and DeepSeek-R1-1.5B) for conversational and office-productivity use cases.
 - **1 vision model** (Qwen2-VL-2B) for image/document analysis.
-- **1 image-generation model** (Z-Image-Turbo, Rust/Candle server) for visual content generation.
+- **1 image-generation model** (Z-Image-Turbo, served by LocalAI) for visual content generation.
 
 All five model families are distributed across the two RTX 4000 Ada cards, as detailed in Step 6.
 
@@ -209,7 +209,7 @@ Quantify the engineering time required to build and operate the platform. In Ger
 
 | Activity | Days | Hours (×8h) | Cost (€100/h) | Justification |
 | :--- | :--- | :--- | :--- | :--- |
-| Rust/Candle development (image-generation server) | 15 | 120 | €12,000 | HTTP server, model integration, inference pipeline, CUDA management |
+| LocalAI integration (image-generation server) | 15 | 120 | €12,000 | Gallery model config, backend pinning, CUDA tuning, inference pipeline |
 | Helm charts + Kubernetes (deployment) | 5 | 40 | €4,000 | Templates, PVCs, ExternalSecrets, ArgoCD integration, sync-waves |
 | CI/CD + release management | 2 | 16 | €1,600 | Continuous-integration workflows, image publishing, semantic versioning |
 | Security and authentication | 3 | 24 | €2,400 | Bearer-token authentication, container security context, vulnerability audit |

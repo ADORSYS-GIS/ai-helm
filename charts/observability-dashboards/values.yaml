@@ -345,11 +345,11 @@ alerting:
         # or ServiceMonitors gone) — bare min() would return no data, and
         # noDataState: OK would keep the very alert meant to catch that green.
         #
-        # ⚠️ COVERS ONLY MODELS THAT EXPOSE /metrics. Since ADR-0100 that is no
-        # longer every model: the `zimage` engine has no Prometheus endpoint, so
-        # it has no ServiceMonitor, so it contributes no `up` series and this
-        # rule is structurally blind to it. That is why the second rule below
-        # exists — do not delete it as a duplicate.
+        # ⚠️ COVERS ONLY MODELS THAT EXPOSE /metrics. The `zimage` engine
+        # (ADR-0100, replaced by localai per ADR-0102) had no Prometheus
+        # endpoint, so the second rule below existed for structural coverage.
+        # With localai metrics are back — but the second rule is kept as a
+        # safety net for any future engine without /metrics.
         - uid: ms-model-down
           title: Model serving — a scraped model is down
           datasourceUid: mimir

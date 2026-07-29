@@ -63,9 +63,10 @@ which is fatal.
 | The Dockerfile **cannot build** — `cargo build` with no `RUN`, `COPY tests/` for a non-existent directory, `-fuse-ld=lld` without lld | The `v0.1.0` image was not built from the committed source, so nobody can say what it contains. |
 | CUDA 12.8 base, kernels compiled for the build host's compute capability | Would fail on the fleet's sm_89 / CUDA 12.4 cards even once running. |
 
-All four are fixed, the model **moved to the GPU fleet** as the `zimage` engine
-profile, and the legacy `model-serving-zimage-turbo` app is disabled. The 500
-should be gone — **but that is a prediction, not a measurement**: see §2.5.
+All four are fixed, the model **moved to the GPU fleet** (first as the `zimage`
+engine profile, then replaced by LocalAI as `localai` per ADR-0102), and the
+legacy `model-serving-zimage-turbo` app is disabled. The 500 should be gone —
+**but that is a prediction, not a measurement**: see §2.5.
 
 The judgement call in the original entry was the right one. Leaving a broken
 model advertised is what kept the bug visible long enough to be traced to its
@@ -279,9 +280,9 @@ month" still needs manual arithmetic.
 | Engine containers run as **root** with all caps dropped | Tightening to non-root is a per-engine follow-up gated on a real GPU rollout; a previous attempt to pin `runAsUser: 1000` was written but never verified (ADR-0094) |
 | Eight legacy `charts/model-serving-*` charts | ⚠️ **Now UNBLOCKED for deletion.** ADR-0094 kept them because `zimage-turbo` was live on `admin@homeos`; as of ADR-0100 all eight are `enabled: false` and that reason is gone. Deleting them is a decommissioning exercise on that cluster (ArgoCD prune + PVCs + Ingresses + certs), not a chart edit — worth its own ticket. **Do not copy their shape** meanwhile |
 | `homeCluster: true` | Now legacy-only (ADR-0095) and referenced by nothing enabled; should retire with the above |
-| No CI builds our first-party images | `lakefs-proxy` and now `z-image-turbo-server` are hand-built (§1.3). A path-filtered `workflow_dispatch` + `on: push` build job would remove a standing manual step and make the running image traceable to a commit |
-| `z-image-turbo-server` does not build with `cargo-auditable` | Same gap `lakefs-proxy` already closed: without it Trivy scans only the base OS and reports zero crates, so a green scan means nothing for the Rust dependency tree |
-| The `zimage` server hardcodes `allow_any_origin()` | The ADR-0097 CORS pin cannot be applied to this engine (`corsConfigurable: false`). A `--cors-origins` flag in our own source closes it in one small change, on the next rebuild |
+| No CI builds our first-party images | `lakefs-proxy` is still hand-built (§1.3). The first-party image server (`z-image-turbo-server`) was deleted by ADR-0102, removing the build gap for that codebase. A path-filtered `workflow_dispatch` + `on: push` build job would still remove a standing manual step for `lakefs-proxy` |
+| `z-image-turbo-server` Rust dep scanning | **MOOT — the server was deleted (ADR-0102).** The `cargo-auditable` gap applied to our first-party Rust server, which no longer exists. `lakefs-proxy` is the only remaining Rust image and already builds with `cargo-auditable` |
+| The first-party Rust server hardcoded `allow_any_origin()` | **MOOT — server deleted (ADR-0102).** LocalAI supports CORS via environment variables (`CORS`, `CORS_ALLOW_ORIGINS`), so the ADR-0097 CORS pin is now enforceable |
 | The llama.cpp dashboard and `ms-llamacpp-queueing` are dormant | No model runs on that engine since OpenMythos was retired. Both self-heal the moment a GGUF model returns; neither was deleted |
 | ~~The seed Job's 6 GiB memory limit is fleet-wide, not per-model~~ | ✅ **RESOLVED 2026-07-27** — and it did OOM, exactly as predicted here: the Z-Image-Turbo seed was `OOMKilled` (exit 137) four times in six minutes on the first sync after merge. The limit is now the per-model `weights.seedMemoryLimit` (16Gi for this model), **and** `weights.seedMaxWorkers` caps `hf download`'s default 8-way fan-out to 2. The lesson generalises: peak seed memory is set by the **largest shard × concurrent workers**, not by the repo total — which is why a 33 GB repo of ~10 GB shards blows a limit that a single 16 GB GGUF never approached |
 | `inference-ops` tutorial not yet run by a non-author | That repo's own rule requires it before merge; the page carries a validation-status note |

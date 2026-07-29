@@ -334,7 +334,7 @@ the sidecar has nothing to come back for.
 {{- $apiKeySecret := printf "%s-api-key" $name -}}
 {{- /* HOW this engine takes the key — a property of the engine, not of the
        model. `file` mounts the Secret and the args point at it (llama.cpp);
-       `env` passes it as a named variable (vLLM, zimage). Expressed as profile
+       `env` passes it as a named variable (vLLM, localai). Expressed as profile
        data so a new engine does not add another `eq $engine "..."` branch. */ -}}
 {{- $akMode := ($eng.apiKey | default dict).mode | default "file" -}}
 {{- if and $apiKey (not (has $akMode (list "file" "env"))) -}}
@@ -355,7 +355,11 @@ pvc:
   name: {{ $pvcName | quote }}
   storageClassName: {{ $d.storageClassName | quote }}
   accessMode: ReadWriteMany
+{{- if $seed }}
   size: {{ printf "%dGi" (int (required (printf "model %s: weights.sizeGi is required" $name) $w.sizeGi)) | quote }}
+{{- else }}
+  size: {{ printf "%dGi" (int ($w.sizeGi | default 60)) | quote }}
+{{- end }}
 
 hfToken:
 {{- if $seed }}
@@ -389,12 +393,13 @@ networkPolicy:
 {{- toYaml $d.networkPolicy | nindent 2 }}
 
 {{/* An engine profile may declare `metrics: false` when the server exposes no
-     Prometheus endpoint at all (zimage). Scraping it anyway would poll a 404
-     every 30s forever and put a permanently-down target in Mimir, which is worse
-     than no target: it trains people to ignore a red panel. Expressed on the
-     engine rather than per model because it is a property of the server, and
-     `hasKey` rather than `default` because `default true false` is true — the
-     classic Helm boolean trap. */}}
+     Prometheus endpoint at all (the old zimage engine, replaced by localai
+     per ADR-0102). Scraping it anyway would poll a 404 every 30s forever and
+     put a permanently-down target in Mimir, which is worse than no target: it
+     trains people to ignore a red panel. Expressed on the engine rather than
+     per model because it is a property of the server, and `hasKey` rather than
+     `default` because `default true false` is true — the classic Helm boolean
+     trap. */}}
 serviceMonitor:
 {{- if and (hasKey $eng "metrics") (not $eng.metrics) }}
   enabled: false
@@ -596,6 +601,11 @@ modelServing:
             # that did not exist, which surfaces as the same opaque
             # "load is in cooldown" cascade as a missing backend.
             LOAD_TO_MEMORY: {{ $s.servedModel | default $s.galleryModel | default $name | quote }}
+            {{- with $sec.corsOrigins }}
+            # CORS policy (ADR-0097). LocalAI accepts a comma-separated list.
+            CORS: "true"
+            CORS_ALLOW_ORIGINS: {{ . | quote }}
+            {{- end }}
             {{- with $s.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

@@ -390,7 +390,15 @@ entry to make it user-reachable). Do NOT create a new chart per model.
   `backends/`). Configured by ENV (`MODELS`, `MODELS_PATH`, `BACKENDS_PATH`,
   `API_KEY`), not flags. ⚠️ With no seed Job there is one controller, so bjw names
   the Deployment `<model>` and **`deploy/<model>-main` does not exist** for image
-  models. ⚠️ A gallery reference is NOT a pin — the bytes can move under us.
+     models.
+   ⚠️ **Closed by ADR-0105** (pin + verify the backend, define the model ourselves):
+   LocalAI's backend image tag is pinned to the same release as the server, the
+   backend gallery index is version-pinned (not `@master`), and the keyless-cosign
+   verification policy is wired. To also pin the **model weights**, switch from
+   `galleryModel` to `modelConfig` with `download_files` sha256 checksums in the
+   catalog entry. The current `z-image-turbo-diffusers` entry still uses the simpler
+   `galleryModel` path — the pinned server tag + backend gallery pin + load gate
+   are the standing mitigations.
 - **⚠️ Two traps an image model taught us the hard way.** (1) A model's advertised
   precision is marketing — Z-Image-Turbo is documented everywhere as "FP8, ~8 GB";
   the diffusers repo is **FP32, ~33 GB**. (2) A server that loads its model
@@ -411,10 +419,10 @@ entry to make it user-reachable). Do NOT create a new chart per model.
   on purpose — that's how a model is load-gated before users can reach it.
 
 *Legacy.* The eight `charts/model-serving-*` charts targeted the OTHER cluster
-(`admin@homeos`) over a public edge with `homeCluster: true`. ⚠️ **Since
-2026-07-27 (ADR-0100) ALL EIGHT are `enabled: false`** — `zimage-turbo` was the
-last live one and moved to the fleet, so the generation is now a rollback surface
-only and ADR-0094's reason for retaining it is spent. **Retained, not deleted**
+(`admin@homeos`) over a public edge with `homeCluster: true`. ⚠️ **All eight are
+`enabled: false` in `charts/apps/values.yaml`** — `zimage-turbo` was the last live
+one (ADR-0100) and has been **deleted** since it moved to the GPU fleet under
+LocalAI (ADR-0102). The rest are a rollback surface only. **Retained, not deleted**
 (deleting them is a decommissioning exercise on that cluster) — don't copy their
 shape, and don't "fix" them to match the new pattern. Papers:
 [`docs/models/`](docs/models/).

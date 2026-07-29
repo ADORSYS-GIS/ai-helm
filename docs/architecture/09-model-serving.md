@@ -94,36 +94,48 @@ disable another. Adding a model is a ~15-line catalog entry — no new chart.
 
 ### Three engines, one container each
 
-| | `llamacpp` | `vllm` | `zimage` |
+| | `llamacpp` | `vllm` | `localai` |
 |---|---|---|---|
 | Serves | text | text | **images** (`/v1/images/generations`) |
-| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `ghcr.io/adorsys-gis/z-image-turbo-server` (**first-party**) |
-| Weights | GGUF | safetensors (AWQ/GPTQ/FP8/BF16) | diffusers repo |
-| Containers | **1** | **1** | **1** |
-| Optional key | native `--api-key-file` | native `VLLM_API_KEY` | native `API_KEY` |
-| `/metrics` | `llamacpp:*` | `vllm:*` | **none** |
+| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `quay.io/go-skynet/local-ai:v4.7.1-gpu-nvidia-cuda-12` |
+| Weights | GGUF (one file via `include`) | safetensors (AWQ/GPTQ/FP8/BF16) | fetched by the engine from its gallery |
+| Seed Job | yes | yes | **no** (mount is writable) |
+| API key | file (`--api-key-file`) | env `VLLM_API_KEY` | env `API_KEY` |
+| `/metrics` | yes (`llamacpp:*`) | yes (`vllm:*`) | yes (behind admin key) |
+| Configured by | flags | flags | **environment** |
 | Extras | — | opt-in LMCache + `/dev/shm` | — |
 
-The weight format selects the engine (`inference-ops` ADR-0002 for text, ADR-0003
+The weight format selects the engine (`inference-ops` ADR-0002 for text, ADR-0004
 for images) — GGUF on vLLM is ~8× slower, and neither text engine can do
 diffusion at all. **No engine has a Caddy sidecar**: that was only ever required
 by `kserve/huggingfaceserver`, which ignores `VLLM_API_KEY` (ADR-0022), and that
 wrapper is not an engine profile here.
 
-`zimage` is the one engine we build ourselves (source: `images/z-image-turbo-server/`,
-ADR-0100). Two consequences that do not apply to the upstream engines: the image
-is **built out-of-band, so it must be pushed before the catalog entry merges**,
-and it publishes no Prometheus metrics — liveness for image models comes from the
-engine-independent `ms-model-unavailable` alert over kube-state-metrics, not from
-`up{namespace="inference"}`.
+`localai` is the image engine — an **off-the-shelf** OpenAI-compatible multi-backend
+server (ADR-0102). We briefly maintained a first-party Rust/Candle server here and
+should not have: ADR-0100's survey missed the entire category of multi-backend
+inference servers. Two differences from the text engines:
+
+- **No seed Job.** LocalAI downloads weights AND its inference backend from its own
+  gallery on first boot, so the PVC is writable (`writableModelStore: true`) and
+  there is no pinned download SHA — the pinned *image* tag and the load gate
+  stand in for it, closed by ADR-0105 (pin + verify the backend).
+- **Configured by environment, not flags.** `MODELS`, `MODELS_PATH`, `BACKENDS_PATH`
+  and `API_KEY` replace `--model`, `--ctx-size`, etc.
+- **Metrics exist** (unlike the first-party server) but are behind the admin key,
+  so the ServiceMonitor authenticates to scrape them.
+
+Liveness for image models uses the engine-independent `ms-model-unavailable` alert
+over kube-state-metrics, with `up{namespace="inference"}` as a complement.
 
 ### Legacy generation
 
 Eight `charts/model-serving-*` charts targeted the **other** cluster
 (`admin@homeos`) over a public edge with `homeCluster: true`. **All are
-`enabled: false` since 2026-07-27** (ADR-0100): `zimage-turbo`, the last live
-one, moved to the fleet. Retained as a rollback surface until that cluster is
-decommissioned; not a template for anything new.
+`enabled: false` since 2026-07-27** (ADR-0100): `zimage-turbo` was the last live
+one and moved to the fleet under **LocalAI** (ADR-0102), deleting the first-party
+server. Retained as a rollback surface until that cluster is decommissioned; not a
+template for anything new.
 
 Pricing for owned hardware is **cost-recovery** (€/hour TCO → weighted per-token,
 ADR-0028), not flat-zero.

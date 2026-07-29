@@ -442,7 +442,7 @@ applications:
   # deliberately excluded there (see hetzner-k8s docs/runbooks/add-gpu-node.md).
   # See ADR-0092 for the full rationale, the node-scoping mechanism, and why
   # this is a SEPARATE instance from the unrelated Longhorn already running on
-  # admin@homeos (backs model-serving-qwen3-4b/zimage-turbo RWX PVCs — see
+  # admin@homeos (backs model-serving-* legacy RWX PVCs — see
   # docs/patterns/self-hosted-model-serving.md). Lands on home-remote (the
   # default destination) — this app is NOT homeCluster.
   #
@@ -1036,13 +1036,14 @@ applications:
   # These per-model charts each serve one model from the OTHER cluster
   # (admin@homeos) over a public Ingress.
   #
-  # ⚠️ As of 2026-07-27 (ADR-0100) EVERY ONE OF THEM IS DISABLED: zimage-turbo,
-  # the last live one, moved to the GPU fleet. The whole generation is now dead
-  # code retained only as a rollback surface, and the reason ADR-0094 gave for
-  # keeping it ("zimage-turbo is live there") no longer holds. Deleting the eight
-  # charts is a decommissioning exercise on that cluster, tracked as a follow-up
-  # — not a change here. Do NOT copy this shape for a new model; add a catalog
-  # entry to charts/model-serving instead.
+  # ⚠️ As of 2026-07-27 (ADR-0100) EVERY ONE OF THEM IS DISABLED. The last live
+  # one, zimage-turbo, moved to the GPU fleet (ADR-0101) and has since been
+  # deleted from this repo (ADR-0102 — replaced by LocalAI). The whole generation
+  # is now dead code retained only as a rollback surface, and the reason ADR-0094
+  # gave for keeping it ("zimage-turbo is live there") no longer holds. Deleting
+  # the eight charts is a decommissioning exercise on that cluster, tracked as a
+  # follow-up — not a change here. Do NOT copy this shape for a new model; add a
+  # catalog entry to charts/model-serving instead.
   # KServe/Knative + vLLM + LMCache serving Qwen3-4B on the home RTX A2000.
   # `homeCluster: true` is the SINGLE sanctioned ADR-0017 exception: this
   # workload targets the cluster ArgoCD runs on (the home Talos cluster) — NOT
@@ -1262,7 +1263,7 @@ applications:
   # the inverse. See docs/patterns/self-hosted-model-serving.md.
   # ADRs: 0022 (federation), 0029 (serving mode), 0030 (one STS via bjw-template).
   - name: model-serving-qwen2-vl-2b
-    enabled: false                 # DISABLED — swapped by model-serving-zimage-turbo (one GPU). Re-enable to roll back.
+    enabled: false                 # DISABLED — superseded by model-serving/z-image-turbo on the GPU fleet. Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -1284,31 +1285,6 @@ applications:
         prune: true
         selfHeal: true
 
-  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the Hetzner GPU fleet (ADR-0094/0095).
-  # 6B params, FP8 quantized (~8 GB VRAM), 1024×1024, 8-step distilled DiT.
-  # Served by a custom Rust/Actix server (ghcr.io/adorsys-gis/z-image-turbo-server).
-  # Deployed on the Hetzner GPU nodes via the model-serving orchestrator pattern.
-  - name: model-serving-zimage-turbo
-    enabled: true
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
-      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-zimage-turbo
-      chart: "."
-      targetRevision: ">=0.0.0"
-      helm:
-        releaseName: model-serving-zimage-turbo
-        valuesObject: { }
-    destination:
-      namespace: inference
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # Self-hosted llm-d (CNCF Sandbox distributed inference middleware) + vLLM on
   # the home GPU. charts/llm-d deploys the llm-d router in standalone mode (EPP +
