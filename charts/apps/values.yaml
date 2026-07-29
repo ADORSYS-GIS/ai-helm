@@ -1261,6 +1261,7 @@ applications:
   # add the ai-models federation entry + flip its enabled flag. Rollback =
   # the inverse. See docs/patterns/self-hosted-model-serving.md.
   # ADRs: 0022 (federation), 0029 (serving mode), 0030 (one STS via bjw-template).
+  # Z-Image-Turbo now serves the group GPU instead of qwen2-vl-2b.
   - name: model-serving-qwen2-vl-2b
     enabled: false                 # DISABLED — swapped by model-serving-zimage-turbo (one GPU). Re-enable to roll back.
     finalizers:
@@ -1284,55 +1285,6 @@ applications:
         prune: true
         selfHeal: true
 
-  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the Hetzner GPU fleet (ADR-0094/0095).
-  #
-  # ⚠️ DISABLED 2026-07-29 — the image this chart deploys does not exist.
-  # `ghcr.io/adorsys-gis/z-image-turbo-server:v0.1.0` 403s on pull (verified live:
-  # kubelet `failed to authorize: ... 403 Forbidden`, no imagePullSecret configured
-  # anywhere in this namespace). ADR-0102 already recorded why: the source for
-  # this image (`images/z-image-turbo-server/`) was deleted the day after this
-  # chart's original deployment (PR #704), when the team replaced this whole
-  # custom-Rust-server approach with LocalAI, measured live at 32.4s/image
-  # (ADR-0100 through ADR-0105). [PR #790](https://github.com/ADORSYS-GIS/ai-helm/pull/790)
-  # then merged a stale branch that resurrected this chart (re-enabling it here)
-  # without noticing the LocalAI work — see the disk-space fix in
-  # [PR #802](https://github.com/ADORSYS-GIS/ai-helm/pull/802) for the seed-side
-  # half of that regression, and #803 for the full writeup and the ask to
-  # either finish this custom server properly or restore LocalAI instead.
-  #
-  # The "FP8, ~8 GB VRAM" claim below is the model card's, not measured: the
-  # published HF repo is FP32 (~33 GB on disk: transformer 24.62 + text_encoder
-  # 8.05 + VAE 0.17), and how that fits a 20 GB-VRAM card was never demonstrated
-  # end to end — the model Deployment never got past ImagePullBackOff to find out.
-  # 6B params, 1024×1024, 8-step distilled DiT.
-  # Served by a custom Rust/Actix server (ghcr.io/adorsys-gis/z-image-turbo-server).
-  # Deployed on the Hetzner GPU nodes via the model-serving orchestrator pattern.
-  - name: model-serving-zimage-turbo
-    enabled: false                 # DISABLED — image does not exist (see comment above). Do not re-enable without fixing the image first.
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
-      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-zimage-turbo
-      chart: "."
-      targetRevision: ">=0.0.0"
-      helm:
-        releaseName: model-serving-zimage-turbo
-
-        # Tolerations and nodeSelector added inline to enable scheduling on GPU nodes with nvidia.com/gpu taints.
-        # Note: ValuesObject tolerations override chart defaults (nvidia.com/gpu Exists/NoSchedule+NoExecute).
-        valuesObject:
-          modelServing:
-            defaultPodOptions:
-              nodeSelector:
-                nvidia.com/gpu.present: "true"
-              tolerations:
-                - key: nvidia.com/gpu
-                  operator: Exists
-                  effect: NoSchedule
-                - key: nvidia.com/gpu
-                  operator: Exists
-                  effect: NoExecute
     destination:
       namespace: inference
     syncPolicy:

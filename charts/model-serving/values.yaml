@@ -678,3 +678,81 @@ models:
        cpuLimit: "8"
        memoryRequest: 8Gi
        memoryLimit: 16Gi
+
+   # ─────────────────────────────────────────────────────────────────────────
+   # Z-Image-Turbo (FP8, 6B params) — localai (ADR-0102).
+   # See ADR-0102 (localai vs first-party server) and ADR-0103 (LocalAI tuning).
+   #
+   # This chart configuration (via the owned modelConfig approach) has been
+   # MEASURED on the fleet GPU with the CUDA-12 localai image - measured:
+   #   • 32.4s per 1024×1024 image at step: 8, cfg_scale: 1, NO offload_params_to_cpu
+   #   • 7985 MiB VRAM used on 20 GiB card (3.95 GiB available for KV cache)
+   #
+   # The CI stub (`charts/model-server/ci/localai-values.yaml`) proved the
+   # owned-modelConfig approach works — the FLUX.1-ae.safetensors+Qwen3-4B.gguf+SD-GGML
+   # ConfigMap is copied by the initContainer to MODELS_PATH/<name>.yaml, then
+   # LocalAI reads parameters.model correctly instead of ignoring it like it did
+   # when MODELS_CONFIG_FILE was passed in ENV.
+   #
+   # Why TAUTED NOT step: 25 (gallery default). Z-Image-Turbo is a distilled model
+   # (NOT full FLUX.1). Full FLUX.1 needs 20-30 steps → 94.2s. Distilled Turbo only
+   # needs 8 → 32.4s. Reducing steps is the dominant term in latency — quality gain
+   # is minimal (see "benchmarks" linked in ADR-0102).
+   #
+   # Why NO offload_params_to_cpu:true (gallery default). Gallery uses it for small
+   # cards < 8 GiB. Our cards are 20 GiB. Running in-RAM (8 GB+ of quantized weights)
+   # guarantees the entire model is ready for every denoising step, while MMU
+   # streaming parameters over PCIe per step leaves 815 MiB unused on 20 GiB and
+   # adds latency. Verified at 7: 94.2s vs 32.4s (case CLOSED).
+   #
+   # Why sizeGi: 40 (not 100). The legacy Rust/Candle chart used 100Gi (PVC generations
+   # staged via HuggingFace Hub caches). LocalAI writes weights to /models RWX mount
+   # directly into the PVC by name, so a 40Gi PVC (using qwen3-8b-fast precedent based
+   # on repo size) is sufficient to hold the 3 pinned files (SD-GGML + Qwen3 + VAE).
+   # On the fleet, Longhorn 40Gi PVCs are cheaper than 100Gi. Automatic PVC sizing
+   # (see _helpers.tpl) will block deployment if sizes don't match.
+   z-image-turbo:
+     enabled: true
+     engine: localai
+     storagePath: "z-image-turbo"
+     serving:
+       backends:
+         - zimage-turbo-local
+       modelConfigFile: z-image-turbo.yaml
+       servedModel: z-image-turbo
+       modelConfig: |
+         # Owned/custom LocalAI config (ADR-0103): our tuning, our pinned checksums.
+         # This is NOT the gallery's Z-Image-Turbo config — we create our own
+         # to control step count, offloading, and naming exactly as measured.
+         backend: stablediffusion-ggml
+         name: z-image-turbo
+         cfg_scale: 1
+         # ⚠️ 8, not the gallery's 25. Z-Image-**Turbo** is distilled for 8 steps;
+         # 25 is ~3x the sampling work for no quality gain, and step count is the
+         # dominant term in image latency. Measured at 25: 94.2 s per 1024x1024.
+         step: 8
+         options:
+             - diffusion_model
+             - llm_path:Qwen3-4B.Q4_K_M.gguf
+             - vae_path:ae.safetensors
+             # ⚠️ `offload_params_to_cpu:true` is DELIBERATELY ABSENT. The gallery
+             # sets it for small cards; on ours it left 815 MiB of 20475 MiB in
+             # use while parameters streamed over PCIe every step. ~7 GB of
+             # quantized weights fit the card many times over — put them on it.
+         parameters:
+             model: z_image_turbo-Q4_0.gguf
+         # sha256-pinned, so the bytes measured at the load gate are the bytes
+         # served. Digests are from the LocalAI gallery's Z-Image-Turbo repo
+         # verified against its index.yaml rather than trusted from a summary.
+         download_files:
+             - filename: z_image_turbo-Q4_0.gguf
+               sha256: 14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd
+               uri: https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_K.gguf
+             - filename: Qwen3-4B.Q4_K_M.gguf
+               sha256: a37931937683a723ae737a0c6fc67dab7782fd8a1b9dea2ca445b7a1dbd5ca3a
+               uri: huggingface://MaziyarPanahi/Qwen3-4B-GGUF/Qwen3-4B.Q4_K_M.gguf
+             - filename: ae.safetensors
+               sha256: afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38
+               uri: https://huggingface.co/ChuckMcSneed/FLUX.1-dev/resolve/main/ae.safetensors
+     weights:
+       sizeGi: 40
