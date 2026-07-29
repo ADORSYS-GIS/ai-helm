@@ -251,35 +251,49 @@ defaults:
       # the tags by DATE, never by version string:
       #     curl -s 'https://hub.docker.com/v2/repositories/lmcache/vllm-openai/tags?ordering=last_updated'
       #
-      # ⚠️⚠️ CORRECTED 2026-07-29, live and the hard way: this guidance used to
-      # say "use the plain tag, NOT `-cu129`" — that is now BACKWARDS.
-      # LMCache moved the plain/`latest` tag's CUDA toolkit to **13.0.1** at
-      # some point after that note was written (confirmed by pulling the image
-      # config, not assumed from the tag name: `CUDA_VERSION=13.0.1.012` in
-      # `v0.5.2`'s env). CUDA 13 is a MAJOR version bump past this fleet's
-      # driver (550.163.01, CUDA 12.4 max) — no minor-version-compatibility
-      # applies across a major boundary, and the pod crash-loops at engine
-      # start:
-      #     RuntimeError: The NVIDIA driver on your system is too old
-      #     (found version 12040). ...
-      # `v0.5.2-cu129` (CUDA 12.9 — still within the 12.x family) is what
-      # actually initializes on this hardware — verified with a throwaway pod
-      # on `hetzner-k8s-gpu-1` running this exact image:
-      #     CUDA_OK 2.11.0+cu129 12.9 NVIDIA RTX 4000 SFF Ada Generation
-      # Same LMCache version (v0.5.2) underneath both tags — this is a CUDA
-      # toolkit swap only, not a vLLM/LMCache version change, so nothing about
-      # model support changes.
+      # ⚠️⚠️ CORRECTED 2026-07-29, live and the hard way, TWICE in one incident.
+      # This guidance used to say "use the plain tag, NOT `-cu129`" — that was
+      # true once and is no longer, and the replacement (`-cu129`) turned out
+      # to be broken too, in a way only a real vLLM import — not a bare CUDA
+      # check — catches. Both failures were verified against this image, not
+      # assumed:
       #
-      # ⚠️ Re-verify this against the config's `CUDA_VERSION` env (not the tag
-      # name) on every bump — the "plain tag = safe" assumption already
-      # inverted once and will again once the fleet's driver is upgraded past
-      # 550, or once LMCache moves the `-cu129` tag itself. Same class of trap
-      # as llama.cpp's `server-cuda13`.
+      #   1. `v0.5.2` (plain): CUDA_VERSION=13.0.1.012 baked into the image
+      #      (confirmed by pulling the image config, not the tag name).
+      #      CUDA 13 is a MAJOR version bump past this fleet's driver
+      #      (550.163.01, CUDA 12.4 max) — no minor-version-compatibility
+      #      applies across a major boundary:
+      #          RuntimeError: The NVIDIA driver on your system is too old
+      #          (found version 12040). ...
+      #
+      #   2. `v0.5.2-cu129`: torch itself is a coherent CUDA 12.9 build and
+      #      initializes fine (`torch.cuda.init()` succeeds, GPU detected) —
+      #      but vLLM's own compiled extension is NOT rebuilt to match:
+      #          ImportError: libcudart.so.13: cannot open shared object file
+      #      i.e. this specific tag mixes a cu129 torch with a cu13-linked
+      #      vLLM native extension. A bare `torch.cuda.init()` check does NOT
+      #      catch this — only a real `import vllm` does.
+      #
+      # `nightly-2026-05-01` is what was actually verified end-to-end on
+      # `hetzner-k8s-gpu-1` (three separate probe pods, not one shortcut):
+      #     FULL_VLLM_IMPORT_OK 0.20.1rc1.dev128+g32964e770 2.11.0+cu129
+      #     Qwen3VLForConditionalGeneration  (present in ModelRegistry)
+      #     CUDA_OK  (device correctly identified as the RTX 4000 SFF Ada)
+      # It is a dated NIGHTLY, not a versioned release — deliberately: the
+      # closest-to-current versioned tag (`v0.5.2`) is the CUDA-13 one. Dated
+      # nightly tags are immutable per LMCache's own tagging (each date is a
+      # distinct tag/digest), so this pins the same way a version tag would.
+      #
+      # ⚠️ Re-verify with a REAL `import vllm` (not just `torch.cuda.init()`)
+      # on every bump, on the actual target hardware — this incident is proof
+      # that CUDA-version-in-the-env and CUDA-version-the-binaries-actually-
+      # need can silently diverge inside one image. Same class of trap as
+      # llama.cpp's `server-cuda13`, one layer deeper.
       #
       # ⚠️ vLLM↔LMCache compatibility is pinned by this image — test before bumping.
       image:
         repository: lmcache/vllm-openai
-        tag: v0.5.2-cu129
+        tag: nightly-2026-05-01
         pullPolicy: IfNotPresent
       healthPath: /health
       # vLLM's own OpenAI server reads the Bearer from the environment.
