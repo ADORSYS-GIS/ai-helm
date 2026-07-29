@@ -23,7 +23,24 @@ Input: pricing dict with standard.effectivePerRequest in USD.
 */}}
 {{- define "ai-model.flatPerRequestCostBranch" -}}
 {{- $p := . -}}
-{{- $cost := mulf $p.effectivePerRequest 1000000.0 | printf "%.0f" -}}
+{{- /* ⚠️ `%.1f`, NOT `%.0f`. CEL has NO implicit numeric promotion, so a bare
+       integer literal here makes the whole expression uncompilable:
+
+         1.0 * 10000     ->  found no matching overload for '_*_'
+                             applied to '(double, int)'
+
+       `%.0f` renders 0.0100 * 1e6 as "10000" — an int literal — and the AI
+       Gateway controller then fails to convert LLMRequestCosts for the route.
+       That failure aborts the ENTIRE Gateway reconcile, not just this route, so
+       every gateway config change stalls until it is fixed: new backends never
+       reach the ext_proc config and requests 500 with "unknown backend".
+       Verified live 2026-07-29 on z-image-turbo-local.
+
+       Note the sibling branches use `%.4f` and are safe by accident; this was
+       the only branch that could emit a decimal-less literal. Helm renders it
+       happily and `helm lint` cannot see it — CEL is only validated by the
+       controller, at sync time. */ -}}
+{{- $cost := mulf $p.effectivePerRequest 1000000.0 | printf "%.1f" -}}
 {{- printf "1.0 * %s" $cost -}}
 {{- end -}}
 
