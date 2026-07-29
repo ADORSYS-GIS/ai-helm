@@ -67,6 +67,14 @@ All four are fixed, the model **moved to the GPU fleet** as the `zimage` engine
 profile, and the legacy `model-serving-zimage-turbo` app is disabled. The 500
 should be gone — **but that is a prediction, not a measurement**: see §2.5.
 
+> **Update 2026-07-29 (ADR-0106).** Two things above have since changed. The
+> `zimage` engine profile no longer exists — ADR-0102 replaced it with `localai`
+> the following day and deleted the Rust server. And "the legacy app is disabled"
+> did not hold: PR #790 merged a stale branch that re-enabled it, reverting
+> ADR-0100 through ADR-0105 in one clean merge. The chart is now **deleted**
+> rather than disabled, precisely because being disabled did not stop it coming
+> back. See [ADR-0106](../adr/0106-restore-the-localai-image-tier.md).
+
 The judgement call in the original entry was the right one. Leaving a broken
 model advertised is what kept the bug visible long enough to be traced to its
 source instead of silently disabled and forgotten.

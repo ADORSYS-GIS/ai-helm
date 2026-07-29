@@ -531,9 +531,9 @@ defaults:
 models:
 
    # ─────────────────────────────────────────────────────────────────────────
-   # Qwen3-VL-4B-Thinking (dense, BF16, vLLM) — VISION-LANGUAGE, both fleet GPUs
-   # currently idle (openmythos-27b and qwen3-8b-fast are both disabled below;
-   # z-image-turbo was retired entirely, see #803/#804).
+   # Qwen3-VL-4B-Thinking (dense, BF16, vLLM) — VISION-LANGUAGE, one of the two
+   # fleet GPUs (openmythos-27b and qwen3-8b-fast are both disabled below;
+   # z-image-turbo, restored below, takes the other card — see ADR-0106).
    #
    # First multimodal model on the NEW orchestrator (ADR-0094) — the earlier
    # Qwen2-VL-2B was served on the LEGACY per-model-chart generation with a
@@ -630,9 +630,128 @@ models:
        memoryLimit: 20Gi
 
    # ─────────────────────────────────────────────────────────────────────────
+   # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102/0103/0105).
+   #
+   # Tongyi-MAI/Z-Image-Turbo: 6B distilled DiT, 8 sampling steps, 1024×1024,
+   # Apache-2.0. Answers OpenAI `POST /v1/images/generations`, so it federates
+   # like any other model — with `kind: image` + `flatPerRequest` pricing, because
+   # tokens are always 0 for image generation.
+   #
+   # ⚠️ RESTORED 2026-07-29 (ADR-0106, issue #803). This entry is not new work:
+   # it is the configuration that was measured live at 32.4 s / 1024×1024 and
+   # 7985 MiB VRAM on 2026-07-28, then silently deleted when PR #790 merged a
+   # stale branch (`704-ticket-deployment-of-z-image-turbo`) that predated the
+   # LocalAI decision. That merge resurrected a first-party Rust/Candle server
+   # whose image `ghcr.io/adorsys-gis/z-image-turbo-server:v0.1.0` does not exist
+   # — the source had been deleted by ADR-0102 the day after it shipped — so the
+   # pod sat in ImagePullBackOff and could never have served a request. The
+   # legacy chart is gone; this is the deployment.
+   #
+   # LocalAI downloads BOTH the model and its inference backend at start-up, so
+   # unlike every other entry here there is no `weights.hfRepo`, no HF revision
+   # to pin and no seed Job — the engine profile sets `seedJob: false` and the
+   # volume is mounted writable. The pinned-bytes guarantee comes back a
+   # different way: `download_files` carries a sha256 per file (ADR-0105).
+   z-image-turbo:
+     enabled: true
+     engine: localai
+     serving:
+       # The inference backend to install at boot. REQUIRED because we define the
+       # model ourselves and therefore name no gallery model — naming one used to
+       # pull its backend as a side effect. The chart fails the render without it
+       # rather than letting LocalAI find out at boot, where a missing backend
+       # surfaces as a cooldown cascade that names every backend EXCEPT the
+       # absent one (an error that cost real time to read correctly).
+       backends:
+         - cuda12-stablediffusion-ggml
+       # ⚠️ A DIFFERENT FILENAME FROM THE GALLERY'S, deliberately. Overwriting
+       # `Z-Image-Turbo.yaml` does not work: LocalAI logs `installing model` on
+       # EVERY start and rewrites it, so an initContainer's version survived
+       # exactly until the engine booted. Measured proof — latency and VRAM were
+       # bit-identical to the untuned run (95.6 s, 815 MiB). The `._gallery_*`
+       # marker does not prevent the rewrite. So we write our own file under our
+       # own name, and nothing of ours is left for the gallery to clobber.
+       modelConfigFile: z-image-turbo.yaml
+       # The name LocalAI serves and preloads. Must equal `name:` in modelConfig
+       # below, and `modelNameOverride` in charts/ai-models. It cannot be derived
+       # — modelConfig is an opaque string to Helm.
+       servedModel: z-image-turbo
+       modelConfig: |
+         backend: stablediffusion-ggml
+         name: z-image-turbo
+         cfg_scale: 1
+         # ⚠️ 8, not the gallery's 25. Z-Image-**Turbo** is distilled for 8 steps;
+         # 25 is ~3x the sampling work for no quality gain, and step count is the
+         # dominant term in image latency. Measured at 25: 94.2 s per 1024x1024;
+         # at 8: 32.4 s, and the output is visibly better, not merely faster.
+         step: 8
+         options:
+             - diffusion_model
+             - llm_path:Qwen3-4B.Q4_K_M.gguf
+             - vae_path:ae.safetensors
+             # ⚠️ `offload_params_to_cpu:true` is DELIBERATELY ABSENT. The gallery
+             # sets it for small cards; on ours it left 815 MiB of 20475 MiB in
+             # use while parameters streamed over PCIe every step. ~6.7 GB of
+             # quantized weights fit the card many times over — put them on it.
+             # Removing it is what moved VRAM 815 MiB → 7985 MiB and latency
+             # 94.2 s → 32.4 s.
+         parameters:
+             model: z_image_turbo-Q4_0.gguf
+         # sha256-pinned, so the bytes measured at the load gate are the bytes
+         # served. Digests are the LocalAI gallery's own, copied deliberately and
+         # verified against its index.yaml rather than trusted from a summary —
+         # only the TUNING above is ours.
+         #
+         # ⚠️ The Z-Image `filename` says Q4_0 while its `uri` fetches Q4_K. That
+         # mismatch is the gallery's, not a typo here: the file is stored under
+         # the name `parameters.model` refers to, and the sha256 is the one that
+         # is actually checked. Sizes confirmed via the HF tree API — Q4_K
+         # 3.86 GB, Qwen3-4B Q4_K_M 2.50 GB, ae 0.34 GB (~6.7 GB total).
+         download_files:
+             - filename: z_image_turbo-Q4_0.gguf
+               sha256: 14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd
+               uri: https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_K.gguf
+             - filename: Qwen3-4B.Q4_K_M.gguf
+               sha256: a37931937683a723ae737a0c6fc67dab7782fd8a1b9dea2ca445b7a1dbd5ca3a
+               uri: huggingface://MaziyarPanahi/Qwen3-4B-GGUF/Qwen3-4B.Q4_K_M.gguf
+             - filename: ae.safetensors
+               sha256: afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38
+               uri: https://huggingface.co/ChuckMcSneed/FLUX.1-dev/resolve/main/ae.safetensors
+     weights:
+       # No hfRepo/revision: LocalAI fetches from its own gallery. `sizeGi` still
+       # applies — the volume holds the weights AND the downloaded backend.
+       #
+       # ⚠️ 40Gi, NOT the 100Gi this entry carried before. That number was never
+       # the right size: it was forced by a PVC that had already been expanded to
+       # 100Gi in the staging-disk fix, and `spec.resources.requests.storage` may
+       # never be less than `status.capacity` — Longhorn grows a claim in place
+       # but never shrinks one. That constraint is gone: the old
+       # `z-image-turbo-weights` claim was pruned with the app, VERIFIED live on
+       # 2026-07-29 (`kubectl -n inference get pvc` lists only the qwen3-vl
+       # claim), so this provisions a fresh volume and can be sized honestly.
+       #
+       # 40Gi against ~6.7 GB of weights plus the extracted backend is deliberate
+       # headroom, not a measurement: this direction only goes one way, and there
+       # is ~1.6 TiB free per GPU node. 40Gi is the number the retired entry
+       # itself recommended as the starting point for a new image model.
+       sizeGi: 40
+     resources:
+       # Text encoding for this model runs on CPU in most backends, so it wants
+       # real CPU — unlike the text tiers, where the CPU idles while the GPU works.
+       cpuRequest: "4"
+       cpuLimit: "12"
+       memoryRequest: 12Gi
+       # HOST RAM, not VRAM.
+       memoryLimit: 32Gi
+
+   # ─────────────────────────────────────────────────────────────────────────
    # OpenMythos-27B (Q4_K GGUF, llama.cpp) — DISABLED.
-   # Was the first model on the Hetzner GPU fleet. Disabled to make way for
-   # Z-Image-Turbo as the sole GPU model. Re-enable to roll back.
+   # Was the first model on the Hetzner GPU fleet, load-gated at 15.05 tok/s
+   # decode / 625 tok/s prefill / 16748 MiB and served to users. Disabled because
+   # the fleet has two cards and they now hold qwen3-vl-4b-thinking and
+   # z-image-turbo. The pinned SHA still resolves, so re-enabling re-seeds
+   # byte-identical weights. Report: inference-ops
+   # docs/benchmarks/2026-07-26-openmythos-27b-q4k-rtx4000-ada.md
    # ─────────────────────────────────────────────────────────────────────────
    openmythos-27b:
      enabled: false
@@ -654,8 +773,9 @@ models:
 
    # ─────────────────────────────────────────────────────────────────────────
    # Qwen3-8B-AWQ (vLLM + LMCache) — DISABLED.
-   # Was the SPEED tier on the second GPU. Disabled to make way for
-   # Z-Image-Turbo as the sole GPU model. Re-enable to roll back.
+   # Was the SPEED tier on the second GPU. Disabled because the fleet has two
+   # cards and they now hold qwen3-vl-4b-thinking and z-image-turbo. Never
+   # load-gated, so it was never federated. Re-enable to roll back.
    # ─────────────────────────────────────────────────────────────────────────
    qwen3-8b-fast:
      enabled: false
