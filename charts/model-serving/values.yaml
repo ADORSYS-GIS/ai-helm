@@ -546,9 +546,17 @@ models:
        # `.cache` staging directory after a successful download — the fix from
        # the Z-Image-Turbo disk-space incident, #802).
        sizeGi: 20
-       # Largest shard here is ~5 GB, well under the ~10 GB threshold that
-       # OOM-killed the Z-Image-Turbo seed at the fleet-default 6Gi limit — no
-       # seedMaxWorkers/seedMemoryLimit override needed.
+       # ⚠️ CORRECTED 2026-07-29, live: this DID OOM (exit 137) at the
+       # fleet-default 6Gi seed limit with the default 8-way `hf download`
+       # fan-out, at 12/14 files. The earlier assumption here — "largest shard
+       # ~5 GB, under the ~10 GB threshold, no override needed" — missed that
+       # the repo's two big shards (4.97 + 3.91 GB) can be fetched
+       # CONCURRENTLY under 8-way fan-out, buffering both at once, which is
+       # what actually decides peak memory, not the single largest file.
+       # Same fix as the Z-Image-Turbo incident (#802): cap the fan-out and
+       # raise the margin.
+       seedMaxWorkers: 2
+       seedMemoryLimit: 10Gi
      serving:
        contextSize: 32768
        parallel: 2
