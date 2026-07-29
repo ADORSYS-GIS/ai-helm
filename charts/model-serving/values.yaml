@@ -251,13 +251,35 @@ defaults:
       # the tags by DATE, never by version string:
       #     curl -s 'https://hub.docker.com/v2/repositories/lmcache/vllm-openai/tags?ordering=last_updated'
       #
-      # ⚠️ Use the plain tag, NOT `-cu129`: these nodes run driver 550.163.01 /
-      # CUDA 12.4. Same class of trap as llama.cpp's `server-cuda13`.
+      # ⚠️⚠️ CORRECTED 2026-07-29, live and the hard way: this guidance used to
+      # say "use the plain tag, NOT `-cu129`" — that is now BACKWARDS.
+      # LMCache moved the plain/`latest` tag's CUDA toolkit to **13.0.1** at
+      # some point after that note was written (confirmed by pulling the image
+      # config, not assumed from the tag name: `CUDA_VERSION=13.0.1.012` in
+      # `v0.5.2`'s env). CUDA 13 is a MAJOR version bump past this fleet's
+      # driver (550.163.01, CUDA 12.4 max) — no minor-version-compatibility
+      # applies across a major boundary, and the pod crash-loops at engine
+      # start:
+      #     RuntimeError: The NVIDIA driver on your system is too old
+      #     (found version 12040). ...
+      # `v0.5.2-cu129` (CUDA 12.9 — still within the 12.x family) is what
+      # actually initializes on this hardware — verified with a throwaway pod
+      # on `hetzner-k8s-gpu-1` running this exact image:
+      #     CUDA_OK 2.11.0+cu129 12.9 NVIDIA RTX 4000 SFF Ada Generation
+      # Same LMCache version (v0.5.2) underneath both tags — this is a CUDA
+      # toolkit swap only, not a vLLM/LMCache version change, so nothing about
+      # model support changes.
+      #
+      # ⚠️ Re-verify this against the config's `CUDA_VERSION` env (not the tag
+      # name) on every bump — the "plain tag = safe" assumption already
+      # inverted once and will again once the fleet's driver is upgraded past
+      # 550, or once LMCache moves the `-cu129` tag itself. Same class of trap
+      # as llama.cpp's `server-cuda13`.
       #
       # ⚠️ vLLM↔LMCache compatibility is pinned by this image — test before bumping.
       image:
         repository: lmcache/vllm-openai
-        tag: v0.5.2
+        tag: v0.5.2-cu129
         pullPolicy: IfNotPresent
       healthPath: /health
       # vLLM's own OpenAI server reads the Bearer from the environment.
