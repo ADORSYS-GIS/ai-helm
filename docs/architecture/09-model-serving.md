@@ -94,15 +94,16 @@ disable another. Adding a model is a ~15-line catalog entry — no new chart.
 
 ### Three engines, one container each
 
-| | `llamacpp` | `vllm` | `zimage` |
+| | `llamacpp` | `vllm` | `localai` |
 |---|---|---|---|
 | Serves | text | text | **images** (`/v1/images/generations`) |
-| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `ghcr.io/adorsys-gis/z-image-turbo-server` (**first-party**) |
-| Weights | GGUF | safetensors (AWQ/GPTQ/FP8/BF16) | diffusers repo |
+| Image | `ghcr.io/ggml-org/llama.cpp:server-cuda` | `lmcache/vllm-openai` | `quay.io/go-skynet/local-ai:v4.7.1-gpu-nvidia-cuda-12` |
+| Weights | GGUF | safetensors (AWQ/GPTQ/FP8/BF16) | GGUF, fetched by the engine itself |
+| Seed Job | yes | yes | **no** — LocalAI downloads model *and* backend |
 | Containers | **1** | **1** | **1** |
 | Optional key | native `--api-key-file` | native `VLLM_API_KEY` | native `API_KEY` |
-| `/metrics` | `llamacpp:*` | `vllm:*` | **none** |
-| Extras | — | opt-in LMCache + `/dev/shm` | — |
+| `/metrics` | `llamacpp:*` | `vllm:*` | yes (behind the admin key) |
+| Extras | — | opt-in LMCache + `/dev/shm` | writable weights volume |
 
 The weight format selects the engine (`inference-ops` ADR-0002 for text, ADR-0003
 for images) — GGUF on vLLM is ~8× slower, and neither text engine can do
@@ -110,20 +111,32 @@ diffusion at all. **No engine has a Caddy sidecar**: that was only ever required
 by `kserve/huggingfaceserver`, which ignores `VLLM_API_KEY` (ADR-0022), and that
 wrapper is not an engine profile here.
 
-`zimage` is the one engine we build ourselves (source: `images/z-image-turbo-server/`,
-ADR-0100). Two consequences that do not apply to the upstream engines: the image
-is **built out-of-band, so it must be pushed before the catalog entry merges**,
-and it publishes no Prometheus metrics — liveness for image models comes from the
-engine-independent `ms-model-unavailable` alert over kube-state-metrics, not from
-`up{namespace="inference"}`.
+**All three engines are now off the shelf.** There was briefly a fourth, `zimage`,
+backed by a first-party Rust/Candle server we maintained ourselves (ADR-0100).
+ADR-0102 replaced it with `localai` on the grounds that an OpenAI-compatible
+multi-backend image server is a commodity we should never have been building; the
+Rust source was deleted, and the chart that deployed it was deleted in turn by
+ADR-0106 after a stale-branch merge briefly resurrected it referencing an image
+that no longer exists.
+
+`localai` differs from the text engines in two structural ways, both expressed as
+profile data rather than engine-name branches: it has **no seed Job** (it fetches
+its own weights and its own inference backend at start-up), and its weights volume
+is therefore **writable**. The pinned-bytes guarantee the other engines get from a
+pinned HF revision comes instead from a `sha256` per file in `download_files`, and
+the backend gallery, backend image tag and cosign policy are all pinned alongside
+the server (ADR-0105) — pinning the server alone does **not** pin what executes
+the model.
 
 ### Legacy generation
 
-Eight `charts/model-serving-*` charts targeted the **other** cluster
+Seven `charts/model-serving-*` charts target the **other** cluster
 (`admin@homeos`) over a public edge with `homeCluster: true`. **All are
 `enabled: false` since 2026-07-27** (ADR-0100): `zimage-turbo`, the last live
-one, moved to the fleet. Retained as a rollback surface until that cluster is
-decommissioned; not a template for anything new.
+one, moved to the fleet — and its chart was **deleted outright** in ADR-0106,
+because an image that does not exist is not a rollback surface. The rest are
+retained as a rollback surface until that cluster is decommissioned; not a
+template for anything new.
 
 Pricing for owned hardware is **cost-recovery** (€/hour TCO → weighted per-token,
 ADR-0028), not flat-zero.

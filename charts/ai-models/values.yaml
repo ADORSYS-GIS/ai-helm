@@ -532,6 +532,34 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102). Same
+  # cluster-local shape as the text backends above; the difference is what it
+  # serves, not how it is reached.
+  #
+  # ⚠️ RESTORED 2026-07-29 (ADR-0106, issue #803). The entry #814 removed pointed
+  # at `z-image-turbo--poc.ssegning.com` — the OLD home-cluster edge host, dead
+  # since the model moved onto the fleet, resolving through Cloudflare with no
+  # origin behind it. #814 was right to remove it; this is not that backend. It
+  # is the cluster-local Service the `z-image-turbo` model-serving entry creates,
+  # which is what the LocalAI deployment served from before PR #790 deleted it.
+  #
+  # ⚠️ `prefix: /v1` — LocalAI registers `/v1/images/generations` and `/v1/models`.
+  # The retired home-GPU backend used `/`, which strips the version segment and
+  # 404s.
+  z-image-turbo-local:
+    schema: OpenAI
+    prefix: "/v1"
+    fqdn:
+      hostname: z-image-turbo.inference.svc.cluster.local
+      port: 8080
+    securityType: APIKey
+    resourceName: z-image-turbo-local-svc
+    secretRef:
+      name: z-image-turbo-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -565,10 +593,10 @@ models:
 #  rather than left `enabled: false`, because a disabled entry still reads like
 #  something that could come back, and these cannot: the servers no longer exist.
 #
-#  Today `-local` is exactly: qwen3-vl-4b-thinking-local (vision-language;
-#  qwen3-8b-fast-local is disabled). z-image-turbo-local was removed
-#  2026-07-29 — dead backend, see #803. If you add another, it is on the
-#  fleet or it does not carry -local.
+#  Today `-local` is exactly: qwen3-vl-4b-thinking-local (vision-language) and
+#  z-image-turbo-local (image generation) — one per fleet card. Both text tiers
+#  (openmythos-27b-local, qwen3-8b-fast-local) are disabled. If you add another,
+#  it is on the fleet or it does not carry -local.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ⚠️ INTERNAL-ONLY MODELS CARRY AN `-internal` SUFFIX (2026-07-28).
@@ -737,17 +765,81 @@ models:
         priority: 0
         modelNameOverride: "openmythos-27b"   # = llama-server --alias
 
-  # ⚠️ z-image-turbo-local REMOVED 2026-07-29 (not just disabled) — it was
-  # still being advertised at `/v1/models` and routed to a dead backend
-  # (`zimage-local-01` -> `z-image-turbo--poc.ssegning.com`, a casualty of
-  # PR #790's regression: that hostname resolves through Cloudflare with no
-  # origin behind it, bare 404, confirmed live with a direct curl). Every
-  # real request would have failed while the catalog listed it as available.
-  # #803 tracks getting image generation working again (fix the custom
-  # server or restore LocalAI); re-add a model + backend entry here once
-  # that lands, rather than re-enabling this one — the measured pricing/VRAM
-  # numbers this entry carried are preserved in #803 and this PR's diff, not
-  # reproduced here as dead weight.
+  # ─────────────────────────────────────────────────────────────────────────
+  # Z-Image-Turbo — IMAGE GENERATION, on the GPU fleet (ADR-0100/0102).
+  #
+  # ⚠️ RE-FEDERATED 2026-07-29 (ADR-0106, issue #803), which is exactly what #814
+  # asked for: "re-add a model + backend entry here once that lands, rather than
+  # re-enabling this one." #814 removed an entry pointing at the dead home-cluster
+  # edge host; this one points at the cluster-local LocalAI Service.
+  #
+  # Serving spec: charts/model-serving/values.yaml `z-image-turbo`.
+  #
+  # `kind: image` is load-bearing in charts/ai-model: it drops the InputToken /
+  # OutputToken / TotalToken cost metadata and the tokens-per-minute burst rule,
+  # both of which are meaningless here — an image response carries zero tokens,
+  # so a tokens/min limit would never bind and the metadata slots would be spent
+  # on constant zeroes.
+  #
+  # ✅ LOAD-GATED 2026-07-28 (ADR-0101) on hetzner-k8s-gpu-*, on the TUNED
+  # configuration this restores — verified end to end by generating an image and
+  # looking at it, not by checking for HTTP 200:
+  #
+  #   1024x1024   32.4 s median (34.30 / 32.18 / 32.38)   HTTP 200, PNG, matches prompt
+  #   peak VRAM   7985 MiB of 20475
+  #
+  # ⚠️ Everything above was FALSE of the configuration that preceded it, which had
+  # a green ArgoCD tree, a Ready pod and a scraping /metrics endpoint while
+  # returning 500. Read the numbers, not the dashboard (ADR-0101).
+  #
+  # ⚠️ The gate was passed on this hardware and this config, but the volume it ran
+  # on has since been pruned, so the FIRST boot after this merge is a fresh-volume
+  # install: LocalAI will fetch the `download_files` weights and cosign-verify the
+  # backend for real (ADR-0105 flagged both as untested). Re-confirm one 1024×1024
+  # generation after the first sync before treating this as done.
+  z-image-turbo-local:
+    enabled: true
+    kind: image
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      # 8 distilled steps at 1024×1024 is ~32 s — but the model holds a Mutex and
+      # serves ONE request at a time, so a queued caller waits for those ahead of
+      # it. 300s rides a short queue; it does NOT need to ride a cold start,
+      # because LocalAI pre-loads its weights before reporting Ready (/readyz
+      # gates on the preload), so no request ever meets a loading model.
+      requestTimeout: 300s
+      connectionIdleTimeout: 1h
+    info:
+      # NOT "FP8" — the published weights are FP32; we serve a Q4 GGUF quant. The
+      # old display name advertised a quantization this model has never had.
+      displayName: "Z-Image-Turbo (self-hosted, image generation)"
+    pricing:
+      # ✅ MEASURED ON THE TUNED CONFIGURATION, 2026-07-28:
+      #
+      #   €217/mo ÷ 730 h           = €0.2973/hour     (basis: ADR-0104)
+      #   3600 ÷ 32.4 s             = 111.1 images/hour
+      #   €0.2973 ÷ 111.1           = €0.00268/image raw
+      #   × 3.45 duty-cycle uplift  = €0.00923  ≈ $0.0100
+      #
+      # ⚠️ The 3.45x duty-cycle uplift is INHERITED from the old A2000 and has
+      # never been measured on this fleet (ADR-0104). It is the only unverified
+      # term left in this figure. Re-derive from measured throughput if the
+      # tuning changes — never scale the old number.
+      strategy: flatPerRequest
+      standard:
+        effectivePerRequest: 0.0100
+    backends:
+      z-image-turbo-local:
+        ref: z-image-turbo-local
+        priority: 0
+        # ⚠️ The id the ENGINE serves, read off /v1/models — not the catalog key.
+        # Lowercase `z-image-turbo` because we define the model ourselves under
+        # our own filename (ADR-0105); it was `Z-Image-Turbo` while we served the
+        # gallery entry directly, because LocalAI serves a model under the name of
+        # whatever DEFINES it. Must equal `serving.servedModel` in
+        # charts/model-serving. Re-read /v1/models after any change to how the
+        # model is defined — it is not derivable from the catalog key.
+        modelNameOverride: "z-image-turbo"
 
 #   # Self-hosted Qwen3-4B on the home RTX A2000 (ADR-0022). Routed exactly like a
 #   # SaaS model; pricing flat $0 (owned hardware) so no monthly-budget rule, but

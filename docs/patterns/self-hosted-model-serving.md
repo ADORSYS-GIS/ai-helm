@@ -107,10 +107,11 @@ these nodes run driver 550 / CUDA 12.4 — the same trap as `server-cuda13` and
 | Backend | in the image | **downloaded at boot** into `BACKENDS_PATH`, which must be on the PVC or it repeats every restart |
 | Configuration | flags | **environment** (`MODELS`, `MODELS_PATH`, `BACKENDS_PATH`, `API_KEY`) |
 
-A catalog entry is a gallery name rather than a repo, a revision and a glob:
+A catalog entry carries no repo, revision or glob. The short form names a gallery
+entry and lets LocalAI decide everything else:
 
 ```yaml
-  z-image-turbo:
+  some-image-model:
     enabled: true
     engine: localai
     serving:
@@ -118,6 +119,33 @@ A catalog entry is a gallery name rather than a repo, a revision and a glob:
     weights:
       sizeGi: 40                              # weights AND the downloaded backend
 ```
+
+**The live entry does not use that form** — it defines the model itself
+(ADR-0103/0105), because the gallery's defaults are tuned for other hardware and a
+gallery name is not a pin:
+
+```yaml
+  z-image-turbo:
+    enabled: true
+    engine: localai
+    serving:
+      backends: [cuda12-stablediffusion-ggml] # REQUIRED once you name no gallery model
+      modelConfigFile: z-image-turbo.yaml     # our own filename — see the trap below
+      servedModel: z-image-turbo              # = modelNameOverride in charts/ai-models
+      modelConfig: |
+        backend: stablediffusion-ggml
+        name: z-image-turbo
+        step: 8                               # NOT the gallery's 25 — this model is distilled for 8
+        # no offload_params_to_cpu — put the parameters on the card
+        download_files:                       # sha256 per file = the pin back
+          - {filename: …, sha256: …, uri: …}
+    weights:
+      sizeGi: 40
+```
+
+Measured difference between the two: **94.2 s → 32.4 s** per 1024×1024 and
+**815 MiB → 7985 MiB** of VRAM. The gallery's `offload_params_to_cpu: true` left
+a 20 GiB card idle while parameters streamed over PCIe every step.
 
 ⚠️ **Two traps specific to this engine:**
 
@@ -127,10 +155,24 @@ A catalog entry is a gallery name rather than a repo, a revision and a glob:
   functional depends on it (Service and CiliumNetworkPolicy select on the
   `ai-helm…/model` label), but your `kubectl logs deploy/<model>-main` will just
   say `NotFound`.
-- **The gallery reference is not a pin.** A seed Job fetched an exact commit, so
-  the bytes measured were the bytes served. A gallery entry can move under us.
-  The pinned *image* tag and the load gate are what stand in for it; if that
-  proves too loose, mount a model config file we own into `MODELS_PATH`.
+- **The gallery reference is not a pin — and neither is the server image.** A seed
+  Job fetched an exact commit, so the bytes measured were the bytes served. A
+  gallery entry can move under us, and LocalAI resolves its inference **backend**
+  separately at runtime (default `…/index.yaml@master` at tag `latest`, unsigned),
+  so pinning the server pins the thing that answers HTTP but not the thing that
+  executes the model. Fixed in ADR-0105 by pinning gallery + backend image to the
+  server's own release, adding a keyless-cosign policy, and defining the model
+  ourselves with a `sha256` per file.
+- **Do not overwrite the gallery's config file.** LocalAI logs `installing model`
+  on **every** start and rewrites it, so an initContainer's version survives
+  exactly until the engine boots — measured proof: latency and VRAM came back
+  bit-identical to the untuned run. Write your own file under your own name
+  (`serving.modelConfigFile`) instead. The `._gallery_*` marker does not prevent
+  the rewrite.
+- **Naming no gallery model removes the backend install that came with it.** Set
+  `serving.backends` when you set `serving.modelConfig`, or LocalAI reports the
+  absence as a cooldown cascade naming every backend *except* the missing one.
+  The chart fails the render rather than let you find that out at boot.
 
 On the gateway side an image model needs **`kind: image`** and
 **`pricing.strategy: flatPerRequest`** in `charts/ai-models`: `charts/ai-model`
@@ -180,7 +222,7 @@ Deployment + Service + ServiceMonitor.
 
 ## 7. The legacy generation (`admin@homeos`)
 
-Eight `charts/model-serving-<model>` charts serve from the **other** cluster over
+Seven `charts/model-serving-<model>` charts serve from the **other** cluster over
 a public Traefik Ingress with `cert-cloudflare` TLS, a static API key, and
 `homeCluster: true` (ADR-0022).
 
@@ -188,11 +230,18 @@ a public Traefik Ingress with `cert-cloudflare` TLS, a static API key, and
 > `zimage-turbo` was the last live one, and it moved to the fleet. The generation
 > is now dead code kept only as a rollback surface — and ADR-0094's stated reason
 > for retaining it ("zimage-turbo is live there") no longer applies. Deleting the
-> eight charts is a decommissioning exercise on that cluster, tracked as a
+> remaining charts is a decommissioning exercise on that cluster, tracked as a
 > follow-up.
+>
+> **`model-serving-zimage-turbo` was the exception and is DELETED** (ADR-0106).
+> Two reasons, and the second is the general rule: the image it referenced
+> (`ghcr.io/adorsys-gis/z-image-turbo-server:v0.1.0`) does not exist, so it was
+> not a rollback surface — and a disabled chart is a **resurrection surface**. A
+> stale branch merged cleanly and turned it back on, reverting six ADRs with it.
+> Retire a chart by deleting it once it stops being a credible rollback target.
 
-They are **retained, not deleted**. Do not copy their shape for a new model, and
-do not "fix" them to match this page; they are correct for where they ran.
+The rest are **retained, not deleted**. Do not copy their shape for a new model,
+and do not "fix" them to match this page; they are correct for where they ran.
 
 `homeCluster: true` is now scoped to that generation and should retire with it.
 

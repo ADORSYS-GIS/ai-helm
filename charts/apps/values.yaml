@@ -442,7 +442,7 @@ applications:
   # deliberately excluded there (see hetzner-k8s docs/runbooks/add-gpu-node.md).
   # See ADR-0092 for the full rationale, the node-scoping mechanism, and why
   # this is a SEPARATE instance from the unrelated Longhorn already running on
-  # admin@homeos (backs model-serving-qwen3-4b/zimage-turbo RWX PVCs — see
+  # admin@homeos (backs the legacy home-GPU model-serving-qwen3-4b RWX PVC — see
   # docs/patterns/self-hosted-model-serving.md). Lands on home-remote (the
   # default destination) — this app is NOT homeCluster.
   #
@@ -1039,10 +1039,12 @@ applications:
   # ⚠️ As of 2026-07-27 (ADR-0100) EVERY ONE OF THEM IS DISABLED: zimage-turbo,
   # the last live one, moved to the GPU fleet. The whole generation is now dead
   # code retained only as a rollback surface, and the reason ADR-0094 gave for
-  # keeping it ("zimage-turbo is live there") no longer holds. Deleting the eight
-  # charts is a decommissioning exercise on that cluster, tracked as a follow-up
-  # — not a change here. Do NOT copy this shape for a new model; add a catalog
-  # entry to charts/model-serving instead.
+  # keeping it ("zimage-turbo is live there") no longer holds. Its chart has since
+  # been DELETED outright (ADR-0106) because it had also stopped being a valid
+  # rollback surface — the image it referenced does not exist. Deleting the
+  # remaining seven is the same decommissioning exercise on that cluster, tracked
+  # as a follow-up — not a change here. Do NOT copy this shape for a new model;
+  # add a catalog entry to charts/model-serving instead.
   # KServe/Knative + vLLM + LMCache serving Qwen3-4B on the home RTX A2000.
   # `homeCluster: true` is the SINGLE sanctioned ADR-0017 exception: this
   # workload targets the cluster ArgoCD runs on (the home Talos cluster) — NOT
@@ -1262,7 +1264,7 @@ applications:
   # the inverse. See docs/patterns/self-hosted-model-serving.md.
   # ADRs: 0022 (federation), 0029 (serving mode), 0030 (one STS via bjw-template).
   - name: model-serving-qwen2-vl-2b
-    enabled: false                 # DISABLED — swapped by model-serving-zimage-turbo (one GPU). Re-enable to roll back.
+    enabled: false                 # DISABLED — legacy home-GPU generation, superseded by the model-serving orchestrator (ADR-0094).
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     homeCluster: true
@@ -1284,64 +1286,19 @@ applications:
         prune: true
         selfHeal: true
 
-  # Self-hosted Tongyi-MAI Z-Image-Turbo FP8 on the Hetzner GPU fleet (ADR-0094/0095).
+  # ⚠️ model-serving-zimage-turbo DELETED 2026-07-29 (ADR-0106, issue #803) —
+  # decommissioned, not disabled. It deployed a first-party Rust/Candle server
+  # from `ghcr.io/adorsys-gis/z-image-turbo-server:v0.1.0`, an image that does not
+  # exist: its source was deleted by ADR-0102 the day after the chart shipped,
+  # when the team replaced the whole custom-server approach with LocalAI. PR #790
+  # then merged a stale branch that resurrected the chart without noticing, so the
+  # pod sat in ImagePullBackOff (kubelet `failed to authorize: ... 403 Forbidden`)
+  # and could never have served a request.
   #
-  # ⚠️ DISABLED 2026-07-29 — the image this chart deploys does not exist.
-  # `ghcr.io/adorsys-gis/z-image-turbo-server:v0.1.0` 403s on pull (verified live:
-  # kubelet `failed to authorize: ... 403 Forbidden`, no imagePullSecret configured
-  # anywhere in this namespace). ADR-0102 already recorded why: the source for
-  # this image (`images/z-image-turbo-server/`) was deleted the day after this
-  # chart's original deployment (PR #704), when the team replaced this whole
-  # custom-Rust-server approach with LocalAI, measured live at 32.4s/image
-  # (ADR-0100 through ADR-0105). [PR #790](https://github.com/ADORSYS-GIS/ai-helm/pull/790)
-  # then merged a stale branch that resurrected this chart (re-enabling it here)
-  # without noticing the LocalAI work — see the disk-space fix in
-  # [PR #802](https://github.com/ADORSYS-GIS/ai-helm/pull/802) for the seed-side
-  # half of that regression, and #803 for the full writeup and the ask to
-  # either finish this custom server properly or restore LocalAI instead.
-  #
-  # The "FP8, ~8 GB VRAM" claim below is the model card's, not measured: the
-  # published HF repo is FP32 (~33 GB on disk: transformer 24.62 + text_encoder
-  # 8.05 + VAE 0.17), and how that fits a 20 GB-VRAM card was never demonstrated
-  # end to end — the model Deployment never got past ImagePullBackOff to find out.
-  # 6B params, 1024×1024, 8-step distilled DiT.
-  # Served by a custom Rust/Actix server (ghcr.io/adorsys-gis/z-image-turbo-server).
-  # Deployed on the Hetzner GPU nodes via the model-serving orchestrator pattern.
-  - name: model-serving-zimage-turbo
-    enabled: false                 # DISABLED — image does not exist (see comment above). Do not re-enable without fixing the image first.
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    source:
-      # OCI chart-float (ADR-0055): in-place .source swap; valuesObject untouched.
-      repoURL: oci://ghcr.io/adorsys-gis/charts/model-serving-zimage-turbo
-      chart: "."
-      targetRevision: ">=0.0.0"
-      helm:
-        releaseName: model-serving-zimage-turbo
-
-        # Tolerations and nodeSelector added inline to enable scheduling on GPU nodes with nvidia.com/gpu taints.
-        # Note: ValuesObject tolerations override chart defaults (nvidia.com/gpu Exists/NoSchedule+NoExecute).
-        valuesObject:
-          modelServing:
-            defaultPodOptions:
-              nodeSelector:
-                nvidia.com/gpu.present: "true"
-              tolerations:
-                - key: nvidia.com/gpu
-                  operator: Exists
-                  effect: NoSchedule
-                - key: nvidia.com/gpu
-                  operator: Exists
-                  effect: NoExecute
-    destination:
-      namespace: inference
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
+  # Image generation is NOT gone — it moved to the generic orchestrator
+  # (ADR-0094), where it is one catalog entry: `z-image-turbo` in
+  # charts/model-serving/values.yaml, federated as `z-image-turbo-local` in
+  # charts/ai-models/values.yaml. There is nothing to re-enable here.
 
   # Self-hosted llm-d (CNCF Sandbox distributed inference middleware) + vLLM on
   # the home GPU. charts/llm-d deploys the llm-d router in standalone mode (EPP +
