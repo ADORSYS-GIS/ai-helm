@@ -371,19 +371,30 @@ landed and the UI showed the plain normalized label. Listing `name` lets the
 endpoint value replace it; a field only changes when the endpoint actually
 provides one.
 
-`meta.modelsInfoHideTextOnly: true` (models-info plugin ≥ 0.10.0,
-[vymalo/opencode-oauth2@802ce44..cc8fce1](https://github.com/vymalo/opencode-oauth2/commit/cc8fce1eaa62383ac6b6692b37061972e6a77a19))
-makes `/v1/models/info` authoritative for which models the opencode picker
-even offers, not just their metadata: a model is hard-deleted from
-`provider.models` when the catalog reports it as exactly text-in/text-out, or
-when the catalog has no matching entry at all. We turn this on so oauth2's
-`/v1/models` discovery gets a second, plugin-side check that a model actually
-belongs in the picker — on top of the server-side `disableExternal`/`-internal`
-exclusion `charts/ai-model` (AIGatewayRoute `hostnames`) and
-`charts/ai-models-info` (the catalog helper) already apply. ⚠️ Broad blast
-radius: this hides every plain-text chat model, not just the internal ones —
-only multimodal/image models (and any the catalog explicitly reports as
-non-text-only) survive in the picker.
+`meta.modelsInfoHideTextOnly` was turned on in #800 as a plugin-side "second
+belt" meant to hide internal-only models from the opencode picker, then turned
+back off in
+[#848](https://github.com/ADORSYS-GIS/ai-helm/pull/848). It filters on
+**modality** (text-in/text-out), not on
+internal status — those aren't the same axis, and the correlation broke as
+soon as a legitimate text-only *external* model existed: it hid 12 models, not
+just the 6 actually-internal ones, including `glm-4.7-flash` and our own
+`adorsys-coder`/`adorsys-researcher`/`adorsys-reviewer` coding agents. The
+internal-model leak it was guarding against is already fully closed
+server-side — `disableExternal: true` models are excluded outright from both
+`/v1/models` and `/v1/models/info` via AIGatewayRoute `hostnames` scoping
+(`charts/ai-model`) and the catalog helper (`charts/ai-models-info`, #797) —
+so there was nothing left for a plugin-side belt to catch.
+
+If a future model genuinely needs hiding from the opencode picker without
+being modality-hidden, `@vymalo/opencode-models-info` ≥ 0.11.0 ships
+`meta.modelsInfoHideInternal` for exactly that
+([vymalo/opencode-oauth2#73](https://github.com/vymalo/opencode-oauth2/pull/73)) —
+but it needs the catalog to actually emit `internal: true` on a model entry.
+`charts/ai-models-info` deliberately does not do that today (it *excludes*
+`disableExternal` models rather than flagging them); re-including them, even
+flagged, would reintroduce the "advertised model that 404s" problem #797
+fixed. Don't set either flag until that changes.
 
 ## Prerequisites the cluster must satisfy
 
