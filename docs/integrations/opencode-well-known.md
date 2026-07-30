@@ -373,7 +373,9 @@ provides one.
 
 `meta.modelsInfoHideTextOnly` was turned on in #800 as a plugin-side "second
 belt" meant to hide internal-only models from the opencode picker, then turned
-back off (this change). It filters on **modality** (text-in/text-out), not on
+back off in
+[#848](https://github.com/ADORSYS-GIS/ai-helm/pull/848). It filters on
+**modality** (text-in/text-out), not on
 internal status — those aren't the same axis, and the correlation broke as
 soon as a legitimate text-only *external* model existed: it hid 12 models, not
 just the 6 actually-internal ones, including `glm-4.7-flash` and our own
