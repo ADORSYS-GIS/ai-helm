@@ -70,7 +70,7 @@ agents:
   # `serviceAccount` (agents-rbac.yaml), so every Job pod inherits it with NO dispatcher change — the
   # kubelet merges an SA's imagePullSecrets into each pod that uses it. One name drives both the secret
   # and the SA reference. Reuses the org-wide ghcr.io credential (keyed on the HOST, so it also covers
-  # the vymalo org). Empty → no imagePullSecrets attached (public images / anonymous pull).
+  # the adorsys-gis org). Empty → no imagePullSecrets attached (public images / anonymous pull).
   pullSecretName: lightbridge-repo-auth-ghcr
   # NOTE: unused/vestigial — bjw renders the dispatcher env against the sub-chart scope where
   # top-level `agents.*` isn't visible, so the LIVE runner image is the dispatcher's
@@ -345,7 +345,7 @@ lci:
     # REUSE the org-wide ghcr.io dockerconfigjson already materialised in `converse`
     # by the lightbridge-repo-auth chart (secret `lightbridge-repo-auth-ghcr`,
     # github_username/github_token @ ssegning-aws) — it's keyed on the ghcr.io HOST
-    # so it covers the vymalo org too, exactly as the authz stack reuses it
+    # so it covers the adorsys-gis org, exactly as the authz stack reuses it
     # (ai-helm-values lightbridge-app.yaml). bjw-s resolves imagePullSecrets from
     # defaultPodOptions/pod — NOT global.imagePullSecrets. Harmless while the images
     # are public (a missing/anonymous pull still works).
