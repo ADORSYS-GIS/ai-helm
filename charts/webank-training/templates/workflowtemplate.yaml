@@ -8,6 +8,15 @@
 {{- if not $lakefs.candidateBranch }}{{ fail "webank-training: training.lakefs.candidateBranch is required" }}{{- end }}
 {{- if not $training.otel.endpoint }}{{ fail "webank-training: training.otel.endpoint is required" }}{{- end }}
 {{- if not $workflow.serviceAccountName }}{{ fail "webank-training: workflow.serviceAccountName is required" }}{{- end }}
+{{- $gpuNodeRole := index $training.gpu.nodeSelector "role" | default "" -}}
+{{- if ne $gpuNodeRole "gpu" }}{{ fail "webank-training: GPU-capable templates require training.gpu.nodeSelector.role=gpu" }}{{- end }}
+{{- $gpuLimit := index $training.gpu.resources.limits "nvidia.com/gpu" | default 0 -}}
+{{- if lt (int $gpuLimit) 1 }}{{ fail "webank-training: GPU-capable templates require limits.nvidia.com/gpu >= 1" }}{{- end }}
+{{- $toleratesGpu := false -}}
+{{- range $training.gpu.tolerations }}
+{{- if and (eq (.key | default "") "role") (eq (.operator | default "Equal") "Equal") (eq (.value | default "") "gpu") (eq (.effect | default "") "NoSchedule") }}{{- $toleratesGpu = true }}{{- end }}
+{{- end }}
+{{- if not $toleratesGpu }}{{ fail "webank-training: GPU-capable templates require a role=gpu:NoSchedule toleration" }}{{- end }}
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -66,6 +75,10 @@ spec:
           requests: { cpu: 250m, memory: 512Mi }
           limits: { cpu: "1", memory: 1Gi }
 
+    # The only GPU-capable task carries an enforced `role=gpu` selector,
+    # matching NoSchedule toleration, and an extended-resource GPU request.
+    # Kubernetes therefore cannot place it on a non-GPU node. The preceding
+    # readiness gate is deliberately CPU-only.
     - name: gpu-train-and-publish-candidate
       nodeSelector:
         {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
