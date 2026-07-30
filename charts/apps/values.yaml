@@ -684,7 +684,7 @@ applications:
 
   # --- Lightbridge Code Intelligence ---
   # The GitHub-App code-review / repo-Q&A system (repo:
-  # vymalo/lightbridge-code-intelligence): Rust control plane + Next.js web console
+  # ADORSYS-GIS/lightbridge-code-intelligence): Rust control plane + Next.js web console
   # + Neo4j. Postgres/pgvector is REUSED from the lightbridge-main-db CNPG cluster via
   # a dedicated `codeintel` role + database (charts/lightbridge-db). Plain workload →
   # home-remote (default).
@@ -718,20 +718,20 @@ applications:
       # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
       # `a2a` = the A2A surface (RFC-0006) — the SAME control-plane image, kept in lockstep so the a2a
       # role never lags the control-plane on a build.
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/vymalo/lightbridge-control-plane,disp=ghcr.io/vymalo/lightbridge-control-plane,recon=ghcr.io/vymalo/lightbridge-control-plane,a2a=ghcr.io/vymalo/lightbridge-control-plane,notifier=ghcr.io/vymalo/lightbridge-control-plane,web=ghcr.io/vymalo/lightbridge-web,runner=ghcr.io/vymalo/lightbridge-agent-runner,review=ghcr.io/vymalo/lightbridge-agent-review
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/adorsys-gis/lightbridge-control-plane,disp=ghcr.io/adorsys-gis/lightbridge-control-plane,recon=ghcr.io/adorsys-gis/lightbridge-control-plane,a2a=ghcr.io/adorsys-gis/lightbridge-control-plane,notifier=ghcr.io/adorsys-gis/lightbridge-control-plane,web=ghcr.io/adorsys-gis/lightbridge-web,runner=ghcr.io/adorsys-gis/lightbridge-agent-runner,review=ghcr.io/adorsys-gis/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/cp.force-update: "true"
-      # GHCR read cred so tag detection survives ghcr.io/vymalo/* going private. The
+      # GHCR read cred so tag detection survives ghcr.io/adorsys-gis/* going private. The
       # #621 secret's dockerconfigjson is keyed on the ghcr.io host, so it authenticates
-      # the vymalo org too — one secret for both orgs. Applied to every alias below.
+      # the adorsys-gis org. Applied to every alias below.
       argocd-image-updater.argoproj.io/cp.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/cp.helm.image-name: lci.controllers.control-plane.containers.main.image.repository
       argocd-image-updater.argoproj.io/cp.helm.image-tag: lci.controllers.control-plane.containers.main.image.tag
       argocd-image-updater.argoproj.io/cp.signature-type: cosign
       argocd-image-updater.argoproj.io/cp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/cp.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      argocd-image-updater.argoproj.io/cp.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── dispatcher (SAME image as control-plane, role-selected) — keeps its tag in lockstep so it
       #    never lags the control-plane on a build (it's not a pod image-updater would otherwise see). ──
       argocd-image-updater.argoproj.io/disp.update-strategy: newest-build
@@ -742,7 +742,7 @@ applications:
       argocd-image-updater.argoproj.io/disp.helm.image-tag: lci.controllers.dispatcher.containers.main.image.tag
       argocd-image-updater.argoproj.io/disp.signature-type: cosign
       argocd-image-updater.argoproj.io/disp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/disp.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      argocd-image-updater.argoproj.io/disp.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── reconciler (SAME image as control-plane, role-selected) — the single GitHub-egress drainer +
       #    feedback poll; keeps its tag in lockstep so egress never lags the control-plane on a build.
       #    (alias `recon`; was `poll` before the ADR-0058 rename.) ──
@@ -754,7 +754,7 @@ applications:
       argocd-image-updater.argoproj.io/recon.helm.image-tag: lci.controllers.reconciler.containers.main.image.tag
       argocd-image-updater.argoproj.io/recon.signature-type: cosign
       argocd-image-updater.argoproj.io/recon.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/recon.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      argocd-image-updater.argoproj.io/recon.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── a2a (SAME image as control-plane, role-selected; RFC-0006) — keeps its tag in lockstep so
       #    the A2A surface never lags the control-plane on a build. ──
       argocd-image-updater.argoproj.io/a2a.update-strategy: newest-build
@@ -765,7 +765,7 @@ applications:
       argocd-image-updater.argoproj.io/a2a.helm.image-tag: lci.controllers.a2a.containers.main.image.tag
       argocd-image-updater.argoproj.io/a2a.signature-type: cosign
       argocd-image-updater.argoproj.io/a2a.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/a2a.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      argocd-image-updater.argoproj.io/a2a.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── notifier (SAME image as control-plane, role-selected; RFC-0006 Phase 3 / ADR-0079) — keeps its
       #    tag in lockstep so the A2A push-notification worker never lags the control-plane on a build. ──
       argocd-image-updater.argoproj.io/notifier.update-strategy: newest-build
@@ -776,7 +776,7 @@ applications:
       argocd-image-updater.argoproj.io/notifier.helm.image-tag: lci.controllers.notifier.containers.main.image.tag
       argocd-image-updater.argoproj.io/notifier.signature-type: cosign
       argocd-image-updater.argoproj.io/notifier.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/notifier.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      argocd-image-updater.argoproj.io/notifier.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── web ──
       argocd-image-updater.argoproj.io/web.update-strategy: newest-build
       argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -786,7 +786,7 @@ applications:
       argocd-image-updater.argoproj.io/web.helm.image-tag: lci.controllers.web.containers.main.image.tag
       argocd-image-updater.argoproj.io/web.signature-type: cosign
       argocd-image-updater.argoproj.io/web.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/web.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      argocd-image-updater.argoproj.io/web.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── agent-runner (the one-shot Job image the dispatcher launches; NOT a pod in
       #    this chart, so it's a single combined `repo:tag` env value, not a split
       #    image.repository/.tag). Uses `helm.image-spec` to write the whole ref into
@@ -800,7 +800,7 @@ applications:
       argocd-image-updater.argoproj.io/runner.helm.image-spec: lci.controllers.dispatcher.containers.main.env.AGENT_RUNNER_IMAGE
       argocd-image-updater.argoproj.io/runner.signature-type: cosign
       argocd-image-updater.argoproj.io/runner.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/runner.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      argocd-image-updater.argoproj.io/runner.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── review (the review-only Job image — drops Python/Graphify, ~44% smaller; #207). The
       #    dispatcher's image_for() picks it for review tasks (control_plane env AGENT_REVIEW_RUNNER_IMAGE;
       #    falls back to AGENT_RUNNER_IMAGE when unset). Same cosign identity / build workflow as runner. ──
@@ -811,7 +811,7 @@ applications:
       argocd-image-updater.argoproj.io/review.helm.image-spec: lci.controllers.dispatcher.containers.main.env.AGENT_REVIEW_RUNNER_IMAGE
       argocd-image-updater.argoproj.io/review.signature-type: cosign
       argocd-image-updater.argoproj.io/review.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
-      argocd-image-updater.argoproj.io/review.cosign.certificate-identity-regexp: ^https://github\.com/vymalo/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      argocd-image-updater.argoproj.io/review.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── git write-back → ai-helm-values main (PRIVATE; the org-wide adorsys-gis
       # GitHub App commits, and ArgoCD reads Source B via the same repo-creds —
       # exactly like converse-ui). Unprotected branch → the bot can direct-commit. ──
@@ -822,13 +822,13 @@ applications:
       # target resolves relative to the app's chart SOURCE path).
       argocd-image-updater.argoproj.io/write-back-target: helmvalues:/environments/prod/values/lightbridge-code-intelligence.yaml
       argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys-gis
-      # ── argocd-notifications → GitHub Deployment status. `vymalo` is the
-      # notifier service (GitHub App installation on the vymalo org); the
+      # ── argocd-notifications → GitHub Deployment status. `adorsys-gis` is the
+      # notifier service (GitHub App installation on the adorsys-gis org); the
       # on-deployed / on-deploy-failed triggers + ssegning.me annotation
       # contract are defined in home-os charts/argocd. ──
-      notifications.argoproj.io/subscribe.on-deployed.vymalo: ""
-      notifications.argoproj.io/subscribe.on-deploy-failed.vymalo: ""
-      notifications.ssegning.me/github-repo-url: https://github.com/vymalo/lightbridge-code-intelligence
+      notifications.argoproj.io/subscribe.on-deployed.adorsys-gis: ""
+      notifications.argoproj.io/subscribe.on-deploy-failed.adorsys-gis: ""
+      notifications.ssegning.me/github-repo-url: https://github.com/ADORSYS-GIS/lightbridge-code-intelligence
       notifications.ssegning.me/github-revision: main
       notifications.ssegning.me/environment-url: https://code-intelligence.ai.camer.digital
     sources:
@@ -854,7 +854,7 @@ applications:
 
   # ── Lightbridge observability — Grafana dashboards-as-code (ADR-0046) ──
   # Deploys the dashboards-as-code chart that lives in the APPLICATION repo
-  # (vymalo/lightbridge-code-intelligence, PUBLIC → no repo-creds needed), NOT in
+  # (ADORSYS-GIS/lightbridge-code-intelligence, PUBLIC → no repo-creds needed), NOT in
   # ai-helm: a GrafanaFolder + GrafanaDashboard CRs (imported by the grafana
   # operator) + a read-only Postgres GrafanaDatasource. Lands in `observability`
   # where the operator watches. No images → no image-updater. The metrics
@@ -865,7 +865,7 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     sources:
       # Source A — the dashboards chart from the app repo @ main (continuous).
-      - repoURL: https://github.com/vymalo/lightbridge-code-intelligence
+      - repoURL: https://github.com/ADORSYS-GIS/lightbridge-code-intelligence
         targetRevision: main
         path: deploy/observability
         helm:
