@@ -1,0 +1,31 @@
+# Environment-neutral structure for the Webank training WorkflowTemplate.
+# Deployment literals belong in ai-helm-values; this chart fails closed when
+# they are absent, so ArgoCD cannot silently install an unsafe default.
+workflow:
+  name: webank-weak-training-pass
+  activeDeadlineSeconds: 21600
+  ttlSecondsAfterCompletion: 259200
+  serviceAccountName: argo-workflow
+  imagePullSecrets: []
+
+training:
+  image: ""
+  lakefs:
+    endpoint: ""
+    secretName: lakefs-proxy-admin
+    accessKey: access-key-id
+    secretKey: secret-access-key
+  mlflow:
+    trackingUri: ""
+    tokenUrl: ""
+    clientId: mlflow-automation
+    secretName: mlflow-automation
+    clientSecretKey: client-secret
+  otel:
+    endpoint: ""
+  gpu:
+    nodeSelector: {}
+    tolerations: []
+    resources:
+      requests: { cpu: "4", memory: 16Gi }
+      limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }

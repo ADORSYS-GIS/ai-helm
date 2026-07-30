@@ -1432,6 +1432,21 @@ applications:
     destination:
       namespace: mlops
 
+  # --- Webank governed GPU training (webank-models ADR-0034 / ADR-0035) ---
+  # A plain workload Application, not an orchestrator: it installs only the
+  # namespaced WorkflowTemplate. Human submission remains the sole trigger;
+  # the template gates its pinned LakeFS ref and readiness attestation before
+  # requesting one RTX 4000 Ada GPU. Deployment values and the app-scoped
+  # MLflow automation ExternalSecret live in ai-helm-values.
+  - name: webank-training
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: webank-training
+    releaseName: webank-training
+    depsOverlay: environments/prod/deps/webank-training
+    destination:
+      namespace: mlops
+
 extraObjects:
   # ==========================================
   # Upstream namespace quotas & limit ranges

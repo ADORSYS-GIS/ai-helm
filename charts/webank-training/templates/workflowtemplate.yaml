@@ -1,0 +1,156 @@
+{{- $workflow := .Values.workflow -}}
+{{- $training := .Values.training -}}
+{{- $lakefs := $training.lakefs -}}
+{{- $mlflow := $training.mlflow -}}
+{{- if not $training.image }}{{ fail "webank-training: training.image must be an immutable image digest" }}{{- end }}
+{{- if not (contains "@sha256:" $training.image) }}{{ fail "webank-training: training.image must be digest-pinned" }}{{- end }}
+{{- if not $lakefs.endpoint }}{{ fail "webank-training: training.lakefs.endpoint is required" }}{{- end }}
+{{- if not $mlflow.trackingUri }}{{ fail "webank-training: training.mlflow.trackingUri is required" }}{{- end }}
+{{- if not $mlflow.tokenUrl }}{{ fail "webank-training: training.mlflow.tokenUrl is required" }}{{- end }}
+{{- if not $training.otel.endpoint }}{{ fail "webank-training: training.otel.endpoint is required" }}{{- end }}
+{{- if not $workflow.serviceAccountName }}{{ fail "webank-training: workflow.serviceAccountName is required" }}{{- end }}
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: {{ $workflow.name | quote }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+    app.kubernetes.io/part-of: webank-models
+    app.kubernetes.io/component: training-orchestration
+  annotations:
+    webank.io/adr: "0034"
+    webank.io/observability-adr: "0035"
+spec:
+  entrypoint: train
+  activeDeadlineSeconds: {{ $workflow.activeDeadlineSeconds }}
+  ttlStrategy:
+    secondsAfterCompletion: {{ $workflow.ttlSecondsAfterCompletion }}
+  serviceAccountName: {{ $workflow.serviceAccountName | quote }}
+  {{- with $workflow.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  arguments:
+    parameters:
+      - name: model
+      - name: lakefs_ref
+      - name: run_name
+      - name: readiness_manifest
+      - name: readiness_attestation
+      - name: training_command
+      - name: output_path
+      - name: training_image
+        value: {{ $training.image | quote }}
+  templates:
+    - name: train
+      dag:
+        tasks:
+          - name: validate-lakefs-ref
+            template: validate-lakefs-ref
+          - name: readiness-gate
+            dependencies: [validate-lakefs-ref]
+            template: readiness-gate
+          - name: gpu-train
+            dependencies: [readiness-gate]
+            template: gpu-train
+          - name: push-candidate
+            dependencies: [gpu-train]
+            template: push-candidate
+
+    - name: validate-lakefs-ref
+      container:
+        image: "{{`{{workflow.parameters.training_image}}`}}"
+        command: ["sh", "-c"]
+        args:
+          - |
+            case "$LAKEFS_REF" in
+              [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) exit 0 ;;
+              *) echo "lakefs_ref must be a pinned 64-character lowercase-hex commit id" >&2; exit 1 ;;
+            esac
+        env:
+          - name: LAKEFS_REF
+            value: "{{`{{workflow.parameters.lakefs_ref}}`}}"
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: webank-training-validate-lakefs-ref
+        resources:
+          requests: { cpu: 100m, memory: 64Mi }
+          limits: { cpu: 200m, memory: 128Mi }
+
+    - name: readiness-gate
+      container:
+        image: "{{`{{workflow.parameters.training_image}}`}}"
+        command: ["cargo"]
+        args: [xtask, training-data, readiness-gate, --manifest, "{{`{{workflow.parameters.readiness_manifest}}`}}", --lakefs-ref, "{{`{{workflow.parameters.lakefs_ref}}`}}", --readiness, "{{`{{workflow.parameters.readiness_attestation}}`}}"]
+        env:
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: webank-training-readiness-gate
+        resources:
+          requests: { cpu: 250m, memory: 256Mi }
+          limits: { cpu: 500m, memory: 512Mi }
+
+    - name: gpu-train
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      container:
+        image: "{{`{{workflow.parameters.training_image}}`}}"
+        command: ["sh", "-c"]
+        args: ["{{`{{workflow.parameters.training_command}}`}}"]
+        env:
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: WEBANK_LAKEFS_REF
+            value: "{{`{{workflow.parameters.lakefs_ref}}`}}"
+          - name: LAKEFS_ENDPOINT
+            value: {{ $lakefs.endpoint | quote }}
+          - name: LAKEFS_ACCESS_KEY_ID
+            valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.accessKey | quote }} } }
+          - name: LAKEFS_SECRET_ACCESS_KEY
+            valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.secretKey | quote }} } }
+          - name: MLFLOW_TRACKING_URI
+            value: {{ $mlflow.trackingUri | quote }}
+          - name: MLFLOW_TOKEN_URL
+            value: {{ $mlflow.tokenUrl | quote }}
+          - name: MLFLOW_AUTOMATION_CLIENT_ID
+            value: {{ $mlflow.clientId | quote }}
+          - name: MLFLOW_AUTOMATION_CLIENT_SECRET
+            valueFrom: { secretKeyRef: { name: {{ $mlflow.secretName | quote }}, key: {{ $mlflow.clientSecretKey | quote }} } }
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: "webank-training-{{`{{workflow.parameters.model}}`}}"
+        resources:
+          {{- toYaml $training.gpu.resources | nindent 10 }}
+
+    - name: push-candidate
+      container:
+        image: "{{`{{workflow.parameters.training_image}}`}}"
+        command: ["cargo"]
+        args: [xtask, training-data, push, --destination, training-data-lake, --path, "{{`{{workflow.parameters.output_path}}`}}", --manifest, "{{`{{workflow.parameters.readiness_manifest}}`}}", --lakefs-ref, "{{`{{workflow.parameters.lakefs_ref}}`}}", --readiness, "{{`{{workflow.parameters.readiness_attestation}}`}}"]
+        env:
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: LAKEFS_ENDPOINT
+            value: {{ $lakefs.endpoint | quote }}
+          - name: LAKEFS_ACCESS_KEY_ID
+            valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.accessKey | quote }} } }
+          - name: LAKEFS_SECRET_ACCESS_KEY
+            valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.secretKey | quote }} } }
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: webank-training-push-candidate
+        resources:
+          requests: { cpu: 250m, memory: 256Mi }
+          limits: { cpu: 500m, memory: 512Mi }
