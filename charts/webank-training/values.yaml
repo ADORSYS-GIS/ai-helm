@@ -2,7 +2,7 @@
 # Deployment literals belong in ai-helm-values; this chart fails closed when
 # they are absent, so ArgoCD cannot silently install an unsafe default.
 workflow:
-  name: webank-weak-training-pass
+  name: webank-document-detector-train
   activeDeadlineSeconds: 21600
   ttlSecondsAfterCompletion: 259200
   serviceAccountName: argo-workflow
@@ -15,12 +15,7 @@ training:
     secretName: lakefs-proxy-admin
     accessKey: access-key-id
     secretKey: secret-access-key
-  mlflow:
-    trackingUri: ""
-    tokenUrl: ""
-    clientId: mlflow-automation
-    secretName: mlflow-automation
-    clientSecretKey: client-secret
+    candidateBranch: candidates
   otel:
     endpoint: ""
   gpu:
@@ -29,3 +24,9 @@ training:
     resources:
       requests: { cpu: "4", memory: 16Gi }
       limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }
+  documentDetector:
+    stemChannels: 32
+    epochs: 10
+    batchSize: 1
+    learningRate: 0.001
+    shrinkRatio: 0.6
