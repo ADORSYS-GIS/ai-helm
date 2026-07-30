@@ -43,7 +43,7 @@ secrets:
   runnerTokenSigningKeyProperty: ""
   openaiKeyProperty: ""
   # GHCR pull credential for the agent Jobs' namespace (private-image cutover). The runner images
-  # (ghcr.io/vymalo/*) are private, so the Jobs the dispatcher launches into `agents.namespace` need
+  # (ghcr.io/adorsys-gis/*) are private, so the Jobs the dispatcher launches into `agents.namespace` need
   # imagePullSecrets — and, unlike the bjw controllers, they get NO defaultPodOptions (they're created
   # imperatively by the Rust dispatcher, see k8s.rs). We materialise a dockerconfigjson in that
   # namespace (externalsecret.yaml) and attach it to the agent SA (agents-rbac.yaml). The PAT lives in
@@ -65,7 +65,7 @@ agents:
   enabled: true
   namespace: lightbridge-agents
   serviceAccount: lightbridge-agent
-  # Pull secret (dockerconfigjson) the agent Job pods use for the now-private ghcr.io/vymalo/* runner
+  # Pull secret (dockerconfigjson) the agent Job pods use for the now-private ghcr.io/adorsys-gis/* runner
   # images. Materialised in `namespace` by the ExternalSecret in externalsecret.yaml and attached to
   # `serviceAccount` (agents-rbac.yaml), so every Job pod inherits it with NO dispatcher change — the
   # kubelet merges an SA's imagePullSecrets into each pod that uses it. One name drives both the secret
@@ -77,7 +77,7 @@ agents:
   # AGENT_RUNNER_IMAGE env literal (controllers.dispatcher) below, NOT this. That env value IS
   # image-updater-managed now (charts/apps `runner` alias, helm.image-spec) → pinned to a sha- tag
   # in ai-helm-values and bumped per build. Kept here only as documentation; keep in sync.
-  runnerImage: ghcr.io/vymalo/lightbridge-agent-runner:latest
+  runnerImage: ghcr.io/adorsys-gis/lightbridge-agent-runner:latest
   # The gateway only serves embeddings/chat on the HTTPS `core-gateway-internal` ClusterIP (the HTTP
   # LoadBalancer 308-redirects / 404s by Host). Its cert is from ClusterIssuer/self-signed-ca, so the
   # runner mounts that CA (caSecret below) and trusts it — see k8s.rs AGENT_CA_SECRET + embeddings.rs.
@@ -341,7 +341,7 @@ lci:
       runAsNonRoot: true
       seccompProfile:
         type: RuntimeDefault
-    # GHCR pull secret so kubelet can pull the now-private ghcr.io/vymalo/* images.
+    # GHCR pull secret so kubelet can pull the now-private ghcr.io/adorsys-gis/* images.
     # REUSE the org-wide ghcr.io dockerconfigjson already materialised in `converse`
     # by the lightbridge-repo-auth chart (secret `lightbridge-repo-auth-ghcr`,
     # github_username/github_token @ ssegning-aws) — it's keyed on the ghcr.io HOST
@@ -371,7 +371,7 @@ lci:
       containers:
         main:
           image:
-            repository: ghcr.io/vymalo/lightbridge-control-plane
+            repository: ghcr.io/adorsys-gis/lightbridge-control-plane
             # Default/fallback only. The deployed tag is OVERRIDDEN at sync time by the
             # app repo's deploy/envs/production/values.yaml ($values source), which
             # argocd-image-updater owns — see charts/apps/values.yaml + the app repo.
@@ -500,7 +500,7 @@ lci:
       containers:
         main:
           image:
-            repository: ghcr.io/vymalo/lightbridge-web
+            repository: ghcr.io/adorsys-gis/lightbridge-web
             # Default/fallback only. The deployed tag is OVERRIDDEN at sync time by the
             # app repo's deploy/envs/production/values.yaml ($values source), which
             # argocd-image-updater owns — see charts/apps/values.yaml + the app repo.
@@ -673,7 +673,7 @@ lci:
       containers:
         main:
           image:
-            repository: ghcr.io/vymalo/lightbridge-control-plane
+            repository: ghcr.io/adorsys-gis/lightbridge-control-plane
             tag: "0.1.0"
             pullPolicy: IfNotPresent
           env:
@@ -718,12 +718,12 @@ lci:
             # image-updater-managed (charts/apps `runner` alias via helm.image-spec): prod pins this
             # to a sha- tag in ai-helm-values and bumps it per signed build. `:latest` is only the
             # defaults-render fallback. Used for index tasks (and as the fallback for review).
-            AGENT_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-runner:latest"
+            AGENT_RUNNER_IMAGE: "ghcr.io/adorsys-gis/lightbridge-agent-runner:latest"
             # The slimmer review-only Job image (no Python/Graphify; #207). The control plane's
             # image_for() picks it for REVIEW tasks and falls back to AGENT_RUNNER_IMAGE when unset, so a
             # cluster that hasn't seeded it keeps working on the combined image. image-updater-managed
             # (charts/apps `review` alias via helm.image-spec) → pinned to a sha- tag in ai-helm-values.
-            AGENT_REVIEW_RUNNER_IMAGE: "ghcr.io/vymalo/lightbridge-agent-review:latest"
+            AGENT_REVIEW_RUNNER_IMAGE: "ghcr.io/adorsys-gis/lightbridge-agent-review:latest"
             # Secret (agents ns) whose ca.crt the runner mounts to trust the HTTPS gateway.
             AGENT_CA_SECRET: "lightbridge-agent-ca"
             # FQDN, not the bare Service name: the runner Jobs run in the lightbridge-agents
@@ -779,7 +779,7 @@ lci:
       containers:
         main:
           image:
-            repository: ghcr.io/vymalo/lightbridge-control-plane
+            repository: ghcr.io/adorsys-gis/lightbridge-control-plane
             # Default/fallback; the deployed tag is overridden at sync time by ai-helm-values via the
             # image-updater `recon` alias (charts/apps/values.yaml), in lockstep with control-plane.
             tag: "0.1.0"
@@ -869,7 +869,7 @@ lci:
       containers:
         main:
           image:
-            repository: ghcr.io/vymalo/lightbridge-control-plane
+            repository: ghcr.io/adorsys-gis/lightbridge-control-plane
             # Default/fallback; overridden at sync time by ai-helm-values via the image-updater `a2a`
             # alias (charts/apps/values.yaml), in lockstep with control-plane.
             tag: "0.1.0"
@@ -980,7 +980,7 @@ lci:
       containers:
         main:
           image:
-            repository: ghcr.io/vymalo/lightbridge-control-plane
+            repository: ghcr.io/adorsys-gis/lightbridge-control-plane
             # Default/fallback; the deployed tag is overridden at sync time by ai-helm-values via the
             # image-updater `notifier` alias (charts/apps/values.yaml), in lockstep with control-plane.
             tag: "0.1.0"

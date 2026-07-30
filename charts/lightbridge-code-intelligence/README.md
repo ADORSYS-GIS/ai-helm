@@ -1,6 +1,6 @@
 # lightbridge-code-intelligence
 
-Helm chart for **Lightbridge Code Intelligence** (repo: `vymalo/lightbridge-code-intelligence`) —
+Helm chart for **Lightbridge Code Intelligence** (repo: `ADORSYS-GIS/lightbridge-code-intelligence`) —
 the GitHub-App code-review / repository-Q&A system. Modelled on the `librechat-app`
 deployment pattern.
 
@@ -8,8 +8,8 @@ deployment pattern.
 
 | Component | Workload | Image | Notes |
 |---|---|---|---|
-| Control plane | Deployment (`*-control-plane`) | `ghcr.io/vymalo/lightbridge-control-plane` | Rust/Axum trust boundary + GitHub webhook + OAuth2 resource server (validates Keycloak JWTs) |
-| Web console | Deployment (`*-web`) | `ghcr.io/vymalo/lightbridge-web` | Next.js Keycloak OIDC client (Authorization-Code + PKCE) |
+| Control plane | Deployment (`*-control-plane`) | `ghcr.io/adorsys-gis/lightbridge-control-plane` | Rust/Axum trust boundary + GitHub webhook + OAuth2 resource server (validates Keycloak JWTs) |
+| Web console | Deployment (`*-web`) | `ghcr.io/adorsys-gis/lightbridge-web` | Next.js Keycloak OIDC client (Authorization-Code + PKCE) |
 | Knowledge graph | StatefulSet (`*-neo4j`) | `neo4j:5.26-community` | Single instance, emptyDir (non-persistent for now; see values comment) |
 | Postgres / pgvector | **reused** | — | Uses the existing CNPG cluster `lightbridge-main-db` via a dedicated `codeintel` role + database |
 
