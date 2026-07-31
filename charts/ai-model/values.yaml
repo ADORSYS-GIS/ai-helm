@@ -67,19 +67,63 @@ timeout:
   requestTimeout: 600s
   connectionIdleTimeout: 1h
 
-# Optional: per-model rate-limit overrides. When absent, the model inherits
-# from `plans` below.
+# Optional: per-model rate-limit overrides (a DIFFERENT, currently-unconsumed
+# key from the `plans`/`tiers` lists below — reserved for a future per-model
+# `{ free: 10, pro: 50 }`-style override; do not confuse the two). When absent,
+# the model inherits from `plans` below.
 # Example:
 #   free: 10
 #   pro: 50
+rateLimitBudgeting: {}
 
-# Required: monthly-budget defaults across plans (in USD). Used when the
-plans: {}
-# Example:
-#   free:
+# Required: monthly-budget + burst defaults across plans (in USD / per-minute
+# counts). `plans` is an ORDERED, APPEND-ONLY LIST of
+# {id, monthlyBudgetUsd?, burst}, NOT a map (ADR-0084/0085) — each entry's
+# INDEX becomes the `rule/N` in the Lyft ratelimit redis key, and the plan
+# name itself is masked (Exact match ⇒ constant), so the index is the ONLY
+# carrier of plan identity. A new plan is always APPENDED at the tail; never
+# reorder, insert, or remove an entry — doing so mid-window silently orphans
+# every account's accumulated spend under the old index and starts a fresh,
+# unthrottled counter (ADR-0084's confirmed 2026-07-16 incident).
+plans: []
+# Example (append-only order — see comment above):
+#   - id: free
 #     monthlyBudgetUsd: 30
-#   pro:
+#     burst:
+#       requestsPerMin: 200
+#       tokensPerMin: 1000000
+#   - id: pro
 #     monthlyBudgetUsd: 200
+#     burst:
+#       requestsPerMin: 400
+#       tokensPerMin: 2000000
+
+# `tiers` is the SAME shape as `plans`, for per-member-in-project quota tiers
+# (ai-helm#570) — a separate, independently-ordered append-only list, rendered
+# strictly AFTER the plans rules so introducing/reordering tiers can never
+# shift a plan rule's index. Empty by default: no tiers configured means no
+# tier rules render, so any caller with no `x-quota-tier` context falls
+# through to the plan rules unchanged.
+tiers: []
+# Example:
+#   - id: t-xs
+#     monthlyBudgetUsd: 5
+#     burst:
+#       requestsPerMin: 60
+#       tokensPerMin: 200000
+#   - id: t-m
+#     monthlyBudgetUsd: 50
+#     burst:
+#       requestsPerMin: 200
+#       tokensPerMin: 1000000
+
+# `projectEnvelope` is a single static rule (no list, no ordering hazard)
+# enforcing a per-project ceiling alongside the per-member tier. Unset by
+# default (no rule rendered).
+projectEnvelope: {}
+# Example:
+#   monthlyBudgetUsd: 500
+#   projectQuota: standard
 
 # Shared cross-model monthly budget cutover (#532). When enabled, this per-model
 # BTP drops its monthly-budget rule and merges (StrategicMerge) with the

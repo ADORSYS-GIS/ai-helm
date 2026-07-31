@@ -66,8 +66,30 @@ sharedBudget:
   enabled: true
 
 rateLimitBudgeting:
+  # ⚠️⚠️ ORDER IS LOAD-BEARING — APPEND ONLY. NEVER reorder, insert, or remove
+  # (ADR-0084/0085). This was a MAP until 2026-07-22; Helm sorts map keys, and
+  # the per-model monthly-budget rule this feeds is currently DORMANT (masked
+  # by sharedBudget.enabled below) only — the moment sharedBudget is ever
+  # rolled back, a map here would carry the exact same live hazard ADR-0084
+  # hit in charts/core-gateway (inserting a plan mid-alphabet mid-window
+  # orphans every account's counter). The order below reproduces the sorted
+  # order that was live on 2026-07-22 (enterprise, free, internal, pro,
+  # service), so this conversion is render-neutral.
   plans:
-    free:
+    # index 0
+    - id: enterprise
+      # Customer "enterprise" tier — the top self-serve plan lightbridge keys can be
+      # minted on (lightbridge-authz billing.plans id `enterprise`, x-billing-plan set
+      # from the key's introspected plan). Explicit HIGH caps (≈2× pro), NOT uncapped —
+      # a bounded ceiling still protects the shared budget/backends. Adjust to taste.
+      # monthlyBudgetUsd DORMANT (see free); the LIVE monthly cap is
+      # core-gateway backendTrafficPolicy.monthlyBudget.plans.enterprise — keep in sync.
+      monthlyBudgetUsd: 1000
+      burst:
+        requestsPerMin: 800
+        tokensPerMin: 4000000
+    # index 1
+    - id: free
       # Per-person monthly budget. DORMANT since the #532 shared-budget cutover
       # (sharedBudget.enabled gates the per-model rule off) — the LIVE knob is
       # core-gateway backendTrafficPolicy.monthlyBudget.plans. Kept in sync
@@ -80,34 +102,38 @@ rateLimitBudgeting:
         # blows the per-minute token bucket. The monthly budget ($50) stays the
         # real cost cap; this is just the per-minute RATE.
         tokensPerMin: 1000000
-    pro:
+    # index 2 — in-cluster services (LibreChat, cron-jobs, k8s SAs) on the
+    # INTERNAL plane. Uncapped budget (no monthlyBudgetUsd) — burst-only.
+    - id: internal
+      burst:
+        requestsPerMin: 600
+        tokensPerMin: 2000000
+    # index 3
+    - id: pro
       monthlyBudgetUsd: 200
       burst:
         requestsPerMin: 400
         tokensPerMin: 2000000     # 400k → 2M: a couple of max-context requests/min
-    # Customer "enterprise" tier — the top self-serve plan lightbridge keys can be
-    # minted on (lightbridge-authz billing.plans id `enterprise`, x-billing-plan set
-    # from the key's introspected plan). Explicit HIGH caps (≈2× pro), NOT uncapped —
-    # a bounded ceiling still protects the shared budget/backends. Adjust to taste.
-    # monthlyBudgetUsd DORMANT (see free); the LIVE monthly cap is
-    # core-gateway backendTrafficPolicy.monthlyBudget.plans.enterprise — keep in sync.
-    enterprise:
-      monthlyBudgetUsd: 1000
-      burst:
-        requestsPerMin: 800
-        tokensPerMin: 4000000
-    # Remote service accounts (GitHub runners, …) on the EXTERNAL plane.
-    # Uncapped budget (no monthlyBudgetUsd) — burst-only.
-    service:
+    # index 4 — remote service accounts (GitHub runners, …) on the EXTERNAL
+    # plane. Uncapped budget (no monthlyBudgetUsd) — burst-only.
+    - id: service
       burst:
         requestsPerMin: 600
         tokensPerMin: 2000000
-    # In-cluster services (LibreChat, cron-jobs, k8s SAs) on the INTERNAL plane.
-    # Uncapped budget — burst-only.
-    internal:
-      burst:
-        requestsPerMin: 600
-        tokensPerMin: 2000000
+
+  # Per-member-in-project quota tiers (ai-helm#570) — SAME append-only-list
+  # contract as `plans` above, but a separate, independently-ordered list
+  # rendered strictly after the plan rules so introducing a tier never shifts
+  # a plan rule's index. Empty until the header-stamping wiring that sets
+  # `x-quota-tier` exists (see ADR-0110) — until then these rules are inert by
+  # construction (no tier configured ⇒ no rule ⇒ every caller falls through to
+  # the plan rules above).
+  tiers: []
+
+  # Per-project envelope ceiling (ai-helm#570) — a single static rule, not a
+  # list, so it carries none of the append-only ordering hazard. Unset until
+  # the header-stamping wiring sets `x-project-id`/`x-project-quota` (ADR-0110).
+  projectEnvelope: {}
 
 gatewayRef:
   name: core-gateway

@@ -56,22 +56,43 @@ pricing:
 
 # Full plan set (budgeted + burst-only) so the BackendTrafficPolicy renders
 # every rule family (burst req/min, burst tokens/min, monthly budget).
+# Ordered list, not a map (ADR-0084/0085) — order pinned to what was live
+# before the 2026-07-22 map→list conversion (alphabetical: free, internal,
+# pro, service). APPEND ONLY.
 plans:
-  free:
+  - id: free
     monthlyBudgetUsd: 50
     burst:
       requestsPerMin: 200
       tokensPerMin: 200000
-  pro:
+  - id: internal
+    burst:
+      requestsPerMin: 1000
+      tokensPerMin: 5000000
+  - id: pro
     monthlyBudgetUsd: 200
     burst:
       requestsPerMin: 400
       tokensPerMin: 400000
-  service:
+  - id: service
     burst:
       requestsPerMin: 600
       tokensPerMin: 2000000
-  internal:
+
+# Exercises the new tier + project-envelope rule families (ai-helm#570 /
+# ADR-0110) so CI renders every rule family this chart can produce.
+tiers:
+  - id: t-xs
+    monthlyBudgetUsd: 5
     burst:
-      requestsPerMin: 1000
-      tokensPerMin: 5000000
+      requestsPerMin: 60
+      tokensPerMin: 200000
+  - id: t-m
+    monthlyBudgetUsd: 50
+    burst:
+      requestsPerMin: 200
+      tokensPerMin: 1000000
+
+projectEnvelope:
+  monthlyBudgetUsd: 500
+  projectQuota: standard
