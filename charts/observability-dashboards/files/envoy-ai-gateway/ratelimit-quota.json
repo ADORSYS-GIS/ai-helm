@@ -688,7 +688,7 @@
           "options": {
             "source": "key",
             "format": "regex",
-            "regExp": "^(?:.*/converse/(?<Model>[^/]+)/)?.*_rule-\\d+-match-0_(?<Account>.+?)_rule-\\d+-match-1",
+            "regExp": "^(?:.*/converse/(?<Model>[^/]+)/)?.*_rule-\\d+-match-0_(?<Account>.+?)_rule-\\d+-match-1(?:_rule-\\d+-match-1)?(?:_rule-\\d+-match-2_(?<BillingPeriod>\\d{4}-\\d{2}))?",
             "keepFields": true
           }
         },
@@ -696,7 +696,8 @@
           "id": "organize",
           "options": {
             "renameByName": {
-              "key": "Redis key"
+              "key": "Redis key",
+              "BillingPeriod": "Billing period"
             },
             "excludeByName": {
               "type": true,
@@ -707,7 +708,8 @@
             "indexByName": {
               "Account": 0,
               "Model": 1,
-              "Redis key": 2
+              "Billing period": 2,
+              "Redis key": 3
             }
           }
         }
