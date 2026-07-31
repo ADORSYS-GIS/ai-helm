@@ -4,10 +4,10 @@
     "list": [
       {
         "type": "query",
-        "name": "window",
-        "label": "Budget window (30-day bucket)",
+        "name": "billing_period",
+        "label": "Billing period (calendar month)",
         "skipUrlSync": false,
-        "query": "label_values(gateway_ratelimit_spend_micro_usd, window)",
+        "query": "label_values(gateway_ratelimit_spend_micro_usd, billing_period)",
         "datasource": {
           "type": "prometheus",
           "uid": "mimir"
@@ -15,7 +15,7 @@
         "multi": false,
         "allowCustomValue": true,
         "refresh": 2,
-        "sort": 4,
+        "sort": 2,
         "includeAll": false,
         "auto": false,
         "auto_min": "10s",
@@ -84,7 +84,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-ratelimit-quota",
   "title": "AI Gateway — rate-limit quota",
-  "description": "WHO is consuming the Envoy AI Gateway and HOW MUCH of their budget, read from the rate-limit service's LIVE counters in redis-ha (ADR-0070) — the only place that current-window state exists. Mimir panels rank spend per account/plan for the selected 30-day budget window (prometheus-redis-exporter → gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct redis-datasource census (zero scrape-lag). RAW consumption only — budget limits are static Helm config (ADR-0021/0035), not derivable per-user here. NO per-model breakdown: since the #532 shared-budget cutover the budget is one counter per (account, plan) spanning ALL models and both planes, so the keys carry no model label — see the Mimir/Loki cost dashboards for per-model spend. $window defaults to the current bucket. Filters: plan, account. GENERATED — source: tools/dashboards/envoy_ai_gateway/ratelimit_quota.py.",
+  "description": "WHO is consuming the Envoy AI Gateway and HOW MUCH of their budget, read from the rate-limit service's LIVE counters in redis-ha (ADR-0070) — the only place that current-window state exists. Mimir panels rank spend per account/plan for the selected calendar billing period (prometheus-redis-exporter → gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct redis-datasource census (zero scrape-lag). RAW consumption only — budget limits are static Helm config (ADR-0021/0035), not derivable per-user here. NO per-model breakdown: since the #532 shared-budget cutover the budget is one counter per (account, plan) spanning ALL models and both planes, so the keys carry no model label — see the Mimir/Loki cost dashboards for per-model spend. $billing_period (ai-helm ADR-0111) defaults to the current calendar month — the correct temporal filter, replacing the old 30-day-epoch `window` label. Filters: plan, account. GENERATED — source: tools/dashboards/envoy_ai_gateway/ratelimit_quota.py.",
   "tags": [
     "ai-gateway",
     "rate-limit",
@@ -106,7 +106,7 @@
       "collapsed": false,
       "id": 0,
       "panels": [],
-      "title": "Live budget consumption — selected window",
+      "title": "Live budget consumption — selected billing period",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -118,7 +118,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "((sum(gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
+          "expr": "((sum(gateway_ratelimit_spend_micro_usd{billing_period=~\"$billing_period\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -129,7 +129,7 @@
           }
         }
       ],
-      "title": "Total spend — this window",
+      "title": "Total spend — this period",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -179,7 +179,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "count(count by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"}))",
+          "expr": "count(count by (account_id) (gateway_ratelimit_spend_micro_usd{billing_period=~\"$billing_period\", plan=~\"$plan\", account_id=~\"$account\"}))",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -240,7 +240,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "count(gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"})",
+          "expr": "count(gateway_ratelimit_spend_micro_usd{billing_period=~\"$billing_period\", plan=~\"$plan\", account_id=~\"$account\"})",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -301,7 +301,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "count(count by (plan) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"}))",
+          "expr": "count(count by (plan) (gateway_ratelimit_spend_micro_usd{billing_period=~\"$billing_period\", plan=~\"$plan\", account_id=~\"$account\"}))",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -362,7 +362,7 @@
       "type": "bargauge",
       "targets": [
         {
-          "expr": "((topk(20, sum by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"}))) / 1e6)",
+          "expr": "((topk(20, sum by (account_id) (gateway_ratelimit_spend_micro_usd{billing_period=~\"$billing_period\", plan=~\"$plan\", account_id=~\"$account\"}))) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -374,7 +374,7 @@
           }
         }
       ],
-      "title": "Top accounts by spend — this window",
+      "title": "Top accounts by spend — this period",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -431,7 +431,7 @@
       "type": "piechart",
       "targets": [
         {
-          "expr": "((sum by (plan) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
+          "expr": "((sum by (plan) (gateway_ratelimit_spend_micro_usd{billing_period=~\"$billing_period\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -443,7 +443,7 @@
           }
         }
       ],
-      "title": "Spend share by plan — this window",
+      "title": "Spend share by plan — this period",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -482,7 +482,7 @@
       "type": "table",
       "targets": [
         {
-          "expr": "((sum by (account_id, plan) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
+          "expr": "((sum by (account_id, plan) (gateway_ratelimit_spend_micro_usd{billing_period=~\"$billing_period\", plan=~\"$plan\", account_id=~\"$account\"})) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -493,7 +493,7 @@
           }
         }
       ],
-      "title": "Consumption by account x plan — this window",
+      "title": "Consumption by account x plan — this period",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -516,8 +516,7 @@
               "Value #A": "Spend ($)"
             },
             "excludeByName": {
-              "Time": true,
-              "window": true
+              "Time": true
             },
             "indexByName": {
               "account_id": 0,
@@ -584,7 +583,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "((topk(10, sum by (account_id) (gateway_ratelimit_spend_micro_usd{window=~\"$window\", plan=~\"$plan\", account_id=~\"$account\"}))) / 1e6)",
+          "expr": "((topk(10, sum by (account_id) (gateway_ratelimit_spend_micro_usd{billing_period=~\"$billing_period\", plan=~\"$plan\", account_id=~\"$account\"}))) / 1e6)",
           "refId": "A",
           "instant": false,
           "range": true,

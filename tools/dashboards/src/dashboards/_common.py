@@ -97,11 +97,11 @@ METRIC_REQUESTS = _METRIC_PREFIX + "gen_ai_requests"
 # LIVE rate-limit quota gauge in Mimir (ADR-0070). prometheus-redis-exporter
 # SCANs the Lyft ratelimit service's monthly-budget keys in redis-ha and exports
 # each key's value; the ServiceMonitor metricRelabelings rename redis_key_value →
-# this metric and parse account_id / model / plan / plane / window out of the
-# 200-char key (see ai-helm-values environments/prod/values/
-# prometheus-redis-exporter.yaml). Value = micro-USD spent in the current 30-day
-# budget window — a GAUGE (current cumulative spend, not a counter; ÷1e6 → USD).
-# This is the limiter's own current-window state, which Mimir's historical cost
+# this metric and parse account_id / model / plan / plane / window / billing_period
+# out of the 200-char key (see ai-helm-values environments/prod/values/
+# prometheus-redis-exporter.yaml). Value = micro-USD spent in the current budget
+# period — a GAUGE (current cumulative spend, not a counter; ÷1e6 → USD). This
+# is the limiter's own current-window state, which Mimir's historical cost
 # metrics above do NOT hold.
 # ---------------------------------------------------------------------------
 METRIC_RATELIMIT_SPEND_MICRO_USD = "gateway_ratelimit_spend_micro_usd"
@@ -112,6 +112,13 @@ RL_LABEL_MODEL = "model"
 RL_LABEL_PLAN = "plan"
 RL_LABEL_PLANE = "plane"
 RL_LABEL_WINDOW = "window"
+# The calendar "YYYY-MM" marker (ai-helm ADR-0111) stamped on every request as
+# `x-billing-period` and carved out of the key alongside the legacy `window`
+# epoch bucket above. This is the semantically correct temporal filter — the
+# rate-limit key rotates on it at the real calendar month boundary, unlike
+# `window`, which drifts on a fixed 30-day cycle. See docs/adr/0111-calendar-
+# aligned-billing-period.md.
+RL_LABEL_BILLING_PERIOD = "billing_period"
 
 
 # ---------------------------------------------------------------------------
