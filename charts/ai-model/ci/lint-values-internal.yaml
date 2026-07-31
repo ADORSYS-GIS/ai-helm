@@ -57,22 +57,25 @@ pricing:
 
 # Full plan set (budgeted + burst-only) so the BackendTrafficPolicy renders
 # every rule family (burst req/min, burst tokens/min, monthly budget).
+# Ordered list, not a map (ADR-0084/0085/0110) — order matches the sibling
+# lint-values.yaml fixture (alphabetical: free, internal, pro, service).
+# APPEND ONLY.
 plans:
-  free:
+  - id: free
     monthlyBudgetUsd: 50
     burst:
       requestsPerMin: 200
       tokensPerMin: 200000
-  pro:
+  - id: internal
+    burst:
+      requestsPerMin: 1000
+      tokensPerMin: 5000000
+  - id: pro
     monthlyBudgetUsd: 200
     burst:
       requestsPerMin: 400
       tokensPerMin: 400000
-  service:
+  - id: service
     burst:
       requestsPerMin: 600
       tokensPerMin: 2000000
-  internal:
-    burst:
-      requestsPerMin: 1000
-      tokensPerMin: 5000000
