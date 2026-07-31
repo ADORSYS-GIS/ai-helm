@@ -25,6 +25,37 @@ x-billing-plan (stamped by the AuthConfig from Keycloak's billing_plan claim (fr
 Budget per plan = global plan default (.Values.plans.<plan>.monthlyBudgetUsd).
 Burst (rules 1+2) is always per-model; comes from .Values.plans.<plan>.burst.
 
+⚠️⚠️ `.Values.plans` is an ORDERED, APPEND-ONLY LIST — `{id, monthlyBudgetUsd?,
+burst}` — NOT a map. Each entry's INDEX becomes the `rule/N` in the Lyft
+ratelimit redis key, and the plan name itself is masked (Exact match ⇒
+constant), so the index is the ONLY carrier of plan identity. A map here
+silently reorders on any key insertion (Helm sorts map keys), which orphans
+every account's accumulated spend mid-window and hands out a fresh,
+unthrottled counter — a confirmed, live incident in charts/core-gateway
+(ADR-0084). NEVER reorder, insert, or remove a `plans` entry; new plans are
+always appended at the tail. See ADR-0084/ADR-0110.
+
+Two more rule families compose alongside the plan rules (ai-helm#570,
+ADR-0110), rendered AFTER them so they never disturb a plan rule's index:
+
+  4. quota tiers        — `.Values.tiers`, the SAME ordered-list shape/contract
+                          as `plans`, one rule per tier keyed on x-project-id +
+                          x-account-id (Distinct) + x-quota-tier (Exact). A
+                          per-member-in-project budget, delegated by a project
+                          lead (`lightbridge-authz` `project_members.quota_tier`).
+                          Always per-model (not gated by `sharedBudget` — that
+                          lever is specific to the #532 plan-budget cutover and
+                          orthogonal to this new axis).
+  5. project envelope   — `.Values.projectEnvelope`, a SINGLE static rule (no
+                          list, no ordering hazard) keyed on x-project-id
+                          (Distinct) + x-project-quota (Exact), a per-project
+                          ceiling composing with the per-member tier above.
+
+`x-project-id` / `x-quota-tier` / `x-project-quota` are not yet stamped by any
+AuthConfig (separate, not-yet-built Authorino wiring) — with `tiers: []` /
+`projectEnvelope: {}` (the defaults) neither rule family renders, so a caller
+with no project context falls through to the plan rules unchanged.
+
 ⚠️ Every clientSelectors header spells out `invert: false` explicitly, even
 though it's the zero value. The BackendTrafficPolicy CRD schema declares
 `default: false` for this field, so the k8s API server stamps it onto the
@@ -35,6 +66,8 @@ makes the rendered manifest match what the API server actually stores.
 */ -}}
 {{- $modelName := .Values.modelName -}}
 {{- $plans := .Values.plans -}}
+{{- $tiers := .Values.tiers | default list -}}
+{{- $projectEnvelope := .Values.projectEnvelope | default dict -}}
 {{- $costKey := "llm_custom_total_cost" -}}
 {{- /* Image models have no meaningfull token counting (llm_total_token = 0 always),
       so we skip the tokens/min rate-limit rule and only keep requests/min + budget. */ -}}
@@ -82,8 +115,11 @@ spec:
     type: Global
     global:
       rules:
-        {{- range $planName, $planCfg := $plans }}
-        {{- $burst := default dict $planCfg.burst }}
+        {{- /* ── plan rules: `plans` is an ordered list, NOT a map — see the
+               header comment. APPEND ONLY. ── */}}
+        {{- range $i, $plan := $plans }}
+        {{- if not $plan.id }}{{ fail (printf "ai-model plans[%d]: `id` is required (plans is an ordered list of {id, monthlyBudgetUsd?, burst}, not a map — see values.yaml)" $i) }}{{ end }}
+        {{- $burst := default dict $plan.burst }}
         {{- /* ── 1. burst: requests/min (per-user per model) ── */}}
         {{- with $burst.requestsPerMin }}
         - clientSelectors:
@@ -94,13 +130,13 @@ spec:
                 - invert: false
                   name: x-billing-plan
                   type: Exact
-                  value: {{ $planName | quote }}
+                  value: {{ $plan.id | quote }}
                 - invert: false
                   name: x-ai-eg-model
                   type: Exact
                   value: {{ $modelName | quote }}
           limit:
-            requests: {{ int64 . }} # {{ $planName }} burst req/min per model
+            requests: {{ int64 . }} # rule/{{ $i }} · {{ $plan.id }} burst req/min per model
             unit: Minute
           cost:
             request:
@@ -117,13 +153,13 @@ spec:
                 - invert: false
                   name: x-billing-plan
                   type: Exact
-                  value: {{ $planName | quote }}
+                  value: {{ $plan.id | quote }}
                 - invert: false
                   name: x-ai-eg-model
                   type: Exact
                   value: {{ $modelName | quote }}
           limit:
-            requests: {{ int64 . }} # {{ $planName }} burst tokens/min per model
+            requests: {{ int64 . }} # rule/{{ $i }} · {{ $plan.id }} burst tokens/min per model
             unit: Minute
           cost:
             request:
@@ -136,7 +172,7 @@ spec:
                 key: llm_total_token
         {{- end }}{{ end }}
         {{- /* ── 3. monthly budget (per-model unless sharedBudget.enabled → moved to gateway BTP) ── */}}
-        {{- $budgetUsd := $planCfg.monthlyBudgetUsd }}
+        {{- $budgetUsd := $plan.monthlyBudgetUsd }}
         {{- if not $sharedBudget }}
         {{- with $budgetUsd }}
         {{- $limit := mulf . 1000000 | int64 }}
@@ -148,9 +184,9 @@ spec:
                 - invert: false
                   name: x-billing-plan
                   type: Exact
-                  value: {{ $planName | quote }}
+                  value: {{ $plan.id | quote }}
           limit:
-            requests: {{ $limit }} # {{ $planName }} monthly budget ${{ . }} — PER MODEL (see caveat; shared version is the gateway BTP)
+            requests: {{ $limit }} # rule/{{ $i }} · {{ $plan.id }} monthly budget ${{ . }} — PER MODEL (see caveat; shared version is the gateway BTP)
             unit: Month
           cost:
             request:
@@ -163,4 +199,126 @@ spec:
                 key: {{ $costKey }}
         {{- end }}
         {{- end }}
+        {{- end }}
+        {{- /* ── quota tiers (ai-helm#570, ADR-0110): SAME append-only-list
+               contract as `plans`, rendered strictly after it so introducing
+               a tier never shifts a plan rule's index. Always per-model
+               (not gated by sharedBudget — that lever is specific to the
+               #532 plan-budget cutover). ── */}}
+        {{- range $i, $tier := $tiers }}
+        {{- if not $tier.id }}{{ fail (printf "ai-model tiers[%d]: `id` is required (tiers is an ordered list of {id, monthlyBudgetUsd?, burst}, not a map — see values.yaml)" $i) }}{{ end }}
+        {{- $tierBurst := default dict $tier.burst }}
+        {{- /* ── 4a. tier burst: requests/min (per member per model) ── */}}
+        {{- with $tierBurst.requestsPerMin }}
+        - clientSelectors:
+            - headers:
+                - invert: false
+                  name: x-project-id
+                  type: Distinct
+                - invert: false
+                  name: x-account-id
+                  type: Distinct
+                - invert: false
+                  name: x-quota-tier
+                  type: Exact
+                  value: {{ $tier.id | quote }}
+                - invert: false
+                  name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $modelName | quote }}
+          limit:
+            requests: {{ int64 . }} # tier-rule/{{ $i }} · {{ $tier.id }} burst req/min per member per model
+            unit: Minute
+          cost:
+            request:
+              from: Number
+              number: 1
+        {{- end }}
+        {{- /* ── 4b. tier burst: tokens/min (per member per model) — SKIPPED for image models ── */}}
+        {{- if not $isImage }}{{ with $tierBurst.tokensPerMin }}
+        - clientSelectors:
+            - headers:
+                - invert: false
+                  name: x-project-id
+                  type: Distinct
+                - invert: false
+                  name: x-account-id
+                  type: Distinct
+                - invert: false
+                  name: x-quota-tier
+                  type: Exact
+                  value: {{ $tier.id | quote }}
+                - invert: false
+                  name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $modelName | quote }}
+          limit:
+            requests: {{ int64 . }} # tier-rule/{{ $i }} · {{ $tier.id }} burst tokens/min per member per model
+            unit: Minute
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_total_token
+        {{- end }}{{ end }}
+        {{- /* ── 4c. tier monthly budget (per member per model, always — not
+               gated by sharedBudget) ── */}}
+        {{- with $tier.monthlyBudgetUsd }}
+        {{- $tierLimit := mulf . 1000000 | int64 }}
+        - clientSelectors:
+            - headers:
+                - invert: false
+                  name: x-project-id
+                  type: Distinct
+                - invert: false
+                  name: x-account-id
+                  type: Distinct
+                - invert: false
+                  name: x-quota-tier
+                  type: Exact
+                  value: {{ $tier.id | quote }}
+          limit:
+            requests: {{ $tierLimit }} # tier-rule/{{ $i }} · {{ $tier.id }} monthly budget ${{ . }} per member per model
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: {{ $costKey }}
+        {{- end }}
+        {{- end }}
+        {{- /* ── 5. project envelope (ai-helm#570, ADR-0110): a SINGLE static
+               rule (no list, no ordering hazard) enforcing a per-project
+               ceiling alongside the per-member tier above. ── */}}
+        {{- with $projectEnvelope.monthlyBudgetUsd }}
+        {{- $envelopeLimit := mulf . 1000000 | int64 }}
+        - clientSelectors:
+            - headers:
+                - invert: false
+                  name: x-project-id
+                  type: Distinct
+                - invert: false
+                  name: x-project-quota
+                  type: Exact
+                  value: {{ $projectEnvelope.projectQuota | default "" | quote }}
+          limit:
+            requests: {{ $envelopeLimit }} # project envelope ${{ . }} per project per model
+            unit: Month
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: {{ $costKey }}
         {{- end }}
