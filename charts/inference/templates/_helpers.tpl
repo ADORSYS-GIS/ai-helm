@@ -139,7 +139,7 @@ localai: LocalAI (ADR-0102) is configured ENTIRELY BY ENVIRONMENT, not by flags 
   arrive as env vars (see childValues). It therefore contributes no args at all,
   and `extraArgs` remains available for the rare case.
 
-Input: dict "name" <name> "engine" <engine> "serving" <serving> "dir" <modelDir> "lmcache" <lmcache>
+Input: dict "name" <name> "engine" <engine> "serving" <serving> "dir" <modelDir> "lmcache" <lmcache> "apiKey" <apiKey> "security" <security> "apiKeyPath" <apiKeyPath> "kvCacheDtype" <kvCacheDtype>
 Output: a YAML list of strings.
 */}}
 {{- define "inference.serverArgs" -}}
@@ -211,6 +211,13 @@ Output: a YAML list of strings.
   {{- with $s.dtype -}}
     {{- $args = concat $args (list "--dtype" .) -}}
   {{- end -}}
+  {{- /* kvCacheDtype is passed as a TOP-LEVEL key in the include dict (see
+         childValues), not read from $s.*, because it is the RESOLVED value —
+         fleet default OR per-model override — computed in childValues before
+         serverArgs is called. $s.kvCacheDtype is the per-model override only;
+         $.kvCacheDtype is the effective value after the default is applied.
+         Siblings in this function read $s.* because they have no fleet default
+         to inherit. */ -}}
   {{- with $.kvCacheDtype -}}
     {{- /* KV-cache precision (--kv-cache-dtype). The EFFECTIVE value: fleet
            default `defaults.kvCacheDtype` (fp8_e4m3fn) unless the catalog
@@ -340,6 +347,15 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
 {{- end -}}
 {{- if and $s.kvCacheType (not (has $s.kvCacheType (list "f32" "f16" "bf16" "q8_0" "q4_0" "q4_1" "q5_0" "q5_1" "q6_K" "iq1_s" "iq2_s" "iq2_xs" "iq2_xxs" "iq3_s" "iq3_xs" "iq3_xxs" "iq4_nl" "iq4_xs"))) -}}
 {{- fail (printf "model %s: serving.kvCacheType must be one of llama.cpp's --cache-type-k/--cache-type-v values (f32 f16 bf16 q8_0 q4_0 q4_1 q5_0 q5_1 q6_K iq1_s iq2_s iq2_xs iq2_xxs iq3_s iq3_xs iq3_xxs iq4_nl iq4_xs), got %q" $name $s.kvCacheType) -}}
+{{- end -}}
+{{- /* ── LMCache + fp8 KV cache: unverified combination ─────────────────────
+       The fleet default kvCacheDtype (fp8_e4m3fn) is UNVERIFIED with LMCache
+       on this hardware: LMCache serializes KV tensors as stored on the GPU,
+       and its fp8 path has never been exercised here. Fail the render rather
+       than letting a silent misconfiguration through. */ -}}
+{{- $lmcache := $cfg.lmcache | default dict -}}
+{{- if and (eq $engine "vllm") $kvCacheDtype (ne $kvCacheDtype "auto") ($lmcache.enabled | default false) -}}
+{{- fail (printf "model %s: fp8 KV cache (kvCacheDtype: %s) + LMCache is UNVERIFIED on this fleet — set kvCacheDtype: auto to use LMCache, or disable LMCache" $name $kvCacheDtype) -}}
 {{- end -}}
 {{- $res := $cfg.resources | default dict -}}
 {{- $gpu := $d.gpu -}}
