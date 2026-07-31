@@ -84,7 +84,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-ratelimit-quota",
   "title": "AI Gateway — rate-limit quota",
-  "description": "WHO is consuming the Envoy AI Gateway and HOW MUCH of their budget, read from the rate-limit service's LIVE counters in redis-ha (ADR-0070) — the only place that current-window state exists. Mimir panels rank spend per account/plan for the selected calendar billing period (prometheus-redis-exporter → gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct redis-datasource census (zero scrape-lag). RAW consumption only — budget limits are static Helm config (ADR-0021/0035), not derivable per-user here. NO per-model breakdown: since the #532 shared-budget cutover the budget is one counter per (account, plan) spanning ALL models and both planes, so the keys carry no model label — see the Mimir/Loki cost dashboards for per-model spend. $billing_period (ai-helm ADR-0111) defaults to the current calendar month — the correct temporal filter, replacing the old 30-day-epoch `window` label. Filters: plan, account. GENERATED — source: tools/dashboards/envoy_ai_gateway/ratelimit_quota.py.",
+  "description": "WHO is consuming the Envoy AI Gateway and HOW MUCH of their budget, read from the rate-limit service's LIVE counters in redis-ha (ADR-0070) — the only place that current-window state exists. Mimir panels rank spend per account/plan for the selected calendar billing period (prometheus-redis-exporter → gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct redis-datasource census (zero scrape-lag), with a Billing period column parsed straight from the raw key so you can see rotation state live, without waiting on a scrape. RAW consumption only — budget limits are static Helm config (ADR-0021/0035), not derivable per-user here. NO per-model breakdown: since the #532 shared-budget cutover the budget is one counter per (account, plan) spanning ALL models and both planes, so the keys carry no model label — see the Mimir/Loki cost dashboards for per-model spend. $billing_period (ai-helm ADR-0111) defaults to the current calendar month — the correct temporal filter, replacing the old 30-day-epoch `window` label. Filters: plan, account. GENERATED — source: tools/dashboards/envoy_ai_gateway/ratelimit_quota.py.",
   "tags": [
     "ai-gateway",
     "rate-limit",
@@ -688,7 +688,7 @@
           "options": {
             "source": "key",
             "format": "regex",
-            "regExp": "^(?:.*/converse/(?<Model>[^/]+)/)?.*_rule-\\d+-match-0_(?<Account>.+?)_rule-\\d+-match-1",
+            "regExp": "^(?:.*/converse/(?<Model>[^/]+)/)?.*_rule-\\d+-match-0_(?<Account>.+?)_rule-\\d+-match-1(?:_rule-\\d+-match-1)?(?:_rule-\\d+-match-2_(?<BillingPeriod>\\d{4}-\\d{2}))?",
             "keepFields": true
           }
         },
@@ -696,7 +696,8 @@
           "id": "organize",
           "options": {
             "renameByName": {
-              "key": "Redis key"
+              "key": "Redis key",
+              "BillingPeriod": "Billing period"
             },
             "excludeByName": {
               "type": true,
@@ -707,7 +708,8 @@
             "indexByName": {
               "Account": 0,
               "Model": 1,
-              "Redis key": 2
+              "Billing period": 2,
+              "Redis key": 3
             }
           }
         }

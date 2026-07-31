@@ -12,6 +12,10 @@ budget; ADR-0070). Two read paths over the SAME Redis keys:
      billing period.
   2. Redis census (the live "who's active right now"). A `redis-datasource`
      tmscan straight against redis-ha — zero scrape-lag, the limiter's own view.
+     Also shows a "Billing period" column parsed straight from the raw key, so
+     you can see which accounts have already rotated to the new calendar-aligned
+     key vs. which are still on their old 30-day-epoch one, live, without
+     waiting on the exporter's scrape.
 
 RAW consumption only (no quota/% overlay): the budget LIMITS live in static Helm
 config (free $50/mo, pro $200, per-model overrides — charts/ai-models) and a
@@ -243,6 +247,19 @@ def _panel_live_census() -> table.Panel:
     # unparsed keys. The leading `.*/` inside the optional group is load-bearing
     # too: without it the group matches empty at position 0 and Model is dropped
     # from the per-model keys as well.
+    #
+    # The trailing (also optional) group carries "Billing period" (ADR-0111):
+    # after the non-greedy Account capture ends at the first `_rule-N-match-1`,
+    # that literal's own Exact-match value (which repeats the same
+    # `_rule-N-match-1` token — Exact selectors carry their rule/match name as
+    # the descriptor value) is consumed, then an optional
+    # `_rule-N-match-2_<YYYY-MM>` is tried. Legacy pre-rollover keys (no
+    # match-2 segment) simply leave BillingPeriod empty, so a row here is a
+    # direct, zero-scrape-lag view of which accounts have rotated to the new
+    # calendar-aligned key vs. which are still on their old 30-day-epoch one —
+    # useful for watching the rollout finish. The $billing_period Mimir filter
+    # above can't show this: it only ever sees keys the exporter has already
+    # scraped and relabeled, not the raw-key rotation state.
     return (
         table.Panel()
         .title("Live limiter counters — direct from Redis (zero scrape-lag)")
@@ -259,6 +276,8 @@ def _panel_live_census() -> table.Panel:
                     "regExp": (
                         r"^(?:.*/converse/(?<Model>[^/]+)/)?"
                         r".*_rule-\d+-match-0_(?<Account>.+?)_rule-\d+-match-1"
+                        r"(?:_rule-\d+-match-1)?"
+                        r"(?:_rule-\d+-match-2_(?<BillingPeriod>\d{4}-\d{2}))?"
                     ),
                     "keepFields": True,
                 },
@@ -268,9 +287,14 @@ def _panel_live_census() -> table.Panel:
             dm.DataTransformerConfig(
                 id_val="organize",
                 options={
-                    "renameByName": {"key": "Redis key"},
+                    "renameByName": {"key": "Redis key", "BillingPeriod": "Billing period"},
                     "excludeByName": {"type": True, "memory": True, "cursor": True, "count": True},
-                    "indexByName": {"Account": 0, "Model": 1, "Redis key": 2},
+                    "indexByName": {
+                        "Account": 0,
+                        "Model": 1,
+                        "Billing period": 2,
+                        "Redis key": 3,
+                    },
                 },
             )
         )
@@ -283,7 +307,9 @@ _DESCRIPTION = (
     "that current-window state exists. Mimir panels rank spend per account/plan "
     "for the selected calendar billing period (prometheus-redis-exporter → "
     "gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct "
-    "redis-datasource census (zero scrape-lag). RAW consumption only — budget "
+    "redis-datasource census (zero scrape-lag), with a Billing period column "
+    "parsed straight from the raw key so you can see rotation state live, "
+    "without waiting on a scrape. RAW consumption only — budget "
     "limits are static Helm config (ADR-0021/0035), not derivable per-user here. "
     "NO per-model breakdown: since the #532 shared-budget cutover the budget is one "
     "counter per (account, plan) spanning ALL models and both planes, so the keys "
