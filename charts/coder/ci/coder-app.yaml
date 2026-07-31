@@ -12,9 +12,9 @@
 #   - resource requests/limits → tuned for prod load
 #   - replicaCount → 1 (HA is Enterprise-only)
 #
-# Certificate strategy: HTTP-01 ACME (standard platform pattern).
-# No wildcard — path-based workspace apps are used instead of wildcard
-# subdomain apps. CODER_DISABLE_PATH_APPS is not set (defaults to false).
+# Certificate strategy: DNS-01 ACME with wildcard cert `*.coder-ai.camer.digital`
+# (Cloudflare issuer). Workspace apps use wildcard subdomains.
+# CODER_DISABLE_PATH_APPS=true (path-based apps disabled).
 
 coder:
   env:
@@ -32,9 +32,16 @@ coder:
     - name: CODER_ACCESS_URL
       value: "https://coder.ai.camer.digital"
 
-    # No wildcard — path-based workspace apps are used (HTTP-01 ACME cert
-    # cannot issue wildcard SANs). CODER_WILDCARD_ACCESS_URL is NOT set.
-    # CODER_DISABLE_PATH_APPS is NOT set (defaults to false → path apps enabled).
+    # Wildcard workspace access — workspace agents and workspace ports reach
+    # workspaces via wildcard subdomains (e.g. my-workspace.coder-ai.camer.digital).
+    # DNS-01 ACME (Cloudflare) issues the wildcard cert.
+    - name: CODER_WILDCARD_ACCESS_URL
+      value: "*.coder-ai.camer.digital"
+
+    # Path-based workspace apps disabled (CODER_DISABLE_PATH_APPS=true).
+    # Workspaces are accessible only via wildcard subdomains.
+    - name: CODER_DISABLE_PATH_APPS
+      value: "true"
 
     # OIDC — Keycloak realm camer-digital, client `coder`.
     # Credentials from coder-oidc Secret (ESO-provisioned in charts/coder-secrets).
@@ -157,12 +164,11 @@ coder:
     enable: true
     className: "traefik"
     host: "coder.ai.camer.digital"
-    # No wildcardHost — HTTP-01 ACME cannot issue wildcard certs.
-    # workspace apps use path-based URLs instead.
+    wildcardHost: "*.coder-ai.camer.digital"
     tls:
       enable: true
       secretName: coder-tls
-      # No wildcardSecretName — no wildcard cert.
+      wildcardSecretName: coder-wildcard-tls
 
   serviceAccount:
     workspacePerms: true
