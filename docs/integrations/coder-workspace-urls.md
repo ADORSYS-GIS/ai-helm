@@ -13,6 +13,24 @@ https://<port>--<agent>--<workspace>--<user>.coder-ws.camer.digital
 e.g. a Vite dev server on port 5173 in workspace `demo` owned by `koufan`:
 `https://5173--main--demo--koufan.coder-ws.camer.digital`.
 
+The `--` separator and the field order are Coder's own, built in
+`coderd/workspaceapps/appurl/appurl.go`. Both DNS and TLS wildcards match exactly
+**one** label, so Coder flattens all four identifiers into a single label — that
+is what lets one `*.coder-ws.camer.digital` certificate cover every app, in every
+workspace, for every user. Notes:
+
+- The `<agent>` segment appears only on raw port-forward URLs. A declared app
+  (`subdomain = true` on the template's `coder_app`) is
+  `<app-slug>--<workspace>--<user>`.
+- An app speaking TLS inside the workspace gets an `s` after the port: `8080s--…`.
+
+> ⚠️ **A DNS label is capped at 63 characters, and the whole
+> `port--agent--workspace--user` string is one label.** Exceed it and dashboard
+> port-forwarding silently fails for that workspace while everything else looks
+> fine. Keep username + workspace name + app slug under ~50 characters combined.
+> Current workspaces sit around 45, so there is headroom — but a long username
+> plus a long workspace name will find this edge.
+
 Path-based workspace apps are **disabled** (`CODER_DISABLE_PATH_APPS=true`), so
 the wildcard is the *only* way to reach a workspace app. If the wildcard cert is
 broken, workspace apps are unreachable — there is no fallback.
