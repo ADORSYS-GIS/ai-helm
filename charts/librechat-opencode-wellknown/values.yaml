@@ -47,17 +47,17 @@ wellKnown:
     # subagents, so no primary carries the 27 browser_* schemas every turn.
     default_agent: assistant
     plugin:
-      - "@vymalo/opencode-oauth2@0.11.0"
+      - "@vymalo/opencode-oauth2@0.12.0"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.11.0"
+      - "@vymalo/opencode-models-info@0.12.0"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.11.0"
+      - "@vymalo/opencode-ratelimit@0.12.0"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
@@ -72,7 +72,7 @@ wellKnown:
       # in the plugin TUPLE's second arg — this plugin reads its options from
       # there (NOT from provider.options.meta like the others), i.e.
       # opencode's `[name, {opts}]` install form, which toJson renders as a
-      # JSON 2-tuple. Part of the 0.11.0 vymalo line — pin matches the three
+      # JSON 2-tuple. Part of the 0.12.0 vymalo line — pin matches the three
       # above.
       #
       # TWO independent token levers, at different scopes:
@@ -114,7 +114,7 @@ wellKnown:
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
       # adapter saves screenshots to disk for the model to read. One source only.
-      - - "@vymalo/opencode-browser@0.11.0"
+      - - "@vymalo/opencode-browser@0.12.0"
         - port: 4517
           groups:
             - page
@@ -196,21 +196,35 @@ wellKnown:
             # on MODALITY (text-in/text-out), not on internal status — the
             # two aren't the same thing. It hid every text-only model, internal or not,
             # including legitimate external ones (glm-4.7-flash) and our own
-            # adorsys-coder/researcher/reviewer coding agents. The actual
-            # internal-model leak this was meant to guard against is already
-            # fully closed server-side (AIGatewayRoute `hostnames` scoping,
-            # charts/ai-model + charts/ai-models-info's catalog helper, #797) —
-            # `disableExternal: true` models are excluded outright from both
-            # /v1/models and /v1/models/info, so there's nothing left for a
-            # plugin-side belt to catch. If a future model genuinely needs
-            # hiding from the opencode picker without being modality-hidden,
-            # reach for @vymalo/opencode-models-info's `modelsInfoHideInternal`
-            # (≥ 0.11.0) — but it needs the catalog to actually emit
-            # `internal: true` on a model entry, which charts/ai-models-info
-            # deliberately does not do today (it excludes disableExternal
-            # models rather than flagging them — re-including them, even
-            # flagged, would reintroduce the "advertised model that 404s"
-            # problem #797 fixed). Don't set either flag until that changes.
+            # adorsys-coder/researcher/reviewer coding agents.
+            #
+            # Also NOT setting modelsInfoHideInternal (≥ 0.11.0) — it needs
+            # the catalog to actually emit `internal: true` on a model entry,
+            # which charts/ai-models-info deliberately does not do (it
+            # excludes disableExternal models outright rather than flagging
+            # them — re-including them, even flagged, would reintroduce the
+            # "advertised model that 404s" problem #797 fixed). Nothing in
+            # the catalog ever carries `internal: true`, so this flag would
+            # have zero entries to act on today.
+            #
+            # ⚠️ modelsInfoHideUnmatched IS set (≥ 0.12.0,
+            # vymalo/opencode-oauth2#79/#80). Removing modelsInfoHideTextOnly
+            # in #848 also silently removed the OTHER thing it did: making
+            # /v1/models/info authoritative for catalog MEMBERSHIP, not just
+            # modality — a model in a client's discovered `provider.models`
+            # that later drops out of the catalog (renamed, removed,
+            # access-scoped) used to get pruned; after #848 it never was.
+            # Real consequence, not theoretical: end users started seeing
+            # stale/dead model ids (pre-`-internal`-suffix names, fully
+            # retired models) in their opencode picker that the catalog
+            # hasn't listed in a while, and selecting one either 404s or
+            # errors. modelsInfoHideUnmatched reaches the exact same
+            # membership-pruning deletion path modelsInfoHideTextOnly used
+            # to, but WITHOUT its modality filtering — the correct fix,
+            # since disableExternal exclusion (#797) already makes the
+            # catalog itself the intersection point: shown = /v1/models ∩
+            # /v1/models/info.
+            modelsInfoHideUnmatched: true
             # Force our endpoint's `name` to win over the normalized label
             # the oauth2 plugin pre-stamps (vymalo/opencode-models-info#38,
             # needs plugin ≥ 0.7.1 — pinned 0.8.0 above). models-info merges
