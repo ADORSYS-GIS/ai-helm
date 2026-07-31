@@ -41,7 +41,16 @@ spec:
   arguments:
     parameters:
       - name: dataset_uri
+        description: >-
+          Required pinned LakeFS dataset location in the form
+          lakefs://repository/64-character-commit/dataset-version. The training
+          container enforces the URI shape and embedded governance checks before
+          training.
       - name: run_name
+        value: "document-detector-{{`{{workflow.name}}`}}"
+        description: >-
+          Optional human-readable run identity. Defaults to the unique Argo
+          workflow name and may be overridden for a deliberately named experiment.
   templates:
     - name: train
       dag:
