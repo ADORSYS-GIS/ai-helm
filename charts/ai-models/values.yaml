@@ -75,6 +75,22 @@ rateLimitBudgeting:
   # orphans every account's counter). The order below reproduces the sorted
   # order that was live on 2026-07-22 (enterprise, free, internal, pro,
   # service), so this conversion is render-neutral.
+  # ── Per-minute burst limits raised 10x across every plan (2026-07-31) ──────
+  # They were hurting UX more than they protected anything: the monthly budgets
+  # are the real guardrail, and the per-minute buckets mostly surfaced as
+  # spurious 429s on bursty-but-cheap usage.
+  #
+  # Raised rather than REMOVED, deliberately. Envoy Gateway derives each rate
+  # limit's descriptor key from its INDEX in the rendered rules array — the live
+  # config shows literal keys `rule-0-match-0`, `rule-1-match-1`, … — so deleting
+  # the two burst rules would renumber every later rule, including the monthly
+  # budget. A renumbered rule is a NEW counter key, so every user's monthly spend
+  # would silently reset to zero mid-window. This is the same append-only hazard
+  # ADR-0084/ADR-0110 exist to protect against; keeping the rules present but
+  # effectively unreachable preserves the indices.
+  #
+  # To turn them off for real, wait for an append-only-safe moment (or accept the
+  # budget reset knowingly) rather than dropping the entries here.
   plans:
     # index 0
     - id: enterprise
@@ -86,8 +102,8 @@ rateLimitBudgeting:
       # core-gateway backendTrafficPolicy.monthlyBudget.plans.enterprise — keep in sync.
       monthlyBudgetUsd: 1000
       burst:
-        requestsPerMin: 800
-        tokensPerMin: 4000000
+        requestsPerMin: 8000
+        tokensPerMin: 40000000
     # index 1
     - id: free
       # Per-person monthly budget. DORMANT since the #532 shared-budget cutover
@@ -96,30 +112,30 @@ rateLimitBudgeting:
       # (15, 2026-07-08) so a rollback to per-model budgets keeps the same cap.
       monthlyBudgetUsd: 15
       burst:
-        requestsPerMin: 200
+        requestsPerMin: 2000
         # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
         # (charts/ai-models-info) — a single max-context request no longer
-        # blows the per-minute token bucket. The monthly budget ($50) stays the
-        # real cost cap; this is just the per-minute RATE.
-        tokensPerMin: 1000000
+        # blows the per-minute token bucket. The monthly budget stays the real
+        # cost cap; this is just the per-minute RATE. 1M → 10M in the 10x pass.
+        tokensPerMin: 10000000
     # index 2 — in-cluster services (LibreChat, cron-jobs, k8s SAs) on the
     # INTERNAL plane. Uncapped budget (no monthlyBudgetUsd) — burst-only.
     - id: internal
       burst:
-        requestsPerMin: 600
-        tokensPerMin: 2000000
+        requestsPerMin: 6000
+        tokensPerMin: 20000000
     # index 3
     - id: pro
       monthlyBudgetUsd: 200
       burst:
-        requestsPerMin: 400
-        tokensPerMin: 2000000     # 400k → 2M: a couple of max-context requests/min
+        requestsPerMin: 4000
+        tokensPerMin: 20000000    # 2M → 20M in the 10x pass below
     # index 4 — remote service accounts (GitHub runners, …) on the EXTERNAL
     # plane. Uncapped budget (no monthlyBudgetUsd) — burst-only.
     - id: service
       burst:
-        requestsPerMin: 600
-        tokensPerMin: 2000000
+        requestsPerMin: 6000
+        tokensPerMin: 20000000
 
   # Per-member-in-project quota tiers (ai-helm#570) — SAME append-only-list
   # contract as `plans` above, but a separate, independently-ordered list
