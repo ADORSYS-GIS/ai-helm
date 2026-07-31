@@ -394,7 +394,24 @@ but it needs the catalog to actually emit `internal: true` on a model entry.
 `charts/ai-models-info` deliberately does not do that today (it *excludes*
 `disableExternal` models rather than flagging them); re-including them, even
 flagged, would reintroduce the "advertised model that 404s" problem #797
-fixed. Don't set either flag until that changes.
+fixed. Don't set this flag until that changes.
+
+⚠️ **`meta.modelsInfoHideUnmatched: true` IS set** (`@vymalo/opencode-models-info`
+≥ 0.12.0, [ADORSYS-GIS/lightbridge-opencode-toolbeit#79](https://github.com/ADORSYS-GIS/lightbridge-opencode-toolbeit/issues/79)/[#80](https://github.com/ADORSYS-GIS/lightbridge-opencode-toolbeit/pull/80)).
+Removing `modelsInfoHideTextOnly` in #848 turned off *two* things it did, not
+one: modality filtering (the intended fix) AND making the catalog authoritative
+for *membership* — a model a client's `provider.models` picked up at some
+point (upstream discovery, or accumulated local state) that later drops out
+of the catalog (renamed, removed, access-scoped) used to get pruned on the
+next sync; after #848 it never was again. Real consequence, confirmed live:
+end users started seeing stale/dead model ids in their opencode picker —
+pre-`-internal`-suffix names, fully retired models — that the catalog hadn't
+listed in a while, and picking one either 404s or errors.
+`modelsInfoHideUnmatched` reaches the exact same deletion path
+`modelsInfoHideTextOnly` used to, without its modality filtering — since
+`disableExternal` exclusion (#797) already makes the catalog the correct
+intersection point, the opencode picker now shows exactly `/v1/models` ∩
+`/v1/models/info`, nothing stale, nothing modality-filtered.
 
 ## Prerequisites the cluster must satisfy
 
