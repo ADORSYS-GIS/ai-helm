@@ -23,7 +23,7 @@ import json
 
 from grafana_foundation_sdk.builders import common as cb
 from grafana_foundation_sdk.builders import dashboard as db
-from grafana_foundation_sdk.builders import loki, piechart, stat, timeseries
+from grafana_foundation_sdk.builders import gauge, loki, piechart, stat
 from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import common as cm
 from grafana_foundation_sdk.models import dashboard as dm
@@ -228,42 +228,55 @@ def _panel_total_tokens() -> stat.Panel:
 
 
 # ---------------------------------------------------------------------------
-# Time series  (y=13)
+# Budget gauge  (y=8)
 # ---------------------------------------------------------------------------
 
 
-def _panel_cost_over_time() -> timeseries.Panel:
+def _budget_thresholds() -> db.ThresholdsConfig:
+    """green < 70% < yellow < 90% < red — for the budget-burn gauge (percent)."""
     return (
-        timeseries.Panel()
-        .title("Cost over time")
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=8, w=24, x=0, y=8))
-        .unit("currencyUSD")
-        .draw_style(cm.GraphDrawStyle.LINE)
-        .line_interpolation(cm.LineInterpolation.SMOOTH)
-        .fill_opacity(10.0)
-        .show_points(cm.VisibilityMode.NEVER)
-        .stacking(cb.StackingConfig().mode(cm.StackingMode.NORMAL))
-        .legend(
-            cb.VizLegendOptions()
-            .display_mode(cm.LegendDisplayMode.TABLE)
-            .placement(cm.LegendPlacement.RIGHT)
-            .calcs(["sum", "mean"])
-        )
-        .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
-        .with_target(
-            _loki_target(
-                _usd(
-                    f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [1m]))"
-                ),
-                legend=f"{{{{{LABEL_MODEL}}}}}",
-            )
+        db.ThresholdsConfig()
+        .mode(dm.ThresholdsMode.ABSOLUTE)
+        .steps(
+            [
+                dm.Threshold(color="green"),
+                dm.Threshold(value=70.0, color="yellow"),
+                dm.Threshold(value=90.0, color="red"),
+            ]
         )
     )
 
 
+def _panel_budget_gauge() -> gauge.Panel:
+    # Percent of the editable monthly budget spent in the selected range.
+    # Same Loki cost query as _panel_total_cost, divided by the $budget
+    # textbox variable (default $50 — the free-plan monthly budget).
+    expr = (
+        "100 * ("
+        f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+        " / 1e6) / $budget"
+    )
+    return (
+        gauge.Panel()
+        .title("Budget burn (selected range)")
+        .description(
+            "Total cost over the selected range as a % of the $budget variable "
+            "(default $50/mo — edit in the dashboard toolbar)."
+        )
+        .datasource(_LOKI_DS)
+        .grid_pos(dm.GridPos(h=8, w=8, x=0, y=8))
+        .unit("percent")
+        .min(0.0)
+        .max(120.0)
+        .thresholds(_budget_thresholds())
+        .show_threshold_markers(True)
+        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
+        .with_target(_loki_target(expr))
+    )
+
+
 # ---------------------------------------------------------------------------
-# Breakdown by model  (y=21)
+# Breakdown by model  (y=16)
 # ---------------------------------------------------------------------------
 
 
@@ -274,7 +287,7 @@ def _panel_cost_by_model() -> piechart.Panel:
             f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
         ),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 8, 0, 16),
+        grid=(8, 8, 8, 8),
     )
 
 
@@ -283,7 +296,7 @@ def _panel_tokens_by_model() -> piechart.Panel:
         title="Tokens by model",
         expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 8, 8, 16),
+        grid=(8, 8, 16, 8),
     )
 
 
@@ -292,53 +305,8 @@ def _panel_requests_by_model() -> piechart.Panel:
         title="Requests by model",
         expr=f"sum by ({LABEL_MODEL}) (count_over_time({_SELECTOR} [$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 8, 16, 16),
+        grid=(8, 8, 0, 16),
     )
-
-
-# ---------------------------------------------------------------------------
-# Latency  (y=29)
-# ---------------------------------------------------------------------------
-
-
-def _panel_latency() -> timeseries.Panel:
-    return (
-        timeseries.Panel()
-        .title("Latency — p50 / p95")
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=8, w=24, x=0, y=24))
-        .unit("ms")
-        .draw_style(cm.GraphDrawStyle.LINE)
-        .line_interpolation(cm.LineInterpolation.SMOOTH)
-        .fill_opacity(0.0)
-        .show_points(cm.VisibilityMode.NEVER)
-        .legend(
-            cb.VizLegendOptions()
-            .display_mode(cm.LegendDisplayMode.TABLE)
-            .placement(cm.LegendPlacement.RIGHT)
-            .calcs(["mean", "max"])
-        )
-        .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
-        .with_target(
-            _loki_target(
-                f"quantile_over_time(0.50, {_SELECTOR} {_unwrap('duration')} [5m]) by ()",
-                legend="p50",
-                ref_id="A",
-            )
-        )
-        .with_target(
-            _loki_target(
-                f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m]) by ()",
-                legend="p95",
-                ref_id="B",
-            )
-        )
-    )
-
-
-# ---------------------------------------------------------------------------
-# Usage by channel  (y=37)
-# ---------------------------------------------------------------------------
 
 
 def _panel_azp() -> piechart.Panel:
@@ -346,17 +314,17 @@ def _panel_azp() -> piechart.Panel:
         title="Usage by channel (azp)",
         expr=f"sum by ({LABEL_AZP}) (count_over_time({_SELECTOR} [$__range]))",
         legend_label=f"{{{{{LABEL_AZP}}}}}",
-        grid=(8, 12, 0, 32),
+        grid=(8, 8, 8, 16),
     )
 
 
-def _panel_display_name() -> stat.Panel:
-    """Show the authenticated user display name from Loki label."""
+def _panel_user_info() -> stat.Panel:
+    """Show the authenticated user display name and billing plan from Loki label."""
     return (
         stat.Panel()
-        .title("Your name")
+        .title("User Info")
         .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=8, w=6, x=12, y=32))
+        .grid_pos(dm.GridPos(h=8, w=8, x=16, y=16))
         .thresholds(_single_color_thresholds("blue"))
         .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
         .orientation(cm.VizOrientation.HORIZONTAL)
@@ -368,29 +336,14 @@ def _panel_display_name() -> stat.Panel:
             _loki_target(
                 f"sum by ({LABEL_DISPLAY_NAME}) (count_over_time({_SELECTOR} [$__range]))",
                 legend=f"{{{{{LABEL_DISPLAY_NAME}}}}}",
+                ref_id="A",
             )
         )
-    )
-
-
-def _panel_billing_plan() -> stat.Panel:
-    """Show the authenticated user billing plan from Loki label."""
-    return (
-        stat.Panel()
-        .title("Billing plan")
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=8, w=6, x=18, y=32))
-        .thresholds(_single_color_thresholds("blue"))
-        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
-        .orientation(cm.VizOrientation.HORIZONTAL)
-        .text_mode(cm.BigValueTextMode.NAME)
-        .color_mode(cm.BigValueColorMode.NONE)
-        .graph_mode(cm.BigValueGraphMode.NONE)
-        .justify_mode(cm.BigValueJustifyMode.AUTO)
         .with_target(
             _loki_target(
                 f"sum by ({LABEL_BILLING_PLAN}) (count_over_time({_SELECTOR} [$__range]))",
                 legend=f"{{{{{LABEL_BILLING_PLAN}}}}}",
+                ref_id="B",
             )
         )
     )
@@ -403,6 +356,9 @@ def _panel_billing_plan() -> stat.Panel:
 _DESCRIPTION = (
     "Personal AI usage for the authenticated user. "
     "Isolated by ${__user.email} (Grafana built-in user variable, ADR-0077). "
+    "Default range starts at the 1st of the current month. "
+    "Budget gauge measures total cost against the editable $budget variable "
+    "(default $50/mo — the free-plan monthly budget). "
     "Data path: JWT -> Authorino -> Envoy access log -> Alloy -> Loki. "
     "See docs/patterns/per-user-observability.md. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/my_usage.py."
@@ -429,6 +385,17 @@ def _query_var(
     )
 
 
+def _budget_var() -> db.TextBoxVariable:
+    # Editable textbox — the user sets their own monthly budget in the toolbar.
+    # Default $50 = the free-plan monthly budget (charts/ai-models rateLimitBudgeting.plans).
+    return (
+        db.TextBoxVariable("budget")
+        .label("Monthly budget ($)")
+        .default_value("50")
+        .current(dm.VariableOption(selected=True, text="50", value="50"))
+    )
+
+
 def _dashboard() -> db.Dashboard:
     return (
         db.Dashboard("AI Gateway — my usage")
@@ -439,7 +406,7 @@ def _dashboard() -> db.Dashboard:
         .editable()
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
         .refresh("30s")
-        .time("now-30d", "now")
+        .time("now/M", "now")
         .with_variable(
             _query_var(
                 name="azp",
@@ -454,17 +421,16 @@ def _dashboard() -> db.Dashboard:
                 definition=f'label_values({{service_name="{GATEWAY_SERVICE_NAME}", email="${{__user.email}}"}}, model)',
             )
         )
+        .with_variable(_budget_var())
         .with_panel(_panel_total_cost())
         .with_panel(_panel_total_requests())
         .with_panel(_panel_total_tokens())
-        .with_panel(_panel_cost_over_time())
+        .with_panel(_panel_budget_gauge())
         .with_panel(_panel_cost_by_model())
         .with_panel(_panel_tokens_by_model())
         .with_panel(_panel_requests_by_model())
-        .with_panel(_panel_latency())
         .with_panel(_panel_azp())
-        .with_panel(_panel_display_name())
-        .with_panel(_panel_billing_plan())
+        .with_panel(_panel_user_info())
     )
 
 
