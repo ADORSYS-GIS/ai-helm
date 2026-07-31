@@ -170,12 +170,36 @@ defaults:
     scrapeTimeout: 10s
     path: /metrics
 
+  # ── KV-cache precision (FLEET DEFAULT — every vLLM model) ──────────────────
+  # The precision of the KEY/VALUE cache — the storage the attention reads —
+  # for EVERY vLLM model, unless a catalog entry overrides it with its own
+  # `serving.kvCacheDtype`. 8-bit fp8_e4m3fn is the fleet policy: it halves the
+  # KV footprint (≈2× context capacity in the same VRAM budget — for qwen3-vl
+  # the measured ~1.14 GiB budget holds ~16 500 tokens vs ~8 288 in BF16) at a
+  # quality cost that is small but MUST be measured per model, not assumed
+  # (same discipline as every knob in this file).
+  #   • fp8_e4m3fn — 4-bit exponent / 3-bit mantissa: the accuracy pick for
+  #     inference, the production standard (TensorRT-LLM and most deployments).
+  #   • fp8_e5m2   — 5-bit exponent / 2-bit mantissa: robust to KV outliers
+  #     (e.g. vision heads); the plan B if the e4m3fn quality gate fails.
+  #   • auto       — 16-bit (bf16/fp16), the pre-quantization behaviour; how a
+  #     single model opts out without a fleet-wide change.
+  # ⚠️ vLLM-ONLY. llama.cpp has no FP8 vocabulary — its 8-bit cache type is
+  # q8_0 (int8 block quant) and it takes per-model `serving.kvCacheType`; the
+  # LocalAI diffusion backend has no KV cache to quantize.
+  kvCacheDtype: fp8_e4m3fn
+
   # ── LMCache (vLLM only) ───────────────────────────────────────────────────
   # KV-cache offload to host RAM for prefix reuse. Values carried over from the
   # combination this repo actually ran (charts/model-serving-qwen25-3b-awq).
   # ⚠️ LMCACHE_MAX_LOCAL_CPU_SIZE is in GiB of HOST RAM and is NOT accounted for
   # by the container memory limit automatically — raise `resources.memoryLimit`
   # above it or the pod gets OOM-killed mid-cache.
+  #
+  # ⚠️ fp8 KV cache + LMCache is UNVERIFIED on this fleet: LMCache serializes
+  # the KV tensors as stored on the GPU, and its fp8 path has never been
+  # exercised here (the only LMCache model, qwen3-8b-fast, is disabled).
+  # Verify the combination before enabling it — do not assume.
   lmcacheEnv:
     LMCACHE_USE_EXPERIMENTAL: "False"   # connector is activated by --kv-transfer-config alone
     LMCACHE_CHUNK_SIZE: "256"
@@ -578,9 +602,23 @@ defaults:
 #  Optional per-model knobs:
 #
 #    lmcache: { enabled: true }        # vllm only — KV offload to host RAM
+#    kvCacheDtype: auto                # vllm only — override of the fleet default
+#                                      # (defaults.kvCacheDtype = fp8_e4m3fn).
+#                                      # `auto` = 16-bit, for the model that
+#                                      # fails its fp8 quality gate.
+#    kvCacheType: q8_0                 # llamacpp only — 8-bit KV cache; llama.cpp
+#                                      # has no fp8 vocabulary, q8_0 (int8 block
+#                                      # quant) is its sweet spot. No fleet
+#                                      # default: explicit per model.
 #    apiKey:                           # engine-enforced Bearer, normally OFF
 #      enabled: true
 #      property: my_model_api_key      # property in ssegning-aws
+#
+#  On `kvCacheDtype`: the fleet default (defaults.kvCacheDtype) is fp8_e4m3fn
+#  for EVERY vLLM model — you normally do not touch this. A per-model override
+#  exists for two cases: the model that fails its fp8 quality gate (set `auto`
+#  to go back to 16-bit), or, after measurement, the model where `fp8_e5m2`
+#  beats e4m3fn (vision-head outliers). One knob, one model, measured.
 #
 #  On `apiKey`: you almost certainly do not want it. A model is cluster-local
 #  (ADR-0095) and the CiliumNetworkPolicy already limits ingress to the gateway,
@@ -631,7 +669,7 @@ models:
    # comment in templates/_helpers.tpl). This is a deliberate choice for this
    # model, unlike the fleet's text tiers, which disable thinking for latency.
    qwen3-vl-4b-thinking:
-     enabled: true
+     enabled: false
      engine: vllm
      weights:
        hfRepo: Qwen/Qwen3-VL-4B-Thinking
@@ -685,13 +723,77 @@ models:
        reasoning: "on"
        reasoningParser: qwen3
        gpuMemoryUtilization: 0.60
+       # KV cache: the FLEET DEFAULT fp8_e4m3fn applies (defaults.kvCacheDtype)
+       # — no per-model knob here. Halved KV footprint vs the BF16 baseline
+       # this entry was measured at (2026-07-29). Quality gate: re-run the
+       # multimodal benchmark; if it fails, override with `kvCacheDtype: auto`
+       # (16-bit) or `fp8_e5m2` (vision-head outliers) — one knob at a time.
      resources:
        cpuRequest: "2"
        cpuLimit: "8"
        memoryRequest: 8Gi
        # A bit above the fleet's text-tier default: image preprocessing
-       # (decode/resize) runs on host CPU/RAM before tokens ever reach the GPU.
+        # (decode/resize) runs on host CPU/RAM before tokens ever reach the GPU.
        memoryLimit: 20Gi
+
+   # ─────────────────────────────────────────────────────────────────────────
+   # Qwen3-Coder-30B-A3B (MoE, AWQ INT4, vLLM) — CODING MODEL, replaces
+   # qwen3-vl-4b-thinking on one fleet GPU.
+   #
+   # QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ: 30B MoE (128 experts, 8 active),
+   # AWQ INT4 safetensors, ~16.8 GB on disk (6 shards). Apache-2.0.
+   # Base model: Qwen/Qwen3-Coder-30B-A3B-Instruct (official Qwen, 1.5M downloads).
+   #
+   # ⚠️ NOT LOAD-GATED, and NOT FEDERATED (ADR-0101). `enabled: true` here only
+   # deploys it onto a fleet GPU so it CAN be measured — federating it into
+   # charts/ai-models/values.yaml is a separate step, after someone has
+   # actually sent it a coding request and measured tok/s, VRAM and quality.
+   #
+   # ⚠️ `gpuMemoryUtilization: 0.90` is the fleet default: this model's AWQ
+   # weights are ~15.6 GiB, leaving ~3.4 GiB for KV cache + overhead on the
+   # 19.99 GiB card. The FP8 KV cache default (defaults.kvCacheDtype) halves
+   # the KV footprint. Start conservative at 8192 context; raise after load gate.
+   #
+   # ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
+   # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
+   # gate/router layers kept in FP16 (modules_to_not_convert).
+   qwen3-coder-30b-a3b:
+     enabled: true
+     engine: vllm
+     weights:
+       hfRepo: QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ
+       # Pinned via `curl -s https://huggingface.co/api/models/QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ | jq -r .sha`
+       revision: c58857a7f41c0920f73d1b56678640f9c02017d7
+       # No `include`: vLLM needs the whole repo (6 safetensors shards + config
+       # + tokenizer + tool parser), not a single file.
+       #
+       # 16.8 GB on disk; staging in .cache peaks at ~2x = ~33.6 GB. 35 GiB
+       # gives margin above that. Longhorn grows a PVC in place but never
+       # shrinks one, so err high.
+       sizeGi: 35
+       # 6 shards of ~2.8 GB each; with 8-way fan-out, peak memory could hit
+       # ~22 GB. Cap fan-out and raise the margin, same as qwen3-vl-4b-thinking.
+       seedMaxWorkers: 2
+       seedMemoryLimit: 10Gi
+     serving:
+       # Conservative start; raise after load gate measures actual headroom.
+       # With ~15.6 GiB weights + FP8 KV cache, 8192 should fit comfortably.
+       contextSize: 8192
+       parallel: 2
+       quantization: awq
+       dtype: float16
+       toolCallParser: hermes
+       # Fleet default: 0.90. We have ~3.4 GiB headroom after weights.
+       gpuMemoryUtilization: 0.90
+       # KV cache: the FLEET DEFAULT fp8_e4m3fn applies (defaults.kvCacheDtype)
+       # — no per-model knob here. Halved KV footprint vs the BF16 baseline.
+       # Quality gate: re-run the coding benchmark; if it fails, override with
+       # `kvCacheDtype: auto` (16-bit) — one knob at a time.
+     resources:
+       cpuRequest: "2"
+       cpuLimit: "8"
+       memoryRequest: 8Gi
+       memoryLimit: 17Gi
 
    # ─────────────────────────────────────────────────────────────────────────
    # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102/0103/0105).

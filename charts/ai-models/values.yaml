@@ -544,20 +544,6 @@ backends:
   # not just HTTP 200. Peak VRAM 10405 / 20475 MiB (~51%, under the 60%
   # budget). Reasoning landed in the separate `reasoning_content`/`reasoning`
   # field, not leaking `<think>` tags into `content`.
-  qwen3-vl-4b-thinking-local:
-    schema: OpenAI
-    prefix: "/v1"
-    fqdn:
-      hostname: qwen3-vl-4b-thinking.inference.svc.cluster.local
-      port: 8080
-    securityType: APIKey
-    resourceName: qwen3-vl-4b-thinking-local-svc
-    secretRef:
-      name: qwen3-vl-4b-thinking-api-key
-    externalSecret:
-      key: ai/camer/digital/prod/env
-      property: vllm_local_api_key
-
   # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102). Same
   # cluster-local shape as the text backends above; the difference is what it
   # serves, not how it is reached.
@@ -719,7 +705,7 @@ models:
   # for real cost recovery — this is an honest ceiling from one data point,
   # not a settled number.
   qwen3-vl-4b-thinking-local:
-    enabled: true
+    enabled: false
     kind: text
     minBackends: 1                   # one GPU, one backend, by design
     timeout:

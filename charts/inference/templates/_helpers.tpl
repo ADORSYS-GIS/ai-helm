@@ -159,6 +159,16 @@ Output: a YAML list of strings.
       "--ctx-size" (toString (required "serving.contextSize is required" $s.contextSize))
       "--parallel" (toString (default 4 $s.parallel))
       "--metrics") -}}
+  {{- with $s.kvCacheType -}}
+    {{- /* KV-cache precision (llama.cpp --cache-type-k/--cache-type-v). Default
+           is f16; q8_0 is the usual first step (~half the KV memory, minimal
+           quality loss), the aggressive end is q4_0. Applies the SAME type to
+           both K and V — llama.cpp lets you mix them, but there is no measured
+           case for it on this fleet, and a single knob keeps the catalog
+           honest. Value is validated against llama.cpp's accepted set in
+           childValues. */ -}}
+    {{- $args = concat $args (list "--cache-type-k" . "--cache-type-v" .) -}}
+  {{- end -}}
   {{- if ne (default true $s.jinja) false -}}
     {{- $args = append $args "--jinja" -}}
   {{- end -}}
@@ -200,6 +210,17 @@ Output: a YAML list of strings.
   {{- end -}}
   {{- with $s.dtype -}}
     {{- $args = concat $args (list "--dtype" .) -}}
+  {{- end -}}
+  {{- with $.kvCacheDtype -}}
+    {{- /* KV-cache precision (--kv-cache-dtype). The EFFECTIVE value: fleet
+           default `defaults.kvCacheDtype` (fp8_e4m3fn) unless the catalog
+           entry overrides it with `serving.kvCacheDtype`. fp8_e5m2 /
+           fp8_e4m3fn store 8-bit values with a per-tensor scale, halving the
+           KV footprint at a measured quality cost — nothing else changes:
+           weights and activations stay in `--dtype`. `auto` = 16-bit, the
+           pre-quantization behaviour. Validated against vLLM's accepted set
+           in childValues before we get here; passed through verbatim. */ -}}
+    {{- $args = concat $args (list "--kv-cache-dtype" .) -}}
   {{- end -}}
   {{- with $s.toolCallParser -}}
     {{- $args = concat $args (list "--enable-auto-tool-choice" "--tool-call-parser" .) -}}
@@ -296,6 +317,30 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
 {{- fail (printf "model %s: `weights` is required for engine %s (it is seeded by a Job; only self-downloading engines may omit it)" $name $engine) -}}
 {{- end -}}
 {{- $s := $cfg.serving | default dict -}}
+{{- /* ── KV-cache precision ──────────────────────────────────────────────────
+       FLEET DEFAULT: `defaults.kvCacheDtype` (fp8_e4m3fn) applies to EVERY
+       vLLM model unless the catalog entry overrides it with its own
+       `serving.kvCacheDtype`. A per-model `auto` (back to 16-bit) is how one
+       model opts out without a fleet-wide policy change.
+       llama.cpp has NO fp8 vocabulary (its 8-bit cache type is q8_0, an int8
+       block quant), so its per-model `serving.kvCacheType` stays explicit —
+       there is no fleet default to inherit, and `defaults.kvCacheDtype` is
+       vLLM-only. LocalAI's diffusion backend has no KV cache to quantize.
+       Fail-fast: a per-model knob on the wrong engine, or a value the engine
+       does not accept, fails the render rather than dropping on the floor. */ -}}
+{{- $kvCacheDtype := $s.kvCacheDtype | default $d.kvCacheDtype -}}
+{{- if and $s.kvCacheDtype (ne $engine "vllm") -}}
+{{- fail (printf "model %s: serving.kvCacheDtype (%q) is a vLLM knob — llama.cpp models use serving.kvCacheType, LocalAI has no KV cache to quantize" $name $s.kvCacheDtype) -}}
+{{- end -}}
+{{- if and (eq $engine "vllm") $kvCacheDtype (not (has $kvCacheDtype (list "auto" "fp8" "fp8_e5m2" "fp8_e4m3fn"))) -}}
+{{- fail (printf "model %s: serving.kvCacheDtype must be one of [auto fp8 fp8_e5m2 fp8_e4m3fn], got %q — it is passed verbatim to --kv-cache-dtype, so it must be a value vLLM accepts" $name $kvCacheDtype) -}}
+{{- end -}}
+{{- if and $s.kvCacheType (ne $engine "llamacpp") -}}
+{{- fail (printf "model %s: serving.kvCacheType (%q) is a llama.cpp knob — vLLM models use serving.kvCacheDtype, LocalAI has no KV cache to quantize" $name $s.kvCacheType) -}}
+{{- end -}}
+{{- if and $s.kvCacheType (not (has $s.kvCacheType (list "f32" "f16" "bf16" "q8_0" "q4_0" "q4_1" "q5_0" "q5_1" "q6_K" "iq1_s" "iq2_s" "iq2_xs" "iq2_xxs" "iq3_s" "iq3_xs" "iq3_xxs" "iq4_nl" "iq4_xs"))) -}}
+{{- fail (printf "model %s: serving.kvCacheType must be one of llama.cpp's --cache-type-k/--cache-type-v values (f32 f16 bf16 q8_0 q4_0 q4_1 q5_0 q5_1 q6_K iq1_s iq2_s iq2_xs iq2_xxs iq3_s iq3_xs iq3_xxs iq4_nl iq4_xs), got %q" $name $s.kvCacheType) -}}
+{{- end -}}
 {{- $res := $cfg.resources | default dict -}}
 {{- $gpu := $d.gpu -}}
 {{- /* Self-downloading engines have no HF repo to derive a directory from, so
@@ -512,7 +557,7 @@ modelServing:
           {{- /* Omit the key entirely when an engine contributes no args (LocalAI
                  is env-configured). An empty `args:` is YAML null, which bjw
                  still renders — blanking the image's own command. */ -}}
-          {{- $serverArgs := include "inference.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath) | trim }}
+          {{- $serverArgs := include "inference.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath "kvCacheDtype" $kvCacheDtype) | trim }}
           {{- with $serverArgs }}
           args:
             {{- . | nindent 12 }}
