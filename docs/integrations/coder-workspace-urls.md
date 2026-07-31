@@ -37,6 +37,44 @@ broken, workspace apps are unreachable — there is no fallback.
 
 ---
 
+## Mental model: reachable vs accessible
+
+Most confusion here comes from collapsing three **independent** layers into one
+idea of "is it working". Each fails differently, and mistaking one for another
+sends you debugging DNS when you have a permissions problem:
+
+| | Layer | Question | Scope | Failure looks like |
+|---|---|---|---|---|
+| 1 | **Resolvable** | Does the hostname resolve and serve valid TLS? | Deployment-wide | `NXDOMAIN`, `TRAEFIK DEFAULT CERT` |
+| 2 | **Routable** | Does coderd find a process behind it? | Per workspace / port | `502`, `404`, workspace stopped |
+| 3 | **Permitted** | Is *this caller* allowed? | Per port, per share level | `303` → `auth-redirect` |
+
+**Reachability is layers 1 + 2. Accessibility is layer 3.** The wildcard cert and
+DNS record fix layer 1 once, for the whole deployment. Layer 3 is per-port,
+opt-in, and revocable — and it is the layer that is "off" by default.
+
+So: a `303` is *good news about layers 1 and 2*. It proves DNS, TLS, ingress and
+coderd routing all work and you have an authorization question. Never debug the
+wildcard because of a 303.
+
+### Four ways to reach a process in a workspace
+
+| Route | Hostname | Who can reach it | Notes |
+|---|---|---|---|
+| Declared app (`coder_app`, `subdomain = true`) | `<slug>--<ws>--<user>` | Per `share` in the template | The intended path for template-provided apps |
+| Raw port | `<port>--<agent>--<ws>--<user>` | Per port share (default `owner`) | The dev-server case |
+| Path app | `/@user/ws.agent/apps/<slug>/` | — | **Disabled here** (`CODER_DISABLE_PATH_APPS=true`) → `403` |
+| `coder port-forward` | none | Only you | A **local TCP tunnel** to your own machine |
+
+> ⚠️ **`coder port-forward` is not port sharing.** It is a local tunnel (alias
+> `tunnel`) that binds a port on *your* machine and dies when you stop it — no
+> public hostname, no ACL, nothing for anyone else. Port *sharing* is a
+> server-side ACL on the public subdomain URL. They share no state: revoking a
+> share does not affect an active port-forward, and port-forward can neither
+> create nor remove a share. The similar names are the whole trap.
+
+---
+
 ## Finding the public URL of a workspace app
 
 There are two kinds of workspace app and they are addressed differently. Work out
@@ -144,10 +182,27 @@ This is the common case — someone runs `next dev` / `vite` / `python -m http.s
 inside a workspace and wants to hand a colleague or a client a link. The port is
 reachable the moment the process binds, but it is `owner`-only until you share it.
 
-There is **no CLI subcommand** for this. `coder port-forward` is *local* forwarding
-to your own machine, and `coder sharing` shares the whole workspace with named
-users — neither publishes a port. Use the dashboard's **Open Ports** panel, or the
-API below.
+Three interfaces, and only two of them can publish:
+
+| Interface | Find the URL | Change share level |
+|---|---|---|
+| **Dashboard** — "Open Ports" on the workspace page | ✅ | ✅ share-level dropdown |
+| **API** — `/api/v2/workspaces/{id}/port-share` | ✅ | ✅ |
+| **MCP** — `coder exp mcp server` | ✅ `coder_workspace_port_forward` | ❌ no tool exists |
+| **CLI** | ❌ | ❌ |
+
+**MCP is discovery-only.** `coder_workspace_port_forward` takes
+`{"workspace":"K-workspace.main","port":3000}` and returns the finished URL —
+the cleanest way to get one programmatically, since it avoids hand-assembly and
+the 63-character arithmetic. But no MCP tool sets a share level, so an agent can
+tell you where an app *would* be published and cannot publish it. (Note
+`coder_workspace_list_apps` returns each app's raw `url` field — for a
+`subdomain = false` app that is the *internal* `http://localhost:PORT`, not a
+public URL.)
+
+**There is no CLI subcommand.** `coder port-forward` is *local* forwarding to your
+own machine, and `coder sharing` shares the whole workspace with named users —
+neither publishes a port. Use the dashboard or the API below.
 
 > ⚠️ The route is **singular**: `/port-share`. The plural `/port-shares` returns
 > `404 Route not found`, which reads like the feature is missing or unlicensed. It
