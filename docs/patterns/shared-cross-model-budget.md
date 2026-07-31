@@ -58,13 +58,30 @@ Lyft ratelimit composes the Redis key as `<domain>_<generic-key>_<header-descrip
 | `Distinct` header | live value in the key (the account UUID) | same |
 | `Exact` header | position only (`rule-N-match-M`); the literal value is encoded by *which rule* matched | same |
 | window | `floor(now / unit_seconds) × unit_seconds` (Month = 2592000) | same |
+| `x-billing-period` (ADR-0111, since 2026-07-31) | live value in the key (the calendar `YYYY-MM` string, e.g. `2026-08`) | same |
 
 Live examples:
 
 ```
 OLD (per-model):  …core-gateway/api-https_httproute/converse/glm-5/rule/0/…_rule-2-match-0_<ACCOUNT>_rule-2-match-1_<WINDOW>
-NEW (shared):     converse-gateway/core-gateway_converse-gateway/core-gateway/rule/0_rule-0-match-0_<ACCOUNT>_rule-0-match-1_<WINDOW>
+NEW (shared, pre-ADR-0111):  converse-gateway/core-gateway_converse-gateway/core-gateway/rule/0_rule-0-match-0_<ACCOUNT>_rule-0-match-1_<WINDOW>
+NEW (shared, ADR-0111+):     converse-gateway/core-gateway_converse-gateway/core-gateway/rule/0_rule-0-match-0_<ACCOUNT>_rule-0-match-1_<PERIOD>_<WINDOW>
 ```
+
+⚠️ **ADR-0111: the `unit: Month`/`<WINDOW>` epoch segment above is NOT a
+calendar month** — it's a fixed 2,592,000-second (30-day) rolling bucket
+anchored to the Unix epoch, confirmed against Envoy Gateway's own translator
+source. It drifts off the real calendar by ~5 days/year and no Redis
+operation can move that boundary (it's a pure function of wall-clock time).
+Since 2026-07-31, a Lua `EnvoyExtensionPolicy`
+(`charts/core-gateway/templates/envoyextensionpolicy-billing-period.yaml`)
+stamps `x-billing-period: <UTC YYYY-MM>` on every request, and every
+`unit: Month` rule keys on it as an extra `Distinct` header — so a **new**
+key (with a new `<PERIOD>` segment) is used automatically starting every 1st
+of the month, regardless of where the old 30-day `<WINDOW>` epoch happens to
+land. Pre-fix keys (no `<PERIOD>` segment) simply stop being written and age
+out on their existing TTL — no migration needed. See ADR-0111 for the full
+design and rationale.
 
 The only structural difference is the scope segment: route identity (contains the model) → policy identity (no model). On the gateway policy, `rule/0` = free budget, `rule/1` = pro.
 
@@ -74,9 +91,42 @@ To see keys without reverse-engineering: read the generated ratelimit ConfigMap 
 
 **Verifying the #9244 fix is active:** the budget rule's request-cost is `number: 0`, so a non-zero counter can *only* come from the response micro-USD cost. Any shared counter > 0 after real traffic proves cost-charging works.
 
+## Fallback: manual reset for the current cycle (only if ADR-0111 hasn't deployed yet)
+
+If a calendar-month boundary passes before the ADR-0111 chart change has
+merged and deployed, the new `x-billing-period`-keyed counters won't exist yet
+and the old key keeps accumulating against the drifting 30-day window. As a
+one-time fallback (not needed once ADR-0111 is live — every month after that
+resets itself automatically), scope a manual Redis delete to *only* the
+monthly-budget rule keys, run a few minutes after 00:00 UTC on the 1st (not
+before, or it zeroes legitimate remaining spend early):
+
+```bash
+# Read-only first: confirm the live key shape before deleting anything —
+# it has changed shape before (this doc's own OLD/NEW history above).
+redis-cli --tls --cacert /etc/redis-ca/ca.crt \
+  -h redis-ha-haproxy.redis-system.svc.cluster.local -p 6379 \
+  --scan --pattern 'converse-gateway/core-gateway*'
+
+# Scoped delete: this domain is structurally exclusive to the plan-budget
+# rules (burst/req-per-min counters live on the separate per-model route
+# domain, `.../converse/<model>/...`, never here) — so this pattern cannot
+# accidentally catch a burst key. It also never touches LibreChat's session
+# keys (distinct `librechat-prod-v2*` prefix, same redis-ha instance).
+redis-cli --tls --cacert /etc/redis-ca/ca.crt \
+  -h redis-ha-haproxy.redis-system.svc.cluster.local -p 6379 \
+  --scan --pattern 'converse-gateway/core-gateway_converse-gateway/core-gateway/rule/*' \
+| xargs -r -n1 redis-cli --tls --cacert /etc/redis-ca/ca.crt \
+  -h redis-ha-haproxy.redis-system.svc.cluster.local -p 6379 DEL
+```
+
+No model-disable window is needed for this — it's a live, near-instant key
+deletion, not a data migration; worst case is one in-flight request
+re-checking a freshly-zeroed counter.
+
 ## Knock-on effects / gotchas
 
-- **`prometheus-redis-exporter`** (ai-helm-values) parses the *old* per-model key shape (`…/converse/<model>/…`, `rule-2`/`rule-7` indices). The shared keys don't match those regexes — the quota dashboard needs re-pointing at the new key shape (open follow-up).
+- **`prometheus-redis-exporter`** (ai-helm-values) parses the *old* per-model key shape (`…/converse/<model>/…`, `rule-2`/`rule-7` indices). The shared keys don't match those regexes — the quota dashboard needs re-pointing at the new key shape (open follow-up). ADR-0111 adds a further `x-billing-period` segment on top of this same open gap — both need addressing together when that dashboard work happens.
 - The dormant per-model `monthlyBudgetUsd` in `charts/ai-models` is kept in sync with the live core-gateway value so a flag rollback keeps the same cap.
 - Budget changes apply to the **current** month window immediately — lowering the cap 429s anyone already past it on their next request.
 
@@ -89,3 +139,4 @@ To see keys without reverse-engineering: read the generated ratelimit ConfigMap 
 | 2026-07-08 | #607 — EG v1.8.1 → v1.8.2 (#9244 prerequisite) |
 | 2026-07-08 | #616 — cutover: both flags ON; verified live (shared keys, µ$ charging) |
 | 2026-07-08 | #623 — free tier set to $15 shared |
+| 2026-07-31 | ADR-0111 — `x-billing-period` calendar marker folds into every `unit: Month` key; fixes the 30-day-vs-calendar-month drift permanently |

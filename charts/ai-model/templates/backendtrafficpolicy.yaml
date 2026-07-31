@@ -22,6 +22,14 @@ bucket is exhausted):
 
 x-billing-plan (stamped by the AuthConfig from Keycloak's billing_plan claim (from group attribute)) selects the plan.
 
+Every `unit: Month` rule below (plan budget, tier budget, project envelope) also
+keys on x-billing-period — a calendar "YYYY-MM" marker stamped gateway-wide by
+the core-gateway chart's Lua EnvoyExtensionPolicy (ADR-0111). Envoy Gateway's
+`unit: Month` is actually a fixed 30-day (2,592,000s) epoch window, not a true
+calendar month, so without this the budget window drifts off-calendar by ~5
+days/year. Folding the marker into the key makes a fresh counter start every
+1st automatically; the old key just ages out on its existing 30-day TTL.
+
 Budget per plan = global plan default (.Values.plans.<plan>.monthlyBudgetUsd).
 Burst (rules 1+2) is always per-model; comes from .Values.plans.<plan>.burst.
 
@@ -185,6 +193,13 @@ spec:
                   name: x-billing-plan
                   type: Exact
                   value: {{ $plan.id | quote }}
+                - invert: false
+                  # ADR-0111: calendar billing-month marker (stamped gateway-wide
+                  # by the core-gateway Lua EnvoyExtensionPolicy) folded into the
+                  # key so the counter rotates on the 1st instead of drifting on
+                  # Envoy Gateway's fixed 30-day `unit: Month` epoch window.
+                  name: x-billing-period
+                  type: Distinct
           limit:
             requests: {{ $limit }} # rule/{{ $i }} · {{ $plan.id }} monthly budget ${{ . }} — PER MODEL (see caveat; shared version is the gateway BTP)
             unit: Month
@@ -281,6 +296,10 @@ spec:
                   name: x-quota-tier
                   type: Exact
                   value: {{ $tier.id | quote }}
+                - invert: false
+                  # ADR-0111: see the plan-budget rule above — same fix.
+                  name: x-billing-period
+                  type: Distinct
           limit:
             requests: {{ $tierLimit }} # tier-rule/{{ $i }} · {{ $tier.id }} monthly budget ${{ . }} per member per model
             unit: Month
@@ -309,6 +328,10 @@ spec:
                   name: x-project-quota
                   type: Exact
                   value: {{ $projectEnvelope.projectQuota | default "" | quote }}
+                - invert: false
+                  # ADR-0111: see the plan-budget rule above — same fix.
+                  name: x-billing-period
+                  type: Distinct
           limit:
             requests: {{ $envelopeLimit }} # project envelope ${{ . }} per project per model
             unit: Month
