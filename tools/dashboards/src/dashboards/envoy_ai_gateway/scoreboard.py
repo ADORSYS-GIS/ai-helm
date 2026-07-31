@@ -65,8 +65,15 @@ OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/score
 
 TEMPO_DS = dm.DataSourceRef(type_val="tempo", uid=TEMPO_UID)
 
-# Filters apply to every metric panel; the budget burn uses a fixed 30d window
-# (monthly budget) regardless of the dashboard range.
+# Filters apply to every metric panel. The budget-burn gauge and the two spend
+# stats use [$__range] (not a hardcoded duration) so they total whatever the
+# dashboard time picker has selected, same as every other panel here — the
+# dashboard defaults to "This month so far" (now/M .. now) so out of the box
+# they read as calendar month-to-date spend, mirroring the calendar-aligned
+# rate-limit windows fixed in ADR-0111. A fixed `[30d]` duration cannot express
+# "since the 1st of the month" (PromQL range-vector durations have no
+# since-month-start syntax); relying on the picker's own relative-time
+# resolution is the correct fix, not a synthetic duration computation.
 _SEL = sh.selector('azp=~"$azp"', 'model=~"$model"')
 
 _LEGEND_USER = "{{" + LABEL_DISPLAY_NAME + "}}"
@@ -96,14 +103,16 @@ def _budget_thresholds() -> db.ThresholdsConfig:
 
 
 def _gauge_budget() -> gauge.Panel:
-    # Percent of the editable monthly budget spent in the last 30 days. PromQL
-    # substitutes $budget as a literal number, so dividing by it is valid.
-    expr = f"100 * (sum(increase({METRIC_COST_MICRO_USD}{_SEL}[30d])) / 1e6) / $budget"
+    # Percent of the editable monthly budget spent over the dashboard's own
+    # time range (defaults to calendar month-to-date). PromQL substitutes
+    # $budget as a literal number, so dividing by it is valid.
+    expr = f"100 * (sum(increase({METRIC_COST_MICRO_USD}{_SEL}[$__range])) / 1e6) / $budget"
     return (
         gauge.Panel()
-        .title("Monthly budget burn (last 30d)")
+        .title("Monthly budget burn (range)")
         .description(
-            "Spend over the last 30 days as a % of the $budget variable (default $3000/mo)."
+            "Spend over the selected time range as a % of the $budget variable "
+            "(default $3000/mo). Dashboard defaults to This month so far."
         )
         .datasource(sh.MIMIR_DS)
         .grid_pos(dm.GridPos(h=8, w=8, x=0, y=4))
@@ -265,8 +274,9 @@ _HERO_MD = (
     "# 🏆 AI Gateway Scoreboard\n"
     "Who's using the platform, how much it costs, and how close we are to budget — "
     "live from the precomputed Mimir metrics (ADR-0058). "
-    "Default window is **30 days**; pick a calendar month in the time picker for "
-    "monthly totals. Filter by client & model up top. ⚡"
+    "Default window is **this month so far** (calendar month-to-date, resets on the "
+    "1st); pick any other range in the time picker to total a different period. "
+    "Filter by client & model up top. ⚡"
 )
 
 
@@ -286,10 +296,10 @@ def _hero() -> text.Panel:
 # ---------------------------------------------------------------------------
 
 
-def _stat_spend_30d() -> object:
+def _stat_spend_range() -> object:
     return sh.stat_panel(
-        title="Spend (last 30d)",
-        expr=sh.usd(f"sum(increase({METRIC_COST_MICRO_USD}{_SEL}[30d]))"),
+        title="Spend (range)",
+        expr=sh.usd(f"sum(increase({METRIC_COST_MICRO_USD}{_SEL}[$__range]))"),
         unit="currencyUSD",
         color="orange",
         grid=(4, 8, 8, 4),
@@ -297,7 +307,7 @@ def _stat_spend_30d() -> object:
 
 
 def _stat_budget_remaining() -> object:
-    expr = f"$budget - (sum(increase({METRIC_COST_MICRO_USD}{_SEL}[30d])) / 1e6)"
+    expr = f"$budget - (sum(increase({METRIC_COST_MICRO_USD}{_SEL}[$__range])) / 1e6)"
     return sh.stat_panel(
         title="Budget remaining (of $budget)",
         expr=expr,
@@ -412,7 +422,7 @@ def _dashboard() -> db.Dashboard:
         .editable()
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
         .refresh("5m")
-        .time("now-30d", "now")
+        .time("now/M", "now")
         .with_variable(_budget_var())
         .with_variable(
             sh.multi_var(
@@ -432,7 +442,7 @@ def _dashboard() -> db.Dashboard:
         .with_panel(_hero())
         .with_panel(sh.row("Headline", y=3))
         .with_panel(_gauge_budget())
-        .with_panel(_stat_spend_30d())
+        .with_panel(_stat_spend_range())
         .with_panel(_stat_budget_remaining())
         .with_panel(_stat_requests_range())
         .with_panel(_stat_active_actors())
