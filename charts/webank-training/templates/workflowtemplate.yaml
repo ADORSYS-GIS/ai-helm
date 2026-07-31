@@ -8,6 +8,7 @@
 {{- if not $lakefs.candidateBranch }}{{ fail "webank-training: training.lakefs.candidateBranch is required" }}{{- end }}
 {{- if not $training.otel.endpoint }}{{ fail "webank-training: training.otel.endpoint is required" }}{{- end }}
 {{- if not $workflow.serviceAccountName }}{{ fail "webank-training: workflow.serviceAccountName is required" }}{{- end }}
+{{- if eq (len .Values.models) 0 }}{{ fail "webank-training: models must declare the public model workflow catalogue" }}{{- end }}
 {{- $gpuNodeRole := index $training.gpu.nodeSelector "role" | default "" -}}
 {{- if ne $gpuNodeRole "gpu" }}{{ fail "webank-training: GPU-capable templates require training.gpu.nodeSelector.role=gpu" }}{{- end }}
 {{- $gpuLimit := index $training.gpu.resources.limits "nvidia.com/gpu" | default 0 -}}
@@ -17,17 +18,109 @@
 {{- if and (eq (.key | default "") "role") (eq (.operator | default "Equal") "Equal") (eq (.value | default "") "gpu") (eq (.effect | default "") "NoSchedule") }}{{- $toleratesGpu = true }}{{- end }}
 {{- end }}
 {{- if not $toleratesGpu }}{{ fail "webank-training: GPU-capable templates require a role=gpu:NoSchedule toleration" }}{{- end }}
+{{- range $model := .Values.models }}
+{{- $id := required "webank-training: models[].id is required" $model.id -}}
+{{- $materializer := required (printf "webank-training: %s datasetMaterializer is required" $id) $model.datasetMaterializer -}}
+{{- $trainer := required (printf "webank-training: %s trainer is required" $id) $model.trainer -}}
+{{- if not (has $materializer (list "materialize-document-detector-descriptor" "materialize-document-recognizer-descriptor" "materialize-face-detector-descriptor" "materialize-sface-descriptor" "materialize-pad-descriptor")) }}{{ fail (printf "webank-training: %s has an unknown dataset materializer" $id) }}{{- end }}
+{{- if not (has $trainer (list "document-detector" "document-recognizer" "face-detector" "sface" "pad-liveness-pending")) }}{{ fail (printf "webank-training: %s has an unknown trainer" $id) }}{{- end }}
+---
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
-  name: {{ $workflow.name | quote }}
+  name: {{ printf "webank-%s-dataset-build" $id | quote }}
   labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
+    {{- include "common.labels.standard" $ | nindent 4 }}
     app.kubernetes.io/part-of: webank-models
-    app.kubernetes.io/component: document-detector-training
+    app.kubernetes.io/component: dataset-build
+    webank.io/model: {{ $id | quote }}
+  annotations:
+    webank.io/adr: "0034"
+    webank.io/dataset-contract: "0006"
+    webank.io/materialization: "metadata-descriptor"
+spec:
+  entrypoint: build
+  activeDeadlineSeconds: {{ $workflow.activeDeadlineSeconds }}
+  ttlStrategy:
+    secondsAfterCompletion: {{ $workflow.ttlSecondsAfterCompletion }}
+  serviceAccountName: {{ $workflow.serviceAccountName | quote }}
+  {{- with $workflow.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  arguments:
+    parameters:
+      - name: lakefs_ref
+        description: >-
+          Required immutable 64-character LakeFS commit named by the governed
+          manifest and readiness attestation. Branches and moving tags fail closed.
+    artifacts:
+      - name: source
+      - name: manifest
+      - name: readiness
+  templates:
+    - name: build
+      inputs:
+        artifacts:
+          - name: source
+            path: /workspace/input/source.json
+          - name: manifest
+            path: /workspace/input/source-manifest.json
+          - name: readiness
+            path: /workspace/input/readiness.json
+      container:
+        image: {{ $training.image | quote }}
+        command: ["sh", "-ceu"]
+        args:
+          - |
+            cargo xtask training-data {{ $materializer }} \
+              --source /workspace/input/source.json \
+              --manifest /workspace/input/source-manifest.json \
+              --lakefs-ref "$LAKEFS_REF" \
+              --readiness /workspace/input/readiness.json \
+              --output /workspace/output/{{ $id }}-descriptor.json
+            cargo xtask training-data push \
+              --destination training-data-lake \
+              --path /workspace/output/{{ $id }}-descriptor.json \
+              --manifest /workspace/input/source-manifest.json \
+              --lakefs-ref "$LAKEFS_REF" \
+              --readiness /workspace/input/readiness.json \
+              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+        env:
+          - name: LAKEFS_REF
+            value: "{{`{{workflow.parameters.lakefs_ref}}`}}"
+          - name: WEBANK_LAKEFS_ENDPOINT
+            value: {{ $lakefs.endpoint | quote }}
+          - name: WEBANK_LAKEFS_CANDIDATE_BRANCH
+            value: {{ $lakefs.candidateBranch | quote }}
+          - name: LAKEFS_ACCESS_KEY_ID
+            valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.accessKey | quote }} } }
+          - name: LAKEFS_SECRET_ACCESS_KEY
+            valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.secretKey | quote }} } }
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: {{ printf "webank-%s-dataset-build" $id | quote }}
+        resources:
+          requests: { cpu: 250m, memory: 512Mi }
+          limits: { cpu: "1", memory: 1Gi }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: {{ printf "webank-%s-train" $id | quote }}
+  labels:
+    {{- include "common.labels.standard" $ | nindent 4 }}
+    app.kubernetes.io/part-of: webank-models
+    app.kubernetes.io/component: candidate-training
+    webank.io/model: {{ $id | quote }}
   annotations:
     webank.io/adr: "0034"
     webank.io/observability-adr: "0035"
+{{- if eq $trainer "pad-liveness-pending" }}
+    webank.io/execution-state: "blocked-by-pad-training-harness"
+{{- end }}
 spec:
   entrypoint: train
   activeDeadlineSeconds: {{ $workflow.activeDeadlineSeconds }}
@@ -40,55 +133,36 @@ spec:
   {{- end }}
   arguments:
     parameters:
+{{- if eq $trainer "document-detector" }}
       - name: dataset_uri
         description: >-
-          Required pinned LakeFS dataset location in the form
-          lakefs://repository/64-character-commit/dataset-version. The training
-          container enforces the URI shape and embedded governance checks before
-          training.
+          Required pinned document-detector LakeFS location:
+          lakefs://repository/64-character-commit/dataset-version.
+{{- else if ne $trainer "pad-liveness-pending" }}
+      - name: lakefs_ref
+        description: Required immutable 64-character LakeFS commit for the dataset artifacts.
+{{- end }}
       - name: run_name
-        value: "document-detector-{{`{{workflow.name}}`}}"
-        description: >-
-          Optional human-readable run identity. Defaults to the unique Argo
-          workflow name and may be overridden for a deliberately named experiment.
+        value: {{ printf "%s-{{workflow.name}}" $id | quote }}
+        description: Optional operator label; defaults to the unique Argo workflow name.
+{{- if and (ne $trainer "document-detector") (ne $trainer "pad-liveness-pending") }}
+    artifacts:
+      - name: dataset
+      - name: manifest
+      - name: readiness
+{{- end }}
   templates:
     - name: train
-      dag:
-        tasks:
-          - name: readiness-gate
-            template: readiness-gate
-          - name: gpu-train-and-publish-candidate
-            dependencies: [readiness-gate]
-            template: gpu-train-and-publish-candidate
-
-    # Checkout verifies that `dataset_uri` names a pinned LakeFS commit,
-    # allowlists the archive shape, and executes the embedded readiness gate.
-    # It runs before the GPU task, so non-eligible data never consumes a GPU.
-    - name: readiness-gate
-      container:
-        image: {{ $training.image | quote }}
-        command: ["cargo"]
-        args: [xtask, training-data, checkout-document-detector, --dataset-uri, "{{`{{workflow.parameters.dataset_uri}}`}}", --lakefs-endpoint, {{ $lakefs.endpoint | quote }}, --output, /tmp/document-detector-gate]
-        env:
-          - name: TRAINING_RUN_ID
-            value: "{{`{{workflow.parameters.run_name}}`}}"
-          - name: LAKEFS_ACCESS_KEY_ID
-            valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.accessKey | quote }} } }
-          - name: LAKEFS_SECRET_ACCESS_KEY
-            valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.secretKey | quote }} } }
-          - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: {{ $training.otel.endpoint | quote }}
-          - name: OTEL_SERVICE_NAME
-            value: webank-document-detector-readiness-gate
-        resources:
-          requests: { cpu: 250m, memory: 512Mi }
-          limits: { cpu: "1", memory: 1Gi }
-
-    # The only GPU-capable task carries an enforced `role=gpu` selector,
-    # matching NoSchedule toleration, and an extended-resource GPU request.
-    # Kubernetes therefore cannot place it on a non-GPU node. The preceding
-    # readiness gate is deliberately CPU-only.
-    - name: gpu-train-and-publish-candidate
+{{- if and (ne $trainer "document-detector") (ne $trainer "pad-liveness-pending") }}
+      inputs:
+        artifacts:
+          - name: dataset
+            path: /workspace/dataset
+          - name: manifest
+            path: /workspace/governance/source-manifest.json
+          - name: readiness
+            path: /workspace/governance/readiness.json
+{{- end }}
       nodeSelector:
         {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
       {{- with $training.gpu.tolerations }}
@@ -100,30 +174,93 @@ spec:
         command: ["sh", "-ceu"]
         args:
           - |
+{{- if eq $trainer "document-detector" }}
             cargo xtask training-data checkout-document-detector \
               --dataset-uri "$DATASET_URI" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --output /tmp/document-detector
+              --output /workspace/document-detector
             cargo xtask document-detector-train \
-              --data /tmp/document-detector/dataset \
-              --output "/tmp/candidate-{{`{{workflow.name}}`}}.safetensors" \
+              --data /workspace/document-detector/dataset \
+              --output "$CANDIDATE_PATH" \
               --stem-channels {{ $detector.stemChannels }} \
               --epochs {{ $detector.epochs }} \
               --batch-size {{ $detector.batchSize }} \
               --learning-rate {{ $detector.learningRate }} \
               --shrink-ratio {{ $detector.shrinkRatio }}
-            . /tmp/document-detector/governance/lineage.env
+            . /workspace/document-detector/governance/lineage.env
             cargo xtask training-data push \
               --destination training-data-lake \
-              --path "/tmp/candidate-{{`{{workflow.name}}`}}.safetensors" \
-              --manifest /tmp/document-detector/governance/source-manifest.json \
+              --path "$CANDIDATE_PATH" \
+              --manifest /workspace/document-detector/governance/source-manifest.json \
               --lakefs-ref "$LAKEFS_SOURCE_REF" \
-              --readiness /tmp/document-detector/governance/readiness.json \
+              --readiness /workspace/document-detector/governance/readiness.json \
               --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+{{- else if eq $trainer "document-recognizer" }}
+            cargo xtask training-data readiness-gate \
+              --manifest /workspace/governance/source-manifest.json \
+              --lakefs-ref "$LAKEFS_REF" \
+              --readiness /workspace/governance/readiness.json
+            cargo xtask distill-recognizer \
+              --data /workspace/dataset \
+              --output "$CANDIDATE_PATH" \
+              --epochs 10
+            cargo xtask training-data push \
+              --destination training-data-lake \
+              --path "$CANDIDATE_PATH" \
+              --manifest /workspace/governance/source-manifest.json \
+              --lakefs-ref "$LAKEFS_REF" \
+              --readiness /workspace/governance/readiness.json \
+              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+{{- else if eq $trainer "face-detector" }}
+            cargo xtask training-data readiness-gate \
+              --manifest /workspace/governance/source-manifest.json \
+              --lakefs-ref "$LAKEFS_REF" \
+              --readiness /workspace/governance/readiness.json
+            cargo xtask face-detector-train \
+              --data /workspace/dataset \
+              --output "$CANDIDATE_PATH" \
+              --epochs 10
+            cargo xtask training-data push \
+              --destination training-data-lake \
+              --path "$CANDIDATE_PATH" \
+              --manifest /workspace/governance/source-manifest.json \
+              --lakefs-ref "$LAKEFS_REF" \
+              --readiness /workspace/governance/readiness.json \
+              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+{{- else if eq $trainer "sface" }}
+            cargo xtask training-data readiness-gate \
+              --manifest /workspace/governance/source-manifest.json \
+              --lakefs-ref "$LAKEFS_REF" \
+              --readiness /workspace/governance/readiness.json
+            cargo xtask sface-train \
+              --data /workspace/dataset \
+              --output "$CANDIDATE_PATH" \
+              --epochs 10
+            cargo xtask training-data push \
+              --destination training-data-lake \
+              --path "$CANDIDATE_PATH" \
+              --manifest /workspace/governance/source-manifest.json \
+              --lakefs-ref "$LAKEFS_REF" \
+              --readiness /workspace/governance/readiness.json \
+              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+{{- else }}
+            echo "PAD liveness candidate training is unavailable: the governed PAD dataset descriptor exists, but no PAD optimizer/trainer has landed. Refusing to fabricate a candidate." >&2
+            exit 2
+{{- end }}
         env:
+{{- if eq $trainer "document-detector" }}
           - name: DATASET_URI
             value: "{{`{{workflow.parameters.dataset_uri}}`}}"
+{{- else if ne $trainer "pad-liveness-pending" }}
+          - name: LAKEFS_REF
+            value: "{{`{{workflow.parameters.lakefs_ref}}`}}"
+{{- end }}
+          - name: CANDIDATE_PATH
+            value: {{ printf "/workspace/candidate-%s-{{workflow.name}}.safetensors" $id | quote }}
           - name: TRAINING_RUN_ID
             value: "{{`{{workflow.parameters.run_name}}`}}"
           - name: WEBANK_LAKEFS_ENDPOINT
@@ -137,6 +274,7 @@ spec:
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: {{ $training.otel.endpoint | quote }}
           - name: OTEL_SERVICE_NAME
-            value: webank-document-detector-train
+            value: {{ printf "webank-%s-train" $id | quote }}
         resources:
           {{- toYaml $training.gpu.resources | nindent 10 }}
+{{- end }}

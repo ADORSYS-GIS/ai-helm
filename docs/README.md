@@ -69,6 +69,7 @@ Step-by-step runbooks, setup guides, and break-glass recipes.
 | [`gateway-api-usage.md`](playbooks/gateway-api-usage.md) | **Command reference for calling the models from outside the cluster** — `/v1/models`, image generation, chat completions, streaming, vision, embeddings, and the failure table. ⚠️ Image responses default to an in-pod `127.0.0.1` URL; always pass `response_format: b64_json`. Verified live |
 | [`lakefs-sso.md`](playbooks/lakefs-sso.md) | **LakeFS Keycloak SSO** via the `lakefs-proxy` session shim (ADR-0090): why LakeFS OSS 1.83 has no OIDC and is single-user, the securecookie relay, the admin-credential runbook, symptom→fix table |
 | [`mlops-app-auth.md`](playbooks/mlops-app-auth.md) | **Argo Workflows SSO/RBAC + MLflow OIDC** (ADR-0085, ADR-0091): the three independent Argo identities (SSO delegate / workflow pod / API client), `code:7` vs `code:5`, the `<sa>.service-account-token` name, Argo Events CRD stubs, `--auth-mode=client` for CI, the `mlflow-oidc-auth` plugin's dedicated DB + the `OIDC_AUDIENCE` bearer gate, mounting the LakeFS key in a workflow step |
+| [`webank-model-workflows.md`](playbooks/webank-model-workflows.md) | **Webank dataset and training workflow submission** — choose each model's explicit Argo template, provide governed inputs, verify GPU placement, and handle the PAD fail-closed path |
 
 ---
 
@@ -149,7 +150,7 @@ Operational subsystems with several files keep their own directory + local index
 | [`solutions-team/`](./solutions-team/) | Solutions-team runbooks (e.g. graphify setup) |
 | [`mlops-access-model.md`](patterns/mlops-access-model.md) | **MLOps access model** (ADR-0085/0090/0091): who can reach LakeFS / Argo Workflows / MLflow and as what — humans vs in-cluster workloads vs external scripts, the credential inventory, the end-to-end training-job path, and the known limitations |
 | [`mlops-platform-consumer-guide.md`](integrations/mlops-platform-consumer-guide.md) | **Consuming the MLOps platform from another team/repo** (ADR-0085/0090/0091): endpoints, machine auth per app, the training-job recipe, and what to request from the maintainer |
-| [`webank-training-deployment.md`](integrations/webank-training-deployment.md) | **Webank governed training deployment** — the chart-owned Argo WorkflowTemplate, GPU placement, credential boundaries, and candidate-run submission contract |
+| [`webank-training-deployment.md`](integrations/webank-training-deployment.md) | **Webank governed dataset and training deployment** — ten explicit Argo templates, model-specific input contracts, GPU placement, and credential boundaries |
 
 ---
 
