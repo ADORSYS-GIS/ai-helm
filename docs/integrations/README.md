@@ -17,4 +17,4 @@ other categories.
 | [keycloak-identity-datasource.md](keycloak-identity-datasource.md) | Resolving `user_id` → person, sessions & grants (ADR-0063/0064) |
 | [homepage.md](homepage.md) | Homepage central hub — the `gethomepage.dev/*` discovery-annotation convention for adding new apps (ADR-0089) |
 | [mlops-platform-consumer-guide.md](mlops-platform-consumer-guide.md) | **Using the MLOps platform from another repo/team** — endpoints, how a script or training job authenticates to LakeFS/MLflow/Argo, and the end-to-end training recipe |
-| [webank-training-deployment.md](webank-training-deployment.md) | **Webank governed training deployment** — the Argo WorkflowTemplate, Hetzner RTX 4000 Ada placement, LakeFS/MLflow credential boundaries, and manual submission contract |
+| [webank-training-deployment.md](webank-training-deployment.md) | **Webank governed dataset and training deployment** — the ten public Argo templates, GPU placement, LakeFS credential boundary, and model-specific contracts |

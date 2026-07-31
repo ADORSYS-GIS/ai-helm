@@ -1,8 +1,9 @@
-# Environment-neutral structure for the Webank training WorkflowTemplate.
+# Environment-neutral structure for Webank's public dataset-build and training
+# WorkflowTemplates. Environment literals belong in ai-helm-values; this chart
+# fails closed when they are absent.
 # Deployment literals belong in ai-helm-values; this chart fails closed when
 # they are absent, so ArgoCD cannot silently install an unsafe default.
 workflow:
-  name: webank-document-detector-train
   activeDeadlineSeconds: 21600
   ttlSecondsAfterCompletion: 259200
   serviceAccountName: argo-workflow
@@ -33,3 +34,8 @@ training:
     batchSize: 1
     learningRate: 0.001
     shrinkRatio: 0.6
+
+# One entry produces exactly two public WorkflowTemplates: `<id>-dataset-build`
+# and `<id>-train`. Keep model-specific commands in the chart, selected by the
+# closed `trainer` enum below; values never provide executable shell text.
+models: []

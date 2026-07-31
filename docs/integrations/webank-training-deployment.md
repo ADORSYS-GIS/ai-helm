@@ -1,73 +1,74 @@
-# Document-detector governed training deployment
+# Webank governed dataset and training deployment
 
-The `webank-training` chart installs the namespaced Argo
-`WorkflowTemplate` `webank-document-detector-train` in `mlops`. It is a
-manual candidate-training route for the document detector, not a scheduler,
-dataset builder, or model-serving deployment.
+The `webank-training` chart installs a deliberately small, public Argo
+WorkflowTemplate catalogue in `mlops`. Each governed model has two separate
+templates in the dashboard: one for restricted dataset materialization and one
+for GPU candidate training. This is the deployment boundary for
+[Webank ADR-0034](https://github.com/ADORSYS-GIS/webank-models/blob/main/docs/adr/0034-training-job-orchestration-argo-workflows.md);
+it is neither a scheduler nor a model-serving deployment.
 
-It implements Webank
-[ADR-0034](https://github.com/ADORSYS-GIS/webank-models/blob/main/docs/adr/0034-training-job-orchestration-argo-workflows.md).
-The deployment values, including the immutable GPU-training image digest, live
-in the private `ai-helm-values` repository.
+| Model | Dataset template | Training template |
+| --- | --- | --- |
+| Document detector | `webank-document-detector-dataset-build` | `webank-document-detector-train` |
+| Document recognizer | `webank-document-recognizer-dataset-build` | `webank-document-recognizer-train` |
+| Face detector | `webank-face-detector-dataset-build` | `webank-face-detector-train` |
+| SFace | `webank-sface-dataset-build` | `webank-sface-train` |
+| PAD liveness | `webank-pad-liveness-dataset-build` | `webank-pad-liveness-train` |
 
-## Dashboard submission
+Each object has exactly one named template and fixes its own `entrypoint`
+(`build` or `train`). The Argo UI therefore cannot turn an implementation
+stage into an alternative public operation.
 
-In the Argo UI, select the `webank-document-detector-train` WorkflowTemplate
-and leave **Entrypoint** set to `train`.
+## Dataset-build templates
 
-The UI also lists `readiness-gate` and `gpu-train-and-publish-candidate` because
-they are Argo implementation templates. They are not alternate public
-workflows. `train` is the only supported entrypoint and fixes the ordering:
+`*-dataset-build` templates are CPU-only restricted-plane operations. The
+Argo submission form requires three governed artifacts:
 
-```text
-train
-  -> readiness-gate (CPU only)
-  -> gpu-train-and-publish-candidate (one GPU)
-```
+- `source` — the model-specific source metadata;
+- `manifest` — the RFC-0006 source manifest; and
+- `readiness` — the matching attestation.
 
-The submission fields are:
+It also requires `lakefs_ref`, the immutable commit declared by those two
+governance documents. The container materializes the model-specific descriptor
+and calls the narrow `training-data push` LakeFS boundary. It never accepts a
+dataset path or arbitrary shell command from the dashboard.
 
-| Field | Value |
-| --- | --- |
-| `dataset_uri` | Required immutable URI: `lakefs://repository/64-character-commit/dataset-version`. It must name an approved, published document-detector training archive. Branches, local paths, raw source data, and moving refs are rejected. |
-| `run_name` | Optional correlation name. It defaults to `document-detector-<Argo workflow name>` so every submission has a unique identity. Override it only for a deliberately named experiment; never include personal or source-record data. |
+The current materializers deliberately produce metadata descriptors. They do
+not invent document, biometric, identity, or PAD bytes. A data repository must
+provide an approved model-specific source and its governed artifact contract
+before an operator starts one of these templates.
 
-Do not submit this template while LakeFS has no approved document-detector
-dataset. A missing `dataset_uri` is intentionally rejected by Argo before a
-Workflow is created; it must not be replaced with a fake or blank default.
+## Training templates
 
-## Producing the required dataset URI
+All `*-train` templates select `role=gpu`, tolerate
+`role=gpu:NoSchedule`, and request one `nvidia.com/gpu`. A submitted training
+workflow therefore cannot land on a CPU-only node.
 
-Dataset publication is a distinct, restricted-plane operation. The Python
-builder in
-[webank-models](https://github.com/ADORSYS-GIS/webank-models/tree/main/tools/document-detector-dataset)
-creates the typed archive from approved source records. A governed LakeFS push
-then returns the immutable commit used in `dataset_uri`.
+The document detector accepts one `dataset_uri` in the immutable form
+`lakefs://repository/64-character-commit/dataset-version`; its runtime checks
+out and gates the archive itself. The recognizer, face-detector, and SFace
+templates take a governed `dataset`, `manifest`, and `readiness` artifact plus
+the matching `lakefs_ref`; they run their closed, model-specific Rust trainer
+only after the readiness gate passes. All successful trainers write candidates
+back only through `training-data push`, never to the model registry.
 
-1. Build and review the archive, source manifest, and readiness attestation in
-   the restricted plane.
-2. Push the reviewed archive through `cargo xtask training-data push` to the
-   repository named by the governed manifest.
-3. Record the returned LakeFS commit and the manifest `dataset_version`.
-4. Submit `train` with
-   `lakefs://<repository>/<returned-commit>/<dataset-version>`.
+`run_name` is optional on every training template. Its default includes the
+generated Argo workflow name, so it is unique even when the operator leaves
+the form untouched. Use an override only for an intentional experiment and
+never include source-record or personal data.
 
-The workflow downloads that exact archive, verifies its embedded governance
-files on CPU, and only then requests the GPU. A successful run publishes a
-candidate; it is not production promotion evidence.
+The PAD liveness template is visible intentionally but **fails closed**: PAD
+has a governed descriptor materializer, while a PAD optimizer/trainer has not
+landed. It emits no checkpoint and cannot fabricate a candidate. That gap must
+be closed in `webank-models` before a real PAD training submission is possible.
 
-## Model-specific workflow surface
+Use the [model workflow playbook](../playbooks/webank-model-workflows.md) for
+the dashboard submission sequence and failure handling.
 
-Each model gets its own public WorkflowTemplate when its dataset contract and
-trainer exist. The document detector is the first deployed template. Do not add
-new model behaviour as an extra entrypoint or optional parameter to this
-template: that obscures the governed data contract and makes the dashboard form
-unsafe.
+## Credentials and delivery
 
-## Placement and credentials
-
-The GPU task is constrained to `role=gpu`, tolerates the matching
-`role=gpu:NoSchedule` taint, and requests exactly `nvidia.com/gpu: 1`. The
-readiness gate is CPU-only. LakeFS credentials are mounted from the
-platform-managed `mlops` Secret only inside workflow pods and are never passed
-through dashboard parameters or committed to Git.
+LakeFS credentials are mounted only into the restricted workflow pods from the
+platform-managed `mlops` Secret. They are never dashboard parameters or Git
+values. The immutable GPU training image and all endpoint/placement literals
+live in the private `ai-helm-values` repository. Argo CD renders the public
+catalogue from the OCI chart plus those values.
