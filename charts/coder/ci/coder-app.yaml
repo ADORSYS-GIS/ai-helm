@@ -12,9 +12,18 @@
 #   - resource requests/limits → tuned for prod load
 #   - replicaCount → 1 (HA is Enterprise-only)
 #
-# Certificate strategy: DNS-01 ACME with wildcard cert `*.coder-ai.camer.digital`
-# (Cloudflare issuer). Workspace apps use wildcard subdomains.
+# Certificate strategy: HTTP-01 ACME for the dashboard host + DNS-01 ACME for the
+# workspace wildcard cert `*.coder-ws.camer.digital` (cert-cloudflare issuer).
 # CODER_DISABLE_PATH_APPS=true (path-based apps disabled).
+#
+# ⚠️ The workspace wildcard is NOT a subdomain of the dashboard host. The
+# cert-cloudflare DNS-01 solver can only validate names in zones Cloudflare
+# actually serves; `ai.camer.digital` is NS-delegated to AWS Route53, so a
+# `*.coder.ai.camer.digital` challenge pends forever (cert-manager writes the
+# _acme-challenge TXT into Cloudflare, Route53 answers the lookup). Keeping
+# workspace apps on a sibling domain is also Coder's own recommendation — a
+# workspace app then cannot read cookies scoped to the dashboard domain.
+# See docs/integrations/coder-workspace-urls.md.
 
 coder:
   env:
@@ -33,10 +42,11 @@ coder:
       value: "https://coder.ai.camer.digital"
 
     # Wildcard workspace access — workspace agents and workspace ports reach
-    # workspaces via wildcard subdomains (e.g. my-workspace.coder.ai.camer.digital).
-    # DNS-01 ACME via Cloudflare.
+    # workspaces via wildcard subdomains, e.g. a Vite dev server on port 5173 at
+    # 5173--main--my-workspace--user.coder-ws.camer.digital. DNS-01 ACME via
+    # Cloudflare. See the header note for why this is not under CODER_ACCESS_URL.
     - name: CODER_WILDCARD_ACCESS_URL
-      value: "*.coder.ai.camer.digital"
+      value: "*.coder-ws.camer.digital"
 
     # Path-based workspace apps disabled (CODER_DISABLE_PATH_APPS=true).
     # Workspaces are accessible only via wildcard subdomains.
@@ -164,7 +174,7 @@ coder:
     enable: true
     className: "traefik"
     host: "coder.ai.camer.digital"
-    wildcardHost: "*.coder.ai.camer.digital"
+    wildcardHost: "*.coder-ws.camer.digital"
     tls:
       enable: true
       secretName: coder-tls

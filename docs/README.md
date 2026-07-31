@@ -87,6 +87,7 @@ How to integrate against, or consume, a specific product or surface.
 | [`opencode-well-known.md`](integrations/opencode-well-known.md) | opencode `.well-known/opencode` flow at `ai.camer.digital`; prerequisites, plugin install, troubleshooting |
 | [`opencode-plugins-research.md`](integrations/opencode-plugins-research.md) | OpenCode plugins/extensions research (the vymalo toolbelt, skills, MCP surfaces) |
 | [`coder-platform-integration.md`](integrations/coder-platform-integration.md) | Coder re-integration evaluation: Keycloak OIDC, Grafana, LibreChat MCP, OpenCode auth (ADR-0027 removal + re-intro reqs; issue #651) |
+| [`coder-workspace-urls.md`](integrations/coder-workspace-urls.md) | Public workspace URLs via wildcard subdomains (`*.coder-ws.camer.digital`): the DNS-01 wildcard cert, why the wildcard cannot live under `ai.camer.digital` (Route53 delegation vs the Cloudflare solver), verification + rollback |
 | [`keycloak-identity-datasource.md`](integrations/keycloak-identity-datasource.md) | Resolving `user_id` → person, sessions & grants (ADR-0063/0064): read-only Keycloak Postgres datasource, the dashboards, the KC 26 `offline_flag` trap, cross-repo layout + runbook |
 | [`homepage.md`](integrations/homepage.md) | Homepage central hub — the `gethomepage.dev/*` discovery-annotation convention for adding new apps to the hub (ADR-0089) |
 
