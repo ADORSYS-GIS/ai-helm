@@ -105,13 +105,38 @@ which one you have first — a **declared app** is a `coder_app` resource in the
 template; a **raw port** is anything a user just started inside the workspace
 (`next dev`, `vite`, `python -m http.server`).
 
-Everything below uses the CLI (`coder login https://coder.ai.camer.digital`) and
-its session token for API calls:
+Everything below uses the CLI and its session token for API calls:
 
 ```bash
+curl -fsSL https://coder.ai.camer.digital/install.sh | sh   # installs the matching version
+coder login https://coder.ai.camer.digital
+
 TOKEN=$(cat ~/.config/coderv2/session)
 CODER_URL=https://coder.ai.camer.digital
 ```
+
+<details>
+<summary>Two CLI warnings you can ignore</summary>
+
+Both go to **stderr**, so neither corrupts a piped stdout:
+
+```
+version mismatch: client v2.35.2+5c2838a, server v2.34.6+660dc56
+download v2.34.6+660dc56 with: 'curl -fsSL https://coder.ai.camer.digital/install.sh | sh'
+```
+A newer CLI than the server. Harmless for everything in this guide. The install
+one-liner above pins you to the server's version if you want it silenced — worth
+doing before reporting any CLI bug, since a mismatch is the first thing to rule out.
+
+```
+WARN: Failed to get devcontainers for agent main: ... unexpected status code 500:
+Could not get containers ... dial unix /var/run/docker.sock: no such file or directory
+```
+`coder show` probing for devcontainers on a template that has no Docker socket.
+Expected on our Kubernetes templates; it does not affect the agent, the workspace,
+or app URLs.
+
+</details>
 
 > ⚠️ **A reachable URL is not an accessible one.** Both kinds of app default to
 > share level `owner` — the URL resolves and serves TLS, but returns **HTTP 303**
@@ -220,7 +245,7 @@ This is the common case — someone runs `next dev` / `vite` / `python -m http.s
 inside a workspace and wants to hand a colleague or a client a link. The port is
 reachable the moment the process binds, but it is `owner`-only until you share it.
 
-Three interfaces, and only two of them can publish:
+Four interfaces, only two of which can publish:
 
 | Interface | Find the URL | Change share level |
 |---|---|---|
@@ -230,13 +255,19 @@ Three interfaces, and only two of them can publish:
 | **CLI** | ❌ | ❌ |
 
 **MCP is discovery-only.** `coder_workspace_port_forward` takes
-`{"workspace":"K-workspace.main","port":3000}` and returns the finished URL —
-the cleanest way to get one programmatically, since it avoids hand-assembly and
-the 63-character arithmetic. But no MCP tool sets a share level, so an agent can
-tell you where an app *would* be published and cannot publish it. (Note
-`coder_workspace_list_apps` returns each app's raw `url` field — for a
-`subdomain = false` app that is the *internal* `http://localhost:PORT`, not a
-public URL.)
+`{"workspace":"K-workspace.main","port":3000}` and returns the finished URL — the
+tidiest lookup, since it avoids hand-assembly and the 63-character arithmetic. But
+no MCP tool sets a share level, so an agent can tell you where an app *would* be
+published and cannot publish it. (Note `coder_workspace_list_apps` returns each
+app's raw `url` field — for a `subdomain = false` app that is the *internal*
+`http://localhost:PORT`, not a public URL.)
+
+> ⚠️ **`coder exp mcp` is explicitly experimental.** `coder exp --help` describes
+> the whole namespace as *"Internal commands for testing and experimentation.
+> These are prone to breaking changes with no notice."* Fine for interactive use
+> and for agents that can adapt; do **not** build durable tooling or CI on the
+> tool names or their output shapes. The `/api/v2` endpoints above are the stable
+> contract — prefer them for anything automated.
 
 **There is no CLI subcommand.** `coder port-forward` is *local* forwarding to your
 own machine, and `coder sharing` shares the whole workspace with named users —
