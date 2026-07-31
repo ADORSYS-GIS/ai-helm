@@ -572,14 +572,19 @@ backends:
   # ⚠️ `prefix: /v1` — LocalAI registers `/v1/images/generations` and `/v1/models`.
   # The retired home-GPU backend used `/`, which strips the version segment and
   # 404s.
-  z-image-turbo-local:
+  #
+  # ⚠️ RENAMED 2026-07-31 (issue #830): `z-image-turbo-local` → `z-image-turbo-internal`
+  # to follow the `-internal` suffix convention for disableExternal models (see the
+  # comment block above `models:` in this file). ai-helm-values must update any
+  # reference to this backend key in the same commit window.
+  z-image-turbo-internal:
     schema: OpenAI
     prefix: "/v1"
     fqdn:
       hostname: z-image-turbo.inference.svc.cluster.local
       port: 8080
     securityType: APIKey
-    resourceName: z-image-turbo-local-svc
+    resourceName: z-image-turbo-internal-svc
     secretRef:
       name: z-image-turbo-api-key
     externalSecret:
@@ -619,10 +624,11 @@ models:
 #  rather than left `enabled: false`, because a disabled entry still reads like
 #  something that could come back, and these cannot: the servers no longer exist.
 #
-#  Today `-local` is exactly: qwen3-vl-4b-thinking-local (vision-language) and
-#  z-image-turbo-local (image generation) — one per fleet card. Both text tiers
-#  (openmythos-27b-local, qwen3-8b-fast-local) are disabled. If you add another,
-#  it is on the fleet or it does not carry -local.
+#  Today `-local` is exactly: qwen3-vl-4b-thinking-local (vision-language). Both
+#  text tiers (openmythos-27b-local, qwen3-8b-fast-local) are disabled. If you
+#  add another, it is on the fleet or it does not carry -local.
+#  Note: z-image-turbo (image generation) was renamed to z-image-turbo-internal
+#  (issue #830) and carries `-internal`, not `-local`, because it is internal-only.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ⚠️ INTERNAL-ONLY MODELS CARRY AN `-internal` SUFFIX (2026-07-28).
@@ -842,9 +848,21 @@ models:
   # install: LocalAI will fetch the `download_files` weights and cosign-verify the
   # backend for real (ADR-0105 flagged both as untested). Re-confirm one 1024×1024
   # generation after the first sync before treating this as done.
-  z-image-turbo-local:
+  #
+  # ⚠️ RENAMED 2026-07-31 (issue #830): `z-image-turbo-local` → `z-image-turbo-internal`
+  # (disableExternal: true — internal-plane only, LibreChat consumer only). Following
+  # the `-internal` suffix convention for models not exposed on api.ai.camer.digital.
+  # ⚠️ Cross-repo: ai-helm-values must rename any reference to `z-image-turbo-local`
+  # → `z-image-turbo-internal` (x-ai-eg-model header, allowed-model lists, token tables)
+  # in the same deployment window, or internal callers 404.
+  z-image-turbo-internal:
     enabled: true
     kind: image
+    # Blocked on the external host (api.ai.camer.digital) — only reachable on
+    # the internal plane (LibreChat and other in-cluster callers). The image-gen
+    # agent is a LibreChat-only consumer; external exposure is unnecessary attack
+    # surface (issue #830).
+    disableExternal: true
     minBackends: 1                   # one GPU, one backend, by design
     timeout:
       # 8 distilled steps at 1024×1024 is ~32 s — but the model holds a Mutex and
@@ -874,8 +892,8 @@ models:
       standard:
         effectivePerRequest: 0.0100
     backends:
-      z-image-turbo-local:
-        ref: z-image-turbo-local
+      z-image-turbo-internal:
+        ref: z-image-turbo-internal
         priority: 0
         # ⚠️ The id the ENGINE serves, read off /v1/models — not the catalog key.
         # Lowercase `z-image-turbo` because we define the model ourselves under
