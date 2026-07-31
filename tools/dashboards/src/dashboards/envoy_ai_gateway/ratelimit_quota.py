@@ -260,6 +260,25 @@ def _panel_live_census() -> table.Panel:
     # useful for watching the rollout finish. The $billing_period Mimir filter
     # above can't show this: it only ever sees keys the exporter has already
     # scraped and relabeled, not the raw-key rotation state.
+    #
+    # ⚠️ Two Grafana-model gotchas here, both pre-dating this file (verified
+    # against Grafana's own source, packages/grafana-data/src/text/string.ts
+    # + public/app/features/transformers/extractFields/{types,fieldExtractors}.ts,
+    # v12.3.1 — the pinned chart version, charts/observability/values.yaml):
+    #   1. `format` must be the literal `FieldExtractorID` enum value
+    #      `"regexp"`, not `"regex"` — an unrecognized format id fails the
+    #      WHOLE transform with "Error transforming data: unknown extractor"
+    #      (the registry has no `"regex"` entry: json|kvp|auto|regexp|delimiter).
+    #   2. The pattern must be wrapped in `/…/` delimiters, like a JS regex
+    #      literal. `stringToJsRegex` special-cases this: `stringStartsAsRegEx`
+    #      only checks the FIRST character is `/`; without both delimiters the
+    #      whole option is silently discarded and Grafana falls back to its own
+    #      built-in default `/(?<NewField>.*)/` — which is exactly why the
+    #      table used to render one big "NewField" column holding the whole raw
+    #      key instead of Account/Model/Billing period, with no error at all.
+    #      (The trailing `/` before `stringToJsRegex`'s own non-greedy `.*?`
+    #      still finds the TRUE closing delimiter correctly across our
+    #      pattern's internal `/`s — verified live, not just reasoned about.)
     return (
         table.Panel()
         .title("Live limiter counters — direct from Redis (zero scrape-lag)")
@@ -272,12 +291,12 @@ def _panel_live_census() -> table.Panel:
                 id_val="extractFields",
                 options={
                     "source": "key",
-                    "format": "regex",
+                    "format": "regexp",
                     "regExp": (
-                        r"^(?:.*/converse/(?<Model>[^/]+)/)?"
+                        r"/^(?:.*\/converse\/(?<Model>[^/]+)\/)?"
                         r".*_rule-\d+-match-0_(?<Account>.+?)_rule-\d+-match-1"
                         r"(?:_rule-\d+-match-1)?"
-                        r"(?:_rule-\d+-match-2_(?<BillingPeriod>\d{4}-\d{2}))?"
+                        r"(?:_rule-\d+-match-2_(?<BillingPeriod>\d{4}-\d{2}))?/"
                     ),
                     "keepFields": True,
                 },
