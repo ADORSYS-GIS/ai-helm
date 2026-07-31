@@ -56,6 +56,14 @@ spec:
      → the counter ticks +1/req instead of +micro-USD → budget effectively
      UNLIMITED (worse than per-model). `monthlyBudget.enabled` defaults false;
      flip it (and ai-model `sharedBudget.enabled`) TOGETHER only after the upgrade.
+
+     ADR-0111: the key also includes x-billing-period, a calendar "YYYY-MM"
+     marker this chart's Lua EnvoyExtensionPolicy (envoyextensionpolicy-billing-
+     period.yaml) stamps on every request. `unit: Month` below is actually a
+     fixed 30-day (2,592,000s) epoch window, not a true calendar month, so
+     without the marker the budget window drifts off-calendar by ~5 days/year.
+     Folding it into the key makes a fresh counter start every 1st
+     automatically; the old key just ages out on its existing 30-day TTL.
   */ -}}
   {{- with $btp.monthlyBudget }}
   {{- if .enabled }}
@@ -80,6 +88,13 @@ spec:
                   name: x-billing-plan
                   type: Exact
                   value: {{ $plan.id | quote }}
+                - invert: false
+                  # ADR-0111: calendar billing-month marker (stamped by the Lua
+                  # EnvoyExtensionPolicy in this chart) folded into the key so
+                  # the counter naturally rotates on the 1st instead of drifting
+                  # on Envoy Gateway's fixed 30-day `unit: Month` epoch window.
+                  name: x-billing-period
+                  type: Distinct
           limit:
             requests: {{ mulf $plan.monthlyBudgetUsd 1000000.0 | int64 }} # rule/{{ $i }} · {{ $plan.id }} shared monthly budget ${{ $plan.monthlyBudgetUsd }} across ALL models
             unit: Month
