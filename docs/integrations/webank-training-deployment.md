@@ -7,13 +7,13 @@ for GPU candidate training. This is the deployment boundary for
 [Webank ADR-0034](https://github.com/ADORSYS-GIS/webank-models/blob/main/docs/adr/0034-training-job-orchestration-argo-workflows.md);
 it is neither a scheduler nor a model-serving deployment.
 
-| Model | Dataset template | Training template |
+| Model | Dataset template → LakeFS destination | Training template → LakeFS destination |
 | --- | --- | --- |
-| Document detector | `webank-document-detector-dataset-build` | `webank-document-detector-train` |
-| Document recognizer | `webank-document-recognizer-dataset-build` | `webank-document-recognizer-train` |
-| Face detector | `webank-face-detector-dataset-build` | `webank-face-detector-train` |
-| SFace | `webank-sface-dataset-build` | `webank-sface-train` |
-| PAD liveness | `webank-pad-liveness-dataset-build` | `webank-pad-liveness-train` |
+| Document detector | `webank-document-detector-dataset-build` → `ds-document-detector/main` | `webank-document-detector-train` → `model-document-detector/main` |
+| Document recognizer | `webank-document-recognizer-dataset-build` → `ds-document-recognizer/main` | `webank-document-recognizer-train` → `model-document-recognizer/main` |
+| Face detector | `webank-face-detector-dataset-build` → `ds-face-detector/main` | `webank-face-detector-train` → `model-face-detector/main` |
+| SFace | `webank-sface-dataset-build` → `ds-sface/main` | `webank-sface-train` → `model-sface/main` |
+| PAD liveness | `webank-pad-liveness-dataset-build` → `ds-pad-liveness/main` | `webank-pad-liveness-train` → `model-pad-liveness/main` |
 
 Each object has exactly one named template and fixes its own `entrypoint`
 (`build` or `train`). The Argo UI therefore cannot turn an implementation
@@ -31,7 +31,9 @@ Argo submission form requires three governed artifacts:
 It also requires `lakefs_ref`, the immutable commit declared by those two
 governance documents. The container materializes the model-specific descriptor
 and calls the narrow `training-data push` LakeFS boundary. It never accepts a
-dataset path or arbitrary shell command from the dashboard.
+dataset path, LakeFS destination, or arbitrary shell command from the
+dashboard. The destination repository and `main` branch come only from the
+model's reviewed `ai-helm-values` entry and must exist before the first run.
 
 The current materializers deliberately produce metadata descriptors. They do
 not invent document, biometric, identity, or PAD bytes. A data repository must
@@ -44,13 +46,15 @@ All `*-train` templates select `role=gpu`, tolerate
 `role=gpu:NoSchedule`, and request one `nvidia.com/gpu`. A submitted training
 workflow therefore cannot land on a CPU-only node.
 
-The document detector accepts one `dataset_uri` in the immutable form
-`lakefs://repository/64-character-commit/dataset-version`; its runtime checks
-out and gates the archive itself. The recognizer, face-detector, and SFace
+The document detector accepts `dataset_ref` and `dataset_version`; its runtime
+combines them with the fixed `ds-document-detector` repository to check out and
+gate `lakefs://ds-document-detector/64-character-commit/dataset-version`.
+The recognizer, face-detector, and SFace
 templates take a governed `dataset`, `manifest`, and `readiness` artifact plus
 the matching `lakefs_ref`; they run their closed, model-specific Rust trainer
 only after the readiness gate passes. All successful trainers write candidates
-back only through `training-data push`, never to the model registry.
+back only through `training-data push` into the fixed per-model `model-*`
+repository, never to the model registry.
 
 `run_name` is optional on every training template. Its default includes the
 generated Argo workflow name, so it is unique even when the operator leaves

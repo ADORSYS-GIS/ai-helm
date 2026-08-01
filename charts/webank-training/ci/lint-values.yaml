@@ -4,7 +4,6 @@ training:
   image: ghcr.io/adorsys-gis/webank-train-gpu@sha256:c1774729a3bf86c1a1cd231a3d06293bf35c950bfec061726e4aa42ea24cf0e7
   lakefs:
     endpoint: http://lakefs.mlops.svc.cluster.local:80
-    candidateBranch: candidates
   otel:
     endpoint: http://alloy.observability.svc.cluster.local:4318
   gpu:
@@ -18,15 +17,30 @@ models:
   - id: document-detector
     datasetMaterializer: materialize-document-detector-descriptor
     trainer: document-detector
+    lakefs:
+      dataset: { repository: ds-document-detector, branch: main }
+      model: { repository: model-document-detector, branch: main }
   - id: document-recognizer
     datasetMaterializer: materialize-document-recognizer-descriptor
     trainer: document-recognizer
+    lakefs:
+      dataset: { repository: ds-document-recognizer, branch: main }
+      model: { repository: model-document-recognizer, branch: main }
   - id: face-detector
     datasetMaterializer: materialize-face-detector-descriptor
     trainer: face-detector
+    lakefs:
+      dataset: { repository: ds-face-detector, branch: main }
+      model: { repository: model-face-detector, branch: main }
   - id: sface
     datasetMaterializer: materialize-sface-descriptor
     trainer: sface
+    lakefs:
+      dataset: { repository: ds-sface, branch: main }
+      model: { repository: model-sface, branch: main }
   - id: pad-liveness
     datasetMaterializer: materialize-pad-descriptor
     trainer: pad-liveness-pending
+    lakefs:
+      dataset: { repository: ds-pad-liveness, branch: main }
+      model: { repository: model-pad-liveness, branch: main }
