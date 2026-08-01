@@ -5,7 +5,6 @@
 {{- if not $training.image }}{{ fail "webank-training: training.image must be an immutable image digest" }}{{- end }}
 {{- if not (contains "@sha256:" $training.image) }}{{ fail "webank-training: training.image must be digest-pinned" }}{{- end }}
 {{- if not $lakefs.endpoint }}{{ fail "webank-training: training.lakefs.endpoint is required" }}{{- end }}
-{{- if not $lakefs.candidateBranch }}{{ fail "webank-training: training.lakefs.candidateBranch is required" }}{{- end }}
 {{- if not $training.otel.endpoint }}{{ fail "webank-training: training.otel.endpoint is required" }}{{- end }}
 {{- if not $workflow.serviceAccountName }}{{ fail "webank-training: workflow.serviceAccountName is required" }}{{- end }}
 {{- if eq (len .Values.models) 0 }}{{ fail "webank-training: models must declare the public model workflow catalogue" }}{{- end }}
@@ -22,6 +21,17 @@
 {{- $id := required "webank-training: models[].id is required" $model.id -}}
 {{- $materializer := required (printf "webank-training: %s datasetMaterializer is required" $id) $model.datasetMaterializer -}}
 {{- $trainer := required (printf "webank-training: %s trainer is required" $id) $model.trainer -}}
+{{- $modelLakefs := required (printf "webank-training: %s lakefs is required" $id) $model.lakefs -}}
+{{- $datasetLakefs := required (printf "webank-training: %s lakefs.dataset is required" $id) $modelLakefs.dataset -}}
+{{- $candidateLakefs := required (printf "webank-training: %s lakefs.model is required" $id) $modelLakefs.model -}}
+{{- $datasetRepository := required (printf "webank-training: %s lakefs.dataset.repository is required" $id) $datasetLakefs.repository -}}
+{{- $datasetBranch := required (printf "webank-training: %s lakefs.dataset.branch is required" $id) $datasetLakefs.branch -}}
+{{- $candidateRepository := required (printf "webank-training: %s lakefs.model.repository is required" $id) $candidateLakefs.repository -}}
+{{- $candidateBranch := required (printf "webank-training: %s lakefs.model.branch is required" $id) $candidateLakefs.branch -}}
+{{- if ne $datasetRepository (printf "ds-%s" $id) }}{{ fail (printf "webank-training: %s dataset repository must be ds-%s" $id $id) }}{{- end }}
+{{- if ne $candidateRepository (printf "model-%s" $id) }}{{ fail (printf "webank-training: %s model repository must be model-%s" $id $id) }}{{- end }}
+{{- if ne $datasetBranch "main" }}{{ fail (printf "webank-training: %s dataset branch must be main" $id) }}{{- end }}
+{{- if ne $candidateBranch "main" }}{{ fail (printf "webank-training: %s model branch must be main" $id) }}{{- end }}
 {{- if not (has $materializer (list "materialize-document-detector-descriptor" "materialize-document-recognizer-descriptor" "materialize-face-detector-descriptor" "materialize-sface-descriptor" "materialize-pad-descriptor")) }}{{ fail (printf "webank-training: %s has an unknown dataset materializer" $id) }}{{- end }}
 {{- if not (has $trainer (list "document-detector" "document-recognizer" "face-detector" "sface" "pad-liveness-pending")) }}{{ fail (printf "webank-training: %s has an unknown trainer" $id) }}{{- end }}
 ---
@@ -38,6 +48,8 @@ metadata:
     webank.io/adr: "0034"
     webank.io/dataset-contract: "0006"
     webank.io/materialization: "metadata-descriptor"
+    webank.io/dataset-lakefs-repository: {{ $datasetRepository | quote }}
+    webank.io/dataset-lakefs-branch: {{ $datasetBranch | quote }}
 spec:
   entrypoint: build
   activeDeadlineSeconds: {{ $workflow.activeDeadlineSeconds }}
@@ -85,15 +97,18 @@ spec:
               --manifest /workspace/input/source-manifest.json \
               --lakefs-ref "$LAKEFS_REF" \
               --readiness /workspace/input/readiness.json \
-              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
-              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+              --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY"
         env:
           - name: LAKEFS_REF
             value: "{{`{{workflow.parameters.lakefs_ref}}`}}"
           - name: WEBANK_LAKEFS_ENDPOINT
             value: {{ $lakefs.endpoint | quote }}
-          - name: WEBANK_LAKEFS_CANDIDATE_BRANCH
-            value: {{ $lakefs.candidateBranch | quote }}
+          - name: WEBANK_DATASET_LAKEFS_REPOSITORY
+            value: {{ $datasetRepository | quote }}
+          - name: WEBANK_DATASET_LAKEFS_BRANCH
+            value: {{ $datasetBranch | quote }}
           - name: LAKEFS_ACCESS_KEY_ID
             valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.accessKey | quote }} } }
           - name: LAKEFS_SECRET_ACCESS_KEY
@@ -118,6 +133,10 @@ metadata:
   annotations:
     webank.io/adr: "0034"
     webank.io/observability-adr: "0035"
+    webank.io/dataset-lakefs-repository: {{ $datasetRepository | quote }}
+    webank.io/dataset-lakefs-branch: {{ $datasetBranch | quote }}
+    webank.io/model-lakefs-repository: {{ $candidateRepository | quote }}
+    webank.io/model-lakefs-branch: {{ $candidateBranch | quote }}
 {{- if eq $trainer "pad-liveness-pending" }}
     webank.io/execution-state: "blocked-by-pad-training-harness"
 {{- end }}
@@ -134,10 +153,13 @@ spec:
   arguments:
     parameters:
 {{- if eq $trainer "document-detector" }}
-      - name: dataset_uri
+      - name: dataset_ref
         description: >-
-          Required pinned document-detector LakeFS location:
-          lakefs://repository/64-character-commit/dataset-version.
+          Required immutable 64-character commit in this template's fixed
+          ds-document-detector LakeFS repository; branches and moving tags fail closed.
+      - name: dataset_version
+        description: >-
+          Required dataset version directory committed by the dataset-build workflow.
 {{- else if ne $trainer "pad-liveness-pending" }}
       - name: lakefs_ref
         description: Required immutable 64-character LakeFS commit for the dataset artifacts.
@@ -175,6 +197,7 @@ spec:
         args:
           - |
 {{- if eq $trainer "document-detector" }}
+            DATASET_URI="lakefs://${WEBANK_DATASET_LAKEFS_REPOSITORY}/${DATASET_REF}/${DATASET_VERSION}"
             cargo xtask training-data checkout-document-detector \
               --dataset-uri "$DATASET_URI" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
@@ -194,8 +217,9 @@ spec:
               --manifest /workspace/document-detector/governance/source-manifest.json \
               --lakefs-ref "$LAKEFS_SOURCE_REF" \
               --readiness /workspace/document-detector/governance/readiness.json \
-              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
-              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+              --lakefs-branch "$WEBANK_MODEL_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY"
 {{- else if eq $trainer "document-recognizer" }}
             cargo xtask training-data readiness-gate \
               --manifest /workspace/governance/source-manifest.json \
@@ -211,8 +235,9 @@ spec:
               --manifest /workspace/governance/source-manifest.json \
               --lakefs-ref "$LAKEFS_REF" \
               --readiness /workspace/governance/readiness.json \
-              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
-              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+              --lakefs-branch "$WEBANK_MODEL_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY"
 {{- else if eq $trainer "face-detector" }}
             cargo xtask training-data readiness-gate \
               --manifest /workspace/governance/source-manifest.json \
@@ -228,8 +253,9 @@ spec:
               --manifest /workspace/governance/source-manifest.json \
               --lakefs-ref "$LAKEFS_REF" \
               --readiness /workspace/governance/readiness.json \
-              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
-              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+              --lakefs-branch "$WEBANK_MODEL_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY"
 {{- else if eq $trainer "sface" }}
             cargo xtask training-data readiness-gate \
               --manifest /workspace/governance/source-manifest.json \
@@ -245,16 +271,19 @@ spec:
               --manifest /workspace/governance/source-manifest.json \
               --lakefs-ref "$LAKEFS_REF" \
               --readiness /workspace/governance/readiness.json \
-              --lakefs-branch "$WEBANK_LAKEFS_CANDIDATE_BRANCH" \
-              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT"
+              --lakefs-branch "$WEBANK_MODEL_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY"
 {{- else }}
             echo "PAD liveness candidate training is unavailable: the governed PAD dataset descriptor exists, but no PAD optimizer/trainer has landed. Refusing to fabricate a candidate." >&2
             exit 2
 {{- end }}
         env:
 {{- if eq $trainer "document-detector" }}
-          - name: DATASET_URI
-            value: "{{`{{workflow.parameters.dataset_uri}}`}}"
+          - name: DATASET_REF
+            value: "{{`{{workflow.parameters.dataset_ref}}`}}"
+          - name: DATASET_VERSION
+            value: "{{`{{workflow.parameters.dataset_version}}`}}"
 {{- else if ne $trainer "pad-liveness-pending" }}
           - name: LAKEFS_REF
             value: "{{`{{workflow.parameters.lakefs_ref}}`}}"
@@ -265,8 +294,14 @@ spec:
             value: "{{`{{workflow.parameters.run_name}}`}}"
           - name: WEBANK_LAKEFS_ENDPOINT
             value: {{ $lakefs.endpoint | quote }}
-          - name: WEBANK_LAKEFS_CANDIDATE_BRANCH
-            value: {{ $lakefs.candidateBranch | quote }}
+          - name: WEBANK_DATASET_LAKEFS_REPOSITORY
+            value: {{ $datasetRepository | quote }}
+          - name: WEBANK_DATASET_LAKEFS_BRANCH
+            value: {{ $datasetBranch | quote }}
+          - name: WEBANK_MODEL_LAKEFS_REPOSITORY
+            value: {{ $candidateRepository | quote }}
+          - name: WEBANK_MODEL_LAKEFS_BRANCH
+            value: {{ $candidateBranch | quote }}
           - name: LAKEFS_ACCESS_KEY_ID
             valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.accessKey | quote }} } }
           - name: LAKEFS_SECRET_ACCESS_KEY
