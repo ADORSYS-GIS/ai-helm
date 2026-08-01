@@ -255,7 +255,7 @@ def _panel_live_census() -> table.Panel:
                 id_val="extractFields",
                 options={
                     "source": "key",
-                    "format": "regex",
+                    "format": "regexp",
                     "regExp": (
                         r"^(?:.*/converse/(?<Model>[^/]+)/)?"
                         r".*_rule-\d+-match-0_(?<Account>.+?)_rule-\d+-match-1"
