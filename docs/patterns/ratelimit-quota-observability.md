@@ -117,6 +117,50 @@ master-router, used by one `tmscan` table for a **zero-scrape-lag** census
 > `secureJsonData.tlsCACert: $__file{/etc/ssl/certs/internal-gateway-ca.pem}` —
 > reusing the `self-signed-ca` bundle already mounted for the LLM plugin.
 
+> ⚠️ **Plugin INSTALL gotcha (found 2026-08-01, broke the whole census panel for
+> hours before being caught).** Declaring `type: redis-datasource` in
+> `datasources.yaml` is **not enough** — Grafana still needs the plugin
+> **binary**. The upstream `grafana/grafana` chart's `plugins:` values key is
+> what actually installs it (rendered into `GF_INSTALL_PLUGINS`, verified
+> against the chart's own `templates/_pod.tpl` at the pinned `10.5.15`,
+> `charts/observability/values.yaml`). Without it, the datasource *looks*
+> correctly provisioned but every query fails at RUN time: Grafana logs
+> `Could not find plugin definition for data source datasource_type=redis-
+> datasource`, and the panel shows `Datasource redis-ratelimit was not found` /
+> "No data" — no config error, no obvious hint. Confirmed live this had been
+> broken since at least 2026-07-31T13:48Z, hit by several different real users,
+> before anyone traced it back to the missing plugin. `redis-datasource` is
+> Grafana-signed (`grafana.com/api/plugins/redis-datasource` →
+> `signatureType: commercial`), so the fix is just adding it to `plugins:` in
+> `ai-helm-values environments/prod/values/grafana.yaml` — no
+> `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS` override needed (check that
+> signature field first if a future plugin addition here is unsigned).
+
+> ⚠️ **`extractFields` schema gotcha (two silent-failure traps, both pre-dating
+> the #532/#862 rewrites of this panel — invisible until the plugin-install
+> bug above was fixed, since the datasource error short-circuited the
+> transform pipeline before either could bite).** Verified against Grafana's
+> own pinned-version source
+> (`public/app/features/transformers/extractFields/{types,fieldExtractors}.ts`
+> + `packages/grafana-data/src/text/string.ts` @ v12.3.1):
+> 1. `format` must be the literal `FieldExtractorID` enum value `"regexp"` —
+>    `"regex"` isn't registered (valid values: `json`\|`kvp`\|`auto`\|`regexp`\|
+>    `delimiter`) and fails the WHOLE transform with "Error transforming data:
+>    unknown extractor".
+> 2. The pattern must be wrapped in `/…/` delimiters, like a JS regex literal —
+>    `stringToJsRegex` checks only that the first character is `/`
+>    (`stringStartsAsRegEx`); without matching delimiters the option is
+>    **silently discarded** and Grafana falls back to its own built-in default
+>    `/(?<NewField>.*)/`. No error at all — the table just renders one
+>    "NewField" column holding the entire raw key instead of your named
+>    capture groups.
+>
+> Fixed in `_panel_live_census()`, `tools/dashboards/src/dashboards/
+> envoy_ai_gateway/ratelimit_quota.py`. Verified live in the browser (Grafana's
+> panel-edit Transformations tab + a JS-console probe against real Redis keys)
+> before applying the equivalent fix in source, not just reasoned about from
+> the source code above.
+
 ## Connectivity & secrets
 
 Both paths connect to `redis-ha-haproxy.redis-system.svc:6379` (the master-router
