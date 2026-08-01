@@ -30,7 +30,7 @@ Three changes, all `BackendTrafficPolicy`-level (Gateway/routes/SecurityPolicy u
              - headers:
                  - { name: x-account-id, type: Distinct }
                  - { name: x-billing-plan, type: Exact, value: "free" }
-           limit: { requests: 15000000, unit: Month }   # micro-USD
+           limit: { requests: 15000000, unit: Year }    # micro-USD/MONTH; unit is a TTL only (ADR-0112)
            shared: true                                  # ← the lever
            cost:
              request: { from: Number, number: 0 }
@@ -57,7 +57,7 @@ Lyft ratelimit composes the Redis key as `<domain>_<generic-key>_<header-descrip
 | generic key (scope) | route identity (`…/converse/<model>/rule/…`) | `<ns>/<policy>/rule/<idx>` |
 | `Distinct` header | live value in the key (the account UUID) | same |
 | `Exact` header | position only (`rule-N-match-M`); the literal value is encoded by *which rule* matched | same |
-| window | `floor(now / unit_seconds) × unit_seconds` (Month = 2592000) | same |
+| window | `floor(now / unit_seconds) × unit_seconds` (Year = 31536000 since ADR-0112; was Month = 2592000) | same |
 | `x-billing-period` (ADR-0111, since 2026-07-31) | live value in the key (the calendar `YYYY-MM` string, e.g. `2026-08`) | same |
 
 Live examples:
@@ -68,20 +68,39 @@ NEW (shared, pre-ADR-0111):  converse-gateway/core-gateway_converse-gateway/core
 NEW (shared, ADR-0111+):     converse-gateway/core-gateway_converse-gateway/core-gateway/rule/0_rule-0-match-0_<ACCOUNT>_rule-0-match-1_<PERIOD>_<WINDOW>
 ```
 
-⚠️ **ADR-0111: the `unit: Month`/`<WINDOW>` epoch segment above is NOT a
-calendar month** — it's a fixed 2,592,000-second (30-day) rolling bucket
-anchored to the Unix epoch, confirmed against Envoy Gateway's own translator
-source. It drifts off the real calendar by ~5 days/year and no Redis
-operation can move that boundary (it's a pure function of wall-clock time).
-Since 2026-07-31, a Lua `EnvoyExtensionPolicy`
-(`charts/core-gateway/templates/envoyextensionpolicy-billing-period.yaml`)
-stamps `x-billing-period: <UTC YYYY-MM>` on every request, and every
-`unit: Month` rule keys on it as an extra `Distinct` header — so a **new**
-key (with a new `<PERIOD>` segment) is used automatically starting every 1st
-of the month, regardless of where the old 30-day `<WINDOW>` epoch happens to
-land. Pre-fix keys (no `<PERIOD>` segment) simply stop being written and age
-out on their existing TTL — no migration needed. See ADR-0111 for the full
-design and rationale.
+⚠️ **The `<WINDOW>` epoch segment is NOT a calendar month.** It's
+`floor(now/unit_seconds)*unit_seconds`, anchored to the Unix epoch — confirmed
+against Envoy Gateway's own translator source. No Redis operation can move that
+boundary; it's a pure function of wall-clock time.
+
+Two changes make the budget calendar-aligned, and **both are load-bearing**:
+
+1. **ADR-0111** — a Lua `EnvoyExtensionPolicy`
+   (`charts/core-gateway/templates/envoyextensionpolicy-billing-period.yaml`)
+   stamps `x-billing-period: <UTC YYYY-MM>` on every request, and every monthly
+   rule keys on it as an extra `Distinct` header. This is what rotates the
+   counter on the 1st.
+2. **ADR-0112** — `unit: Year`, so the `<WINDOW>` epoch stops rotating
+   underneath it.
+
+⚠️ **Why (2) is not optional.** The period marker did NOT replace the window
+epoch — both are in the key, so the counter rotates whenever **either** changes.
+With `unit: Month` the epoch kept rolling on its own 30-day grid (next would
+have been **2026-08-05**, mid-month), granting a spurious second budget ~12x a
+year *on top of* the intended 1st-of-month reset. Proven live: one account was
+found holding counters under two epochs (`1780704000` and `1783296000`). It
+fails **open** — more budget, never less — so nothing alerts. `unit: Year`
+(31,536,000s, the longest the CRD enum allows) freezes the epoch for a year,
+leaving the marker as the sole trigger.
+
+⚠️ **`unit` is a TTL, not a billing period.** `requests` stays the MONTHLY
+budget — never multiply it by 12. Reverting to `Month` silently restores the
+defect.
+
+One epoch rollover per year survives (~**2026-12-18**, then annually — December's
+effective cap is ~2x). Known, documented, accepted; see ADR-0112 for why a
+migration job was rejected. Pre-fix keys simply stop being written and age out
+on their own TTL — no migration needed.
 
 The only structural difference is the scope segment: route identity (contains the model) → policy identity (no model). On the gateway policy, `rule/0` = free budget, `rule/1` = pro.
 
@@ -140,6 +159,7 @@ re-checking a freshly-zeroed counter.
 | 2026-07-08 | #607 — EG v1.8.1 → v1.8.2 (#9244 prerequisite) |
 | 2026-07-08 | #616 — cutover: both flags ON; verified live (shared keys, µ$ charging) |
 | 2026-07-08 | #623 — free tier set to $15 shared |
-| 2026-07-31 | ADR-0111 — `x-billing-period` calendar marker folds into every `unit: Month` key; fixes the 30-day-vs-calendar-month drift permanently |
+| 2026-07-31 | ADR-0111 — `x-billing-period` calendar marker folds into every monthly-budget key |
+| 2026-08-01 | ADR-0112 — `unit: Month` → `Year`: 0111 alone left the 30-day epoch still rotating (a spurious mid-month reset, next due 2026-08-05). The marker is now the sole rotation trigger |
 | 2026-07-31 | per-minute burst limits raised 10x on every plan (spurious 429s on bursty-but-cheap usage) |
 | 2026-08-01 | free tier restored $15 → **$50** shared (back to ADR-0035), and per-minute burst **commented out entirely** — the per-model BTP now emits no rules at all, so this shared budget is the only enforced cap |
