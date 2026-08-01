@@ -453,6 +453,18 @@ lci:
                   name: '{{ .Release.Name }}-runner-signing'
                   key: signing-key
                   optional: true
+            # Externally reachable base URL advertised in the card's supportedInterfaces — must equal
+            # the public Ingress host. DEPLOYMENT-SPECIFIC → ai-helm-values; empty here.
+            A2A_BASE_URL: ""
+            # Push-notification token-signing key (ADR-0079 §3). ENCRYPTS each push config's webhook auth
+            # token on create_push_config and DECRYPTS it for the get/list echo.
+            # `optional: true` keeps the rest of the control plane running if missing.
+            A2A_PUSH_TOKEN_KEY:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-a2a-push'
+                  key: push-token-key
+                  optional: true
           probes:
             liveness:
               enabled: true
@@ -843,115 +855,6 @@ lci:
             capabilities:
               drop: [ALL]
 
-    # ── a2a (RFC-0006) ────────────────────────────────────────────────────────────────────────────
-    # The SAME control-plane image in the `a2a` role: an A2A (Agent2Agent, spec v1.0.1) server. It
-    # serves the PUBLIC agent card at /.well-known/agent-card.json (the spec requires it be public) and
-    # the OIDC-protected JSON-RPC + REST bindings (the `review` skill) on :8080, plus the metrics-only
-    # listener on :9090. It REQUIRES a DB pool (the task queue) and OIDC_ISSUER — there is NO anonymous
-    # access; the role fails readiness without them.
-    #
-    # ⚠️ INERT-BUT-SAFE until operator prerequisites exist (NOT this chart): (1) a Keycloak CLIENT for
-    # A2A callers + the `a2a:review` permission in the token claim (ADR-0023); (2) DNS for the Ingress
-    # host; (3) per-identity quota defaults (A2A_QUOTA_MAX / A2A_QUOTA_WINDOW_SECS — code defaults
-    # 20/hour). Until the Keycloak client exists callers cannot authenticate, so the surface is inert
-    # (only the public card is reachable). `enabled: false` here → inert on chart defaults;
-    # ai-helm-values enables it and supplies image tag + DATABASE_URL + OIDC_ISSUER/OIDC_AUDIENCE +
-    # A2A_BASE_URL + the Ingress per-env.
-    a2a:
-      enabled: false
-      type: deployment
-      strategy: RollingUpdate
-      # Stateless HTTP behind the Ingress; the per-identity deep-run quota is Postgres-backed
-      # (count_recent), so concurrent replicas enforce it consistently. Two for no-downtime rollouts.
-      replicas: 2
-      annotations:
-        argocd.argoproj.io/sync-wave: "2"
-      containers:
-        main:
-          image:
-            repository: ghcr.io/adorsys-gis/lightbridge-control-plane
-            # Default/fallback; overridden at sync time by ai-helm-values via the image-updater `a2a`
-            # alias (charts/apps/values.yaml), in lockstep with control-plane.
-            tag: "0.1.0"
-            pullPolicy: IfNotPresent
-          env:
-            CONTROL_PLANE_ROLE: "a2a"
-            RUST_LOG: "info"
-            # The A2A HTTP surface (card + protected bindings). :8080 is the role default; the a2a
-            # Service + Ingress (below) route to it.
-            A2A_BIND: "0.0.0.0:8080"
-            # Metrics-only listener (like dispatcher/reconciler) — /metrics + /healthz on :9090.
-            METRICS_ADDR: "0.0.0.0:9090"
-            # Externally reachable base URL advertised in the card's supportedInterfaces — must equal
-            # the public Ingress host. DEPLOYMENT-SPECIFIC → ai-helm-values; empty here.
-            A2A_BASE_URL: ""
-            # Authorization (ADR-0023): the dotted token claim carrying the caller's permissions; the
-            # `review` skill requires `a2a:review`. Keep in sync with the control-plane PERMISSIONS_CLAIM.
-            PERMISSIONS_CLAIM: "permissions"
-            # OAuth2 resource server: validate Keycloak-issued JWTs (ADR-0014). REQUIRED — the role
-            # fails readiness without OIDC_ISSUER (no anonymous access). DEPLOYMENT-SPECIFIC →
-            # ai-helm-values; empty here. OIDC_AUDIENCE mirrors the control-plane (expected token `aud`).
-            OIDC_ISSUER: ""
-            OIDC_AUDIENCE: ""
-            # Same CNPG queue (the A2A `review` skill creates a deep task). DATABASE_URL `value` →
-            # ai-helm-values; `dependsOn` stays here.
-            DB_PASSWORD:
-              valueFrom:
-                secretKeyRef:
-                  name: lightbridge-codeintel-db-role
-                  key: password
-            DATABASE_URL:
-              dependsOn: DB_PASSWORD
-              value: ""
-            # Push-notification token-signing key (ADR-0079 §3) — SHARED with the notifier. The a2a role
-            # ENCRYPTS each push config's webhook auth token on create_push_config and DECRYPTS it for the
-            # get/list echo (services/control-plane/src/a2a/mod.rs → push_token_key_from_env()); the
-            # notifier DECRYPTS it at delivery. SAME `{{ .Release.Name }}-a2a-push` ExternalSecret both
-            # roles read. `optional: true` MATTERS: without the key the code degrades gracefully (tokened
-            # CreateTaskPushNotificationConfig is rejected, tokenless webhooks still work) — it does NOT
-            # crash. Since the a2a surface is LIVE (it also serves the `review` skill), a hard secretKeyRef
-            # to a not-yet-provisioned secret would take the WHOLE surface down; optional keeps it up and
-            # only the push-token feature degrades until the operator adds the SM property. base64 32-byte.
-            A2A_PUSH_TOKEN_KEY:
-              valueFrom:
-                secretKeyRef:
-                  name: '{{ .Release.Name }}-a2a-push'
-                  key: push-token-key
-                  optional: true
-          probes:
-            # Liveness = the process/metrics server (:9090 /healthz), like the other headless roles.
-            liveness:
-              enabled: true
-              custom: true
-              spec:
-                httpGet:
-                  path: /healthz
-                  port: 9090
-                initialDelaySeconds: 5
-                periodSeconds: 15
-            # Readiness = the PUBLIC agent card on the A2A surface (:8080), so the pod is only Ready once
-            # the real HTTP surface serves. The card is unauthenticated (spec), so it is a valid probe.
-            readiness:
-              enabled: true
-              custom: true
-              spec:
-                httpGet:
-                  path: /.well-known/agent-card.json
-                  port: 8080
-                initialDelaySeconds: 5
-                periodSeconds: 10
-            startup:
-              enabled: false
-          resources:
-            requests: { cpu: 50m, memory: 64Mi }
-            limits: { cpu: 500m, memory: 256Mi }
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsUser: 1000
-            capabilities:
-              drop: [ALL]
-
     # ── notifier (RFC-0006 Phase 3 / ADR-0079) ────────────────────────────────────────────────────
     # The SAME control-plane image in the `notifier` role: a HEADLESS worker (like dispatcher/
     # reconciler) that drains the A2A push-notification outbox and delivers webhook POSTs to the URLs
@@ -1073,13 +976,6 @@ lci:
       ports:
         metrics:
           port: 9090
-    # A2A HTTP surface Service (:8080) — the Ingress routes to it. `enabled` tracks the controller.
-    a2a:
-      enabled: false
-      controller: a2a
-      ports:
-        http:
-          port: 8080
     # Metrics-only Service for the notifier role (METRICS_ADDR :9090) — same pattern as the dispatcher
     # Service above: the headless notifier has no other Service, so this gives its ServiceMonitor
     # (templates/servicemonitor.yaml) a stable Endpoints target for its push-delivery metrics. `enabled`
@@ -1099,12 +995,6 @@ lci:
     web:
       enabled: false
     control-plane:
-      enabled: false
-    # Public A2A surface (RFC-0006). OFF by default (host + issuer + TLS secret are env-specific); the
-    # FULL config (enabled + className + cert-manager annotation + host + tls) lives in ai-helm-values.
-    # ⚠️ This exposes a PUBLIC authenticated Ingress: the agent card is served unauthenticated (spec),
-    # every A2A binding behind it is OIDC-gated in-app (no anonymous access).
-    a2a:
       enabled: false
 
   # NetworkPolicies (bjw-s `networkpolicies` — rendered by bjw-common as networking.k8s.io/v1
