@@ -75,22 +75,32 @@ rateLimitBudgeting:
   # orphans every account's counter). The order below reproduces the sorted
   # order that was live on 2026-07-22 (enterprise, free, internal, pro,
   # service), so this conversion is render-neutral.
-  # ── Per-minute burst limits raised 10x across every plan (2026-07-31) ──────
-  # They were hurting UX more than they protected anything: the monthly budgets
-  # are the real guardrail, and the per-minute buckets mostly surfaced as
-  # spurious 429s on bursty-but-cheap usage.
+  # ── Per-minute burst limits REMOVED across every plan (2026-08-01) ─────────
+  # The 10x raise of 2026-07-31 was the half-measure; every `burst:` block below
+  # is now commented out, so neither per-minute rule family renders and the
+  # monthly budget is the only guardrail left. Same reasoning as the 10x pass,
+  # carried to its conclusion: the per-minute buckets protected nothing the
+  # budget doesn't, and mostly surfaced as spurious 429s on bursty-but-cheap
+  # usage. Commented rather than deleted so re-enabling a plan is one uncomment.
   #
-  # Raised rather than REMOVED, deliberately. Envoy Gateway derives each rate
-  # limit's descriptor key from its INDEX in the rendered rules array — the live
-  # config shows literal keys `rule-0-match-0`, `rule-1-match-1`, … — so deleting
-  # the two burst rules would renumber every later rule, including the monthly
-  # budget. A renumbered rule is a NEW counter key, so every user's monthly spend
-  # would silently reset to zero mid-window. This is the same append-only hazard
-  # ADR-0084/ADR-0110 exist to protect against; keeping the rules present but
-  # effectively unreachable preserves the indices.
+  # The 10x pass raised rather than removed because deleting rules RENUMBERS the
+  # ones after them, and a renumbered rule is a new Lyft counter key — i.e. a
+  # silent mid-window budget reset (the ADR-0084/ADR-0110 hazard). It called for
+  # waiting for an append-only-safe moment or accepting the reset knowingly.
+  # This is that moment, on both counts:
+  #   - Nothing is left to renumber. Under sharedBudget.enabled the per-model
+  #     budget rule doesn't render at all (it lives on the gateway-wide policy,
+  #     a DIFFERENT policy whose indices this cannot touch), and `tiers` /
+  #     `projectEnvelope` below are still empty. The burst rules are the only
+  #     rules the per-model BTP emits today, so removing them shifts no counter.
+  #   - It is the 1st of the month, and ADR-0111 put the calendar `billing_period`
+  #     in the key, so every budget counter is rotating to a fresh key regardless.
+  # Re-check both before assuming a future removal is equally free: once `tiers`
+  # or `projectEnvelope` carry entries, they render AFTER the plan rules and
+  # uncommenting a `burst:` block would shift THEIR indices.
   #
-  # To turn them off for real, wait for an append-only-safe moment (or accept the
-  # budget reset knowingly) rather than dropping the entries here.
+  # `id` is kept on every entry (even the now-empty burst-only ones) so the list
+  # keeps its length and its append-only index contract.
   plans:
     # index 0
     - id: enterprise
@@ -101,41 +111,44 @@ rateLimitBudgeting:
       # monthlyBudgetUsd DORMANT (see free); the LIVE monthly cap is
       # core-gateway backendTrafficPolicy.monthlyBudget.plans.enterprise — keep in sync.
       monthlyBudgetUsd: 1000
-      burst:
-        requestsPerMin: 8000
-        tokensPerMin: 40000000
+      # burst:
+      #   requestsPerMin: 8000
+      #   tokensPerMin: 40000000
     # index 1
     - id: free
       # Per-person monthly budget. DORMANT since the #532 shared-budget cutover
       # (sharedBudget.enabled gates the per-model rule off) — the LIVE knob is
       # core-gateway backendTrafficPolicy.monthlyBudget.plans. Kept in sync
-      # (15, 2026-07-08) so a rollback to per-model budgets keeps the same cap.
-      monthlyBudgetUsd: 15
-      burst:
-        requestsPerMin: 2000
-        # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
-        # (charts/ai-models-info) — a single max-context request no longer
-        # blows the per-minute token bucket. The monthly budget stays the real
-        # cost cap; this is just the per-minute RATE. 1M → 10M in the 10x pass.
-        tokensPerMin: 10000000
+      # (50, 2026-08-01) so a rollback to per-model budgets keeps the same cap.
+      monthlyBudgetUsd: 50
+      # burst:
+      #   requestsPerMin: 2000
+      #   # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
+      #   # (charts/ai-models-info) — a single max-context request no longer
+      #   # blows the per-minute token bucket. The monthly budget stays the real
+      #   # cost cap; this is just the per-minute RATE. 1M → 10M in the 10x pass.
+      #   tokensPerMin: 10000000
     # index 2 — in-cluster services (LibreChat, cron-jobs, k8s SAs) on the
-    # INTERNAL plane. Uncapped budget (no monthlyBudgetUsd) — burst-only.
+    # INTERNAL plane. Uncapped budget (no monthlyBudgetUsd) — was burst-only, so
+    # with burst commented out this entry now contributes NO rule at all. Kept
+    # (id only) to hold index 2.
     - id: internal
-      burst:
-        requestsPerMin: 6000
-        tokensPerMin: 20000000
+      # burst:
+      #   requestsPerMin: 6000
+      #   tokensPerMin: 20000000
     # index 3
     - id: pro
       monthlyBudgetUsd: 200
-      burst:
-        requestsPerMin: 4000
-        tokensPerMin: 20000000    # 2M → 20M in the 10x pass below
+      # burst:
+      #   requestsPerMin: 4000
+      #   tokensPerMin: 20000000    # 2M → 20M in the 10x pass
     # index 4 — remote service accounts (GitHub runners, …) on the EXTERNAL
-    # plane. Uncapped budget (no monthlyBudgetUsd) — burst-only.
+    # plane. Uncapped budget (no monthlyBudgetUsd) — likewise contributes no
+    # rule today; kept (id only) to hold index 4.
     - id: service
-      burst:
-        requestsPerMin: 6000
-        tokensPerMin: 20000000
+      # burst:
+      #   requestsPerMin: 6000
+      #   tokensPerMin: 20000000
 
   # Per-member-in-project quota tiers (ai-helm#570) — SAME append-only-list
   # contract as `plans` above, but a separate, independently-ordered list

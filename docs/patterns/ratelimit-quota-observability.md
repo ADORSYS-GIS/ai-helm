@@ -19,12 +19,13 @@
 The gateway rate-limits every request against per-account budgets
 ([ADR-0021](../adr/0021-burst-budget-billing-and-dual-plane-authconfigs.md) /
 [ADR-0035](../adr/0035-per-person-monthly-budget-and-free-50.md)): a per-model
-`BackendTrafficPolicy` keyed on `x-account-id` enforces burst (req/min,
+`BackendTrafficPolicy` keyed on `x-account-id` enforced burst (req/min,
 tokens/min); the monthly micro-USD budget moved to a single **gateway-wide**
 shared rule, one counter per (account, plan) spanning every model
-([shared-cross-model-budget.md](shared-cross-model-budget.md)). The Lyft
-ratelimit service keeps all of these counters in **redis-ha**
-(home-os `charts/home-apps/redis-ha`).
+([shared-cross-model-budget.md](shared-cross-model-budget.md)), and the burst
+rules were switched off entirely on 2026-08-01 — so that shared monthly budget
+is now the only cap enforced. The Lyft ratelimit service keeps these counters in
+**redis-ha** (home-os `charts/home-apps/redis-ha`).
 
 That current-window counter exists **nowhere else**. The cost dashboards
 ([ADR-0058](../adr/0058-precompute-gateway-usage-metrics-to-mimir.md) Mimir,
@@ -54,8 +55,13 @@ converse-gateway/core-gateway_converse-gateway/core-gateway/rule/<N>_...
 | `rule-<N>-match-2_<billing_period>` | the Distinct `x-billing-period` value — a calendar `YYYY-MM` string ([ADR-0111](../adr/0111-calendar-aligned-billing-period.md)), stamped on every request by a Lua `EnvoyExtensionPolicy`. Forces a **new** key at the real 1st-of-the-month, independent of where the `<window>` epoch below happens to land. |
 | trailing `<window>` | the legacy 30-day budget bucket start (Unix epoch, a multiple of **2592000** = Lyft's MONTH unit). A pure function of wall-clock time, so it drifts off the calendar by ~5 days/year — `billing_period` above is what actually fixes that. Value = micro-USD spent this window. The previous bucket lingers until TTL. |
 
-Burst (per-minute) keys also exist but churn every minute and are not a budget
-signal — they're deliberately not scraped. Keys written before ADR-0111
+Burst (per-minute) keys used to exist alongside these but churned every minute
+and were never a budget signal, so they were deliberately not scraped. ⚠️ **Since
+2026-08-01 they don't exist at all**: every plan's `burst:` block is commented out
+in `charts/ai-models/values.yaml`, so the per-model `BackendTrafficPolicy` now
+emits no rules whatsoever (its budget rule had already moved to the gateway-wide
+policy at the #532 cutover) and the shared monthly budgets below are the only
+rate-limit counters in Redis. Keys written before ADR-0111
 shipped have no `match-2` segment at all (no `billing_period`); they simply
 age out on their existing TTL, same lenient handling `window` already gets
 across every monthly rollover.

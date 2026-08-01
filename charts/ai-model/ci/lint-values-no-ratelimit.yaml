@@ -1,0 +1,74 @@
+# CI lint/render fixture for the ai-model LEAF chart.
+#
+# ai-model is never installed standalone — the `ai-models` orchestrator
+# (ADR-0012) instantiates it once per model, passing the per-model values its
+# templates `fail`-guard on (modelName, gatewayRef, backendsInventory, ≥2
+# enabled backends, pricing, plans). With the default values.yaml (all empty)
+# the chart intentionally refuses to render, so a standalone
+# `helm lint`/`helm template` can't exercise it.
+#
+# Companion to lint-values.yaml: the LIVE 2026-08-01 shape, where NO rule family
+# renders at all — `sharedBudget.enabled` drops the plan monthly budget, the plan
+# `burst:` blocks are commented out fleet-wide in charts/ai-models/values.yaml,
+# and `tiers`/`projectEnvelope` are still empty. `rateLimit.global.rules` is a
+# required minItems-1 list in the BackendTrafficPolicy CRD, so the template must
+# omit the whole `rateLimit:` block rather than emit an empty one — a rendered
+# empty list is rejected by the API server, which would take the per-model
+# timeout down with it. lint-values.yaml still covers every rule family; this
+# fixture covers their absence.
+modelName: ci-lint-model-no-ratelimit
+kind: text
+
+gatewayRef:
+  name: core-gateway
+  namespace: converse-gateway
+  sectionName: api-https
+  internalSectionName: api-internal
+
+minBackends: 2
+
+timeout:
+  requestTimeout: 600s
+  connectionIdleTimeout: 1h
+
+backends:
+  primary:
+    ref: deepinfra-01
+    priority: 0
+    modelNameOverride: "zai-org/GLM-5"
+  secondary:
+    ref: deepinfra-02
+    priority: 1
+    modelNameOverride: "zai-org/GLM-5"
+
+backendsInventory:
+  deepinfra-01:
+    resourceName: deepinfra-backend-01-svc
+  deepinfra-02:
+    resourceName: deepinfra-backend-02-svc
+
+pricing:
+  strategy: weighted
+  standard:
+    inputPer1M: 0.60
+    cachedInputPer1M: 0.12
+    outputPer1M: 2.08
+
+# Mirrors charts/ai-models/values.yaml as it stands today: the ordered,
+# append-only plans list with every `burst:` commented out, so the burst-only
+# plans (internal, service) carry an `id` and nothing else.
+plans:
+  - id: enterprise
+    monthlyBudgetUsd: 1000
+  - id: free
+    monthlyBudgetUsd: 50
+  - id: internal
+  - id: pro
+    monthlyBudgetUsd: 200
+  - id: service
+
+tiers: []
+projectEnvelope: {}
+
+sharedBudget:
+  enabled: true

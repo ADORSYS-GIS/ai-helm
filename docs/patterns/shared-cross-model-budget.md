@@ -109,9 +109,10 @@ redis-cli --tls --cacert /etc/redis-ca/ca.crt \
   --scan --pattern 'converse-gateway/core-gateway*'
 
 # Scoped delete: this domain is structurally exclusive to the plan-budget
-# rules (burst/req-per-min counters live on the separate per-model route
-# domain, `.../converse/<model>/...`, never here) — so this pattern cannot
-# accidentally catch a burst key. It also never touches LibreChat's session
+# rules (burst/req-per-min counters lived on the separate per-model route
+# domain, `.../converse/<model>/...`, never here — and since 2026-08-01 no
+# burst rule renders at all) — so this pattern cannot accidentally catch a
+# burst key. It also never touches LibreChat's session
 # keys (distinct `librechat-prod-v2*` prefix, same redis-ha instance).
 redis-cli --tls --cacert /etc/redis-ca/ca.crt \
   -h redis-ha-haproxy.redis-system.svc.cluster.local -p 6379 \
@@ -140,3 +141,5 @@ re-checking a freshly-zeroed counter.
 | 2026-07-08 | #616 — cutover: both flags ON; verified live (shared keys, µ$ charging) |
 | 2026-07-08 | #623 — free tier set to $15 shared |
 | 2026-07-31 | ADR-0111 — `x-billing-period` calendar marker folds into every `unit: Month` key; fixes the 30-day-vs-calendar-month drift permanently |
+| 2026-07-31 | per-minute burst limits raised 10x on every plan (spurious 429s on bursty-but-cheap usage) |
+| 2026-08-01 | free tier restored $15 → **$50** shared (back to ADR-0035), and per-minute burst **commented out entirely** — the per-model BTP now emits no rules at all, so this shared budget is the only enforced cap |
