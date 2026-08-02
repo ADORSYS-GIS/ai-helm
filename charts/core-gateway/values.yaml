@@ -345,6 +345,70 @@ extProc:
       # under concurrency were the OOM risk; this gives headroom.
       memory: "1Gi"
 
+# ────────────────────────────────────────────────────────────────────────
+# redact-extproc (ADR-0116): PII/credential redaction as a NATIVE SIDECAR in
+# this same Envoy pod, beside the `extProc` block above — sidecar is the
+# topology, ext_proc is the protocol, and AIEG already uses both; this adds a
+# second processor rather than a new one. Filter order is measured, not
+# assumed: EG v1.8.2 fixes ExtProc at `100 + index` in its own chain, and
+# AIEG's processor is inserted ahead of that table entirely, so ours always
+# runs AFTER Authorino (order 5) and AFTER AIEG — acceptable only because
+# every AIServiceBackend on this fleet is `schema.name: OpenAI` (verified
+# live), so AIEG never rewrites the body into a shape our walker won't
+# recognise. If that stops being true, `redact_uninspected_bodies_total`
+# (exported on `metricsPort`) is the alarm — see the ADR.
+#
+# ⚠️ `image.tag` is a placeholder. No `redact-extproc` image has been built
+# or published yet (Dockerfile + docker.yml entry land in
+# `lightbridge-governance`, the same repo that owns `crates/governance-redact`).
+# Do not merge this chart change to `main` until a real tag exists here —
+# `restartPolicy: Always` makes this an init container the kubelet must start
+# before the pod is Ready, so an unpullable image blocks the WHOLE gateway
+# pod, not just redaction. Values-repo-first, same shape as the ADR-0055
+# ordering rule, for the same reason: land the dependency before the chart
+# change that assumes it.
+# ────────────────────────────────────────────────────────────────────────
+redactExtproc:
+  image:
+    repository: ghcr.io/adorsys-gis/redact-extproc
+    tag: "TBD-no-image-published-yet"
+  # Loopback only — reached solely by Envoy in this same pod (shared network
+  # namespace), never over the pod network. See templates/backend-redact.yaml:
+  # the EnvoyExtensionPolicy's Backend targets `127.0.0.1` specifically so
+  # every gateway replica always talks to ITS OWN sidecar, never another
+  # replica's — a Service-selector backendRef could not guarantee that with
+  # `envoyProxy.hpa` running 3-5 replicas.
+  listenPort: 9500
+  # 0.0.0.0: unlike the gRPC port above, Alloy scrapes this cross-pod (see
+  # podmonitors-observability.yaml), so it must be reachable via the pod IP.
+  metricsPort: 9501
+  profile: coding-assistant
+  # Bytes of a streamed response held back before release — see
+  # governance_redact::holdback for the sizing rationale. Quoted in the
+  # container env (a bare number renders as a YAML float/int that Kubernetes'
+  # string-typed EnvVar.value rejects — the same class of bug as ADR-0109's
+  # `"n": 1` trap and the MAX_BODY_BYTES scientific-notation one).
+  responseHoldBackBytes: 1024
+  # Per-message ext_proc budget. The CRD default (200ms) is the whole
+  # redaction budget per chunk; regex/validator recognizers fit comfortably
+  # inside it, an NER pass would not (ADR-0115 — NER is a separate service).
+  messageTimeout: 200ms
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+  externalSecret:
+    secretStore: ssegning-aws
+    remoteKey: ai/camer/digital/prod/env
+    # ⚠️ Populate this property in ssegning-aws BEFORE this syncs, or the
+    # ExternalSecret sits in SecretSyncedError and the sidecar never starts
+    # (`optional: false` on the env — see charts/redact-gateway's own
+    # comment on why an optional ref is unacceptable for a hash salt).
+    saltProperty: redact_extproc_hash_salt
+
 # NOTE: the `mcpBackendTls` EnvoyPatchPolicy (ADR-0039) was REMOVED by ADR-0040.
 # External MCPs no longer terminate TLS at Envoy — they're fronted by per-MCP
 # Caddy normalizing proxies (charts/mcps, `mode: proxiedExternal`) that do the
