@@ -988,6 +988,15 @@ applications:
     # app to the new version on the next reconcile (no release/repoint needed).
     chart: mongodb-backup
     releaseName: mongodb-backup
+    # librechat-s3-config (the S3 upload creds the CronJob's `main` container
+    # needs) already exists in the `converse` namespace as librechat-app's own
+    # in-chart ExternalSecret, but Secrets are namespace-scoped and this app
+    # runs in `converse-chat` — so it never had a copy. Confirmed live
+    # 2026-08-02: every backup run failed on `secret "librechat-s3-config"
+    # not found` (CreateContainerConfigError) once the separate MONGODB_URI
+    # DNS bug was fixed. This overlay materialises the app's own copy from
+    # the same underlying creds.
+    depsOverlay: environments/prod/deps/mongodb-backup
     destination:
       namespace: converse-chat
 
