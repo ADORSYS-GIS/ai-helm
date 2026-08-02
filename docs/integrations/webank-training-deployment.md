@@ -21,7 +21,9 @@ stage into an alternative public operation.
 
 ## Dataset-build templates
 
-`*-dataset-build` templates are CPU-only restricted-plane operations. Document
+`*-dataset-build` templates are restricted-plane operations placed on
+`role=gpu` nodes and tolerating `role=gpu:NoSchedule`. Their containers retain
+CPU-only resource limits and do not reserve an `nvidia.com/gpu` device. Document
 detector is the one special case: its form has **no inputs**. It creates the
 fixed `ds-document-detector/main` repository if necessary, obtains LakeFS's
 initial immutable commit, then runs the in-image Python builder to create the
