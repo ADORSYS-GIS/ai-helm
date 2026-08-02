@@ -21,8 +21,15 @@ stage into an alternative public operation.
 
 ## Dataset-build templates
 
-`*-dataset-build` templates are CPU-only restricted-plane operations. The
-Argo submission form requires three governed artifacts:
+`*-dataset-build` templates are CPU-only restricted-plane operations. Document
+detector is the one special case: its form has **no inputs**. It creates the
+fixed `ds-document-detector/main` repository if necessary, obtains LakeFS's
+initial immutable commit, then runs the in-image Python builder to create the
+reviewed hermetic synthetic starter set. It fetches no source dataset from the
+network and passes the resulting manifest/readiness pair through the normal
+Rust gate and LakeFS write boundary.
+
+The other dataset-build forms require three governed artifacts:
 
 - `source` — the model-specific source metadata;
 - `manifest` — the RFC-0006 source manifest; and
@@ -33,12 +40,16 @@ governance documents. The container materializes the model-specific descriptor
 and calls the narrow `training-data push` LakeFS boundary. It never accepts a
 dataset path, LakeFS destination, or arbitrary shell command from the
 dashboard. The destination repository and `main` branch come only from the
-model's reviewed `ai-helm-values` entry and must exist before the first run.
+model's reviewed `ai-helm-values` entry. Document detector's reviewed storage
+namespace is used only if that fixed repository must be created; an existing
+repository is never reset or reconfigured.
 
 The current materializers deliberately produce metadata descriptors. They do
-not invent document, biometric, identity, or PAD bytes. A data repository must
-provide an approved model-specific source and its governed artifact contract
-before an operator starts one of these templates.
+not invent biometric, identity, or PAD bytes. The document-detector bootstrap
+creates only generic synthetic scenes and exact programmatic labels; it is
+training input, never real-world evaluation or promotion evidence. Every other
+model still needs an approved model-specific source and governed artifact
+contract before an operator starts its template.
 
 ## Training templates
 

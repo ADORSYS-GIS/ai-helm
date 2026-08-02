@@ -19,10 +19,20 @@ the displayed `build` or `train` entrypoint is fixed by the selected template.
 
 Each template's LakeFS destinations are fixed in reviewed `ai-helm-values`, not
 in the Argo form. Dataset builds use `ds-<model>/main`; training candidates use
-`model-<model>/main`. The repositories and their `main` branches must exist
-before an approved first run.
+`model-<model>/main`. The document-detector Dataset Build template is allowed
+to create its own fixed empty repository from its reviewed storage namespace;
+every other repository and `main` branch must exist before its first run.
 
 ## Build a dataset descriptor
+
+For **document detector**, open
+`webank-document-detector-dataset-build` and select **Submit** with no fields.
+Its fixed entrypoint builds the reviewed hermetic synthetic starter set from
+the image-bundled policy, reports the LakeFS commit in its logs, and accepts no
+source artifact, repository, branch, prompt, or transform. It must not be used
+as real-world evaluation data.
+
+For every other model:
 
 1. In Argo, open the model's `*-dataset-build` template and select **Submit**.
 2. Set `lakefs_ref` to the 64-character immutable commit recorded by the
@@ -34,9 +44,9 @@ before an approved first run.
    generated descriptor through the LakeFS training-data boundary into that
    model's fixed `ds-<model>/main` repository.
 
-If LakeFS is empty, this operation still cannot begin without an approved
-source artifact and its manifest/attestation. Do not use fixtures or a blank
-reference as a substitute.
+If a non-document-detector LakeFS repository is empty, this operation still
+cannot begin without an approved source artifact and its manifest/attestation.
+Do not use fixtures or a blank reference as a substitute.
 
 ## Start candidate training
 
