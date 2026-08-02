@@ -1,0 +1,106 @@
+# censgate/redact `redact-gateway` as an internal-canary front proxy (ADR-0116,
+# epic #873). Off-the-shelf image, config purely via CENSGATE_* env — no custom
+# build, no ConfigMap, no auth-mode secret (see README below for why).
+#
+# Traffic shape: client -> redact-gateway -> core-gateway-internal (Authorino ->
+# AIEG -> provider). redact-gateway forwards the caller's own Authorization
+# header through untouched (`CENSGATE_PROVIDER_FORWARD_CLIENT_AUTHORIZATION`);
+# core-gateway-internal does its own auth exactly as it does for every other
+# internal caller. redact-gateway's own `auth.mode` stays `none` -- that's the
+# ONLY mode the upstream docs allow to combine with forwarding the caller's
+# Authorization header (any other mode would leak redact-gateway's own
+# credential to the provider) -- so trust here is network-level, matching the
+# existing ADR-0021 internal-plane model (first-party-only, ClusterIP + netpol,
+# no route from outside the cluster).
+
+name: censgate-redact-gateway
+
+image:
+  repository: ghcr.io/censgate/redact-gateway
+  # Pinned, not `latest` -- confirmed present via the GHCR package API
+  # (org=censgate) before pinning. Bump deliberately.
+  tag: "0.9.0"
+  pullPolicy: IfNotPresent
+
+port: 8080
+
+replicas: 1
+# vault_kv2 (a shared token map) is required to scale beyond one replica -- see
+# upstream docs/gateway/deployment.md. This canary uses the `default` profile
+# (replace/block/mask only, no `tokenize`), so no token map is needed and one
+# replica is correct, not a placeholder.
+
+provider:
+  # core-gateway-internal's Service DNS name + port, confirmed live
+  # (`kubectl -n envoy-gateway-system get svc core-gateway-internal` -> :443,
+  # matches the `requested_server_name` observed in gateway access logs).
+  baseUrl: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local
+  forwardClientAuthorization: true
+
+# Bundled profile (upstream docs/gateway/policy.md): default_action=replace,
+# blocks credentials/secrets, masks high-sensitivity IDs >=0.7 confidence,
+# fail_closed: true. Matches decision 10 (failOpen: false in production).
+defaultProfile: default
+
+# buffered is the documented default and the only mode with a full-completeness
+# detection guarantee (no entity can hide in a token split) -- see
+# docs/gateway/streaming.md. Incremental trades completeness for latency; not
+# needed for a canary.
+streamMode: buffered
+
+# Internal-CA trust (Home Root CA, `self-signed-ca` ClusterIssuer) so
+# redact-gateway's outbound TLS client trusts core-gateway-internal's cert.
+# Mirrors the librechat-app / Envoy-ratelimit precedent: issue a throwaway leaf
+# from that issuer and mount only its `ca.crt`. redact-gateway is Rust/reqwest
+# with the default (native-tls/OpenSSL) backend -- confirmed via the upstream
+# Cargo.toml (no `default-features = false`, and the shipped image is the
+# `-cc` distroless variant, which only makes sense for a dynamically-linked
+# OpenSSL backend) -- so `SSL_CERT_FILE` is the correct trust-store override.
+internalCaTrust:
+  secretName: censgate-redact-gateway-internal-ca
+  mountPath: /etc/internal-ca
+  caIssuer: self-signed-ca
+  caIssuerKind: ClusterIssuer
+
+telemetry:
+  # Plaintext in-cluster OTLP -- same collector + port every other in-cluster
+  # emitter in this repo uses (charts/core-gateway/templates/otel.yaml).
+  otlpEndpoint: http://alloy.observability.svc.cluster.local:4317
+  traceOperations: basic
+  auditExport: otlp
+
+# Ingress restricted to same-namespace pods for now (the canary phase -- no
+# production client is cut over to this proxy in this change). Tighten to a
+# specific caller label once a real client is wired to it.
+networkPolicy:
+  ingressNamespace: apps
+  providerNamespace: envoy-gateway-system
+  providerPort: 443
+  otlpNamespace: observability
+  otlpPort: 4317
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Distroless image, UID 65532 (upstream docs/gateway/deployment.md), no shell.
+# No writable state needed: vault.backend is off (no tokenize), and an
+# unset CENSGATE_TOKEN_DEK is only a problem for tokenize profiles.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

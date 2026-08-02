@@ -1456,6 +1456,40 @@ applications:
     destination:
       namespace: mlops
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # censgate/redact `redact-gateway` — PII redaction front proxy (ADR-0116,
+  # governance epic #873). Off-the-shelf image (ghcr.io/censgate/redact-gateway),
+  # no custom build. Sidesteps the whole "can a custom ext_proc processor be
+  # ordered before AIEG's on EG v1.8.2" question (spike #874, left deliberately
+  # unresolved/likely unneeded) by sitting IN FRONT of core-gateway-internal as
+  # an ordinary proxy instead of inside the Envoy filter chain: client ->
+  # redact-gateway -> core-gateway-internal (Authorino -> AIEG -> provider).
+  #
+  # ⚠️ INTERNAL CANARY ONLY, as of this change. Deployed and reachable
+  # in-cluster (ClusterIP + CiliumNetworkPolicy), verified end-to-end against
+  # the real core-gateway-internal backend, but NOT YET the path any production
+  # client depends on -- no existing app's traffic was pointed at it in this
+  # change. Cutting a real canary client (starting with the /inference/v1/embeddings
+  # traffic identified in #875 as the strongest non-streaming candidate) over
+  # to route through this proxy is deliberately a separate, reviewed follow-up
+  # PR, not bundled with standing the infrastructure up. No Ingress/HTTPRoute:
+  # not reachable from outside the cluster.
+  # Source: https://github.com/censgate/redact
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: censgate-redact-gateway
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: censgate-redact-gateway
+    releaseName: censgate-redact-gateway
+    destination:
+      namespace: apps
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
 extraObjects:
   # ==========================================
   # Upstream namespace quotas & limit ranges
