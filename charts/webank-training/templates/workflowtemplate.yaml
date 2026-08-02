@@ -90,6 +90,12 @@ spec:
           - name: readiness
             path: /workspace/input/readiness.json
 {{- end }}
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       container:
         image: {{ $training.image | quote }}
         command: ["sh", "-ceu"]
