@@ -130,6 +130,22 @@ spec:
           {{- if $bVal.modelNameOverride }}
           modelNameOverride: {{ $bVal.modelNameOverride }}
           {{- end }}
+          {{- with $bVal.bodyMutation }}
+          bodyMutation:
+            {{- with .set }}
+            set:
+              {{- range . }}
+              - path: {{ .path }}
+                value: {{ .value | quote }}
+              {{- end }}
+            {{- end }}
+            {{- with .remove }}
+            remove:
+              {{- range . }}
+              - {{ . | quote }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
           weight: {{ $bVal.weight | default 1 }}
           priority: {{ $bVal.priority | default 0 }}
         {{- end }}
