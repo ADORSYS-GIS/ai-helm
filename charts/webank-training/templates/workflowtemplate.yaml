@@ -8,15 +8,15 @@
 {{- if not $training.otel.endpoint }}{{ fail "webank-training: training.otel.endpoint is required" }}{{- end }}
 {{- if not $workflow.serviceAccountName }}{{ fail "webank-training: workflow.serviceAccountName is required" }}{{- end }}
 {{- if eq (len .Values.models) 0 }}{{ fail "webank-training: models must declare the public model workflow catalogue" }}{{- end }}
-{{- $gpuNodeRole := index $training.gpu.nodeSelector "role" | default "" -}}
-{{- if ne $gpuNodeRole "gpu" }}{{ fail "webank-training: GPU-capable templates require training.gpu.nodeSelector.role=gpu" }}{{- end }}
+{{- $gpuNodeLabel := index $training.gpu.nodeSelector "nvidia.com/gpu.present" | default "" -}}
+{{- if ne $gpuNodeLabel "true" }}{{ fail "webank-training: GPU-capable templates require training.gpu.nodeSelector[nvidia.com/gpu.present]=true (the live GPU node label — see charts/inference)" }}{{- end }}
 {{- $gpuLimit := index $training.gpu.resources.limits "nvidia.com/gpu" | default 0 -}}
 {{- if lt (int $gpuLimit) 1 }}{{ fail "webank-training: GPU-capable templates require limits.nvidia.com/gpu >= 1" }}{{- end }}
 {{- $toleratesGpu := false -}}
 {{- range $training.gpu.tolerations }}
-{{- if and (eq (.key | default "") "role") (eq (.operator | default "Equal") "Equal") (eq (.value | default "") "gpu") (eq (.effect | default "") "NoSchedule") }}{{- $toleratesGpu = true }}{{- end }}
+{{- if and (eq (.key | default "") "nvidia.com/gpu") (eq (.operator | default "Equal") "Exists") (eq (.effect | default "") "NoSchedule") }}{{- $toleratesGpu = true }}{{- end }}
 {{- end }}
-{{- if not $toleratesGpu }}{{ fail "webank-training: GPU-capable templates require a role=gpu:NoSchedule toleration" }}{{- end }}
+{{- if not $toleratesGpu }}{{ fail "webank-training: GPU-capable templates require an nvidia.com/gpu:NoSchedule (Exists) toleration — the live GPU node taint" }}{{- end }}
 {{- range $model := .Values.models }}
 {{- $id := required "webank-training: models[].id is required" $model.id -}}
 {{- $materializer := required (printf "webank-training: %s datasetMaterializer is required" $id) $model.datasetMaterializer -}}
@@ -95,6 +95,9 @@ spec:
       {{- with $training.gpu.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $training.gpu.priorityClassName }}
+      priorityClassName: {{ . | quote }}
       {{- end }}
       container:
         image: {{ $training.image | quote }}
@@ -235,6 +238,9 @@ spec:
       {{- with $training.gpu.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $training.gpu.priorityClassName }}
+      priorityClassName: {{ . | quote }}
       {{- end }}
       container:
         image: {{ $training.image | quote }}

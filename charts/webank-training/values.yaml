@@ -19,12 +19,21 @@ training:
   otel:
     endpoint: ""
   # Every dataset-build and training template uses this GPU-node placement and
-  # resource profile: `role: gpu`, a matching NoSchedule toleration, and a
-  # positive nvidia.com/gpu limit. Dataset construction receives the same
-  # reviewed CPU, memory, and GPU allocation as candidate training.
+  # resource profile: `nvidia.com/gpu.present=true` (the live GPU node label,
+  # matching charts/inference's `defaults.gpu` — see ADR-0114), an
+  # `nvidia.com/gpu:NoSchedule` (Exists) toleration matching the live node
+  # taint, and a positive nvidia.com/gpu limit. Dataset construction receives
+  # the same reviewed CPU, memory, and GPU allocation as candidate training.
+  #
+  # ⚠️ Prior to ADR-0114 this contract was `role: gpu`, which no node in the
+  # cluster has ever carried — every GPU-requesting workflow pod was
+  # unschedulable (`0/9 nodes are available: 4 didn't match node
+  # affinity/selector, 5 had untolerated taints`) regardless of GPU
+  # availability. Verified live 2026-08-02.
   gpu:
     nodeSelector: {}
     tolerations: []
+    priorityClassName: ""
     resources:
       requests: { cpu: "4", memory: 16Gi }
       limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }
