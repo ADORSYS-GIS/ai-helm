@@ -1,0 +1,20 @@
+# Internal-CA trust bundle for redact-gateway's outbound TLS client. Mirrors
+# charts/librechat-app/templates/certificate-internal-ca.yaml: we issue a
+# throwaway leaf from the internal `self-signed-ca` ClusterIssuer and use only
+# the `ca.crt` it carries (the Home Root CA itself), never the leaf's own
+# tls.crt/key -- we need to TRUST that CA, not present a client cert.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.internalCaTrust.secretName }}
+  labels:
+    app: {{ .Values.name }}
+spec:
+  secretName: {{ .Values.internalCaTrust.secretName }}
+  commonName: {{ .Values.internalCaTrust.secretName }}
+  dnsNames:
+    - {{ .Values.internalCaTrust.secretName }}
+  issuerRef:
+    name: {{ .Values.internalCaTrust.caIssuer }}
+    kind: {{ .Values.internalCaTrust.caIssuerKind }}
+    group: cert-manager.io
