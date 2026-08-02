@@ -111,6 +111,26 @@ not just callers who would have opted in themselves.
   header + a second `AIGatewayRoute` rule per affected model, or per-model
   `-priority` catalog variants (see Alternatives) — not a small change to
   today's shared-anchor shape.
+- **Fireworks priority tier — investigated, deliberately deferred
+  (2026-08-02).** Fireworks supports the identical field
+  (`"service_tier": "priority"`, OpenAI-compatible chat completions and the
+  Anthropic-compatible `messages` API — docs.fireworks.ai/serverless/serving-paths),
+  so the same `bodyMutation` mechanism this ADR uses for DeepInfra would
+  drop in directly on the `fwBackendPrimary`/`fwBackendSecondary` anchors.
+  Not applied because, checked live against Fireworks' own catalog: (1)
+  Priority tier is documented as "available on select models," and neither
+  of the two models currently routed through Fireworks —
+  `qwen3-embedding-8b` and `qwen3p7-plus` — shows a Priority badge or
+  Priority pricing on its own Fireworks model page; (2) unlike DeepInfra,
+  Fireworks' docs do not state what happens when `service_tier=priority` is
+  sent to a model that doesn't support it — DeepInfra's documented safe
+  fallback (standard billing, `service_tier: "default"` echoed) is what
+  makes sending the field unconditionally safe there, and that guarantee is
+  unverified for Fireworks; (3) `qwen3-embedding-8b` is an `/v1/embeddings`
+  model — priority tier is documented only for chat completions and
+  `messages`, so the field is likely a no-op there at best. Revisit when
+  either current Fireworks model gains a Priority badge on its own page, or
+  a new Fireworks-backed chat model is added to the catalog that shows one.
 
 ## Alternatives considered
 
@@ -140,4 +160,6 @@ not just callers who would have opted in themselves.
 - External references:
   [anomalyco/opencode#12297](https://github.com/anomalyco/opencode/issues/12297),
   [deepinfra.com/blog/priority-service-tier](https://deepinfra.com/blog/priority-service-tier),
-  [deepinfra.com/deepseek-ai/DeepSeek-V4-Flash-0731](https://deepinfra.com/deepseek-ai/DeepSeek-V4-Flash-0731)
+  [deepinfra.com/deepseek-ai/DeepSeek-V4-Flash-0731](https://deepinfra.com/deepseek-ai/DeepSeek-V4-Flash-0731),
+  [docs.fireworks.ai/serverless/serving-paths](https://docs.fireworks.ai/serverless/serving-paths)
+  (Fireworks priority tier — deferred follow-up, see above)
