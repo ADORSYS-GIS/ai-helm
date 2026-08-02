@@ -44,9 +44,10 @@ For every other model:
    generated descriptor through the LakeFS training-data boundary into that
    model's fixed `ds-<model>/main` repository.
 
-All dataset-build pods select `role=gpu`, tolerate `role=gpu:NoSchedule`, and
-request the reviewed one-GPU CPU/memory resource profile. This guarantees that
-dataset materialization has the same GPU-node allocation as candidate training.
+All dataset-build pods select `nvidia.com/gpu.present=true`, tolerate
+`nvidia.com/gpu:NoSchedule` (Exists), and request the reviewed one-GPU
+CPU/memory resource profile. This guarantees that dataset materialization has
+the same GPU-node allocation as candidate training.
 
 If a non-document-detector LakeFS repository is empty, this operation still
 cannot begin without an approved source artifact and its manifest/attestation.
@@ -64,8 +65,9 @@ Do not use fixtures or a blank reference as a substitute.
    `lakefs_ref`.
 4. Leave `run_name` empty unless a named experiment is needed. Its default is
    `<model>-<Argo workflow name>` and is the preferred unique correlation key.
-5. Submit. The pod must show `role=gpu`, the `role=gpu:NoSchedule` toleration,
-   and a one-GPU request before it begins candidate training.
+5. Submit. The pod must show `nvidia.com/gpu.present=true`, the
+   `nvidia.com/gpu:NoSchedule` (Exists) toleration, and a one-GPU request
+   before it begins candidate training.
 
 The run can only publish a candidate. Evaluation and governed promotion remain
 separate procedures.
@@ -83,5 +85,5 @@ as PAD training and do not create a candidate manually.
 | --- | --- | --- |
 | Argo rejects a missing dataset field | The data contract is intentionally required. | Supply the approved ref/version or artifacts; never fake a value. |
 | `readiness-gate` fails | Source manifest, readiness attestation, and pinned commit disagree or are not eligible. | Repair/reapprove data in its source repository. |
-| Pod remains Pending | GPU placement requirements cannot currently be met. | Check a `role=gpu` node and its allocatable GPU; do not remove placement constraints. |
+| Pod remains Pending | GPU placement requirements cannot currently be met, or MLOps is preempted by serving (ADR-0114). | Check an `nvidia.com/gpu.present=true` node and its allocatable GPU; do not remove placement constraints. |
 | PAD train exits immediately | There is no PAD trainer. | Keep it blocked until a model-specific trainer lands. |

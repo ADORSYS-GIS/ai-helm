@@ -1,6 +1,6 @@
 # ADR-0114: Free GPUs for MLOps by priority preemption, not by a serving clock
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-02
 **Deciders:** @stephane-segning
 

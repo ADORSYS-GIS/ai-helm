@@ -7,11 +7,10 @@ training:
   otel:
     endpoint: http://alloy.observability.svc.cluster.local:4318
   gpu:
-    nodeSelector: { role: gpu }
+    nodeSelector: { nvidia.com/gpu.present: "true" }
     tolerations:
-      - key: role
-        operator: Equal
-        value: gpu
+      - key: nvidia.com/gpu
+        operator: Exists
         effect: NoSchedule
 models:
   - id: document-detector

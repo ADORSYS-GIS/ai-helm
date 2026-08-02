@@ -1441,6 +1441,26 @@ applications:
     destination:
       namespace: mlops
 
+  # --- GPU arbitration between serving and MLOps (ADR-0114) ---
+  # Two cluster-scoped PriorityClass objects only — no namespaced resources,
+  # so `destination.namespace` below is a formality ArgoCD requires, not a
+  # placement decision (picked `mlops` since it already exists rather than
+  # creating a namespace for nothing). NOT controlPlane: PriorityClass must
+  # exist on home-remote, where the GPU nodes and the pods that reference it
+  # actually schedule — the opposite of the orchestrators above.
+  # `charts/inference` and `charts/webank-training` reference these classes by
+  # name; nothing here breaks if this Application syncs after them the first
+  # time — the pod that references a not-yet-existing class simply stays
+  # unschedulable until ArgoCD's next reconcile creates it (self-healing race,
+  # not a hard ordering dependency).
+  - name: gpu-priority-classes
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: gpu-priority-classes
+    releaseName: gpu-priority-classes
+    destination:
+      namespace: mlops
+
   # --- Webank governed GPU training (webank-models ADR-0034 / ADR-0035) ---
   # A plain workload Application, not an orchestrator: it installs only the
   # namespaced WorkflowTemplate. Human submission remains the sole trigger;

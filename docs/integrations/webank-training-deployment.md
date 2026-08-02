@@ -22,8 +22,10 @@ stage into an alternative public operation.
 ## Dataset-build templates
 
 `*-dataset-build` templates are restricted-plane operations placed on
-`role=gpu` nodes, tolerating `role=gpu:NoSchedule`, and requesting the same
-reviewed CPU, memory, and one-GPU resource profile as candidate training.
+`nvidia.com/gpu.present=true` nodes (the live GPU node label, matching
+`charts/inference`), tolerating `nvidia.com/gpu:NoSchedule` (Exists), and
+requesting the same reviewed CPU, memory, and one-GPU resource profile as
+candidate training (ADR-0114).
 Document detector is the one special case: its form has **no inputs**. It
 creates the fixed `ds-document-detector/main` repository if necessary, obtains
 LakeFS's initial immutable commit, then runs the in-image Python builder to
@@ -55,9 +57,9 @@ contract before an operator starts its template.
 
 ## Training templates
 
-All `*-train` templates select `role=gpu`, tolerate
-`role=gpu:NoSchedule`, and request one `nvidia.com/gpu`. A submitted training
-workflow therefore cannot land on a CPU-only node.
+All `*-train` templates select `nvidia.com/gpu.present=true`, tolerate
+`nvidia.com/gpu:NoSchedule` (Exists), and request one `nvidia.com/gpu`. A
+submitted training workflow therefore cannot land on a CPU-only node.
 
 The document detector accepts `dataset_ref` and `dataset_version`; its runtime
 combines them with the fixed `ds-document-detector` repository to check out and
