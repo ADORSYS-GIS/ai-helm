@@ -18,7 +18,7 @@ generators:
       elements:
         - appName: ai-models-backends                 # syncWave -1
           chartPath: charts/ai-models-backends
-        - appName: ai-models-deepseek-v4-flash        # syncWave 0
+        - appName: ai-models-deepseek-v4-flash-0731    # syncWave 0
           chartPath: charts/ai-model
         - appName: ai-models-glm-5                    # syncWave 0
           chartPath: charts/ai-model
