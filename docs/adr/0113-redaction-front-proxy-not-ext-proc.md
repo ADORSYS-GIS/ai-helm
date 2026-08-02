@@ -1,8 +1,21 @@
 # ADR-0113: PII redaction as a front proxy, not an Envoy ext_proc filter
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0116](0116-redaction-as-ext-proc.md)
 **Date:** 2026-08-02
 **Deciders:** @stephane-segning
+
+> **Superseded the same day.** This ADR chose a front proxy because
+> `censgate/redact` already shipped one as a working binary, making
+> `ext_proc` the expensive option — see the Context below, and the
+> Alternatives section that rejected writing our own engine "outright".
+> [ADR-0115](0115-first-party-redaction-engine.md) then rejected censgate
+> (its only published image could not execute) and we wrote the engine
+> ourselves, which removed the availability argument this decision rested
+> on: with `crates/governance-redact` as our own transport-agnostic library,
+> an `ext_proc` server is no harder to write than a proxy.
+> [ADR-0116](0116-redaction-as-ext-proc.md) moves redaction into the filter
+> chain and deletes the front proxy. The body below is unchanged and records
+> what was decided at the time.
 
 ## Context
 
