@@ -24,7 +24,18 @@ image:
 
 port: 8080
 
-replicas: 1
+# ⚠️ PAUSED 2026-08-02 -- replicas: 0, not 1. The only published image
+# (ghcr.io/censgate/redact-gateway:0.9.0, and equally :latest/:0/:0.9 -- all
+# four tags resolve to the same digest) cannot start on any host: its builder
+# stage (rust:1.93-slim) links against a newer glibc than its runtime stage
+# (gcr.io/distroless/cc-debian12) ships, so every container exits immediately
+# with `GLIBC_2.38' not found`. Reproduced with a plain `docker run`, not a
+# cluster-specific issue. Filed upstream: censgate/redact#114. Everything else
+# in this chart (the wiring, the NetworkPolicy, the internal-CA trust) is
+# unaffected and was verified correct against the live cluster before this
+# was found -- flip back to 1 once a fixed image is published, no other
+# change needed.
+replicas: 0
 # vault_kv2 (a shared token map) is required to scale beyond one replica -- see
 # upstream docs/gateway/deployment.md. This canary uses the `default` profile
 # (replace/block/mask only, no `tokenize`), so no token map is needed and one
