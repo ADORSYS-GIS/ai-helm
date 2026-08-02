@@ -23,7 +23,7 @@ what they share, what order to build them in, and what I'd cut.
 | 12 | Hostnames | `governance.ai.camer.digital`, `otel.ai.camer.digital` |
 | 13 | Keycloak roles | **Not hardcoded.** Roles ride a claim; Lightbridge maps claim values → the internal `budget:*` permission list via `config.yaml`. Fail-closed, unknown values → `default` |
 | — | Phase 6 cutover date | **Split.** ⚠️ **AMENDED 2026-08-01** — the original "6a ships 2026-08-01, ahead of the window-689 boundary" is **void**: ADR-0112 removed that boundary. 6a now targets **2026-09-01 or any later 1st**; 6b still has **no date constraint**. The window *is* a calendar month now |
-| 14 | Redaction engine | [`censgate/redact`](https://github.com/censgate/redact) — Rust, Apache-2.0. **It already ships `redact-gateway`**, an OpenAI-compatible proxy; no rewrite needed |
+| 14 | Redaction engine | ~~[`censgate/redact`](https://github.com/censgate/redact) — it already ships `redact-gateway`; no rewrite needed~~ ⚠️ **REVERSED 2026-08-02 (ADR-0115).** Its only published image cannot execute — builder glibc newer than its distroless runtime, so every container exits with `GLIBC_2.38 not found` on any host ([censgate/redact#114](https://github.com/censgate/redact/issues/114)). Now **first-party**, in `lightbridge-governance`, wrapping the [`pii`](https://crates.io/crates/pii) crate as a library. The front-proxy-over-`ext_proc` decision (ADR-0113) is unaffected and stands |
 
 Consequences: plan 2 loses its whole tenancy problem (§3 option C by default, B never
 needed for us); plan 1 loses the public-App/installation-webhook path; plan 4 gets the
