@@ -18,10 +18,10 @@ training:
     secretKey: secret-access-key
   otel:
     endpoint: ""
-  # Every dataset-build and training template is rendered only when these
-  # placement invariants are present: `role: gpu`, a matching NoSchedule
-  # toleration, and a positive nvidia.com/gpu limit. Dataset builds use the
-  # placement policy but retain their own CPU-only resource limits.
+  # Every dataset-build and training template uses this GPU-node placement and
+  # resource profile: `role: gpu`, a matching NoSchedule toleration, and a
+  # positive nvidia.com/gpu limit. Dataset construction receives the same
+  # reviewed CPU, memory, and GPU allocation as candidate training.
   gpu:
     nodeSelector: {}
     tolerations: []

@@ -22,14 +22,14 @@ stage into an alternative public operation.
 ## Dataset-build templates
 
 `*-dataset-build` templates are restricted-plane operations placed on
-`role=gpu` nodes and tolerating `role=gpu:NoSchedule`. Their containers retain
-CPU-only resource limits and do not reserve an `nvidia.com/gpu` device. Document
-detector is the one special case: its form has **no inputs**. It creates the
-fixed `ds-document-detector/main` repository if necessary, obtains LakeFS's
-initial immutable commit, then runs the in-image Python builder to create the
-reviewed hermetic synthetic starter set. It fetches no source dataset from the
-network and passes the resulting manifest/readiness pair through the normal
-Rust gate and LakeFS write boundary.
+`role=gpu` nodes, tolerating `role=gpu:NoSchedule`, and requesting the same
+reviewed CPU, memory, and one-GPU resource profile as candidate training.
+Document detector is the one special case: its form has **no inputs**. It
+creates the fixed `ds-document-detector/main` repository if necessary, obtains
+LakeFS's initial immutable commit, then runs the in-image Python builder to
+create the reviewed hermetic synthetic starter set. It fetches no source
+dataset from the network and passes the resulting manifest/readiness pair
+through the normal Rust gate and LakeFS write boundary.
 
 The other dataset-build forms require three governed artifacts:
 

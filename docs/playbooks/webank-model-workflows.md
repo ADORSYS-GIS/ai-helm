@@ -10,7 +10,7 @@ Start with the model-specific operation you actually need:
 
 | Need | Template pattern | Compute |
 | --- | --- | --- |
-| Materialize and publish a governed descriptor | `webank-<model>-dataset-build` | GPU node; CPU resources |
+| Materialize and publish a governed descriptor | `webank-<model>-dataset-build` | one GPU |
 | Train a governed candidate | `webank-<model>-train` | one GPU |
 
 There is one template of each kind for document detector, document recognizer,
@@ -44,9 +44,9 @@ For every other model:
    generated descriptor through the LakeFS training-data boundary into that
    model's fixed `ds-<model>/main` repository.
 
-All dataset-build pods select `role=gpu` and tolerate `role=gpu:NoSchedule`.
-They run on the GPU node pool but deliberately do not request an
-`nvidia.com/gpu` device: materialization uses CPU resources only.
+All dataset-build pods select `role=gpu`, tolerate `role=gpu:NoSchedule`, and
+request the reviewed one-GPU CPU/memory resource profile. This guarantees that
+dataset materialization has the same GPU-node allocation as candidate training.
 
 If a non-document-detector LakeFS repository is empty, this operation still
 cannot begin without an approved source artifact and its manifest/attestation.
