@@ -65,13 +65,26 @@ chain, and delete the front proxy.**
 
 ```mermaid
 flowchart LR
-    C["client"] --> EG["core-gateway"]
-    EG --> AZ["Authorino ext_authz"]
-    AZ --> RX["redact-extproc<br/>ext_proc filter"]
-    RX --> AIEG["AI Gateway processor"]
+    C["client"] --> EG["envoy<br/>listener"]
+    subgraph pod ["one pod — envoy-converse-gateway-core-gateway-*"]
+        EG --> AZ["Authorino ext_authz"]
+        AZ -->|"ext_proc<br/>localhost"| RX["redact-extproc<br/>native sidecar"]
+        RX -->|"ext_proc<br/>localhost"| AIEG["ai-gateway-extproc<br/>native sidecar"]
+    end
     AIEG --> P["provider"]
 ```
 
+- **The processor runs as a native sidecar in the Envoy pod, not as a
+  separate Deployment.** This is not a novel topology — it is the one AIEG
+  already uses. Verified live 2026-08-02: the gateway pod runs `envoy` +
+  `shutdown-manager` as containers and **`ai-gateway-extproc:v1.0.0` as an
+  `initContainer` with `restartPolicy: Always`** — a Kubernetes native
+  sidecar, supported on this cluster (**v1.35.3+k3s1**). We add a second
+  sidecar beside it and speak ext_proc over localhost.
+- **Attachment point is a template this repo already owns**:
+  `charts/core-gateway/templates/envoy-proxy.yaml`, whose
+  `provider.kubernetes.envoyDeployment` block already configures `container`
+  and `pod`. The CRD exposes `initContainers` and `patch` alongside them.
 - **The engine is unchanged.** `crates/governance-redact` — profiles, the
   first-party secret pack, the payload walker, the streaming logic and its
   41 tests — is transport-agnostic and moves across untouched. Only the
@@ -79,6 +92,21 @@ flowchart LR
 - **`app/redact-extproc`** implements
   `envoy.service.ext_proc.v3.ExternalProcessor` over gRPC, replacing
   `app/redact-gateway`.
+
+⚠️ **Sidecar topology does not answer the ordering question.** Filter order
+is filter-chain configuration, not pod layout; two sidecars in one pod say
+nothing about which processor sees the body first. `config_dump` remains the
+only evidence.
+
+⚠️ **First implementation check — does declaring `initContainers` on our
+`EnvoyProxy` displace AIEG's injected sidecar?** AIEG injects
+`ai-gateway-extproc` into the same list we would be writing. Lists replace
+wholesale in the merge semantics this platform keeps getting caught by (the
+ARC runner `command` that silently vanished; the `mcps` valuesObject cases),
+and losing AIEG's processor would take model routing, token counting and
+cost attribution with it. Verify the rendered Deployment carries **both**
+sidecars before anything else; if the list merges destructively, use
+`envoyDeployment.patch` instead of `initContainers`.
 - **`processingMode` is set explicitly** for request and response bodies. The
   CRD's documented default is that *neither headers nor body are sent to the
   processor* — a policy that omits it yields a filter that is attached,
@@ -105,8 +133,14 @@ change that lands the filter. No dormant parallel path, no feature gate.
   something it must avoid disturbing.
 - No response-header rewriting, so no RFC 7235 violation and no lost
   `x-ext-auth-reason`.
-- One less network hop, TLS handshake, ClusterIP Service and
-  `CiliumNetworkPolicy` in the request path.
+- **The sidecar topology removes the network path entirely**, not just a
+  hop: no ClusterIP Service, no `CiliumNetworkPolicy`, no cross-pod TLS and
+  no internal-CA trust store to mount — every one of which the front proxy
+  needed, and one of which (the Cilium post-DNAT port) already cost an
+  outage window on this component. Localhost also buys back most of the
+  200 ms `messageTimeout` for actual scanning.
+- Lifecycle is coupled to the gateway: the processor scales with the data
+  plane's HPA and cannot be independently absent while routes reference it.
 - Per-route policy becomes expressible — `EnvoyExtensionPolicy` targets a
   route, so redaction can differ per model or per plane without a second
   deployment. The front proxy could only ever apply one profile to whatever
