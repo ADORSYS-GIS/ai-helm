@@ -95,8 +95,55 @@ flowchart LR
 
 ⚠️ **Sidecar topology does not answer the ordering question.** Filter order
 is filter-chain configuration, not pod layout; two sidecars in one pod say
-nothing about which processor sees the body first. `config_dump` remains the
-only evidence.
+nothing about which processor sees the body first.
+
+**Ordering is now measured, and it constrains us** (this is spike
+[#874](https://github.com/ADORSYS-GIS/ai-helm/issues/874), answered). EG
+v1.8.2 assigns each filter type a fixed order in
+`internal/xds/translator/httpfilters.go`:
+
+| Filter | Order |
+|---|---|
+| ExtAuthz (Authorino) | `5` |
+| JWT | `9` |
+| Lua (ADR-0111's billing marker) | `12 + index` |
+| **ExtProc (ours)** | **`100 + index`** |
+| RateLimit | `303` |
+
+The live `config_dump` shows `ext_proc/aigateway` at **position 0**, ahead of
+`ext_authz` — AIEG's processor is not ordered by that table at all; the AI
+Gateway inserts it at the front. So:
+
+- ✅ Our filter runs **after** Authorino (`100 > 5`), so identity is
+  established and the ADR-0011 `x-oidc-*` headers are present. This ADR's
+  premise holds.
+- ✅ Redaction still precedes the upstream call — the router sorts last, so
+  no provider sees unredacted content.
+- ❌ **A user-defined ExtProc cannot be ordered before AIEG's processor.**
+  100 versus <5 is not configurable; only an `EnvoyPatchPolicy` could move
+  it. ADR-0113 was right that positioning was unresolved, and wrong that a
+  front proxy was the remedy.
+
+**Why that is acceptable here, and the condition under which it stops being
+acceptable.** AIEG's processor may rewrite the request body when it
+translates between API schemas, and our payload walker only understands
+OpenAI shapes. Verified on the live fleet 2026-08-02: **all 15
+`AIServiceBackend`s declare `schema.name: OpenAI` and no `AIGatewayRoute`
+declares an input schema — there is no non-OpenAI schema anywhere.** Even
+`claude-sonnet-5` resolves to `deepinfra-backend-01/02-svc`, i.e. Claude via
+an OpenAI-compatible API rather than Anthropic's native one. AIEG therefore
+performs no cross-schema translation today, and the post-AIEG body is still
+the shape `payload.rs` walks.
+
+⚠️ **This is a live-state fact, not a guarantee.** The first backend added
+with `schema.name: AWSBedrock`, `AzureOpenAI` or an Anthropic-native schema
+makes AIEG rewrite the body before our filter sees it. The walker then finds
+no recognised fields, `scanned_fields == 0`, and the request is forwarded
+**uninspected** — no error, no crash, just unredacted traffic. That makes
+`redact_uninspected_bodies_total` a load-bearing alert rather than a
+diagnostic, and argues for a catalogue check (in the shape of
+`tools/check-model-catalogs.sh`) that fails when a non-OpenAI schema
+appears.
 
 ⚠️ **First implementation check — does declaring `initContainers` on our
 `EnvoyProxy` displace AIEG's injected sidecar?** AIEG injects
