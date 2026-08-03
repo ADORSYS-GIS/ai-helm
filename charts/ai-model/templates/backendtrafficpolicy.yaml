@@ -2,11 +2,20 @@
 BackendTrafficPolicy — per-model rate limiting (ADR-0021).
 
 Up to THREE rule families per plan, all composed (Envoy denies if ANY matched
-bucket is exhausted):
+bucket is exhausted). ⚠️ Families 1 and 2 render for NO plan as of 2026-08-01 —
+every `burst:` block is commented out in charts/ai-models/values.yaml, so
+per-minute limiting is off fleet-wide and the gateway-wide shared monthly budget
+is the only cap left. The logic here is intact and deliberately untouched:
+uncommenting a plan's `burst:` restores its rules with no template change (but
+re-read the ordering note in that file first — once `tiers`/`projectEnvelope`
+are populated, doing so shifts THEIR indices). See the $hasRules guard below,
+which drops the whole rateLimit block when no family renders at all.
 
   1. burst requests/min — keyed on x-account-id + x-billing-plan (per user per model).
+                          DISABLED (no plan sets burst.requestsPerMin).
   2. burst tokens/min   — keyed on x-account-id + x-billing-plan, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
+                          DISABLED (no plan sets burst.tokensPerMin).
   3. monthly budget     — micro-USD, cost = llm_custom_total_cost. Emitted ONLY
                           for plans that carry a budget → service/internal stay
                           uncapped. ⚠️ CAVEAT: because this BTP targets the
@@ -21,6 +30,23 @@ bucket is exhausted):
                           (`mergeType: StrategicMerge`) with that gateway budget.
 
 x-billing-plan (stamped by the AuthConfig from Keycloak's billing_plan claim (from group attribute)) selects the plan.
+
+Every monthly rule below (plan budget, tier budget, project envelope) also keys
+on x-billing-period — a calendar "YYYY-MM" marker stamped gateway-wide by the
+core-gateway chart's Lua EnvoyExtensionPolicy (ADR-0111). That marker, NOT the
+`unit`, is what rolls the budget over on the 1st of each calendar month.
+
+⚠️ ADR-0112: those rules use `unit: Year` DELIBERATELY — do not "fix" them back
+to `Month`. Lyft/Envoy append their own window epoch
+(`floor(now/unit_seconds)*unit_seconds`) to every Redis key, so a counter
+rotates whenever EITHER the period marker OR that epoch changes. `Month` is
+2,592,000s (30 days, NOT a calendar month) and rotates on a drifting grid —
+e.g. 2026-08-05, mid-month — granting a spurious extra budget on top of the
+intended 1st-of-month reset, ~12x a year. `Year` (31,536,000s) is the longest
+unit the CRD enum permits, so the epoch holds still and the marker is the sole
+rotation trigger. The unit is now just a TTL: `monthlyBudgetUsd` stays a
+MONTHLY figure and is NOT scaled by 12. One residual epoch rollover remains
+(~2026-12-18, then annually) — known and documented.
 
 Budget per plan = global plan default (.Values.plans.<plan>.monthlyBudgetUsd).
 Burst (rules 1+2) is always per-model; comes from .Values.plans.<plan>.burst.
@@ -79,6 +105,35 @@ makes the rendered manifest match what the API server actually stores.
        budget counter. Requires Envoy Gateway ≥ v1.8.2 (see core-gateway BTP).
        Defaults off → unchanged per-model behaviour. */ -}}
 {{- $sharedBudget := (.Values.sharedBudget | default dict).enabled -}}
+{{- /* ⚠️ EVERY rule family below is optional, and as of 2026-08-01 ALL of them
+       are absent at once on the live fleet: the plan `burst:` blocks are
+       commented out in charts/ai-models/values.yaml (families 1+2), families 4+5
+       need `tiers`/`projectEnvelope`, still empty, and `sharedBudget.enabled`
+       drops family 3. `rateLimit.global.rules` is a REQUIRED, minItems-1 list in
+       the BackendTrafficPolicy CRD, so rendering the block with an empty list
+       gets the whole policy rejected by the API server — which would take the
+       per-model upstream TIMEOUT down with it, a far bigger blast radius than
+       the rate limits. Pre-compute whether anything renders and omit the
+       `rateLimit:` block entirely when nothing does; the gateway-wide BTP's
+       shared budget still applies via the StrategicMerge above. */ -}}
+{{- $hasRules := false -}}
+{{- range $i, $plan := $plans }}
+  {{- /* Same `id` guard as the rules loop below, repeated here because that loop
+         is skipped entirely when no rule renders — a malformed plans entry must
+         still fail the render, not pass silently. */}}
+  {{- if not $plan.id }}{{ fail (printf "ai-model plans[%d]: `id` is required (plans is an ordered list of {id, monthlyBudgetUsd?, burst}, not a map — see values.yaml)" $i) }}{{ end }}
+  {{- $b := default dict $plan.burst }}
+  {{- if $b.requestsPerMin }}{{ $hasRules = true }}{{ end }}
+  {{- if and (not $isImage) $b.tokensPerMin }}{{ $hasRules = true }}{{ end }}
+  {{- if and (not $sharedBudget) $plan.monthlyBudgetUsd }}{{ $hasRules = true }}{{ end }}
+{{- end }}
+{{- range $tier := $tiers }}
+  {{- $tb := default dict $tier.burst }}
+  {{- if $tb.requestsPerMin }}{{ $hasRules = true }}{{ end }}
+  {{- if and (not $isImage) $tb.tokensPerMin }}{{ $hasRules = true }}{{ end }}
+  {{- if $tier.monthlyBudgetUsd }}{{ $hasRules = true }}{{ end }}
+{{- end }}
+{{- if $projectEnvelope.monthlyBudgetUsd }}{{ $hasRules = true }}{{ end }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -111,6 +166,7 @@ spec:
       {{- with $t.connectionIdleTimeout }}
       connectionIdleTimeout: {{ . | quote }}
       {{- end }}
+  {{- if $hasRules }}
   rateLimit:
     type: Global
     global:
@@ -185,9 +241,18 @@ spec:
                   name: x-billing-plan
                   type: Exact
                   value: {{ $plan.id | quote }}
+                - invert: false
+                  # ADR-0111: calendar billing-month marker (stamped gateway-wide
+                  # by the core-gateway Lua EnvoyExtensionPolicy) folded into the
+                  # key so the counter rotates on the 1st. This — not `unit`,
+                  # which is a TTL only (ADR-0112) — is the monthly boundary.
+                  name: x-billing-period
+                  type: Distinct
           limit:
-            requests: {{ $limit }} # rule/{{ $i }} · {{ $plan.id }} monthly budget ${{ . }} — PER MODEL (see caveat; shared version is the gateway BTP)
-            unit: Month
+            requests: {{ $limit }} # rule/{{ $i }} · {{ $plan.id }} MONTHLY budget ${{ . }} — PER MODEL (see caveat; shared version is the gateway BTP). unit is a TTL only — do NOT scale by 12.
+            # ADR-0112: `Year` is deliberate (see header) — `Month` would add
+            # spurious mid-month resets on top of the x-billing-period rotation.
+            unit: Year
           cost:
             request:
               from: Number
@@ -281,9 +346,14 @@ spec:
                   name: x-quota-tier
                   type: Exact
                   value: {{ $tier.id | quote }}
+                - invert: false
+                  # ADR-0111: see the plan-budget rule above — same fix.
+                  name: x-billing-period
+                  type: Distinct
           limit:
-            requests: {{ $tierLimit }} # tier-rule/{{ $i }} · {{ $tier.id }} monthly budget ${{ . }} per member per model
-            unit: Month
+            requests: {{ $tierLimit }} # tier-rule/{{ $i }} · {{ $tier.id }} MONTHLY budget ${{ . }} per member per model. unit is a TTL only — do NOT scale by 12.
+            # ADR-0112: `Year` is deliberate — see the header note.
+            unit: Year
           cost:
             request:
               from: Number
@@ -309,9 +379,14 @@ spec:
                   name: x-project-quota
                   type: Exact
                   value: {{ $projectEnvelope.projectQuota | default "" | quote }}
+                - invert: false
+                  # ADR-0111: see the plan-budget rule above — same fix.
+                  name: x-billing-period
+                  type: Distinct
           limit:
-            requests: {{ $envelopeLimit }} # project envelope ${{ . }} per project per model
-            unit: Month
+            requests: {{ $envelopeLimit }} # project envelope ${{ . }} per project per model (MONTHLY; unit is a TTL only — do NOT scale by 12)
+            # ADR-0112: `Year` is deliberate — see the header note.
+            unit: Year
           cost:
             request:
               from: Number
@@ -322,3 +397,4 @@ spec:
                 namespace: io.envoy.ai_gateway
                 key: {{ $costKey }}
         {{- end }}
+  {{- end }}

@@ -7,25 +7,32 @@ budget; ADR-0070). Two read paths over the SAME Redis keys:
 
   1. Mimir leaderboard (the numbers). prometheus-redis-exporter SCANs the
      monthly-budget keys and exports `gateway_ratelimit_spend_micro_usd` with
-     parsed account_id / model / plan / plane / window labels. These panels rank
-     spend per account and per model for the selected 30-day budget window.
+     parsed account_id / plan / plane / window / billing_period labels. These
+     panels rank spend per account and per plan for the selected calendar
+     billing period.
   2. Redis census (the live "who's active right now"). A `redis-datasource`
      tmscan straight against redis-ha — zero scrape-lag, the limiter's own view.
+     Also shows a "Billing period" column parsed straight from the raw key, so
+     you can see which accounts have already rotated to the new calendar-aligned
+     key vs. which are still on their old 30-day-epoch one, live, without
+     waiting on the exporter's scrape.
 
 RAW consumption only (no quota/% overlay): the budget LIMITS live in static Helm
 config (free $50/mo, pro $200, per-model overrides — charts/ai-models) and a
 user's plan isn't on the key, so a precise "% of quota" can't be derived here.
-The value shown is micro-USD spent this window (÷1e6 → USD).
+The value shown is micro-USD spent this billing period (÷1e6 → USD).
 
-`window` is the 30-day budget bucket start (Unix epoch, a multiple of 2592000s).
-The $window picker defaults to the newest (current) bucket; the previous bucket
-lingers until its TTL, so pick it to see last period.
+`billing_period` is the calendar "YYYY-MM" marker (ai-helm ADR-0111) and is the
+primary temporal filter — it rotates on the real 1st-of-the-month, unlike the
+legacy `window` label (a fixed 30-day Unix-epoch bucket that drifts off the
+calendar and is no longer surfaced here). The $billing_period picker defaults
+to the newest (current) month; pick an older one to see a past period.
 
 The JSON file is regenerated from this module — do **not** hand-edit it::
 
     uv run dashboards build
 
-ADR: docs/adr/0070-ratelimit-quota-observability.md (+ ADR-0008).
+ADR: docs/adr/0070-ratelimit-quota-observability.md (+ ADR-0008, ADR-0111).
 """
 
 from __future__ import annotations
@@ -42,8 +49,8 @@ from dashboards._common import (
     METRIC_RATELIMIT_SPEND_MICRO_USD,
     REDIS_RATELIMIT_UID,
     RL_LABEL_ACCOUNT,
+    RL_LABEL_BILLING_PERIOD,
     RL_LABEL_PLAN,
-    RL_LABEL_WINDOW,
 )
 from dashboards.envoy_ai_gateway import _shared as sh
 
@@ -52,6 +59,7 @@ OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/ratel
 _M = METRIC_RATELIMIT_SPEND_MICRO_USD
 _A = RL_LABEL_ACCOUNT
 _PL = RL_LABEL_PLAN
+_BP = RL_LABEL_BILLING_PERIOD
 
 # ⚠️ NO `model` / `plane` dimension here, by design. Since the #532 shared-budget
 # cutover the monthly budget is ONE counter per (account, plan) on the gateway-wide
@@ -61,9 +69,14 @@ _PL = RL_LABEL_PLAN
 # a `$model` variable here would blank the whole board, not just its own panels.
 # Per-model spend still lives in the Mimir/Loki cost dashboards (ADR-0058/0046).
 #
-# All filters refine the same metric. $window is single-select (default newest)
-# so totals are for ONE budget period; the rest are multi (default All → .+).
-_SEL = f'{{{RL_LABEL_WINDOW}=~"$window", {_PL}=~"$plan", {_A}=~"$account"}}'
+# All filters refine the same metric. $billing_period is single-select (default
+# newest) so totals are for ONE calendar month; the rest are multi (default All →
+# .+). The legacy `window` label still exists on the metric (kept by the exporter
+# for the lingering pre-rollover bucket) but is deliberately NOT selected on here
+# — it's a vestigial 30-day epoch artifact, not something a user should filter by
+# directly; summing across it within one billing_period gives the correct total
+# even if the underlying window happened to roll over mid-month.
+_SEL = f'{{{_BP}=~"$billing_period", {_PL}=~"$plan", {_A}=~"$account"}}'
 _MSEL = f"{_M}{_SEL}"
 
 _LEGEND_ACCOUNT = "{{" + _A + "}}"
@@ -100,7 +113,7 @@ class _RedisTmscanTarget:
 # ── Mimir leaderboard (the numbers) ────────────────────────────────────────────
 def _panel_total_spend() -> object:
     return sh.stat_panel(
-        title="Total spend — this window",
+        title="Total spend — this period",
         expr=sh.usd(f"sum({_MSEL})"),
         unit="currencyUSD",
         color="orange",
@@ -142,7 +155,7 @@ def _panel_plans() -> object:
 
 def _panel_top_accounts() -> object:
     return sh.bargauge_panel(
-        title="Top accounts by spend — this window",
+        title="Top accounts by spend — this period",
         expr=sh.usd(f"topk(20, sum by ({_A}) ({_MSEL}))"),
         legend=_LEGEND_ACCOUNT,
         unit="currencyUSD",
@@ -155,7 +168,7 @@ def _panel_spend_by_plan() -> object:
     # Was "Spend share by model". Same grid slot; billing tier is the dimension
     # the shared budget actually has.
     return sh.pie_panel(
-        title="Spend share by plan — this window",
+        title="Spend share by plan — this period",
         expr=sh.usd(f"sum by ({_PL}) ({_MSEL})"),
         legend_label=_LEGEND_PLAN,
         grid=(12, 12, 12, 5),
@@ -167,7 +180,7 @@ def _panel_breakdown_table() -> table.Panel:
     expr = sh.usd(f"sum by ({_A}, {_PL}) ({_MSEL})")
     panel = (
         table.Panel()
-        .title("Consumption by account x plan — this window")
+        .title("Consumption by account x plan — this period")
         .datasource(sh.MIMIR_DS)
         .grid_pos(dm.GridPos(h=12, w=24, x=0, y=17))
         .filterable(True)
@@ -181,7 +194,7 @@ def _panel_breakdown_table() -> table.Panel:
                         _PL: "Plan",
                         "Value #A": "Spend ($)",
                     },
-                    "excludeByName": {"Time": True, RL_LABEL_WINDOW: True},
+                    "excludeByName": {"Time": True},
                     "indexByName": {
                         _A: 0,
                         _PL: 1,
@@ -207,7 +220,7 @@ def _panel_breakdown_table() -> table.Panel:
 
 
 def _panel_spend_over_time() -> object:
-    # The gauge over time — accumulation within the window, per top account.
+    # The gauge over time — accumulation within the billing period, per top account.
     expr = sh.usd(f"topk(10, sum by ({_A}) ({_MSEL}))")
     return sh.daily_bars_panel(
         title="Spend over time — top accounts",
@@ -234,6 +247,38 @@ def _panel_live_census() -> table.Panel:
     # unparsed keys. The leading `.*/` inside the optional group is load-bearing
     # too: without it the group matches empty at position 0 and Model is dropped
     # from the per-model keys as well.
+    #
+    # The trailing (also optional) group carries "Billing period" (ADR-0111):
+    # after the non-greedy Account capture ends at the first `_rule-N-match-1`,
+    # that literal's own Exact-match value (which repeats the same
+    # `_rule-N-match-1` token — Exact selectors carry their rule/match name as
+    # the descriptor value) is consumed, then an optional
+    # `_rule-N-match-2_<YYYY-MM>` is tried. Legacy pre-rollover keys (no
+    # match-2 segment) simply leave BillingPeriod empty, so a row here is a
+    # direct, zero-scrape-lag view of which accounts have rotated to the new
+    # calendar-aligned key vs. which are still on their old 30-day-epoch one —
+    # useful for watching the rollout finish. The $billing_period Mimir filter
+    # above can't show this: it only ever sees keys the exporter has already
+    # scraped and relabeled, not the raw-key rotation state.
+    #
+    # ⚠️ Two Grafana-model gotchas here, both pre-dating this file (verified
+    # against Grafana's own source, packages/grafana-data/src/text/string.ts
+    # + public/app/features/transformers/extractFields/{types,fieldExtractors}.ts,
+    # v12.3.1 — the pinned chart version, charts/observability/values.yaml):
+    #   1. `format` must be the literal `FieldExtractorID` enum value
+    #      `"regexp"`, not `"regex"` — an unrecognized format id fails the
+    #      WHOLE transform with "Error transforming data: unknown extractor"
+    #      (the registry has no `"regex"` entry: json|kvp|auto|regexp|delimiter).
+    #   2. The pattern must be wrapped in `/…/` delimiters, like a JS regex
+    #      literal. `stringToJsRegex` special-cases this: `stringStartsAsRegEx`
+    #      only checks the FIRST character is `/`; without both delimiters the
+    #      whole option is silently discarded and Grafana falls back to its own
+    #      built-in default `/(?<NewField>.*)/` — which is exactly why the
+    #      table used to render one big "NewField" column holding the whole raw
+    #      key instead of Account/Model/Billing period, with no error at all.
+    #      (The trailing `/` before `stringToJsRegex`'s own non-greedy `.*?`
+    #      still finds the TRUE closing delimiter correctly across our
+    #      pattern's internal `/`s — verified live, not just reasoned about.)
     return (
         table.Panel()
         .title("Live limiter counters — direct from Redis (zero scrape-lag)")
@@ -246,10 +291,12 @@ def _panel_live_census() -> table.Panel:
                 id_val="extractFields",
                 options={
                     "source": "key",
-                    "format": "regex",
+                    "format": "regexp",
                     "regExp": (
-                        r"^(?:.*/converse/(?<Model>[^/]+)/)?"
+                        r"/^(?:.*\/converse\/(?<Model>[^/]+)\/)?"
                         r".*_rule-\d+-match-0_(?<Account>.+?)_rule-\d+-match-1"
+                        r"(?:_rule-\d+-match-1)?"
+                        r"(?:_rule-\d+-match-2_(?<BillingPeriod>\d{4}-\d{2}))?/"
                     ),
                     "keepFields": True,
                 },
@@ -259,9 +306,14 @@ def _panel_live_census() -> table.Panel:
             dm.DataTransformerConfig(
                 id_val="organize",
                 options={
-                    "renameByName": {"key": "Redis key"},
+                    "renameByName": {"key": "Redis key", "BillingPeriod": "Billing period"},
                     "excludeByName": {"type": True, "memory": True, "cursor": True, "count": True},
-                    "indexByName": {"Account": 0, "Model": 1, "Redis key": 2},
+                    "indexByName": {
+                        "Account": 0,
+                        "Model": 1,
+                        "Billing period": 2,
+                        "Redis key": 3,
+                    },
                 },
             )
         )
@@ -272,28 +324,34 @@ _DESCRIPTION = (
     "WHO is consuming the Envoy AI Gateway and HOW MUCH of their budget, read from "
     "the rate-limit service's LIVE counters in redis-ha (ADR-0070) — the only place "
     "that current-window state exists. Mimir panels rank spend per account/plan "
-    "for the selected 30-day budget window (prometheus-redis-exporter → "
+    "for the selected calendar billing period (prometheus-redis-exporter → "
     "gateway_ratelimit_spend_micro_usd, ÷1e6 → USD); the bottom table is a direct "
-    "redis-datasource census (zero scrape-lag). RAW consumption only — budget "
+    "redis-datasource census (zero scrape-lag), with a Billing period column "
+    "parsed straight from the raw key so you can see rotation state live, "
+    "without waiting on a scrape. RAW consumption only — budget "
     "limits are static Helm config (ADR-0021/0035), not derivable per-user here. "
     "NO per-model breakdown: since the #532 shared-budget cutover the budget is one "
     "counter per (account, plan) spanning ALL models and both planes, so the keys "
     "carry no model label — see the Mimir/Loki cost dashboards for per-model spend. "
-    "$window defaults to the current bucket. Filters: plan, account. "
+    "$billing_period (ai-helm ADR-0111) defaults to the current calendar month — "
+    "the correct temporal filter, replacing the old 30-day-epoch `window` label. "
+    "Filters: plan, account. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/ratelimit_quota.py."
 )
 
 
-def _window_var() -> db.QueryVariable:
-    # Single-select, newest-first (NUMERICAL_DESC) so the current 30-day bucket is
-    # the default. No "All" — totals must be for ONE budget period.
+def _billing_period_var() -> db.QueryVariable:
+    # Single-select, newest-first so the current calendar month is the default.
+    # No "All" — totals must be for ONE budget period. ALPHABETICAL_DESC sorts
+    # a "YYYY-MM" string newest-first identically to a numerical sort, since the
+    # format is zero-padded and lexicographic order matches chronological order.
     return (
-        db.QueryVariable("window")
-        .label("Budget window (30-day bucket)")
+        db.QueryVariable("billing_period")
+        .label("Billing period (calendar month)")
         .datasource(sh.MIMIR_DS)
-        .query(sh.label_values(_M, RL_LABEL_WINDOW))
+        .query(sh.label_values(_M, _BP))
         .refresh(dm.VariableRefresh.ON_TIME_RANGE_CHANGED)
-        .sort(dm.VariableSort.NUMERICAL_DESC)
+        .sort(dm.VariableSort.ALPHABETICAL_DESC)
         .multi(False)
         .include_all(False)
     )
@@ -310,14 +368,14 @@ def _dashboard() -> db.Dashboard:
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
         .refresh("1m")
         .time("now-30d", "now")
-        .with_variable(_window_var())
+        .with_variable(_billing_period_var())
         .with_variable(sh.multi_var(name="plan", label="Plan", definition=sh.label_values(_M, _PL)))
         # NB: no `$model` variable — the shared-budget counters carry no `model`
         # label, and the multi-var default `.+` would match nothing at all.
         .with_variable(
             sh.multi_var(name="account", label="Account", definition=sh.label_values(_M, _A))
         )
-        .with_panel(sh.row("Live budget consumption — selected window", y=0))
+        .with_panel(sh.row("Live budget consumption — selected billing period", y=0))
         .with_panel(_panel_total_spend())
         .with_panel(_panel_active_accounts())
         .with_panel(_panel_counters())

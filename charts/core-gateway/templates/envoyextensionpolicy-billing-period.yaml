@@ -1,0 +1,24 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyExtensionPolicy
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-billing-period
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ include "core-gateway.fullname" . }}
+  lua:
+    - type: Inline
+      # ADR-0111: Envoy Gateway's rate-limit `unit: Month` is a fixed 30-day
+      # (2,592,000s) epoch window, not a calendar month, and never resets on
+      # the 1st. Stamping a calendar billing-period marker folds it into every
+      # monthly-budget rate-limit key (see backendtrafficpolicy.yaml in this
+      # chart and in charts/ai-model), so a fresh key is used starting every
+      # 1st of the month and the old one just ages out on its own TTL.
+      # Runs strictly before the rate-limit filter (Envoy Gateway's own fixed
+      # HTTP filter order: Lua < RateLimit), confirmed in ADR-0111.
+      inline: |
+        function envoy_on_request(request_handle)
+          request_handle:headers():replace("x-billing-period", os.date("!%Y-%m"))
+        end

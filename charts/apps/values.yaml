@@ -988,6 +988,15 @@ applications:
     # app to the new version on the next reconcile (no release/repoint needed).
     chart: mongodb-backup
     releaseName: mongodb-backup
+    # librechat-s3-config (the S3 upload creds the CronJob's `main` container
+    # needs) already exists in the `converse` namespace as librechat-app's own
+    # in-chart ExternalSecret, but Secrets are namespace-scoped and this app
+    # runs in `converse-chat` — so it never had a copy. Confirmed live
+    # 2026-08-02: every backup run failed on `secret "librechat-s3-config"
+    # not found` (CreateContainerConfigError) once the separate MONGODB_URI
+    # DNS bug was fixed. This overlay materialises the app's own copy from
+    # the same underlying creds.
+    depsOverlay: environments/prod/deps/mongodb-backup
     destination:
       namespace: converse-chat
 
@@ -1432,6 +1441,26 @@ applications:
     destination:
       namespace: mlops
 
+  # --- GPU arbitration between serving and MLOps (ADR-0114) ---
+  # Two cluster-scoped PriorityClass objects only — no namespaced resources,
+  # so `destination.namespace` below is a formality ArgoCD requires, not a
+  # placement decision (picked `mlops` since it already exists rather than
+  # creating a namespace for nothing). NOT controlPlane: PriorityClass must
+  # exist on home-remote, where the GPU nodes and the pods that reference it
+  # actually schedule — the opposite of the orchestrators above.
+  # `charts/inference` and `charts/webank-training` reference these classes by
+  # name; nothing here breaks if this Application syncs after them the first
+  # time — the pod that references a not-yet-existing class simply stays
+  # unschedulable until ArgoCD's next reconcile creates it (self-healing race,
+  # not a hard ordering dependency).
+  - name: gpu-priority-classes
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: gpu-priority-classes
+    releaseName: gpu-priority-classes
+    destination:
+      namespace: mlops
+
   # --- Webank governed GPU training (webank-models ADR-0034 / ADR-0035) ---
   # A plain workload Application, not an orchestrator: it installs only the
   # namespaced WorkflowTemplate. Human submission remains the sole trigger;
@@ -1446,6 +1475,54 @@ applications:
     depsOverlay: environments/prod/deps/webank-training
     destination:
       namespace: mlops
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # redact-gateway — PII redaction front proxy (ADR-0115, governance epic #873).
+  # FIRST-PARTY: ADORSYS-GIS/lightbridge-governance, chart + image published
+  # from that repo like every other lightbridge-* service.
+  #
+  # Sits IN FRONT of core-gateway-internal rather than inside the Envoy filter
+  # chain — client -> redact-gateway -> core-gateway-internal (Authorino ->
+  # AIEG -> provider) — which sidesteps the "can a custom ext_proc processor be
+  # ordered before AIEG's on EG v1.8.2" question entirely (spike #874,
+  # deliberately unresolved and probably never needed). That half is ADR-0113
+  # and still stands.
+  #
+  # ⚠️ REPLACES the censgate/redact canary, whose ADR-0115 supersedes ADR-0113's
+  # ENGINE choice only. That image could not execute at all — its builder linked
+  # against a newer glibc than its distroless runtime shipped, so every
+  # container exited with `GLIBC_2.38 not found` on any host
+  # (censgate/redact#114, paused in #890). A binary sitting fail-closed in front
+  # of every AI request has to be one we build and can fix.
+  #
+  # ⚠️ INTERNAL CANARY ONLY, still. Deployed and reachable in-cluster (ClusterIP
+  # + CiliumNetworkPolicy), but NOT the path any production client depends on —
+  # no app's traffic is pointed at it here. Cutting a real client over (starting
+  # with the /inference/v1/embeddings traffic #875 identified as the strongest
+  # non-streaming candidate) is a separate, reviewed PR. No Ingress/HTTPRoute:
+  # unreachable from outside the cluster.
+  #
+  # ⚠️ Does NOT detect person names — `pii`'s NER entities need a model its
+  # `candle-ner` feature does not ship. The service logs that at startup and
+  # `Profile::detects_names()` reports it, so nothing assumes coverage we lack.
+  # NER lands as a SEPARATE service (measured: in-process candle takes the proxy
+  # from 33 crates to 130 and pulls C++ via tokenizers) — its own ADR.
+  # Source: https://github.com/ADORSYS-GIS/lightbridge-governance
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: redact-gateway
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: redact-gateway
+    releaseName: redact-gateway
+    valuesFromRepo: true
+    destination:
+      namespace: apps
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
 
 extraObjects:
   # ==========================================
