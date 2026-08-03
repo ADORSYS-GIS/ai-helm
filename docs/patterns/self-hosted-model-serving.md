@@ -83,11 +83,11 @@ ADR-0002 for text, ADR-0004 for images. Do not serve GGUF on vLLM (~8× throughp
 regression), and do not look for a diffusion path in either text engine — there
 isn't one.
 
-### KV-cache precision (ADR-0111)
+### KV-cache precision (ADR-0118)
 
 The KV cache (what the attention reads) is the biggest per-token VRAM cost
 after weights, and both text engines expose a precision knob. **vLLM has a fleet
-default; llama.cpp does not** (ADR-0111):
+default; llama.cpp does not** (ADR-0118):
 
 | | `vllm` | `llamacpp` |
 |---|---|---|

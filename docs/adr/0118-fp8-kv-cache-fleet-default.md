@@ -1,4 +1,4 @@
-# ADR-0111: FP8 KV-cache dtype as the fleet default for vLLM models
+# ADR-0118: FP8 KV-cache dtype as the fleet default for vLLM models
 
 **Status:** Accepted
 **Date:** 2026-08-03
@@ -37,7 +37,7 @@ Scope is vLLM-only, enforced by render-time guards:
   quant), set explicitly per model via `serving.kvCacheType`; no fleet default.
 - LocalAI's diffusion backend has no KV cache to quantize.
 - `serving.kvCacheDtype` on a non-vLLM engine, or a value vLLM does not accept,
-  fails the render (`_helpers.tpl` fail-fast guards, ADR-0111 scope only —
+  fails the render (`_helpers.tpl` fail-fast guards, ADR-0118 scope only —
   the knob list itself is validated against the engine's accepted set).
 - **LMCache + fp8 is UNVERIFIED on this fleet** and fails the render too:
   LMCache serializes KV tensors as stored on the GPU, and its fp8 path has
