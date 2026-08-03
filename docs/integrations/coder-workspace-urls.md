@@ -46,8 +46,8 @@ sends you debugging DNS when you have a permissions problem:
 | | Layer | Question | Scope | Failure looks like |
 |---|---|---|---|---|
 | 1 | **Resolvable** | Does the hostname resolve and serve valid TLS? | Deployment-wide | `NXDOMAIN`, `TRAEFIK DEFAULT CERT` |
-| 2 | **Routable** | Does coderd find a process behind it? | Per workspace / port | `502`, `404`, workspace stopped |
-| 3 | **Permitted** | Is *this caller* allowed? | Per port, per share level | `303` → `auth-redirect` |
+| 2 | **Routable** | Does coderd find a process behind it? | Per workspace / port | `502`, workspace stopped, nothing bound |
+| 3 | **Permitted** | Is *this caller* allowed? | Per port, per share level | `303` → `auth-redirect`, or **`404`** |
 
 **Reachability is layers 1 + 2. Accessibility is layer 3.** The wildcard cert and
 DNS record fix layer 1 once, for the whole deployment. Layer 3 is per-port,
@@ -56,6 +56,29 @@ opt-in, and revocable — and it is the layer that is "off" by default.
 So: a `303` is *good news about layers 1 and 2*. It proves DNS, TLS, ingress and
 coderd routing all work and you have an authorization question. Never debug the
 wildcard because of a 303.
+
+### ⚠️ A denied user gets `404`, not `403`
+
+Layer 3 answers differently depending on whether you presented credentials:
+
+| Request | Response | Meaning |
+|---|---|---|
+| No session | `303` → `/api/v2/applications/auth-redirect` | "Log in and I will re-evaluate" |
+| Valid session, **not** permitted | **`404`** | Authenticated, denied |
+| Valid session, permitted | `200` | Owner, or covered by the share level |
+| No session, `public` share | `200` | Anyone with the URL |
+
+coderd returns **404 rather than 403 deliberately** — its own comment on the path
+is *"The request has a valid API key but insufficient permissions"*, and it calls
+`WriteWorkspaceApp404`. A 403 would confirm the app exists, which would let anyone
+enumerate other people's workspaces by guessing hostnames — and since the hostname
+is `<port>--<agent>--<workspace>--<user>`, guessing is easy.
+
+**Consequence for debugging:** a `404` on a workspace app URL is far more often an
+*authorization* result than a missing route. The classic report is "it works for
+me but my teammate gets a 404" — that is not a broken link, it is the share level
+being `owner` (the default). Confirm by checking the share level before touching
+anything else.
 
 ### Four ways to reach a process in a workspace
 
@@ -82,13 +105,38 @@ which one you have first — a **declared app** is a `coder_app` resource in the
 template; a **raw port** is anything a user just started inside the workspace
 (`next dev`, `vite`, `python -m http.server`).
 
-Everything below uses the CLI (`coder login https://coder.ai.camer.digital`) and
-its session token for API calls:
+Everything below uses the CLI and its session token for API calls:
 
 ```bash
+curl -fsSL https://coder.ai.camer.digital/install.sh | sh   # installs the matching version
+coder login https://coder.ai.camer.digital
+
 TOKEN=$(cat ~/.config/coderv2/session)
 CODER_URL=https://coder.ai.camer.digital
 ```
+
+<details>
+<summary>Two CLI warnings you can ignore</summary>
+
+Both go to **stderr**, so neither corrupts a piped stdout:
+
+```
+version mismatch: client v2.35.2+5c2838a, server v2.34.6+660dc56
+download v2.34.6+660dc56 with: 'curl -fsSL https://coder.ai.camer.digital/install.sh | sh'
+```
+A newer CLI than the server. Harmless for everything in this guide. The install
+one-liner above pins you to the server's version if you want it silenced — worth
+doing before reporting any CLI bug, since a mismatch is the first thing to rule out.
+
+```
+WARN: Failed to get devcontainers for agent main: ... unexpected status code 500:
+Could not get containers ... dial unix /var/run/docker.sock: no such file or directory
+```
+`coder show` probing for devcontainers on a template that has no Docker socket.
+Expected on our Kubernetes templates; it does not affect the agent, the workspace,
+or app URLs.
+
+</details>
 
 > ⚠️ **A reachable URL is not an accessible one.** Both kinds of app default to
 > share level `owner` — the URL resolves and serves TLS, but returns **HTTP 303**
@@ -171,8 +219,23 @@ resource "coder_app" "my_app" {
 
 **Raw ports** — see the dedicated runbook in the next section.
 
-Share levels: `owner` (default) · `authenticated` (any Coder user on this
-deployment) · `organization` · `public` (no auth at all).
+### The share levels
+
+| Level | Who gets in | Settable on a port share? |
+|---|---|---|
+| `owner` | Only the workspace owner | ❌ `400 Port sharing level not allowed` |
+| `authenticated` | Any logged-in user on this deployment | ✅ |
+| `organization` | Logged-in users in the same organization | ✅ |
+| `public` | Anyone with the URL, no login | ✅ |
+
+> ⚠️ **`owner` is not a writable value on a port share.** A share record exists
+> only to grant access *beyond* the owner, so `owner` is the absence of one.
+> **To return a port to owner-only, `DELETE` the share** — do not try to POST
+> `share_level: "owner"`. That returns `400 Port sharing level not allowed`,
+> which reads like a permissions or licensing failure and is neither.
+>
+> `coder_app.share` in a template is different: there `owner` is the default and
+> is perfectly valid, because the app's declaration *is* the record.
 
 ---
 
@@ -182,7 +245,7 @@ This is the common case — someone runs `next dev` / `vite` / `python -m http.s
 inside a workspace and wants to hand a colleague or a client a link. The port is
 reachable the moment the process binds, but it is `owner`-only until you share it.
 
-Three interfaces, and only two of them can publish:
+Four interfaces, only two of which can publish:
 
 | Interface | Find the URL | Change share level |
 |---|---|---|
@@ -192,13 +255,19 @@ Three interfaces, and only two of them can publish:
 | **CLI** | ❌ | ❌ |
 
 **MCP is discovery-only.** `coder_workspace_port_forward` takes
-`{"workspace":"K-workspace.main","port":3000}` and returns the finished URL —
-the cleanest way to get one programmatically, since it avoids hand-assembly and
-the 63-character arithmetic. But no MCP tool sets a share level, so an agent can
-tell you where an app *would* be published and cannot publish it. (Note
-`coder_workspace_list_apps` returns each app's raw `url` field — for a
-`subdomain = false` app that is the *internal* `http://localhost:PORT`, not a
-public URL.)
+`{"workspace":"K-workspace.main","port":3000}` and returns the finished URL — the
+tidiest lookup, since it avoids hand-assembly and the 63-character arithmetic. But
+no MCP tool sets a share level, so an agent can tell you where an app *would* be
+published and cannot publish it. (Note `coder_workspace_list_apps` returns each
+app's raw `url` field — for a `subdomain = false` app that is the *internal*
+`http://localhost:PORT`, not a public URL.)
+
+> ⚠️ **`coder exp mcp` is explicitly experimental.** `coder exp --help` describes
+> the whole namespace as *"Internal commands for testing and experimentation.
+> These are prone to breaking changes with no notice."* Fine for interactive use
+> and for agents that can adapt; do **not** build durable tooling or CI on the
+> tool names or their output shapes. The `/api/v2` endpoints above are the stable
+> contract — prefer them for anything automated.
 
 **There is no CLI subcommand.** `coder port-forward` is *local* forwarding to your
 own machine, and `coder sharing` shares the whole workspace with named users —
@@ -299,13 +368,23 @@ curl -sS -o /dev/null -w 'http=%{http_code} ssl_verify=%{ssl_verify_result}\n' \
   https://3000--main--K-workspace--kingkoufan.coder-ws.camer.digital/
 ```
 
+Run it **twice** — once unauthenticated as above, once with
+`-H "Coder-Session-Token: $TOKEN"`. The pair is what tells layer 3 apart from the
+rest.
+
 | Result | Meaning |
 |---|---|
-| `200`, `ssl_verify=0` | Public and working |
-| `303` → `auth-redirect` | Routing + TLS fine; share level is `owner`/`authenticated` |
+| `200`, `ssl_verify=0`, no token | Publicly shared and working |
+| `200` only *with* a token | Working; share level is `owner`/`authenticated`, not `public` |
+| `303` → `auth-redirect` | **Layers 1+2 healthy.** No session presented — an authorization question, not DNS or TLS |
+| `404` *with* a valid token | **Authenticated but denied** (see above) — check the share level, not the route |
+| `502` / connection refused | Nothing bound on that port inside the workspace, or the workspace is stopped |
 | `403` | Path-based app on a deployment with `CODER_DISABLE_PATH_APPS=true` |
 | `TRAEFIK DEFAULT CERT` | The wildcard cert is broken — see the zone section below |
 | DNS `NXDOMAIN` | The wildcard `A` record is missing |
+
+To reproduce a teammate's view of your own URL without another account, use a
+private window — as the owner you will always get `200`, which hides the problem.
 
 ### ⚠️ Declared apps must set `subdomain = true`
 

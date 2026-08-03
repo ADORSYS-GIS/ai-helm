@@ -253,7 +253,12 @@ backendTrafficPolicy:
       - id: free
         # 30 → 15 (2026-07-08): now that the budget is genuinely shared across all
         # models (#532 cutover), the old per-model headroom rationale is gone.
-        monthlyBudgetUsd: 15
+        # 15 → 50 (2026-08-01): the 15 was a provisional squeeze, not the tier we
+        # actually offer — restored to the $50/mo of ADR-0035. Only the plan's
+        # VALUE changes, never its index, so no counter is re-keyed and accrued
+        # spend carries over; and with ADR-0111's calendar `billing_period` in the
+        # key, this lands on a fresh window anyway.
+        monthlyBudgetUsd: 50
       # index 2
       - id: pro
         monthlyBudgetUsd: 200

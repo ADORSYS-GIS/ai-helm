@@ -75,6 +75,32 @@ rateLimitBudgeting:
   # orphans every account's counter). The order below reproduces the sorted
   # order that was live on 2026-07-22 (enterprise, free, internal, pro,
   # service), so this conversion is render-neutral.
+  # ── Per-minute burst limits REMOVED across every plan (2026-08-01) ─────────
+  # The 10x raise of 2026-07-31 was the half-measure; every `burst:` block below
+  # is now commented out, so neither per-minute rule family renders and the
+  # monthly budget is the only guardrail left. Same reasoning as the 10x pass,
+  # carried to its conclusion: the per-minute buckets protected nothing the
+  # budget doesn't, and mostly surfaced as spurious 429s on bursty-but-cheap
+  # usage. Commented rather than deleted so re-enabling a plan is one uncomment.
+  #
+  # The 10x pass raised rather than removed because deleting rules RENUMBERS the
+  # ones after them, and a renumbered rule is a new Lyft counter key — i.e. a
+  # silent mid-window budget reset (the ADR-0084/ADR-0110 hazard). It called for
+  # waiting for an append-only-safe moment or accepting the reset knowingly.
+  # This is that moment, on both counts:
+  #   - Nothing is left to renumber. Under sharedBudget.enabled the per-model
+  #     budget rule doesn't render at all (it lives on the gateway-wide policy,
+  #     a DIFFERENT policy whose indices this cannot touch), and `tiers` /
+  #     `projectEnvelope` below are still empty. The burst rules are the only
+  #     rules the per-model BTP emits today, so removing them shifts no counter.
+  #   - It is the 1st of the month, and ADR-0111 put the calendar `billing_period`
+  #     in the key, so every budget counter is rotating to a fresh key regardless.
+  # Re-check both before assuming a future removal is equally free: once `tiers`
+  # or `projectEnvelope` carry entries, they render AFTER the plan rules and
+  # uncommenting a `burst:` block would shift THEIR indices.
+  #
+  # `id` is kept on every entry (even the now-empty burst-only ones) so the list
+  # keeps its length and its append-only index contract.
   plans:
     # index 0
     - id: enterprise
@@ -85,41 +111,44 @@ rateLimitBudgeting:
       # monthlyBudgetUsd DORMANT (see free); the LIVE monthly cap is
       # core-gateway backendTrafficPolicy.monthlyBudget.plans.enterprise — keep in sync.
       monthlyBudgetUsd: 1000
-      burst:
-        requestsPerMin: 800
-        tokensPerMin: 4000000
+      # burst:
+      #   requestsPerMin: 8000
+      #   tokensPerMin: 40000000
     # index 1
     - id: free
       # Per-person monthly budget. DORMANT since the #532 shared-budget cutover
       # (sharedBudget.enabled gates the per-model rule off) — the LIVE knob is
       # core-gateway backendTrafficPolicy.monthlyBudget.plans. Kept in sync
-      # (15, 2026-07-08) so a rollback to per-model budgets keeps the same cap.
-      monthlyBudgetUsd: 15
-      burst:
-        requestsPerMin: 200
-        # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
-        # (charts/ai-models-info) — a single max-context request no longer
-        # blows the per-minute token bucket. The monthly budget ($50) stays the
-        # real cost cap; this is just the per-minute RATE.
-        tokensPerMin: 1000000
+      # (50, 2026-08-01) so a rollback to per-model budgets keeps the same cap.
+      monthlyBudgetUsd: 50
+      # burst:
+      #   requestsPerMin: 2000
+      #   # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
+      #   # (charts/ai-models-info) — a single max-context request no longer
+      #   # blows the per-minute token bucket. The monthly budget stays the real
+      #   # cost cap; this is just the per-minute RATE. 1M → 10M in the 10x pass.
+      #   tokensPerMin: 10000000
     # index 2 — in-cluster services (LibreChat, cron-jobs, k8s SAs) on the
-    # INTERNAL plane. Uncapped budget (no monthlyBudgetUsd) — burst-only.
+    # INTERNAL plane. Uncapped budget (no monthlyBudgetUsd) — was burst-only, so
+    # with burst commented out this entry now contributes NO rule at all. Kept
+    # (id only) to hold index 2.
     - id: internal
-      burst:
-        requestsPerMin: 600
-        tokensPerMin: 2000000
+      # burst:
+      #   requestsPerMin: 6000
+      #   tokensPerMin: 20000000
     # index 3
     - id: pro
       monthlyBudgetUsd: 200
-      burst:
-        requestsPerMin: 400
-        tokensPerMin: 2000000     # 400k → 2M: a couple of max-context requests/min
+      # burst:
+      #   requestsPerMin: 4000
+      #   tokensPerMin: 20000000    # 2M → 20M in the 10x pass
     # index 4 — remote service accounts (GitHub runners, …) on the EXTERNAL
-    # plane. Uncapped budget (no monthlyBudgetUsd) — burst-only.
+    # plane. Uncapped budget (no monthlyBudgetUsd) — likewise contributes no
+    # rule today; kept (id only) to hold index 4.
     - id: service
-      burst:
-        requestsPerMin: 600
-        tokensPerMin: 2000000
+      # burst:
+      #   requestsPerMin: 6000
+      #   tokensPerMin: 20000000
 
   # Per-member-in-project quota tiers (ai-helm#570) — SAME append-only-list
   # contract as `plans` above, but a separate, independently-ordered list
@@ -283,12 +312,33 @@ modelDefaults:
     fwSecondary: &fwBackendSecondary
       ref: fw-02
       priority: 1
+    # service_tier=priority (DeepInfra's paid queue-jump tier, 1.5x the
+    # standard per-token rate — deepinfra.com/blog/priority-service-tier) is
+    # forced on EVERY request to EVERY deepinfra-backed model, for EVERY
+    # caller (LibreChat, opencode, internal agents) — there is no way to
+    # scope this per-caller at the gateway (AIGatewayRoute backendRefs are
+    # per-model, not per-client). Deliberate: maintainer chose gateway-wide
+    # over "let clients opt in" or per-model "-priority" variants. If a given
+    # backend model doesn't actually support priority tier (only vLLM-stack
+    # models do today; SGLang/TensorRT-LLM rolling out), DeepInfra silently
+    # falls back to standard billing and echoes `service_tier: "default"` in
+    # the response — so `pricing.standard` values bumped 1.5x below may
+    # OVER-estimate true spend for those models (safe direction: our budget
+    # rate-limit trips earlier than DeepInfra actually bills, never later).
     deepinfraPrimary: &deepinfraBackendPrimary
       ref: deepinfra-01
       priority: 0
+      bodyMutation:
+        set:
+          - path: service_tier
+            value: '"priority"'
     deepinfraSecondary: &deepinfraBackendSecondary
       ref: deepinfra-02
       priority: 1
+      bodyMutation:
+        set:
+          - path: service_tier
+            value: '"priority"'
     googleAiStudioPrimary: &googleAiStudioBackendPrimary
       ref: google-ai-studio-01
       priority: 0
@@ -1173,56 +1223,34 @@ models:
 #         priority: 0
 #         modelNameOverride: "qwen2-vl-2b"
 #
-  deepseek-v4-flash:
+  deepseek-v4-flash-0731:
     kind: text
-    # DeepInfra · deepseek-ai/DeepSeek-V4-Flash — 1,048,576-token context
-    # (clamped to the 400k catalog ceiling), 384k max output (capped to a
-    # sane 131k generation ceiling). Dual Think/Non-Think modes → reasoning.
+    # DeepInfra · deepseek-ai/DeepSeek-V4-Flash-0731 — the official release of
+    # DeepSeek-V4-Flash, outperforming DeepSeek-V4-Pro on multiple benchmarks
+    # despite a smaller parameter count. Supersedes both `deepseek-v4-flash`
+    # and `deepseek-v4-pro`, which are RETIRED (2026-08-02). 1,048,576-token
+    # context, 131k max output (capped to a sane generation ceiling);
+    # `reasoning_effort` low/high/max → reasoning. Pricing is DeepInfra's
+    # confirmed Priority-tier rate (1.5x standard $0.09/$0.018/$0.18 — see
+    # the deepinfraPrimary/Secondary anchor note on service_tier=priority).
     info:
-      displayName: "DeepSeek V4 Flash"
+      displayName: "DeepSeek V4 Flash 0731"
       contextLength: 1048576
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.14
-        cachedInputPer1M: 0.028
-        outputPer1M: 0.28
+        inputPer1M: 0.135
+        cachedInputPer1M: 0.027
+        outputPer1M: 0.27
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
+        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash-0731"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
-
-  deepseek-v4-pro:
-    kind: text
-    # DeepInfra · deepseek-ai/DeepSeek-V4-Pro — 1,048,576-token context, 131k
-    # max output (capped to a sane generation ceiling). MoE model for advanced
-    # reasoning / coding / long-horizon agents; three reasoning-effort modes
-    # (Non-think / Think High / Think Max) → reasoning. Measured throughput is
-    # modest (~35 tok/s output, ~1.85s TTFT — the "Pro" tier trades speed for
-    # depth; route latency-sensitive work to deepseek-v4-flash or the local Qwen).
-    info:
-      displayName: "DeepSeek V4 Pro"
-      contextLength: 1048576
-      maxOutputTokens: 131072
-      supportedParameters: *spReasoning
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 1.30
-        cachedInputPer1M: 0.10
-        outputPer1M: 2.60
-    backends:
-      deepinfra-01:
-        <<: *deepinfraBackendPrimary
-        modelNameOverride: "deepseek-ai/DeepSeek-V4-Pro"
-      deepinfra-02:
-        <<: *deepinfraBackendSecondary
-        modelNameOverride: "deepseek-ai/DeepSeek-V4-Pro"
+        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash-0731"
 
   reviewer-internal:
     kind: text
@@ -1241,9 +1269,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.93
-        cachedInputPer1M: 0.18
-        outputPer1M: 3.00
+        inputPer1M: 1.395
+        cachedInputPer1M: 0.27
+        outputPer1M: 4.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1267,9 +1295,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.93
-        cachedInputPer1M: 0.18
-        outputPer1M: 3.00
+        inputPer1M: 1.395
+        cachedInputPer1M: 0.27
+        outputPer1M: 4.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1296,9 +1324,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.93
-        cachedInputPer1M: 0.18
-        outputPer1M: 3.00
+        inputPer1M: 1.395
+        cachedInputPer1M: 0.27
+        outputPer1M: 4.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1319,9 +1347,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.45
-        cachedInputPer1M: 0.07
-        outputPer1M: 2.25
+        inputPer1M: 0.675
+        cachedInputPer1M: 0.105
+        outputPer1M: 3.375
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1346,9 +1374,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.74
-        cachedInputPer1M: 0.15
-        outputPer1M: 3.50
+        inputPer1M: 1.11
+        cachedInputPer1M: 0.225
+        outputPer1M: 5.25
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1360,6 +1388,11 @@ models:
   qwen3-reranker-8b:
     enabled: false
     kind: reranker
+    # Pricing NOT bumped for the deepinfraPrimary/Secondary service_tier=priority
+    # anchor (see that anchor's comment): priority tier is a chat/completions
+    # and completions feature only (deepinfra.com/blog/priority-service-tier).
+    # The `/v1/rerank` endpoint ignores the injected service_tier body field
+    # and is billed at this standard rate regardless.
     pricing:
       strategy: flat
       standard:
@@ -1384,9 +1417,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.15
-        cachedInputPer1M: 0.03
-        outputPer1M: 1.15
+        inputPer1M: 0.225
+        cachedInputPer1M: 0.045
+        outputPer1M: 1.725
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1414,9 +1447,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.93
-        cachedInputPer1M: 0.18
-        outputPer1M: 3.00
+        inputPer1M: 1.395
+        cachedInputPer1M: 0.27
+        outputPer1M: 4.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1482,9 +1515,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.07
-        cachedInputPer1M: 0.07
-        outputPer1M: 0.34
+        inputPer1M: 0.105
+        cachedInputPer1M: 0.105
+        outputPer1M: 0.51
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1536,9 +1569,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.06
-        cachedInputPer1M: 0.01
-        outputPer1M: 0.40
+        inputPer1M: 0.09
+        cachedInputPer1M: 0.015
+        outputPer1M: 0.60
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1561,9 +1594,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.25
-        cachedInputPer1M: 0.05
-        outputPer1M: 1.00
+        inputPer1M: 0.375
+        cachedInputPer1M: 0.075
+        outputPer1M: 1.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1585,9 +1618,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.40
-        cachedInputPer1M: 0.08
-        outputPer1M: 2.00
+        inputPer1M: 0.60
+        cachedInputPer1M: 0.12
+        outputPer1M: 3.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1617,9 +1650,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 1.00
-        cachedInputPer1M: 0.20
-        outputPer1M: 3.00
+        inputPer1M: 1.50
+        cachedInputPer1M: 0.30
+        outputPer1M: 4.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1643,9 +1676,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.14
-        cachedInputPer1M: 0.05
-        outputPer1M: 1.00
+        inputPer1M: 0.21
+        cachedInputPer1M: 0.075
+        outputPer1M: 1.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1677,9 +1710,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.30
-        cachedInputPer1M: 0.06
-        outputPer1M: 1.20
+        inputPer1M: 0.45
+        cachedInputPer1M: 0.09
+        outputPer1M: 1.80
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1718,9 +1751,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 2.00
-        cachedInputPer1M: 0.20
-        outputPer1M: 10.00
+        inputPer1M: 3.00
+        cachedInputPer1M: 0.30
+        outputPer1M: 15.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1747,9 +1780,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 10.00
-        cachedInputPer1M: 1.00
-        outputPer1M: 50.00
+        inputPer1M: 15.00
+        cachedInputPer1M: 1.50
+        outputPer1M: 75.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1770,25 +1803,27 @@ models:
   # load-gated and measured on the GPU fleet.)
   adorsys-researcher:
     kind: text
-    # Backing: DeepInfra · deepseek-ai/DeepSeek-V4-Flash (cheap/fast research).
+    # Backing: DeepInfra · deepseek-ai/DeepSeek-V4-Flash-0731 (cheap/fast
+    # research) — repointed from the retired `deepseek-ai/DeepSeek-V4-Flash`
+    # (2026-08-02), same as the standalone `deepseek-v4-flash-0731` catalog id.
     info:
-      displayName: "Adorsys Researcher (DeepSeek V4)"
+      displayName: "Adorsys Researcher (DeepSeek V4 Flash 0731)"
       contextLength: 1048576
       maxOutputTokens: 131072
       supportedParameters: *spReasoning
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.14
-        cachedInputPer1M: 0.028
-        outputPer1M: 0.28
+        inputPer1M: 0.135
+        cachedInputPer1M: 0.027
+        outputPer1M: 0.27
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
-        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
+        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash-0731"
       deepinfra-02:
         <<: *deepinfraBackendSecondary
-        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash"
+        modelNameOverride: "deepseek-ai/DeepSeek-V4-Flash-0731"
 
   adorsys-coder:
     kind: text
@@ -1802,9 +1837,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.25
-        cachedInputPer1M: 0.05
-        outputPer1M: 1.00
+        inputPer1M: 0.375
+        cachedInputPer1M: 0.075
+        outputPer1M: 1.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1828,9 +1863,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.93
-        cachedInputPer1M: 0.18
-        outputPer1M: 3.00
+        inputPer1M: 1.395
+        cachedInputPer1M: 0.27
+        outputPer1M: 4.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1851,9 +1886,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.25
-        cachedInputPer1M: 0.05
-        outputPer1M: 1.00
+        inputPer1M: 0.375
+        cachedInputPer1M: 0.075
+        outputPer1M: 1.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1877,9 +1912,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.93
-        cachedInputPer1M: 0.18
-        outputPer1M: 3.00
+        inputPer1M: 1.395
+        cachedInputPer1M: 0.27
+        outputPer1M: 4.50
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1907,9 +1942,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.20
-        cachedInputPer1M: 0.04
-        outputPer1M: 0.80
+        inputPer1M: 0.30
+        cachedInputPer1M: 0.06
+        outputPer1M: 1.20
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
@@ -1934,9 +1969,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 0.74
-        cachedInputPer1M: 0.15
-        outputPer1M: 3.50
+        inputPer1M: 1.11
+        cachedInputPer1M: 0.225
+        outputPer1M: 5.25
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary

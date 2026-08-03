@@ -18,7 +18,7 @@ generators:
       elements:
         - appName: ai-models-backends                 # syncWave -1
           chartPath: charts/ai-models-backends
-        - appName: ai-models-deepseek-v4-flash        # syncWave 0
+        - appName: ai-models-deepseek-v4-flash-0731    # syncWave 0
           chartPath: charts/ai-model
         - appName: ai-models-glm-5                    # syncWave 0
           chartPath: charts/ai-model
@@ -41,7 +41,7 @@ per-model YAML.
 | `backendDefaults` (YAML anchors) | Provider-level shape: schema, prefix, fqdn, security type |
 | `backends` | Map of provider accounts (fw-01, deepinfra-01, …). Flows into `ai-models-backends` and to each model's `backendsInventory`. |
 | `models` | The model fleet. Each entry → one child Application. Set `enabled: false` to omit. |
-| `rateLimitBudgeting.plans` | Default monthly-budget tiers (free, pro) — models inherit unless they override per-entry |
+| `rateLimitBudgeting.plans` | **Ordered, append-only list** (ADR-0084/0110) of `{id, monthlyBudgetUsd?, burst?}` — never reorder, insert or remove. Budgets here are **dormant** under `sharedBudget.enabled` (the live cap is core-gateway `backendTrafficPolicy.monthlyBudget.plans`; keep the two in sync). The per-minute `burst:` blocks are **commented out** (2026-08-01) — no per-minute limiting today. |
 
 ## Adding a model
 

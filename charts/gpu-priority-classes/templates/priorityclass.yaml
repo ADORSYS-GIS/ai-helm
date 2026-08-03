@@ -1,0 +1,20 @@
+{{- /*
+One PriorityClass per `classes` entry. Cluster-scoped (no `metadata.namespace`).
+`globalDefault` is always false — a class becomes the implicit default for
+every unlabeled pod cluster-wide, which neither of these should be: an
+unprioritized pod must stay at the true default (0), strictly between
+inference-serving (-10) and mlops-training (1000).
+*/ -}}
+{{- range $name, $cfg := .Values.classes }}
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ $name | quote }}
+  labels:
+    {{- include "common.labels.standard" $ | nindent 4 }}
+value: {{ required (printf "gpu-priority-classes: classes.%s.value is required" $name) $cfg.value }}
+globalDefault: false
+preemptionPolicy: {{ $cfg.preemptionPolicy | default "PreemptLowerPriority" | quote }}
+description: {{ $cfg.description | default "" | quote }}
+{{- end }}

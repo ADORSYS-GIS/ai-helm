@@ -9,7 +9,7 @@ permissions:
   contents: read
   pull-requests: write
 
-# NOTE on chart coverage: this gate delegates to the org-shared ai-ops
+# NOTE on chart coverage: this gate delegates to the org-shared ai-governance
 # security-gates workflow, which does a bare `actions/checkout` and runs
 # `trivy config charts/` with NO `helm dependency build`. Every chart in this
 # repo that has a subchart dependency (all the model-serving/llm-d/librechat/…
@@ -20,9 +20,14 @@ permissions:
 # release-helm-charts.yml. We keep delegating here (org alignment); closing this
 # gap would mean forking an inline dep-build+render job away from the shared
 # workflow. See PR / .trivyignore.yaml header.
+#
+# Hosted in ai-governance (public), not ai-ops (private) — ai-ops's Actions
+# "Access" setting blocks all external callers outright, independent of the
+# workflow file's content. Pinned to an immutable commit SHA, not @main or a
+# movable tag, so a future push to ai-governance cannot change what runs here.
 jobs:
   scan:
-    uses: ADORSYS-GIS/ai-ops/.github/workflows/security-gates.yml@v1.2.0
+    uses: ADORSYS-GIS/ai-governance/.github/workflows/security-gates.yml@b0798a3b7218a21bd807405551fc6c73b63693b4
     secrets: inherit
     with:
       trivy-scan-type: 'config'

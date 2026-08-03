@@ -12,7 +12,7 @@ flowchart TB
 
     subgraph dp["Envoy data plane (eg) — HPA 3–5, LeastRequest LB"]
         LISTEN["Listeners<br/><b>external</b>: api.ai.camer.digital (ACME TLS)<br/><b>internal</b>: core-gateway-internal.svc (self-signed CA)"]
-        FILTER["HTTP filter chain<br/>ext_authz → ratelimit → router"]
+        FILTER["HTTP filter chain<br/>ext_authz → lua (billing-period) → ratelimit → router"]
     end
 
     subgraph authz["Authorino (authorino-system, 2 replicas)"]
@@ -46,7 +46,8 @@ flowchart TB
 | **Listeners** | `Gateway` (`core-gateway`) | Terminate TLS; split external (public, ACME) vs internal (ClusterIP, self-signed CA) planes |
 | **ext_authz** | `SecurityPolicy` → Authorino | Call Authorino over gRPC before routing |
 | **AuthConfig** | `kuadrant-policies` | Per-`Host` JWT verification; stamp `x-oidc-*` + `x-account-id`/`x-org-id`/`x-billing-plan` |
-| **ratelimit** | `BackendTrafficPolicy` + Redis | Burst (req/min, tokens/min, per user) + monthly USD budget (per user, ADR-0035) |
+| **lua (billing-period)** | `EnvoyExtensionPolicy` (`core-gateway`) | Stamp `x-billing-period` (UTC `YYYY-MM`) on every request via `os.date`, so monthly-budget rate-limit keys rotate on the calendar 1st instead of a 30-day epoch (ADR-0111). Runs after ext_authz, strictly before ratelimit (Envoy Gateway's fixed filter order). |
+| **ratelimit** | `BackendTrafficPolicy` + Redis | Burst (req/min, tokens/min, per user) + monthly USD budget (per user, ADR-0035), keyed calendar-aligned since ADR-0111 |
 | **AIGatewayRoute** | `ai-model` leaf | Map an OpenAI model id → an `AIServiceBackend` |
 | **AIServiceBackend** | `ai-models-backends` | Provider endpoint + credential + token-cost metadata (`llmRequestCosts`) |
 | **access log** | `core-gateway` | Emit per-request JSON (carrying `x-oidc-*`) to Alloy |
@@ -155,6 +156,8 @@ sequenceDiagram
 | Fairness | Per-user burst + per-user monthly budget | `BackendTrafficPolicy` + Redis |
 | Resilience | Circuit breaker + outlier detection (eject erroring backend ≤30 s) | `BackendTrafficPolicy` |
 | Zero-cut rollout | 60 s drain (`minDrainDuration` 15 s); PDB `maxUnavailable: 1` | `EnvoyProxy` |
-| Cost metering | Native `llmRequestCosts` token extraction (no Lua/Python hop) | `AIGatewayRoute` |
+| Cost metering | Native `llmRequestCosts` token extraction (no Lua/Python hop for *this*) | `AIGatewayRoute` |
+
+Note: ADR-0111 does add one small Lua filter to the chain (the `x-billing-period` calendar-marker stamp), but it's unrelated to cost metering — token/cost extraction above stays entirely native via `llmRequestCosts` response metadata.
 
 → Subsystems: [05 Auth](05-auth-identity.md) · [09 Model serving](09-inference.md) · [08 Observability](08-observability.md)

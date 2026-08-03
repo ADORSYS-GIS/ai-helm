@@ -95,7 +95,7 @@
   "editable": true,
   "graphTooltip": 1,
   "time": {
-    "from": "now-30d",
+    "from": "now/M",
     "to": "now"
   },
   "fiscalYearStartMonth": 0,
@@ -114,7 +114,7 @@
       "repeatDirection": "h",
       "options": {
         "mode": "markdown",
-        "content": "# 🏆 AI Gateway Scoreboard\nWho's using the platform, how much it costs, and how close we are to budget — live from the precomputed Mimir metrics (ADR-0058). Default window is **30 days**; pick a calendar month in the time picker for monthly totals. Filter by client & model up top. ⚡"
+        "content": "# 🏆 AI Gateway Scoreboard\nWho's using the platform, how much it costs, and how close we are to budget — live from the precomputed Mimir metrics (ADR-0058). Default window is **this month so far** (calendar month-to-date, resets on the 1st); pick any other range in the time picker to total a different period. Filter by client & model up top. ⚡"
       }
     },
     {
@@ -134,7 +134,7 @@
       "type": "gauge",
       "targets": [
         {
-          "expr": "100 * (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[30d])) / 1e6) / $budget",
+          "expr": "100 * (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range])) / 1e6) / $budget",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -145,8 +145,8 @@
           }
         }
       ],
-      "title": "Monthly budget burn (last 30d)",
-      "description": "Spend over the last 30 days as a % of the $budget variable (default $3000/mo).",
+      "title": "Monthly budget burn (range)",
+      "description": "Spend over the selected time range as a % of the $budget variable (default $3000/mo). Dashboard defaults to This month so far.",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -204,7 +204,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "((sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[30d]))) / 1e6)",
+          "expr": "((sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range]))) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,
@@ -215,7 +215,7 @@
           }
         }
       ],
-      "title": "Spend (last 30d)",
+      "title": "Spend (range)",
       "transparent": false,
       "datasource": {
         "type": "prometheus",
@@ -265,7 +265,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "$budget - (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[30d])) / 1e6)",
+          "expr": "$budget - (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", azp=~\"$azp\", model=~\"$model\"}[$__range])) / 1e6)",
           "refId": "A",
           "instant": true,
           "range": false,

@@ -16,17 +16,27 @@ training:
     secretName: lakefs-proxy-admin
     accessKey: access-key-id
     secretKey: secret-access-key
-    candidateBranch: candidates
   otel:
     endpoint: ""
-  # Every GPU-capable template is rendered only when these placement
-  # invariants are present: `role: gpu`, a matching NoSchedule toleration,
-  # and a positive nvidia.com/gpu limit. The readiness gate remains CPU-only.
+  # Every dataset-build and training template uses this GPU-node placement and
+  # resource profile: `nvidia.com/gpu.present=true` (the live GPU node label,
+  # matching charts/inference's `defaults.gpu` — see ADR-0114), an
+  # `nvidia.com/gpu:NoSchedule` (Exists) toleration matching the live node
+  # taint, and an explicit positive nvidia.com/gpu request and limit. Dataset
+  # construction receives the same reviewed CPU, memory, and GPU allocation as
+  # candidate training.
+  #
+  # ⚠️ Prior to ADR-0114 this contract was `role: gpu`, which no node in the
+  # cluster has ever carried — every GPU-requesting workflow pod was
+  # unschedulable (`0/9 nodes are available: 4 didn't match node
+  # affinity/selector, 5 had untolerated taints`) regardless of GPU
+  # availability. Verified live 2026-08-02.
   gpu:
     nodeSelector: {}
     tolerations: []
+    priorityClassName: ""
     resources:
-      requests: { cpu: "4", memory: 16Gi }
+      requests: { cpu: "4", memory: 16Gi, nvidia.com/gpu: 1 }
       limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }
   documentDetector:
     stemChannels: 32
@@ -36,6 +46,6 @@ training:
     shrinkRatio: 0.6
 
 # One entry produces exactly two public WorkflowTemplates: `<id>-dataset-build`
-# and `<id>-train`. Keep model-specific commands in the chart, selected by the
-# closed `trainer` enum below; values never provide executable shell text.
+# and `<id>-train`. Each entry must also bind a fixed `lakefs.dataset` and
+# `lakefs.model` destination; values never provide executable shell text.
 models: []

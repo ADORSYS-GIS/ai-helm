@@ -1,0 +1,24 @@
+# GPU arbitration between self-hosted model serving (charts/inference) and
+# MLOps GPU workflows (charts/webank-training) — ADR-0114. PriorityClass is
+# cluster-scoped, so this chart renders no namespaced resources; the
+# destination namespace on the Argo Application is a formality ArgoCD
+# requires, not a placement decision.
+#
+# `inference-serving` is deliberately NEGATIVE: it must never be able to
+# preempt anything itself, including an unprioritized pod sitting at the
+# implicit default of 0 — it is the designated victim, nothing more.
+# `mlops-training` is a large positive so a submitted training/dataset-build
+# step always outranks it.
+classes:
+  inference-serving:
+    value: -10
+    preemptionPolicy: PreemptLowerPriority
+    description: >-
+      Self-hosted GPU model serving (charts/inference). Never the
+      preemptor — only ever preempted, by mlops-training.
+  mlops-training:
+    value: 1000
+    preemptionPolicy: PreemptLowerPriority
+    description: >-
+      Webank governed GPU dataset-build and candidate-training workflows
+      (charts/webank-training). Preempts inference-serving on demand.
