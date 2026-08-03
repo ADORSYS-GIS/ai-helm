@@ -44,3 +44,28 @@ spec:
     - targetPort: 19001
       path: /metrics
       interval: 30s
+---
+# redact-extproc (ADR-0116): same pods as the "envoy-proxy" monitor above (the
+# sidecar shares the gateway pod's labels — labels are pod-scoped, not
+# per-container), scraping its OWN metrics container port by name. Cross-pod
+# scrape, unlike the sidecar's gRPC port — see values.yaml's comment on why
+# METRICS_LISTEN_ADDR binds 0.0.0.0 while LISTEN_ADDR stays loopback-only.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-redact-extproc
+  namespace: envoy-gateway-system
+  labels:
+    app.kubernetes.io/part-of: core-gateway
+spec:
+  namespaceSelector:
+    matchNames:
+      - envoy-gateway-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/managed-by: envoy-gateway
+      app.kubernetes.io/name: envoy
+  podMetricsEndpoints:
+    - targetPort: redact-metrics
+      path: /metrics
+      interval: 30s

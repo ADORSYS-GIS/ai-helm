@@ -30,6 +30,51 @@ spec:
         container:
           resources:
             {{- toYaml ($ep.resources | default dict) | nindent 12 }}
+        # redact-extproc (ADR-0116): a second native sidecar beside the one
+        # AIEG's own admission webhook injects. Direct assignment here
+        # (`InitContainers: deploymentConfig.InitContainers` in EG's own
+        # resource_provider.go) and AIEG's injection (an APPEND in its
+        # gateway_mutator.go, at Pod CREATE admission) happen at different
+        # layers — one writes the Deployment spec, the other patches the Pod
+        # — so this cannot displace AIEG's container. Verified against EG
+        # v1.8.2 / AIEG v1.0.0 source before relying on it; re-check on any
+        # major bump to either.
+        initContainers:
+          - name: redact-extproc
+            image: "{{ .Values.redactExtproc.image.repository }}:{{ .Values.redactExtproc.image.tag }}"
+            # The Kubernetes native-sidecar marker (1.28+, this cluster is
+            # 1.35): starts before the main containers, keeps running
+            # alongside them, and is what makes an initContainer entry behave
+            # as a sidecar rather than a run-once init step.
+            restartPolicy: Always
+            ports:
+              - name: redact-grpc
+                containerPort: {{ .Values.redactExtproc.listenPort | default 9500 }}
+              - name: redact-metrics
+                containerPort: {{ .Values.redactExtproc.metricsPort | default 9501 }}
+            env:
+              - name: LISTEN_ADDR
+                value: "127.0.0.1:{{ .Values.redactExtproc.listenPort | default 9500 }}"
+              - name: METRICS_LISTEN_ADDR
+                value: "0.0.0.0:{{ .Values.redactExtproc.metricsPort | default 9501 }}"
+              - name: REDACT_PROFILE
+                value: {{ .Values.redactExtproc.profile | default "coding-assistant" | quote }}
+              # Quoted deliberately: a bare number here renders as a YAML
+              # int/float that Kubernetes' string-typed EnvVar.value rejects.
+              - name: RESPONSE_HOLD_BACK_BYTES
+                value: {{ .Values.redactExtproc.responseHoldBackBytes | default 1024 | quote }}
+              - name: REDACT_HASH_SALT
+                valueFrom:
+                  secretKeyRef:
+                    name: {{ include "core-gateway.fullname" . }}-redact-extproc-env
+                    key: {{ .Values.redactExtproc.externalSecret.saltProperty | default "redact_extproc_hash_salt" }}
+                    # ⚠️ NEVER optional — see charts/redact-gateway's own
+                    # comment on this exact env var. An optional ref lets a
+                    # sidecar that beats ESO capture an empty salt and hash
+                    # with it forever.
+                    optional: false
+            resources:
+              {{- toYaml (.Values.redactExtproc.resources | default dict) | nindent 14 }}
         {{- if (default dict $ep.topologySpread).enabled }}
         pod:
           topologySpreadConstraints:

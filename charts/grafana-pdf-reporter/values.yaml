@@ -1,0 +1,45 @@
+# Remote headless-chromium for the Grafana dashboard-reporter-app (ADR-0118).
+# The reporter plugin renders each dashboard panel to a PNG via Grafana's
+# image-renderer sidecar, then assembles the PDF from HTML using THIS chromium
+# instance. The plugin connects to it via remoteChromeUrl: ws://<service>:9222.
+
+name: grafana-pdf-reporter
+
+# chromedp/headless-shell — the same headless-chromium the reporter app's
+# chromedp dependency targets. Exposes Chrome remote-debugging on 9222.
+image: docker.io/chromedp/headless-shell:151.0.7922.72
+
+# Chrome remote-debugging port (the reporter app's remoteChromeUrl port).
+port: 9222
+
+# Deployment-specific (ADR-0057): image tag + resources are supplied per-env
+# from ai-helm-values (environments/<env>/values/grafana-pdf-reporter.yaml).
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+# Headless chrome needs real shared memory; the default 64Mi /dev/shm is too
+# small and crashes the renderer. Mount an in-memory emptyDir at /dev/shm.
+shmSize: 1Gi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level hardening (KSV-0014): immutable root FS. Chrome only writes
+# to $HOME (→ /tmp) and /dev/shm, both mounted as writable emptyDirs, so the
+# root filesystem can stay read-only. Verified live: headless-shell starts and
+# serves remote-debugging on 9222 under read-only root + non-root uid 1000.
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]

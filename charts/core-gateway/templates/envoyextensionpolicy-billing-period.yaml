@@ -1,3 +1,18 @@
+{{- /*
+⚠️ EG allows exactly ONE EnvoyExtensionPolicy per targetRef. A second policy
+targeting the same Gateway (this is what ai-helm#900 originally shipped, as
+its own envoyextensionpolicy-redact.yaml) is REJECTED outright —
+`status.ancestors[].conditions`: `Accepted: False, reason: Conflicted,
+message: "Unable to target Gateway core-gateway, another EnvoyExtensionPolicy
+has already attached to it"` — not merged, not queued, just never wired into
+the filter chain. Caught live 2026-08-03: a bare `ghp_` token sent to the
+public gateway came back fully analysed, unblocked, because the ext_proc
+filter this policy's `extProc` block below adds was never attached at all.
+Every extension for this Gateway (Lua, ext_proc, any future one) MUST live
+in this ONE resource. Do not split a new extension into its own
+EnvoyExtensionPolicy file again — verify this constraint against the
+CRD/controller behaviour before assuming otherwise.
+*/}}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: EnvoyExtensionPolicy
 metadata:
@@ -22,3 +37,29 @@ spec:
         function envoy_on_request(request_handle)
           request_handle:headers():replace("x-billing-period", os.date("!%Y-%m"))
         end
+  # ADR-0116: PII/credential redaction ext_proc filter. Merged into THIS
+  # resource for the reason in the header comment above — it cannot be its
+  # own EnvoyExtensionPolicy targeting the same Gateway.
+  extProc:
+    - backendRefs:
+        - name: {{ include "core-gateway.fullname" . }}-redact-extproc
+          kind: Backend
+          group: gateway.envoyproxy.io
+      # Explicit on purpose: the CRD's own documented default is to send
+      # NEITHER headers nor body to the processor, which yields a filter
+      # that is attached, healthy, and inspecting nothing (ADR-0116 flags
+      # this as the same silent-no-op class as the `"n": 1` YAML-boolean
+      # trap). Request is Buffered — the whole JSON body arrives as one
+      # message, matching what crates/governance-redact's payload walker
+      # expects. Response is Streamed — see governance_redact::holdback for
+      # why buffering the whole completion is the wrong latency trade.
+      processingMode:
+        request:
+          body: Buffered
+        response:
+          body: Streamed
+      messageTimeout: {{ .Values.redactExtproc.messageTimeout | default "200ms" }}
+      # Matches decision 10 of the governance roadmap and every profile's
+      # own `fail_closed` stance: an outage of the redactor must fail the
+      # request, never silently forward unscanned content.
+      failOpen: false
