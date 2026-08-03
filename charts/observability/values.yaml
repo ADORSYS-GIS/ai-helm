@@ -455,33 +455,3 @@ children:
       automated:
         prune: true
         selfHeal: true
-
-  # --- Observability: grafana-pdf-reporter (dashboard PDF export chromium) ---
-  # Remote headless-chromium for the dashboard-reporter-app plugin. The reporter
-  # rasterizes each panel via Grafana's image-renderer sidecar, then assembles
-  # the PDF from HTML using THIS chromium (remoteChromeUrl:
-  # ws://grafana-pdf-reporter:9222). Sync-wave 0: alongside Grafana — the
-  # reporter only needs it at report time, not at startup.
-  - name: grafana-pdf-reporter
-    valuesFromRepo: true   # values in ai-helm-values (ADR-0056)
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    additionalAnnotations:
-      argocd.argoproj.io/sync-wave: "0"
-    source:
-      # OCI chart-float (ADR-0055): full chart path in repoURL + chart ".".
-      repoURL: oci://ghcr.io/adorsys-gis/charts/grafana-pdf-reporter
-      chart: "."
-      targetRevision: ">=0.0.0"
-      helm:
-        releaseName: grafana-pdf-reporter
-    destination:
-      namespace: observability
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-        - SkipDryRunOnMissingResource=true
-      automated:
-        prune: true
-        selfHeal: true

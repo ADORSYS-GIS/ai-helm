@@ -25,7 +25,6 @@ from pathlib import Path
 from types import ModuleType
 
 from dashboards._common import SCHEMA_VERSION
-from dashboards._report import inject_report_link
 
 # Registry of every generated dashboard. Import-by-string so Python's
 # import-time errors don't blow up unrelated `--help`.
@@ -78,7 +77,6 @@ def _emit(mod: ModuleType, target_dir: Path) -> Path:
     # every generated dashboard — instead of relying on the SDK's internal
     # default. See `_common.SCHEMA_VERSION`.
     dashboard["schemaVersion"] = SCHEMA_VERSION
-    inject_report_link(dashboard)
     out_path = target_dir / mod.OUTPUT_PATH  # type: ignore[attr-defined]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
