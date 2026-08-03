@@ -587,7 +587,18 @@ applications:
       # untouched. No depsOverlay on this app, so it renders as a single source.
       repoURL: oci://ghcr.io/adorsys-gis/charts/core-gateway
       chart: "."
-      targetRevision: ">=0.0.0"
+      # ⚠️ TEMPORARY ROLLBACK PIN (2026-08-03 incident): 0.3.146 is the last
+      # published chart WITHOUT the ADR-0116 redact-extproc sidecar at all
+      # (0.3.147 = e7ea902/#900, the first commit that adds it). Live traffic
+      # was seeing near-half of ext_proc streams get an ImmediateResponse
+      # after #905 switched response.body to Buffered as a stopgap for the
+      # UTF-8 chunk-split bug — a bug already fixed properly upstream
+      # (lightbridge-governance#47, sha-b3c0a2e) but not yet re-verified live
+      # under that stopgap. Pinning below the whole feature is the fastest
+      # correct kill switch while the chart is reworked so Buffered/Streamed
+      # is a value, not a template literal (see redactExtproc.processingMode
+      # once that lands) — re-float to ">=0.0.0" once verified fixed.
+      targetRevision: "0.3.146"
       helm:
         releaseName: core-gateway
     destination:
