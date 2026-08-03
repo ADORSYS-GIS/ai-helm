@@ -264,7 +264,7 @@ def _panel_budget_gauge() -> gauge.Panel:
             "(default $50/mo — edit in the dashboard toolbar)."
         )
         .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=8, w=8, x=0, y=8))
+        .grid_pos(dm.GridPos(h=8, w=12, x=12, y=8))
         .unit("percent")
         .min(0.0)
         .max(120.0)
@@ -287,7 +287,7 @@ def _panel_cost_by_model() -> piechart.Panel:
             f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
         ),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 8, 8, 8),
+        grid=(8, 6, 0, 16),
     )
 
 
@@ -296,7 +296,7 @@ def _panel_tokens_by_model() -> piechart.Panel:
         title="Tokens by model",
         expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 8, 16, 8),
+        grid=(8, 6, 6, 16),
     )
 
 
@@ -305,7 +305,7 @@ def _panel_requests_by_model() -> piechart.Panel:
         title="Requests by model",
         expr=f"sum by ({LABEL_MODEL}) (count_over_time({_SELECTOR} [$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
-        grid=(8, 8, 0, 16),
+        grid=(8, 6, 12, 16),
     )
 
 
@@ -314,7 +314,7 @@ def _panel_azp() -> piechart.Panel:
         title="Usage by channel (azp)",
         expr=f"sum by ({LABEL_AZP}) (count_over_time({_SELECTOR} [$__range]))",
         legend_label=f"{{{{{LABEL_AZP}}}}}",
-        grid=(8, 8, 8, 16),
+        grid=(8, 6, 18, 16),
     )
 
 
@@ -324,7 +324,7 @@ def _panel_user_info() -> stat.Panel:
         stat.Panel()
         .title("User Info")
         .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=8, w=8, x=16, y=16))
+        .grid_pos(dm.GridPos(h=8, w=12, x=0, y=8))
         .thresholds(_single_color_thresholds("blue"))
         .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
         .orientation(cm.VizOrientation.HORIZONTAL)
