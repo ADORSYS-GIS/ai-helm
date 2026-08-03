@@ -758,12 +758,19 @@ models:
     # off until the load gate measures real headroom, then re-check.
     # Start conservative at 8192 context; raise after load gate.
    #
-   # ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
-   # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
-   # gate/router layers kept in FP16 — baked into the model's HF config
-   # (quantization_config.modules_to_not_convert: ['.mlp.gate']), not wired
-   # by the chart. vLLM reads it automatically from config.json.
-   qwen3-coder-30b-a3b:
+# ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
+    # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
+    # gate/router layers kept in FP16 — baked into the model's HF config
+    # (quantization_config.modules_to_not_convert: ['.mlp.gate']), not wired
+    # by the chart. vLLM reads it automatically from config.json.
+    #
+    # ⚠️ RISK (review finding): TWO lossy layers are stacked on a model whose
+    # entire value is correctness. (1) AWQ INT4 — the pinned quant's own card
+    # warns "significant loss under 4-bit quantization, use with caution".
+    # (2) FP8 KV cache (defaults.kvCacheDtype) with uncalibrated scales. Both
+    # may be fine in practice, but the load gate must measure quality (not just
+    # tok/s and VRAM) BEFORE this model is federated — see ADR-0111.
+    qwen3-coder-30b-a3b:
      enabled: true
      engine: vllm
      weights:
