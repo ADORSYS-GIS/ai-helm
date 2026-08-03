@@ -749,17 +749,20 @@ models:
    # charts/ai-models/values.yaml is a separate step, after someone has
    # actually sent it a coding request and measured tok/s, VRAM and quality.
    #
-   # ⚠️ `gpuMemoryUtilization: 0.90` caps vLLM's budget at 17.99 GiB
-   # (0.90 × 19.99). Weights are ~15.66 GiB, leaving ~2.33 GiB for KV cache +
-   # CUDA graphs + activations. FP8 KV cache (defaults.kvCacheDtype) halves the
-   # KV footprint (~0.38 GiB at 8K). CUDA graphs capture memory is larger on
-   # this 48-layer / 128-expert MoE than on dense models — if vLLM aborts at
-   # startup with no memory for KV blocks, set `extraArgs: ["--enforce-eager"]`.
-   # Start conservative at 8192 context; raise after load gate.
+    # ⚠️ `gpuMemoryUtilization: 0.90` caps vLLM's budget at 17.99 GiB
+    # (0.90 × 19.99). Weights are ~15.66 GiB, leaving ~2.33 GiB for KV cache +
+    # CUDA graphs + activations. FP8 KV cache (defaults.kvCacheDtype) halves the
+    # KV footprint (~0.38 GiB at 8K). CUDA graphs capture memory is larger on
+    # this 48-layer / 128-expert MoE than on dense models, so `--enforce-eager`
+    # is PRE-DECLARED in serving.extraArgs below (review finding) — CUDA graphs
+    # off until the load gate measures real headroom, then re-check.
+    # Start conservative at 8192 context; raise after load gate.
    #
    # ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
    # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
-   # gate/router layers kept in FP16 (modules_to_not_convert).
+   # gate/router layers kept in FP16 — baked into the model's HF config
+   # (quantization_config.modules_to_not_convert: ['.mlp.gate']), not wired
+   # by the chart. vLLM reads it automatically from config.json.
    qwen3-coder-30b-a3b:
      enabled: true
      engine: vllm
@@ -779,19 +782,35 @@ models:
        seedMaxWorkers: 2
        seedMemoryLimit: 10Gi
      serving:
-       # Conservative start; raise after load gate measures actual headroom.
-       # With ~15.6 GiB weights + FP8 KV cache, 8192 should fit comfortably.
+       # Conservative start (model native: 262144). For agentic coding through
+       # opencode, system prompt + tool schemas + file context can exceed 8K on
+       # turn one — raise after load gate measures actual headroom. With ~15.6
+       # GiB weights + FP8 KV cache, 8192 should fit comfortably.
        contextSize: 8192
        parallel: 2
        quantization: awq
+       # float16, not bfloat16: AWQ weights are INT4 with FP16 scales; the
+       # model's torch_dtype is bfloat16 but vLLM's AWQ path uses float16
+       # for non-quantized layers (embedding, lm_head, gate/router). This
+       # is the repo's AWQ convention — same as qwen3-8b-fast.
        dtype: float16
        # ⚠️ qwen3_xml, NOT hermes. Qwen3-Coder uses XML function-call format
        # (the model ships its own qwen3coder_tool_parser.py). hermes is correct
        # for Qwen3 base models but produces plain-text tool calls on Coder.
        # Ref: https://docs.vllm.ai/en/stable/features/tool_calling/
        toolCallParser: qwen3_xml
-       # Fleet default: 0.90. We have ~3.4 GiB headroom after weights.
+       # Fleet default: 0.90 → 17.99 GiB budget (0.90 × 19.99). Weights are
+       # ~15.66 GiB, leaving ~2.33 GiB for KV cache + CUDA graphs + activations.
        gpuMemoryUtilization: 0.90
+       # ⚠️ --enforce-eager PRE-DECLARED (review finding): CUDA graphs capture
+       # memory is materially larger on this 48-layer / 128-expert MoE than on
+       # the 4B this knob was sized against, and 2.33 GiB headroom is too tight
+       # to gamble on it — the most likely first failure is vLLM aborting at
+       # startup with no memory for KV blocks. Costs: no CUDA-graph speedup for
+       # this model until measured. Remove once the load gate has measured real
+       # headroom and confirmed eager mode is not needed (then re-check quality).
+       extraArgs:
+         - "--enforce-eager"
        # KV cache: the FLEET DEFAULT fp8_e4m3fn applies (defaults.kvCacheDtype)
        # — no per-model knob here. Halved KV footprint vs the BF16 baseline.
        # Quality gate: re-run the coding benchmark; if it fails, override with
