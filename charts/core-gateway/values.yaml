@@ -358,20 +358,21 @@ extProc:
 # recognise. If that stops being true, `redact_uninspected_bodies_total`
 # (exported on `metricsPort`) is the alarm — see the ADR.
 #
-# ⚠️ `image.tag` is a placeholder. No `redact-extproc` image has been built
-# or published yet (Dockerfile + docker.yml entry land in
-# `lightbridge-governance`, the same repo that owns `crates/governance-redact`).
-# Do not merge this chart change to `main` until a real tag exists here —
-# `restartPolicy: Always` makes this an init container the kubelet must start
-# before the pod is Ready, so an unpullable image blocks the WHOLE gateway
-# pod, not just redaction. Values-repo-first, same shape as the ADR-0055
-# ordering rule, for the same reason: land the dependency before the chart
-# change that assumes it.
+# Image built + published from lightbridge-governance's docker.yml
+# (lightbridge-governance#44, merged into its main at 54718b2; this tag is
+# the immutable per-commit build from main's current tip, 415d877 — a
+# docs-only README commit on top of #44, confirmed to touch neither
+# app/redact-extproc nor crates/governance-redact source, so it's the same
+# binary). `restartPolicy: Always` makes this an init container the kubelet
+# must start before the pod is Ready, so pin the immutable sha-<commit> tag
+# here rather than the floating `main` tag — an unrelated later push to
+# that repo's main must not silently change what THIS chart deploys.
 # ────────────────────────────────────────────────────────────────────────
 redactExtproc:
   image:
     repository: ghcr.io/adorsys-gis/redact-extproc
-    tag: "TBD-no-image-published-yet"
+    # sha256:05e5fbe1b5ec2dabc6a6e7e670c1782fb907507e3509dad341aecdd1a4d24c81
+    tag: "sha-415d877"
   # Loopback only — reached solely by Envoy in this same pod (shared network
   # namespace), never over the pod network. See templates/backend-redact.yaml:
   # the EnvoyExtensionPolicy's Backend targets `127.0.0.1` specifically so
