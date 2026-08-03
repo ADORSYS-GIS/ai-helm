@@ -7,7 +7,7 @@ name: grafana-pdf-reporter
 
 # chromedp/headless-shell — the same headless-chromium the reporter app's
 # chromedp dependency targets. Exposes Chrome remote-debugging on 9222.
-image: docker.io/chromedp/headless-shell:latest
+image: docker.io/chromedp/headless-shell:151.0.7922.72
 
 # Chrome remote-debugging port (the reporter app's remoteChromeUrl port).
 port: 9222
@@ -28,7 +28,18 @@ shmSize: 1Gi
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 1000
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
   seccompProfile:
     type: RuntimeDefault
+
+# Container-level hardening (KSV-0014): immutable root FS. Chrome only writes
+# to $HOME (→ /tmp) and /dev/shm, both mounted as writable emptyDirs, so the
+# root filesystem can stay read-only. Verified live: headless-shell starts and
+# serves remote-debugging on 9222 under read-only root + non-root uid 1000.
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]

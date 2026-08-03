@@ -24,9 +24,18 @@ spec:
           ports:
             - name: debug
               containerPort: {{ .Values.port }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            # Chrome writes its user-data-dir + temp files under $HOME; point it
+            # at the writable /tmp emptyDir so the root FS can stay read-only.
+            - name: HOME
+              value: /tmp
           volumeMounts:
             - name: dshm
               mountPath: /dev/shm
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -34,3 +43,5 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: {{ .Values.shmSize }}
+        - name: tmp
+          emptyDir: {}
