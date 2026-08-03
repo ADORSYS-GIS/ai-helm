@@ -369,10 +369,14 @@ extProc:
 # that repo's main must not silently change what THIS chart deploys.
 # ────────────────────────────────────────────────────────────────────────
 redactExtproc:
+  # ADR-0055/0056: the deployed tag is workload config, not chart structure —
+  # it lives in ai-helm-values (environments/prod/values/core-gateway.yaml),
+  # not here. This placeholder previously held a real live tag by mistake
+  # (ai-helm#900/#901), which meant the fix in lightbridge-governance#47
+  # published to GHCR but was never referenced anywhere ArgoCD reads.
   image:
     repository: ghcr.io/adorsys-gis/redact-extproc
-    # sha256:05e5fbe1b5ec2dabc6a6e7e670c1782fb907507e3509dad341aecdd1a4d24c81
-    tag: "sha-415d877"
+    tag: "TBD-no-image-published-yet"
   # Loopback only — reached solely by Envoy in this same pod (shared network
   # namespace), never over the pod network. See templates/backend-redact.yaml:
   # the EnvoyExtensionPolicy's Backend targets `127.0.0.1` specifically so
