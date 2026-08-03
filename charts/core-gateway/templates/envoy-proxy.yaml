@@ -39,6 +39,14 @@ spec:
         # — so this cannot displace AIEG's container. Verified against EG
         # v1.8.2 / AIEG v1.0.0 source before relying on it; re-check on any
         # major bump to either.
+        #
+        # Gated on redactExtproc.enabled (default true in values.yaml) so the whole feature
+        # is a values-repo toggle (ai-helm-values), not an ai-helm chart
+        # release — see backend-redact.yaml / externalsecret-redact.yaml /
+        # envoyextensionpolicy-billing-period.yaml / podmonitors-
+        # observability.yaml, which gate the rest of this feature's
+        # resources the same way.
+        {{- if .Values.redactExtproc.enabled }}
         initContainers:
           - name: redact-extproc
             image: "{{ .Values.redactExtproc.image.repository }}:{{ .Values.redactExtproc.image.tag }}"
@@ -75,6 +83,7 @@ spec:
                     optional: false
             resources:
               {{- toYaml (.Values.redactExtproc.resources | default dict) | nindent 14 }}
+        {{- end }}
         {{- if (default dict $ep.topologySpread).enabled }}
         pod:
           topologySpreadConstraints:

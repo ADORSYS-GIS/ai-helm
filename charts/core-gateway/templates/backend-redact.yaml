@@ -16,6 +16,7 @@ the only way the Gateway API's backendRef model allows it (there is no
 "self" primitive — verified against Envoy Gateway's own ext_proc docs, which
 show only Service-backed examples).
 */}}
+{{- if .Values.redactExtproc.enabled }}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
@@ -28,3 +29,4 @@ spec:
     - ip:
         address: 127.0.0.1
         port: {{ .Values.redactExtproc.listenPort | default 9500 }}
+{{- end }}
