@@ -745,32 +745,32 @@ models:
    # Base model: Qwen/Qwen3-Coder-30B-A3B-Instruct (official Qwen, 1.5M downloads).
    #
    # ⚠️ NOT LOAD-GATED, and NOT FEDERATED (ADR-0101). `enabled: true` here only
-   # deploys it onto a fleet GPU so it CAN be measured — federating it into
+   # deploys it onto a GPU so it CAN be measured — federating it into
    # charts/ai-models/values.yaml is a separate step, after someone has
    # actually sent it a coding request and measured tok/s, VRAM and quality.
    #
-    # ⚠️ `gpuMemoryUtilization: 0.90` caps vLLM's budget at 17.99 GiB
-    # (0.90 × 19.99). Weights are ~15.66 GiB, leaving ~2.33 GiB for KV cache +
-    # CUDA graphs + activations. FP8 KV cache (defaults.kvCacheDtype) halves the
-    # KV footprint (~0.38 GiB at 8K). CUDA graphs capture memory is larger on
-    # this 48-layer / 128-expert MoE than on dense models, so `--enforce-eager`
-    # is PRE-DECLARED in serving.extraArgs below (review finding) — CUDA graphs
-    # off until the load gate measures real headroom, then re-check.
-    # Start conservative at 8192 context; raise after load gate.
+   # ⚠️ `gpuMemoryUtilization: 0.90` caps vLLM's budget at 17.99 GiB
+   # (0.90 × 19.99). Weights are ~15.66 GiB, leaving ~2.33 GiB for KV cache +
+   # CUDA graphs + activations. FP8 KV cache (defaults.kvCacheDtype) halves the
+   # KV footprint (~0.38 GiB at 8K). CUDA graphs capture memory is larger on
+   # this 48-layer / 128-expert MoE than on dense models, so `--enforce-eager`
+   # is PRE-DECLARED in serving.extraArgs below (review finding) — CUDA graphs
+   # off until the load gate measures real headroom, then re-check.
+   # Start conservative at 8192 context; raise after load gate.
    #
-# ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
-    # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
-    # gate/router layers kept in FP16 — baked into the model's HF config
-    # (quantization_config.modules_to_not_convert: ['.mlp.gate']), not wired
-    # by the chart. vLLM reads it automatically from config.json.
-    #
-    # ⚠️ RISK (review finding): TWO lossy layers are stacked on a model whose
-    # entire value is correctness. (1) AWQ INT4 — the pinned quant's own card
-    # warns "significant loss under 4-bit quantization, use with caution".
-    # (2) FP8 KV cache (defaults.kvCacheDtype) with uncalibrated scales. Both
-    # may be fine in practice, but the load gate must measure quality (not just
-    # tok/s and VRAM) BEFORE this model is federated — see ADR-0111.
-    qwen3-coder-30b-a3b:
+   # ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
+   # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
+   # gate/router layers kept in FP16 — baked into the model's HF config
+   # (quantization_config.modules_to_not_convert: ['.mlp.gate']), not wired
+   # by the chart. vLLM reads it automatically from config.json.
+   #
+   # ⚠️ RISK (review finding): TWO lossy layers are stacked on a model whose
+   # entire value is correctness. (1) AWQ INT4 — the pinned quant's own card
+   # warns "significant loss under 4-bit quantization, use with caution".
+   # (2) FP8 KV cache (defaults.kvCacheDtype) with uncalibrated scales. Both
+   # may be fine in practice, but the load gate must measure quality (not just
+   # tok/s and VRAM) BEFORE this model is federated — see ADR-0111.
+   qwen3-coder-30b-a3b:
      enabled: true
      engine: vllm
      weights:
