@@ -21,10 +21,10 @@ curl -s $AI_BASE/v1/models -H "Authorization: Bearer $AI_TOKEN" | jq -r '.data[]
 curl -s $AI_BASE/v1/models/info -H "Authorization: Bearer $AI_TOKEN" | jq       # OpenRouter-shape catalog
 ```
 
-Self-hosted on our own GPUs: **`z-image-turbo-local`** (images) and
-**`qwen3-vl-4b-thinking-local`** (text + vision). Everything else is a SaaS
-backend behind a branded alias. Ids ending `-internal` are routed on the internal
-listener only — picking one externally returns `404 No matching route found`.
+Self-hosted on our own GPUs: **`z-image-turbo-local`** (images). Everything
+else is a SaaS backend behind a branded alias. Ids ending `-internal` are
+routed on the internal listener only — picking one externally returns
+`404 No matching route found`.
 
 ## Image generation — `z-image-turbo-local`
 
@@ -79,7 +79,7 @@ curl -s $AI_BASE/v1/chat/completions \
   -H "Authorization: Bearer $AI_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "adorsys-tiny",
+    "model": "gemma-4",
     "messages": [{"role": "user", "content": "Explain sync waves in one sentence."}]
   }' | jq -r '.choices[0].message.content'
 ```
@@ -89,30 +89,25 @@ Streaming — add `"stream": true` and read the SSE frames:
 ```bash
 curl -N -s $AI_BASE/v1/chat/completions \
   -H "Authorization: Bearer $AI_TOKEN" -H "Content-Type: application/json" \
-  -d '{"model":"adorsys-tiny","messages":[{"role":"user","content":"count to 5"}],"stream":true}'
+  -d '{"model":"gemma-4","messages":[{"role":"user","content":"count to 5"}],"stream":true}'
 ```
 
 ## Vision (image input)
 
-Any `kind: multimodal` model — e.g. `qwen3-vl-4b-thinking-local` (self-hosted),
-`adorsys-frontend`, `claude-sonnet-5`:
+Any `kind: multimodal` model — e.g. `adorsys-frontend`, `claude-sonnet-5`:
 
 ```bash
 IMG=$(base64 -w0 photo.png)
 curl -s $AI_BASE/v1/chat/completions \
   -H "Authorization: Bearer $AI_TOKEN" -H "Content-Type: application/json" \
   -d '{
-    "model": "qwen3-vl-4b-thinking-local",
+    "model": "claude-sonnet-5",
     "messages": [{"role":"user","content":[
       {"type":"text","text":"What is in this image?"},
       {"type":"image_url","image_url":{"url":"data:image/png;base64,'"$IMG"'"}}
     ]}]
   }' | jq -r '.choices[0].message.content'
 ```
-
-⚠️ `qwen3-vl-4b-thinking-local` reasons by default; the trace comes back in a
-separate `reasoning_content` field, not inside `content`. Disable per request with
-`"chat_template_kwargs": {"enable_thinking": false}`.
 
 ## Embeddings
 

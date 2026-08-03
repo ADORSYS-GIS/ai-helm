@@ -220,9 +220,9 @@ Output: a YAML list of strings.
          to inherit. */ -}}
   {{- with $.kvCacheDtype -}}
     {{- /* KV-cache precision (--kv-cache-dtype). The EFFECTIVE value: fleet
-           default `defaults.kvCacheDtype` (fp8_e4m3fn) unless the catalog
+           default `defaults.kvCacheDtype` (fp8_e4m3) unless the catalog
            entry overrides it with `serving.kvCacheDtype`. fp8_e5m2 /
-           fp8_e4m3fn store 8-bit values with a per-tensor scale, halving the
+           fp8_e4m3 store 8-bit values with a per-tensor scale, halving the
            KV footprint at a measured quality cost — nothing else changes:
            weights and activations stay in `--dtype`. `auto` = 16-bit, the
            pre-quantization behaviour. Validated against vLLM's accepted set
@@ -325,7 +325,7 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
 {{- end -}}
 {{- $s := $cfg.serving | default dict -}}
 {{- /* ── KV-cache precision ──────────────────────────────────────────────────
-       FLEET DEFAULT: `defaults.kvCacheDtype` (fp8_e4m3fn) applies to EVERY
+       FLEET DEFAULT: `defaults.kvCacheDtype` (fp8_e4m3) applies to EVERY
        vLLM model unless the catalog entry overrides it with its own
        `serving.kvCacheDtype`. A per-model `auto` (back to 16-bit) is how one
        model opts out without a fleet-wide policy change.
@@ -339,8 +339,8 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
 {{- if and $s.kvCacheDtype (ne $engine "vllm") -}}
 {{- fail (printf "model %s: serving.kvCacheDtype (%q) is a vLLM knob — llama.cpp models use serving.kvCacheType, LocalAI has no KV cache to quantize" $name $s.kvCacheDtype) -}}
 {{- end -}}
-{{- if and (eq $engine "vllm") $kvCacheDtype (not (has $kvCacheDtype (list "auto" "fp8" "fp8_e5m2" "fp8_e4m3fn"))) -}}
-{{- fail (printf "model %s: serving.kvCacheDtype must be one of [auto fp8 fp8_e5m2 fp8_e4m3fn], got %q — it is passed verbatim to --kv-cache-dtype, so it must be a value vLLM accepts" $name $kvCacheDtype) -}}
+{{- if and (eq $engine "vllm") $kvCacheDtype (not (has $kvCacheDtype (list "auto" "fp8" "fp8_e5m2" "fp8_e4m3"))) -}}
+{{- fail (printf "model %s: serving.kvCacheDtype must be one of [auto fp8 fp8_e5m2 fp8_e4m3], got %q — it is passed verbatim to --kv-cache-dtype, so it must be a value vLLM accepts" $name $kvCacheDtype) -}}
 {{- end -}}
 {{- if and $s.kvCacheType (ne $engine "llamacpp") -}}
 {{- fail (printf "model %s: serving.kvCacheType (%q) is a llama.cpp knob — vLLM models use serving.kvCacheDtype, LocalAI has no KV cache to quantize" $name $s.kvCacheType) -}}
@@ -349,7 +349,7 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
 {{- fail (printf "model %s: serving.kvCacheType must be one of llama.cpp's --cache-type-k/--cache-type-v values (f32 f16 bf16 q8_0 q4_0 q4_1 q5_0 q5_1 q6_K iq1_s iq2_s iq2_xs iq2_xxs iq3_s iq3_xs iq3_xxs iq4_nl iq4_xs), got %q" $name $s.kvCacheType) -}}
 {{- end -}}
 {{- /* ── LMCache + fp8 KV cache: unverified combination ─────────────────────
-       The fleet default kvCacheDtype (fp8_e4m3fn) is UNVERIFIED with LMCache
+       The fleet default kvCacheDtype (fp8_e4m3) is UNVERIFIED with LMCache
        on this hardware: LMCache serializes KV tensors as stored on the GPU,
        and its fp8 path has never been exercised here. Fail the render rather
        than letting a silent misconfiguration through. */ -}}

@@ -91,12 +91,12 @@ default; llama.cpp does not** (ADR-0118):
 
 | | `vllm` | `llamacpp` |
 |---|---|---|
-| Fleet default | `defaults.kvCacheDtype: fp8_e4m3fn` | — none (explicit per model) |
-| Per-model key | `serving.kvCacheDtype` (`auto` \| `fp8` \| `fp8_e5m2` \| `fp8_e4m3fn`) | `serving.kvCacheType` (`f16` default; `q8_0` the usual first step; down to `iq4_xs`) |
+| Fleet default | `defaults.kvCacheDtype: fp8_e4m3` | — none (explicit per model) |
+| Per-model key | `serving.kvCacheDtype` (`auto` \| `fp8` \| `fp8_e5m2` \| `fp8_e4m3`) | `serving.kvCacheType` (`f16` default; `q8_0` the usual first step; down to `iq4_xs`) |
 | 8-bit meaning | fp8, per-tensor scale, ~half the KV footprint | int8 block quant |
 | 16-bit opt-out | `auto` | `f16` |
 
-`fp8_e4m3fn` halves the KV footprint at a small, **per-model measured** quality
+`fp8_e4m3` halves the KV footprint at a small, **per-model measured** quality
 cost (ADR-0101 discipline — do not assume it for a model you did not test).
 `fp8_e5m2` is the plan B for KV outliers (e.g. vision heads). llama.cpp has no
 fp8 vocabulary, so its knob stays explicit. LocalAI's diffusion backend has no

@@ -13,8 +13,9 @@ CUDA graphs and activations (for `qwen3-coder-30b-a3b` at 0.90: ~2.33 GiB after
 ~15.66 GiB of AWQ weights). vLLM's default KV-cache dtype is 16-bit (bf16/fp16),
 which limits how many tokens fit in that remainder.
 
-A spike (#839) validated fp8 KV cache on this hardware: `fp8_e4m3fn` stores
-8-bit values with a per-tensor scale, roughly halving the KV footprint — for
+A spike (#839) validated fp8 KV cache on this hardware: `fp8_e4m3` (the
+E4M3FN format — vLLM's `fp8_e4m3`) stores 8-bit values with a per-tensor
+scale, roughly halving the KV footprint — for
 `qwen3-vl-4b-thinking` the measured ~1.14 GiB budget holds ~16 500 tokens vs
 ~8 288 in BF16 (about 2× context capacity in the same VRAM). Nothing else
 changes: weights and activations stay in `--dtype`.
@@ -24,7 +25,7 @@ warrants an ADR rather than a silent values change.
 
 ## Decision
 
-Adopt `defaults.kvCacheDtype: fp8_e4m3fn` in `charts/inference` as the fleet
+Adopt `defaults.kvCacheDtype: fp8_e4m3` in `charts/inference` as the fleet
 default applied to **every** vLLM model, unless a catalog entry overrides it
 with its own `serving.kvCacheDtype`. Per-model `auto` (16-bit, the
 pre-quantization behaviour) is the opt-out for a model that fails its fp8
@@ -59,7 +60,7 @@ Scope is vLLM-only, enforced by render-time guards:
   `qwen3-vl-4b-thinking`/`qwen3-8b-fast`/`openmythos-27b` are disabled and
   `z-image-turbo` is LocalAI) — but the default persists for any model
   re-enabled later.
-- `fp8_e5m2`/`fp8_e4m3fn` are passed verbatim to `--kv-cache-dtype`; a future
+- `fp8_e5m2`/`fp8_e4m3` are passed verbatim to `--kv-cache-dtype`; a future
   vLLM version that renames the accepted set requires the guard list to move
   in lockstep.
 
