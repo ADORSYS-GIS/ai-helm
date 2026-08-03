@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    {{- include "grafana-pdf-reporter.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+    spec:
+      # No Kubernetes API access needed — don't mount a SA token.
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: chrome
+          image: {{ .Values.image | quote }}
+          ports:
+            - name: debug
+              containerPort: {{ .Values.port }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            # Chrome writes its user-data-dir + temp files under $HOME; point it
+            # at the writable /tmp emptyDir so the root FS can stay read-only.
+            - name: HOME
+              value: /tmp
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.shmSize }}
+        - name: tmp
+          emptyDir: {}
