@@ -12,6 +12,8 @@
 {{- if ne $gpuNodeLabel "true" }}{{ fail "webank-training: GPU-capable templates require training.gpu.nodeSelector[nvidia.com/gpu.present]=true (the live GPU node label — see charts/inference)" }}{{- end }}
 {{- $gpuLimit := index $training.gpu.resources.limits "nvidia.com/gpu" | default 0 -}}
 {{- if lt (int $gpuLimit) 1 }}{{ fail "webank-training: GPU-capable templates require limits.nvidia.com/gpu >= 1" }}{{- end }}
+{{- $gpuRequest := index $training.gpu.resources.requests "nvidia.com/gpu" | default 0 -}}
+{{- if lt (int $gpuRequest) 1 }}{{ fail "webank-training: GPU-capable templates require requests.nvidia.com/gpu >= 1" }}{{- end }}
 {{- $toleratesGpu := false -}}
 {{- range $training.gpu.tolerations }}
 {{- if and (eq (.key | default "") "nvidia.com/gpu") (eq (.operator | default "Equal") "Exists") (eq (.effect | default "") "NoSchedule") }}{{- $toleratesGpu = true }}{{- end }}
