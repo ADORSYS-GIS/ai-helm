@@ -1,0 +1,30 @@
+{{- /*
+ADR-0116: the Backend the redact-extproc sidecar's ext_proc filter targets.
+The EnvoyExtensionPolicy itself lives in
+envoyextensionpolicy-billing-period.yaml, NOT here — see that file's header
+comment for why (EG accepts only ONE EnvoyExtensionPolicy per targetRef; a
+second one here was silently rejected in production, ai-helm#902).
+
+This is the whole trick that makes "sidecar" actually mean same-pod. A
+normal Service-selector backendRef resolves via EDS to EVERY matching pod —
+with `envoyProxy.hpa` running 3-5 replicas, that would let Envoy load-balance
+ext_proc calls to a DIFFERENT replica's sidecar, reintroducing the cross-pod
+network hop this design exists to avoid. A `Backend` with a literal
+`ip: 127.0.0.1` endpoint has no such ambiguity: every replica's own Envoy
+resolves 127.0.0.1 to itself, so this is the same-pod guarantee, expressed
+the only way the Gateway API's backendRef model allows it (there is no
+"self" primitive — verified against Envoy Gateway's own ext_proc docs, which
+show only Service-backed examples).
+*/}}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-redact-extproc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+spec:
+  endpoints:
+    - ip:
+        address: 127.0.0.1
+        port: {{ .Values.redactExtproc.listenPort | default 9500 }}
