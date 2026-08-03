@@ -1,0 +1,34 @@
+# Remote headless-chromium for the Grafana dashboard-reporter-app (ADR-0118).
+# The reporter plugin renders each dashboard panel to a PNG via Grafana's
+# image-renderer sidecar, then assembles the PDF from HTML using THIS chromium
+# instance. The plugin connects to it via remoteChromeUrl: ws://<service>:9222.
+
+name: grafana-pdf-reporter
+
+# chromedp/headless-shell — the same headless-chromium the reporter app's
+# chromedp dependency targets. Exposes Chrome remote-debugging on 9222.
+image: docker.io/chromedp/headless-shell:latest
+
+# Chrome remote-debugging port (the reporter app's remoteChromeUrl port).
+port: 9222
+
+# Deployment-specific (ADR-0057): image tag + resources are supplied per-env
+# from ai-helm-values (environments/<env>/values/grafana-pdf-reporter.yaml).
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+# Headless chrome needs real shared memory; the default 64Mi /dev/shm is too
+# small and crashes the renderer. Mount an in-memory emptyDir at /dev/shm.
+shmSize: 1Gi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    {{- include "grafana-pdf-reporter.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: {{ .Values.name }}
+  ports:
+    - name: debug
+      port: {{ .Values.port }}
+      targetPort: {{ .Values.port }}
