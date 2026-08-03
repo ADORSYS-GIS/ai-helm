@@ -22,8 +22,9 @@ training:
   # resource profile: `nvidia.com/gpu.present=true` (the live GPU node label,
   # matching charts/inference's `defaults.gpu` — see ADR-0114), an
   # `nvidia.com/gpu:NoSchedule` (Exists) toleration matching the live node
-  # taint, and a positive nvidia.com/gpu limit. Dataset construction receives
-  # the same reviewed CPU, memory, and GPU allocation as candidate training.
+  # taint, and an explicit positive nvidia.com/gpu request and limit. Dataset
+  # construction receives the same reviewed CPU, memory, and GPU allocation as
+  # candidate training.
   #
   # ⚠️ Prior to ADR-0114 this contract was `role: gpu`, which no node in the
   # cluster has ever carried — every GPU-requesting workflow pod was
@@ -35,7 +36,7 @@ training:
     tolerations: []
     priorityClassName: ""
     resources:
-      requests: { cpu: "4", memory: 16Gi }
+      requests: { cpu: "4", memory: 16Gi, nvidia.com/gpu: 1 }
       limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }
   documentDetector:
     stemChannels: 32
