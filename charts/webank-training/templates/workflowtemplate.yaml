@@ -18,22 +18,38 @@
 {{- if eq (len $training.gpu.tolerations) 0 }}{{ fail "webank-training: GPU-capable templates require at least one training.gpu.toleration" }}{{- end }}
 {{- range $model := .Values.models }}
 {{- $id := required "webank-training: models[].id is required" $model.id -}}
-{{- $materializer := required (printf "webank-training: %s datasetMaterializer is required" $id) $model.datasetMaterializer -}}
 {{- $trainer := required (printf "webank-training: %s trainer is required" $id) $model.trainer -}}
+{{- $datasetBuild := required (printf "webank-training: %s datasetBuild is required" $id) $model.datasetBuild -}}
+{{- $datasetTarget := required (printf "webank-training: %s datasetBuild.target is required" $id) $datasetBuild.target -}}
+{{- $datasetSource := required (printf "webank-training: %s datasetBuild.source is required" $id) $datasetBuild.source -}}
+{{- $sourceStrategy := required (printf "webank-training: %s datasetBuild.source.strategy is required" $id) $datasetSource.strategy -}}
 {{- $modelLakefs := required (printf "webank-training: %s lakefs is required" $id) $model.lakefs -}}
 {{- $datasetLakefs := required (printf "webank-training: %s lakefs.dataset is required" $id) $modelLakefs.dataset -}}
 {{- $candidateLakefs := required (printf "webank-training: %s lakefs.model is required" $id) $modelLakefs.model -}}
 {{- $datasetRepository := required (printf "webank-training: %s lakefs.dataset.repository is required" $id) $datasetLakefs.repository -}}
 {{- $datasetBranch := required (printf "webank-training: %s lakefs.dataset.branch is required" $id) $datasetLakefs.branch -}}
-{{- $datasetStorageNamespace := "" -}}
-{{- if eq $id "document-detector" }}{{- $datasetStorageNamespace = required "webank-training: document-detector lakefs.dataset.storageNamespace is required for hermetic bootstrap" $datasetLakefs.storageNamespace }}{{- end }}
+{{- $datasetTargetRepository := required (printf "webank-training: %s datasetBuild.target.repository is required" $id) $datasetTarget.repository -}}
+{{- $datasetTargetBranch := required (printf "webank-training: %s datasetBuild.target.branch is required" $id) $datasetTarget.branch -}}
+{{- $datasetStorageNamespace := required (printf "webank-training: %s datasetBuild.target.storageNamespace is required" $id) $datasetTarget.storageNamespace -}}
 {{- $candidateRepository := required (printf "webank-training: %s lakefs.model.repository is required" $id) $candidateLakefs.repository -}}
 {{- $candidateBranch := required (printf "webank-training: %s lakefs.model.branch is required" $id) $candidateLakefs.branch -}}
 {{- if ne $datasetRepository (printf "ds-%s" $id) }}{{ fail (printf "webank-training: %s dataset repository must be ds-%s" $id $id) }}{{- end }}
+{{- if ne $datasetTargetRepository $datasetRepository }}{{ fail (printf "webank-training: %s datasetBuild target must match its training dataset repository" $id) }}{{- end }}
 {{- if ne $candidateRepository (printf "model-%s" $id) }}{{ fail (printf "webank-training: %s model repository must be model-%s" $id $id) }}{{- end }}
 {{- if ne $datasetBranch "main" }}{{ fail (printf "webank-training: %s dataset branch must be main" $id) }}{{- end }}
+{{- if ne $datasetTargetBranch $datasetBranch }}{{ fail (printf "webank-training: %s datasetBuild target must match its training dataset branch" $id) }}{{- end }}
 {{- if ne $candidateBranch "main" }}{{ fail (printf "webank-training: %s model branch must be main" $id) }}{{- end }}
-{{- if not (has $materializer (list "materialize-document-detector-descriptor" "materialize-document-recognizer-descriptor" "materialize-face-detector-descriptor" "materialize-sface-descriptor" "materialize-pad-descriptor")) }}{{ fail (printf "webank-training: %s has an unknown dataset materializer" $id) }}{{- end }}
+{{- if not (has $sourceStrategy (list "hermetic-synthetic" "governed-lakefs")) }}{{ fail (printf "webank-training: %s has an unknown dataset source strategy" $id) }}{{- end }}
+{{- if eq $sourceStrategy "hermetic-synthetic" }}
+{{- if not (has $id (list "document-detector" "document-recognizer" "face-detector")) }}{{ fail (printf "webank-training: %s cannot use hermetic-synthetic" $id) }}{{- end }}
+{{- if or ($datasetSource.repository | default "") ($datasetSource.branch | default "") }}{{ fail (printf "webank-training: %s hermetic source must not declare a LakeFS route" $id) }}{{- end }}
+{{- else }}
+{{- if not (has $id (list "sface" "pad-liveness")) }}{{ fail (printf "webank-training: %s must not use a governed biometric source" $id) }}{{- end }}
+{{- $sourceRepository := required (printf "webank-training: %s governed source repository is required" $id) $datasetSource.repository -}}
+{{- $sourceBranch := required (printf "webank-training: %s governed source branch is required" $id) $datasetSource.branch -}}
+{{- if ne $sourceBranch "main" }}{{ fail (printf "webank-training: %s governed source branch must be main" $id) }}{{- end }}
+{{- if or (eq $sourceRepository $datasetTargetRepository) (eq $sourceRepository $candidateRepository) }}{{ fail (printf "webank-training: %s governed source repository must be distinct from its targets" $id) }}{{- end }}
+{{- end }}
 {{- if not (has $trainer (list "document-detector" "document-recognizer" "face-detector" "sface" "pad-liveness-pending")) }}{{ fail (printf "webank-training: %s has an unknown trainer" $id) }}{{- end }}
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -48,13 +64,14 @@ metadata:
   annotations:
     webank.io/adr: "0034"
     webank.io/dataset-contract: "0006"
-{{- if eq $id "document-detector" }}
-    webank.io/materialization: "hermetic-synthetic-bootstrap"
-{{- else }}
-    webank.io/materialization: "metadata-descriptor"
+    webank.io/materialization: {{ ternary "hermetic-synthetic-bootstrap" "governed-lakefs" (eq $sourceStrategy "hermetic-synthetic") | quote }}
+    webank.io/source-strategy: {{ $sourceStrategy | quote }}
+    webank.io/dataset-lakefs-repository: {{ $datasetTargetRepository | quote }}
+    webank.io/dataset-lakefs-branch: {{ $datasetTargetBranch | quote }}
+{{- if eq $sourceStrategy "governed-lakefs" }}
+    webank.io/source-lakefs-repository: {{ $datasetSource.repository | quote }}
+    webank.io/source-lakefs-branch: {{ $datasetSource.branch | quote }}
 {{- end }}
-    webank.io/dataset-lakefs-repository: {{ $datasetRepository | quote }}
-    webank.io/dataset-lakefs-branch: {{ $datasetBranch | quote }}
 spec:
   entrypoint: build
   activeDeadlineSeconds: {{ $workflow.activeDeadlineSeconds }}
@@ -65,30 +82,8 @@ spec:
   imagePullSecrets:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-{{- if ne $id "document-detector" }}
-  arguments:
-    parameters:
-      - name: lakefs_ref
-        description: >-
-          Required immutable 64-character LakeFS commit named by the governed
-          manifest and readiness attestation. Branches and moving tags fail closed.
-    artifacts:
-      - name: source
-      - name: manifest
-      - name: readiness
-{{- end }}
   templates:
     - name: build
-{{- if ne $id "document-detector" }}
-      inputs:
-        artifacts:
-          - name: source
-            path: /workspace/input/source.json
-          - name: manifest
-            path: /workspace/input/source-manifest.json
-          - name: readiness
-            path: /workspace/input/readiness.json
-{{- end }}
       podSpecPatch: |
         runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
       nodeSelector:
@@ -120,46 +115,99 @@ spec:
               --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
               --code-revision "$WEBANK_SOURCE_REVISION" \
               --policy /opt/webank-document-detector-dataset/bootstrap-policy.json
-            cargo xtask training-data push \
-              --destination training-data-lake \
-              --path /workspace/output/document-detector-bootstrap/document-detector-training-v1.tar \
-              --manifest /workspace/output/document-detector-bootstrap/governance/source-manifest.json \
-              --lakefs-ref "$BASE_REF" \
-              --readiness /workspace/output/document-detector-bootstrap/governance/readiness.json \
+            cargo xtask training-data fixed-dataset publish \
+              --model document-detector \
+              --bundle /workspace/output/document-detector-bootstrap/document-detector-training-v1.tar \
               --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY"
+              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
+              --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE"
+{{- else if eq $id "document-recognizer" }}
+            PYTHONPATH=/opt/webank-document-recognizer-dataset/src \
+              /opt/webank-document-detector-dataset/venv/bin/python \
+              -m webank_document_recognizer_dataset \
+              --output /workspace/output/document-recognizer-raw
+            cargo xtask training-data materialize-synthetic-source \
+              --model document-recognizer \
+              --source /workspace/output/document-recognizer-raw \
+              --output /workspace/output/document-recognizer-materialized
+            cargo xtask training-data fixed-dataset pack \
+              --model document-recognizer \
+              --input /workspace/output/document-recognizer-materialized \
+              --output /workspace/output/document-recognizer-training-bundle.tar
+            cargo xtask training-data fixed-dataset publish \
+              --model document-recognizer \
+              --bundle /workspace/output/document-recognizer-training-bundle.tar \
+              --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
+              --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE"
+{{- else if eq $id "face-detector" }}
+            PYTHONPATH=/opt/webank-face-detector-dataset/src \
+              /opt/webank-document-detector-dataset/venv/bin/python \
+              -m webank_face_detector_dataset \
+              --output /workspace/output/face-detector-raw
+            cargo xtask training-data materialize-synthetic-source \
+              --model face-detector \
+              --source /workspace/output/face-detector-raw \
+              --output /workspace/output/face-detector-materialized
+            cargo xtask training-data fixed-dataset pack \
+              --model face-detector \
+              --input /workspace/output/face-detector-materialized \
+              --output /workspace/output/face-detector-training-bundle.tar
+            cargo xtask training-data fixed-dataset publish \
+              --model face-detector \
+              --bundle /workspace/output/face-detector-training-bundle.tar \
+              --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
+              --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE"
 {{- else }}
-            cargo xtask training-data {{ $materializer }} \
-              --source /workspace/input/source.json \
-              --manifest /workspace/input/source-manifest.json \
-              --lakefs-ref "$LAKEFS_REF" \
-              --readiness /workspace/input/readiness.json \
-              --output /workspace/output/{{ $id }}-descriptor.json
-            cargo xtask training-data push \
-              --destination training-data-lake \
-              --path /workspace/output/{{ $id }}-descriptor.json \
-              --manifest /workspace/input/source-manifest.json \
-              --lakefs-ref "$LAKEFS_REF" \
-              --readiness /workspace/input/readiness.json \
+            SOURCE_REF="$(cargo xtask training-data resolve-governed-source-branch \
+              --model {{ $id }} \
+              --lakefs-branch "$WEBANK_SOURCE_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_SOURCE_LAKEFS_REPOSITORY")"
+            cargo xtask training-data checkout-governed-source \
+              --model {{ $id }} \
+              --source-ref "$SOURCE_REF" \
+              --output /workspace/output/{{ $id }}-source \
+              --lakefs-branch "$WEBANK_SOURCE_LAKEFS_BRANCH" \
+              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+              --lakefs-repository "$WEBANK_SOURCE_LAKEFS_REPOSITORY"
+            cargo xtask training-data materialize-governed-source \
+              --model {{ $id }} \
+              --source-ref "$SOURCE_REF" \
+              --source /workspace/output/{{ $id }}-source \
+              --output /workspace/output/{{ $id }}-materialized
+            cargo xtask training-data fixed-dataset pack \
+              --model {{ $id }} \
+              --input /workspace/output/{{ $id }}-materialized \
+              --output /workspace/output/{{ $id }}-training-bundle.tar
+            cargo xtask training-data fixed-dataset publish \
+              --model {{ $id }} \
+              --bundle /workspace/output/{{ $id }}-training-bundle.tar \
               --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY"
+              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
+              --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE"
 {{- end }}
         env:
-{{- if ne $id "document-detector" }}
-          - name: LAKEFS_REF
-            value: "{{`{{workflow.parameters.lakefs_ref}}`}}"
-{{- end }}
           - name: WEBANK_LAKEFS_ENDPOINT
             value: {{ $lakefs.endpoint | quote }}
           - name: WEBANK_DATASET_LAKEFS_REPOSITORY
-            value: {{ $datasetRepository | quote }}
+            value: {{ $datasetTargetRepository | quote }}
           - name: WEBANK_DATASET_LAKEFS_BRANCH
-            value: {{ $datasetBranch | quote }}
-{{- if eq $id "document-detector" }}
+            value: {{ $datasetTargetBranch | quote }}
           - name: WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE
             value: {{ $datasetStorageNamespace | quote }}
+          - name: WEBANK_DATASET_SOURCE_STRATEGY
+            value: {{ $sourceStrategy | quote }}
+{{- if eq $sourceStrategy "governed-lakefs" }}
+          - name: WEBANK_SOURCE_LAKEFS_REPOSITORY
+            value: {{ $datasetSource.repository | quote }}
+          - name: WEBANK_SOURCE_LAKEFS_BRANCH
+            value: {{ $datasetSource.branch | quote }}
 {{- end }}
           - name: LAKEFS_ACCESS_KEY_ID
             valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.accessKey | quote }} } }
