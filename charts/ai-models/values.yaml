@@ -101,6 +101,12 @@ rateLimitBudgeting:
   #
   # `id` is kept on every entry (even the now-empty burst-only ones) so the list
   # keeps its length and its append-only index contract.
+  # ⚠️ ADR-0119 added an additive WEEKLY sub-budget alongside the monthly cap,
+  # but ONLY on the live core-gateway shared path — deliberately NOT mirrored
+  # here as a `weeklyBudgetUsd` field. This per-model list is already dormant
+  # (sharedBudget.enabled masks it) and exists only for a `sharedBudget`
+  # rollback; a per-model weekly design is a decision for that rollback
+  # moment, not something to carry as new dormant code today.
   plans:
     # index 0
     - id: enterprise

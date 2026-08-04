@@ -144,6 +144,60 @@ No model-disable window is needed for this — it's a live, near-instant key
 deletion, not a data migration; worst case is one in-flight request
 re-checking a freshly-zeroed counter.
 
+## Weekly sub-budget (ADR-0119) — additive, not a replacement
+
+**Status:** live since 2026-08-04.
+**TL;DR:** a SECOND, independent rule composes (AND) with the monthly budget
+above — same shared cross-model shape, same `unit: Year` TTL trick, but keyed
+on `x-billing-week` (an ISO-8601, **Monday-start** `GGGG-Www` marker) instead
+of `x-billing-period`. It stops a user spending their whole month's budget in
+the first few days; it never raises the monthly ceiling — a request is denied
+if *either* bucket is exhausted.
+
+The week marker is stamped by the same Lua function that stamps
+`x-billing-period` (only one `EnvoyExtensionPolicy` may target a Gateway, see
+that template's header note):
+
+```lua
+request_handle:headers():replace("x-billing-week", os.date("!%G-W%V"))
+```
+
+`%G` is the ISO week-numbering year (not `%Y`, the Gregorian year) — a week
+spanning a year boundary (e.g. 2027-01-01, which is ISO week 53 of *2026*)
+must key against the ISO year or it collides with the wrong year's week 1.
+
+Config lives on the **same** `backendTrafficPolicy.monthlyBudget.plans` list,
+as an optional `weeklyBudgetUsd` field per entry — deliberately not a second,
+separately-ordered list (two lists that must stay in the same order is
+strictly worse than one list with an extra field). The template renders the
+weekly rules as a **second pass over the same list, strictly after** the
+monthly rules, so it only ever appends new `rule/N` slots and can never
+renumber a live monthly counter (ADR-0084's append-only contract).
+
+⚠️ **ai-helm / ai-helm-values split (ADR-0055/0056).** The `plans` list
+(including `weeklyBudgetUsd`) is workload config, not a chart default — it
+lives in `ai-helm-values` `environments/prod/values/core-gateway.yaml`
+(`backendTrafficPolicy.monthlyBudget`), which `core-gateway`'s
+`valuesFromRepo` `$values` ref overrides onto the chart. `ai-helm`'s own
+`charts/core-gateway/values.yaml` ships only the safe structural default
+(`monthlyBudget: {enabled: false, plans: []}`) — no real business figures
+live in the `ai-helm` repo. Same fix already applied once to this chart for
+`redactExtproc.image` ("moved out after that's exactly where it landed by
+mistake during initial wiring") — this migration closes the same gap for the
+budget plans.
+
+⚠️ Current default figures are `monthlyBudgetUsd / 4` (enterprise $250, free
+$12.50, pro $50) — a starting formula, not a confirmed business number. Tune
+per plan; nothing about the mechanism depends on the ratio.
+
+⚠️ Only wired into this gateway-wide shared path. The dormant per-model
+budget rule in `charts/ai-model` (kept only for a `sharedBudget` rollback)
+does **not** get a weekly counterpart — see ADR-0119's Neutral/follow-ups.
+
+⚠️ Redis key churn is ~4x higher than the monthly rule alone: a fresh key
+mints every Monday instead of every 1st (~52/year/account/plan vs ~12),
+each still carrying the `unit: Year` TTL from ADR-0112.
+
 ## Knock-on effects / gotchas
 
 - **`prometheus-redis-exporter`** (ai-helm-values) parses the *old* per-model key shape (`…/converse/<model>/…`, `rule-2`/`rule-7` indices). The shared keys don't match those regexes — the quota dashboard needs re-pointing at the new key shape (open follow-up). ADR-0111 adds a further `x-billing-period` segment on top of this same open gap — both need addressing together when that dashboard work happens.
@@ -163,3 +217,4 @@ re-checking a freshly-zeroed counter.
 | 2026-08-01 | ADR-0112 — `unit: Month` → `Year`: 0111 alone left the 30-day epoch still rotating (a spurious mid-month reset, next due 2026-08-05). The marker is now the sole rotation trigger |
 | 2026-07-31 | per-minute burst limits raised 10x on every plan (spurious 429s on bursty-but-cheap usage) |
 | 2026-08-01 | free tier restored $15 → **$50** shared (back to ADR-0035), and per-minute burst **commented out entirely** — the per-model BTP now emits no rules at all, so this shared budget is the only enforced cap |
+| 2026-08-04 | ADR-0119 — additive weekly sub-budget (`x-billing-week`, Monday-start ISO week) composes with the monthly rule to stop front-loading; monthly contract untouched |
