@@ -780,10 +780,11 @@ models:
   # RE-DERIVE from the measured rate before relying on cost boards — never
   # scale a placeholder (same rule as every corrected price in this file).
   #
-  # ⚠️ Context is deliberately small (8192) until the load gate measures real
-  # headroom: --enforce-eager + fp8 KV cache at 0.90 GPU util leaves ~2.33 GiB
-  # of budget. Agentic coding through opencode can exceed 8K on turn one —
-  # raise it only after measurement.
+  # ⚠️ Context raised to 12288 (2026-08-04): at 8192 the catalog's own
+  # maxOutputTokens (4096) is additive on top of the input window, so a
+  # 4097-token prompt + 4096 output = 8193 > 8192 → vLLM refused. FP8 KV cache
+  # at 12288 ≈ 0.56 GiB leaves ~1.77 GiB of the ~2.33 GiB budget (0.90 util)
+  # for activations. 16384 remains the measured step (load gate), not assumed.
   #
   # ⚠️ Thinking is OFF at the server (`reasoning: "off"` in the serving spec),
   # so `supportedParameters` does NOT advertise `reasoning` — same policy as
@@ -797,7 +798,7 @@ models:
       connectionIdleTimeout: 1h
     info:
       displayName: "Qwen3-Coder-30B (self-hosted)"
-      contextLength: 8192            # = --max-model-len (vLLM: the per-request window)
+      contextLength: 12288           # = --max-model-len (vLLM: the per-request window)
       maxOutputTokens: 4096
       supportedParameters: *spStandard
     pricing:
