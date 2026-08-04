@@ -21,11 +21,11 @@ training:
   # Every dataset-build and training template uses this GPU-node placement and
   # resource profile: `nvidia.com/gpu.present=true` (the live GPU node label,
   # matching charts/inference's `defaults.gpu` — see ADR-0114), an
-  # `nvidia.com/gpu:NoSchedule` (Exists) toleration matching the live node
-  # taint, the NVIDIA runtime class that injects host driver libraries, and an
-  # explicit positive nvidia.com/gpu request and limit. Dataset construction
-  # receives the same reviewed CPU, memory, and GPU allocation as candidate
-  # training.
+  # matching toleration and runtime class, and an explicit positive accelerator
+  # request and limit. Every cluster-specific name and placement value is
+  # supplied by ai-helm-values; this chart owns only the rendering contract.
+  # Dataset construction receives the same reviewed CPU, memory, and accelerator
+  # allocation as candidate training.
   #
   # ⚠️ Prior to ADR-0114 this contract was `role: gpu`, which no node in the
   # cluster has ever carried — every GPU-requesting workflow pod was
@@ -34,6 +34,7 @@ training:
   # availability. Verified live 2026-08-02.
   gpu:
     nodeSelector: {}
+    resourceName: ""
     runtimeClassName: ""
     tolerations: []
     priorityClassName: ""
