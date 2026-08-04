@@ -166,18 +166,29 @@ request_handle:headers():replace("x-billing-week", os.date("!%G-W%V"))
 spanning a year boundary (e.g. 2027-01-01, which is ISO week 53 of *2026*)
 must key against the ISO year or it collides with the wrong year's week 1.
 
-Config lives on the **same** `backendTrafficPolicy.monthlyBudget.plans` list
-in `charts/core-gateway/values.yaml`, as an optional `weeklyBudgetUsd` field
-per entry — deliberately not a second, separately-ordered list (two lists
-that must stay in the same order is strictly worse than one list with an
-extra field). The template renders the weekly rules as a **second pass over
-the same list, strictly after** the monthly rules, so it only ever appends
-new `rule/N` slots and can never renumber a live monthly counter
-(ADR-0084's append-only contract).
+Config lives on the **same** `backendTrafficPolicy.monthlyBudget.plans` list,
+as an optional `weeklyBudgetUsd` field per entry — deliberately not a second,
+separately-ordered list (two lists that must stay in the same order is
+strictly worse than one list with an extra field). The template renders the
+weekly rules as a **second pass over the same list, strictly after** the
+monthly rules, so it only ever appends new `rule/N` slots and can never
+renumber a live monthly counter (ADR-0084's append-only contract).
+
+⚠️ **ai-helm / ai-helm-values split (ADR-0055/0056).** The `plans` list
+(including `weeklyBudgetUsd`) is workload config, not a chart default — it
+lives in `ai-helm-values` `environments/prod/values/core-gateway.yaml`
+(`backendTrafficPolicy.monthlyBudget`), which `core-gateway`'s
+`valuesFromRepo` `$values` ref overrides onto the chart. `ai-helm`'s own
+`charts/core-gateway/values.yaml` ships only the safe structural default
+(`monthlyBudget: {enabled: false, plans: []}`) — no real business figures
+live in the `ai-helm` repo. Same fix already applied once to this chart for
+`redactExtproc.image` ("moved out after that's exactly where it landed by
+mistake during initial wiring") — this migration closes the same gap for the
+budget plans.
 
 ⚠️ Current default figures are `monthlyBudgetUsd / 4` (enterprise $250, free
-$12.50, pro $200/pro $50) — a starting formula, not a confirmed business
-number. Tune per plan; nothing about the mechanism depends on the ratio.
+$12.50, pro $50) — a starting formula, not a confirmed business number. Tune
+per plan; nothing about the mechanism depends on the ratio.
 
 ⚠️ Only wired into this gateway-wide shared path. The dormant per-model
 budget rule in `charts/ai-model` (kept only for a `sharedBudget` rollback)

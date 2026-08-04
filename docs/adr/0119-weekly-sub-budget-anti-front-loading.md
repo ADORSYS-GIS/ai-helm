@@ -67,6 +67,17 @@ monthly ceiling.
   monthly ceiling either way (the monthly rule still enforces the real total,
   since the rules are ANDed) — it only affects how far a user can front-load
   within a single week.
+- **The actual `plans` list — including `weeklyBudgetUsd` — lives in
+  `ai-helm-values`, not `ai-helm` (ADR-0055/0056).** It is workload config,
+  not a structural chart default, same class as `redactExtproc.image` on this
+  same chart ("moved out after that's exactly where it landed by mistake
+  during initial wiring"). `ai-helm`'s `charts/core-gateway/values.yaml`
+  ships only `monthlyBudget: {enabled: false, plans: []}` — a safe,
+  standalone-renderable default with zero real business figures. The
+  authoritative `enabled: true` + full `plans` list (monthly and weekly) is
+  added to `ai-helm-values` `environments/prod/values/core-gateway.yaml` in
+  the *same* change, verified render-neutral by diffing `helm template`
+  output before/after the split (byte-identical).
 
 ## Consequences
 
@@ -94,6 +105,15 @@ monthly ceiling.
   considered tuned rather than merely wired up.
 - Same residual ADR-0112 annual epoch blip applies identically here (~2x cap
   around the epoch's yearly rollover) — already documented, not new.
+- **Values-repo-first cutover risk.** `ai-helm-values` must merge to `main`
+  before (or in the same deploy window as) this `ai-helm` chart change. If the
+  `ai-helm` PR (which blanks the chart default to `enabled: false`) reaches
+  Hetzner via ArgoCD before `ai-helm-values` carries the real `plans` list,
+  the gateway briefly enforces **no budget at all** for every plan — the same
+  class of hazard already documented for `security-policies` (ADR-0056:
+  "DROPS the gateway AuthConfig" if sequenced wrong). Mitigated by review
+  gating, not tooling — same as every other `valuesFromRepo` cutover in this
+  repo.
 
 **Neutral / follow-ups**
 - Only wired into the currently-live shared path (`charts/core-gateway`).
@@ -135,9 +155,14 @@ monthly ceiling.
 ## Related
 
 - Builds on ADR-0021 (burst/budget descriptors), ADR-0035 (per-person
-  budget), ADR-0084 (append-only rule ordering), ADR-0111 (calendar period
-  marker), ADR-0112 (`unit: Year` TTL trick).
+  budget), ADR-0055/0056 (`ai-helm`/`ai-helm-values` split), ADR-0084
+  (append-only rule ordering), ADR-0111 (calendar period marker), ADR-0112
+  (`unit: Year` TTL trick).
 - Docs: `docs/patterns/shared-cross-model-budget.md`.
-- Charts/files touched: `charts/core-gateway/templates/envoyextensionpolicy-billing-period.yaml`,
+- Charts/files touched (`ai-helm`): `charts/core-gateway/templates/envoyextensionpolicy-billing-period.yaml`,
   `charts/core-gateway/templates/backendtrafficpolicy.yaml`,
-  `charts/core-gateway/values.yaml`.
+  `charts/core-gateway/values.yaml` (structural default only).
+- Companion change (`ai-helm-values`, private repo):
+  `environments/prod/values/core-gateway.yaml` — the authoritative
+  `backendTrafficPolicy.monthlyBudget` block (`enabled: true` + the full
+  `plans` list, monthly and weekly figures).
