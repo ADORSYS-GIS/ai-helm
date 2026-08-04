@@ -742,8 +742,15 @@ models:
      resources:
        cpuRequest: "2"
        cpuLimit: "8"
-       memoryRequest: 8Gi
-       memoryLimit: 17Gi
+       # RAM, not VRAM. 17 Gi was too tight: vLLM stages the 16.8 GB of AWQ
+       # weights in RAM while loading (and the 30B/128-expert MoE engine init
+       # holds sizeable CPU-side structures on top), so the load OOM-killed
+       # before the port ever opened — pod never Ready, killed at the 30-min
+       # startup budget. Aligned with z-image-turbo (32 Gi), the fleet
+       # precedent for similarly-sized weights. Re-check after the load gate
+       # measures real headroom.
+       memoryRequest: 12Gi
+       memoryLimit: 32Gi
 
    # ─────────────────────────────────────────────────────────────────────────
    # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102/0103/0105).
