@@ -25,6 +25,7 @@ from pathlib import Path
 from types import ModuleType
 
 from dashboards._common import SCHEMA_VERSION
+from dashboards._period_filter import inject_period_quick_ranges
 from dashboards._report import inject_report_link
 
 # Registry of every generated dashboard. Import-by-string so Python's
@@ -79,6 +80,7 @@ def _emit(mod: ModuleType, target_dir: Path) -> Path:
     # default. See `_common.SCHEMA_VERSION`.
     dashboard["schemaVersion"] = SCHEMA_VERSION
     inject_report_link(dashboard)
+    inject_period_quick_ranges(dashboard, mod.__name__)
     out_path = target_dir / mod.OUTPUT_PATH  # type: ignore[attr-defined]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
