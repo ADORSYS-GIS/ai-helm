@@ -8,18 +8,14 @@
 {{- if not $training.otel.endpoint }}{{ fail "webank-training: training.otel.endpoint is required" }}{{- end }}
 {{- if not $workflow.serviceAccountName }}{{ fail "webank-training: workflow.serviceAccountName is required" }}{{- end }}
 {{- if eq (len .Values.models) 0 }}{{ fail "webank-training: models must declare the public model workflow catalogue" }}{{- end }}
-{{- $gpuNodeLabel := index $training.gpu.nodeSelector "nvidia.com/gpu.present" | default "" -}}
-{{- if ne $gpuNodeLabel "true" }}{{ fail "webank-training: GPU-capable templates require training.gpu.nodeSelector[nvidia.com/gpu.present]=true (the live GPU node label — see charts/inference)" }}{{- end }}
-{{- if ne ($training.gpu.runtimeClassName | default "") "nvidia" }}{{ fail "webank-training: GPU-capable templates require training.gpu.runtimeClassName=nvidia so host CUDA driver libraries are injected" }}{{- end }}
-{{- $gpuLimit := index $training.gpu.resources.limits "nvidia.com/gpu" | default 0 -}}
-{{- if lt (int $gpuLimit) 1 }}{{ fail "webank-training: GPU-capable templates require limits.nvidia.com/gpu >= 1" }}{{- end }}
-{{- $gpuRequest := index $training.gpu.resources.requests "nvidia.com/gpu" | default 0 -}}
-{{- if lt (int $gpuRequest) 1 }}{{ fail "webank-training: GPU-capable templates require requests.nvidia.com/gpu >= 1" }}{{- end }}
-{{- $toleratesGpu := false -}}
-{{- range $training.gpu.tolerations }}
-{{- if and (eq (.key | default "") "nvidia.com/gpu") (eq (.operator | default "Equal") "Exists") (eq (.effect | default "") "NoSchedule") }}{{- $toleratesGpu = true }}{{- end }}
-{{- end }}
-{{- if not $toleratesGpu }}{{ fail "webank-training: GPU-capable templates require an nvidia.com/gpu:NoSchedule (Exists) toleration — the live GPU node taint" }}{{- end }}
+{{- if eq (len $training.gpu.nodeSelector) 0 }}{{ fail "webank-training: GPU-capable templates require a non-empty training.gpu.nodeSelector" }}{{- end }}
+{{- if not ($training.gpu.runtimeClassName | default "") }}{{ fail "webank-training: GPU-capable templates require training.gpu.runtimeClassName" }}{{- end }}
+{{- $gpuResourceName := required "webank-training: training.gpu.resourceName is required" $training.gpu.resourceName -}}
+{{- $gpuLimit := index $training.gpu.resources.limits $gpuResourceName | default 0 -}}
+{{- if lt (int $gpuLimit) 1 }}{{ fail (printf "webank-training: GPU-capable templates require limits.%s >= 1" $gpuResourceName) }}{{- end }}
+{{- $gpuRequest := index $training.gpu.resources.requests $gpuResourceName | default 0 -}}
+{{- if lt (int $gpuRequest) 1 }}{{ fail (printf "webank-training: GPU-capable templates require requests.%s >= 1" $gpuResourceName) }}{{- end }}
+{{- if eq (len $training.gpu.tolerations) 0 }}{{ fail "webank-training: GPU-capable templates require at least one training.gpu.toleration" }}{{- end }}
 {{- range $model := .Values.models }}
 {{- $id := required "webank-training: models[].id is required" $model.id -}}
 {{- $materializer := required (printf "webank-training: %s datasetMaterializer is required" $id) $model.datasetMaterializer -}}
@@ -93,7 +89,8 @@ spec:
           - name: readiness
             path: /workspace/input/readiness.json
 {{- end }}
-      runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
+      podSpecPatch: |
+        runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
       nodeSelector:
         {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
       {{- with $training.gpu.tolerations }}
@@ -237,7 +234,8 @@ spec:
           - name: readiness
             path: /workspace/governance/readiness.json
 {{- end }}
-      runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
+      podSpecPatch: |
+        runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
       nodeSelector:
         {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
       {{- with $training.gpu.tolerations }}
