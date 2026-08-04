@@ -40,9 +40,7 @@ The automated E2E test suite lives in `e2e-tests/` and uses [Playwright](https:/
 | File | Scope & Verification |
 |---|---|
 | `tests/auth.setup.ts` | Global authentication setup. Manages Playwright session state capture and fallback for headless execution. |
-| `tests/agent-connectivity.spec.ts` | Direct API probes to `/api/agents` and `/api/agents/chat`. Verifies unauthenticated security guards (401 response). |
 | `tests/agent-oauth2.spec.ts` | UI-level flow for selecting the `Coder` agent, handling Keycloak OIDC redirects (`auth.verif.fyi`), and executing agent prompts. |
-| `tests/token-refresh.spec.ts` | Validates token lifecycle handling and verifies silent token refresh availability on `/api/auth/refresh`. |
 
 ---
 
