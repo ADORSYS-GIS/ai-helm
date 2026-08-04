@@ -116,7 +116,7 @@ rateLimitBudgeting:
       # a bounded ceiling still protects the shared budget/backends. Adjust to taste.
       # monthlyBudgetUsd DORMANT (see free); the LIVE monthly cap is
       # core-gateway backendTrafficPolicy.monthlyBudget.plans.enterprise — keep in sync.
-      monthlyBudgetUsd: 1000
+      monthlyBudgetUsd: 50
       # burst:
       #   requestsPerMin: 8000
       #   tokensPerMin: 40000000
@@ -125,8 +125,8 @@ rateLimitBudgeting:
       # Per-person monthly budget. DORMANT since the #532 shared-budget cutover
       # (sharedBudget.enabled gates the per-model rule off) — the LIVE knob is
       # core-gateway backendTrafficPolicy.monthlyBudget.plans. Kept in sync
-      # (50, 2026-08-01) so a rollback to per-model budgets keeps the same cap.
-      monthlyBudgetUsd: 50
+      # (15, 2026-08-04) so a rollback to per-model budgets keeps the same cap.
+      monthlyBudgetUsd: 15
       # burst:
       #   requestsPerMin: 2000
       #   # Raised 200k → 1M (2026-06-12) to match the 1M context ceiling
@@ -144,7 +144,7 @@ rateLimitBudgeting:
       #   tokensPerMin: 20000000
     # index 3
     - id: pro
-      monthlyBudgetUsd: 200
+      monthlyBudgetUsd: 30
       # burst:
       #   requestsPerMin: 4000
       #   tokensPerMin: 20000000    # 2M → 20M in the 10x pass
@@ -2027,4 +2027,3 @@ models:
       deepinfra-02:
         <<: *deepinfraBackendSecondary
         modelNameOverride: "moonshotai/Kimi-K2.7-Code"
-

@@ -250,7 +250,7 @@ def _budget_thresholds() -> db.ThresholdsConfig:
 def _panel_budget_gauge() -> gauge.Panel:
     # Percent of the editable monthly budget spent in the selected range.
     # Same Loki cost query as _panel_total_cost, divided by the $budget
-    # textbox variable (default $50 — the free-plan monthly budget).
+    # textbox variable (default $15 — the free-plan monthly budget).
     expr = (
         "100 * ("
         f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
@@ -261,7 +261,7 @@ def _panel_budget_gauge() -> gauge.Panel:
         .title("Budget burn (selected range)")
         .description(
             "Total cost over the selected range as a % of the $budget variable "
-            "(default $50/mo — edit in the dashboard toolbar)."
+            "(default $15/mo — edit in the dashboard toolbar)."
         )
         .datasource(_LOKI_DS)
         .grid_pos(dm.GridPos(h=8, w=12, x=12, y=8))
@@ -358,7 +358,7 @@ _DESCRIPTION = (
     "Isolated by ${__user.email} (Grafana built-in user variable, ADR-0077). "
     "Default range starts at the 1st of the current month. "
     "Budget gauge measures total cost against the editable $budget variable "
-    "(default $50/mo — the free-plan monthly budget). "
+    "(default $15/mo — the free-plan monthly budget). "
     "Data path: JWT -> Authorino -> Envoy access log -> Alloy -> Loki. "
     "See docs/patterns/per-user-observability.md. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/my_usage.py."
@@ -391,8 +391,8 @@ def _budget_var() -> db.TextBoxVariable:
     return (
         db.TextBoxVariable("budget")
         .label("Monthly budget ($)")
-        .default_value("50")
-        .current(dm.VariableOption(selected=True, text="50", value="50"))
+        .default_value("15")
+        .current(dm.VariableOption(selected=True, text="15", value="15"))
     )
 
 

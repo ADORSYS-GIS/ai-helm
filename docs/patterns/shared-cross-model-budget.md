@@ -186,8 +186,8 @@ live in the `ai-helm` repo. Same fix already applied once to this chart for
 mistake during initial wiring") — this migration closes the same gap for the
 budget plans.
 
-⚠️ Current default figures are `monthlyBudgetUsd / 4` (enterprise $250, free
-$12.50, pro $50) — a starting formula, not a confirmed business number. Tune
+⚠️ Current default figures are `monthlyBudgetUsd / 4` (enterprise $12.50, free
+$3.75, pro $7.50) — a starting formula, not a confirmed business number. Tune
 per plan; nothing about the mechanism depends on the ratio.
 
 ⚠️ Only wired into this gateway-wide shared path. The dormant per-model
@@ -217,4 +217,5 @@ each still carrying the `unit: Year` TTL from ADR-0112.
 | 2026-08-01 | ADR-0112 — `unit: Month` → `Year`: 0111 alone left the 30-day epoch still rotating (a spurious mid-month reset, next due 2026-08-05). The marker is now the sole rotation trigger |
 | 2026-07-31 | per-minute burst limits raised 10x on every plan (spurious 429s on bursty-but-cheap usage) |
 | 2026-08-01 | free tier restored $15 → **$50** shared (back to ADR-0035), and per-minute burst **commented out entirely** — the per-model BTP now emits no rules at all, so this shared budget is the only enforced cap |
+| 2026-08-04 | all shared monthly caps lowered: enterprise **$50**, free **$15**, pro **$30**; weekly sub-budgets remain `monthlyBudgetUsd / 4` |
 | 2026-08-04 | ADR-0119 — additive weekly sub-budget (`x-billing-week`, Monday-start ISO week) composes with the monthly rule to stop front-loading; monthly contract untouched |
