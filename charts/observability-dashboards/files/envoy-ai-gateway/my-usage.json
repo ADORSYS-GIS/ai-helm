@@ -59,13 +59,31 @@
         "auto": false,
         "auto_min": "10s",
         "auto_count": 30
+      },
+      {
+        "type": "textbox",
+        "name": "budget",
+        "label": "Monthly budget ($)",
+        "skipUrlSync": false,
+        "query": "50",
+        "current": {
+          "text": "50",
+          "value": "50",
+          "selected": true
+        },
+        "multi": false,
+        "allowCustomValue": true,
+        "includeAll": false,
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
       }
     ]
   },
   "annotations": {},
   "uid": "my-usage",
   "title": "AI Gateway — my usage",
-  "description": "Personal AI usage for the authenticated user. Isolated by ${__user.email} (Grafana built-in user variable, ADR-0077). Data path: JWT -> Authorino -> Envoy access log -> Alloy -> Loki. See docs/patterns/per-user-observability.md. GENERATED — source: tools/dashboards/envoy_ai_gateway/my_usage.py.",
+  "description": "Personal AI usage for the authenticated user. Isolated by ${__user.email} (Grafana built-in user variable, ADR-0077). Default range starts at the 1st of the current month. Budget gauge measures total cost against the editable $budget variable (default $50/mo — the free-plan monthly budget). Data path: JWT -> Authorino -> Envoy access log -> Alloy -> Loki. See docs/patterns/per-user-observability.md. GENERATED — source: tools/dashboards/envoy_ai_gateway/my_usage.py.",
   "tags": [
     "ai-gateway",
     "my-usage",
@@ -75,7 +93,7 @@
   "editable": true,
   "graphTooltip": 1,
   "time": {
-    "from": "now-30d",
+    "from": "now/M",
     "to": "now"
   },
   "fiscalYearStartMonth": 0,
@@ -259,12 +277,11 @@
       }
     },
     {
-      "type": "timeseries",
+      "type": "gauge",
       "targets": [
         {
-          "expr": "((sum by (model) (sum_over_time({service_name=\"envoy-ai-gateway\", email=\"${__user.email}\", azp=~\"$azp\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [1m]))) / 1e6)",
+          "expr": "100 * (sum(sum_over_time({service_name=\"envoy-ai-gateway\", email=\"${__user.email}\", azp=~\"$azp\", model=~\"$model\"} | json gen_ai_usage_custom_total_cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap gen_ai_usage_custom_total_cost | __error__=\"\" [$__range])) / 1e6) / $budget",
           "refId": "A",
-          "legendFormat": "{{model}}",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -272,7 +289,8 @@
           }
         }
       ],
-      "title": "Cost over time",
+      "title": "Budget burn (selected range)",
+      "description": "Total cost over the selected range as a % of the $budget variable (default $50/mo — edit in the dashboard toolbar).",
       "transparent": false,
       "datasource": {
         "type": "loki",
@@ -280,37 +298,47 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
+        "w": 12,
+        "x": 12,
         "y": 8
       },
       "repeatDirection": "h",
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": false,
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "reduceOptions": {
           "calcs": [
-            "sum",
-            "mean"
-          ]
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "asc"
-        }
+        "minVizHeight": 75,
+        "orientation": "auto"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD",
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "fillOpacity": 10.0,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "normal"
-            }
+          "unit": "percent",
+          "min": 0.0,
+          "max": 120.0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 70.0,
+                "color": "yellow"
+              },
+              {
+                "value": 90.0,
+                "color": "red"
+              }
+            ]
           }
         },
         "overrides": []
@@ -338,7 +366,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 16
       },
@@ -387,8 +415,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 6,
         "y": 16
       },
       "repeatDirection": "h",
@@ -436,8 +464,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 12,
         "y": 16
       },
       "repeatDirection": "h",
@@ -464,71 +492,6 @@
       }
     },
     {
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "quantile_over_time(0.50, {service_name=\"envoy-ai-gateway\", email=\"${__user.email}\", azp=~\"$azp\", model=~\"$model\"} | json duration | unwrap duration | __error__=\"\" [5m]) by ()",
-          "refId": "A",
-          "legendFormat": "p50",
-          "queryType": "range",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          }
-        },
-        {
-          "expr": "quantile_over_time(0.95, {service_name=\"envoy-ai-gateway\", email=\"${__user.email}\", azp=~\"$azp\", model=~\"$model\"} | json duration | unwrap duration | __error__=\"\" [5m]) by ()",
-          "refId": "B",
-          "legendFormat": "p95",
-          "queryType": "range",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          }
-        }
-      ],
-      "title": "Latency — p50 / p95",
-      "transparent": false,
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 24
-      },
-      "repeatDirection": "h",
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": false,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "asc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "fillOpacity": 0.0,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
       "type": "piechart",
       "targets": [
         {
@@ -550,9 +513,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 32
+        "w": 6,
+        "x": 18,
+        "y": 16
       },
       "repeatDirection": "h",
       "options": {
@@ -589,59 +552,10 @@
             "type": "loki",
             "uid": "loki"
           }
-        }
-      ],
-      "title": "Your name",
-      "transparent": false,
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 12,
-        "y": 32
-      },
-      "repeatDirection": "h",
-      "options": {
-        "graphMode": "none",
-        "colorMode": "none",
-        "justifyMode": "auto",
-        "textMode": "name",
-        "wideLayout": true,
-        "showPercentChange": false,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false,
-          "fields": ""
         },
-        "percentChangeColorMode": "standard",
-        "orientation": "horizontal"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "value": null,
-                "color": "blue"
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "targets": [
         {
           "expr": "sum by (billing_plan) (count_over_time({service_name=\"envoy-ai-gateway\", email=\"${__user.email}\", azp=~\"$azp\", model=~\"$model\"} [$__range]))",
-          "refId": "A",
+          "refId": "B",
           "legendFormat": "{{billing_plan}}",
           "queryType": "range",
           "datasource": {
@@ -650,7 +564,7 @@
           }
         }
       ],
-      "title": "Billing plan",
+      "title": "User Info",
       "transparent": false,
       "datasource": {
         "type": "loki",
@@ -658,9 +572,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 6,
-        "x": 18,
-        "y": 32
+        "w": 12,
+        "x": 0,
+        "y": 8
       },
       "repeatDirection": "h",
       "options": {
