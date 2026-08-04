@@ -27,34 +27,29 @@ stage into an alternative public operation.
 using `runtimeClassName: nvidia` so the host CUDA driver libraries are mounted.
 They request the same reviewed CPU, memory, and one-GPU resource profile as
 candidate training (ADR-0114).
-Document detector is the one special case: its form has **no inputs**. It
-creates the fixed `ds-document-detector/main` repository if necessary, obtains
-LakeFS's initial immutable commit, then runs the in-image Python builder to
-create the reviewed hermetic synthetic starter set. It fetches no source
-dataset from the network and passes the resulting manifest/readiness pair
-through the normal Rust gate and LakeFS write boundary.
+Every Dataset Build form has **no inputs**. Its target repository, `main`
+branch, reviewed storage namespace, and closed source strategy come only from
+`ai-helm-values`; the dashboard cannot choose a LakeFS reference, source
+archive, URL, or destination.
 
-The other dataset-build forms require three governed artifacts:
+Document detector, document recognizer, and face detector run their bundled
+offline Python builders. Recognizer and face-detector output then passes
+through the typed `materialize-synthetic-source` adapter before the complete
+training directory is packed. Document detector's builder already emits the
+fixed bundle contract. All three publish only through `fixed-dataset publish`
+to their configured `ds-<model>/main` target.
 
-- `source` — the model-specific source metadata;
-- `manifest` — the RFC-0006 source manifest; and
-- `readiness` — the matching attestation.
+SFace and PAD use a distinct, fixed governed LakeFS source repository. The
+workflow resolves its configured `main` branch to an immutable commit, checks
+out only the sealed source bundle, proves the embedded source commit matches,
+materializes the model-specific trainer contract, then packs and publishes the
+derived bundle. A missing or unapproved source fails closed. No workflow
+invents identity labels, consent, or physical-attack labels.
 
-It also requires `lakefs_ref`, the immutable commit declared by those two
-governance documents. The container materializes the model-specific descriptor
-and calls the narrow `training-data push` LakeFS boundary. It never accepts a
-dataset path, LakeFS destination, or arbitrary shell command from the
-dashboard. The destination repository and `main` branch come only from the
-model's reviewed `ai-helm-values` entry. Document detector's reviewed storage
-namespace is used only if that fixed repository must be created; an existing
-repository is never reset or reconfigured.
-
-The current materializers deliberately produce metadata descriptors. They do
-not invent biometric, identity, or PAD bytes. The document-detector bootstrap
-creates only generic synthetic scenes and exact programmatic labels; it is
-training input, never real-world evaluation or promotion evidence. Every other
-model still needs an approved model-specific source and governed artifact
-contract before an operator starts its template.
+Every target repository may be created only with its reviewed storage
+namespace. An existing repository is never reset or reconfigured. The
+synthetic builders create starter training data, never real-world evaluation
+or promotion evidence.
 
 ## Training templates
 

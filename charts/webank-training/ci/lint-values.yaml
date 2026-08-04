@@ -16,8 +16,13 @@ training:
         effect: NoSchedule
 models:
   - id: document-detector
-    datasetMaterializer: materialize-document-detector-descriptor
     trainer: document-detector
+    datasetBuild:
+      target:
+        repository: ds-document-detector
+        branch: main
+        storageNamespace: s3://governed-ci/datasets/ds-document-detector
+      source: { strategy: hermetic-synthetic }
     lakefs:
       dataset:
         repository: ds-document-detector
@@ -25,26 +30,52 @@ models:
         storageNamespace: s3://governed-ci/datasets/ds-document-detector
       model: { repository: model-document-detector, branch: main }
   - id: document-recognizer
-    datasetMaterializer: materialize-document-recognizer-descriptor
     trainer: document-recognizer
+    datasetBuild:
+      target:
+        repository: ds-document-recognizer
+        branch: main
+        storageNamespace: s3://governed-ci/datasets/ds-document-recognizer
+      source: { strategy: hermetic-synthetic }
     lakefs:
       dataset: { repository: ds-document-recognizer, branch: main }
       model: { repository: model-document-recognizer, branch: main }
   - id: face-detector
-    datasetMaterializer: materialize-face-detector-descriptor
     trainer: face-detector
+    datasetBuild:
+      target:
+        repository: ds-face-detector
+        branch: main
+        storageNamespace: s3://governed-ci/datasets/ds-face-detector
+      source: { strategy: hermetic-synthetic }
     lakefs:
       dataset: { repository: ds-face-detector, branch: main }
       model: { repository: model-face-detector, branch: main }
   - id: sface
-    datasetMaterializer: materialize-sface-descriptor
     trainer: sface
+    datasetBuild:
+      target:
+        repository: ds-sface
+        branch: main
+        storageNamespace: s3://governed-ci/datasets/ds-sface
+      source:
+        strategy: governed-lakefs
+        repository: source-sface-consented
+        branch: main
     lakefs:
       dataset: { repository: ds-sface, branch: main }
       model: { repository: model-sface, branch: main }
   - id: pad-liveness
-    datasetMaterializer: materialize-pad-descriptor
     trainer: pad-liveness-pending
+    datasetBuild:
+      target:
+        repository: ds-pad-liveness
+        branch: main
+        storageNamespace: s3://governed-ci/datasets/ds-pad-liveness
+      source:
+        strategy: governed-lakefs
+        repository: source-pad-liveness-consented
+        branch: main
     lakefs:
       dataset: { repository: ds-pad-liveness, branch: main }
       model: { repository: model-pad-liveness, branch: main }
