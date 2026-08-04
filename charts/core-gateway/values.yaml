@@ -242,6 +242,16 @@ backendTrafficPolicy:
     # The order below is NOT alphabetical and must not be "tidied" — it reproduces
     # the sorted order that was live on 2026-07-20, so this change is render-neutral
     # and re-keys nothing.
+    # weeklyBudgetUsd (ADR-0119, additive): an optional per-plan field on the
+    # SAME entries above, rendered as a second, independent rule pass in the
+    # template — strictly after the monthlyBudgetUsd rules, so it only ever
+    # APPENDS new rule-index slots and never re-keys a monthly counter
+    # (ADR-0084). Composes (AND) with monthlyBudgetUsd: it only ever tightens
+    # the effective cap within an ISO week (Monday-start), never raises the
+    # monthly ceiling. Omitting it for a plan renders no weekly rule at all.
+    # ⚠️ The figures below are `monthlyBudgetUsd / 4` — a starting formula,
+    # not a confirmed business number (ADR-0119). Tune per plan as needed;
+    # the mechanism doesn't depend on the ratio.
     plans:
       # index 0
       - id: enterprise
@@ -249,6 +259,7 @@ backendTrafficPolicy:
         # ai-models rateLimitBudgeting.plans.enterprise.monthlyBudgetUsd). A key
         # gets x-billing-plan=enterprise from its lightbridge introspected plan.
         monthlyBudgetUsd: 1000
+        weeklyBudgetUsd: 250
       # index 1
       - id: free
         # 30 → 15 (2026-07-08): now that the budget is genuinely shared across all
@@ -259,9 +270,11 @@ backendTrafficPolicy:
         # spend carries over; and with ADR-0111's calendar `billing_period` in the
         # key, this lands on a fresh window anyway.
         monthlyBudgetUsd: 50
+        weeklyBudgetUsd: 12.5
       # index 2
       - id: pro
         monthlyBudgetUsd: 200
+        weeklyBudgetUsd: 50
 
   # Whole-request ceiling for routes this gateway-wide policy governs (the
   # non-model routes — model routes are governed by their own per-model BTP in
