@@ -21,7 +21,7 @@ def inject_report_link(dashboard: dict) -> None:
         return
     url = f"{REPORT_PLUGIN_PATH}?dashUid={uid}"
     links = dashboard.get("links") or []
-    if any(isinstance(l, dict) and l.get("url") == url for l in links):
+    if any(isinstance(link, dict) and link.get("url") == url for link in links):
         return
     links.append(
         {
