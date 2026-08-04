@@ -13,6 +13,16 @@
 > read that first for the full counter-key anatomy and its history). The key
 > shape below has been updated to match the current **shared** (gateway-wide,
 > not per-model) counter.
+>
+> ⚠️ It also predates the **additive weekly sub-budget**
+> ([ADR-0119](../adr/0119-weekly-sub-budget-anti-front-loading.md)) — the
+> dashboard now shows TWO parallel leaderboards (monthly + ISO-week,
+> Monday-start), plus a `billing_week` column on the raw Redis-census table
+> below. Same key shape, same rule-index-is-plan-identity contract, just a
+> second rule family (`rule-3/4/5` = enterprise/free/pro, weekly) appended
+> after the existing monthly ones (`rule-0/1/2`) — see
+> `shared-cross-model-budget.md`'s own "Weekly sub-budget" section for the
+> `x-billing-week` marker details.
 
 ## Why this exists
 
@@ -51,8 +61,8 @@ converse-gateway/core-gateway_converse-gateway/core-gateway/rule/<N>_...
 | Part | Meaning |
 |---|---|
 | `rule-<N>-match-0_<x-account-id>` | the Distinct `x-account-id` value — a Keycloak `sub` UUID, or a named service caller (`benie-joy`, `koufan-king`). `x-billing-plan`/`x-ai-eg-model` are fixed Exact matches → masked constants, so **plan is the rule index, not a value**. |
-| `rule-<N>` | the rule index → the plan. ⚠️ **The index is the ONLY carrier of plan identity** (the plan is an `Exact` match ⇒ masked to a constant), and it is **positional**, so renumbering a rule ORPHANS its counter rather than migrating it. `monthlyBudget.plans` is an **append-only ordered list** ([ADR-0084](../adr/0084-ratelimit-plan-order-is-append-only.md): today `rule-0` = enterprise, `rule-1` = free, `rule-2` = pro); read the current index↔plan mapping off the rendered comment (`# rule/1 · free …`), never off alphabetical order or a hardcoded index — it has renumbered before. |
-| `rule-<N>-match-2_<billing_period>` | the Distinct `x-billing-period` value — a calendar `YYYY-MM` string ([ADR-0111](../adr/0111-calendar-aligned-billing-period.md)), stamped on every request by a Lua `EnvoyExtensionPolicy`. Forces a **new** key at the real 1st-of-the-month, independent of where the `<window>` epoch below happens to land. |
+| `rule-<N>` | the rule index → the plan. ⚠️ **The index is the ONLY carrier of plan identity** (the plan is an `Exact` match ⇒ masked to a constant), and it is **positional**, so renumbering a rule ORPHANS its counter rather than migrating it. `monthlyBudget.plans` is an **append-only ordered list** ([ADR-0084](../adr/0084-ratelimit-plan-order-is-append-only.md): today `rule-0` = enterprise, `rule-1` = free, `rule-2` = pro, and since [ADR-0119](../adr/0119-weekly-sub-budget-anti-front-loading.md) `rule-3/4/5` = the same three plans' WEEKLY sub-budget, appended after — never interleaved with — the monthly rules); read the current index↔plan mapping off the rendered comment (`# rule/1 · free …`), never off alphabetical order or a hardcoded index — it has renumbered before. |
+| `rule-<N>-match-2_<billing_period>` | the Distinct `x-billing-period` value — a calendar `YYYY-MM` string ([ADR-0111](../adr/0111-calendar-aligned-billing-period.md)), stamped on every request by a Lua `EnvoyExtensionPolicy`. Forces a **new** key at the real 1st-of-the-month, independent of where the `<window>` epoch below happens to land. On a WEEKLY rule (`rule-3/4/5`) this same match-2 position instead carries an ISO `GGGG-Www` string (`x-billing-week`, ADR-0119) — a row has exactly one of `billing_period`/`billing_week`, never both. |
 | trailing `<window>` | the legacy 30-day budget bucket start (Unix epoch, a multiple of **2592000** = Lyft's MONTH unit). A pure function of wall-clock time, so it drifts off the calendar by ~5 days/year — `billing_period` above is what actually fixes that. Value = micro-USD spent this window. The previous bucket lingers until TTL. |
 
 Burst (per-minute) keys used to exist alongside these but churned every minute

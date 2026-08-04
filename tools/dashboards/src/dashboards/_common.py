@@ -120,6 +120,16 @@ RL_LABEL_WINDOW = "window"
 # aligned-billing-period.md.
 RL_LABEL_BILLING_PERIOD = "billing_period"
 
+# The ISO-8601, Monday-start "GGGG-Www" marker (ai-helm ADR-0119) stamped as
+# `x-billing-week` on the additive weekly sub-budget rules. Only ever set on
+# rows from those rules (the exporter's regex is anchored on the `-W` shape,
+# which a billing_period value never has, and vice versa) — a monthly row's
+# billing_week is always empty and a weekly row's billing_period is always
+# empty, which is what lets a single `billing_week=~"<value>"` selector
+# exclude every monthly row with no separate period-type label needed. See
+# docs/adr/0119-weekly-sub-budget-anti-front-loading.md.
+RL_LABEL_BILLING_WEEK = "billing_week"
+
 
 # ---------------------------------------------------------------------------
 # Phase-3 "gamified scoreboard" knobs (ADR-0060).
