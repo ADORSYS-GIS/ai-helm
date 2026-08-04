@@ -26,7 +26,7 @@ else is a SaaS backend behind a branded alias. Ids ending `-internal` are
 routed on the internal listener only — picking one externally returns
 `404 No matching route found`.
 
-## Image generation — `z-image-turbo-local`
+## Image generation — `z-image-turbo-internal` (internal plane only)
 
 > ⚠️ **KNOWN LIMITATION (2026-07-29): only ≤512×512 works through the gateway.**
 > Anything larger fails with `HTTP 500` / `Internal Server Error`. It is not your
@@ -54,7 +54,7 @@ curl -s $AI_BASE/v1/images/generations \
   -H "Authorization: Bearer $AI_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "z-image-turbo-local",
+    "model": "z-image-turbo-internal",
     "prompt": "a red bicycle leaning on a blue wall",
     "size": "512x512",
     "n": 1,
@@ -70,7 +70,7 @@ curl -s $AI_BASE/v1/images/generations \
 | Timeout | 300 s request / 1 h idle — rides a short queue, not a cold start |
 | Billing | flat **$0.0100/image**, tokens always 0 (ADR-0104) |
 
-Image-only: `z-image-turbo-local` does **not** answer `/v1/chat/completions`.
+Image-only: `z-image-turbo-internal` does **not** answer `/v1/chat/completions`.
 
 ## Chat completions
 

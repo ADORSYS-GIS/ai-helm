@@ -50,6 +50,9 @@ spec:
 # per-container), scraping its OWN metrics container port by name. Cross-pod
 # scrape, unlike the sidecar's gRPC port — see values.yaml's comment on why
 # METRICS_LISTEN_ADDR binds 0.0.0.0 while LISTEN_ADDR stays loopback-only.
+# Gated the same as the rest of the feature (envoy-proxy.yaml's note) — no
+# sidecar means no redact-metrics port to scrape.
+{{- if .Values.redactExtproc.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
@@ -69,3 +72,4 @@ spec:
     - targetPort: redact-metrics
       path: /metrics
       interval: 30s
+{{- end }}

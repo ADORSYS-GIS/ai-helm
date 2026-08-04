@@ -33,13 +33,26 @@ spec:
       # 1st of the month and the old one just ages out on its own TTL.
       # Runs strictly before the rate-limit filter (Envoy Gateway's own fixed
       # HTTP filter order: Lua < RateLimit), confirmed in ADR-0111.
+      #
+      # ADR-0119: the SAME function also stamps an ISO-8601, Monday-start week
+      # marker for the additive weekly sub-budget (backendtrafficpolicy.yaml
+      # in this chart). Must live in this one function — EG rejects a second
+      # EnvoyExtensionPolicy on the same Gateway (see the file header note).
+      # `%G` (ISO week-numbering year) is used instead of `%Y` (Gregorian
+      # year) so a week spanning a year boundary doesn't key against the
+      # wrong year — e.g. 2027-01-01 is ISO week 53 of 2026.
       inline: |
         function envoy_on_request(request_handle)
           request_handle:headers():replace("x-billing-period", os.date("!%Y-%m"))
+          request_handle:headers():replace("x-billing-week", os.date("!%G-W%V"))
         end
   # ADR-0116: PII/credential redaction ext_proc filter. Merged into THIS
   # resource for the reason in the header comment above — it cannot be its
-  # own EnvoyExtensionPolicy targeting the same Gateway.
+  # own EnvoyExtensionPolicy targeting the same Gateway. Gated on
+  # redactExtproc.enabled (default true in values.yaml) — see envoy-proxy.yaml's own note
+  # on the same gate — so this whole block, and not just the sidecar that
+  # backs it, is a values-repo toggle.
+  {{- if .Values.redactExtproc.enabled }}
   extProc:
     - backendRefs:
         - name: {{ include "core-gateway.fullname" . }}-redact-extproc
@@ -49,17 +62,26 @@ spec:
       # NEITHER headers nor body to the processor, which yields a filter
       # that is attached, healthy, and inspecting nothing (ADR-0116 flags
       # this as the same silent-no-op class as the `"n": 1` YAML-boolean
-      # trap). Request is Buffered — the whole JSON body arrives as one
-      # message, matching what crates/governance-redact's payload walker
-      # expects. Response is Streamed — see governance_redact::holdback for
-      # why buffering the whole completion is the wrong latency trade.
+      # trap). Both modes are values, not literals, precisely because of
+      # 2026-08-03: response body was flipped Streamed -> Buffered as an
+      # emergency stopgap for a UTF-8 chunk-split bug (fixed properly
+      # upstream in lightbridge-governance#47), and that flip had to wait
+      # for an ai-helm chart release instead of shipping as an
+      # ai-helm-values change. Defaults restore ADR-0116's original intent
+      # — request Buffered (the redact engine's payload walker needs the
+      # whole JSON body), response Streamed (see governance_redact::holdback
+      # for why buffering a whole completion is the wrong latency trade).
       processingMode:
         request:
-          body: Buffered
+          body: {{ .Values.redactExtproc.processingMode.request.body | default "Buffered" }}
         response:
-          body: Streamed
+          body: {{ .Values.redactExtproc.processingMode.response.body | default "Streamed" }}
       messageTimeout: {{ .Values.redactExtproc.messageTimeout | default "200ms" }}
-      # Matches decision 10 of the governance roadmap and every profile's
-      # own `fail_closed` stance: an outage of the redactor must fail the
-      # request, never silently forward unscanned content.
+      # NOT a value, deliberately: matches decision 10 of the governance
+      # roadmap and every profile's own `fail_closed` stance — an outage of
+      # the redactor must fail the request, never silently forward
+      # unscanned content. This is a safety invariant of the feature, not
+      # workload config, the same way `project: ai` is hardcoded in
+      # applications.yaml rather than made a per-app value.
       failOpen: false
+  {{- end }}

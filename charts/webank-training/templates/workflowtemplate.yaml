@@ -10,6 +10,7 @@
 {{- if eq (len .Values.models) 0 }}{{ fail "webank-training: models must declare the public model workflow catalogue" }}{{- end }}
 {{- $gpuNodeLabel := index $training.gpu.nodeSelector "nvidia.com/gpu.present" | default "" -}}
 {{- if ne $gpuNodeLabel "true" }}{{ fail "webank-training: GPU-capable templates require training.gpu.nodeSelector[nvidia.com/gpu.present]=true (the live GPU node label — see charts/inference)" }}{{- end }}
+{{- if ne ($training.gpu.runtimeClassName | default "") "nvidia" }}{{ fail "webank-training: GPU-capable templates require training.gpu.runtimeClassName=nvidia so host CUDA driver libraries are injected" }}{{- end }}
 {{- $gpuLimit := index $training.gpu.resources.limits "nvidia.com/gpu" | default 0 -}}
 {{- if lt (int $gpuLimit) 1 }}{{ fail "webank-training: GPU-capable templates require limits.nvidia.com/gpu >= 1" }}{{- end }}
 {{- $gpuRequest := index $training.gpu.resources.requests "nvidia.com/gpu" | default 0 -}}
@@ -92,6 +93,7 @@ spec:
           - name: readiness
             path: /workspace/input/readiness.json
 {{- end }}
+      runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
       nodeSelector:
         {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
       {{- with $training.gpu.tolerations }}
@@ -235,6 +237,7 @@ spec:
           - name: readiness
             path: /workspace/governance/readiness.json
 {{- end }}
+      runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
       nodeSelector:
         {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
       {{- with $training.gpu.tolerations }}

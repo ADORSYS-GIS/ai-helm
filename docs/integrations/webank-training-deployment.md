@@ -24,7 +24,8 @@ stage into an alternative public operation.
 `*-dataset-build` templates are restricted-plane operations placed on
 `nvidia.com/gpu.present=true` nodes (the live GPU node label, matching
 `charts/inference`), tolerating `nvidia.com/gpu:NoSchedule` (Exists), and
-requesting the same reviewed CPU, memory, and one-GPU resource profile as
+using `runtimeClassName: nvidia` so the host CUDA driver libraries are mounted.
+They request the same reviewed CPU, memory, and one-GPU resource profile as
 candidate training (ADR-0114).
 Document detector is the one special case: its form has **no inputs**. It
 creates the fixed `ds-document-detector/main` repository if necessary, obtains
@@ -58,8 +59,9 @@ contract before an operator starts its template.
 ## Training templates
 
 All `*-train` templates select `nvidia.com/gpu.present=true`, tolerate
-`nvidia.com/gpu:NoSchedule` (Exists), and request one `nvidia.com/gpu`. A
-submitted training workflow therefore cannot land on a CPU-only node.
+`nvidia.com/gpu:NoSchedule` (Exists), use `runtimeClassName: nvidia`, and request
+one `nvidia.com/gpu`. A submitted training workflow therefore cannot land on a
+CPU-only node or start without the NVIDIA runtime injecting `libcuda.so.1`.
 
 The document detector accepts `dataset_ref` and `dataset_version`; its runtime
 combines them with the fixed `ds-document-detector` repository to check out and

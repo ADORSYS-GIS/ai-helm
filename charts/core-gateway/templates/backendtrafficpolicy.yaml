@@ -74,6 +74,15 @@ spec:
      trigger. The unit is now only a TTL: `requests` below stays the MONTHLY
      budget and is NOT multiplied by 12. One residual epoch rollover remains
      (~2026-12-18, then annually) — a known, documented limitation.
+
+     ADR-0119: a second, additive WEEKLY sub-budget rule (per plan, opt-in via
+     `weeklyBudgetUsd`) renders after the monthly rules below, in the same
+     shared/cross-model shape, keyed on x-billing-week (ISO-8601 Monday-start,
+     same Lua block) instead of x-billing-period. It composes (AND) with the
+     monthly rule to stop a user front-loading the whole month's budget in a
+     few days — it never raises the monthly ceiling, only tightens pacing
+     within a week. See that rule's own comment below for the render-order
+     reasoning (append-only, ADR-0084).
   */ -}}
   {{- with $btp.monthlyBudget }}
   {{- if .enabled }}
@@ -121,6 +130,57 @@ spec:
               metadata:
                 namespace: io.envoy.ai_gateway
                 key: llm_custom_total_cost
+        {{- end }}
+        {{- /* ── Weekly sub-budget (ADR-0119) — additive, NOT a replacement ──
+           Same shared cross-model shape as the monthly rule above, but keyed
+           on x-billing-week (an ISO-8601 Monday-start "GGGG-Www" marker,
+           stamped by the SAME Lua block that stamps x-billing-period) instead
+           of x-billing-period, with its own tighter weeklyBudgetUsd limit.
+           Composed (AND) with the monthly rule: a request is denied if EITHER
+           bucket is exhausted, so this only ever tightens the effective cap
+           within a week — the monthly ceiling above is completely unchanged.
+
+           Rendered as a SECOND, independent pass over the SAME .plans list,
+           strictly AFTER the monthly loop above, so it only ever APPENDS new
+           rule-index slots and never shifts a monthly rule's index (the
+           ADR-0084 append-only contract). Per plan, opt-in via
+           weeklyBudgetUsd — omit it and no weekly rule renders for that plan.
+        */ -}}
+        {{- range $i, $plan := .plans }}
+        {{- with $plan.weeklyBudgetUsd }}
+        - clientSelectors:
+            - headers:
+                - invert: false
+                  name: x-account-id
+                  type: Distinct
+                - invert: false
+                  name: x-billing-plan
+                  type: Exact
+                  value: {{ $plan.id | quote }}
+                - invert: false
+                  # ADR-0119: ISO-8601 Monday-start week marker, stamped by the
+                  # same Lua EnvoyExtensionPolicy as x-billing-period.
+                  name: x-billing-week
+                  type: Distinct
+          limit:
+            requests: {{ mulf . 1000000.0 | int64 }} # weekly-rule/{{ $i }} · {{ $plan.id }} shared WEEKLY budget ${{ . }} across ALL models (unit is a TTL only — do NOT scale)
+            # ADR-0112's reasoning applies identically here: Year holds the
+            # window epoch still for far longer than a week, so x-billing-week
+            # is the sole rotation trigger. Do not "correct" this to Week —
+            # the CRD enum doesn't even offer it, and Month/Day reintroduce
+            # the same drifting-epoch defect ADR-0112 fixed for the monthly rule.
+            unit: Year
+          shared: true
+          cost:
+            request:
+              from: Number
+              number: 0
+            response:
+              from: Metadata
+              metadata:
+                namespace: io.envoy.ai_gateway
+                key: llm_custom_total_cost
+        {{- end }}
         {{- end }}
   {{- end }}
   {{- end }}

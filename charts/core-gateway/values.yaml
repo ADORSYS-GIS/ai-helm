@@ -212,56 +212,43 @@ clientTrafficPolicy:
 backendTrafficPolicy:
   bufferLimit: 100Mi
 
-  # ── Shared cross-model monthly budget (#532) ──────────────────────────────
+  # ── Shared cross-model monthly + weekly budget (#532, ADR-0119) ───────────
   # One SHARED micro-USD budget per (user, plan) across ALL model routes, instead
   # of the per-model counters that let a heavy user spend cap × N-models. Rendered
-  # as a `shared: true` cost rule on the gateway-wide BTP (see the template).
-  # ⚠️ enabled MUST stay false until Envoy Gateway is ≥ v1.8.2 (bug #9244 breaks
-  # shared+cost on 1.8.1). Flip this AND ai-model `sharedBudget.enabled` together.
-  # `plans` values (USD) must match what the per-model path used (ai-models
-  # rateLimitBudgeting.plans.<plan>.monthlyBudgetUsd) at cutover.
-  # CUTOVER 2026-07-08: enabled — EG live on v1.8.2 (#9244 fixed), paired with
-  # ai-models sharedBudget.enabled: true.
+  # as `shared: true` cost rule(s) on the gateway-wide BTP (see the template) —
+  # plus an additive weekly sub-budget (ADR-0119) that composes with it to stop
+  # front-loading. Requires Envoy Gateway ≥ v1.8.2 (bug #9244 breaks shared+cost
+  # on 1.8.1) — live since 2026-07-08, paired with ai-models `sharedBudget.enabled`.
+  #
+  # ⚠️ ai-helm / ai-helm-values split (ADR-0055/0056): this is WORKLOAD CONFIG,
+  # not a structural chart default. The actual `enabled` + ordered `plans` list
+  # (monthlyBudgetUsd / weeklyBudgetUsd per plan) lives in `ai-helm-values`
+  # `environments/prod/values/core-gateway.yaml` (`backendTrafficPolicy.monthlyBudget`),
+  # which this app's `valuesFromRepo` `$values` ref overrides this whole block
+  # with. What's below is ONLY the safe structural default (rate limiting off,
+  # no plans) so `helm template`/`helm lint` render a valid chart standalone —
+  # no real business figures live in this repo. Edit plan budgets in
+  # ai-helm-values, never here.
+  #
+  # ⚠️⚠️ Whoever edits `plans` in ai-helm-values — ORDER IS LOAD-BEARING,
+  # APPEND ONLY (ADR-0084). Each entry's INDEX becomes the `rule/N` inside the
+  # Lyft ratelimit Redis counter key, and the plan name itself is masked (an
+  # `Exact` match renders as a constant) — the index is the ONLY carrier of
+  # plan identity in the key. Reordering, inserting, or removing an entry
+  # ORPHANS every account's accumulated spend mid-window and silently hands
+  # out a fresh, unthrottled counter (the 2026-07-16 incident this ADR fixed).
+  # New plans are always appended at the tail.
+  #
+  # `weeklyBudgetUsd` (ADR-0119) is an optional additive per-plan field on the
+  # SAME entries, rendered as a second, independent rule pass in the
+  # template — strictly after the monthlyBudgetUsd rules, so it only ever
+  # APPENDS new rule-index slots and never re-keys a monthly counter.
+  # Composes (AND) with monthlyBudgetUsd: it only ever tightens the effective
+  # cap within an ISO week (Monday-start), never raises the monthly ceiling.
+  # Omitting it for a plan renders no weekly rule for that plan.
   monthlyBudget:
-    enabled: true
-    # ⚠️⚠️ ORDER IS LOAD-BEARING — APPEND ONLY. NEVER reorder, insert, or remove.
-    #
-    # Each entry's INDEX in this list becomes the `rule/N` inside the Lyft
-    # ratelimit Redis counter key, and the plan name itself is masked (it is an
-    # `Exact` match, so it renders as a constant). The index is therefore the ONLY
-    # carrier of plan identity in the key. Renumbering a plan does not migrate its
-    # counter — it ORPHANS it and starts a fresh one from zero.
-    #
-    # This was a `map` until 2026-07-20. Helm sorts map keys, so adding the
-    # `enterprise` plan on 2026-07-16 (which sorts alphabetically FIRST) inserted a
-    # rule at index 0 and pushed `free` 0→1 and `pro` 1→2 MID-WINDOW. Every user's
-    # accumulated monthly spend was orphaned and everyone silently received a fresh
-    # budget. A list makes the order explicit and append-only, so a new plan lands
-    # at the tail and cannot shift an existing counter (ADR-0084).
-    #
-    # The order below is NOT alphabetical and must not be "tidied" — it reproduces
-    # the sorted order that was live on 2026-07-20, so this change is render-neutral
-    # and re-keys nothing.
-    plans:
-      # index 0
-      - id: enterprise
-        # Customer "enterprise" tier (LIVE monthly $ cap; keep in sync with
-        # ai-models rateLimitBudgeting.plans.enterprise.monthlyBudgetUsd). A key
-        # gets x-billing-plan=enterprise from its lightbridge introspected plan.
-        monthlyBudgetUsd: 1000
-      # index 1
-      - id: free
-        # 30 → 15 (2026-07-08): now that the budget is genuinely shared across all
-        # models (#532 cutover), the old per-model headroom rationale is gone.
-        # 15 → 50 (2026-08-01): the 15 was a provisional squeeze, not the tier we
-        # actually offer — restored to the $50/mo of ADR-0035. Only the plan's
-        # VALUE changes, never its index, so no counter is re-keyed and accrued
-        # spend carries over; and with ADR-0111's calendar `billing_period` in the
-        # key, this lands on a fresh window anyway.
-        monthlyBudgetUsd: 50
-      # index 2
-      - id: pro
-        monthlyBudgetUsd: 200
+    enabled: false
+    plans: []
 
   # Whole-request ceiling for routes this gateway-wide policy governs (the
   # non-model routes — model routes are governed by their own per-model BTP in
@@ -369,10 +356,32 @@ extProc:
 # that repo's main must not silently change what THIS chart deploys.
 # ────────────────────────────────────────────────────────────────────────
 redactExtproc:
+  # Kill switch for the whole feature (sidecar, Backend, ExternalSecret,
+  # ext_proc filter, PodMonitor) — a values-repo toggle, not an ai-helm chart
+  # release. Added 2026-08-03 after an incident where disabling required
+  # pinning the app's targetRevision below the whole feature in ai-helm
+  # instead — see charts/apps/values.yaml's core-gateway entry history.
+  enabled: true
+  # request/response body processing mode — see
+  # templates/envoyextensionpolicy-billing-period.yaml for why these are
+  # values rather than literals (a 2026-08-03 incident needed a chart
+  # release to flip response back from an emergency Buffered stopgap).
+  # Defaults restore ADR-0116's original intent; don't set response to
+  # Buffered without also checking the messageTimeout budget below is
+  # enough to scan a WHOLE completion, not a chunk.
+  processingMode:
+    request:
+      body: Buffered
+    response:
+      body: Streamed
+  # ADR-0055/0056: the deployed tag is workload config, not chart structure —
+  # it lives in ai-helm-values (environments/prod/values/core-gateway.yaml),
+  # not here. This placeholder previously held a real live tag by mistake
+  # (ai-helm#900/#901), which meant the fix in lightbridge-governance#47
+  # published to GHCR but was never referenced anywhere ArgoCD reads.
   image:
     repository: ghcr.io/adorsys-gis/redact-extproc
-    # sha256:05e5fbe1b5ec2dabc6a6e7e670c1782fb907507e3509dad341aecdd1a4d24c81
-    tag: "sha-415d877"
+    tag: "TBD-no-image-published-yet"
   # Loopback only — reached solely by Envoy in this same pod (shared network
   # namespace), never over the pod network. See templates/backend-redact.yaml:
   # the EnvoyExtensionPolicy's Backend targets `127.0.0.1` specifically so
