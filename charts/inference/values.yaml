@@ -663,7 +663,12 @@ models:
    # this 48-layer / 128-expert MoE than on dense models, so `--enforce-eager`
    # is PRE-DECLARED in serving.extraArgs below (review finding) — CUDA graphs
    # off until the load gate measures real headroom, then re-check.
-   # Start conservative at 8192 context; raise after load gate.
+    # Context raised to 12288 (2026-08-04): a 4097-token prompt + 4096 output
+   # tokens = 8193 > 8192 → vLLM refused (the catalog's maxOutputTokens is
+   # additive, not independent). KV fp8 at 12288 ≈ 0.56 GiB leaves ~1.77 GiB
+   # of the ~2.33 GiB budget for activations — comfortably safe. 16384
+   # (~0.75 GiB KV) also fits arithmetically but is left as the measured
+   # step (load gate), not assumed.
    #
    # ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
    # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
@@ -699,9 +704,10 @@ models:
      serving:
        # Conservative start (model native: 262144). For agentic coding through
        # opencode, system prompt + tool schemas + file context can exceed 8K on
-       # turn one — raise after load gate measures actual headroom. With ~15.6
-       # GiB weights + FP8 KV cache, 8192 should fit comfortably.
-       contextSize: 8192
+       # turn one — raised to 12288 (2026-08-04) after the 8193-token refusal.
+       # With ~15.6 GiB weights + FP8 KV cache, 12288 fits comfortably
+       # (~0.56 GiB KV, ~1.77 GiB left for activations).
+       contextSize: 12288
        parallel: 2
        quantization: awq
        # float16, not bfloat16: AWQ weights are INT4 with FP16 scales; the
