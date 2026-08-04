@@ -106,7 +106,9 @@ spec:
         args:
           - |
 {{- if eq $id "document-detector" }}
-            BASE_REF="$(cargo xtask training-data bootstrap-document-detector-repository \
+            BASE_REF="$(cargo xtask training-data bootstrap-model-repository \
+              --model document-detector \
+              --role dataset \
               --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
               --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
