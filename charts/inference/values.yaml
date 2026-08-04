@@ -714,6 +714,15 @@ models:
        # for Qwen3 base models but produces plain-text tool calls on Coder.
        # Ref: https://docs.vllm.ai/en/stable/features/tool_calling/
        toolCallParser: qwen3_xml
+       # Fleet convention for Qwen3 text models (same as qwen3-8b-fast,
+       # openmythos-27b): thinking OFF at the server. Without a configured
+       # `--reasoning-parser`, vLLM's Qwen3 default emits the trace as RAW
+       # `<think>` tags inside `content` — visible markup in every answer.
+       # Thinking also eats the tight 8K window + output budget at the eager
+       # mode this model is forced into. Clients opt in per request with
+       # `chat_template_kwargs.enable_thinking=true` (vLLM merges request
+       # kwargs over --default-chat-template-kwargs).
+       reasoning: "off"
        # Fleet default: 0.90 → 17.99 GiB budget (0.90 × 19.99). Weights are
        # ~15.66 GiB, leaving ~2.33 GiB for KV cache + CUDA graphs + activations.
        gpuMemoryUtilization: 0.90

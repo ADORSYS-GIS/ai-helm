@@ -633,6 +633,24 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # Qwen3-Coder-30B-A3B — the fleet's CODING model (vLLM, MoE 30B/3B active,
+  # AWQ INT4). Cluster-local Service created by the `qwen3-coder-30b-a3b`
+  # inference entry. Same `vllm_local_api_key` ssegning-aws property every
+  # other fleet backend uses.
+  qwen3-coder-30b-a3b-local:
+    schema: OpenAI
+    prefix: "/v1"
+    fqdn:
+      hostname: qwen3-coder-30b-a3b.inference.svc.cluster.local
+      port: 8080
+    securityType: APIKey
+    resourceName: qwen3-coder-30b-a3b-local-svc
+    secretRef:
+      name: qwen3-coder-30b-a3b-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -740,6 +758,59 @@ models:
         ref: qwen3-8b-fast-local
         priority: 0
         modelNameOverride: "qwen3-8b-fast"   # = --served-model-name
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Qwen3-Coder-30B-A3B — CODING model on the GPU fleet (vLLM, MoE 30B/3B
+  # active, AWQ INT4).
+  #
+  # Serving spec: charts/inference/values.yaml `qwen3-coder-30b-a3b`.
+  #
+  # ⚠️ FEDERATED WITHOUT ITS LOAD GATE (ADR-0101) — deliberate, at the
+  # operator's request, so a real coding request can be exercised through the
+  # gateway end to end. The gate is still REQUIRED before this entry is
+  # trusted with real traffic: measure tok/s, VRAM headroom and answer
+  # QUALITY (two lossy layers stacked: AWQ INT4 + uncalibrated FP8 KV cache).
+  # Update this comment with the measured numbers when done.
+  #
+  # ⚠️ PRICING IS A PLACEHOLDER. Derived from the ADR-0104 node cost at an
+  # ASSUMED 35 tok/s decode (never measured; the 8B dense measured 45 tok/s
+  # with LMCache + CUDA graphs, this model is eager-mode):
+  #   €0.2968/h ÷ 3600 ÷ 35 tok/s = €2.36/1M output at saturation
+  #   × 3.45 duty-cycle uplift     = €8.13/1M ≈ $8.85/M (1 : 0.15 : 0.03 split)
+  # RE-DERIVE from the measured rate before relying on cost boards — never
+  # scale a placeholder (same rule as every corrected price in this file).
+  #
+  # ⚠️ Context is deliberately small (8192) until the load gate measures real
+  # headroom: --enforce-eager + fp8 KV cache at 0.90 GPU util leaves ~2.33 GiB
+  # of budget. Agentic coding through opencode can exceed 8K on turn one —
+  # raise it only after measurement.
+  #
+  # ⚠️ Thinking is OFF at the server (`reasoning: "off"` in the serving spec),
+  # so `supportedParameters` does NOT advertise `reasoning` — same policy as
+  # z-image-turbo. Clients opt in per request via chat_template_kwargs.
+  qwen3-coder-30b-a3b-local:
+    enabled: true
+    kind: text
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen3-Coder-30B (self-hosted)"
+      contextLength: 8192            # = --max-model-len (vLLM: the per-request window)
+      maxOutputTokens: 4096
+      supportedParameters: *spStandard
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 1.34
+        cachedInputPer1M: 0.27
+        outputPer1M: 8.85
+    backends:
+      qwen3-coder-30b-a3b-local:
+        ref: qwen3-coder-30b-a3b-local
+        priority: 0
+        modelNameOverride: "qwen3-coder-30b-a3b"   # = --served-model-name
 
   # ─────────────────────────────────────────────────────────────────────────
   # Z-Image-Turbo — IMAGE GENERATION, on the GPU fleet (ADR-0100).
