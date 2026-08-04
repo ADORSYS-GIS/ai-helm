@@ -132,6 +132,22 @@ not just callers who would have opted in themselves.
   either current Fireworks model gains a Priority badge on its own page, or
   a new Fireworks-backed chat model is added to the catalog that shows one.
 
+## 2026-08-04 invoice correction: Claude partner pricing
+
+DeepInfra's August usage invoice proved that `anthropic/claude-sonnet-5`
+does not receive Priority billing: it was billed at standard `$2/M` input,
+`$2/M` cache reads, `$2.50/M` cache writes, and `$10/M` output. The generic
+1.5x price bump plus an unverified 10%-of-input cache estimate had configured
+the gateway at `$3/$0.30/$15`, causing it to record `$160.10` while DeepInfra
+billed `$442.66` for the same month-to-date Claude traffic.
+
+The route keeps the uniform `service_tier=priority` mutation (DeepInfra safely
+falls back), but its cost weights are corrected to `$2/$2/$10`. Envoy AI
+Gateway's cost inputs do not expose cache-write tokens separately, so those
+tokens remain priced as ordinary `$2/M` input instead of `$2.50/M`; exact
+provider reconciliation requires ingesting DeepInfra billing data rather than
+estimating it solely from the completion response.
+
 ## Alternatives considered
 
 - **Don't force it server-side — let clients opt in** (the literal ask in

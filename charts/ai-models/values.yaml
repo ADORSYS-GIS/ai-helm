@@ -1787,9 +1787,12 @@ models:
     # reasoning_effort and break it. (`output_config.effort` was ACCEPTED —
     # HTTP 200 — in live testing, so it's the likely path if we ever want a
     # real cap; not yet proven to actually reduce thinking volume.) DeepInfra's
-    # price matches Anthropic's own intro API rate ($2/$10, through
-    # 2026-08-31 per Anthropic's pricing table); cachedInputPer1M estimated at
-    # the standard ~10% cache-read ratio (unconfirmed on DeepInfra's page).
+    # 2026-08 invoice is authoritative here: this partner model fell back to
+    # STANDARD billing despite the gateway's service_tier=priority mutation,
+    # at $2/M input, $2/M cache reads, $2.50/M cache writes, and $10/M output.
+    # AIEG exposes no separate cache-write token in llmRequestCosts, so the
+    # current formula prices cache writes as ordinary $2/M input; provider-cost
+    # ingestion is the follow-up for exact invoice reconciliation.
     # 1,048,576-token context, 128k max output.
     info:
       displayName: "Claude Sonnet 5 (DeepInfra)"
@@ -1799,9 +1802,9 @@ models:
     pricing:
       strategy: weighted
       standard:
-        inputPer1M: 3.00
-        cachedInputPer1M: 0.30
-        outputPer1M: 15.00
+        inputPer1M: 2.00
+        cachedInputPer1M: 2.00
+        outputPer1M: 10.00
     backends:
       deepinfra-01:
         <<: *deepinfraBackendPrimary
