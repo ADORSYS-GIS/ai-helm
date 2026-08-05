@@ -283,7 +283,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "((sum(provider_billing_total_cost_micro_usd{provider=~\"$provider\", billing_period=\"$billing_period\"})/1e6) - (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[$__range]))/1e6)) / (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[$__range]))/1e6) * 100",
+          "expr": "((sum(provider_billing_total_cost_micro_usd{provider=~\"$provider\", billing_period=\"$billing_period\"})/1e6) - (sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[$__range]))/1e6)) / clamp_min(sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[$__range]))/1e6, 1) * 100",
           "refId": "A",
           "instant": true,
           "range": false,
