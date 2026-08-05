@@ -782,16 +782,15 @@ models:
   # RE-DERIVE from the measured rate before relying on cost boards — never
   # scale a placeholder (same rule as every corrected price in this file).
   #
-  # ⚠️ Context raised to 16384 (2026-08-05): at 12288 the catalog's own
-  # maxOutputTokens (4096) is additive on top of the input window, so a
-  # 12288-token prompt + 4096 output = 16384 > 12288 → vLLM refused (same
-  # failure as the 8193 > 8192 refusal at the earlier step). 16384 is the
-  # smallest window where the advertised contextLength (12288) + maxOutputTokens
-  # (4096) fit, so a client honouring the catalog can never exceed it. The
-  # serving spec runs the 16-bit KV cache (`kvCacheDtype: auto`, NOT the fp8
-  # fleet default) with `parallel: 1`, so 16384 ≈ 1.50 GiB KV leaves ~1.83 GiB
-  # of the ~3.33 GiB budget (0.95 util) for activations — re-verify at the load
-  # gate, not assumed.
+  # ⚠️ Context raised to 12288 input window (2026-08-05): at 8192 the
+  # catalog's own maxOutputTokens (4096) is additive on top of the input
+  # window, so a 4097-token prompt + 4096 output = 8193 > 8192 → vLLM refused
+  # (same failure as #919). The serving spec window is 16384 (see inference),
+  # exactly the advertised contextLength (12288) + maxOutputTokens (4096) — a
+  # client honouring the catalog can never exceed it. The serving spec runs
+  # the 16-bit KV cache (`kvCacheDtype: auto`, NOT the fp8 fleet default) with
+  # `parallel: 1`, so 16384 ≈ 1.50 GiB KV leaves ~1.83 GiB of the ~3.33 GiB
+  # budget (0.95 util) for activations — re-verify at the load gate, not assumed.
   #
   # ⚠️ Thinking is OFF at the server (`reasoning: "off"` in the serving spec),
   # so `supportedParameters` does NOT advertise `reasoning` — same policy as
@@ -805,7 +804,7 @@ models:
       connectionIdleTimeout: 1h
     info:
       displayName: "Qwen3-Coder-30B (self-hosted)"
-      contextLength: 16384           # = --max-model-len (vLLM: the per-request window)
+      contextLength: 12288           # = advertised INPUT window (clients add maxOutputTokens on top; serving window is 16384)
       maxOutputTokens: 4096
       supportedParameters: *spStandard
     pricing:
