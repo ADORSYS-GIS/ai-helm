@@ -75,6 +75,15 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/cost-by-model.json
     resyncPeriod: 5m
+  # Provider-billed cost (invoice source of truth, polled from DeepInfra by the
+  # provider-billing-exporter) reconciled against the gateway estimate (ADR-0058)
+  # and the Redis limiter spend (ADR-0070): provider total by model/pricing type,
+  # gateway-vs-provider, absolute/% reconciliation delta, cache read/write, and
+  # missing-cost/disconnected gateway requests.
+  - name: envoy-ai-gateway-provider-billing
+    folderRef: ai-gateway
+    file: files/envoy-ai-gateway/provider-billing.json
+    resyncPeriod: 5m
   # Per-actor (user OR repo via display_name) consumption: cost per month/day +
   # which models + which channels. Input variables: actor / azp / model.
   - name: envoy-ai-gateway-actor-consumption
@@ -669,6 +678,39 @@ alerting:
             (trailing 30d). Same rolling-vs-enforcement caveat as the free-tier
             rule above — check the AI Gateway — rate-limit quota dashboard for
             the live enforcement state.
+
+    # ── Provider billing reconciliation (provider-billing-exporter) ─────────
+    # Fires when PROVIDER-BILLED cost (invoice truth, polled from DeepInfra by
+    # the provider-billing-exporter) exceeds the gateway's ESTIMATED cost by a
+    # configurable ratio. The ratio (threshold) is the knob — tune live. The
+    # provider total is a cumulative gauge for the current billing period; the
+    # gateway estimate is the ADR-0058 counter over the trailing 30d. clamp_min
+    # avoids a divide-by-zero when the gateway estimate is 0.
+    - name: ai-gateway-billing-reconcile
+      folderRef: ai-gateway
+      interval: 1h
+      rules:
+        - uid: billing-reconcile-provider-over-gateway
+          title: AI Gateway — provider bill exceeds gateway estimate
+          datasourceUid: mimir
+          expr: >-
+            (sum(provider_billing_total_cost_micro_usd) / 1e6)
+            / clamp_min(sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[30d])) / 1e6, 1)
+          fromSeconds: 2592000
+          op: gt
+          threshold: 1.5
+          for: 1h
+          severity: warning
+          summary: >-
+            Provider-billed cost is more than 1.5x the gateway's estimated cost
+            over the last 30 days — a pricing/estimate mismatch (e.g. an
+            unverified cache pricing like the 2026-08-04 claude-sonnet-5 case).
+          description: >-
+            Reconciliation alert: provider-billed total (invoice source of truth)
+            exceeds the gateway estimate by the configured ratio. Investigate the
+            AI Gateway — provider billing & reconciliation dashboard; check the
+            provider-billing runbook for pricing-correction and backfill steps.
+            Threshold (1.5) is configurable in this values file.
 
     - name: stack-health
       folderRef: collectors
