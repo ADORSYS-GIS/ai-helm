@@ -48,5 +48,5 @@ Key technical specifications:
 
 - Epic: #821 (LibreChat Autonomous App Scaffolding)
 - Ticket: #829 (Spike: Coder workspace public accessibility)
-- Docs: [`docs/integrations/coder-workspace-urls.md`](file:///home/skyengpro-ws02/projects/ai-governance/ai-helm/docs/integrations/coder-workspace-urls.md)
+- Docs: [`docs/integrations/coder-workspace-urls.md`](../integrations/coder-workspace-urls.md)
 - ADR-0083 (Re-introduce Coder as App-of-Apps Orchestrator)

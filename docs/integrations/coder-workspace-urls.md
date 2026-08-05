@@ -583,7 +583,18 @@ When the LibreChat Coder agent provisions or interacts with a workspace applicat
    Verify that the URL returns `HTTP 200 OK` (or appropriate app status) rather than `303 See Other` (`auth-redirect`).
 
 4. **Revocation**:
-   When the demo or preview session ends, revoke public access by issuing a `DELETE` request to `/api/v2/workspaces/{workspace_id}/port-share`.
+   When the demo or preview session ends, revoke public access by issuing a `DELETE` request to `/api/v2/workspaces/{workspace_id}/port-share` with a body identifying the share:
+   ```http
+   DELETE /api/v2/workspaces/{workspace_id}/port-share HTTP/1.1
+   Host: coder.ai.camer.digital
+   Coder-Session-Token: <agent_session_token>
+   Content-Type: application/json
+
+   {
+     "agent_name": "main",
+     "port": 3000
+   }
+   ```
 
 ## References
 
