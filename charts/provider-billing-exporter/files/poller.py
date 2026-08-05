@@ -8,7 +8,7 @@ for scrape into Mimir.
 Uses the `prometheus_client` library (installed at container start from the
 requirements.txt in this ConfigMap). Runs on python:3.12-alpine.
 
-Design (see docs/runbooks/provider-billing-reconciliation.md):
+Design (see docs/playbooks/provider-billing-reconciliation.md):
   * GAUGES, not counters - each poll OVERWRITES the absolute cumulative value
     the provider reports for the billing period, so restarts / re-polls can
     never double count (FR-003).
@@ -260,8 +260,9 @@ def main() -> int:
 
     threading.Thread(target=loop, daemon=True).start()
     start_http_server(listen_port, addr=listen_addr)
-    while True:
-        time.sleep(3600)
+    # Block the main thread forever. start_http_server() and the poller loop
+    # run on daemon threads, so main() must not return or the process exits.
+    threading.Event().wait()
     return 0
 
 

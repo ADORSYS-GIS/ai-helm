@@ -36,7 +36,9 @@ spec:
             - /bin/sh
             - -ec
             - |
-              pip install --no-cache-dir -q -r /app/requirements.txt
+              # Install into the writable /opt/pkgs emptyDir (root fs is
+              # read-only via readOnlyRootFilesystem) and run from PYTHONPATH.
+              pip install --no-cache-dir -q --target=/opt/pkgs -r /app/requirements.txt
               exec python /app/poller.py
           ports:
             - name: http
@@ -46,6 +48,8 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
+            - name: PYTHONPATH
+              value: /opt/pkgs
             - name: DEEPINFRA_API_URL
               value: {{ .Values.poller.apiUrl | quote }}
             - name: POLL_INTERVAL
@@ -69,6 +73,8 @@ spec:
               mountPath: /app
             - name: tmp
               mountPath: /tmp
+            - name: pkgs
+              mountPath: /opt/pkgs
           readinessProbe:
             httpGet:
               path: /metrics
@@ -86,4 +92,6 @@ spec:
           configMap:
             name: {{ .Values.name }}-poller
         - name: tmp
+          emptyDir: {}
+        - name: pkgs
           emptyDir: {}

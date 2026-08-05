@@ -1,8 +1,10 @@
 {{- /*
 In-chart egress policy. The observability ns is default-deny egress, so the
-poller needs DNS (L7, so toFQDNs can resolve) and egress to the provider API
-host over 443. It can reach nothing else. Ingress is from Alloy's scrape only
-(any pod in the observability namespace on the metrics port).
+poller needs DNS (L7, so toFQDNs can resolve), egress to the provider API host
+over 443, and egress to PyPI so the startup `pip install` of prometheus-client
+can reach the index (off-the-shelf image, no custom build - ADR-0040). It can
+reach nothing else. Ingress is from Alloy's scrape only (any pod in the
+observability namespace on the metrics port).
 */ -}}
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -41,6 +43,17 @@ spec:
     - toFQDNs:
         - matchName: {{ .Values.poller.apiHost | quote }}
         - matchPattern: {{ printf "*.%s" .Values.poller.apiHost | quote }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # PyPI egress for the startup `pip install` of prometheus-client. Scoped to
+    # the two hosts pip actually talks to (index + package files).
+    - toFQDNs:
+        - matchName: "pypi.org"
+        - matchPattern: "*.pypi.org"
+        - matchName: "files.pythonhosted.org"
+        - matchPattern: "*.pythonhosted.org"
       toPorts:
         - ports:
             - port: "443"

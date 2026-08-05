@@ -63,8 +63,10 @@ _GATEWAY_EST = f"sum(increase({METRIC_COST_MICRO_USD}[$__range]))/1e6"
 _PROVIDER_TOTAL = f"sum({METRIC_PROVIDER_TOTAL}{_SEL})/1e6"
 # Absolute reconciliation delta (provider - gateway).
 _DELTA_ABS = f"(({_PROVIDER_TOTAL}) - ({_GATEWAY_EST}))"
-# Percentage reconciliation delta.
-_DELTA_PCT = f"(({_PROVIDER_TOTAL}) - ({_GATEWAY_EST})) / ({_GATEWAY_EST}) * 100"
+# Percentage reconciliation delta. clamp_min guards the divisor so a 0 gateway
+# estimate (fresh billing period / no ADR-0058 cost in range) yields 0% rather
+# than +Inf — same guard as the ai-gateway-billing-reconcile alert.
+_DELTA_PCT = f"(({_PROVIDER_TOTAL}) - ({_GATEWAY_EST})) / clamp_min({_GATEWAY_EST}, 1) * 100"
 
 
 def _loki_target(expr: str, *, legend: str = "", ref_id: str = "A") -> loki.Dataquery:
@@ -233,6 +235,11 @@ def _panel_by_pricing_type() -> object:
 def _panel_over_time() -> object:
     # The provider gauge is cumulative; a timeseries shows the MTD total growing
     # as polls update it (step 1d for daily granularity).
+    # opengrep-ignore: opt.opengrep-rules.python.sh.security.string-concat
+    #   False positive: `sh` is the local alias for `_shared` (a dashboard helper
+    #   module), not the `sh` subprocess library. `sh.usd()` is a pure function
+    #   that wraps a PromQL expression in `((...) / 1e6)`; it never runs a
+    #   command, so there is no command-injection surface.
     expr = sh.usd(f"sum by (provider_model) ({METRIC_PROVIDER_COST}{_SEL})")
     return sh.daily_bars_panel(
         title="Provider-billed cumulative by model",
