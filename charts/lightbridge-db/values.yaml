@@ -103,6 +103,17 @@ resources:
             login: true
             passwordSecret:
               name: mlflow-db-role
+          # Dedicated login role for lightbridge-governance (ADORSYS-GIS/lightbridge-governance),
+          # the AI governance platform's registry + Copilot/Foundry connectors.
+          # Reuses this shared CNPG cluster, same reasoning as coder/lakefs/mlflow
+          # (ADR-0083). Owns the `governance` Database below; password from the
+          # basic-auth Secret `lightbridge-governance-db-role` (ESO-provisioned,
+          # below).
+          - name: governance
+            ensure: present
+            login: true
+            passwordSecret:
+              name: lightbridge-governance-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -310,6 +321,64 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: codeintel_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # lightbridge-governance: a `governance` Database owned by the managed
+  # `governance` role above, plus the role's basic-auth Secret (username +
+  # password) consumed by CNPG (passwordSecret). Mirrors the codeintel
+  # pattern above. No extensions needed -- ADR-0009: cratestack is the sole
+  # persistence layer, plain tables only.
+  #
+  # NOTE: the lightbridge-governance chart's own ExternalSecret takes ONE
+  # opaque `governance_database_url` property (a pre-assembled connection
+  # string), not username+password assembled at the pod (unlike codeintel's
+  # bjw-template $(DB_PASSWORD) substitution). An operator must construct
+  # postgresql://governance:<governance_db_password>@lightbridge-main-db-rw.converse.svc.cluster.local:5432/governance
+  # and write it into ai/camer/digital/prod/env as governance_database_url
+  # once this role's password (below) is known -- see
+  # charts/lightbridge-governance's own README in the lightbridge-governance
+  # repo for the full property list this depends on.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: governance
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: governance
+      owner: governance
+      ensure: present
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lightbridge-governance-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lightbridge-governance-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "governance"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: governance_db_password
   # ────────────────────────────────────────────────────────────────────
   # grafana_ro role password (read-only DB user for the Grafana dashboards).
   # basic-auth Secret consumed by CNPG (passwordSecret on the managed role above)

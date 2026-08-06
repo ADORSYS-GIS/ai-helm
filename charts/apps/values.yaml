@@ -587,18 +587,14 @@ applications:
       # untouched. No depsOverlay on this app, so it renders as a single source.
       repoURL: oci://ghcr.io/adorsys-gis/charts/core-gateway
       chart: "."
-      # ⚠️ TEMPORARY ROLLBACK PIN (2026-08-03 incident): 0.3.146 is the last
-      # published chart WITHOUT the ADR-0116 redact-extproc sidecar at all
-      # (0.3.147 = e7ea902/#900, the first commit that adds it). Live traffic
-      # was seeing near-half of ext_proc streams get an ImmediateResponse
-      # after #905 switched response.body to Buffered as a stopgap for the
-      # UTF-8 chunk-split bug — a bug already fixed properly upstream
-      # (lightbridge-governance#47, sha-b3c0a2e) but not yet re-verified live
-      # under that stopgap. Pinning below the whole feature is the fastest
-      # correct kill switch while the chart is reworked so Buffered/Streamed
-      # is a value, not a template literal (see redactExtproc.processingMode
-      # once that lands) — re-float to ">=0.0.0" once verified fixed.
-      targetRevision: "0.3.146"
+      # Re-floated 2026-08-06: the 2026-08-03 incident's rollback pin
+      # (0.3.146, the last chart WITHOUT the ADR-0116 redact-extproc sidecar)
+      # is lifted. The UTF-8 chunk-split bug in streaming ext_proc responses
+      # is fixed upstream (lightbridge-governance#47, sha-b3c0a2e -- already
+      # the pinned redactExtproc.image.tag in this repo's
+      # environments/prod/values/core-gateway.yaml) and has been re-verified
+      # live under production traffic. Back to the normal chart-float range.
+      targetRevision: ">=0.0.0"
       helm:
         releaseName: core-gateway
     destination:
@@ -862,6 +858,47 @@ applications:
         ref: values
     destination:
       namespace: converse
+
+  # --- lightbridge-governance ---
+  # The AI governance platform (repo: ADORSYS-GIS/lightbridge-governance): a
+  # tenant/application/integration registry plus two connectors — GitHub
+  # Copilot (pull, RFC-0001, the copilot-sync CronJob) and Microsoft Foundry
+  # (push over OTLP, RFC-0002). One image, two binaries. Own namespace
+  # (`governance`), separate from `converse` — this is not part of the
+  # Lightbridge authz stack.
+  #
+  # OCI mode (ADR-0055): the chart lives WITH the app code (charts live here
+  # and publish to OCI on merge, matching lightbridge-authz's convention —
+  # not vendored into ai-helm). The chart renders its OWN CronJob egress
+  # CiliumNetworkPolicy (GitHub + the S3 raw archive, scoped to the
+  # copilot-sync pods), so no depsOverlay is needed for that half. depsOverlay
+  # below adds the piece the chart can't own itself: DB egress to the shared
+  # lightbridge-main-db CNPG cluster in `converse` (ADR-0083 reuse, same as
+  # coder/lakefs/mlflow — see charts/lightbridge-db) plus the DNS baseline
+  # under this namespace's default-deny-egress.
+  #
+  # Postgres role/database (`governance`) provisioned in charts/lightbridge-db
+  # (this repo). GHCR package is public (no imagePullSecret needed — verified
+  # via `gh repo view` visibility; re-check if that ever changes).
+  #
+  # ⚠️ NOT YET LIVE-READY: the chart's ExternalSecret property names
+  # (governance_database_url, governance_internal_resolve_token,
+  # governance_internal_ingest_token, governance_github_app_id,
+  # governance_github_app_private_key) are unverified against the real
+  # ssegning-aws store, copilot.tenantId + externalSecret.s3RemoteKey are
+  # empty until an operator sets them in the values-repo file below, and no
+  # ingress-side CiliumNetworkPolicy exists yet (core-gateway's Authorino
+  # calling /internal/v1/resolve and the OTel Collector calling
+  # /internal/v1/ingest need their exact live Service selectors verified
+  # before a restrictive ingress policy can be added safely — see this
+  # chart's README). See the PR description for the full pre-merge checklist.
+  - name: lightbridge-governance
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    depsOverlay: environments/prod/deps/lightbridge-governance
+    chart: lightbridge-governance
+    destination:
+      namespace: governance
 
   # ── Lightbridge observability — Grafana dashboards-as-code (ADR-0046) ──
   # Deploys the dashboards-as-code chart that lives in the APPLICATION repo
