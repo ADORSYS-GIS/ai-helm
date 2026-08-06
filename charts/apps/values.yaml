@@ -863,6 +863,47 @@ applications:
     destination:
       namespace: converse
 
+  # --- lightbridge-governance ---
+  # The AI governance platform (repo: ADORSYS-GIS/lightbridge-governance): a
+  # tenant/application/integration registry plus two connectors — GitHub
+  # Copilot (pull, RFC-0001, the copilot-sync CronJob) and Microsoft Foundry
+  # (push over OTLP, RFC-0002). One image, two binaries. Own namespace
+  # (`governance`), separate from `converse` — this is not part of the
+  # Lightbridge authz stack.
+  #
+  # OCI mode (ADR-0055): the chart lives WITH the app code (charts live here
+  # and publish to OCI on merge, matching lightbridge-authz's convention —
+  # not vendored into ai-helm). The chart renders its OWN CronJob egress
+  # CiliumNetworkPolicy (GitHub + the S3 raw archive, scoped to the
+  # copilot-sync pods), so no depsOverlay is needed for that half. depsOverlay
+  # below adds the piece the chart can't own itself: DB egress to the shared
+  # lightbridge-main-db CNPG cluster in `converse` (ADR-0083 reuse, same as
+  # coder/lakefs/mlflow — see charts/lightbridge-db) plus the DNS baseline
+  # under this namespace's default-deny-egress.
+  #
+  # Postgres role/database (`governance`) provisioned in charts/lightbridge-db
+  # (this repo). GHCR package is public (no imagePullSecret needed — verified
+  # via `gh repo view` visibility; re-check if that ever changes).
+  #
+  # ⚠️ NOT YET LIVE-READY: the chart's ExternalSecret property names
+  # (governance_database_url, governance_internal_resolve_token,
+  # governance_internal_ingest_token, governance_github_app_id,
+  # governance_github_app_private_key) are unverified against the real
+  # ssegning-aws store, copilot.tenantId + externalSecret.s3RemoteKey are
+  # empty until an operator sets them in the values-repo file below, and no
+  # ingress-side CiliumNetworkPolicy exists yet (core-gateway's Authorino
+  # calling /internal/v1/resolve and the OTel Collector calling
+  # /internal/v1/ingest need their exact live Service selectors verified
+  # before a restrictive ingress policy can be added safely — see this
+  # chart's README). See the PR description for the full pre-merge checklist.
+  - name: lightbridge-governance
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    depsOverlay: environments/prod/deps/lightbridge-governance
+    chart: lightbridge-governance
+    destination:
+      namespace: governance
+
   # ── Lightbridge observability — Grafana dashboards-as-code (ADR-0046) ──
   # Deploys the dashboards-as-code chart that lives in the APPLICATION repo
   # (ADORSYS-GIS/lightbridge-code-intelligence, PUBLIC → no repo-creds needed), NOT in
