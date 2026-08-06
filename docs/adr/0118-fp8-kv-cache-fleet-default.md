@@ -9,7 +9,7 @@
 Self-hosted models on the Hetzner GPU fleet (RTX 4000 SFF Ada, 20475 MiB) are
 VRAM-bound: the whole budget for a model is `gpuMemoryUtilization` × 19.99 GiB,
 and weights consume most of it, leaving a small remainder for the KV cache,
-CUDA graphs and activations (for `qwen3-coder-30b-a3b` at 0.90: ~2.33 GiB after
+CUDA graphs and activations (for a 30B-A3B MoE at 0.90: ~2.33 GiB after
 ~15.66 GiB of AWQ weights). vLLM's default KV-cache dtype is 16-bit (bf16/fp16),
 which limits how many tokens fit in that remainder.
 
@@ -56,13 +56,11 @@ Scope is vLLM-only, enforced by render-time guards:
 - fp8 KV cache is lossy; the quality cost is small but must be **measured per
   model, not assumed** (ADR-0101 discipline). A model whose KV headroom was
   measured in BF16 changes its baseline silently the moment it is re-enabled.
-- Today the blast radius is one enabled model (`qwen3-coder-30b-a3b`;
-  `qwen3-vl-4b-thinking`/`qwen3-8b-fast`/`openmythos-27b` are disabled and
-  `z-image-turbo` is LocalAI) — but the default persists for any model
-  re-enabled later. ⚠️ Note: `qwen3-coder-30b-a3b` is the one enabled vLLM
-  model and it **opts out** of the fp8 default (`serving.kvCacheDtype: auto`,
-  16-bit), so today no live model actually runs fp8 KV. The default still
-  applies to any vLLM model that does not override it.
+- Today the blast radius is one enabled vLLM model — but the default persists
+  for any model re-enabled later. ⚠️ Note: that model **opts out** of the fp8
+  default (`serving.kvCacheDtype: auto`, 16-bit), so today no live model
+  actually runs fp8 KV. The default still applies to any vLLM model that does
+  not override it.
 - `fp8_e5m2`/`fp8_e4m3` are passed verbatim to `--kv-cache-dtype`; a future
   vLLM version that renames the accepted set requires the guard list to move
   in lockstep.
