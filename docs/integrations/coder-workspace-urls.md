@@ -574,7 +574,8 @@ When the LibreChat Coder agent provisions or interacts with a workspace applicat
      "agent_name": "main",
      "port": 3000,
      "share_level": "public",
-     "protocol": "http"
+     "protocol": "http",
+     "workspace_id": "<workspace_id>"
    }
    ```
    *Note*: `share_level` can be set to `"public"` for instant browser previews or `"authenticated"` if Keycloak SSO is required.
