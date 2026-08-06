@@ -1,560 +1,52 @@
-# Public workspace URLs in Coder (wildcard subdomain apps)
+# Coder Workspace URLs & Agent Contract
 
-**Status:** Implemented · **ADR:** [ADR-0121](../adr/0121-coder-workspace-url-exposure-strategy.md) · **Last updated:** 2026-08-05
-
-Coder workspaces are reachable from the public internet on wildcard subdomains,
-so an app a developer runs inside a workspace (a Vite dev server, a notebook, an
-API) gets a real HTTPS URL without any port-forwarding.
-
-```
-https://<port>--<agent>--<workspace>--<user>.coder-ws.camer.digital
-```
-
-e.g. a Vite dev server on port 5173 in workspace `demo` owned by `koufan`:
-`https://5173--main--demo--koufan.coder-ws.camer.digital`.
-
-The `--` separator and the field order are Coder's own, built in
-`coderd/workspaceapps/appurl/appurl.go`. Both DNS and TLS wildcards match exactly
-**one** label, so Coder flattens all four identifiers into a single label — that
-is what lets one `*.coder-ws.camer.digital` certificate cover every app, in every
-workspace, for every user. Notes:
-
-- The `<agent>` segment appears only on raw port-forward URLs. A declared app
-  (`subdomain = true` on the template's `coder_app`) is
-  `<app-slug>--<workspace>--<user>`.
-- An app speaking TLS inside the workspace gets an `s` after the port: `8080s--…`.
-
-> ⚠️ **A DNS label is capped at 63 characters, and the whole
-> `port--agent--workspace--user` string is one label.** Exceed it and dashboard
-> port-forwarding silently fails for that workspace while everything else looks
-> fine. Keep username + workspace name + app slug under ~50 characters combined.
-> Current workspaces sit around 45, so there is headroom — but a long username
-> plus a long workspace name will find this edge.
-
-Path-based workspace apps are **disabled** (`CODER_DISABLE_PATH_APPS=true`), so
-the wildcard is the *only* way to reach a workspace app. If the wildcard cert is
-broken, workspace apps are unreachable — there is no fallback.
+This document defines the platform URL structure, access patterns, domain routing mechanisms, and agent integration lifecycle for Coder workspace applications on `home-remote` (Kubernetes).
 
 ---
 
-## Mental model: reachable vs accessible
+## Overview
 
-Most confusion here comes from collapsing three **independent** layers into one
-idea of "is it working". Each fails differently, and mistaking one for another
-sends you debugging DNS when you have a permissions problem:
-
-| | Layer | Question | Scope | Failure looks like |
-|---|---|---|---|---|
-| 1 | **Resolvable** | Does the hostname resolve and serve valid TLS? | Deployment-wide | `NXDOMAIN`, `TRAEFIK DEFAULT CERT` |
-| 2 | **Routable** | Does coderd find a process behind it? | Per workspace / port | `502`, workspace stopped, nothing bound |
-| 3 | **Permitted** | Is *this caller* allowed? | Per port, per share level | `303` → `auth-redirect`, or **`404`** |
-
-**Reachability is layers 1 + 2. Accessibility is layer 3.** The wildcard cert and
-DNS record fix layer 1 once, for the whole deployment. Layer 3 is per-port,
-opt-in, and revocable — and it is the layer that is "off" by default.
-
-So: a `303` is *good news about layers 1 and 2*. It proves DNS, TLS, ingress and
-coderd routing all work and you have an authorization question. Never debug the
-wildcard because of a 303.
-
-### ⚠️ A denied user gets `404`, not `403`
-
-Layer 3 answers differently depending on whether you presented credentials:
-
-| Request | Response | Meaning |
-|---|---|---|
-| No session | `303` → `/api/v2/applications/auth-redirect` | "Log in and I will re-evaluate" |
-| Valid session, **not** permitted | **`404`** | Authenticated, denied |
-| Valid session, permitted | `200` | Owner, or covered by the share level |
-| No session, `public` share | `200` | Anyone with the URL |
-
-coderd returns **404 rather than 403 deliberately** — its own comment on the path
-is *"The request has a valid API key but insufficient permissions"*, and it calls
-`WriteWorkspaceApp404`. A 403 would confirm the app exists, which would let anyone
-enumerate other people's workspaces by guessing hostnames — and since the hostname
-is `<port>--<agent>--<workspace>--<user>`, guessing is easy.
-
-**Consequence for debugging:** a `404` on a workspace app URL is far more often an
-*authorization* result than a missing route. The classic report is "it works for
-me but my teammate gets a 404" — that is not a broken link, it is the share level
-being `owner` (the default). Confirm by checking the share level before touching
-anything else.
-
-### Four ways to reach a process in a workspace
-
-| Route | Hostname | Who can reach it | Notes |
-|---|---|---|---|
-| Declared app (`coder_app`, `subdomain = true`) | `<slug>--<ws>--<user>` | Per `share` in the template | The intended path for template-provided apps |
-| Raw port | `<port>--<agent>--<ws>--<user>` | Per port share (default `owner`) | The dev-server case |
-| Path app | `/@user/ws.agent/apps/<slug>/` | — | **Disabled here** (`CODER_DISABLE_PATH_APPS=true`) → `403` |
-| `coder port-forward` | none | Only you | A **local TCP tunnel** to your own machine |
-
-> ⚠️ **`coder port-forward` is not port sharing.** It is a local tunnel (alias
-> `tunnel`) that binds a port on *your* machine and dies when you stop it — no
-> public hostname, no ACL, nothing for anyone else. Port *sharing* is a
-> server-side ACL on the public subdomain URL. They share no state: revoking a
-> share does not affect an active port-forward, and port-forward can neither
-> create nor remove a share. The similar names are the whole trap.
+Developer workspaces hosted in Coder frequently run web applications (e.g. Next.js, Vite, or tRPC dev servers) that require accessible HTTPS URLs. To ensure both human developers and LibreChat UI chat sessions can interact with scaffolded applications, Coder provides flat wildcard subdomains and REST API port sharing capabilities.
 
 ---
 
-## Finding the public URL of a workspace app
+## 1. Domain & URL Architecture
 
-There are two kinds of workspace app and they are addressed differently. Work out
-which one you have first — a **declared app** is a `coder_app` resource in the
-template; a **raw port** is anything a user just started inside the workspace
-(`next dev`, `vite`, `python -m http.server`).
+### Base Access Domain
+All Coder workspace applications use the dedicated wildcard domain:
+`*.coder-ws.camer.digital`
 
-Everything below uses the CLI and its session token for API calls:
+### Domain Separation & Security Isolation
+Workspace applications are purposefully served on `*.coder-ws.camer.digital` rather than subdomains of the main Coder dashboard (`coder.ai.camer.digital`). This design ensures:
+- **Origin Isolation**: Prevents untrusted workspace applications from accessing Coder session cookies or localStorage credentials.
+- **TLS Certificate Delegation**: Allows independent cert-manager issuance via Cloudflare DNS-01 ACME challenge (`cert-cloudflare` ClusterIssuer) without interfering with HTTP-01 challenges on the primary domain.
 
-```bash
-curl -fsSL https://coder.ai.camer.digital/install.sh | sh   # installs the matching version
-coder login https://coder.ai.camer.digital
+### Flat Wildcard Subdomain Pattern
+Coder uses a flat, 4-part hyphen-separated label structure:
+`https://<port>--<agent-name>--<workspace-name>--<username>.coder-ws.camer.digital`
 
-TOKEN=$(cat ~/.config/coderv2/session)
-CODER_URL=https://coder.ai.camer.digital
-```
+**Example**:
+- Workspace: `my-nextjs-app`
+- Agent: `main`
+- User: `alex`
+- Port: `3000`
+- **Resulting URL**: `https://3000--main--my-nextjs-app--alex.coder-ws.camer.digital`
 
-<details>
-<summary>Two CLI warnings you can ignore</summary>
-
-Both go to **stderr**, so neither corrupts a piped stdout:
-
-```
-version mismatch: client v2.35.2+5c2838a, server v2.34.6+660dc56
-download v2.34.6+660dc56 with: 'curl -fsSL https://coder.ai.camer.digital/install.sh | sh'
-```
-A newer CLI than the server. Harmless for everything in this guide. The install
-one-liner above pins you to the server's version if you want it silenced — worth
-doing before reporting any CLI bug, since a mismatch is the first thing to rule out.
-
-```
-WARN: Failed to get devcontainers for agent main: ... unexpected status code 500:
-Could not get containers ... dial unix /var/run/docker.sock: no such file or directory
-```
-`coder show` probing for devcontainers on a template that has no Docker socket.
-Expected on our Kubernetes templates; it does not affect the agent, the workspace,
-or app URLs.
-
-</details>
-
-> ⚠️ **A reachable URL is not an accessible one.** Both kinds of app default to
-> share level `owner` — the URL resolves and serves TLS, but returns **HTTP 303**
-> to `/api/v2/applications/auth-redirect` for anyone who is not the owner. A `303`
-> means routing is fine and you have an *authorization* question, not a DNS or
-> certificate question. Don't go debugging the wildcard.
-
-### Step 1 — identify workspace, owner and agent
-
-```bash
-coder list                       # OWNER/WORKSPACE, e.g. kingkoufan/K-workspace
-coder show <workspace>           # agent name is the tree node under the resource,
-                                 # e.g. "main" in `coder ssh K-workspace.main`
-```
-
-The agent name is almost always `main`, but templates can name it anything, and
-it is part of the hostname for raw ports — don't assume.
-
-If the CLI is unavailable, the same three facts are on the workspace pod as
-labels (needs cluster access, `home-remote`):
-
-```bash
-kubectl -n coder get pods \
-  -L com.coder.workspace.name,com.coder.user.username,com.coder.agent.name
-```
-
-### Step 2a — declared apps: ask the API, don't build the string
-
-For a `coder_app`, Coder computes the hostname itself and exposes it as
-`subdomain_name`. **Read that field** rather than assembling it by hand — it
-already accounts for the optional agent segment and any prefix.
-
-```bash
-WSID=$(curl -sS -H "Coder-Session-Token: $TOKEN" \
-  "$CODER_URL/api/v2/users/me/workspace/<workspace>" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
-
-curl -sS -H "Coder-Session-Token: $TOKEN" "$CODER_URL/api/v2/workspaces/$WSID" \
-| python3 -c '
-import sys,json
-for r in json.load(sys.stdin)["latest_build"]["resources"]:
-    for a in r.get("agents") or []:
-        for app in a.get("apps") or []:
-            print(f"{app[\"slug\"]:20} subdomain={app.get(\"subdomain\")} "
-                  f"share={app.get(\"sharing_level\")} host={app.get(\"subdomain_name\")}")'
-```
-
-- `subdomain=True` → the public URL is `https://<subdomain_name>.coder-ws.camer.digital`.
-- `subdomain=False` → **the app has no public URL on this deployment.** It is
-  path-based, and path apps are disabled here. See the trap below.
-
-### Step 2b — raw ports: build the hostname
-
-Nothing to look up; construct it from step 1:
-
-```
-https://<port>--<agent>--<workspace>--<user>.coder-ws.camer.digital
-```
-
-A Next.js dev server on port 3000, agent `main`, workspace `K-workspace`, user
-`kingkoufan`:
-
-```
-https://3000--main--K-workspace--kingkoufan.coder-ws.camer.digital
-```
-
-Hostnames are case-insensitive, so the workspace name's capitalisation does not
-matter. If the app inside the workspace speaks TLS, use `3000s--…`.
-
-### Step 3 — set the share level
-
-**Declared apps** — set it in the template, then push:
-
-```hcl
-resource "coder_app" "my_app" {
-  subdomain = true               # required; without it there is no public URL
-  share     = "authenticated"    # owner | authenticated | organization | public
-  # ...
-}
-```
-
-**Raw ports** — see the dedicated runbook in the next section.
-
-### The share levels
-
-| Level | Who gets in | Settable on a port share? |
-|---|---|---|
-| `owner` | Only the workspace owner | ❌ `400 Port sharing level not allowed` |
-| `authenticated` | Any logged-in user on this deployment | ✅ |
-| `organization` | Logged-in users in the same organization | ✅ |
-| `public` | Anyone with the URL, no login | ✅ |
-
-> ⚠️ **`owner` is not a writable value on a port share.** A share record exists
-> only to grant access *beyond* the owner, so `owner` is the absence of one.
-> **To return a port to owner-only, `DELETE` the share** — do not try to POST
-> `share_level: "owner"`. That returns `400 Port sharing level not allowed`,
-> which reads like a permissions or licensing failure and is neither.
->
-> `coder_app.share` in a template is different: there `owner` is the default and
-> is perfectly valid, because the app's declaration *is* the record.
+> ⚠️ **RFC 1035 Hostname Limit**: The total length of `<port>--<agent>--<workspace>--<user>` must not exceed **63 characters**.
 
 ---
 
-## Runbook: publishing a dev server publicly, and taking it down
+## 2. Default Access Control & Port Sharing Lifecycle
 
-This is the common case — someone runs `next dev` / `vite` / `python -m http.server`
-inside a workspace and wants to hand a colleague or a client a link. The port is
-reachable the moment the process binds, but it is `owner`-only until you share it.
-
-Four interfaces, only two of which can publish:
-
-| Interface | Find the URL | Change share level |
-|---|---|---|
-| **Dashboard** — "Open Ports" on the workspace page | ✅ | ✅ share-level dropdown |
-| **API** — `/api/v2/workspaces/{id}/port-share` | ✅ | ✅ |
-| **MCP** — `coder exp mcp server` | ✅ `coder_workspace_port_forward` | ❌ no tool exists |
-| **CLI** | ❌ | ❌ |
-
-**MCP is discovery-only.** `coder_workspace_port_forward` takes
-`{"workspace":"K-workspace.main","port":3000}` and returns the finished URL — the
-tidiest lookup, since it avoids hand-assembly and the 63-character arithmetic. But
-no MCP tool sets a share level, so an agent can tell you where an app *would* be
-published and cannot publish it. (Note `coder_workspace_list_apps` returns each
-app's raw `url` field — for a `subdomain = false` app that is the *internal*
-`http://localhost:PORT`, not a public URL.)
-
-> ⚠️ **`coder exp mcp` is explicitly experimental.** `coder exp --help` describes
-> the whole namespace as *"Internal commands for testing and experimentation.
-> These are prone to breaking changes with no notice."* Fine for interactive use
-> and for agents that can adapt; do **not** build durable tooling or CI on the
-> tool names or their output shapes. The `/api/v2` endpoints above are the stable
-> contract — prefer them for anything automated.
-
-**There is no CLI subcommand.** `coder port-forward` is *local* forwarding to your
-own machine, and `coder sharing` shares the whole workspace with named users —
-neither publishes a port. Use the dashboard or the API below.
-
-> ⚠️ The route is **singular**: `/port-share`. The plural `/port-shares` returns
-> `404 Route not found`, which reads like the feature is missing or unlicensed. It
-> is neither — it is a typo.
-
-### Setup
-
-```bash
-TOKEN=$(cat ~/.config/coderv2/session)
-CODER_URL=https://coder.ai.camer.digital
-WSID=$(curl -sS -H "Coder-Session-Token: $TOKEN" \
-  "$CODER_URL/api/v2/users/me/workspace/<workspace>" \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
-```
-
-### Publish
-
-```bash
-curl -sS -X POST -H "Coder-Session-Token: $TOKEN" -H "Content-Type: application/json" \
-  -d '{"agent_name":"main","port":3000,"share_level":"public","protocol":"http"}' \
-  "$CODER_URL/api/v2/workspaces/$WSID/port-share"
-```
-
-`protocol` is how Coder should talk to your process **inside** the workspace —
-`http` for a normal dev server. Use `https` only if the process itself terminates
-TLS (that also changes the hostname to `3000s--…`). Public HTTPS is terminated at
-the ingress either way.
-
-Swap `"public"` for `"authenticated"` to require a Coder login instead — a good
-default for sharing with colleagues, since it needs no extra work from them and
-leaves nothing exposed to the open internet.
-
-### List what is currently shared
-
-```bash
-curl -sS -H "Coder-Session-Token: $TOKEN" \
-  "$CODER_URL/api/v2/workspaces/$WSID/port-share"
-# {"shares":[{"agent_name":"main","port":3000,"share_level":"public",...}]}
-```
-
-### Revoke
-
-```bash
-curl -sS -X DELETE -H "Coder-Session-Token: $TOKEN" -H "Content-Type: application/json" \
-  -d '{"agent_name":"main","port":3000}' \
-  "$CODER_URL/api/v2/workspaces/$WSID/port-share"
-```
-
-The DELETE body takes only `agent_name` and `port` — no `share_level`. It returns
-`200` with an empty body, and takes effect **immediately**: the URL flips from
-`200` back to `303 → auth-redirect` on the very next request. Confirm it:
-
-```bash
-curl -sS -o /dev/null -w '%{http_code}\n' \
-  https://3000--main--<workspace>--<user>.coder-ws.camer.digital/
-# 303 = revoked   200 = still public
-```
-
-### What "public" actually means here
-
-Be deliberate about this — the exposure is larger than it looks:
-
-- **No authentication at all.** Anyone with the URL reaches the dev server. The
-  hostname is guessable (`<port>--<agent>--<workspace>--<username>`), and it appears
-  in Certificate Transparency logs only as the wildcard, but the username and
-  workspace name are often easy to infer.
-- **It is a dev server.** Framework dev servers run with verbose errors, source
-  maps, hot-reload websockets and no rate limiting, and frequently hold API keys
-  from the workspace's environment. They are not written to face the internet.
-- **Shares survive.** A share persists across workspace stop/start and is not
-  time-bounded — it stays until explicitly revoked. Revoke when the demo ends
-  rather than leaving it up; there is nothing that will clean it up for you.
-- **Nothing centrally caps this.** On OSS the enterprise `control_shared_ports`
-  restriction is unavailable, so any user can publish any of their own ports at
-  `public` and no template setting or admin policy prevents it. Treat this as a
-  convention to be socialised, not a control that is enforced.
-
-### Licensing: public sharing works on OSS
-
-We run **unlicensed OSS** (`/api/v2/entitlements` → `has_license: false`), and
-`share_level: "public"` still works — verified live. The
-`control_shared_ports: not_entitled` entry in the entitlements response is easy to
-misread: it does **not** gate sharing. It gates the *enterprise* ability to cap the
-maximum share level a template may allow. On OSS every level is available and
-nothing can be centrally restricted — worth knowing before telling people to share
-ports freely.
+### Security Posture by Default
+- **Unshared Ports**: Ports default to `owner` visibility. Unauthenticated requests trigger a `303 See Other` redirect to `/api/v2/applications/auth-redirect`. Authenticated requests from non-owners return `404 Not Found`.
+- **Public Port Share**: Explicitly publishing a port makes it accessible to external unauthenticated callers (`HTTP 200 OK`).
 
 ---
 
-## Verifying and troubleshooting an app URL
+## 3. LibreChat Coder Agent (`coder_mcp`) Integration Contract
 
-```bash
-curl -sS -o /dev/null -w 'http=%{http_code} ssl_verify=%{ssl_verify_result}\n' \
-  https://3000--main--K-workspace--kingkoufan.coder-ws.camer.digital/
-```
-
-Run it **twice** — once unauthenticated as above, once with
-`-H "Coder-Session-Token: $TOKEN"`. The pair is what tells layer 3 apart from the
-rest.
-
-| Result | Meaning |
-|---|---|
-| `200`, `ssl_verify=0`, no token | Publicly shared and working |
-| `200` only *with* a token | Working; share level is `owner`/`authenticated`, not `public` |
-| `303` → `auth-redirect` | **Layers 1+2 healthy.** No session presented — an authorization question, not DNS or TLS |
-| `404` *with* a valid token | **Authenticated but denied** (see above) — check the share level, not the route |
-| `502` / connection refused | Nothing bound on that port inside the workspace, or the workspace is stopped |
-| `403` | Path-based app on a deployment with `CODER_DISABLE_PATH_APPS=true` |
-| `TRAEFIK DEFAULT CERT` | The wildcard cert is broken — see the zone section below |
-| DNS `NXDOMAIN` | The wildcard `A` record is missing |
-
-To reproduce a teammate's view of your own URL without another account, use a
-private window — as the owner you will always get `200`, which hides the problem.
-
-### ⚠️ Declared apps must set `subdomain = true`
-
-Because `CODER_DISABLE_PATH_APPS=true`, a `coder_app` with `subdomain = false`
-(the Terraform default) is **unreachable** — it returns `403`, with no hint that
-the cause is a deployment-level setting rather than the app itself.
-
-The stock `kubernetes` template's `code-server` app ships with `subdomain = false`
-and is currently in exactly this state. Any template carrying a declared app needs
-`subdomain = true` before its apps work here. Audit them with the step-2a snippet:
-anything reporting `subdomain=False` is already broken or will be as soon as
-someone tries to open it.
-
----
-
-## ⚠️ Why workspaces live on `camer.digital`, not under `coder.ai.camer.digital`
-
-This is the single non-obvious thing about this setup, and it has cost real
-debugging time more than once. **Do not "tidy" the workspace wildcard back under
-the dashboard domain.**
-
-A wildcard certificate can only be issued via an **ACME DNS-01** challenge
-(HTTP-01 cannot do wildcards). Our only DNS-01 solver is the `cert-cloudflare`
-ClusterIssuer (`home-os` `charts/cert`), which authenticates against the
-Cloudflare API. It can therefore only satisfy a challenge for a name in a zone
-**Cloudflare actually serves**.
-
-`camer.digital` is on Cloudflare — but several subdomains are **NS-delegated
-away** to other providers:
-
-| Name | Authoritative NS |
-|---|---|
-| `camer.digital` | Cloudflare (`*.ns.cloudflare.com`) |
-| `ai.camer.digital` | **AWS Route53** (`ns-{409,556,1502,1914}.awsdns-*`) |
-| `coder-ai.camer.digital` | **AWS Route53** (`ns-{157,976,1492,1562}.awsdns-*`) |
-| `observe.camer.digital` | Google Cloud DNS (`ns-cloud-d*.googledomains.com`) |
-
-So a `Certificate` for `*.coder.ai.camer.digital` on `cert-cloudflare` fails in a
-way that looks like nothing is wrong:
-
-1. cert-manager creates the `_acme-challenge` TXT record via the Cloudflare API —
-   it succeeds, and the `Challenge` reports `Presented: true`.
-2. The record lands in the Cloudflare `camer.digital` zone, where it is **never
-   served** — Route53 is authoritative for `ai.camer.digital`.
-3. The self-check never passes. The `Challenge` sits at
-   `Waiting for DNS-01 challenge propagation: DNS record for "…" not yet propagated`
-   until Let's Encrypt expires the order.
-
-The dashboard hostname `coder.ai.camer.digital` is unaffected because it uses
-**HTTP-01** (`cert-home-cert-http`), which validates over the load balancer and
-does not care who serves DNS.
-
-**Diagnostic tell:** orphaned `_acme-challenge.*` TXT records accumulating in the
-Cloudflare `camer.digital` zone for delegated names. As of this writing the zone
-still holds abandoned ones for `ai`, `coder-ai`, `coder-ai.ai`, `mlops`, and
-`serverless.mlops` — every past attempt to DNS-01 a delegated name.
-
-Confirm a name's zone before pointing a DNS-01 `Certificate` at it:
-
-```bash
-dig +short NS <the-parent-of-your-wildcard>
-```
-
-If that returns anything other than Cloudflare nameservers, `cert-cloudflare`
-cannot issue for it.
-
-### Secondary benefit
-
-Putting workspace apps on a sibling domain rather than a subdomain of the
-dashboard is also Coder's own recommendation: a compromised or hostile workspace
-app cannot set or read cookies scoped to `coder.ai.camer.digital`.
-
-### If we ever do need the wildcard under `ai.camer.digital`
-
-Two options, both requiring a `home-os` change (that repo owns the issuers):
-
-- **Route53 DNS-01 ClusterIssuer** — add a `route53` solver to `charts/cert` plus
-  an AWS IAM credential with `route53:ChangeResourceRecordSets` on the zone. Note
-  the existing in-cluster AWS user (`k8s-cluster-secret-manager`, the ESO
-  credential) is **denied** Route53 — it is not reusable for this.
-- **CNAME delegation** — add a CNAME in Route53 for
-  `_acme-challenge.<name>.ai.camer.digital` pointing at a name inside the
-  Cloudflare `camer.digital` zone, and set `cnameStrategy: Follow` on the
-  `cert-cloudflare` solver. This would fix `mlops` the same way.
-
----
-
-## Where each piece lives
-
-| Piece | Repo / path |
-|---|---|
-| `CODER_WILDCARD_ACCESS_URL`, `CODER_DISABLE_PATH_APPS`, `ingress.wildcardHost`, `ingress.tls.wildcardSecretName` | `ai-helm-values` `environments/prod/values/coder-app.yaml` |
-| `coder-wildcard-tls` `Certificate` (dnsNames) | `ai-helm-values` `environments/base/deps/coder/certificates.yaml` |
-| Issuer patch → `cert-cloudflare` | `ai-helm-values` `environments/prod/deps/coder/kustomization.yaml` |
-| CI reference copy (keep structurally in sync) | `ai-helm` `charts/coder/ci/coder-app.yaml` |
-| `cert-cloudflare` ClusterIssuer + `cloudflare-secret` | `home-os` `charts/cert` (app `cert-remote`) |
-| Wildcard DNS `A` record | Cloudflare `camer.digital` zone (out-of-band) |
-
-Per ADR-0055/0056 the values live in `ai-helm-values`; `ai-helm` holds only the
-chart logic and the CI reference. Cut over **values-repo-first**.
-
-## DNS record required
-
-One record in the Cloudflare `camer.digital` zone, DNS-only (not proxied),
-matching the other platform records:
-
-```
-*.coder-ws.camer.digital   A   46.225.40.134   (proxied: false)
-```
-
-`46.225.40.134` is the Traefik ingress LB. Proxying must stay **off** —
-Cloudflare's proxy would terminate TLS in front of us and interfere with the
-WebSocket-heavy workspace app traffic.
-
-## Verification (platform side: cert, DNS, ingress)
-
-For verifying a *single app URL* see "Verifying and troubleshooting an app URL"
-above; this section is for the platform plumbing.
-
-```bash
-# 1. wildcard cert issued
-kubectl -n coder get certificate coder-wildcard-tls
-kubectl -n coder get order,challenge          # empty once issued
-
-# 2. the SANs are right
-kubectl -n coder get secret coder-wildcard-tls -o jsonpath='{.data.tls\.crt}' \
-  | base64 -d | openssl x509 -noout -subject -ext subjectAltName
-
-# 3. Traefik serves it (not "TRAEFIK DEFAULT CERT")
-echo | openssl s_client -connect 46.225.40.134:443 \
-  -servername 5173--main--demo--koufan.coder-ws.camer.digital 2>/dev/null \
-  | openssl x509 -noout -subject -issuer
-
-# 4. coderd picked up the env
-kubectl -n coder get deploy coder \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="CODER_WILDCARD_ACCESS_URL")]}'
-```
-
-Then create a workspace and open a workspace app from the Coder UI — the URL in
-the address bar should be a `coder-ws.camer.digital` subdomain with a valid
-Let's Encrypt certificate.
-
-### If the challenge stalls
-
-```bash
-kubectl -n coder describe challenge
-```
-
-`Presented: true` + `not yet propagated` means the TXT went to a provider that is
-not authoritative — re-read the zone-delegation section above. Deleting and
-recreating the `Certificate` will not help.
-
-## Rollback
-
-Re-enable path-based apps (workspace apps then live under the dashboard host and
-need no wildcard cert):
-
-1. Drop `CODER_WILDCARD_ACCESS_URL` and set `CODER_DISABLE_PATH_APPS=false` (or
-   remove it) in `environments/prod/values/coder-app.yaml`.
-2. Remove `ingress.wildcardHost` and `ingress.tls.wildcardSecretName`.
-3. Remove the `coder-wildcard-tls` Certificate from
-   `environments/base/deps/coder/certificates.yaml` and its issuer patch from the
-   prod kustomization.
-
-Path-based apps are a weaker security posture (workspace apps share the dashboard
-origin), which is why subdomain apps are the default here.
-
-## LibreChat Coder Agent (`coder_mcp`) Integration Contract
-
-When the LibreChat Coder agent provisions or interacts with a workspace application (e.g., scaffolding a Next.js / tRPC app on port 3000), it must ensure the resulting workspace URL is reachable by human users.
+When the LibreChat Coder agent (`coder`) provisions or interacts with a workspace application, it executes the following contract:
 
 ### Step-by-Step Publishing Lifecycle
 
@@ -563,7 +55,7 @@ When the LibreChat Coder agent provisions or interacts with a workspace applicat
    `https://<port>--<agent>--<workspace>--<user>.coder-ws.camer.digital`
 
 2. **Programmatic Port Publishing**:
-   To allow external access without forcing Keycloak authentication redirects (`303` / `404`), send a `POST` request to the Coder REST API:
+   Send a `POST` request to the Coder REST API:
    ```http
    POST /api/v2/workspaces/{workspace_id}/port-share HTTP/1.1
    Host: coder.ai.camer.digital
@@ -581,7 +73,7 @@ When the LibreChat Coder agent provisions or interacts with a workspace applicat
    *Note*: `share_level` can be set to `"public"` for instant browser previews or `"authenticated"` if Keycloak SSO is required.
 
 3. **URL Verification**:
-   Verify that the URL returns `HTTP 200 OK` (or appropriate app status) rather than `303 See Other` (`auth-redirect`).
+   Verify that the URL returns `HTTP 200 OK` rather than `303 See Other` (`auth-redirect`).
 
 4. **Revocation**:
    When the demo or preview session ends, revoke public access by issuing a `DELETE` request to `/api/v2/workspaces/{workspace_id}/port-share` with a body identifying the share:
@@ -597,9 +89,12 @@ When the LibreChat Coder agent provisions or interacts with a workspace applicat
    }
    ```
 
+---
+
 ## References
 
 - [ADR-0121: Coder Workspace URL Exposure Strategy](../adr/0121-coder-workspace-url-exposure-strategy.md)
+- [`coder-agent-system-prompt.md`](coder-agent-system-prompt.md) — LibreChat Coder Agent System Prompt Specification (Ticket #832)
 - ADR-0019 — App-of-Apps orchestrator pattern (`charts/coder`)
 - ADR-0083 — Coder re-introduction
 - [`coder-platform-integration.md`](coder-platform-integration.md) — the wider Coder integration
