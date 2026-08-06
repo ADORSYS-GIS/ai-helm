@@ -11,6 +11,7 @@ Run with:  uv run pytest tools/dashboards/tests/test_provider_billing_poller.py
 from __future__ import annotations
 
 import datetime
+import json
 import sys
 import urllib.error
 from pathlib import Path
@@ -23,6 +24,11 @@ POLLER_DIR = Path(__file__).resolve().parents[3] / "charts" / "provider-billing-
 sys.path.insert(0, str(POLLER_DIR))
 
 import poller  # noqa: E402
+
+# The dashboard generator lives in this project's src tree; import it so the
+# regression test below can build the dashboard and assert on its queries.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from dashboards.envoy_ai_gateway import provider_billing  # noqa: E402
 
 
 def _month(period: str, invoice_id: str = "in_x", items: list | None = None) -> dict:
@@ -237,3 +243,62 @@ def test_poll_returns_permanent_on_http_error(monkeypatch) -> None:
     assert permanent is True
     assert "403" in err
     assert metrics.up.labels(provider="deepinfra", billing_period="2026-08")._value.get() == 0
+
+
+# --- dashboard selector regression (the "no data in fields" bug) -------------
+
+
+def _panel_exprs(node) -> list[str]:
+    """Recursively collect every PromQL `expr` from a built dashboard dict."""
+    exprs: list[str] = []
+    if isinstance(node, dict):
+        if "expr" in node and isinstance(node["expr"], str):
+            exprs.append(node["expr"])
+        for v in node.values():
+            exprs.extend(_panel_exprs(v))
+    elif isinstance(node, list):
+        for v in node:
+            exprs.extend(_panel_exprs(v))
+    return exprs
+
+
+def test_dashboard_billing_period_uses_regex_selector() -> None:
+    """Every provider query must select billing_period with =~ (regex), not =.
+
+    The billing_period variable is multi-value with includeAll + allValue ".+".
+    With the exact-match operator (`billing_period="$billing_period"`) the "All"
+    default expands to `billing_period=".+"`, which matches the literal string
+    ".+" and returns NO series — the dashboard shows "No data in fields". Using
+    `=~` makes "All" expand to a working regex. This is the same convention as
+    ratelimit_quota.py's _MONTHLY_SEL.
+    """
+    dash = provider_billing.build()
+    exprs = _panel_exprs(dash)
+    assert exprs, "expected the dashboard to contain query expressions"
+    # Only queries that actually filter on billing_period are relevant (the
+    # last_success / scrape_duration metrics carry no labels and are excluded).
+    period_queries = [e for e in exprs if "billing_period" in e]
+    assert period_queries, "expected billing_period-filtered queries in the dashboard"
+    for expr in period_queries:
+        # Every provider query that filters on billing_period must use =~.
+        assert 'billing_period=~"$billing_period"' in expr, (
+            f"billing_period must use =~ (regex) so the All default works: {expr}"
+        )
+        assert 'billing_period="$billing_period"' not in expr, (
+            f"billing_period must NOT use = (exact match) — causes no data: {expr}"
+        )
+        # provider must also use =~ for the same reason.
+        assert 'provider=~"$provider"' in expr, f"provider must use =~: {expr}"
+
+
+def test_dashboard_json_matches_generator() -> None:
+    """The committed provider-billing.json queries must equal the generator's.
+
+    Guards against hand-editing the JSON (the generator is the source of truth)
+    and against the =~ fix being reverted in one place but not the other. We
+    compare the query expressions (not the whole dict — the orchestrator in
+    main.py additionally injects the report link and schema-version stamp).
+    """
+    out = Path(__file__).resolve().parents[3] / "charts" / "observability-dashboards" / "files" / "envoy-ai-gateway" / "provider-billing.json"
+    committed = json.loads(out.read_text())
+    assert sorted(_panel_exprs(committed)) == sorted(_panel_exprs(provider_billing.build()))

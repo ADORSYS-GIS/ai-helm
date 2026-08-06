@@ -55,7 +55,11 @@ METRIC_PROVIDER_LAST_SUCCESS = "provider_billing_last_success_timestamp_seconds"
 METRIC_PROVIDER_SCRAPE_DURATION = "provider_billing_scrape_duration_seconds"
 
 # Selector scoped to the chosen provider + billing period.
-_SEL = '{provider=~"$provider", billing_period="$billing_period"}'
+# Both use the regex match operator (=~) so the multi-value "All" ($__all ->
+# allValue ".+") expands to a working regex instead of an exact-match literal
+# ".+" that matches nothing (the "no data in fields" bug). Same convention as
+# ratelimit_quota.py's _MONTHLY_SEL.
+_SEL = '{provider=~"$provider", billing_period=~"$billing_period"}'
 
 # Gateway-estimated cost over the selected range (ADR-0058 counter).
 _GATEWAY_EST = f"sum(increase({METRIC_COST_MICRO_USD}[$__range]))/1e6"
@@ -272,7 +276,7 @@ def _panel_units_by_model() -> object:
 
 
 def _panel_cache_read() -> object:
-    inner = f'sum({METRIC_PROVIDER_COST}{{provider=~"$provider", billing_period="$billing_period", pricing_type="cache_read"}})'
+    inner = f'sum({METRIC_PROVIDER_COST}{{provider=~"$provider", billing_period=~"$billing_period", pricing_type="cache_read"}})'
     return _stat_panel(
         title="Cache read cost",
         expr=sh.usd(inner),
@@ -283,7 +287,7 @@ def _panel_cache_read() -> object:
 
 
 def _panel_cache_write() -> object:
-    inner = f'sum({METRIC_PROVIDER_COST}{{provider=~"$provider", billing_period="$billing_period", pricing_type="cache_write"}})'
+    inner = f'sum({METRIC_PROVIDER_COST}{{provider=~"$provider", billing_period=~"$billing_period", pricing_type="cache_write"}})'
     return _stat_panel(
         title="Cache write cost",
         expr=sh.usd(inner),
