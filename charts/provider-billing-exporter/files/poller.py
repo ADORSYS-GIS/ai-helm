@@ -22,6 +22,9 @@ Design (see docs/playbooks/provider-billing-reconciliation.md):
     task. Never the API token or account identifiers (FR-002).
   * 429/5xx handled with exponential backoff + jitter; surfaced as up=0.
   * Delayed invoices: invoice_id NOT_FINAL/EMPTY exposed as invoice_final=0.
+  * Failures are logged to stderr (via the stdlib `logging` module) — the
+    initial poll included, so a bad token (401/403) is visible immediately
+    rather than silently until the loop's first poll.
 
 Environment:
   DEEPINFRA_API_TOKEN  (required) DeepInfra API bearer token.
@@ -36,6 +39,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import os
 import random
 import sys
@@ -54,41 +58,52 @@ PROVIDER = "deepinfra"
 
 
 class Metrics:
-    """Prometheus gauges for provider billing. One instance, shared by threads."""
+    """Prometheus gauges for provider billing. One instance, shared by threads.
 
-    def __init__(self) -> None:
+    `registry` is injectable for test isolation (a fresh CollectorRegistry per
+    test avoids duplicate-registration errors); defaults to the global registry.
+    """
+
+    def __init__(self, registry=None) -> None:
         self.cost = Gauge(
             "provider_billing_cost_micro_usd",
             "Provider-billed cost for the billing period, cumulative, in micro-USD.",
             ["provider", "provider_model", "pricing_type", "billing_period", "task"],
+            registry=registry,
         )
         self.units = Gauge(
             "provider_billing_units",
             "Provider-billed units (tokens or seconds) for the billing period.",
             ["provider", "provider_model", "pricing_type", "billing_period", "task"],
+            registry=registry,
         )
         self.total = Gauge(
             "provider_billing_total_cost_micro_usd",
             "Provider-billed total cost for the billing period, cumulative, in micro-USD.",
             ["provider", "billing_period"],
+            registry=registry,
         )
         self.invoice_final = Gauge(
             "provider_billing_invoice_final",
             "1 if the month's invoice is final (has a Stripe invoice id), 0 if still accruing (NOT_FINAL/EMPTY).",
             ["provider", "billing_period"],
+            registry=registry,
         )
         self.up = Gauge(
             "provider_billing_up",
             "1 if the last poll for the billing period succeeded, 0 otherwise.",
             ["provider", "billing_period"],
+            registry=registry,
         )
         self.last_success = Gauge(
             "provider_billing_last_success_timestamp_seconds",
             "Unix timestamp of the last successful poll.",
+            registry=registry,
         )
         self.scrape_duration = Gauge(
             "provider_billing_scrape_duration_seconds",
             "Duration of the last poll in seconds.",
+            registry=registry,
         )
 
 
@@ -194,8 +209,15 @@ def fetch_usage(api_url: str, token: str, from_period: str, to_period: str | Non
         return json.loads(resp.read().decode("utf-8"))
 
 
-def poll(api_url: str, token: str, periods: list[str], metrics: Metrics) -> tuple[bool, str | None]:
-    """Poll the API for the period range and update the gauges. Returns (ok, error)."""
+def poll(api_url: str, token: str, periods: list[str], metrics: Metrics) -> tuple[bool, str | None, bool]:
+    """Poll the API for the period range and update the gauges.
+
+    Returns (ok, error, permanent):
+      ok:        True if the poll succeeded.
+      error:     Human-readable error when ok is False, else None.
+      permanent: True when the failure is a config/contract error (bad token,
+                 404 endpoint, etc.) that retrying cannot fix.
+    """
     start = time.time()
     try:
         data = fetch_usage(api_url, token, periods[0], periods[-1])
@@ -203,7 +225,7 @@ def poll(api_url: str, token: str, periods: list[str], metrics: Metrics) -> tupl
         if not ok:
             for p in periods:
                 metrics.up.labels(provider=PROVIDER, billing_period=p).set(0)
-            return False, "no months returned for period range"
+            return False, "no months returned for period range", False
         for name, labels, value in series:
             if name == "cost":
                 metrics.cost.labels(**labels).set(value)
@@ -217,11 +239,11 @@ def poll(api_url: str, token: str, periods: list[str], metrics: Metrics) -> tupl
             metrics.up.labels(provider=PROVIDER, billing_period=p).set(1)
         metrics.last_success.set(time.time())
         metrics.scrape_duration.set(time.time() - start)
-        return True, None
+        return True, None, False
     except Exception as exc:  # noqa: BLE001 - surface any fetch/parse failure as down
         for p in periods:
             metrics.up.labels(provider=PROVIDER, billing_period=p).set(0)
-        return False, str(exc)
+        return False, str(exc), _permanent(exc)
 
 
 def _backoff_delay(attempt: int, base: float = 30.0, cap: float = 900.0) -> float:
@@ -230,10 +252,33 @@ def _backoff_delay(attempt: int, base: float = 30.0, cap: float = 900.0) -> floa
     return exp * (0.5 + random.random())
 
 
+# HTTP statuses that retrying cannot fix: the request is rejected for a reason
+# that will not change by re-sending it (bad/expired token, wrong endpoint,
+# forbidden). Retrying these just spams the API and the logs.
+PERMANENT_STATUS = {400, 401, 403, 404, 405, 422}
+
+
+def _permanent(exc: Exception) -> bool:
+    """True for config/contract errors (bad token, 404 endpoint) that retrying
+    cannot fix. `urllib.error.HTTPError` carries `.code`; everything else
+    (network, timeout, 429/5xx) is treated as transient."""
+    return getattr(exc, "code", None) in PERMANENT_STATUS
+
+
 def main() -> int:
+    # Log to stderr (captured by the k8s container runtime). logging flushes on
+    # every call, so a crash can't lose a line; it is also thread-safe, which
+    # matters because the poll loop runs on a background thread.
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    logger = logging.getLogger("provider-billing")
+
     token = os.environ.get("DEEPINFRA_API_TOKEN")
     if not token:
-        sys.stderr.write("DEEPINFRA_API_TOKEN is required\n")
+        logger.error("DEEPINFRA_API_TOKEN is required")
         return 1
     api_url = os.environ.get("DEEPINFRA_API_URL", "https://api.deepinfra.com").rstrip("/")
     poll_interval = int(os.environ.get("POLL_INTERVAL", "3600"))
@@ -242,19 +287,31 @@ def main() -> int:
     periods_env = os.environ.get("BILLING_PERIOD", "").strip()
 
     metrics = Metrics()
-    # Initial poll before serving so /metrics is populated immediately.
-    poll(api_url, token, resolve_periods(periods_env), metrics)
+    periods = resolve_periods(periods_env)
+    # Initial poll before serving so /metrics is populated immediately. Log the
+    # result so a startup failure (e.g. bad token -> 401/403) is visible at once
+    # instead of silently until the loop's first poll an hour later.
+    ok, err, permanent = poll(api_url, token, periods, metrics)
+    if ok:
+        logger.info("initial poll succeeded")
+    elif permanent:
+        logger.error("initial poll failed permanently (check the DeepInfra token): %s", err)
+    else:
+        logger.error("initial poll failed: %s", err)
 
     def loop() -> None:
         attempt = 0
         while True:
             time.sleep(poll_interval)
-            ok, err = poll(api_url, token, resolve_periods(periods_env), metrics)
+            ok, err, permanent = poll(api_url, token, resolve_periods(periods_env), metrics)
             if ok:
                 attempt = 0
             else:
                 attempt += 1
-                sys.stderr.write(f"poll error: {err}\n")
+                if permanent:
+                    logger.error("poll failed permanently (check the DeepInfra token): %s", err)
+                else:
+                    logger.error("poll error: %s", err)
                 # Back off before the next attempt on transient failures.
                 time.sleep(_backoff_delay(attempt))
 
