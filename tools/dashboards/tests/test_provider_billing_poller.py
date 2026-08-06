@@ -169,6 +169,33 @@ def test_provider_correction_overwrites() -> None:
 # --- error classification (permanent vs transient) ----------------------------
 
 
+def test_api_period_converts_dash_to_dot() -> None:
+    # The repo uses YYYY-MM for labels/env, but the DeepInfra API expects YYYY.MM.
+    # Sending the dash form yields HTTP 400 (the bug that caused "no data").
+    assert poller._api_period("2026-08") == "2026.08"
+    assert poller._api_period("2026-07") == "2026.07"
+    # Idempotent if already in dot form.
+    assert poller._api_period("2026.08") == "2026.08"
+
+
+def test_fetch_usage_uses_dot_period_format(monkeypatch) -> None:
+    """The request URL must use YYYY.MM (dot), not YYYY-MM (dash)."""
+    captured = {}
+
+    def _fake_urlopen(req, timeout=30):
+        captured["url"] = req.full_url
+        captured["auth"] = req.get_header("Authorization")
+        import io
+        return io.BytesIO(b'{"months": []}')
+
+    monkeypatch.setattr(poller.urllib.request, "urlopen", _fake_urlopen)
+    poller.fetch_usage("https://api.deepinfra.com", "tok", "2026-07", "2026-08")
+    assert "from=2026.07" in captured["url"]
+    assert "to=2026.08" in captured["url"]
+    assert "2026-07" not in captured["url"]
+    assert captured["auth"] == "Bearer tok"
+
+
 def test_permanent_http_errors() -> None:
     # Bad token / forbidden / missing endpoint are permanent: retrying cannot fix.
     for code in (400, 401, 403, 404, 405, 422):
