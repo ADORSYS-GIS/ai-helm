@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import datetime
 import sys
+import urllib.error
 from pathlib import Path
+
+import prometheus_client
 
 # Make the chart's poller importable (it imports prometheus_client, which is a
 # dev dependency of this project).
@@ -161,3 +164,49 @@ def test_provider_correction_overwrites() -> None:
     series, _, _ = poller.parse_usage(payload)
     cost = next(s for s in series if s[0] == "cost")[2]
     assert cost == 999 * 10000
+
+
+# --- error classification (permanent vs transient) ----------------------------
+
+
+def test_permanent_http_errors() -> None:
+    # Bad token / forbidden / missing endpoint are permanent: retrying cannot fix.
+    for code in (400, 401, 403, 404, 405, 422):
+        exc = urllib.error.HTTPError(url="u", code=code, msg="m", hdrs=None, fp=None)
+        assert poller._permanent(exc) is True, f"expected {code} to be permanent"
+
+
+def test_transient_errors() -> None:
+    # 429/5xx and network errors are transient: retry with backoff.
+    for code in (429, 500, 502, 503, 504):
+        exc = urllib.error.HTTPError(url="u", code=code, msg="m", hdrs=None, fp=None)
+        assert poller._permanent(exc) is False, f"expected {code} to be transient"
+    assert poller._permanent(TimeoutError("boom")) is False
+    assert poller._permanent(ValueError("parse")) is False
+
+
+def test_poll_returns_transient_on_network_error(monkeypatch) -> None:
+    """A network/transient failure is surfaced with permanent=False (retryable)."""
+    def _raise(api_url, token, from_period, to_period=None):
+        raise urllib.error.URLError("no network")
+    monkeypatch.setattr(poller, "fetch_usage", _raise)
+    metrics = poller.Metrics(registry=prometheus_client.CollectorRegistry())
+    ok, err, permanent = poller.poll("https://api.deepinfra.com", "tok", ["2026-08"], metrics)
+    assert ok is False
+    assert permanent is False
+    assert err  # a human-readable error is returned for logging
+    # up is set to 0 for the period so the dashboard shows the poll is down.
+    assert metrics.up.labels(provider="deepinfra", billing_period="2026-08")._value.get() == 0
+
+
+def test_poll_returns_permanent_on_http_error(monkeypatch) -> None:
+    """A bad token (403) is surfaced as permanent so main() logs it loudly."""
+    def _raise(api_url, token, from_period, to_period=None):
+        raise urllib.error.HTTPError(url="u", code=403, msg="Forbidden", hdrs=None, fp=None)
+    monkeypatch.setattr(poller, "fetch_usage", _raise)
+    metrics = poller.Metrics(registry=prometheus_client.CollectorRegistry())
+    ok, err, permanent = poller.poll("https://api.deepinfra.com", "tok", ["2026-08"], metrics)
+    assert ok is False
+    assert permanent is True
+    assert "403" in err
+    assert metrics.up.labels(provider="deepinfra", billing_period="2026-08")._value.get() == 0
