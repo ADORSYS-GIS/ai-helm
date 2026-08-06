@@ -1,0 +1,97 @@
+{{- /*
+Deployment running the provider-billing poller. Installs prometheus-client at
+container start (off-the-shelf python image, no custom build - ADR-0040), then
+runs the poller. The DeepInfra token comes from the ESO-managed Secret via
+secretKeyRef (optional:false so the pod waits for ESO rather than starting
+tokenless - same pattern as the MCP charts). The token is NEVER a metric label.
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+      annotations:
+        # Roll the pod when the poller script changes (ConfigMap edits don't reload).
+        checksum/poller: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      # The poller only talks to the provider API over HTTPS - no Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: poller
+          image: {{ .Values.image | quote }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              # Install into the writable /opt/pkgs emptyDir (root fs is
+              # read-only via readOnlyRootFilesystem) and run from PYTHONPATH.
+              pip install --no-cache-dir -q --target=/opt/pkgs -r /app/requirements.txt
+              exec python /app/poller.py
+          ports:
+            - name: http
+              containerPort: {{ .Values.poller.listenPort }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: PYTHONPATH
+              value: /opt/pkgs
+            - name: DEEPINFRA_API_URL
+              value: {{ .Values.poller.apiUrl | quote }}
+            - name: POLL_INTERVAL
+              value: {{ .Values.poller.pollInterval | quote }}
+            - name: BILLING_PERIOD
+              value: {{ .Values.poller.billingPeriod | quote }}
+            - name: LISTEN_PORT
+              value: {{ .Values.poller.listenPort | quote }}
+            {{- if .Values.externalSecret.enabled }}
+            # Never optional: the pod waits in ContainerCreating until ESO has
+            # populated the Secret rather than starting tokenless (MCP pattern).
+            - name: DEEPINFRA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalSecret.secretName }}
+                  key: token
+                  optional: false
+            {{- end }}
+          volumeMounts:
+            - name: poller
+              mountPath: /app
+            - name: tmp
+              mountPath: /tmp
+            - name: pkgs
+              mountPath: /opt/pkgs
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      volumes:
+        - name: poller
+          configMap:
+            name: {{ .Values.name }}-poller
+        - name: tmp
+          emptyDir: {}
+        - name: pkgs
+          emptyDir: {}

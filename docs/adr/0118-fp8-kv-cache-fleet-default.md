@@ -59,7 +59,10 @@ Scope is vLLM-only, enforced by render-time guards:
 - Today the blast radius is one enabled model (`qwen3-coder-30b-a3b`;
   `qwen3-vl-4b-thinking`/`qwen3-8b-fast`/`openmythos-27b` are disabled and
   `z-image-turbo` is LocalAI) — but the default persists for any model
-  re-enabled later.
+  re-enabled later. ⚠️ Note: `qwen3-coder-30b-a3b` is the one enabled vLLM
+  model and it **opts out** of the fp8 default (`serving.kvCacheDtype: auto`,
+  16-bit), so today no live model actually runs fp8 KV. The default still
+  applies to any vLLM model that does not override it.
 - `fp8_e5m2`/`fp8_e4m3` are passed verbatim to `--kv-cache-dtype`; a future
   vLLM version that renames the accepted set requires the guard list to move
   in lockstep.

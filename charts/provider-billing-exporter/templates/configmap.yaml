@@ -1,0 +1,18 @@
+{{- /*
+ConfigMap holding the poller script + its pip requirements. Mounted read-only
+into the Deployment; the container installs prometheus-client at start then runs
+the script. The script is a real file (files/poller.py) so it stays diffable and
+unit-testable, not an inline YAML blob.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-poller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.name }}
+data:
+  poller.py: |-
+{{ .Files.Get "files/poller.py" | indent 4 }}
+  requirements.txt: |-
+    prometheus-client==0.21.1

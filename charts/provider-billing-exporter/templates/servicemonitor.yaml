@@ -1,0 +1,28 @@
+{{- /*
+Scrape the poller's /metrics into Mimir. Alloy discovers ServiceMonitors
+cluster-wide (see the alloy child in charts/observability), so this is all that
+is needed to get provider-billed cost into Mimir.
+*/ -}}
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval | default "60s" }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout | default "10s" }}
+{{- end }}

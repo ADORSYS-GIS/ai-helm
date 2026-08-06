@@ -656,19 +656,23 @@ models:
    # charts/ai-models/values.yaml is a separate step, after someone has
    # actually sent it a coding request and measured tok/s, VRAM and quality.
    #
-   # ⚠️ `gpuMemoryUtilization: 0.90` caps vLLM's budget at 17.99 GiB
-   # (0.90 × 19.99). Weights are ~15.66 GiB, leaving ~2.33 GiB for KV cache +
+   # ⚠️ `gpuMemoryUtilization: 0.95` caps vLLM's budget at 18.99 GiB
+   # (0.95 × 19.99). Weights are ~15.66 GiB, leaving ~3.33 GiB for KV cache +
    # CUDA graphs + activations. FP8 KV cache (defaults.kvCacheDtype) halves the
    # KV footprint (~0.38 GiB at 8K). CUDA graphs capture memory is larger on
    # this 48-layer / 128-expert MoE than on dense models, so `--enforce-eager`
    # is PRE-DECLARED in serving.extraArgs below (review finding) — CUDA graphs
    # off until the load gate measures real headroom, then re-check.
-    # Context raised to 12288 (2026-08-04): a 4097-token prompt + 4096 output
-   # tokens = 8193 > 8192 → vLLM refused (the catalog's maxOutputTokens is
-   # additive, not independent). KV fp8 at 12288 ≈ 0.56 GiB leaves ~1.77 GiB
-   # of the ~2.33 GiB budget for activations — comfortably safe. 16384
-   # (~0.75 GiB KV) also fits arithmetically but is left as the measured
-   # step (load gate), not assumed.
+   # Context raised to 16384 (2026-08-05): at 12288 the catalog's own
+   # maxOutputTokens (4096) is additive on top of the input window, so a
+   # 12288-token prompt + 4096 output = 16384 > 12288 → vLLM refused — the
+   # same failure as the 8193 > 8192 refusal, one step higher. 16384 is the
+   # smallest window where the advertised contextLength (12288) + maxOutputTokens
+   # (4096) fit, so a client honouring the catalog can never exceed it. With the
+   # 16-bit KV cache (kvCacheDtype: auto — NO quantization) and `parallel: 1`
+   # (see below), 16384 needs ~1.50 GiB KV (≈2× the fp8 footprint), leaving
+   # ~1.83 GiB of the ~3.33 GiB budget for activations — still comfortable,
+   # but the non-fp8 KV footprint must be re-verified at the load gate.
    #
    # ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
    # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
@@ -676,11 +680,13 @@ models:
    # (quantization_config.modules_to_not_convert: ['.mlp.gate']), not wired
    # by the chart. vLLM reads it automatically from config.json.
    #
-   # ⚠️ RISK (review finding): TWO lossy layers are stacked on a model whose
-   # entire value is correctness. (1) AWQ INT4 — the pinned quant's own card
-   # warns "significant loss under 4-bit quantization, use with caution".
-   # (2) FP8 KV cache (defaults.kvCacheDtype) with uncalibrated scales. Both
-   # may be fine in practice, but the load gate must measure quality (not just
+   # ⚠️ RISK (review finding): lossy layers on a model whose entire value is
+   # correctness. (1) AWQ INT4 — the pinned quant's own card warns "significant
+   # loss under 4-bit quantization, use with caution". (2) The fleet default
+   # FP8 KV cache (defaults.kvCacheDtype) with uncalibrated scales — this model
+   # OPPTS OUT with `serving.kvCacheDtype: auto` below (16-bit KV cache, NO
+   # quantization), which removes the fp8-KV quality risk; only the AWQ-INT4
+   # weight loss remains. The load gate must still measure quality (not just
    # tok/s and VRAM) BEFORE this model is federated — see ADR-0118.
    qwen3-coder-30b-a3b:
      enabled: true
@@ -689,6 +695,14 @@ models:
        hfRepo: QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ
        # Pinned via `curl -s https://huggingface.co/api/models/QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ | jq -r .sha`
        revision: c58857a7f41c0920f73d1b56678640f9c02017d7
+       # ⚠️ PROVENANCE (review finding, 2026-08-05): this repo's config.json
+       # differs from the official base model's — `intermediate_size` 5472 vs 6144,
+       # `max_window_layers` 28 vs 48, `use_qk_norm: true`, and `name_or_path:
+       # tclf90/Qwen3-Coder-30B-A3B-Instruct-AWQ` (a third-party quant, republished
+       # by QuantTrio). The SHA pin makes the bytes reproducible, and vLLM reads
+       # this config against these weights so it is self-consistent — but confirm
+       # at the load gate that the AWQ was quantized from the exact official
+       # checkpoint before trusting it with real traffic.
        # No `include`: vLLM needs the whole repo (6 safetensors shards + config
        # + tokenizer + tool parser), not a single file.
        #
@@ -704,11 +718,26 @@ models:
      serving:
        # Conservative start (model native: 262144). For agentic coding through
        # opencode, system prompt + tool schemas + file context can exceed 8K on
-       # turn one — raised to 12288 (2026-08-04) after the 8193-token refusal.
-       # With ~15.6 GiB weights + FP8 KV cache, 12288 fits comfortably
-       # (~0.56 GiB KV, ~1.77 GiB left for activations).
-       contextSize: 12288
-       parallel: 2
+       # turn one — raised to 16384 (2026-08-05) so the catalog's advertised
+       # input window (12288) + maxOutputTokens (4096) both fit the window,
+       # after the 12289 > 12288 refusal at 16384's predecessor step. With
+       # ~15.6 GiB weights and the 16-bit KV cache (kvCacheDtype: auto,
+       # NO quantization), 16384 fits: ~1.50 GiB KV, ~1.83 GiB left for
+       # activations at the 0.95 util budget.
+       contextSize: 16384
+       # ⚠️ parallel: 1, NOT 2 (review finding, 2026-08-05). vLLM PRE-ALLOCATES
+       # the KV cache for `--max-num-seqs × --max-model-len` tokens, not one
+       # sequence. At parallel: 2 that is 2 × 16384 = 32768 tokens × 96 KiB (fp16)
+       # = ~3.00 GiB of KV — which consumes most of the ~3.33 GiB headroom
+       # (18.99 GiB budget − ~15.66 GiB weights) and leaves ~0.33 GiB for
+       # activations, a thin margin for a 48-layer MoE and the exact "no memory
+       # for KV blocks" startup abort the --enforce-eager note below fears. At
+       # parallel: 1 the KV prealloc is 1 × 16384 = ~1.50 GiB, leaving the
+       # ~1.83 GiB for activations the comments above assume. One GPU, one
+       # backend (minBackends: 1) — a single concurrent coding request is the
+       # honest capacity here. Re-raise only after the load gate measures real
+       # headroom.
+       parallel: 1
        quantization: awq
        # float16, not bfloat16: AWQ weights are INT4 with FP16 scales; the
        # model's torch_dtype is bfloat16 but vLLM's AWQ path uses float16
@@ -724,27 +753,38 @@ models:
        # openmythos-27b): thinking OFF at the server. Without a configured
        # `--reasoning-parser`, vLLM's Qwen3 default emits the trace as RAW
        # `<think>` tags inside `content` — visible markup in every answer.
-       # Thinking also eats the tight 8K window + output budget at the eager
+       # Thinking also eats the tight 16K window + output budget at the eager
        # mode this model is forced into. Clients opt in per request with
        # `chat_template_kwargs.enable_thinking=true` (vLLM merges request
        # kwargs over --default-chat-template-kwargs).
        reasoning: "off"
        # Fleet default: 0.90 → 17.99 GiB budget (0.90 × 19.99). Weights are
        # ~15.66 GiB, leaving ~2.33 GiB for KV cache + CUDA graphs + activations.
-       gpuMemoryUtilization: 0.90
+       # ⚠️ Raised to 0.95 (2026-08-05): 18.99 GiB budget → ~3.33 GiB for KV +
+       # activations. With the 16-bit KV cache (kvCacheDtype: auto) at 16384
+       # (~1.50 GiB) that leaves ~1.83 GiB for activations — ~0.4 GiB more than
+       # at 0.90, with no quality cost. 0.95 is safe on a dedicated GPU (the
+       # ~1 GiB left is driver/display overhead); re-check at the load gate.
+       gpuMemoryUtilization: 0.95
        # ⚠️ --enforce-eager PRE-DECLARED (review finding): CUDA graphs capture
        # memory is materially larger on this 48-layer / 128-expert MoE than on
-       # the 4B this knob was sized against, and 2.33 GiB headroom is too tight
-       # to gamble on it — the most likely first failure is vLLM aborting at
-       # startup with no memory for KV blocks. Costs: no CUDA-graph speedup for
-       # this model until measured. Remove once the load gate has measured real
-       # headroom and confirmed eager mode is not needed (then re-check quality).
+       # the 4B this knob was sized against, and ~3.33 GiB of headroom (0.95
+       # util) is still too tight to gamble on it — the most likely first
+       # failure is vLLM aborting at startup with no memory for KV blocks.
+       # Costs: no CUDA-graph speedup for this model until measured. Remove
+       # once the load gate has measured real headroom and confirmed eager mode
+       # is not needed (then re-check quality).
        extraArgs:
          - "--enforce-eager"
-       # KV cache: the FLEET DEFAULT fp8_e4m3 applies (defaults.kvCacheDtype)
-       # — no per-model knob here. Halved KV footprint vs the BF16 baseline.
-       # Quality gate: re-run the coding benchmark; if it fails, override with
-       # `kvCacheDtype: auto` (16-bit) — one knob at a time.
+       # KV cache: PER-MODEL OPT-OUT of the fleet default (defaults.kvCacheDtype
+       # = fp8_e4m3). `kvCacheDtype: auto` restores the STANDARD 16-bit
+       # (bf16/fp16) cache — NO quantization — at the cost of ≈2× the KV
+       # footprint vs fp8 (hence the ~1.83 GiB activation headroom note above).
+       # Deliberate, local choice for this coding model (correctness-sensitive,
+       # one lossy layer only: AWQ INT4); the rest of the fleet keeps the fp8
+       # default (ADR-0118). fp8 is the option if the load gate wants the extra
+       # context headroom back — measure quality first, like every knob here.
+       kvCacheDtype: auto
      resources:
        cpuRequest: "2"
        cpuLimit: "8"

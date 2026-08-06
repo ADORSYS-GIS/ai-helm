@@ -337,8 +337,9 @@ wellKnown:
           # cannot produce a trace. `reasoningEffort: low` is harmless (vLLM
           # ignores the OpenAI graded knob; native knob is enable_thinking).
           # Context/output limits come from the catalog (ai-models-info):
-          # contextLength 12288 / maxOutputTokens 4096 — clients must not exceed
-          # the 12288 total window (max_tokens > 12288 → vLLM 400).
+          # contextLength 12288 / maxOutputTokens 4096 — the serving window is
+          # 16384 total, so input + max_tokens must not exceed 16384
+          # (12288 input + 4096 output = 16384; beyond → vLLM 400).
           qwen3-coder-30b-a3b-local:
             options:
               reasoningEffort: low
