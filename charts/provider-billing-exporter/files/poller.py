@@ -198,11 +198,25 @@ def parse_usage(payload: dict) -> tuple[list, dict, bool]:
     return series, invoice_final, True
 
 
+def _api_period(period: str) -> str:
+    """Convert the repo's YYYY-MM period convention to the API's YYYY.MM format.
+
+    DeepInfra's /payment/usage/tokens endpoint expects periods as YYYY.MM (dot),
+    while the repo's metric labels and BILLING_PERIOD env use YYYY-MM (dash).
+    Sending the dash form yields HTTP 400 (validation error).
+    """
+    return period.replace("-", ".")
+
+
 def fetch_usage(api_url: str, token: str, from_period: str, to_period: str | None = None) -> dict:
-    """One GET /payment/usage/tokens call covering [from_period, to_period]."""
-    params = [("from", from_period)]
+    """One GET /payment/usage/tokens call covering [from_period, to_period].
+
+    Periods are given in the repo's YYYY-MM form and converted to the API's
+    YYYY.MM form for the request.
+    """
+    params = [("from", _api_period(from_period))]
     if to_period:
-        params.append(("to", to_period))
+        params.append(("to", _api_period(to_period)))
     url = f"{api_url}/payment/usage/tokens?{urlencode(params)}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req, timeout=30) as resp:
