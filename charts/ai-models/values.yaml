@@ -633,6 +633,25 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # ── Qwen3-4B backend (cluster-local, ADR-0095) ─────────────────────────
+  # The fleet coding model served by the `qwen3-4b` inference entry
+  # (charts/inference/values.yaml). Same cluster-local shape as every other
+  # fleet backend: ClusterIP Service, CiliumNetworkPolicy, no Ingress.
+  # `prefix: /v1` is llama-server's own OpenAI route.
+  qwen3-4b-local:
+    schema: OpenAI
+    prefix: "/v1"
+    fqdn:
+      hostname: qwen3-4b.inference.svc.cluster.local
+      port: 8080
+    securityType: APIKey
+    resourceName: qwen3-4b-local-svc
+    secretRef:
+      name: qwen3-4b-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -849,6 +868,43 @@ models:
   # ⚠️ Cross-repo: ai-helm-values must rename any reference to `z-image-turbo-local`
   # → `z-image-turbo-internal` (x-ai-eg-model header, allowed-model lists, token tables)
   # in the same deployment window, or internal callers 404.
+
+  # ── Qwen3-4B — the fleet's coding model (ADR-0101 load-gated) ────────────
+  #
+  # Serving spec: charts/inference/values.yaml `qwen3-4b`.
+  #
+  # ⚠️ PRICING IS A PLACEHOLDER at the PREDICTED 65 tok/s (see the deployment
+  # plan). Re-derive from the MEASURED gate throughput — never merge on a
+  # guessed number (the 30B rule). Formula:
+  #   €0.2968/h ÷ 3600 ÷ <measured tok/s> × 3.45 × 1.09 = $/1M output,
+  #   split 1 : 0.15 : 0.03.
+  #
+  # Thinking off at the server (`reasoning: "off"`), so `supportedParameters`
+  # is *spStandard (no `reasoning` advertised) — same policy as z-image-turbo.
+  qwen3-4b-local:
+    enabled: true
+    kind: text
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen3-4B (self-hosted)"
+      contextLength: 32768           # = llama.cpp n_ctx_slot (ctx 32768 / parallel 1)
+      maxOutputTokens: 8192
+      supportedParameters: *spStandard
+    pricing:
+      strategy: weighted             # cost-recovery per ADR-0028, basis ADR-0104
+      standard:
+        inputPer1M: 0.72             # placeholder — re-derive from measured tok/s
+        cachedInputPer1M: 0.14       # placeholder — re-derive from measured tok/s
+        outputPer1M: 4.77            # placeholder — re-derive from measured tok/s
+    backends:
+      qwen3-4b-local:
+        ref: qwen3-4b-local
+        priority: 0
+        modelNameOverride: "qwen3-4b"   # = llama-server --alias
+
   z-image-turbo-internal:
     enabled: true
     kind: image
