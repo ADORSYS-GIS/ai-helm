@@ -398,7 +398,20 @@ redactExtproc:
   # container env (a bare number renders as a YAML float/int that Kubernetes'
   # string-typed EnvVar.value rejects — the same class of bug as ADR-0109's
   # `"n": 1` trap and the MAX_BODY_BYTES scientific-notation one).
-  responseHoldBackBytes: 1024
+  #
+  # ⚠️ 2026-08-06 incident: this MUST track governance_redact::holdback::DEFAULT_WINDOW
+  # in the deployed image, not just be "a reasonable-looking number". The
+  # 2026-08-03 fix (lightbridge-governance#47, sha-b3c0a2e) shipped with
+  # DEFAULT_WINDOW still at 1024; a follow-up review pass (main@29ae332,
+  # "window size ... 1024 -> 4096 bytes, exceeds longest Block entity")
+  # raised the CODE's own default to 4096 -- but this chart value is an
+  # explicit env override, so it kept forcing 1024 regardless of which image
+  # was deployed. Re-enabling redactExtproc with only the image bumped, and
+  # NOT this value, would have silently reintroduced the exact bug the image
+  # bump was meant to fix. Verify against governance_redact::holdback::DEFAULT_WINDOW
+  # at whatever commit `redactExtproc.image.tag` (ai-helm-values) points to
+  # before changing either one without the other.
+  responseHoldBackBytes: 4096
   # Per-message ext_proc budget. The CRD default (200ms) is the whole
   # redaction budget per chunk; regex/validator recognizers fit comfortably
   # inside it, an NER pass would not (ADR-0115 — NER is a separate service).
