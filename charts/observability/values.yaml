@@ -195,6 +195,38 @@ children:
         prune: true
         selfHeal: true
 
+  # --- Observability: provider-billing-exporter (ADR-0120) ---
+  # Polls DeepInfra's read-only GET /payment/usage/tokens and exports cumulative
+  # monthly GAUGES to Mimir so the provider-billing dashboard shows the invoice
+  # source of truth (vs the gateway estimate ADR-0058 and Redis limiter spend
+  # ADR-0070). Idempotent by construction (each poll overwrites the absolute
+  # value); the token is an ESO-managed read-only secret, never a metric label.
+  # Its ServiceMonitor is discovered automatically by Alloy; the in-chart
+  # CiliumNetworkPolicy opens egress to api.deepinfra.com:443.
+  - name: provider-billing-exporter
+    valuesFromRepo: true   # values in ai-helm-values (ADR-0056)
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd.argoproj.io/sync-wave: "-1"
+    source:
+      # OCI chart-float (ADR-0055): full chart path in repoURL + chart ".".
+      repoURL: oci://ghcr.io/adorsys-gis/charts/provider-billing-exporter
+      chart: "."
+      targetRevision: ">=0.0.0"
+      helm:
+        releaseName: provider-billing-exporter
+    destination:
+      namespace: observability
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Observability: prometheus-node-exporter ---
   # DaemonSet exposing per-node hardware/OS metrics (node_cpu_*, node_memory_*,
   # node_filesystem_*, node_network_*). Required by the K8s Nodes / Global

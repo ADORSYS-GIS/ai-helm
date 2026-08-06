@@ -1,0 +1,28 @@
+apiVersion: v2
+name: provider-billing-exporter
+description: >-
+  Polls provider read-only billing APIs (DeepInfra GET /payment/usage/tokens)
+  for calendar-month usage and exports cumulative monthly gauges to Mimir so
+  Grafana can show PROVIDER-BILLED cost (the invoice source of truth) and
+  reconcile it against the Envoy AI Gateway's estimated cost and the Redis
+  limiter counters. Idempotent by construction: absolute cumulative gauges are
+  overwritten per poll, so restarts can never double count. Credentials come
+  from an ESO-managed Secret and are never exposed as metric labels. See
+  docs/playbooks/provider-billing-reconciliation.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+annotations:
+  # Real config (token secret, billing periods) lives in ai-helm-values
+  # (ADR-0056/0057), so chart defaults render a no-op. CI lints + renders the
+  # ci/*-values.yaml fixtures instead of the empty defaults. See CLAUDE.md
+  # "render-only LEAF charts".
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
+keywords:
+  - billing
+  - cost
+  - deepinfra
+  - observability
+  - prometheus
+maintainers:
+  - name: ai-helm
