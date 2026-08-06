@@ -1,6 +1,6 @@
 # Public workspace URLs in Coder (wildcard subdomain apps)
 
-**Status:** Implemented · **Last updated:** 2026-07-31
+**Status:** Implemented · **ADR:** [ADR-0121](../adr/0121-coder-workspace-url-exposure-strategy.md) · **Last updated:** 2026-08-05
 
 Coder workspaces are reachable from the public internet on wildcard subdomains,
 so an app a developer runs inside a workspace (a Vite dev server, a notebook, an
@@ -552,8 +552,54 @@ need no wildcard cert):
 Path-based apps are a weaker security posture (workspace apps share the dashboard
 origin), which is why subdomain apps are the default here.
 
+## LibreChat Coder Agent (`coder_mcp`) Integration Contract
+
+When the LibreChat Coder agent provisions or interacts with a workspace application (e.g., scaffolding a Next.js / tRPC app on port 3000), it must ensure the resulting workspace URL is reachable by human users.
+
+### Step-by-Step Publishing Lifecycle
+
+1. **URL Synthesis**:
+   Construct the flat wildcard subdomain URL:
+   `https://<port>--<agent>--<workspace>--<user>.coder-ws.camer.digital`
+
+2. **Programmatic Port Publishing**:
+   To allow external access without forcing Keycloak authentication redirects (`303` / `404`), send a `POST` request to the Coder REST API:
+   ```http
+   POST /api/v2/workspaces/{workspace_id}/port-share HTTP/1.1
+   Host: coder.ai.camer.digital
+   Coder-Session-Token: <agent_session_token>
+   Content-Type: application/json
+
+   {
+     "agent_name": "main",
+     "port": 3000,
+     "share_level": "public",
+     "protocol": "http",
+     "workspace_id": "<workspace_id>"
+   }
+   ```
+   *Note*: `share_level` can be set to `"public"` for instant browser previews or `"authenticated"` if Keycloak SSO is required.
+
+3. **URL Verification**:
+   Verify that the URL returns `HTTP 200 OK` (or appropriate app status) rather than `303 See Other` (`auth-redirect`).
+
+4. **Revocation**:
+   When the demo or preview session ends, revoke public access by issuing a `DELETE` request to `/api/v2/workspaces/{workspace_id}/port-share` with a body identifying the share:
+   ```http
+   DELETE /api/v2/workspaces/{workspace_id}/port-share HTTP/1.1
+   Host: coder.ai.camer.digital
+   Coder-Session-Token: <agent_session_token>
+   Content-Type: application/json
+
+   {
+     "agent_name": "main",
+     "port": 3000
+   }
+   ```
+
 ## References
 
+- [ADR-0121: Coder Workspace URL Exposure Strategy](../adr/0121-coder-workspace-url-exposure-strategy.md)
 - ADR-0019 — App-of-Apps orchestrator pattern (`charts/coder`)
 - ADR-0083 — Coder re-introduction
 - [`coder-platform-integration.md`](coder-platform-integration.md) — the wider Coder integration
