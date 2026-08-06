@@ -644,159 +644,40 @@ defaults:
 models:
 
    # ─────────────────────────────────────────────────────────────────────────
-   # Qwen3-Coder-30B-A3B (MoE, AWQ INT4, vLLM) — CODING MODEL, takes the GPU
-   # fleet card that used to run qwen3-vl-4b-thinking.
+   # Qwen3-4B (Q6_K GGUF, llama.cpp) — the fleet's coding model.
    #
-   # QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ: 30B MoE (128 experts, 8 active),
-   # AWQ INT4 safetensors, ~16.8 GB on disk (6 shards). Apache-2.0.
-   # Base model: Qwen/Qwen3-Coder-30B-A3B-Instruct (official Qwen, 1.5M downloads).
+   # Full deployment plan + sizing:
+   #   inference-ops docs/benchmarks/2026-08-06-qwen3-4b-q6k-rtx4000-ada-deployment.md
    #
-   # ⚠️ NOT LOAD-GATED, and NOT FEDERATED (ADR-0101). `enabled: true` here only
-   # deploys it onto a GPU so it CAN be measured — federating it into
-   # charts/ai-models/values.yaml is a separate step, after someone has
-   # actually sent it a coding request and measured tok/s, VRAM and quality.
+   # ⚠️ NOT FEDERATED until the load gate measures it (ADR-0101 — a model must
+   # be measured before any user can route to it). Predictions are in the plan
+   # above; the gate's own report is separate and immuable.
    #
-   # ⚠️ `gpuMemoryUtilization: 0.95` caps vLLM's budget at 18.99 GiB
-   # (0.95 × 19.99). Weights are ~15.66 GiB, leaving ~3.33 GiB for KV cache +
-   # CUDA graphs + activations. FP8 KV cache (defaults.kvCacheDtype) halves the
-   # KV footprint (~0.38 GiB at 8K). CUDA graphs capture memory is larger on
-   # this 48-layer / 128-expert MoE than on dense models, so `--enforce-eager`
-   # is PRE-DECLARED in serving.extraArgs below (review finding) — CUDA graphs
-   # off until the load gate measures real headroom, then re-check.
-   # Context raised to 16384 (2026-08-05): at 12288 the catalog's own
-   # maxOutputTokens (4096) is additive on top of the input window, so a
-   # 12288-token prompt + 4096 output = 16384 > 12288 → vLLM refused — the
-   # same failure as the 8193 > 8192 refusal, one step higher. 16384 is the
-   # smallest window where the advertised contextLength (12288) + maxOutputTokens
-   # (4096) fit, so a client honouring the catalog can never exceed it. With the
-   # 16-bit KV cache (kvCacheDtype: auto — NO quantization) and `parallel: 1`
-   # (see below), 16384 needs ~1.50 GiB KV (≈2× the fp8 footprint), leaving
-   # ~1.83 GiB of the ~3.33 GiB budget for activations — still comfortable,
-   # but the non-fp8 KV footprint must be re-verified at the load gate.
-   #
-   # ⚠️ MoE architecture: 128 experts, 8 active per token. vLLM supports
-   # qwen3_moe natively. AWQ Marlin kernels for the expert linear layers;
-   # gate/router layers kept in FP16 — baked into the model's HF config
-   # (quantization_config.modules_to_not_convert: ['.mlp.gate']), not wired
-   # by the chart. vLLM reads it automatically from config.json.
-   #
-   # ⚠️ RISK (review finding): lossy layers on a model whose entire value is
-   # correctness. (1) AWQ INT4 — the pinned quant's own card warns "significant
-   # loss under 4-bit quantization, use with caution". (2) The fleet default
-   # FP8 KV cache (defaults.kvCacheDtype) with uncalibrated scales — this model
-   # OPPTS OUT with `serving.kvCacheDtype: auto` below (16-bit KV cache, NO
-   # quantization), which removes the fp8-KV quality risk; only the AWQ-INT4
-   # weight loss remains. The load gate must still measure quality (not just
-   # tok/s and VRAM) BEFORE this model is federated — see ADR-0118.
-   qwen3-coder-30b-a3b:
+   # contextSize 32768 / parallel 1: every request gets the FULL native
+   # window (the per-request window is the load-bearing number). parallel: 2 @
+   # ctx 65536 (two full-window slots) is a load-gate comparison, not the
+   # initial setting — it implies rope scaling.
+   qwen3-4b:
      enabled: true
-     engine: vllm
+     engine: llamacpp
      weights:
-       hfRepo: QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ
-       # Pinned via `curl -s https://huggingface.co/api/models/QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ | jq -r .sha`
-       revision: c58857a7f41c0920f73d1b56678640f9c02017d7
-       # ⚠️ PROVENANCE (review finding, 2026-08-05): this repo's config.json
-       # differs from the official base model's — `intermediate_size` 5472 vs 6144,
-       # `max_window_layers` 28 vs 48, `use_qk_norm: true`, and `name_or_path:
-       # tclf90/Qwen3-Coder-30B-A3B-Instruct-AWQ` (a third-party quant, republished
-       # by QuantTrio). The SHA pin makes the bytes reproducible, and vLLM reads
-       # this config against these weights so it is self-consistent — but confirm
-       # at the load gate that the AWQ was quantized from the exact official
-       # checkpoint before trusting it with real traffic.
-       # No `include`: vLLM needs the whole repo (6 safetensors shards + config
-       # + tokenizer + tool parser), not a single file.
-       #
-       # 16.8 GB on disk; staging in .cache peaks at ~2x = ~33.6 GB. 35 GiB
-       # gives margin above that. Longhorn grows a PVC in place but never
-       # shrinks one, so err high.
-       sizeGi: 35
-       # 6 shards of ~2.8 GB each; with 8-way fan-out, peak memory could hit
-       # ~22 GB. Cap fan-out and raise the margin (same lesson as the
-       # Z-Image-Turbo incident #802).
-       seedMaxWorkers: 2
-       seedMemoryLimit: 10Gi
+       hfRepo: Qwen/Qwen3-4B-GGUF
+       # Pinned via `curl -s https://huggingface.co/api/models/Qwen/Qwen3-4B-GGUF | jq -r .sha`
+       revision: bc640142c66e1fdd12af0bd68f40445458f3869b
+       include: "Qwen3-4B-Q6_K.gguf"
+       sizeGi: 10
      serving:
-       # Conservative start (model native: 262144). For agentic coding through
-       # opencode, system prompt + tool schemas + file context can exceed 8K on
-       # turn one — raised to 16384 (2026-08-05) so the catalog's advertised
-       # input window (12288) + maxOutputTokens (4096) both fit the window,
-       # after the 12289 > 12288 refusal at 16384's predecessor step. With
-       # ~15.6 GiB weights and the 16-bit KV cache (kvCacheDtype: auto,
-       # NO quantization), 16384 fits: ~1.50 GiB KV, ~1.83 GiB left for
-       # activations at the 0.95 util budget.
-       contextSize: 16384
-       # ⚠️ parallel: 1, NOT 2 (review finding, 2026-08-05). vLLM PRE-ALLOCATES
-       # the KV cache for `--max-num-seqs × --max-model-len` tokens, not one
-       # sequence. At parallel: 2 that is 2 × 16384 = 32768 tokens × 96 KiB (fp16)
-       # = ~3.00 GiB of KV — which consumes most of the ~3.33 GiB headroom
-       # (18.99 GiB budget − ~15.66 GiB weights) and leaves ~0.33 GiB for
-       # activations, a thin margin for a 48-layer MoE and the exact "no memory
-       # for KV blocks" startup abort the --enforce-eager note below fears. At
-       # parallel: 1 the KV prealloc is 1 × 16384 = ~1.50 GiB, leaving the
-       # ~1.83 GiB for activations the comments above assume. One GPU, one
-       # backend (minBackends: 1) — a single concurrent coding request is the
-       # honest capacity here. Re-raise only after the load gate measures real
-       # headroom.
+       contextSize: 32768
        parallel: 1
-       quantization: awq
-       # float16, not bfloat16: AWQ weights are INT4 with FP16 scales; the
-       # model's torch_dtype is bfloat16 but vLLM's AWQ path uses float16
-       # for non-quantized layers (embedding, lm_head, gate/router). This
-       # is the repo's AWQ convention — same as qwen3-8b-fast.
-       dtype: float16
-       # ⚠️ qwen3_xml, NOT hermes. Qwen3-Coder uses XML function-call format
-       # (the model ships its own qwen3coder_tool_parser.py). hermes is correct
-       # for Qwen3 base models but produces plain-text tool calls on Coder.
-       # Ref: https://docs.vllm.ai/en/stable/features/tool_calling/
-       toolCallParser: qwen3_xml
-       # Fleet convention for Qwen3 text models (same as qwen3-8b-fast,
-       # openmythos-27b): thinking OFF at the server. Without a configured
-       # `--reasoning-parser`, vLLM's Qwen3 default emits the trace as RAW
-       # `<think>` tags inside `content` — visible markup in every answer.
-       # Thinking also eats the tight 16K window + output budget at the eager
-       # mode this model is forced into. Clients opt in per request with
-       # `chat_template_kwargs.enable_thinking=true` (vLLM merges request
-       # kwargs over --default-chat-template-kwargs).
+       # Fleet convention for Qwen3 text models (same as openmythos-27b,
+       # qwen3-8b-fast): thinking OFF at the server. Clients opt in per
+       # request; the catalog does NOT advertise reasoning.
        reasoning: "off"
-       # Fleet default: 0.90 → 17.99 GiB budget (0.90 × 19.99). Weights are
-       # ~15.66 GiB, leaving ~2.33 GiB for KV cache + CUDA graphs + activations.
-       # ⚠️ Raised to 0.95 (2026-08-05): 18.99 GiB budget → ~3.33 GiB for KV +
-       # activations. With the 16-bit KV cache (kvCacheDtype: auto) at 16384
-       # (~1.50 GiB) that leaves ~1.83 GiB for activations — ~0.4 GiB more than
-       # at 0.90, with no quality cost. 0.95 is safe on a dedicated GPU (the
-       # ~1 GiB left is driver/display overhead); re-check at the load gate.
-       gpuMemoryUtilization: 0.95
-       # ⚠️ --enforce-eager PRE-DECLARED (review finding): CUDA graphs capture
-       # memory is materially larger on this 48-layer / 128-expert MoE than on
-       # the 4B this knob was sized against, and ~3.33 GiB of headroom (0.95
-       # util) is still too tight to gamble on it — the most likely first
-       # failure is vLLM aborting at startup with no memory for KV blocks.
-       # Costs: no CUDA-graph speedup for this model until measured. Remove
-       # once the load gate has measured real headroom and confirmed eager mode
-       # is not needed (then re-check quality).
-       extraArgs:
-         - "--enforce-eager"
-       # KV cache: PER-MODEL OPT-OUT of the fleet default (defaults.kvCacheDtype
-       # = fp8_e4m3). `kvCacheDtype: auto` restores the STANDARD 16-bit
-       # (bf16/fp16) cache — NO quantization — at the cost of ≈2× the KV
-       # footprint vs fp8 (hence the ~1.83 GiB activation headroom note above).
-       # Deliberate, local choice for this coding model (correctness-sensitive,
-       # one lossy layer only: AWQ INT4); the rest of the fleet keeps the fp8
-       # default (ADR-0118). fp8 is the option if the load gate wants the extra
-       # context headroom back — measure quality first, like every knob here.
-       kvCacheDtype: auto
      resources:
        cpuRequest: "2"
        cpuLimit: "8"
-       # RAM, not VRAM. 17 Gi was too tight: vLLM stages the 16.8 GB of AWQ
-       # weights in RAM while loading (and the 30B/128-expert MoE engine init
-       # holds sizeable CPU-side structures on top), so the load OOM-killed
-       # before the port ever opened — pod never Ready, killed at the 30-min
-       # startup budget. Aligned with z-image-turbo (32 Gi), the fleet
-       # precedent for similarly-sized weights. Re-check after the load gate
-       # measures real headroom.
-       memoryRequest: 12Gi
-       memoryLimit: 32Gi
+       memoryRequest: 4Gi
+       memoryLimit: 16Gi
 
    # ─────────────────────────────────────────────────────────────────────────
    # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102/0103/0105).
@@ -920,8 +801,9 @@ models:
    # OpenMythos-27B (Q4_K GGUF, llama.cpp) — DISABLED.
    # Was the first model on the Hetzner GPU fleet, load-gated at 15.05 tok/s
    # decode / 625 tok/s prefill / 16748 MiB and served to users. Disabled because
-   # the fleet has two cards and they now hold qwen3-coder-30b-a3b and
-   # z-image-turbo. The pinned SHA still resolves, so re-enabling re-seeds
+   # the fleet has two cards and they now hold z-image-turbo (and the coding
+   # model that briefly took the other card was retired 2026-08-06 — the card is
+   # free). The pinned SHA still resolves, so re-enabling re-seeds
    # byte-identical weights. Report: inference-ops
    # docs/benchmarks/2026-07-26-openmythos-27b-q4k-rtx4000-ada.md
    # ─────────────────────────────────────────────────────────────────────────
@@ -946,7 +828,8 @@ models:
    # ─────────────────────────────────────────────────────────────────────────
    # Qwen3-8B-AWQ (vLLM + LMCache) — DISABLED.
    # Was the SPEED tier on the second GPU. Disabled because the fleet has two
-   # cards and they now hold qwen3-coder-30b-a3b and z-image-turbo. Never
+   # cards and they now hold z-image-turbo (the coding model that briefly took
+   # the other card was retired 2026-08-06 — the card is free). Never
    # load-gated, so it was never federated. Re-enable to roll back.
    # ─────────────────────────────────────────────────────────────────────────
    qwen3-8b-fast:
