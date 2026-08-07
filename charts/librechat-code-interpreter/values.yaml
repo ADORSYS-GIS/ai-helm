@@ -94,6 +94,14 @@ api:
         secretKeyRef:
           name: codeapi-secrets
           key: codeapi-jwt-public-key
+    # redis-ha is TLS-only (port 0 / tls-port 6379) — a plaintext client gets
+    # "connection reset by peer". This service's own Redis TLS support
+    # (service/src/queue.ts et al.) is `REDIS_TLS=true` → tls.rejectUnauthorized:
+    # false — encrypted but NOT CA-verified (no REDIS_CA/NODE_EXTRA_CA_CERTS
+    # equivalent upstream, unlike librechat-app's rediss://+REDIS_CA). Accepted
+    # for now: redis-ha is in-cluster only, no public exposure.
+    - name: REDIS_TLS
+      value: "true"
     - name: CODEAPI_JWT_KID
       value: lc-codeapi-2026-05 # must match librechat-app's CODEAPI_JWT_KID
 
@@ -206,7 +214,11 @@ workerSandbox:
           cpu: 2000m
           memory: 4Gi
 
-  extraEnv: []
+  # service-worker connects to redis-ha directly — see the REDIS_TLS note on
+  # api.extraEnv above (rejectUnauthorized:false, no CA verification).
+  extraEnv:
+    - name: REDIS_TLS
+      value: "true"
   sandboxExtraEnv: []
 
 # =============================================================================
@@ -250,6 +262,11 @@ fileServer:
     useSSL: true
     useIrsa: false
 
+  # See the REDIS_TLS note on api.extraEnv above.
+  extraEnv:
+    - name: REDIS_TLS
+      value: "true"
+
 # =============================================================================
 # TOOL CALL SERVER (programmatic tool calling)
 # =============================================================================
@@ -278,6 +295,11 @@ toolCallServer:
     requestTimeout: 300000
     sessionExpiry: 600
 
+  # See the REDIS_TLS note on api.extraEnv above.
+  extraEnv:
+    - name: REDIS_TLS
+      value: "true"
+
 # =============================================================================
 # EGRESS GATEWAY (sandbox-runner's only outbound capability endpoint)
 # =============================================================================
@@ -304,6 +326,11 @@ egressGateway:
 
   config:
     maxToolCallBytes: 1048576
+
+  # See the REDIS_TLS note on api.extraEnv above.
+  extraEnv:
+    - name: REDIS_TLS
+      value: "true"
 
 # =============================================================================
 # REDIS — always external (repo convention: reuse the shared redis-ha,
