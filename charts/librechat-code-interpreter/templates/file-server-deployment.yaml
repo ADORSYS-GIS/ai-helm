@@ -38,18 +38,25 @@ spec:
       {{- if or .Values.fileServer.serviceAccount.create .Values.fileServer.serviceAccount.name }}
       serviceAccountName: {{ .Values.fileServer.serviceAccount.name | default (printf "%s-file-server" (include "codeapi.fullname" .)) }}
       {{- end }}
+      securityContext:
+        {{- include "codeapi.hardenedPodSecurityContext" . | nindent 8 }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: file-server
+          securityContext:
+            {{- include "codeapi.hardenedContainerSecurityContext" . | nindent 12 }}
           image: "{{ .Values.fileServer.image.repository }}:{{ .Values.fileServer.image.tag }}"
           imagePullPolicy: {{ .Values.fileServer.image.pullPolicy }}
           ports:
             - name: http
               containerPort: {{ .Values.fileServer.service.port }}
               protocol: TCP
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           env:
 {{ include "codeapi.otel.env" (dict "root" . "serviceName" "aiml-codeapi-file-server") | nindent 12 }}
             {{- if $useS3 }}
@@ -135,6 +142,9 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.fileServer.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

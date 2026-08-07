@@ -25,18 +25,25 @@ spec:
       labels:
         {{- include "codeapi.api.selectorLabels" . | nindent 8 }}
     spec:
+      securityContext:
+        {{- include "codeapi.hardenedPodSecurityContext" . | nindent 8 }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: api
+          securityContext:
+            {{- include "codeapi.hardenedContainerSecurityContext" . | nindent 12 }}
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           ports:
             - name: http
               containerPort: {{ .Values.api.service.port }}
               protocol: TCP
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           env:
 {{ include "codeapi.otel.env" (dict "root" . "serviceName" "aiml-codeapi-api") | nindent 12 }}
             - name: CODEAPI_HARDENED_SANDBOX_MODE
@@ -87,6 +94,9 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

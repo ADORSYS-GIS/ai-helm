@@ -20,18 +20,25 @@ spec:
       labels:
         {{- include "codeapi.toolCallServer.selectorLabels" . | nindent 8 }}
     spec:
+      securityContext:
+        {{- include "codeapi.hardenedPodSecurityContext" . | nindent 8 }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: tool-call-server
+          securityContext:
+            {{- include "codeapi.hardenedContainerSecurityContext" . | nindent 12 }}
           image: "{{ .Values.toolCallServer.image.repository }}:{{ .Values.toolCallServer.image.tag }}"
           imagePullPolicy: {{ .Values.toolCallServer.image.pullPolicy }}
           ports:
             - name: http
               containerPort: {{ .Values.toolCallServer.service.port }}
               protocol: TCP
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           env:
 {{ include "codeapi.otel.env" (dict "root" . "serviceName" "aiml-codeapi-tool-call-server") | nindent 12 }}
             # Redis connection
@@ -70,6 +77,9 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.toolCallServer.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

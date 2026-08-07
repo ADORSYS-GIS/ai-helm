@@ -267,6 +267,27 @@ OpenTelemetry environment shared by CodeAPI components.
 {{- end }}
 
 {{/*
+ai-helm addition (not upstream): standard hardened pod/container
+securityContext for the stateless Node components (api, file-server,
+tool-call-server, egress-gateway, service-worker) — matches this repo's usual
+KSV-0118 profile. NOT used on sandbox-runner, which genuinely needs the
+elevated capabilities NsJail requires (see .trivyignore + ADR-0122).
+*/}}
+{{- define "codeapi.hardenedPodSecurityContext" -}}
+runAsNonRoot: true
+seccompProfile:
+  type: RuntimeDefault
+{{- end }}
+
+{{- define "codeapi.hardenedContainerSecurityContext" -}}
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: true
+capabilities:
+  drop:
+    - ALL
+{{- end }}
+
+{{/*
 OpenTelemetry collector egress. Set networkPolicy.otel selectors to match
 your collector's namespace and pod labels.
 */}}

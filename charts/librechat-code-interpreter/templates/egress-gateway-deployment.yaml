@@ -20,18 +20,25 @@ spec:
       labels:
         {{- include "codeapi.egressGateway.selectorLabels" . | nindent 8 }}
     spec:
+      securityContext:
+        {{- include "codeapi.hardenedPodSecurityContext" . | nindent 8 }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: egress-gateway
+          securityContext:
+            {{- include "codeapi.hardenedContainerSecurityContext" . | nindent 12 }}
           image: "{{ .Values.egressGateway.image.repository }}:{{ .Values.egressGateway.image.tag }}"
           imagePullPolicy: {{ .Values.egressGateway.image.pullPolicy }}
           ports:
             - name: http
               containerPort: {{ .Values.egressGateway.service.port }}
               protocol: TCP
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           env:
 {{ include "codeapi.otel.env" (dict "root" . "serviceName" "aiml-codeapi-egress-gateway") | nindent 12 }}
             - name: SERVICE_NAME
@@ -83,6 +90,9 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.egressGateway.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

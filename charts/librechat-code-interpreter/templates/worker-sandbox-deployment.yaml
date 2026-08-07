@@ -110,25 +110,36 @@ spec:
       {{- if or .Values.workerSandbox.serviceAccount.create .Values.workerSandbox.serviceAccount.name }}
       serviceAccountName: {{ $serviceWorkerServiceAccount }}
       {{- end }}
+      securityContext:
+        {{- include "codeapi.hardenedPodSecurityContext" . | nindent 8 }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
         - name: wait-for-redis
+          securityContext:
+            {{- include "codeapi.hardenedContainerSecurityContext" . | nindent 12 }}
           image: busybox:1.36.1
           command: ['sh', '-c', 'until nc -z {{ include "codeapi.redis.host" . }} {{ include "codeapi.redis.port" . }}; do echo waiting for redis; sleep 2; done']
         - name: wait-for-sandbox-runner
+          securityContext:
+            {{- include "codeapi.hardenedContainerSecurityContext" . | nindent 12 }}
           image: busybox:1.36.1
           command: ['sh', '-c', 'until nc -z {{ include "codeapi.fullname" . }}-sandbox-runner {{ .Values.workerSandbox.sandbox.port }}; do echo waiting for sandbox-runner; sleep 2; done']
       containers:
         - name: service-worker
+          securityContext:
+            {{- include "codeapi.hardenedContainerSecurityContext" . | nindent 12 }}
           image: "{{ .Values.workerSandbox.workerImage.repository }}:{{ .Values.workerSandbox.workerImage.tag }}"
           imagePullPolicy: {{ .Values.workerSandbox.workerImage.pullPolicy }}
           ports:
             - name: health
               containerPort: {{ .Values.workerSandbox.healthPort }}
               protocol: TCP
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           env:
 {{ include "codeapi.otel.env" (dict "root" . "serviceName" "aiml-codeapi-service-worker") | nindent 12 }}
             - name: CODEAPI_HARDENED_SANDBOX_MODE
@@ -193,6 +204,9 @@ spec:
             limits:
               {{- toYaml . | nindent 14 }}
             {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
       {{- with $serviceWorkerNodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
