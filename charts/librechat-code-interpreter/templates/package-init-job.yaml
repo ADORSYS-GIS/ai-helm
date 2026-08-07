@@ -32,6 +32,8 @@ spec:
         {{- include "codeapi.labels" . | nindent 8 }}
         app.kubernetes.io/component: package-init
     spec:
+      securityContext:
+        {{- include "codeapi.hardenedPodSecurityContext" . | nindent 8 }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -39,6 +41,16 @@ spec:
       restartPolicy: Never
       containers:
         - name: package-init
+          # No readOnlyRootFilesystem: this container compiles Python from
+          # source and installs Node/Bun/Bash into system paths (see
+          # api/README.md "Quick Start" step 4) — needs a writable rootfs
+          # beyond /pkgs, same class of container as the seed Jobs already
+          # exempted in .trivyignore.yaml (KSV-0014).
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           image: "{{ .Values.workerSandbox.packages.initJob.image.repository }}:{{ .Values.workerSandbox.packages.initJob.image.tag }}"
           imagePullPolicy: {{ .Values.workerSandbox.packages.initJob.image.pullPolicy }}
           env:

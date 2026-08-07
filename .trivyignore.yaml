@@ -61,12 +61,25 @@ misconfigurations:
     #  - keycloak-baseline `main` (keycloak-config-cli CronJob) + keycloak-backup
     #    `exporter` (pg_dump CronJob) — ephemeral Jobs writing scratch to rootfs.
     #  - lmcache `main` — the LMCache server Deployment.
+    # librechat-code-interpreter (ADR-0122):
+    #  - `sandbox-runner` — NsJail writes its per-job workspace/scratch dirs to
+    #    the container rootfs (same reason KSV-0118/KSV-0005 are exempt below).
+    #  - `package-init` — a Helm pre-install/pre-upgrade hook Job that compiles
+    #    Python from source and installs Node/Bun/Bash into system paths
+    #    (api/README.md "Quick Start" step 4); same class as the `seed`
+    #    weight-download Jobs above (pip installs into /usr/local). Every OTHER
+    #    container in this chart (api, file-server, tool-call-server,
+    #    egress-gateway, service-worker, both busybox init containers) IS
+    #    hardened with readOnlyRootFilesystem, not exempt.
     statement: >-
       Containers that require a writable rootfs at runtime (GPU compile/KV cache,
       Caddy autosave, pip install, neo4j/keycloak config render, winston logs);
       KSV-0118 is hardened for all in-scope workloads, only the read-only rootfs
       is exempt. The keycloak/lmcache entries are pre-existing hardening debt
-      tracked as a follow-up.
+      tracked as a follow-up. librechat-code-interpreter's sandbox-runner
+      (NsJail workspace) and package-init (source compilation/system installs)
+      are the same class as the seed Jobs above; every other container in that
+      chart is hardened.
     paths:
       - "llm-d.yaml"
       - "model-serving-deepseek-r1-1-5b.yaml"
@@ -81,6 +94,7 @@ misconfigurations:
       - "keycloak-baseline.yaml"
       - "keycloak-backup.yaml"
       - "lmcache.yaml"
+      - "librechat-code-interpreter.yaml"
   - id: KSV-0118
     # KSV-0118 "default security context / allows root". Every OTHER workload in
     # this repo is HARDENED, not ignored — the two categories below cannot be:
@@ -114,12 +128,22 @@ misconfigurations:
     #    hardening deferred to a follow-up — see PR):
     #    - keycloak-baseline — the keycloak-config-cli CronJob container + pod.
     #    - lmcache — the LMCache server Deployment container + pod.
+    #
+    # 4. Capability-limited (librechat-code-interpreter's sandbox-runner,
+    #    ADR-0122): NsJail's namespace/mount/chroot setup requires SYS_ADMIN +
+    #    7 more added capabilities (see KSV-0005 below and
+    #    charts/librechat-code-interpreter/templates/worker-sandbox-deployment.yaml),
+    #    which is itself a non-default securityContext this check flags.
+    #    Every OTHER container in that chart IS hardened, not exempt.
     statement: >-
       llm-d EPP has no subchart securityContext hook; the Caddy sidecar on the
       three huggingfaceserver model charts ships an fcap binary that cannot exec
       under any hardened securityContext (it is required there because
       huggingfaceserver ignores VLLM_API_KEY; the vllm-openai charts dropped it);
-      keycloak-baseline + lmcache are pre-existing hardening debt. All tracked.
+      keycloak-baseline + lmcache are pre-existing hardening debt (all tracked);
+      librechat-code-interpreter's sandbox-runner needs NsJail's required
+      capabilities (SYS_ADMIN et al.), itself a non-default securityContext —
+      every other container in that chart is hardened.
     paths:
       - "llm-d.yaml"
       - "keycloak-baseline.yaml"
@@ -127,3 +151,19 @@ misconfigurations:
       - "model-serving-deepseek-r1-1-5b.yaml"
       - "model-serving-ministral-3b.yaml"
       - "model-serving-qwen3-8b.yaml"
+      - "librechat-code-interpreter.yaml"
+
+  - id: KSV-0005
+    # KSV-0005 "SYS_ADMIN capability" — librechat-code-interpreter's
+    # sandbox-runner container ONLY (ADR-0122). NsJail's namespace/mount setup
+    # genuinely requires SYS_ADMIN (see
+    # charts/librechat-code-interpreter/templates/worker-sandbox-deployment.yaml
+    # for the full capability list, and the chart's README for the
+    # kvmEnabled:true microVM alternative that wouldn't need it — deferred,
+    # no confirmed /dev/kvm on home-remote worker nodes). Nothing else in this
+    # repo adds SYS_ADMIN.
+    statement: >-
+      NsJail (the sandbox isolation mechanism when kvmEnabled:false) requires
+      SYS_ADMIN for its namespace/mount/chroot setup — sandbox-runner only.
+    paths:
+      - "librechat-code-interpreter.yaml"
