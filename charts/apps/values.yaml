@@ -928,6 +928,18 @@ applications:
       argocd-image-updater.argoproj.io/sync.signature-type: cosign
       argocd-image-updater.argoproj.io/sync.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/sync.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-governance/\.github/workflows/docker\.yml@.*$
+      # Write-back: git, to ai-helm-values, same shape as converse-ui /
+      # lightbridge-code-intelligence (ADR-0055). Without this the detected
+      # tag has nowhere to persist -- image-updater's default write-back
+      # method is `argocd` (patches the Application's own parameter
+      # overrides, not this repo), which is not what the values-repo file's
+      # own comment promises and silently diverges from GitOps. Caught in
+      # #940's review before this ever shipped a detection-only no-op.
+      argocd-image-updater.argoproj.io/write-back-method: git
+      argocd-image-updater.argoproj.io/git-repository: https://github.com/adorsys-gis/ai-helm-values.git
+      argocd-image-updater.argoproj.io/git-branch: main
+      argocd-image-updater.argoproj.io/write-back-target: helmvalues:/environments/prod/values/lightbridge-governance.yaml
+      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys-gis
     depsOverlay: environments/prod/deps/lightbridge-governance
     chart: lightbridge-governance
     destination:
