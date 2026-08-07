@@ -1,0 +1,102 @@
+{{/*
+API Deployment
+This creates the API pods that handle HTTP requests.
+It doesn't run workers - just submits jobs to the queue.
+*/}}
+{{- if and .Values.api.enabled (not .Values.egressGateway.enabled) }}
+{{- fail "api.enabled requires egressGateway.enabled=true because sandbox-originated file and PTC traffic must not bypass the egress gateway" }}
+{{- end }}
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "codeapi.fullname" . }}-api
+  labels:
+    {{- include "codeapi.api.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "codeapi.api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "codeapi.api.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.service.port }}
+              protocol: TCP
+          env:
+{{ include "codeapi.otel.env" (dict "root" . "serviceName" "aiml-codeapi-api") | nindent 12 }}
+            - name: CODEAPI_HARDENED_SANDBOX_MODE
+              value: {{ .Values.hardenedSandboxMode | quote }}
+            # Redis connection
+            - name: REDIS_HOST
+              value: {{ include "codeapi.redis.host" . }}
+            - name: REDIS_PORT
+              value: {{ include "codeapi.redis.port" . | quote }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "codeapi.fullname" . }}-secrets
+                  key: redis-password
+            # Service URLs
+            - name: FILE_SERVER_URL
+              value: "http://{{ include "codeapi.fullname" . }}-file-server:{{ .Values.fileServer.service.port }}"
+            - name: TOOL_CALL_SERVER_URL
+              value: "http://{{ include "codeapi.fullname" . }}-tool-call-server:{{ .Values.toolCallServer.service.port }}"
+            - name: EGRESS_GATEWAY_URL
+              value: "http://{{ include "codeapi.fullname" . }}-egress-gateway:{{ .Values.egressGateway.service.port }}"
+            - name: CODEAPI_INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "codeapi.fullname" . }}-secrets
+                  key: codeapi-internal-service-token
+            - name: EGRESS_GRANT_TTL_SECONDS
+              value: {{ .Values.egressGrant.ttlSeconds | quote }}
+            # Server config
+            - name: SERVICE_PORT
+              value: {{ .Values.api.service.port | quote }}
+            - name: CODEAPI_HTTP_JSON_LIMIT
+              value: {{ .Values.api.httpJsonLimit | quote }}
+            {{- with .Values.api.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

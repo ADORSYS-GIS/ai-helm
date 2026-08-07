@@ -1,0 +1,400 @@
+# values.yaml — ai-helm defaults for the vendored codeapi chart.
+#
+# Structural/deployment defaults only (ADR-0056 split) — this file mirrors
+# upstream helm/codeapi/values.yaml with the changes ADR-0122 made:
+#   - No bundled Redis/MinIO: always point at the shared redis-ha and the
+#     shared Hetzner Object Storage bucket (repo convention — see CLAUDE.md
+#     "Don't re-add a redis chart here"). The `dependencies:` block Chart.yaml
+#     would otherwise carry (bitnami/redis, bitnami/minio) has been dropped
+#     entirely rather than declared-and-disabled.
+#   - workerSandbox.kvmEnabled: false — no /dev/kvm confirmed on home-remote
+#     worker nodes, so the sandbox runs the NsJail/chroot fallback (heavier
+#     Linux capabilities; needs the `privileged` Pod Security Standard, hence
+#     the dedicated `librechat-sandbox` namespace — see ADR-0122). Flip to
+#     true + re-derive resources once KVM support is confirmed on a node pool.
+#   - workerSandbox.packages.source: pvc (kvmEnabled:false forces this — the
+#     baked block-root image path requires KVM) on a ReadWriteOnce PVC.
+#     home-remote's general worker pool has no RWX-capable storage class
+#     (Longhorn is GPU-node-scoped only, ADR-0092; hcloud-volumes is RWO-only)
+#     — so sandboxRunner is pinned to a single replica for now (RWO with
+#     inheritSharedScheduling would put concurrent pods on different nodes,
+#     and a second pod can't attach the same RWO volume).
+#   - Secrets come from codeApiSecrets (an ExternalSecret against ssegning-aws
+#     — see templates/externalsecret.yaml), not plaintext values.
+#   - fullnameOverride: codeapi — short, predictable resource names.
+
+fullnameOverride: codeapi
+
+global:
+  imagePullSecrets: []
+  storageClass: ""
+
+hardenedSandboxMode: true
+
+otel:
+  enabled: false
+
+# Encrypted-grant secret for the egress gateway (sandbox-runner never sees
+# it). Sourced from codeApiSecrets below, not a plaintext value.
+egressGrant:
+  ttlSeconds: 900
+  ledgerRequired: true
+  ledgerTtlGraceSeconds: 300
+
+# Ed25519 keypair the service-worker signs sandbox execute manifests with.
+# Both halves come from codeApiSecrets (templates/externalsecret.yaml) — see
+# worker-sandbox-deployment.yaml, which reads privateKey/publicKey via
+# secretKeyRef instead of the upstream chart's plaintext values fields.
+executionManifest:
+  ttlSeconds: 300
+
+# =============================================================================
+# API SERVICE
+# =============================================================================
+api:
+  enabled: true
+  replicaCount: 1 # conservative first deploy; bump once validated live
+
+  image:
+    repository: ghcr.io/clickhouse/code-interpreter/api
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  service:
+    type: ClusterIP
+    port: 3112
+
+  httpJsonLimit: 50mb
+
+  ingress:
+    enabled: false
+
+  autoscaling:
+    enabled: false
+
+  # Production auth: LibreChat mints a short-lived (<=300s) Ed25519-signed JWT
+  # per request (packages/api/src/auth/codeapi.ts in danny-avila/LibreChat,
+  # active once librechat-app sets CODEAPI_JWT_ENABLED=true) — NOT a static
+  # X-API-Key (the service explicitly rejects that header outside LOCAL_MODE).
+  # CODEAPI_JWT_PUBLIC_KEY/_KID are plain values (public key material, not
+  # secret) and MUST match the private half librechat-app signs with 1:1.
+  extraEnv:
+    - name: CODEAPI_AUTH_PROVIDER
+      value: librechat-jwt
+    - name: CODEAPI_JWT_PUBLIC_KEY
+      valueFrom:
+        secretKeyRef:
+          name: codeapi-secrets
+          key: codeapi-jwt-public-key
+    - name: CODEAPI_JWT_KID
+      value: lc-codeapi-2026-05 # must match librechat-app's CODEAPI_JWT_KID
+
+# =============================================================================
+# WORKER-SANDBOX
+# =============================================================================
+workerSandbox:
+  enabled: true
+  replicaCount: 1 # see the file header note on RWO storage
+
+  workerImage:
+    repository: ghcr.io/clickhouse/code-interpreter/worker
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+
+  sandboxImage:
+    repository: ghcr.io/clickhouse/code-interpreter/sandbox-runner
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+
+  # No confirmed /dev/kvm (nested virt) on home-remote worker nodes — NsJail
+  # fallback. See ADR-0122.
+  kvmEnabled: false
+
+  # Only consumed when kvmEnabled:true; kept at chart defaults so the
+  # LAUNCHER_* env vars still render (unused by the NsJail path).
+  launcher:
+    vcpus: 2
+    ramMib: 2048
+    logLevel: 3
+    filterVsockEnotconn: true
+
+  seccomp:
+    enabled: false # would need a node DaemonSet installer (seccomp/README.md); deferred
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 3Gi
+
+  serviceAccount:
+    create: true
+  sandboxServiceAccount:
+    create: true
+    automountServiceAccountToken: false
+
+  serviceWorker:
+    replicaCount: null
+    inheritSharedScheduling: true
+  sandboxRunner:
+    replicaCount: null
+    fdLivenessLimit: 40000
+    inheritSharedScheduling: true
+    autoscaling:
+      enabled: false
+
+  config:
+    pythonConcurrency: 1
+    otherConcurrency: 4
+    jobWindow: 1000
+    jobTimeout: 25000
+
+  healthPort: 3113
+
+  sandbox:
+    port: 2000
+    maxProcessCount: 100
+    runCpuTime: 15000
+    runTimeout: 15000
+    compileCpuTime: 10000
+    compileTimeout: 10000
+    outputMaxSize: 65536
+    maxOpenFiles: 2048
+    executeBodyLimit: 50mb
+    disableNetworking: true
+    maxConcurrentJobs: 4 # matches otherConcurrency at replicaCount:1
+    perJobUids: true
+    jobUidBase: 200000
+    jobGidBase: 200000
+    workspaceReaperMaxAgeSeconds: 3600
+
+  packages:
+    # kvmEnabled:false forces pvc (the baked image-root path requires KVM).
+    source: pvc
+    persistence:
+      enabled: true
+      size: 10Gi
+      accessMode: ReadWriteOnce
+      storageClass: "" # cluster default (hcloud-volumes on home-remote)
+    initJob:
+      enabled: true
+      image:
+        repository: ghcr.io/clickhouse/code-interpreter/package-init
+        tag: "2.0.0"
+        pullPolicy: IfNotPresent
+      pythonVersion: "3.14.4"
+      nodeVersion: "24.15.0"
+      bunVersion: "1.3.14"
+      bashPackageVersion: "5.2.0"
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+
+  extraEnv: []
+  sandboxExtraEnv: []
+
+# =============================================================================
+# FILE SERVER (Hetzner Object Storage, S3-compatible)
+# =============================================================================
+fileServer:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/clickhouse/code-interpreter/file-server
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+  serviceAccount:
+    create: true
+
+  # Same bucket LibreChat's own S3 file storage uses (ssegning-k8s-state) —
+  # this chart has no key-prefix knob, so codeapi's objects land in the
+  # bucket root alongside LibreChat's own (images/, files/…). Both use
+  # opaque random keys (session/execution ids vs LibreChat file ids), so
+  # collision risk is effectively nil; a dedicated bucket is a one-line
+  # follow-up (fileServer.s3.bucket) if you'd rather not share it.
+  s3:
+    enabled: true
+    endpoint: nbg1.your-objectstorage.com
+    region: us-east-1
+    bucket: ssegning-k8s-state
+    useSSL: true
+    useIrsa: false
+
+# =============================================================================
+# TOOL CALL SERVER (programmatic tool calling)
+# =============================================================================
+toolCallServer:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/clickhouse/code-interpreter/tool-call-server
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  service:
+    type: ClusterIP
+    port: 3033
+
+  config:
+    requestTimeout: 300000
+    sessionExpiry: 600
+
+# =============================================================================
+# EGRESS GATEWAY (sandbox-runner's only outbound capability endpoint)
+# =============================================================================
+egressGateway:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/clickhouse/code-interpreter/egress-gateway
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  service:
+    type: ClusterIP
+    port: 3190
+
+  config:
+    maxToolCallBytes: 1048576
+
+# =============================================================================
+# REDIS — always external (repo convention: reuse the shared redis-ha,
+# never bundle a Redis chart). See CLAUDE.md "Redis — deployed by the
+# home-os repo". TLS-only, like every other redis-ha consumer.
+# =============================================================================
+redis:
+  enabled: false
+  external:
+    host: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+    port: 6379
+
+# =============================================================================
+# MINIO — disabled; fileServer.s3.* (above) targets Hetzner Object Storage
+# directly. useSimple stays false (that path was removed from this chart).
+# =============================================================================
+minio:
+  enabled: false
+  useSimple: false
+
+# =============================================================================
+# COMMON SETTINGS
+# =============================================================================
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podDisruptionBudget:
+  api:
+    enabled: false
+  workerSandbox:
+    enabled: false
+
+metrics:
+  enabled: false
+
+# Plain-K8s NetworkPolicy (podSelector/namespaceSelector rules — Cilium
+# honours these; only ipBlock-by-node-IP rules don't work under Cilium, and
+# this chart doesn't use those). This is IN ADDITION to the namespace-level
+# CiliumNetworkPolicy shipped via the librechart depsOverlay (DNS, redis-system,
+# Hetzner Object Storage egress; converse-namespace ingress on the api Service)
+# — that policy opens the namespace boundary, this one keeps the five
+# components from talking to each other outside the designed call graph.
+networkPolicy:
+  enabled: true
+  otel:
+    enabled: false
+  redis:
+    # redis-ha-redis-haproxy resolves outside the cluster-DNS-name match this
+    # plain NetworkPolicy can express (no FQDN egress in the vanilla API) —
+    # externalCIDRs is left empty, so the generated rule allows the Redis port
+    # to any destination for the pods that need it. Cilium's toFQDNs support
+    # (shipped via the depsOverlay CiliumNetworkPolicy) is what actually scopes
+    # this in practice; see environments/{base,prod}/deps/librechat-code-interpreter/.
+    externalCIDRs: []
+  toolCallServer:
+    allowExternalEgress: false
+
+# =============================================================================
+# ExternalSecret → `codeapi-secrets` (ssegning-aws). One property per key;
+# every property below must exist in ai/camer/digital/prod/env or this sits
+# in SecretSyncedError and every codeapi pod CrashLoops on missing envs.
+# Generation commands for each key are in ADR-0122 / docs/patterns/
+# self-hosted-code-interpreter.md.
+# =============================================================================
+codeApiSecrets:
+  enabled: true
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  remoteRefs:
+    codeapi-internal-service-token:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_internal_service_token
+    codeapi-egress-grant-secret:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_egress_grant_secret
+    codeapi-execution-manifest-private-key:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_execution_manifest_private_key
+    codeapi-execution-manifest-public-key:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_execution_manifest_public_key
+    codeapi-jwt-public-key:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_jwt_public_key
+    redis-password:
+      key: prod/meta/test-app
+      property: redis_password
+    minio-access-key:
+      key: prod/meta/test-app
+      property: s3_backup_cnpg_client_id
+    minio-secret-key:
+      key: prod/meta/test-app
+      property: s3_backup_cnpg_secret

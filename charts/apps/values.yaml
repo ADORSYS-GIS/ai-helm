@@ -18,8 +18,16 @@ global:
   # privileged host access (/var/lib/longhorn, /dev, iSCSI) on the GPU nodes
   # it's scoped to; k3s/Hetzner's baseline-enforced default forbids that
   # without this elevation (ADR-0092).
+  #
+  # `librechat-sandbox: privileged` — the self-hosted Code Interpreter's
+  # sandbox-runner needs SYS_ADMIN/SYS_CHROOT/NET_ADMIN (NsJail namespace +
+  # mount + chroot setup) because no home-remote worker node has confirmed
+  # /dev/kvm for the chart's safer libkrun microVM mode (ADR-0122). Kept in
+  # its OWN namespace — not added to `converse` — so the elevation doesn't
+  # reach librechat-app/mongo/meilisearch, which don't need it.
   namespacePodSecurity:
     longhorn-system: privileged
+    librechat-sandbox: privileged
 
 # ────────────────────────────────────────────────────────────────────────
 # ArgoCD destination — the home-remote cluster every generated Application
@@ -1080,6 +1088,26 @@ applications:
     depsOverlay: environments/prod/deps/mongodb-backup
     destination:
       namespace: converse-chat
+
+  # --- Self-hosted LibreChat Code Interpreter (ADR-0122) ---
+  # Vendored clickhouse/code-interpreter (not published to any Helm/OCI
+  # registry upstream — floats from OUR OCI publish like every other chart
+  # here). Deployed as a FLAT app, not a librechart child: the librechart
+  # ApplicationSet's children all share ONE destination.namespace (see
+  # charts/librechart/templates/applicationset.yaml), and this needs its OWN
+  # dedicated `privileged`-PSS namespace (global.namespacePodSecurity above),
+  # isolated from `converse`'s librechat-app/mongo/meilisearch.
+  - name: librechat-code-interpreter
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: librechat-code-interpreter
+    releaseName: librechat-code-interpreter
+    # Cilium egress for file-server → Hetzner Object Storage (the vendored
+    # chart's own NetworkPolicy templates cover everything else — see the
+    # overlay's ciliumnetworkpolicy.yaml for exactly what's missing and why).
+    depsOverlay: environments/prod/deps/librechat-code-interpreter
+    destination:
+      namespace: librechat-sandbox
 
   # --- Models ---
   - name: models
