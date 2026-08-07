@@ -46,7 +46,9 @@ Coder uses a flat, 4-part hyphen-separated label structure:
 
 ## 3. LibreChat Coder Agent (`coder_mcp`) Integration Contract
 
-When the LibreChat Coder agent (`coder`) provisions or interacts with a workspace application, it executes the following contract:
+The LibreChat Coder agent (`coder`) is registered as a **Subagent** delegated to by primary orchestrators (such as `@converse` via `subagentNames: ["coder"]`).
+
+When a user in LibreChat requests app prototyping or hosting, `@converse` delegates workspace provisioning to `@coder`. The `@coder` subagent executes the following contract:
 
 ### Step-by-Step Publishing Lifecycle
 

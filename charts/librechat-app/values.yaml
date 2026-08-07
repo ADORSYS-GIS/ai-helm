@@ -115,11 +115,21 @@ agentSeed:
   librechatUrl: ""
   image: ""
   agents:
+    - name: "converse"
+      description: "Primary platform assistant for general conversation, coding, and web app prototyping"
+      provider: "converse"
+      model: "kimi-k2.7-code"
+      category: "general"
+      subagentNames:
+        - "coder"
+      instructions: |
+        You are Converse, the primary platform AI assistant for the AI Governance platform. You assist users with general queries, architectural guidance, and code generation.
+        When a user requests to build, prototype, host, or preview a web application, delegate the workspace creation, application scaffolding, and port-sharing tasks to your `@coder` subagent.
     - name: "coder"
-      description: "Autonomous Coder agent for workspace provisioning, Next.js + tRPC + Keycloak app scaffolding, and live port previews"
+      description: "Autonomous Coder subagent for workspace provisioning, Next.js + tRPC + Keycloak app scaffolding, and live port previews"
       provider: "converse"
       model: "adorsys-coder-pro"
-      category: "development"
+      category: "subagent"
       tools:
         - "execute_code"
         - "github_repos"
