@@ -895,6 +895,39 @@ applications:
   - name: lightbridge-governance
     finalizers:
       - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      # argocd-image-updater: float both controllers (api Deployment +
+      # copilot-sync CronJob, app-template v4 -- lightbridge-governance#56)
+      # independently onto the newest cosign-signed sha-<gitsha> tag from
+      # lightbridge-governance's own docker.yml (signing added in that
+      # repo's #60, specifically to make this possible). Both aliases point
+      # at the SAME image repo, so they resolve to the same tag on their
+      # own -- no explicit lockstep needed, unlike lightbridge-code-
+      # intelligence's role-selected same-image aliases (cp/disp/recon/...).
+      # allow-tags restricts to sha-<hex> so this can never resolve back to
+      # the floating `main` tag the values-repo file used before.
+      argocd-image-updater.argoproj.io/image-list: api=ghcr.io/adorsys-gis/lightbridge-governance,sync=ghcr.io/adorsys-gis/lightbridge-governance
+      argocd-image-updater.argoproj.io/api.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/api.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/api.force-update: "true"
+      # GHCR read cred so tag detection survives ghcr.io/adorsys-gis/* going
+      # private -- same shared secret lightbridge-code-intelligence already
+      # uses (the dockerconfigjson is keyed on the ghcr.io host, not a repo).
+      argocd-image-updater.argoproj.io/api.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/api.helm.image-name: app-template.controllers.api.containers.main.image.repository
+      argocd-image-updater.argoproj.io/api.helm.image-tag: app-template.controllers.api.containers.main.image.tag
+      argocd-image-updater.argoproj.io/api.signature-type: cosign
+      argocd-image-updater.argoproj.io/api.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/api.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-governance/\.github/workflows/docker\.yml@.*$
+      argocd-image-updater.argoproj.io/sync.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/sync.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/sync.force-update: "true"
+      argocd-image-updater.argoproj.io/sync.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/sync.helm.image-name: app-template.controllers.copilot-sync.containers.main.image.repository
+      argocd-image-updater.argoproj.io/sync.helm.image-tag: app-template.controllers.copilot-sync.containers.main.image.tag
+      argocd-image-updater.argoproj.io/sync.signature-type: cosign
+      argocd-image-updater.argoproj.io/sync.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/sync.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-governance/\.github/workflows/docker\.yml@.*$
     depsOverlay: environments/prod/deps/lightbridge-governance
     chart: lightbridge-governance
     destination:
