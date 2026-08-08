@@ -1,7 +1,7 @@
 resource "coderd_template" "poc_ubuntu" {
   name            = "poc-ubuntu"
   display_name    = "POC Ubuntu"
-  description     = "Simple Kubernetes POC template (declarative delivery test — ADR-0122)"
+  description     = "Simple Kubernetes POC template (declarative delivery test — ADR-0123)"
   organization_id = var.organization_id
 
   versions = [{

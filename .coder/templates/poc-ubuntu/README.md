@@ -1,7 +1,7 @@
 # poc-ubuntu
 
 A minimal Coder template for verifying the declarative delivery mechanism
-decided in [ADR-0122](../../../docs/adr/0122-declarative-coder-template-management.md).
+decided in [ADR-0123](../../../docs/adr/0123-declarative-coder-template-management.md).
 
 It provisions a single Kubernetes pod based on
 `codercom/enterprise-base:ubuntu` (in the `coder` namespace) and runs a
