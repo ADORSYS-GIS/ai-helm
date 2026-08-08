@@ -513,18 +513,23 @@ codeapi:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { cpu: 200m, memory: 256Mi }
 
-    # ── PACKAGE-INIT (Helm pre-install/pre-upgrade hook Job) ────────────
+    # ── PACKAGE-INIT (plain Job, NOT a Helm/ArgoCD hook) ─────────────────
     # Compiles Python from source and installs Node/Bun/Bash into the shared
-    # packages PVC before sandbox-runner/service-worker start. No
-    # readOnlyRootFilesystem (compiles into system paths — same class of
-    # container as the `seed` weight-download Jobs elsewhere in this repo,
-    # see .trivyignore.yaml KSV-0014).
+    # packages PVC. No readOnlyRootFilesystem (compiles into system paths —
+    # same class of container as the `seed` weight-download Jobs elsewhere
+    # in this repo, see .trivyignore.yaml KSV-0014).
+    #
+    # ⚠️ NOT a `helm.sh/hook: pre-install` Job (live-incident correction,
+    # 2026-08-08 — see the `packages` persistence entry below for the full
+    # story): a hook Job here needs the packages PVC to exist and be Bound
+    # BEFORE ArgoCD runs it, but the PVC can only bind once THIS Job's own
+    # pod is scheduled (WaitForFirstConsumer on hcloud-volumes) — a
+    # structural deadlock, not a race. Runs as an ordinary resource instead;
+    # sandbox-runner may start before this Job finishes populating /pkgs on
+    # a fresh install, which is a real but bounded/self-healing risk (its
+    # readinessProbe fails until packages are usable), not a hard failure.
     package-init:
       type: job
-      annotations:
-        helm.sh/hook: pre-install,pre-upgrade
-        helm.sh/hook-weight: "-5"
-        helm.sh/hook-delete-policy: before-hook-creation
       pod:
         restartPolicy: Never
       containers:
@@ -592,9 +597,17 @@ codeapi:
       # cluster default storage class (hcloud-volumes on home-remote)
       storageClass: ""
       retain: true # helm.sh/resource-policy: keep — don't lose compiled packages on upgrade
-      annotations:
-        helm.sh/hook: pre-install,pre-upgrade
-        helm.sh/hook-weight: "-10" # before package-init (-5)
+      # ⚠️ NOT a `helm.sh/hook: pre-install` PVC (live-incident correction,
+      # 2026-08-08). This cluster's default storage class (hcloud-volumes) is
+      # WaitForFirstConsumer — the PVC only binds once a pod referencing it
+      # is SCHEDULED. As a pre-install hook at an earlier wave than
+      # package-init's Job, ArgoCD blocked waiting for this PVC to become
+      # Healthy/Bound before it would even create that Job's pod — the only
+      # thing that could ever trigger the bind. Confirmed live: Application
+      # stuck OutOfSync/Degraded, operationState.message "waiting for
+      # completion of hook /PersistentVolumeClaim/codeapi", forever. Plain
+      # resource now — binds normally once package-init's pod (or any other
+      # consumer) is scheduled.
       advancedMounts:
         sandbox-runner:
           sandbox-runner:
