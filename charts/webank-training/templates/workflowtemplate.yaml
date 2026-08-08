@@ -33,6 +33,7 @@
 {{- $datasetStorageNamespace := required (printf "webank-training: %s datasetBuild.target.storageNamespace is required" $id) $datasetTarget.storageNamespace -}}
 {{- $candidateRepository := required (printf "webank-training: %s lakefs.model.repository is required" $id) $candidateLakefs.repository -}}
 {{- $candidateBranch := required (printf "webank-training: %s lakefs.model.branch is required" $id) $candidateLakefs.branch -}}
+{{- $candidateStorageNamespace := required (printf "webank-training: %s lakefs.model.storageNamespace is required" $id) $candidateLakefs.storageNamespace -}}
 {{- if ne $datasetRepository (printf "ds-%s" $id) }}{{ fail (printf "webank-training: %s dataset repository must be ds-%s" $id $id) }}{{- end }}
 {{- if ne $datasetTargetRepository $datasetRepository }}{{ fail (printf "webank-training: %s datasetBuild target must match its training dataset repository" $id) }}{{- end }}
 {{- if ne $candidateRepository (printf "model-%s" $id) }}{{ fail (printf "webank-training: %s model repository must be model-%s" $id $id) }}{{- end }}
@@ -84,14 +85,6 @@ spec:
   {{- end }}
   templates:
     - name: build
-      podSpecPatch: |
-        runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
-      nodeSelector:
-        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
-      {{- with $training.gpu.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       {{- with $training.gpu.priorityClassName }}
       priorityClassName: {{ . | quote }}
       {{- end }}
@@ -218,7 +211,7 @@ spec:
           - name: OTEL_SERVICE_NAME
             value: {{ printf "webank-%s-dataset-build" $id | quote }}
         resources:
-          {{- toYaml $training.gpu.resources | nindent 10 }}
+          {{- toYaml $training.datasetBuild.resources | nindent 10 }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
@@ -315,15 +308,13 @@ spec:
               --learning-rate {{ $detector.learningRate }} \
               --shrink-ratio {{ $detector.shrinkRatio }}
             . /workspace/document-detector/governance/lineage.env
-            cargo xtask training-data push \
-              --destination training-data-lake \
-              --path "$CANDIDATE_PATH" \
-              --manifest /workspace/document-detector/governance/source-manifest.json \
-              --lakefs-ref "$LAKEFS_SOURCE_REF" \
-              --readiness /workspace/document-detector/governance/readiness.json \
-              --lakefs-branch "$WEBANK_MODEL_LAKEFS_BRANCH" \
+            cargo xtask training-data fixed-candidate publish \
+              --model document-detector \
+              --artifact "$CANDIDATE_PATH" \
+              --dataset-ref "$LAKEFS_SOURCE_REF" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY"
+              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY" \
+              --lakefs-storage-namespace "$WEBANK_MODEL_LAKEFS_STORAGE_NAMESPACE"
 {{- else if eq $trainer "document-recognizer" }}
             cargo xtask training-data readiness-gate \
               --manifest /workspace/governance/source-manifest.json \
@@ -333,15 +324,13 @@ spec:
               --data /workspace/dataset \
               --output "$CANDIDATE_PATH" \
               --epochs 10
-            cargo xtask training-data push \
-              --destination training-data-lake \
-              --path "$CANDIDATE_PATH" \
-              --manifest /workspace/governance/source-manifest.json \
-              --lakefs-ref "$LAKEFS_REF" \
-              --readiness /workspace/governance/readiness.json \
-              --lakefs-branch "$WEBANK_MODEL_LAKEFS_BRANCH" \
+            cargo xtask training-data fixed-candidate publish \
+              --model document-recognizer \
+              --artifact "$CANDIDATE_PATH" \
+              --dataset-ref "$LAKEFS_REF" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY"
+              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY" \
+              --lakefs-storage-namespace "$WEBANK_MODEL_LAKEFS_STORAGE_NAMESPACE"
 {{- else if eq $trainer "face-detector" }}
             cargo xtask training-data readiness-gate \
               --manifest /workspace/governance/source-manifest.json \
@@ -351,15 +340,13 @@ spec:
               --data /workspace/dataset \
               --output "$CANDIDATE_PATH" \
               --epochs 10
-            cargo xtask training-data push \
-              --destination training-data-lake \
-              --path "$CANDIDATE_PATH" \
-              --manifest /workspace/governance/source-manifest.json \
-              --lakefs-ref "$LAKEFS_REF" \
-              --readiness /workspace/governance/readiness.json \
-              --lakefs-branch "$WEBANK_MODEL_LAKEFS_BRANCH" \
+            cargo xtask training-data fixed-candidate publish \
+              --model face-detector \
+              --artifact "$CANDIDATE_PATH" \
+              --dataset-ref "$LAKEFS_REF" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY"
+              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY" \
+              --lakefs-storage-namespace "$WEBANK_MODEL_LAKEFS_STORAGE_NAMESPACE"
 {{- else if eq $trainer "sface" }}
             cargo xtask training-data readiness-gate \
               --manifest /workspace/governance/source-manifest.json \
@@ -369,15 +356,13 @@ spec:
               --data /workspace/dataset \
               --output "$CANDIDATE_PATH" \
               --epochs 10
-            cargo xtask training-data push \
-              --destination training-data-lake \
-              --path "$CANDIDATE_PATH" \
-              --manifest /workspace/governance/source-manifest.json \
-              --lakefs-ref "$LAKEFS_REF" \
-              --readiness /workspace/governance/readiness.json \
-              --lakefs-branch "$WEBANK_MODEL_LAKEFS_BRANCH" \
+            cargo xtask training-data fixed-candidate publish \
+              --model sface \
+              --artifact "$CANDIDATE_PATH" \
+              --dataset-ref "$LAKEFS_REF" \
               --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY"
+              --lakefs-repository "$WEBANK_MODEL_LAKEFS_REPOSITORY" \
+              --lakefs-storage-namespace "$WEBANK_MODEL_LAKEFS_STORAGE_NAMESPACE"
 {{- else }}
             echo "PAD liveness candidate training is unavailable: the governed PAD dataset descriptor exists, but no PAD optimizer/trainer has landed. Refusing to fabricate a candidate." >&2
             exit 2
@@ -404,8 +389,8 @@ spec:
             value: {{ $datasetBranch | quote }}
           - name: WEBANK_MODEL_LAKEFS_REPOSITORY
             value: {{ $candidateRepository | quote }}
-          - name: WEBANK_MODEL_LAKEFS_BRANCH
-            value: {{ $candidateBranch | quote }}
+          - name: WEBANK_MODEL_LAKEFS_STORAGE_NAMESPACE
+            value: {{ $candidateStorageNamespace | quote }}
           - name: LAKEFS_ACCESS_KEY_ID
             valueFrom: { secretKeyRef: { name: {{ $lakefs.secretName | quote }}, key: {{ $lakefs.accessKey | quote }} } }
           - name: LAKEFS_SECRET_ACCESS_KEY

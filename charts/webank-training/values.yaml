@@ -41,6 +41,19 @@ training:
     resources:
       requests: { cpu: "4", memory: 16Gi, nvidia.com/gpu: 1 }
       limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }
+  # Dataset-build steps run generation, image decode/resize, tensor packing,
+  # and an HTTP upload — no forward pass, no CUDA (webank-models#415). They
+  # request no accelerator and carry no GPU node placement; only `train`
+  # steps use `training.gpu` above. Sized from a real local run of this
+  # pipeline: 13,393 crops in 2:55, materialize-synthetic-source 12,799 rows
+  # in 11s (peak 13.2 GiB RSS, measured with `/usr/bin/time -v` — the working
+  # set is one `Vec<f32>` tensor plus a copy, not the packed output size),
+  # pack 4.4 GB in 14s. The memory limit keeps ~50% headroom above that
+  # measured peak; do not size it from the smaller output artifact.
+  datasetBuild:
+    resources:
+      requests: { cpu: "4", memory: 16Gi }
+      limits: { cpu: "8", memory: 20Gi }
   documentDetector:
     stemChannels: 32
     epochs: 10

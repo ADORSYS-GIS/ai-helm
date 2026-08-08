@@ -21,12 +21,14 @@ stage into an alternative public operation.
 
 ## Dataset-build templates
 
-`*-dataset-build` templates are restricted-plane operations placed on
-`nvidia.com/gpu.present=true` nodes (the live GPU node label, matching
-`charts/inference`), tolerating `nvidia.com/gpu:NoSchedule` (Exists), and
-using `runtimeClassName: nvidia` so the host CUDA driver libraries are mounted.
-They request the same reviewed CPU, memory, and one-GPU resource profile as
-candidate training (ADR-0114).
+`*-dataset-build` templates are restricted-plane operations that run on
+ordinary CPU nodes — no GPU node placement, toleration, or `runtimeClassName`
+(webank-models#415). The work is generation, image decode/resize, tensor
+packing, and a LakeFS upload: no forward pass, no CUDA device. Their CPU and
+memory request/limit come from `training.datasetBuild.resources`, sized from a
+real local run of this pipeline (13,393 crops in 2:55; `materialize-synthetic-
+source` peaking at 13.2 GiB RSS, not the smaller packed-output size), separate
+from `training.gpu` (ADR-0114), which candidate training alone still uses.
 Every Dataset Build form has **no inputs**. Its target repository, `main`
 branch, reviewed storage namespace, and closed source strategy come only from
 `ai-helm-values`; the dashboard cannot choose a LakeFS reference, source
@@ -65,8 +67,8 @@ The recognizer, face-detector, and SFace
 templates take a governed `dataset`, `manifest`, and `readiness` artifact plus
 the matching `lakefs_ref`; they run their closed, model-specific Rust trainer
 only after the readiness gate passes. All successful trainers write candidates
-back only through `training-data push` into the fixed per-model `model-*`
-repository, never to the model registry.
+back only through `training-data fixed-candidate publish` into the fixed
+per-model `model-*` repository, never to the model registry.
 
 `run_name` is optional on every training template. Its default includes the
 generated Argo workflow name, so it is unique even when the operator leaves
