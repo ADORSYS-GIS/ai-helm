@@ -1120,6 +1120,26 @@ applications:
     depsOverlay: environments/prod/deps/librechat-code-interpreter
     destination:
       namespace: librechat-sandbox
+    # ⚠️ Override, NOT the repo-wide Replace=true default (live-incident
+    # correction, 2026-08-08): this chart's `packages` PVC and
+    # `package-init` Job both develop server-populated immutable fields
+    # once they exist in their normal running state (a Bound PVC's spec;
+    # a Job's spec.selector) — Replace=true (`kubectl replace`) then fails
+    # every subsequent sync forever with "spec is immutable"/"field is
+    # immutable", even once the workload itself is healthy. Confirmed live
+    # across 10+ retried sync attempts, including a per-resource
+    # `argocd.argoproj.io/sync-options: Replace=false` annotation attempt
+    # (charts/librechat-code-interpreter/values.yaml git history) that did
+    # NOT override the app-level default. Same pattern already used by
+    # other apps in this file (e.g. same-origin-proxy, apprise-api,
+    # opencode-k8s-agent) — just the two known-safe options, no Replace.
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
 
   # --- Models ---
   - name: models
