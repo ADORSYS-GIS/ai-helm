@@ -36,6 +36,24 @@ secretKeys:
 lakefsConfig: |
   database:
     type: postgres
+    # Incident (2026-08-08/09): lightbridge-main-db is a SHARED CNPG cluster
+    # (converse ns, ADR-0085) with no PgBouncer in front of it. LakeFS's
+    # unconfigured client fell back to the binary's own default pool
+    # (max_open_connections=25, max_idle_connections=25 — confirmed from the
+    # pod's own "Config loaded" startup log line, not guessed), which alone
+    # is a quarter of CNPG's default max_connections=100 and, combined with
+    # every other tenant's own pool (coder/mlflow/governance/codeintel/
+    # grafana_ro), exhausted it: `FATAL: sorry, too many clients already`
+    # (SQLSTATE 53300). LakeFS then fell back to rendering its first-run
+    # /setup page and returned repository-not-found/auth errors.
+    # Capped hard here — LakeFS's KV access pattern is short, low-concurrency
+    # point reads/writes, not a connection-heavy workload — so it can never
+    # again be the tenant that exhausts the shared cluster. Key names verified
+    # against the same startup log (`database.postgres.max_open_connections`,
+    # `database.postgres.max_idle_connections`), not guessed against docs.
+    postgres:
+      max_open_connections: 5
+      max_idle_connections: 2
   blockstore:
     type: s3
     s3:
