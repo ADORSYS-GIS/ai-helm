@@ -43,6 +43,32 @@ training:
     resources:
       requests: { cpu: "4", memory: 16Gi, nvidia.com/gpu: 1 }
       limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }
+  # Both `webank-dataset-gpu` and `webank-train-gpu` run as a fixed non-root
+  # UID:GID 10001:10001 baked into the image (Dockerfile.dataset-build:74,
+  # Dockerfile.train-gpu:123 in ADORSYS-GIS/webank-models) -- not an
+  # environment literal, so this fact lives in the chart, not ai-helm-values.
+  # Every `*-dataset-build`/`*-train` pod mounts an `emptyDir` at /workspace
+  # (see templates/workflowtemplate.yaml) sized below, plus
+  # `securityContext.fsGroup: 10001` so that non-root UID can actually write
+  # it: an emptyDir/PVC volume's mount-point is chowned root:root by default
+  # on attach, and `fsGroup` is the documented, portable mechanism (works for
+  # both emptyDir and a future PVC storage class alike) that makes the
+  # kubelet chown it to that GID with the setgid bit set, instead of relying
+  # on emptyDir's undocumented default permissions. `train` also needs this
+  # for its Argo input artifacts (`inputs.artifacts[].path` under /workspace)
+  # to land somewhere the main container can actually read.
+  #
+  # `emptyDir`, not a PVC: unlike webank-models' own (undeployed,
+  # documentation-by-example) deploy/argo-workflows/dataset-build-workflowtemplate.yaml,
+  # every `build`/`train` template here runs as ONE container in ONE pod --
+  # no multi-step DAG spanning separate pods -- so nothing needs the volume
+  # to outlive that single pod or be attached from a second one. Both GPU
+  # nodes have ~1.7Ti allocatable ephemeral-storage and exactly 1
+  # `nvidia.com/gpu` each (verified live against hetzner-prod 2026-08-08), so
+  # the GPU claim itself already caps concurrency to one workflow pod per
+  # node -- a `sizeLimit` far under that headroom needs no PVC/StorageClass
+  # provisioning latency to be safe.
+  workspaceSizeLimit: 8Gi
   # webank-models#415 argued dataset-build performs no forward pass so it
   # needs no GPU. That reasoning was correct but incomplete (ai-helm#948):
   # every subcommand of the pinned `webank-train-gpu` image — including a
@@ -77,6 +103,18 @@ training:
     resources:
       requests: { cpu: "4", memory: 10Gi, nvidia.com/gpu: 1 }
       limits: { cpu: "8", memory: 14Gi, nvidia.com/gpu: 1 }
+    # Overrides `training.workspaceSizeLimit` above for dataset-build's
+    # larger /workspace: a real local run of the document-recognizer
+    # hermetic-synthetic pipeline (source archive 823 MB + raw crops
+    # ~360 MB + materialized 4.4 GB + packed 4.4 GB ≈ 10 GB measured, this
+    # template's `sh`/`xtask` steps -- no unpack-round-trip step runs here,
+    # unlike the reference manifest cited below) needs headroom above that
+    # ~10 GB. Sized to the same 24Gi
+    # deploy/argo-workflows/dataset-build-workflowtemplate.yaml (webank-models,
+    # story #328) already uses for this same pipeline's PVC, so a
+    # governed-lakefs model (sface, pad-liveness) with a differently sized
+    # source checkout stays covered by the same generous margin.
+    workspaceSizeLimit: 24Gi
   documentDetector:
     stemChannels: 32
     epochs: 10
