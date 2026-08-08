@@ -1,0 +1,51 @@
+name: Validate Coder Templates
+
+# PR-gate for the declarative Coder template delivery (ADR-0122): validate the
+# `coder/coderd` Terraform config and the template source without touching Coder.
+# This mirrors the local `terraform fmt` / `validate` workflow. Secrets not needed.
+
+on:
+  pull_request:
+    paths:
+      - '.coder/templates/**'
+      - 'terraform/coder/**'
+      - '.github/workflows/validate-coder-templates.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-coder-templates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: adorsys-gis-runner   # GitHub-hosted runners are billing-blocked org-wide (CLAUDE.md)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11   # >= 1.10 for backend use_lockfile (S3-native locking)
+
+      - name: Terraform Format
+        run: terraform fmt -check -recursive terraform/coder
+
+      - name: Terraform Init (no backend)
+        run: |
+          cd terraform/coder
+          terraform init -backend=false
+
+      - name: Terraform Validate
+        run: |
+          cd terraform/coder
+          terraform validate
+
+      - name: Check template source files
+        run: |
+          for d in .coder/templates/*/; do
+            [ -f "$d/main.tf" ] || { echo "ERROR: missing main.tf in $d"; exit 1; }
+            [ -f "$d/variables.tf" ] && echo "ok: $d" || echo "warn: no variables.tf in $d"
+          done
