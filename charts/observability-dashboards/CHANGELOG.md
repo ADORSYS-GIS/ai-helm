@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/ADORSYS-GIS/ai-helm/compare/observability-dashboards-v0.2.0...observability-dashboards-v0.3.0) (2026-08-08)
+
+
+### Features
+
+* **ai-gateway:** align limits and budget observability ([cdb9099](https://github.com/ADORSYS-GIS/ai-helm/commit/cdb9099c76b0ef25af1d9e496603386df456e61c))
+* **bservability:** ingest provider billing into grafana for invoice reconciliation ([#926](https://github.com/ADORSYS-GIS/ai-helm/issues/926)) ([ef16565](https://github.com/ADORSYS-GIS/ai-helm/commit/ef16565a37c95b61ffb6ed1e6aa35c1bce8456c9))
+* **observability:** add Grafana dashboard PDF export via dashboard-r… ([#902](https://github.com/ADORSYS-GIS/ai-helm/issues/902)) ([69f93fb](https://github.com/ADORSYS-GIS/ai-helm/commit/69f93fb1dd5feb433b6624594c08bd85f5753c10))
+* **observability:** add weekly/monthly/raw period filters to cost dashboards ([d1dd5fb](https://github.com/ADORSYS-GIS/ai-helm/commit/d1dd5fbea8e56db7721dfcfce2faf2cb72a86ee2))
+* **obsev:** ingest provider billing into grafana for invoice reconciliation ([#929](https://github.com/ADORSYS-GIS/ai-helm/issues/929)) ([fcfde15](https://github.com/ADORSYS-GIS/ai-helm/commit/fcfde157f8236e3817bc7f3843c77cd1b9391e86))
+
+
+### Bug Fixes
+
+* **dashboards:** My-Usage dashboard modifications ([#856](https://github.com/ADORSYS-GIS/ai-helm/issues/856)) ([1248169](https://github.com/ADORSYS-GIS/ai-helm/commit/1248169f650b04a257e37fe4eefa7f28a3d1963a))
+* **observability:** provider billing period format ([#931](https://github.com/ADORSYS-GIS/ai-helm/issues/931)) ([aec8f50](https://github.com/ADORSYS-GIS/ai-helm/commit/aec8f50ea7a013daca80079f8c54f918da23c9b4))
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [0.2.0](https://github.com/ADORSYS-GIS/ai-helm/compare/observability-dashboards-v0.1.0...observability-dashboards-v0.2.0) (2026-08-02)
 
 

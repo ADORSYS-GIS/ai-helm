@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-db-v0.3.0...lightbridge-db-v0.4.0) (2026-08-08)
+
+
+### Features
+
+* deploy lightbridge-governance (AI governance platform) ([#933](https://github.com/ADORSYS-GIS/ai-helm/issues/933)) ([24bf612](https://github.com/ADORSYS-GIS/ai-helm/commit/24bf612ee74a1c4f48df36633c92035432a3f8ad))
+
+
+### Bug Fixes
+
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [0.3.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-db-v0.2.0...lightbridge-db-v0.3.0) (2026-08-02)
 
 

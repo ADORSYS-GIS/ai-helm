@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v2.0.0...apps-v2.1.0) (2026-08-08)
+
+
+### Features
+
+* **apps:** float lightbridge-governance's images via argocd-image-updater ([#939](https://github.com/ADORSYS-GIS/ai-helm/issues/939)) ([13dd0ed](https://github.com/ADORSYS-GIS/ai-helm/commit/13dd0edb47996b925f174a4b6893f197ce045f4d))
+* deploy lightbridge-governance (AI governance platform) ([#933](https://github.com/ADORSYS-GIS/ai-helm/issues/933)) ([24bf612](https://github.com/ADORSYS-GIS/ai-helm/commit/24bf612ee74a1c4f48df36633c92035432a3f8ad))
+* **governance:** deploy censgate/redact-gateway as an internal canary (ADR-0113) ([#889](https://github.com/ADORSYS-GIS/ai-helm/issues/889)) ([623be27](https://github.com/ADORSYS-GIS/ai-helm/commit/623be275b8398319cca54c92f0678c1625fe6f01))
+* **librechat-code-interpreter:** self-host LibreChat Code Interpreter (ADR-0122) ([#941](https://github.com/ADORSYS-GIS/ai-helm/issues/941)) ([9e14d02](https://github.com/ADORSYS-GIS/ai-helm/commit/9e14d02aa2da38c6213580c60312c6dbabee674c))
+* **redact-gateway:** replace the censgate canary with a first-party proxy (ADR-0115) ([#892](https://github.com/ADORSYS-GIS/ai-helm/issues/892)) ([3ecec8a](https://github.com/ADORSYS-GIS/ai-helm/commit/3ecec8a171b632412b0bf02e480534bf634bebe9))
+
+
+### Bug Fixes
+
+* **core-gateway:** pin chart to 0.3.146, rolling back ADR-0116 sidecar ([#907](https://github.com/ADORSYS-GIS/ai-helm/issues/907)) ([edd200b](https://github.com/ADORSYS-GIS/ai-helm/commit/edd200b9ad2fa762c35c64f0ac9453d56ff132dd))
+* **imageupdater:** activate the CRD controller for lightbridge-governance ([#940](https://github.com/ADORSYS-GIS/ai-helm/issues/940)) ([b7fa107](https://github.com/ADORSYS-GIS/ai-helm/commit/b7fa10702975f9c307210405f794766adfc9b89f))
+* **librechat-code-interpreter:** move Replace=false override to app-level syncPolicy ([#952](https://github.com/ADORSYS-GIS/ai-helm/issues/952)) ([7f0e468](https://github.com/ADORSYS-GIS/ai-helm/commit/7f0e46836493e282d778d3546bee6614cff89f9a))
+* **webank-training:** correct GPU placement contract; implement ADR-0114 priority preemption ([#891](https://github.com/ADORSYS-GIS/ai-helm/issues/891)) ([b045b69](https://github.com/ADORSYS-GIS/ai-helm/commit/b045b69a4163e86aa7c4e45edae4e4f7a93c08f6))
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [2.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v1.2.0...apps-v2.0.0) (2026-08-02)
 
 
