@@ -16,16 +16,11 @@ data "coder_workspace_owner" "me" {}
 
 provider "coder" {}
 
-# If Coder is running INSIDE the same cluster (k3s), use the service account
-# token. This matches the platform's k8s-based workspace delivery (ADR-0122).
-provider "kubernetes" {
-  host                   = "https://kubernetes.default.svc"
-  cluster_ca_certificate = file("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
-  token                  = file("/var/run/secrets/kubernetes.io/serviceaccount/token")
-
-  # If Coder is OUTSIDE k3s, comment out the above and uncomment below:
-  # config_path = "~/.kube/config"
-}
+# Coder's provisioner job runs INSIDE the cluster, so the hashicorp/kubernetes
+# provider auto-detects the in-cluster service-account config — no explicit
+# host/token/ca needed here. For local `validate`/`plan` it falls back to
+# KUBECONFIG or ~/.kube/config, so it doesn't fail outside the pod.
+provider "kubernetes" {}
 
 variable "namespace" {
   type        = string
