@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/ADORSYS-GIS/ai-helm/compare/ai-model-v1.2.0...ai-model-v1.3.0) (2026-08-08)
+
+
+### Features
+
+* **ai-models:** force DeepInfra service_tier=priority; retire deepseek-v4-flash/-pro for -0731 (ADR-0117) ([#894](https://github.com/ADORSYS-GIS/ai-helm/issues/894)) ([59a7ab4](https://github.com/ADORSYS-GIS/ai-helm/commit/59a7ab46f7f37d2da357ca01e8333e51c2446ca8))
+
+
+### Bug Fixes
+
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [1.2.0](https://github.com/ADORSYS-GIS/ai-helm/compare/ai-model-v1.1.0...ai-model-v1.2.0) (2026-08-02)
 
 

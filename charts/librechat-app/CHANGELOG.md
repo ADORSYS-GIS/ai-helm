@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-app-v1.1.0...librechat-app-v1.2.0) (2026-08-08)
+
+
+### Features
+
+* **librechat-code-interpreter:** self-host LibreChat Code Interpreter (ADR-0122) ([#941](https://github.com/ADORSYS-GIS/ai-helm/issues/941)) ([9e14d02](https://github.com/ADORSYS-GIS/ai-helm/commit/9e14d02aa2da38c6213580c60312c6dbabee674c))
+
+
+### Bug Fixes
+
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [1.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-app-v1.0.0...librechat-app-v1.1.0) (2026-08-02)
 
 
