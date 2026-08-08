@@ -1,0 +1,38 @@
+# Plain .trivyignore — this is trivy's own DEFAULT ignorefile (repo root,
+# `--ignorefile` default), auto-loaded by every gate that doesn't override it.
+# In this repo that's the org-shared `scan / Vulnerability Scan (Trivy)` gate
+# (.github/workflows/security.yml → ADORSYS-GIS/ai-governance
+# security-gates.yml, pinned SHA, `scanners: vuln,secret,misconfig`) — it
+# passes NO `trivyignores`/`ignorefile` input to aquasecurity/trivy-action, so
+# trivy falls back to this file. It's DIFFERENT from .trivyignore.yaml (whose
+# `paths:` scheme is `rendered/<chart>.yaml`, a single flat file per chart —
+# matches ONLY release-helm-charts.yml's deterministic scan, which renders
+# each chart to `rendered/<chart>.yaml` before scanning; it structurally
+# cannot match paths this gate reports, which are directory-relative,
+# since this gate scans `charts/` directly with trivy's own Helm renderer).
+#
+# ⚠️ This trivy version's plain .trivyignore is ID-ONLY for misconfigurations
+# — no path-scoping (tested: a trailing path token on the line is silently
+# ignored, verified empirically against a wrong path). Any entry here is
+# therefore a genuine BLANKET ignore of the rule ID, not scoped to one file,
+# unlike .trivyignore.yaml's policy of "never a blanket whole-ID ignore" — the
+# tool doesn't give this gate that option.
+#
+# ⚠️ This gate can only render DEPENDENCY-FREE charts — it does a bare
+# checkout with no `helm dependency build`, so any chart with a subchart
+# dependency fails to render and is silently SKIPPED, never reaching this
+# ignorefile at all. A blanket entry here therefore only has any effect for
+# whichever dependency-free chart currently trips that ID — check that before
+# adding one, or you're carrying dead risk (an ignore with no coverage, but
+# still hiding a real finding repo-wide the day some OTHER dependency-free
+# chart legitimately trips the same ID).
+#
+# No active entries as of 2026-08-08. Previously carried KSV-0005/0014/0118
+# for charts/librechat-code-interpreter's sandbox-runner controller
+# (ADR-0122) while that chart was dependency-free; removed once it gained
+# the bjw-template + common dependencies (Chart.yaml) — those findings are
+# still legitimately exempt, but now only reachable via release-helm-
+# charts.yml's deterministic scan, which .trivyignore.yaml already covers
+# (caught in PR review — the entries here had silently stopped providing any
+# coverage for the chart they named, and were dead weight carrying only the
+# blind-spot risk described above).

@@ -1,0 +1,816 @@
+# values.yaml — self-hosted code-interpreter (ADR-0122), built on bjw-template
+# (charts/bjw-template, aliased `codeapi` below) — repo convention: see
+# charts/librechat-app for the pattern this mirrors (multi-controller,
+# `service`/`persistence`/`networkpolicies`, ExternalSecret as the one custom
+# template). NOT a copy of upstream's helm/codeapi chart — that chart's own
+# templates render raw manifests; this expresses the same 7-component stack
+# (api, service-worker, sandbox-runner, file-server, tool-call-server,
+# egress-gateway, package-init) through bjw-template's values schema instead.
+#
+# Images: upstream ships none (its own CI only validates `docker buildx build
+# --check`, never pushes) — built and published by the ADORSYS-GIS/
+# code-interpreter fork (ghcr.io/adorsys-gis/code-interpreter-*), pinned to a
+# commit SHA tag rather than floating on `latest`.
+#
+# Key structural decisions (ADR-0122, unchanged from the previous revision):
+#   - workerSandbox equivalent (service-worker + sandbox-runner) runs the
+#     NsJail/chroot sandbox path (no confirmed /dev/kvm on home-remote worker
+#     nodes) — sandbox-runner needs SYS_ADMIN + friends, hence the dedicated
+#     `librechat-sandbox` namespace elevated to `privileged` PSS
+#     (charts/apps/values.yaml global.namespacePodSecurity).
+#   - No bundled Redis/MinIO — reuses the shared redis-ha (TLS, unauthenticated
+#     — this project's own Redis client has no CA-verification knob, see the
+#     REDIS_TLS comment below) and the existing Hetzner Object Storage bucket.
+#   - Secrets come from codeApiSecrets (an ExternalSecret against ssegning-aws
+#     — templates/externalsecret.yaml), never plaintext values.
+#   - The packages PVC is ReadWriteOnce (no RWX storage class on home-remote's
+#     general nodes, Longhorn is GPU-node-scoped — ADR-0092), so sandbox-runner
+#     and service-worker are pinned to 1 replica each for now.
+
+# ────────────────────────────────────────────────────────────────────────
+# ExternalSecret → `codeapi-secrets` (ssegning-aws). One property per key;
+# every property below must exist in ai/camer/digital/prod/env or this sits
+# in SecretSyncedError and every codeapi pod CrashLoops on missing envs.
+# Generation commands: docs/patterns/self-hosted-code-interpreter.md.
+# ────────────────────────────────────────────────────────────────────────
+codeApiSecrets:
+  enabled: true
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  remoteRefs:
+    codeapi-internal-service-token:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_internal_service_token
+    codeapi-egress-grant-secret:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_egress_grant_secret
+    codeapi-execution-manifest-private-key:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_execution_manifest_private_key
+    codeapi-execution-manifest-public-key:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_execution_manifest_public_key
+    codeapi-jwt-public-key:
+      key: ai/camer/digital/prod/env
+      property: librechat_codeapi_jwt_public_key
+    redis-password:
+      key: prod/meta/test-app
+      property: redis_password
+    minio-access-key:
+      key: prod/meta/test-app
+      property: s3_backup_cnpg_client_id
+    minio-secret-key:
+      key: prod/meta/test-app
+      property: s3_backup_cnpg_secret
+
+# ────────────────────────────────────────────────────────────────────────
+# bjw-template (alias: codeapi). Everything below lives under `.Values.codeapi`
+# once Helm resolves the aliased dependency.
+# ────────────────────────────────────────────────────────────────────────
+codeapi:
+  enabled: true
+
+  # Short, predictable resource names (codeapi-api, codeapi-file-server, …)
+  # regardless of release name — referenced verbatim by every EGRESS_/
+  # FILE_SERVER_/TOOL_CALL_SERVER_ URL below and by templates/externalsecret.yaml.
+  # MUST be fullnameOverride, not nameOverride: bjw-template's fullname only
+  # collapses to the short name when the release name CONTAINS it (see
+  # bjw-common templates/lib/chart/_names.tpl) — the actual release name here
+  # is "librechat-code-interpreter" (charts/apps/values.yaml), which doesn't
+  # contain "codeapi", so nameOverride alone renders
+  # "librechat-code-interpreter-codeapi-<controller>" instead (verified by
+  # rendering with the real release name — silently broke every inter-service
+  # URL below, since those don't get a release-name prefix).
+  global:
+    fullnameOverride: codeapi
+
+  # Hardened by default for every controller except sandbox-runner, which
+  # explicitly overrides this (NsJail needs to start as root — see its own
+  # container securityContext below).
+  defaultPodOptions:
+    securityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+
+  controllers:
+    # ── API (HTTP gateway) ──────────────────────────────────────────────
+    api:
+      type: deployment
+      replicas: 1 # conservative first deploy; bump once validated live
+      containers:
+        api:
+          image:
+            repository: ghcr.io/adorsys-gis/code-interpreter-api
+            tag: sha-93172e7
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3112
+              protocol: TCP
+          env:
+            OTEL_TRACING_ENABLED: "false"
+            OTEL_SERVICE_NAME: aiml-codeapi-api
+            CODEAPI_HARDENED_SANDBOX_MODE: "true"
+            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_PORT: "6379"
+            REDIS_PASSWORD:
+              secretKeyRef: { name: codeapi-secrets, key: redis-password }
+            # redis-ha is TLS-only (port 0 / tls-port 6379) — a plaintext
+            # client gets "connection reset by peer". This service's own
+            # Redis TLS support (service/src/queue.ts et al.) is
+            # REDIS_TLS=true -> tls.rejectUnauthorized:false — encrypted but
+            # NOT CA-verified (no REDIS_CA/NODE_EXTRA_CA_CERTS equivalent
+            # upstream, unlike librechat-app's rediss://+REDIS_CA). Accepted
+            # for now: redis-ha is in-cluster only, no public exposure.
+            REDIS_TLS: "true"
+            FILE_SERVER_URL: http://codeapi-file-server:3000
+            TOOL_CALL_SERVER_URL: http://codeapi-tool-call-server:3033
+            EGRESS_GATEWAY_URL: http://codeapi-egress-gateway:3190
+            CODEAPI_INTERNAL_SERVICE_TOKEN:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-internal-service-token }
+            EGRESS_GRANT_TTL_SECONDS: "900"
+            SERVICE_PORT: "3112"
+            CODEAPI_HTTP_JSON_LIMIT: 50mb
+            # Production auth: LibreChat mints a short-lived (<=300s)
+            # Ed25519-signed JWT per request (packages/api/src/auth/codeapi.ts
+            # in danny-avila/LibreChat, active once librechat-app sets
+            # CODEAPI_JWT_ENABLED=true) — NOT a static X-API-Key (the service
+            # explicitly rejects that header outside LOCAL_MODE).
+            # CODEAPI_JWT_PUBLIC_KEY/_KID must match the private half
+            # librechat-app signs with 1:1 (same generated keypair).
+            CODEAPI_AUTH_PROVIDER: librechat-jwt
+            CODEAPI_JWT_PUBLIC_KEY:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-jwt-public-key }
+            CODEAPI_JWT_KID: lc-codeapi-2026-05 # must match librechat-app's CODEAPI_JWT_KID
+          probes:
+            liveness:
+              enabled: true
+              type: HTTP
+              path: /v1/health
+              spec: { httpGet: { port: http }, initialDelaySeconds: 10, periodSeconds: 30 }
+            readiness:
+              enabled: true
+              type: HTTP
+              path: /v1/health
+              spec: { httpGet: { port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+
+    # ── SERVICE-WORKER (BullMQ job processor — signs sandbox execute manifests) ──
+    service-worker:
+      type: deployment
+      replicas: 1
+      initContainers:
+        wait-for-redis:
+          image:
+            repository: busybox
+            tag: "1.36.1"
+          command: ["sh", "-c", "until nc -z redis-ha-redis-haproxy.redis-system.svc.cluster.local 6379; do echo waiting for redis; sleep 2; done"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+        wait-for-sandbox-runner:
+          dependsOn: wait-for-redis
+          image:
+            repository: busybox
+            tag: "1.36.1"
+          command: ["sh", "-c", "until nc -z codeapi-sandbox-runner 2000; do echo waiting for sandbox-runner; sleep 2; done"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      containers:
+        service-worker:
+          image:
+            repository: ghcr.io/adorsys-gis/code-interpreter-worker
+            tag: sha-93172e7
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: health
+              containerPort: 3113
+              protocol: TCP
+          env:
+            OTEL_TRACING_ENABLED: "false"
+            OTEL_SERVICE_NAME: aiml-codeapi-service-worker
+            CODEAPI_HARDENED_SANDBOX_MODE: "true"
+            SANDBOX_ENDPOINT: http://codeapi-sandbox-runner:2000/api/v2
+            EGRESS_GATEWAY_URL: http://codeapi-egress-gateway:3190
+            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_PORT: "6379"
+            REDIS_PASSWORD:
+              secretKeyRef: { name: codeapi-secrets, key: redis-password }
+            REDIS_TLS: "true" # see the note on api's REDIS_TLS above
+            CODEAPI_INTERNAL_SERVICE_TOKEN:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-internal-service-token }
+            CODEAPI_EXECUTION_MANIFEST_PRIVATE_KEY:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-execution-manifest-private-key }
+            EXECUTION_MANIFEST_TTL_SECONDS: "300"
+            EGRESS_GRANT_TTL_SECONDS: "900"
+            PYTHON_CONCURRENCY: "1"
+            OTHER_CONCURRENCY: "4"
+            JOB_WINDOW: "1000"
+            JOB_TIMEOUT: "25000"
+            WORKER_HEALTH_PORT: "3113"
+          probes:
+            liveness:
+              enabled: true
+              type: HTTP
+              path: /health
+              spec: { httpGet: { port: health }, initialDelaySeconds: 30, periodSeconds: 30 }
+            readiness:
+              enabled: true
+              type: HTTP
+              path: /ready
+              spec: { httpGet: { port: health }, initialDelaySeconds: 10, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: 2000m, memory: 3Gi }
+
+    # ── SANDBOX-RUNNER (sandbox API + NsJail — the only elevated component) ──
+    # NOT hardened like the rest of this chart: NsJail's namespace/mount/
+    # chroot setup requires SYS_ADMIN + 7 more capabilities and starting as
+    # root. This is a genuine, permanent exception (see .trivyignore +
+    # ADR-0122) — the KVM microVM alternative (kvmEnabled:true, `privileged:
+    # false`, zero added capabilities) is deferred pending confirmed /dev/kvm
+    # on a home-remote node pool.
+    sandbox-runner:
+      type: deployment
+      replicas: 1 # see the file header note on RWO storage
+      pod:
+        automountServiceAccountToken: false
+      containers:
+        sandbox-runner:
+          image:
+            repository: ghcr.io/adorsys-gis/code-interpreter-sandbox-runner
+            tag: sha-93172e7
+            pullPolicy: IfNotPresent
+          securityContext:
+            privileged: false
+            runAsNonRoot: false
+            seccompProfile:
+              type: Unconfined
+            capabilities:
+              add:
+                - SYS_ADMIN
+                - SYS_CHROOT
+                - SYS_PTRACE
+                - SETUID
+                - SETGID
+                - NET_ADMIN
+                - DAC_OVERRIDE
+                - DAC_READ_SEARCH
+                - CHOWN
+                - FOWNER
+                - FSETID
+                - KILL
+                - SETFCAP
+                - MKNOD
+          ports:
+            - name: sandbox
+              containerPort: 2000
+              protocol: TCP
+          env:
+            OTEL_TRACING_ENABLED: "false"
+            OTEL_SERVICE_NAME: aiml-codeapi-sandbox-runner
+            CODEAPI_HARDENED_SANDBOX_MODE: "true"
+            KVM_ENABLED: "false"
+            # LAUNCHER_* are unused by the NsJail path (KVM-mode-only knobs) —
+            # kept at chart defaults so the service doesn't have to special-case
+            # their absence.
+            LAUNCHER_VCPUS: "2"
+            LAUNCHER_RAM_MIB: "2048"
+            LAUNCHER_LOG_LEVEL: "3"
+            LAUNCHER_FILTER_VSOCK_ENOTCONN: "true"
+            SANDBOX_RUNNER_FD_LIVENESS_LIMIT: "40000"
+            EGRESS_GATEWAY_URL: http://codeapi-egress-gateway:3190
+            SANDBOX_LOG_LEVEL: INFO
+            SANDBOX_PACKAGES_DIRECTORY: /pkgs
+            SANDBOX_MAX_PROCESS_COUNT: "100"
+            SANDBOX_RUN_CPU_TIME: "15000"
+            SANDBOX_RUN_TIMEOUT: "15000"
+            SANDBOX_COMPILE_CPU_TIME: "10000"
+            SANDBOX_COMPILE_TIMEOUT: "10000"
+            SANDBOX_OUTPUT_MAX_SIZE: "65536"
+            SANDBOX_MAX_OPEN_FILES: "2048"
+            # matches service-worker's otherConcurrency at replicaCount:1
+            SANDBOX_MAX_CONCURRENT_JOBS: "4"
+            SANDBOX_PER_JOB_UIDS: "true"
+            SANDBOX_JOB_UID_BASE: "200000"
+            SANDBOX_JOB_GID_BASE: "200000"
+            SANDBOX_JOB_UID_COUNT: "4"
+            SANDBOX_WORKSPACE_REAPER_MAX_AGE_SECONDS: "3600"
+            SANDBOX_EXECUTE_BODY_LIMIT: 50mb
+            SANDBOX_DISABLE_NETWORKING: "true"
+            SANDBOX_ALLOWED_LOCAL_NETWORK_PORT: "3190"
+            SANDBOX_FORWARD_TARGET: codeapi-egress-gateway:3190
+            SANDBOX_REQUIRE_EGRESS_MANIFEST: "true"
+            SANDBOX_EXECUTION_MANIFEST_PUBLIC_KEY:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-execution-manifest-public-key }
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                exec:
+                  command: ["/usr/local/bin/sandbox-runner-healthcheck.sh"]
+                initialDelaySeconds: 60
+                periodSeconds: 30
+                timeoutSeconds: 5
+            readiness:
+              enabled: true
+              type: HTTP
+              path: /api/v2/health
+              spec: { httpGet: { port: sandbox }, initialDelaySeconds: 30, periodSeconds: 10, timeoutSeconds: 5 }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: 2000m, memory: 3Gi }
+
+    # ── FILE SERVER (Hetzner Object Storage, S3-compatible) ─────────────
+    file-server:
+      type: deployment
+      replicas: 1
+      containers:
+        file-server:
+          image:
+            repository: ghcr.io/adorsys-gis/code-interpreter-file-server
+            tag: sha-93172e7
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            OTEL_TRACING_ENABLED: "false"
+            OTEL_SERVICE_NAME: aiml-codeapi-file-server
+            # Same bucket LibreChat's own S3 file storage uses
+            # (ssegning-k8s-state) — this service has no key-prefix knob, so
+            # codeapi's objects land in the bucket root alongside LibreChat's
+            # own (images/, files/…). Both use opaque random keys
+            # (session/execution ids vs LibreChat file ids), so collision
+            # risk is effectively nil; a dedicated bucket is a one-line
+            # follow-up (MINIO_BUCKET) if you'd rather not share it.
+            MINIO_ENDPOINT: nbg1.your-objectstorage.com
+            MINIO_NO_PORT: "true"
+            MINIO_USE_SSL: "true"
+            MINIO_BUCKET: ssegning-k8s-state
+            MINIO_REGION: us-east-1
+            MINIO_ACCESS_KEY:
+              secretKeyRef: { name: codeapi-secrets, key: minio-access-key }
+            MINIO_SECRET_KEY:
+              secretKeyRef: { name: codeapi-secrets, key: minio-secret-key }
+            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_PORT: "6379"
+            REDIS_PASSWORD:
+              secretKeyRef: { name: codeapi-secrets, key: redis-password }
+            REDIS_TLS: "true" # see the note on api's REDIS_TLS above
+            CODEAPI_INTERNAL_SERVICE_TOKEN:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-internal-service-token }
+            FILE_SERVER_PORT: "3000"
+          probes:
+            liveness:
+              enabled: true
+              type: HTTP
+              path: /health
+              spec: { httpGet: { port: http }, initialDelaySeconds: 10, periodSeconds: 30, failureThreshold: 3 }
+            readiness:
+              enabled: true
+              type: HTTP
+              path: /ready
+              spec: { httpGet: { port: http }, initialDelaySeconds: 5, periodSeconds: 15, failureThreshold: 2, timeoutSeconds: 5 }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+
+    # ── TOOL CALL SERVER (programmatic tool calling) ─────────────────────
+    tool-call-server:
+      type: deployment
+      replicas: 1
+      containers:
+        tool-call-server:
+          image:
+            repository: ghcr.io/adorsys-gis/code-interpreter-tool-call-server
+            tag: sha-93172e7
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3033
+              protocol: TCP
+          env:
+            OTEL_TRACING_ENABLED: "false"
+            OTEL_SERVICE_NAME: aiml-codeapi-tool-call-server
+            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_PORT: "6379"
+            REDIS_PASSWORD:
+              secretKeyRef: { name: codeapi-secrets, key: redis-password }
+            REDIS_TLS: "true" # see the note on api's REDIS_TLS above
+            CODEAPI_INTERNAL_SERVICE_TOKEN:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-internal-service-token }
+            TOOL_CALL_SERVER_PORT: "3033"
+            TOOL_CALL_REQUEST_TIMEOUT: "300000"
+            TOOL_CALL_SESSION_EXPIRY: "600"
+          probes:
+            liveness:
+              enabled: true
+              type: HTTP
+              path: /health
+              spec: { httpGet: { port: http }, initialDelaySeconds: 10, periodSeconds: 30 }
+            readiness:
+              enabled: true
+              type: HTTP
+              path: /health
+              spec: { httpGet: { port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+
+    # ── EGRESS GATEWAY (sandbox-runner's only outbound capability endpoint) ──
+    egress-gateway:
+      type: deployment
+      replicas: 1
+      containers:
+        egress-gateway:
+          image:
+            repository: ghcr.io/adorsys-gis/code-interpreter-egress-gateway
+            tag: sha-93172e7
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3190
+              protocol: TCP
+          env:
+            OTEL_TRACING_ENABLED: "false"
+            OTEL_SERVICE_NAME: aiml-codeapi-egress-gateway
+            SERVICE_NAME: egress-gateway
+            CODEAPI_HARDENED_SANDBOX_MODE: "true"
+            CODEAPI_EGRESS_LEDGER_REQUIRED: "true"
+            CODEAPI_EGRESS_LEDGER_TTL_GRACE_SECONDS: "300"
+            EGRESS_GATEWAY_PORT: "3190"
+            EGRESS_GATEWAY_FILE_SERVER_URL: http://codeapi-file-server:3000
+            EGRESS_GATEWAY_TOOL_CALL_SERVER_URL: http://codeapi-tool-call-server:3033
+            EGRESS_GATEWAY_MAX_TOOL_CALL_BYTES: "1048576"
+            CODEAPI_EGRESS_GRANT_SECRET:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-egress-grant-secret }
+            CODEAPI_INTERNAL_SERVICE_TOKEN:
+              secretKeyRef: { name: codeapi-secrets, key: codeapi-internal-service-token }
+            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_PORT: "6379"
+            REDIS_PASSWORD:
+              secretKeyRef: { name: codeapi-secrets, key: redis-password }
+            REDIS_TLS: "true" # see the note on api's REDIS_TLS above
+          probes:
+            liveness:
+              enabled: true
+              type: HTTP
+              path: /live
+              spec: { httpGet: { port: http }, initialDelaySeconds: 10, periodSeconds: 30 }
+            readiness:
+              enabled: true
+              type: HTTP
+              path: /ready
+              spec: { httpGet: { port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+
+    # ── PACKAGE-INIT (Helm pre-install/pre-upgrade hook Job) ────────────
+    # Compiles Python from source and installs Node/Bun/Bash into the shared
+    # packages PVC before sandbox-runner/service-worker start. No
+    # readOnlyRootFilesystem (compiles into system paths — same class of
+    # container as the `seed` weight-download Jobs elsewhere in this repo,
+    # see .trivyignore.yaml KSV-0014).
+    package-init:
+      type: job
+      annotations:
+        helm.sh/hook: pre-install,pre-upgrade
+        helm.sh/hook-weight: "-5"
+        helm.sh/hook-delete-policy: before-hook-creation
+      pod:
+        restartPolicy: Never
+      containers:
+        package-init:
+          image:
+            repository: ghcr.io/adorsys-gis/code-interpreter-package-init
+            tag: sha-93172e7
+            pullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            PYTHON_VERSION: "3.14.4"
+            NODE_VERSION: "24.15.0"
+            BUN_VERSION: "1.3.14"
+            BASH_PACKAGE_VERSION: "5.2.0"
+            FORCE_REBUILD: "false"
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: 2000m, memory: 4Gi }
+
+  # ────────────────────────────────────────────────────────────────────
+  # Services. service-worker has none — it's called only by api (SANDBOX_
+  # ENDPOINT is direct to sandbox-runner, not through service-worker) and
+  # exposes no service of its own beyond the health port probes hit directly.
+  # ────────────────────────────────────────────────────────────────────
+  service:
+    api:
+      enabled: true
+      controller: api
+      ports:
+        http: { enabled: true, port: 3112, targetPort: 3112 }
+    sandbox-runner:
+      enabled: true
+      controller: sandbox-runner
+      ports:
+        sandbox: { enabled: true, port: 2000, targetPort: 2000 }
+    file-server:
+      enabled: true
+      controller: file-server
+      ports:
+        http: { enabled: true, port: 3000, targetPort: 3000 }
+    tool-call-server:
+      enabled: true
+      controller: tool-call-server
+      ports:
+        http: { enabled: true, port: 3033, targetPort: 3033 }
+    egress-gateway:
+      enabled: true
+      controller: egress-gateway
+      ports:
+        http: { enabled: true, port: 3190, targetPort: 3190 }
+
+  # ────────────────────────────────────────────────────────────────────
+  # Persistence: the shared packages PVC (ReadWriteOnce, see the file header
+  # note) plus a /tmp emptyDir per hardened (readOnlyRootFilesystem) container.
+  # ────────────────────────────────────────────────────────────────────
+  persistence:
+    packages:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 10Gi
+      # cluster default storage class (hcloud-volumes on home-remote)
+      storageClass: ""
+      retain: true # helm.sh/resource-policy: keep — don't lose compiled packages on upgrade
+      annotations:
+        helm.sh/hook: pre-install,pre-upgrade
+        helm.sh/hook-weight: "-10" # before package-init (-5)
+      advancedMounts:
+        sandbox-runner:
+          sandbox-runner:
+            - path: /host-packages
+              readOnly: true
+        package-init:
+          package-init:
+            - path: /pkgs
+    tmp-api:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        api:
+          api:
+            - path: /tmp
+    tmp-service-worker:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        service-worker:
+          service-worker:
+            - path: /tmp
+    tmp-file-server:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        file-server:
+          file-server:
+            - path: /tmp
+    tmp-tool-call-server:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        tool-call-server:
+          tool-call-server:
+            - path: /tmp
+    tmp-egress-gateway:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        egress-gateway:
+          egress-gateway:
+            - path: /tmp
+
+  # ────────────────────────────────────────────────────────────────────
+  # NetworkPolicies — the important boundary is sandbox-runner: service-worker
+  # may call it, it may call only egress-gateway (plus DNS), and
+  # egress-gateway delegates only to file-server/tool-call-server. Mirrors
+  # the isolation upstream's own chart designs, re-expressed here.
+  # `app.kubernetes.io/controller: <name>` is the label bjw-template stamps
+  # on every controller's pods — used for the cross-component podSelectors.
+  # This is IN ADDITION to the namespace-level CiliumNetworkPolicy shipped via
+  # the app's depsOverlay (DNS, redis-system, Hetzner Object Storage egress;
+  # see environments/prod/deps/librechat-code-interpreter/ in ai-helm-values).
+  # ────────────────────────────────────────────────────────────────────
+  networkpolicies:
+    api:
+      enabled: true
+      controller: api
+      policyTypes: [Ingress, Egress]
+      rules:
+        ingress:
+          - ports:
+              - { protocol: TCP, port: 3112 }
+        egress:
+          - to:
+              - namespaceSelector: {}
+                podSelector:
+                  matchLabels: { k8s-app: kube-dns }
+            ports:
+              - { protocol: UDP, port: 53 }
+              - { protocol: TCP, port: 53 }
+          - ports:
+              - { protocol: TCP, port: 6379 } # redis-ha (Cilium toFQDNs scopes this further — see depsOverlay)
+          - to:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: file-server }
+            ports:
+              - { protocol: TCP, port: 3000 }
+          - to:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: tool-call-server }
+            ports:
+              - { protocol: TCP, port: 3033 }
+          - to:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: egress-gateway }
+            ports:
+              - { protocol: TCP, port: 3190 }
+
+    service-worker:
+      enabled: true
+      controller: service-worker
+      policyTypes: [Ingress, Egress]
+      rules:
+        ingress:
+          - ports:
+              - { protocol: TCP, port: 3113 }
+        egress:
+          - to:
+              - namespaceSelector: {}
+                podSelector:
+                  matchLabels: { k8s-app: kube-dns }
+            ports:
+              - { protocol: UDP, port: 53 }
+              - { protocol: TCP, port: 53 }
+          - ports:
+              - { protocol: TCP, port: 6379 }
+          - to:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: sandbox-runner }
+            ports:
+              - { protocol: TCP, port: 2000 }
+          - to:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: egress-gateway }
+            ports:
+              - { protocol: TCP, port: 3190 }
+
+    sandbox-runner:
+      enabled: true
+      controller: sandbox-runner
+      policyTypes: [Ingress, Egress]
+      rules:
+        ingress:
+          - from:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: service-worker }
+            ports:
+              - { protocol: TCP, port: 2000 }
+        egress:
+          - to:
+              - namespaceSelector: {}
+                podSelector:
+                  matchLabels: { k8s-app: kube-dns }
+            ports:
+              - { protocol: UDP, port: 53 }
+              - { protocol: TCP, port: 53 }
+          - to:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: egress-gateway }
+            ports:
+              - { protocol: TCP, port: 3190 }
+
+    egress-gateway:
+      enabled: true
+      controller: egress-gateway
+      policyTypes: [Ingress, Egress]
+      rules:
+        ingress:
+          - from:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: sandbox-runner }
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: service-worker }
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: api }
+            ports:
+              - { protocol: TCP, port: 3190 }
+        egress:
+          - to:
+              - namespaceSelector: {}
+                podSelector:
+                  matchLabels: { k8s-app: kube-dns }
+            ports:
+              - { protocol: UDP, port: 53 }
+              - { protocol: TCP, port: 53 }
+          - to:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: file-server }
+            ports:
+              - { protocol: TCP, port: 3000 }
+          - to:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: tool-call-server }
+            ports:
+              - { protocol: TCP, port: 3033 }
+          - ports:
+              - { protocol: TCP, port: 6379 }
+
+    file-server:
+      enabled: true
+      controller: file-server
+      policyTypes: [Ingress, Egress]
+      rules:
+        ingress:
+          - from:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: api }
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: egress-gateway }
+            ports:
+              - { protocol: TCP, port: 3000 }
+        egress:
+          - to:
+              - namespaceSelector: {}
+                podSelector:
+                  matchLabels: { k8s-app: kube-dns }
+            ports:
+              - { protocol: UDP, port: 53 }
+              - { protocol: TCP, port: 53 }
+          - ports:
+              - { protocol: TCP, port: 6379 }
+          # Hetzner Object Storage egress (:443) is granted by the Cilium
+          # toFQDNs policy in the app's depsOverlay — a plain NetworkPolicy
+          # can't express an FQDN destination.
+
+    tool-call-server:
+      enabled: true
+      controller: tool-call-server
+      policyTypes: [Ingress, Egress]
+      rules:
+        ingress:
+          - from:
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: api }
+              - podSelector:
+                  matchLabels: { app.kubernetes.io/controller: egress-gateway }
+            ports:
+              - { protocol: TCP, port: 3033 }
+        egress:
+          - to:
+              - namespaceSelector: {}
+                podSelector:
+                  matchLabels: { k8s-app: kube-dns }
+            ports:
+              - { protocol: UDP, port: 53 }
+              - { protocol: TCP, port: 53 }
+          - ports:
+              - { protocol: TCP, port: 6379 }

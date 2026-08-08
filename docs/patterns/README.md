@@ -7,6 +7,7 @@ categories.
 | File | What it covers |
 |---|---|
 | [self-hosted-model-serving.md](self-hosted-model-serving.md) | **The model-agnostic serving pattern** on the home GPU (VRAM budgeting, engine choice, "deploy the next model" checklist) |
+| [self-hosted-code-interpreter.md](self-hosted-code-interpreter.md) | Self-hosted LibreChat Code Interpreter (ADR-0122): secret generation checklist, install verification, known limitations |
 | [per-user-observability.md](per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki labels |
 | [cost-observability.md](cost-observability.md) | AI-gateway cost observability (ADR-0058/0059/0060): Mimir metrics, cost dashboards + scoreboard, Discord alerting |
 | [ratelimit-quota-observability.md](ratelimit-quota-observability.md) | Rate-limit quota from the limiter's LIVE Redis counters (ADR-0070) |
