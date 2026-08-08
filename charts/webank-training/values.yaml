@@ -68,6 +68,12 @@ training:
   # sizing convention; do not size either from the smaller packed-output
   # artifact.
   datasetBuild:
+    # webank-models#435 split the combined training image: `train` uses
+    # `training.image` (candle-only, no `ort`) and `dataset-build` uses this
+    # image (the CUDA image carrying `ort` plus the Python generator venvs).
+    # GPU node placement above stays shared between both — both images link
+    # `libcuda.so.1` — but the image reference itself is no longer shared.
+    image: ""
     resources:
       requests: { cpu: "4", memory: 10Gi, nvidia.com/gpu: 1 }
       limits: { cpu: "8", memory: 14Gi, nvidia.com/gpu: 1 }

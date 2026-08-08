@@ -4,6 +4,8 @@
 {{- $detector := $training.documentDetector -}}
 {{- if not $training.image }}{{ fail "webank-training: training.image must be an immutable image digest" }}{{- end }}
 {{- if not (contains "@sha256:" $training.image) }}{{ fail "webank-training: training.image must be digest-pinned" }}{{- end }}
+{{- if not $training.datasetBuild.image }}{{ fail "webank-training: training.datasetBuild.image must be an immutable image digest" }}{{- end }}
+{{- if not (contains "@sha256:" $training.datasetBuild.image) }}{{ fail "webank-training: training.datasetBuild.image must be digest-pinned" }}{{- end }}
 {{- if not $lakefs.endpoint }}{{ fail "webank-training: training.lakefs.endpoint is required" }}{{- end }}
 {{- if not $training.otel.endpoint }}{{ fail "webank-training: training.otel.endpoint is required" }}{{- end }}
 {{- if not $workflow.serviceAccountName }}{{ fail "webank-training: workflow.serviceAccountName is required" }}{{- end }}
@@ -97,7 +99,7 @@ spec:
       priorityClassName: {{ . | quote }}
       {{- end }}
       container:
-        image: {{ $training.image | quote }}
+        image: {{ $training.datasetBuild.image | quote }}
         command: ["sh", "-ceu"]
         args:
           - |
