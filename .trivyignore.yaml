@@ -155,15 +155,16 @@ misconfigurations:
 
   - id: KSV-0005
     # KSV-0005 "SYS_ADMIN capability" — librechat-code-interpreter's
-    # sandbox-runner container ONLY (ADR-0122). NsJail's namespace/mount setup
-    # genuinely requires SYS_ADMIN (see
-    # charts/librechat-code-interpreter/values.yaml (controllers.sandbox-runner)
-    # for the full capability list, and the chart's README for the
-    # kvmEnabled:true microVM alternative that wouldn't need it — deferred,
-    # no confirmed /dev/kvm on home-remote worker nodes). Nothing else in this
-    # repo adds SYS_ADMIN.
+    # sandbox-runner controller ONLY (ADR-0122). NsJail's namespace/mount
+    # setup genuinely requires SYS_ADMIN (see
+    # charts/librechat-code-interpreter/values.yaml
+    # codeapi.controllers.sandbox-runner.containers.sandbox-runner.securityContext
+    # for the full capability list). A KVM microVM mode would avoid this
+    # entirely but isn't wired here — deferred, no confirmed /dev/kvm on
+    # home-remote worker nodes (see the ADR). Nothing else in this repo adds
+    # SYS_ADMIN.
     statement: >-
-      NsJail (the sandbox isolation mechanism when kvmEnabled:false) requires
-      SYS_ADMIN for its namespace/mount/chroot setup — sandbox-runner only.
+      NsJail (this chart's sandbox isolation mechanism) requires SYS_ADMIN
+      for its namespace/mount/chroot setup — sandbox-runner only.
     paths:
       - "librechat-code-interpreter.yaml"

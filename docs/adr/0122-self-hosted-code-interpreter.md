@@ -183,11 +183,13 @@ copied — see also the correction note above):
   through a device-plugin instead of hostPath).
 - Single sandbox-runner replica (RWO storage constraint) means no HA and
   limited concurrent-execution throughput until an RWX storage path exists.
-- A five-component stateful-ish service (Redis queue, S3, a PVC-backed
+- A six-controller stateful-ish service (Redis queue, S3, a PVC-backed
   package-init Job, an ExternalSecret with 8 properties) is real new
-  operational surface on a home cluster, vendored from an upstream repo we
-  don't control the release cadence of — bumping `appVersion` means re-diffing
-  the vendored templates by hand (no `helm dep update` safety net).
+  operational surface on a home cluster, and the images come from a fork
+  (`ADORSYS-GIS/code-interpreter`) we now own the release cadence of —
+  bumping the image version means merging an upstream-sync PR there, then
+  re-pinning every `tag:` here and confirming nothing else changed shape
+  (env vars, ports, probe paths) before merging.
 - The upstream chart's own `fail`-guard validation of the execution-manifest
   keypair is gone (it's ESO-sourced now); a missing/misnamed
   `ssegning-aws` property now surfaces as `SecretSyncedError` at sync time
@@ -198,12 +200,19 @@ copied — see also the correction note above):
 - Confirm whether any `home-remote` node pool actually exposes `/dev/kvm`;
   if so, migrate to KVM mode (materially better security posture).
 - Investigate an RWX-capable storage path (or accept node-pinning) before
-  scaling `sandboxRunner` beyond 1 replica.
-- Harden `api`/`file-server`/`tool-call-server`/`egress-gateway` container
-  `securityContext` to this repo's usual KSV-0118 profile
-  (`runAsNonRoot`/`drop: ALL`/`readOnlyRootFilesystem`) once each image's
-  non-root behaviour is confirmed live — left at upstream defaults for this
-  first pass to avoid an unverifiable breaking change.
+  scaling `sandbox-runner` beyond 1 replica.
+- **Redis TLS is encrypted but not CA-verified** — `REDIS_TLS=true` maps to
+  `tls.rejectUnauthorized: false` in this service's own Redis client (all
+  five consumers: api, service-worker, file-server, tool-call-server,
+  egress-gateway); there's no CA-verification knob like `librechat-app`'s
+  `rediss://`+`REDIS_CA`. Redis here carries the BullMQ job queue, the
+  internal service token, execution manifests, and the egress-grant
+  ledger — an in-cluster MITM could decrypt/forge that traffic. Likelihood
+  is low (needs cluster-networking compromise; sandbox-runner's own egress
+  is locked to egress-gateway only, so untrusted code can't reach Redis
+  directly) and accepted for now, but proper `rejectUnauthorized: true` +
+  CA pinning would need an upstream patch (flagged in review, P2 — tracked
+  here rather than fixed in this PR).
 - Programmatic Tool Calling (routing MCP tool calls through the sandbox) is
   available upstream but not wired here yet.
 

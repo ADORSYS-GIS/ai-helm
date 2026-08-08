@@ -9,36 +9,30 @@
 # matches ONLY release-helm-charts.yml's deterministic scan, which renders
 # each chart to `rendered/<chart>.yaml` before scanning; it structurally
 # cannot match paths this gate reports, which are directory-relative,
-# e.g. `librechat-code-interpreter/templates/worker-sandbox-deployment.yaml`,
 # since this gate scans `charts/` directly with trivy's own Helm renderer).
 #
 # ⚠️ This trivy version's plain .trivyignore is ID-ONLY for misconfigurations
 # — no path-scoping (tested: a trailing path token on the line is silently
-# ignored, verified empirically against a wrong path). Every entry below is
+# ignored, verified empirically against a wrong path). Any entry here is
 # therefore a genuine BLANKET ignore of the rule ID, not scoped to one file,
 # unlike .trivyignore.yaml's policy of "never a blanket whole-ID ignore" — the
-# tool doesn't give this gate that option. Verified (2026-08-07) that no OTHER
-# dependency-free chart in this repo trips these three IDs today (the gate
-# only manages to render dependency-free charts — every chart with a subchart
-# dependency fails to render under a bare checkout with no `helm dependency
-# build` and is silently skipped, so it never reaches this ignorefile at all).
-# If a FUTURE chart legitimately needs one of these IDs to fail, this file
-# will incorrectly hide it — revisit this note before adding another
-# workload that needs elevated capabilities or a non-default securityContext.
-
-# KSV-0005 / KSV-0014 / KSV-0118 — charts/librechat-code-interpreter's
-# sandbox-runner controller ONLY (ADR-0122). NsJail's namespace/mount/chroot
-# setup genuinely requires SYS_ADMIN + friends (see
-# charts/librechat-code-interpreter/values.yaml
-# codeapi.controllers.sandbox-runner.containers.sandbox-runner.securityContext
-# for the full capability list), which forces a non-default securityContext
-# (KSV-0118) and rules out readOnlyRootFilesystem (KSV-0014 — NsJail writes
-# its per-job workspace/scratch dirs to the container rootfs). Every OTHER
-# controller in this chart (api, file-server, tool-call-server,
-# egress-gateway, service-worker, both busybox init containers, package-init)
-# carries this repo's usual hardened securityContext (drop ALL, no priv-esc,
-# readOnlyRootFilesystem where the container can tolerate it) — see the same
-# values.yaml, not ignored.
-KSV-0005
-KSV-0014
-KSV-0118
+# tool doesn't give this gate that option.
+#
+# ⚠️ This gate can only render DEPENDENCY-FREE charts — it does a bare
+# checkout with no `helm dependency build`, so any chart with a subchart
+# dependency fails to render and is silently SKIPPED, never reaching this
+# ignorefile at all. A blanket entry here therefore only has any effect for
+# whichever dependency-free chart currently trips that ID — check that before
+# adding one, or you're carrying dead risk (an ignore with no coverage, but
+# still hiding a real finding repo-wide the day some OTHER dependency-free
+# chart legitimately trips the same ID).
+#
+# No active entries as of 2026-08-08. Previously carried KSV-0005/0014/0118
+# for charts/librechat-code-interpreter's sandbox-runner controller
+# (ADR-0122) while that chart was dependency-free; removed once it gained
+# the bjw-template + common dependencies (Chart.yaml) — those findings are
+# still legitimately exempt, but now only reachable via release-helm-
+# charts.yml's deterministic scan, which .trivyignore.yaml already covers
+# (caught in PR review — the entries here had silently stopped providing any
+# coverage for the chart they named, and were dead weight carrying only the
+# blind-spot risk described above).
