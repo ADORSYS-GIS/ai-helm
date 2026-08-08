@@ -554,6 +554,19 @@ codeapi:
     # securityContext on this container at all.
     package-init:
       type: job
+      # ⚠️ Replace=false override (live-incident correction, 2026-08-08): the
+      # repo-wide default syncPolicy (charts/apps) uses ArgoCD's Replace=true
+      # sync option (`kubectl replace` instead of `apply`). Once this Job's
+      # pod is created, `spec.selector` is server-populated and immutable —
+      # every subsequent sync then fails with `spec.selector: Required
+      # value`/`field is immutable` and the Application sits Failed/OutOfSync
+      # forever, even though the running Job itself is perfectly healthy.
+      # Confirmed live across 5+ retried sync attempts. This per-resource
+      # annotation overrides just this Job back to `kubectl apply`, which
+      # handles the immutable-selector case fine (apply only patches fields
+      # that changed). Nothing else in the repo is affected.
+      annotations:
+        argocd.argoproj.io/sync-options: Replace=false
       pod:
         restartPolicy: Never
       containers:
@@ -628,6 +641,16 @@ codeapi:
       # completion of hook /PersistentVolumeClaim/codeapi", forever. Plain
       # resource now — binds normally once package-init's pod (or any other
       # consumer) is scheduled.
+      # ⚠️ Replace=false override (live-incident correction, 2026-08-08):
+      # once Bound, a PVC's spec is immutable except resources.requests —
+      # the repo-wide Replace=true sync option (`kubectl replace`) fails
+      # every subsequent sync with `spec is immutable after creation`,
+      # forever, even though the PVC itself is perfectly healthy. Confirmed
+      # live across 5+ retried sync attempts. This per-resource annotation
+      # overrides just this PVC back to `kubectl apply`. Nothing else in the
+      # repo is affected.
+      annotations:
+        argocd.argoproj.io/sync-options: Replace=false
       advancedMounts:
         sandbox-runner:
           sandbox-runner:
