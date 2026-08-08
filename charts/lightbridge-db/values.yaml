@@ -42,13 +42,30 @@ resources:
       postgresql:
         parameters:
           archive_timeout: "30min"
+          # Incident (2026-08-08/09): max_connections was left UNSET, so CNPG
+          # applied its own default of 100 — too little for a cluster shared
+          # by 7 tenant roles (repoauth/codeintel/grafana_ro/coder/lakefs/
+          # mlflow/governance) each holding their own client-side pool, plus
+          # the reserved superuser/replication/monitoring-exporter slots.
+          # LakeFS alone defaults to a 25-connection pool (see charts/lakefs
+          # lakefs-app.yaml, now capped to 5) — a quarter of the old ceiling
+          # from one tenant. Doubled explicitly to 200 rather than left
+          # implicit, paired with the memory bump below so it isn't a bare
+          # number with no headroom behind it. Sized for max_connections ×
+          # work_mem (Postgres default work_mem=4MiB, unset here): worst case
+          # (every connection concurrently sorting) is 200 × 4MiB ≈ 800MiB,
+          # plus per-backend base overhead (roughly 200 × ~2MiB ≈ 400MiB) and
+          # CNPG's own shared_buffers default (128MiB) — call it ~1.3GiB
+          # worst-case, which the 2Gi limit below covers with headroom without
+          # requiring the node to reserve that much (500Mi→1Gi request only).
+          max_connections: "200"
       resources:
         limits:
           cpu: 300m
-          memory: 1Gi
+          memory: 2Gi
         requests:
           cpu: 200m
-          memory: 500Mi
+          memory: 1Gi
       # Declarative role for lightbridge-repo-auth (ADR-0047): a dedicated login
       # role, isolated from the bootstrap `app` role. Password from the
       # basic-auth Secret below (ESO-provisioned); CNPG creates/maintains the
