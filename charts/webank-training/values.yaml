@@ -18,14 +18,16 @@ training:
     secretKey: secret-access-key
   otel:
     endpoint: ""
-  # Every dataset-build and training template uses this GPU-node placement and
-  # resource profile: `nvidia.com/gpu.present=true` (the live GPU node label,
-  # matching charts/inference's `defaults.gpu` — see ADR-0114), an
-  # matching toleration and runtime class, and an explicit positive accelerator
-  # request and limit. Every cluster-specific name and placement value is
-  # supplied by ai-helm-values; this chart owns only the rendering contract.
-  # Dataset construction receives the same reviewed CPU, memory, and accelerator
-  # allocation as candidate training.
+  # Every dataset-build and training template uses this GPU-node placement:
+  # `nvidia.com/gpu.present=true` (the live GPU node label, matching
+  # charts/inference's `defaults.gpu` — see ADR-0114), a matching toleration,
+  # and `runtimeClassName`. Every cluster-specific name and placement value
+  # is supplied by ai-helm-values; this chart owns only the rendering
+  # contract. `train` also takes its CPU/memory/accelerator quantities from
+  # `resources` below; `dataset-build` uses the same placement but its own
+  # measured `training.datasetBuild.resources` quantities (see below) —
+  # placement is shared because both need the driver library the GPU claim
+  # injects (ai-helm#948), not because their resource footprints match.
   #
   # ⚠️ Prior to ADR-0114 this contract was `role: gpu`, which no node in the
   # cluster has ever carried — every GPU-requesting workflow pod was
@@ -41,19 +43,34 @@ training:
     resources:
       requests: { cpu: "4", memory: 16Gi, nvidia.com/gpu: 1 }
       limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }
-  # Dataset-build steps run generation, image decode/resize, tensor packing,
-  # and an HTTP upload — no forward pass, no CUDA (webank-models#415). They
-  # request no accelerator and carry no GPU node placement; only `train`
-  # steps use `training.gpu` above. Sized from a real local run of this
-  # pipeline: 13,393 crops in 2:55, materialize-synthetic-source 12,799 rows
-  # in 11s (peak 13.2 GiB RSS, measured with `/usr/bin/time -v` — the working
-  # set is one `Vec<f32>` tensor plus a copy, not the packed output size),
-  # pack 4.4 GB in 14s. The memory limit keeps ~50% headroom above that
-  # measured peak; do not size it from the smaller output artifact.
+  # webank-models#415 argued dataset-build performs no forward pass so it
+  # needs no GPU. That reasoning was correct but incomplete (ai-helm#948):
+  # every subcommand of the pinned `webank-train-gpu` image — including a
+  # pure-CLI one like `training-data bootstrap-model-repository` — links
+  # `libcuda.so.1` as a hard ELF DT_NEEDED dependency, because candle's
+  # `cuda` feature pulls in ~30 `cu*` driver symbols at load time. The
+  # process fails at start (exit 127, "cannot open shared object file")
+  # unless the NVIDIA driver library is injected, which only happens via
+  # the GPU resource claim plus `runtimeClassName: nvidia`. Dataset-build
+  # therefore keeps the same GPU node placement as `train` (`training.gpu`
+  # nodeSelector/toleration/runtimeClassName), even though it runs no
+  # kernel — the accelerator claim exists to provision the driver, not
+  # compute.
+  #
+  # CPU/memory stay their own knob, distinct from `training.gpu.resources`,
+  # because dataset-build's measured footprint differs from training's and
+  # has already changed once: webank-models#424 measured
+  # `materialize-synthetic-source` peaking at 13.20 GiB RSS (12,799 rows,
+  # `/usr/bin/time -v`); webank-models#425 removed a redundant tensor copy
+  # and cut that peak to 8.81 GiB RSS (9,234,140 KB), byte-identical output
+  # verified by SHA-256. The request sits just above that new peak and the
+  # limit keeps ~50%+ headroom above it, consistent with the original
+  # sizing convention; do not size either from the smaller packed-output
+  # artifact.
   datasetBuild:
     resources:
-      requests: { cpu: "4", memory: 16Gi }
-      limits: { cpu: "8", memory: 20Gi }
+      requests: { cpu: "4", memory: 10Gi, nvidia.com/gpu: 1 }
+      limits: { cpu: "8", memory: 14Gi, nvidia.com/gpu: 1 }
   documentDetector:
     stemChannels: 32
     epochs: 10

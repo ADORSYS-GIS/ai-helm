@@ -85,6 +85,14 @@ spec:
   {{- end }}
   templates:
     - name: build
+      podSpecPatch: |
+        runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with $training.gpu.priorityClassName }}
       priorityClassName: {{ . | quote }}
       {{- end }}
