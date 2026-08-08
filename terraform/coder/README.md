@@ -1,6 +1,6 @@
 # Declarative Coder templates — test wiring
 
-This directory is the **declarative lifecycle** for Coder templates (ADR-0122).
+This directory is the **declarative lifecycle** for Coder templates (ADR-0123).
 The template **source** lives in `.coder/templates/`; this Terraform manages the
 template/version in Coder via the `coder/coderd` provider.
 
@@ -15,7 +15,7 @@ template/version in Coder via the `coder/coderd` provider.
 
 ## Prereqs
 
-- Terraform >= 1.10 (S3-native state locking via `use_lockfile`; ADR-0122)
+- Terraform >= 1.10 (S3-native state locking via `use_lockfile`; ADR-0123)
 - A Coder API token with template-admin scope
 - Hetzner Object Storage (S3-compatible) credentials for the state backend
 
@@ -63,7 +63,7 @@ terraform import coderd_template.poc_ubuntu default/poc-ubuntu
 
 For a genuinely new Coder deployment, do **not** reuse state from a previous
 one — it holds stale template/version UUIDs. Use **empty** state (fresh state
-key, or `terraform state rm`) as documented in ADR-0122.
+key, or `terraform state rm`) as documented in ADR-0123.
 
 ## Notes
 
