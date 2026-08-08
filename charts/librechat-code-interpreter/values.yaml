@@ -84,12 +84,23 @@ codeapi:
   global:
     fullnameOverride: codeapi
 
-  # Hardened by default for every controller except sandbox-runner, which
-  # explicitly overrides this (NsJail needs to start as root — see its own
-  # container securityContext below).
+  # NO runAsNonRoot here (live-deploy correction, 2026-08-08): confirmed via
+  # a real rollout that NONE of the ADORSYS-GIS/code-interpreter fork's
+  # images declare a non-root USER (checked every Dockerfile — all `FROM
+  # oven/bun:1.3.14`/`buildpack-deps:bookworm` production stages, no `USER`
+  # directive) — every one of them runs as root by design/default. Asserting
+  # runAsNonRoot:true here made kubelet refuse to start ANY controller
+  # (`CreateContainerConfigError: container has runAsNonRoot and image will
+  # run as root`) — first hit on package-init specifically because it's a
+  # pre-install hook Job that blocks the rest of the release, so nothing else
+  # even got a chance to run before this was caught. `allowPrivilegeEscalation:
+  # false`/`capabilities.drop: [ALL]`/`readOnlyRootFilesystem`/seccomp still
+  # apply per-container below — running as root is a real regression on
+  # defense-in-depth, tracked in the ADR as a follow-up (patch the fork's
+  # Dockerfiles to add non-root USERs, which needs care: /pkgs and other
+  # writable paths would need matching ownership).
   defaultPodOptions:
     securityContext:
-      runAsNonRoot: true
       seccompProfile:
         type: RuntimeDefault
 
