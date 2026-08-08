@@ -1,0 +1,234 @@
+# lakefs-db — dedicated CNPG Cluster (lakefs-main-db) + barman ObjectStore +
+# ScheduledBackup + PodMonitor for LakeFS's metadata KV store. Leaf chart of
+# the lakefs App-of-Apps orchestrator (ADR-0019), modelled directly on
+# charts/lightbridge-db's pattern — see ADR-0123 for why LakeFS gets its own
+# cluster instead of a role on the shared lightbridge-main-db (supersedes
+# ADR-0085 decision #3, LakeFS only).
+#
+# Namespace is `mlops` — the same namespace as the rest of the LakeFS stack
+# (unlike lightbridge-db's tenants, LakeFS is the ONLY consumer of this
+# cluster, so there's no reason to place it elsewhere).
+
+resources:
+  # ────────────────────────────────────────────────────────────────────
+  # The primary CNPG cluster. Bootstraps the `lakefs` database owned by a
+  # `lakefs` role whose credentials come from the lakefs-db-role Secret below
+  # (ExternalSecret) — a single-tenant cluster uses CNPG's initdb bootstrap
+  # owner+secret directly, unlike lightbridge-db's `managed.roles` pattern
+  # (which layers additional tenant roles onto an already-bootstrapped `app`
+  # database on a cluster that predates any of them).
+  #
+  # instances: 3, NOT the 2 lightbridge-main-db and this repo's only other
+  # CNPG cluster use — a deliberate departure, not a new default. This
+  # cluster is the sole system of record for every dataset commit the
+  # platform's training pipelines depend on; losing quorum here makes the
+  # whole data-versioning plane unreadable, not just inconvenient for one
+  # app. A third instance keeps one standby in reserve even after a single
+  # node loss. See ADR-0123 for the full reasoning.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: lakefs-main-db
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      instances: 3
+      imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+      storage:
+        # LakeFS's KV data is refs/commits/metadata (small keys/values), not
+        # the S3-resident object content repositories actually version — this
+        # does not need to scale with dataset size.
+        size: "2Gi"
+      bootstrap:
+        initdb:
+          database: lakefs
+          owner: lakefs
+          secret:
+            name: lakefs-db-role
+      plugins:
+        # `enabled: true` explicit for the same reason as lightbridge-db: the
+        # CNPG operator defaults it on and ArgoCD compares `plugins` as an
+        # atomic LIST, so without it here the chart never matches live state.
+        - name: barman-cloud.cloudnative-pg.io
+          enabled: true
+          isWALArchiver: true
+          parameters:
+            barmanObjectName: lakefs-main-db
+            serverName: lakefs-main-db
+      postgresql:
+        parameters:
+          archive_timeout: "30min"
+          # This cluster serves exactly ONE client (LakeFS) with a hard-capped
+          # 5-connection pool (charts/lakefs lakefs-app.yaml). 50 is generous
+          # headroom over that for psql debugging, the CNPG monitoring
+          # exporter, and backup/migration connections — small and well
+          # understood for a single-tenant cluster, set explicitly rather than
+          # left at CNPG's 100 default (this incident's lesson: don't leave
+          # max_connections implicit). See ADR-0123 for the full sizing math.
+          max_connections: "50"
+      resources:
+        # Sized for max_connections × work_mem, not copied from
+        # lightbridge-main-db's numbers (ADR-0123): worst case with Postgres's
+        # 4MiB work_mem default (unset here) is 50 × 4MiB ≈ 200MiB, plus
+        # per-backend base overhead (≈50 × 2MiB ≈ 100MiB) and CNPG's own
+        # shared_buffers default (128MiB) — ≈430MiB worst case. 1Gi covers
+        # that with real headroom.
+        limits:
+          cpu: 200m
+          memory: 1Gi
+        requests:
+          cpu: 100m
+          memory: 512Mi
+  # ────────────────────────────────────────────────────────────────────
+  # barman-cloud ObjectStore — same Hetzner Object Storage bucket every other
+  # CNPG cluster in this repo backs up to, own destinationPath prefix so this
+  # cluster's catalog never collides with lightbridge-main-db's.
+  # Retention/throttling match the lightbridge-db convention (7d window,
+  # jobs:1 + gzip) — found live during that cluster's own incident history
+  # (Hetzner Object Storage SlowDown on parallel multipart uploads and on a
+  # large retention-prune catalog scan); applying the same convention here
+  # from day one rather than rediscovering it.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: barmancloud.cnpg.io/v1
+    kind: ObjectStore
+    metadata:
+      name: lakefs-main-db
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      retentionPolicy: "7d"
+      configuration:
+        destinationPath: s3://ssegning-k8s-state/lakefs-main-db
+        endpointURL: https://nbg1.your-objectstorage.com
+        data:
+          jobs: 1
+          compression: gzip
+        s3Credentials:
+          accessKeyId:
+            name: lakefs-cnpg-s3
+            key: s3_access_key_id
+          secretAccessKey:
+            name: lakefs-cnpg-s3
+            key: s3_secret_access_key
+  # ────────────────────────────────────────────────────────────────────
+  # Scheduled backup — same 6h cadence as lightbridge-main-db.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: ScheduledBackup
+    metadata:
+      name: lakefs-main-db-daily
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      immediate: true
+      schedule: "0 0 */6 * * *"
+      backupOwnerReference: self
+      cluster:
+        name: lakefs-main-db
+      method: plugin
+      pluginConfiguration:
+        name: barman-cloud.cloudnative-pg.io
+  # ────────────────────────────────────────────────────────────────────
+  # PodMonitor so Grafana Alloy scrapes the CloudNativePG per-instance
+  # metrics exporter, same as lightbridge-main-db.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: lakefs-main-db
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+    spec:
+      selector:
+        matchLabels:
+          cnpg.io/cluster: lakefs-main-db
+      podMetricsEndpoints:
+        - port: metrics
+          interval: 30s
+  # ────────────────────────────────────────────────────────────────────
+  # lakefs-db-role: the CNPG bootstrap owner Secret (username `lakefs`,
+  # consumed by spec.bootstrap.initdb.secret above) AND the same Secret the
+  # app-facing connection string (charts/lakefs-secrets) reads the password
+  # from. Reuses the EXISTING `lakefs_db_password` Secrets Manager property
+  # (previously consumed by the now-removed lakefs role on
+  # lightbridge-main-db) — no new operator-provisioned property needed.
+  # NOTE: the ESO `password` template braces are double-escaped so Helm's
+  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lakefs-db-role
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lakefs-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "lakefs"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: lakefs_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # lakefs-cnpg-s3: barman-cloud backup credentials, mirroring
+  # lightbridge-cnpg-s3 exactly — same underlying platform S3 material every
+  # other Hetzner Object Storage / CNPG-backup consumer in this repo uses
+  # (prod/meta/test-app). The `s3_region_name` literal is required by the
+  # barman-cloud plugin's defaulting webhook, which injects an
+  # `s3Credentials.region` ref pointing at THIS secret name/key server-side —
+  # without it every ScheduledBackup fails `missing key s3_region_name`
+  # (found live on lightbridge-db; applying the fix here from day one).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lakefs-cnpg-s3
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lakefs-cnpg-s3
+        creationPolicy: Owner
+        template:
+          engineVersion: v2
+          mergePolicy: Merge
+          data:
+            s3_region_name: "us-east-1"
+      data:
+        - secretKey: s3_access_key_id
+          remoteRef:
+            key: prod/meta/test-app
+            property: s3_backup_cnpg_client_id
+        - secretKey: s3_secret_access_key
+          remoteRef:
+            key: prod/meta/test-app
+            property: s3_backup_cnpg_secret
