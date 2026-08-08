@@ -4,6 +4,25 @@
 **Date:** 2026-08-07
 **Deciders:** @stephane-segning
 
+> **Corrected 2026-08-08 (same PR, before merge — not a supersession):** the
+> first pass of this work got two things wrong, caught in review before
+> merge. (1) It referenced `ghcr.io/clickhouse/code-interpreter/*` images
+> that were never verified and do not exist — upstream publishes no images
+> at all (its own CI only runs `docker buildx build --check`, never a push).
+> Fixed by forking upstream to
+> [`ADORSYS-GIS/code-interpreter`](https://github.com/ADORSYS-GIS/code-interpreter)
+> with a build+push workflow publishing to `ghcr.io/adorsys-gis/
+> code-interpreter-*`, pinned to a commit SHA tag. (2) It hand-wrote raw
+> Kubernetes manifests instead of using `bjw-template` (`charts/bjw-template`,
+> this repo's standard app-scaffolding chart — see `charts/librechat-app` for
+> the established multi-controller pattern this now mirrors), against repo
+> convention. Rewritten so the whole chart is `bjw-template`-driven
+> (`controllers`/`service`/`persistence`/`networkpolicies`); only the
+> ExternalSecret (not a bjw-common resource type) stays a custom template.
+> The architecture decisions below (NsJail mode, dedicated namespace, JWT
+> auth, shared redis-ha/S3) are unchanged — only *how* the chart is
+> authored and *where* the images come from changed.
+
 ## Context
 
 LibreChat's Code Interpreter agent capability (`execute_code`) was already wired
@@ -68,12 +87,22 @@ docs), and materially shaped this decision:
 
 ## Decision
 
-Vendor and adapt `helm/codeapi` as `charts/librechat-code-interpreter`
-(copied from source, not a Helm chart dependency — nothing to point one at).
-Adaptations from upstream:
+Build `charts/librechat-code-interpreter` on `bjw-template` (this repo's
+standard app-scaffolding chart, `charts/bjw-template` — repo convention, see
+`charts/librechat-app` for the established pattern) rather than hand-rolled
+manifests, re-implementing upstream's `helm/codeapi` chart's 7 components
+(api, service-worker, sandbox-runner, file-server, tool-call-server,
+egress-gateway, package-init) as `bjw-template` `controllers`/`service`/
+`persistence`/`networkpolicies` entries. Only the ExternalSecret (not a
+bjw-common resource type) is a custom template
+(`templates/externalsecret.yaml`). Images come from the
+`ADORSYS-GIS/code-interpreter` fork (upstream publishes none — see the
+correction note above), pinned to a commit SHA tag, not `latest`.
 
-- **Drop the Bitnami `redis`/`minio` chart dependencies entirely** rather than
-  declaring-and-disabling them. Always point at the shared `redis-ha`
+Adaptations from upstream's own chart design (re-implemented, not literally
+copied — see also the correction note above):
+
+- **No bundled Redis/MinIO.** Always point at the shared `redis-ha`
   (`redis-ha-redis-haproxy.redis-system.svc.cluster.local`, TLS, same as every
   other consumer) and the shared Hetzner Object Storage bucket
   (`ssegning-k8s-state`) that `librechat-app` itself already uses for file
@@ -81,24 +110,26 @@ Adaptations from upstream:
   the bucket root alongside LibreChat's own — both use opaque
   session/execution-scoped keys, so collision risk is negligible; a dedicated
   bucket is a one-line follow-up (`fileServer.s3.bucket`) if that changes.
-- **Replace `templates/secrets.yaml`** (a plaintext-from-values Opaque
-  Secret — would fight ArgoCD selfHeal against an ExternalSecret targeting
-  the same object) **with an ExternalSecret** (`templates/externalsecret.yaml`)
-  producing the identical Secret name/keys every other template already reads
-  via `secretKeyRef`, sourced from `ssegning-aws`
-  (`ai/camer/digital/prod/env`, one property per key — repo convention). This
-  also removes the upstream chart's template-time `fail` guards that checked
-  `executionManifest.privateKey`/`publicKey` presence in `.Values` — those
-  values no longer exist as plaintext by design; a missing secret now surfaces
-  as `SecretSyncedError` / pod CrashLoop, same as every other ESO-backed
-  secret in this repo.
-- **`workerSandbox.kvmEnabled: false`** — NsJail/chroot fallback, deployed to
-  a new dedicated `librechat-sandbox` namespace elevated to the `privileged`
+- **Secrets are an ExternalSecret** (`templates/externalsecret.yaml`,
+  producing a single `codeapi-secrets` Secret) sourced from `ssegning-aws`
+  (`ai/camer/digital/prod/env`, one property per key — repo convention),
+  never plaintext values. Every container reads it via `secretKeyRef` —
+  same pattern `charts/librechat-app` already uses. A missing property
+  surfaces as `SecretSyncedError` / pod CrashLoop, same as every other
+  ESO-backed secret in this repo.
+- **NsJail/chroot sandbox mode** (`sandbox-runner`'s container
+  `securityContext.capabilities.add: [SYS_ADMIN, …]`), deployed to a new
+  dedicated `librechat-sandbox` namespace elevated to the `privileged`
   Pod Security Standard (via `global.namespacePodSecurity` in
-  `charts/apps/values.yaml`, the existing mechanism).
-- **`workerSandbox.packages.source: pvc`** on a 10Gi ReadWriteOnce PVC (cluster
-  default storage class), with **`sandboxRunner.replicaCount` and
-  `api.replicaCount` at 1** for the first deploy (RWO can't be shared across
+  `charts/apps/values.yaml`, the existing mechanism). Every other
+  container in the chart keeps this repo's usual hardened
+  `securityContext` (`drop: [ALL]`, no priv-esc, `readOnlyRootFilesystem`)
+  — sandbox-runner and the `package-init` Job (compiles Python from
+  source into system paths) are the two documented exceptions
+  (`.trivyignore` / `.trivyignore.yaml`).
+- **A shared packages PVC** (10Gi, ReadWriteOnce, cluster default storage
+  class), with **`sandbox-runner` and `service-worker`/`api` at 1 replica**
+  for the first deploy (RWO can't be shared across
   nodes; conservative footprint on a resource-constrained home cluster).
   Revisit once validated live — scale `sandboxRunner` up only once an RWX
   storage class is available, or accept node-pinning via
@@ -113,16 +144,19 @@ Adaptations from upstream:
   wired (`LIBRECHAT_CODE_BASEURL` now points at the in-cluster Service instead
   of the managed API); the API key is simply unused by this auth path and left
   in place in case a managed-API fallback is ever wanted again.
-- **Deployed as a `librechart` orchestrator child** (`charts/librechart`,
-  ADR-0014 pattern) rather than a flat `charts/apps` umbrella entry, since it's
-  part of the LibreChat application group. A `depsOverlay`
-  (`environments/{base,prod}/deps/librechat-code-interpreter`) ships the
-  CiliumNetworkPolicy opening the new namespace boundary (DNS, `redis-system`,
-  Hetzner Object Storage FQDN egress; ingress on the `api` Service from
-  `converse`) and the matching egress allow in `converse` for librechat-app to
-  reach it — the chart's own plain-`NetworkPolicy` templates (vendored as-is)
-  keep the five components from talking to each other outside the designed
-  call graph, underneath that boundary.
+- **Deployed as a flat `charts/apps` entry**, NOT a `librechart` orchestrator
+  child (ADR-0014) despite being part of the LibreChat application group —
+  the `librechart` ApplicationSet's children all share ONE
+  `destination.namespace` (`charts/librechart/templates/applicationset.yaml`
+  has no per-child namespace override), which is incompatible with this
+  needing its own dedicated `librechat-sandbox` namespace. A `depsOverlay`
+  (`environments/prod/deps/librechat-code-interpreter` in `ai-helm-values`)
+  ships the one Cilium egress gap the chart's own `bjw-template`
+  `networkpolicies` don't cover: `file-server` → Hetzner Object Storage
+  (FQDN egress, which plain `NetworkPolicy` can't express). Everything else
+  cross-component is scoped by those `networkpolicies` entries directly
+  (podSelector on `app.kubernetes.io/controller`, the label `bjw-template`
+  stamps on every controller's pods).
 
 ## Consequences
 
@@ -196,12 +230,17 @@ Adaptations from upstream:
 ## Related
 
 - Docs: `docs/patterns/self-hosted-code-interpreter.md` (the *how*)
-- Charts/files touched: `charts/librechat-code-interpreter/` (new),
-  `charts/librechart/values.yaml`, `charts/librechat-app/values.yaml`,
-  `environments/{base,prod}/deps/librechat-code-interpreter/` (new),
-  `charts/apps/values.yaml` (`global.namespacePodSecurity`)
+- Charts/files touched: `charts/librechat-code-interpreter/` (new, built on
+  `charts/bjw-template`), `charts/apps/values.yaml` (new app entry +
+  `global.namespacePodSecurity`), `charts/librechat-app/values.yaml`
+  (JWT signing env/secret), `environments/{base,prod}/deps/
+  librechat-code-interpreter/` (new, in `ai-helm-values`)
 - Upstream: [`clickhouse/code-interpreter`](https://github.com/clickhouse/code-interpreter)
-  (`helm/codeapi`), [`danny-avila/LibreChat`](https://github.com/danny-avila/LibreChat)
+  (the design/architecture this chart re-implements; NOT consumed as a chart
+  or image dependency — see the correction note),
+  [`ADORSYS-GIS/code-interpreter`](https://github.com/ADORSYS-GIS/code-interpreter)
+  (the fork that actually publishes the images this chart pulls),
+  [`danny-avila/LibreChat`](https://github.com/danny-avila/LibreChat)
   (`packages/api/src/auth/codeapi.ts`)
 - Supersedes: none — extends the managed-API wiring from issue #734 (now
   dormant, kept as a fallback path)

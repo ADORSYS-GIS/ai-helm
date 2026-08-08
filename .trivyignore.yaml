@@ -132,7 +132,7 @@ misconfigurations:
     # 4. Capability-limited (librechat-code-interpreter's sandbox-runner,
     #    ADR-0122): NsJail's namespace/mount/chroot setup requires SYS_ADMIN +
     #    7 more added capabilities (see KSV-0005 below and
-    #    charts/librechat-code-interpreter/templates/worker-sandbox-deployment.yaml),
+    #    charts/librechat-code-interpreter/values.yaml (controllers.sandbox-runner)),
     #    which is itself a non-default securityContext this check flags.
     #    Every OTHER container in that chart IS hardened, not exempt.
     statement: >-
@@ -157,7 +157,7 @@ misconfigurations:
     # KSV-0005 "SYS_ADMIN capability" — librechat-code-interpreter's
     # sandbox-runner container ONLY (ADR-0122). NsJail's namespace/mount setup
     # genuinely requires SYS_ADMIN (see
-    # charts/librechat-code-interpreter/templates/worker-sandbox-deployment.yaml
+    # charts/librechat-code-interpreter/values.yaml (controllers.sandbox-runner)
     # for the full capability list, and the chart's README for the
     # kvmEnabled:true microVM alternative that wouldn't need it — deferred,
     # no confirmed /dev/kvm on home-remote worker nodes). Nothing else in this

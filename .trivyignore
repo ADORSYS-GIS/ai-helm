@@ -27,17 +27,18 @@
 # workload that needs elevated capabilities or a non-default securityContext.
 
 # KSV-0005 / KSV-0014 / KSV-0118 — charts/librechat-code-interpreter's
-# sandbox-runner container ONLY (ADR-0122). NsJail's namespace/mount/chroot
+# sandbox-runner controller ONLY (ADR-0122). NsJail's namespace/mount/chroot
 # setup genuinely requires SYS_ADMIN + friends (see
-# charts/librechat-code-interpreter/templates/worker-sandbox-deployment.yaml
-# for the full capability list and the KVM-mode alternative that wouldn't
-# need any of this), which forces a non-default securityContext (KSV-0118)
-# and rules out readOnlyRootFilesystem (KSV-0014 — NsJail writes its per-job
-# workspace/scratch dirs to the container rootfs). Every OTHER container in
-# this chart (api, file-server, tool-call-server, egress-gateway,
-# service-worker, both busybox init containers) IS hardened, not ignored —
-# see the same templates dir for the codeapi.hardened*SecurityContext helpers
-# applied everywhere except sandbox-runner.
+# charts/librechat-code-interpreter/values.yaml
+# codeapi.controllers.sandbox-runner.containers.sandbox-runner.securityContext
+# for the full capability list), which forces a non-default securityContext
+# (KSV-0118) and rules out readOnlyRootFilesystem (KSV-0014 — NsJail writes
+# its per-job workspace/scratch dirs to the container rootfs). Every OTHER
+# controller in this chart (api, file-server, tool-call-server,
+# egress-gateway, service-worker, both busybox init containers, package-init)
+# carries this repo's usual hardened securityContext (drop ALL, no priv-esc,
+# readOnlyRootFilesystem where the container can tolerate it) — see the same
+# values.yaml, not ignored.
 KSV-0005
 KSV-0014
 KSV-0118

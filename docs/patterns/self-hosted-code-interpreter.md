@@ -6,15 +6,26 @@ live, and how to change/rotate things afterward.
 
 ## What this is
 
-`charts/librechat-code-interpreter` is a vendored, adapted copy of
+`charts/librechat-code-interpreter` re-implements
 [`clickhouse/code-interpreter`](https://github.com/clickhouse/code-interpreter)'s
-`helm/codeapi` chart — the open-source sandboxed code-execution service behind
-LibreChat's Code Interpreter agent capability. It replaces the managed
-librechat.ai API (issue #734) as the backend for `execute_code`. Five
-components (API, service-worker + sandbox-runner, file-server, tool-call-
-server, egress-gateway) in the dedicated `librechat-sandbox` namespace on
-`home-remote`, deployed as a flat `charts/apps` app (not a `librechart` child
-— see the ADR for why).
+design — the open-source sandboxed code-execution service behind LibreChat's
+Code Interpreter agent capability — on `bjw-template` (this repo's standard
+app-scaffolding chart, repo convention), not upstream's own `helm/codeapi`
+chart. It replaces the managed librechat.ai API (issue #734) as the backend
+for `execute_code`. Six controllers (api, service-worker, sandbox-runner,
+file-server, tool-call-server, egress-gateway) plus a `package-init` hook Job
+in the dedicated `librechat-sandbox` namespace on `home-remote`, deployed as
+a flat `charts/apps` app (not a `librechart` child — see the ADR for why).
+
+**Images are not upstream's** — `clickhouse/code-interpreter` publishes none
+(its own CI only validates the Dockerfiles build, never pushes). This chart
+pulls from [`ADORSYS-GIS/code-interpreter`](https://github.com/ADORSYS-GIS/code-interpreter),
+a fork with its own `publish-images.yml` workflow building the 7 images
+(`code-interpreter-{api,worker,tool-call-server,egress-gateway,file-server,
+sandbox-runner,package-init}`) to `ghcr.io/adorsys-gis/code-interpreter-*` on
+every push to its `main`. Chart image tags are pinned to a commit SHA
+(`sha-<short-sha>`), not `latest` — bump them deliberately when the fork
+publishes a new build.
 
 ## One-time setup: generate and store the secrets
 
@@ -64,8 +75,8 @@ every redis-ha/S3 consumer already reads from).
 
 **`CODEAPI_JWT_KID` must match on both sides** — the chart default
 (`lc-codeapi-2026-05`, matching LibreChat's own compiled-in default) is used
-on both `charts/librechat-code-interpreter` (`api.extraEnv`) and
-`charts/librechat-app` (`CODEAPI_JWT_KID` env). If you ever rotate the JWT
+on both `charts/librechat-code-interpreter` (the `api` controller's `env`)
+and `charts/librechat-app` (`CODEAPI_JWT_KID` env). If you ever rotate the JWT
 keypair, bump the kid on **both** sides in the same change, or the old kid's
 verifier key stays cached (`CODEAPI_JWT_KEY_CACHE_TTL_SECONDS`, default 30s)
 and new tokens fail `unknown_kid` until it expires.
@@ -99,32 +110,32 @@ means no storage class bound (see the ADR's RWO-storage note).
 ## Known limitations of the current deploy (see the ADR for the trade-offs)
 
 - **NsJail/chroot sandbox mode**, not the safer KVM microVM mode — no
-  confirmed `/dev/kvm` on `home-remote` worker nodes. If you confirm KVM
-  support on a node pool, flip `workerSandbox.kvmEnabled: true`,
-  `workerSandbox.packages.source: image` (drop the PVC/package-init Job
-  entirely), and re-derive `workerSandbox.resources` — the microVM launcher
-  has different memory/CPU shape than the chroot path.
-- **`api.replicaCount`/`workerSandbox.replicaCount` pinned to 1** — the
+  confirmed `/dev/kvm` on `home-remote` worker nodes. sandbox-runner's
+  container `securityContext` (the `SYS_ADMIN` capability list) is what would
+  need to change to move to KVM mode; there's no simple flag for it in this
+  chart today (it wasn't built with a KVM path at all — the previous revision
+  vendored upstream's own KVM/NsJail toggle, this one doesn't). Revisit if
+  `/dev/kvm` is ever confirmed on a node pool — likely worth a fresh design
+  pass rather than a values tweak.
+- **`api`/`service-worker`/`sandbox-runner` pinned to 1 replica each** — the
   packages PVC is ReadWriteOnce and `home-remote`'s general nodes have no RWX
   storage class (Longhorn is GPU-node-scoped, ADR-0092). Scaling
-  `sandboxRunner` past 1 needs either an RWX-capable storage class or
+  `sandbox-runner` past 1 needs either an RWX-capable storage class or
   `nodeSelector`/`affinity` pinning every replica to one node.
 - **File-server shares LibreChat's own S3 bucket root** (`ssegning-k8s-state`)
-  — no key-prefix knob in the upstream chart. Low collision risk (both use
-  opaque random keys) but not a hard guarantee; switch
-  `fileServer.s3.bucket` to a dedicated bucket if that ever matters.
-- `api`/`file-server`/`tool-call-server`/`egress-gateway` containers don't yet
-  carry this repo's usual KSV-0118 hardening (`runAsNonRoot`/`drop:
-  ALL`/`readOnlyRootFilesystem`) — deferred until each image's non-root
-  behaviour is confirmed live.
+  — the service has no key-prefix knob. Low collision risk (both use opaque
+  random keys) but not a hard guarantee; point the `file-server` controller's
+  `MINIO_BUCKET` env at a dedicated bucket if that ever matters.
+- **Redis TLS is encrypted but not CA-verified** — `REDIS_TLS=true` maps to
+  `tls.rejectUnauthorized: false` in this service's own Redis client; there's
+  no CA-verification knob like `librechat-app`'s `rediss://`+`REDIS_CA`.
+  Accepted for now (redis-ha is in-cluster only, no public exposure); would
+  need an upstream patch to fix properly.
 
-## Bumping the vendored chart version
+## Bumping the image version
 
-There's no `helm dep update` safety net here — the chart is copied from
-upstream source, not consumed as a dependency. To pick up a new
-`clickhouse/code-interpreter` release: diff `helm/codeapi/` between the pinned
-and target upstream tags, re-apply the same adaptations (no Bitnami
-redis/minio, `templates/secrets.yaml` → `templates/externalsecret.yaml`, the
-`executionManifest.publicKey` → secretKeyRef edit in
-`worker-sandbox-deployment.yaml`), and re-render (`helm template`) to confirm
-nothing else changed shape before bumping `appVersion`/chart `version`.
+Push to `main` on [`ADORSYS-GIS/code-interpreter`](https://github.com/ADORSYS-GIS/code-interpreter)
+(e.g. merging an upstream sync PR) to publish new `sha-<short-sha>`-tagged
+images, then bump every `tag:` in `charts/librechat-code-interpreter/values.yaml`
+to the new SHA and `helm template` to confirm nothing else changed shape
+(env var names, ports, probe paths) before merging.
