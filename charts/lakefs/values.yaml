@@ -26,9 +26,11 @@
 # users share the ONE `admin` LakeFS identity. Authentication is genuinely
 # per-Keycloak-user; in-LakeFS authorization and audit are shared. See ADR-0090.
 #
-# LakeFS uses the existing lightbridge-main-db CNPG cluster (charts/lightbridge-db)
-# for its metadata DB — no separate CNPG cluster (ADR-0085, same reasoning as
-# coder in ADR-0083).
+# LakeFS has its OWN dedicated CNPG cluster (charts/lakefs-db, mlops ns) —
+# ADR-0123 supersedes ADR-0085 decision #3 (which put LakeFS on the shared
+# lightbridge-main-db cluster instead) after an incident where an unrelated
+# converse-namespace tenant's connection load exhausted that shared cluster
+# and took LakeFS's metadata store down with it.
 
 # ────────────────────────────────────────────────────────────────────────
 # Shared ArgoCD wiring for all child Applications.
@@ -70,14 +72,29 @@ secrets:
   syncWave: "0"
 
 # ────────────────────────────────────────────────────────────────────────
-# lakefs-db child — DISABLED. LakeFS uses the existing lightbridge-main-db
-# CNPG cluster (charts/lightbridge-db) for its metadata DB. A managed
-# `lakefs` role + `lakefs` Database CR are added to lightbridge-db instead.
-# Kept (disabled) so a future dedicated-DB path exists without a template
-# rewrite — mirrors charts/coder's db.enabled: false block.
+# lakefs-db child — the dedicated CNPG cluster (charts/lakefs-db, this repo),
+# ADR-0123. Was disabled (LakeFS shared lightbridge-main-db, ADR-0085); the
+# incident that ADR-0123 documents is why it's enabled now. Lowest non-secrets
+# wave — after lakefs-secrets (0, provisions its own S3/OIDC creds — NOT the
+# DB role, which this chart provisions itself) and before lakefs-app (2, the
+# app needs the DB to exist first).
 # ────────────────────────────────────────────────────────────────────────
 db:
-  enabled: false
+  enabled: true
+  appName: lakefs-db
+  chartName: lakefs-db   # OCI chart name
+  releaseName: lakefs-db
+  syncWave: "1"
+  # Ignore the CNPG operator's defaulted fields on the Cluster so it doesn't
+  # sit permanently OutOfSync — same reasoning/pattern as charts/lightbridge's
+  # db.ignoreDifferences (the operator, field manager `manager`, adds
+  # affinity/bootstrap/probes/primaryUpdateStrategy/… the chart never
+  # declares).
+  ignoreDifferences:
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      managedFieldsManagers:
+        - manager
 
 # ────────────────────────────────────────────────────────────────────────
 # lakefs-proxy child — the SSO shim (ADR-0090), this repo's own leaf chart,
