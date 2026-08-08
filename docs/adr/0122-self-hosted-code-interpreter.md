@@ -215,6 +215,19 @@ copied — see also the correction note above):
   here rather than fixed in this PR).
 - Programmatic Tool Calling (routing MCP tool calls through the sandbox) is
   available upstream but not wired here yet.
+- **Every controller runs as root** — caught live on first deploy (2026-08-08):
+  none of the `ADORSYS-GIS/code-interpreter` fork's Dockerfiles declare a
+  non-root `USER` (checked all 7 — every production stage is `FROM
+  oven/bun:1.3.14`/`buildpack-deps:bookworm` with no `USER` directive), so
+  `defaultPodOptions.securityContext.runAsNonRoot: true` made kubelet refuse
+  to start every controller (`CreateContainerConfigError`). Removed; every
+  container still gets `allowPrivilegeEscalation: false` /
+  `capabilities.drop: [ALL]` / `readOnlyRootFilesystem` (where tolerated) /
+  seccomp `RuntimeDefault`, but running as root is a real regression on
+  defense-in-depth versus this repo's usual posture. Proper fix is patching
+  the fork's Dockerfiles to add non-root `USER`s — needs care (matching
+  ownership on `/pkgs` and other writable mounts) — tracked here rather than
+  attempted under live-incident pressure.
 
 ## Alternatives considered
 
