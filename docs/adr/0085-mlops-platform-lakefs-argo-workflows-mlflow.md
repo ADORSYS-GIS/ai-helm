@@ -4,6 +4,17 @@
 **Date:** 2026-07-22
 **Deciders:** @stephane-segning
 
+> **Partially superseded by [ADR-0123](./0123-lakefs-dedicated-cnpg-cluster.md)
+> (2026-08-09):** decision #3 below (metadata DB — LakeFS gets a managed role
+> on the shared `lightbridge-main-db` cluster instead of a dedicated CNPG
+> cluster) applies to **MLflow only** as of ADR-0123. An outage where an
+> unrelated tenant on that shared cluster exhausted its Postgres connections
+> and took LakeFS down with it showed the coupling was a real production
+> risk for LakeFS's data-versioning role specifically; LakeFS now has its own
+> CNPG cluster (`charts/lakefs-db`). Decisions #1 (S3 backend) and #2 (per-app
+> auth strategy) below are unaffected and remain in force as originally
+> decided here.
+
 ## Context
 
 The platform needed three new self-hosted MLOps components on `home-remote`:
