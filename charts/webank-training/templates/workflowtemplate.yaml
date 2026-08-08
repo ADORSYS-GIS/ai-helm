@@ -98,6 +98,12 @@ spec:
       {{- with $training.gpu.priorityClassName }}
       priorityClassName: {{ . | quote }}
       {{- end }}
+      securityContext:
+        fsGroup: 10001
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: {{ $training.datasetBuild.workspaceSizeLimit | quote }}
       container:
         image: {{ $training.datasetBuild.image | quote }}
         command: ["sh", "-ceu"]
@@ -220,6 +226,9 @@ spec:
             value: {{ $training.otel.endpoint | quote }}
           - name: OTEL_SERVICE_NAME
             value: {{ printf "webank-%s-dataset-build" $id | quote }}
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
         resources:
           {{- toYaml $training.datasetBuild.resources | nindent 10 }}
 ---
@@ -298,6 +307,12 @@ spec:
       {{- with $training.gpu.priorityClassName }}
       priorityClassName: {{ . | quote }}
       {{- end }}
+      securityContext:
+        fsGroup: 10001
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: {{ $training.workspaceSizeLimit | quote }}
       container:
         image: {{ $training.image | quote }}
         command: ["sh", "-ceu"]
@@ -409,6 +424,9 @@ spec:
             value: {{ $training.otel.endpoint | quote }}
           - name: OTEL_SERVICE_NAME
             value: {{ printf "webank-%s-train" $id | quote }}
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
         resources:
           {{- toYaml $training.gpu.resources | nindent 10 }}
 {{- end }}
