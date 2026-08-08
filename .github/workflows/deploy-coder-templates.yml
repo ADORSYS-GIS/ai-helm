@@ -23,8 +23,10 @@ permissions:
   contents: read
 
 env:
-  CODER_URL: ${{ secrets.CODER_URL }}
-  CODER_TOKEN: ${{ secrets.CODER_TOKEN }}
+  # Map Actions secrets to Terraform vars via TF_VAR_ (coder_url/coder_token are
+  # required vars with no default — plain env names would NOT be read by Terraform).
+  TF_VAR_coder_url: ${{ secrets.CODER_URL }}
+  TF_VAR_coder_token: ${{ secrets.CODER_TOKEN }}
   AWS_ACCESS_KEY_ID: ${{ secrets.SSEGNING_AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.SSEGNING_AWS_SECRET_ACCESS_KEY }}
 
