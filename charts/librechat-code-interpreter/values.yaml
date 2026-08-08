@@ -528,6 +528,19 @@ codeapi:
     # sandbox-runner may start before this Job finishes populating /pkgs on
     # a fresh install, which is a real but bounded/self-healing risk (its
     # readinessProbe fails until packages are usable), not a hard failure.
+    #
+    # ⚠️ NO securityContext at all (live-incident correction, 2026-08-08):
+    # `capabilities.drop: [ALL]` broke Node.js archive extraction — `tar`
+    # (run as root, but with CAP_CHOWN dropped) failed `chown()`ing files to
+    # the upstream tarball's embedded uid/gid ("Cannot change ownership to
+    # uid 1000, gid 1000: Operation not permitted"), which the init script
+    # treats as fatal (`ERROR: Failed to extract Node.js archive`), so the
+    # whole run reported FAILED even though most of the multi-package-manager
+    # install had already succeeded. This container genuinely needs broad
+    # root capabilities for its job (compiling Python from source, extracting
+    # archives with arbitrary embedded ownership, installing across several
+    # package managers) — matches upstream's own chart, which never put a
+    # securityContext on this container at all.
     package-init:
       type: job
       pod:
@@ -538,10 +551,6 @@ codeapi:
             repository: ghcr.io/adorsys-gis/code-interpreter-package-init
             tag: sha-93172e7
             pullPolicy: IfNotPresent
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
           env:
             PYTHON_VERSION: "3.14.4"
             NODE_VERSION: "24.15.0"
