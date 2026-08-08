@@ -1,0 +1,68 @@
+name: Deploy Coder Templates
+
+# GitOps apply for the declarative Coder template delivery (ADR-0123): on merge
+# to main, reconcile the `coder` `coderd` templates from git. State lives on
+# Hetzner Object Storage (S3 backend); the `coderd` provider talks to Coder.
+#
+# Required repository secrets:
+#   CODER_URL                         Coder server URL (e.g. https://coder...)
+#   CODER_TOKEN                       Coder session token (template-admin scope)
+#   SSEGNING_AWS_ACCESS_KEY_ID        Hetzner Object Storage (S3-compatible) creds
+#   SSEGNING_AWS_SECRET_ACCESS_KEY    for the remote state backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.coder/templates/**'
+      - 'terraform/coder/**'
+      - '.github/workflows/deploy-coder-templates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Map Actions secrets to Terraform vars via TF_VAR_ (coder_url/coder_token are
+  # required vars with no default — plain env names would NOT be read by Terraform).
+  TF_VAR_coder_url: ${{ secrets.CODER_URL }}
+  TF_VAR_coder_token: ${{ secrets.CODER_TOKEN }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.SSEGNING_AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.SSEGNING_AWS_SECRET_ACCESS_KEY }}
+
+jobs:
+  deploy:
+    runs-on: adorsys-gis-runner   # GitHub-hosted runners are billing-blocked org-wide (CLAUDE.md)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11   # >= 1.10 for backend use_lockfile (S3-native locking)
+
+      - name: Set Git SHA
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform Init
+        run: |
+          cd terraform/coder
+          terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          cd terraform/coder
+          terraform plan \
+            -var="git_commit_sha=${{ steps.sha.outputs.sha }}" \
+            -no-color \
+            -out=tfplan
+
+      - name: Terraform Apply
+        run: |
+          cd terraform/coder
+          terraform apply -no-color tfplan
