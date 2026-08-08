@@ -10,7 +10,7 @@ Start with the model-specific operation you actually need:
 
 | Need | Template pattern | Compute |
 | --- | --- | --- |
-| Build and publish a fixed training dataset | `webank-<model>-dataset-build` | one GPU |
+| Build and publish a fixed training dataset | `webank-<model>-dataset-build` | CPU only (webank-models#415) |
 | Train a governed candidate | `webank-<model>-train` | one GPU |
 
 There is one template of each kind for document detector, document recognizer,
@@ -42,11 +42,13 @@ A successful run writes one validated training bundle through the fixed
 LakeFS boundary into that model's `ds-<model>/main` repository and reports the
 server-issued immutable commit.
 
-All dataset-build pods select `nvidia.com/gpu.present=true`, tolerate
-`nvidia.com/gpu:NoSchedule` (Exists), use `runtimeClassName: nvidia`, and request
-the reviewed one-GPU CPU/memory resource profile. This guarantees that dataset
-materialization has the same GPU-node allocation and CUDA driver injection as
-candidate training.
+Dataset-build pods request no GPU: no `nvidia.com/gpu` limit/request, no
+`nvidia.com/gpu.present=true` node selector, no `nvidia.com/gpu:NoSchedule`
+toleration, and no `runtimeClassName: nvidia` (webank-models#415). The work is
+generation, image decode/resize, tensor packing, and a LakeFS upload — no
+forward pass, no CUDA device — and runs on ordinary CPU nodes with the reviewed
+`training.datasetBuild.resources` CPU/memory profile. Do not expect it to
+compete with candidate training for one of the fleet's two GPU cards.
 
 If an SFace or PAD governed-source repository is empty, the operation fails
 before materialization. Do not use fixtures or placeholder evidence as a
@@ -84,6 +86,6 @@ as PAD training and do not create a candidate manually.
 | --- | --- | --- |
 | Argo rejects a missing dataset field | The data contract is intentionally required. | Supply the approved ref/version or artifacts; never fake a value. |
 | `readiness-gate` fails | Source manifest, readiness attestation, and pinned commit disagree or are not eligible. | Repair/reapprove data in its source repository. |
-| Pod remains Pending | GPU placement requirements cannot currently be met, or MLOps is preempted by serving (ADR-0114). | Check an `nvidia.com/gpu.present=true` node and its allocatable GPU; do not remove placement constraints. |
-| `libcuda.so.1` cannot be opened | The pod did not use the NVIDIA runtime handler, so host driver libraries were not injected. | Confirm the rendered template and pod both have `runtimeClassName: nvidia`; do not copy CUDA driver files into the image. |
+| `*-train` pod remains Pending | GPU placement requirements cannot currently be met, or MLOps is preempted by serving (ADR-0114). | Check an `nvidia.com/gpu.present=true` node and its allocatable GPU; do not remove placement constraints. |
+| `libcuda.so.1` cannot be opened | The pod did not use the NVIDIA runtime handler, so host driver libraries were not injected. Only `*-train` pods use the NVIDIA runtime; `*-dataset-build` pods do not and should never need it. | Confirm the rendered `*-train` template and pod both have `runtimeClassName: nvidia`; do not copy CUDA driver files into the image. |
 | PAD train exits immediately | There is no PAD trainer. | Keep it blocked until a model-specific trainer lands. |
