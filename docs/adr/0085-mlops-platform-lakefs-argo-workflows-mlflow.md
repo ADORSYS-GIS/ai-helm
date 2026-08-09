@@ -12,12 +12,16 @@
 > outage where an unrelated tenant on the shared cluster exhausted its
 > Postgres connections and took LakeFS down with it showed the coupling was
 > a real production risk for LakeFS's data-versioning role specifically.
-> **MLflow's role/database are provisioned on the new cluster too but its
-> live connection has NOT been repointed** — ADR-0123 explicitly did not
-> clear abandoning MLflow's existing tracking data, so decision #3 stays in
-> force for MLflow until a separate, explicitly-cleared migration lands.
-> Decisions #1 (S3 backend) and #2 (per-app auth strategy) below are
-> unaffected and remain in force as originally decided here.
+> **MLflow is now cut over too (2026-08-09, same day):** the owner checked
+> the authenticated MLflow UI directly and confirmed `lightbridge-main-db`'s
+> `mlflow`/`mlflow_oidc` databases held nothing worth migrating (only the
+> default experiment, no run history) — clearing the gate ADR-0123 left
+> open. MLflow's connection (`environments/prod/values/mlflow-app.yaml` in
+> `ai-helm-values`) now points at `mlops-main-db`; its old role/Database on
+> `lightbridge-main-db` are removed (`charts/lightbridge-db`). Decision #3
+> below is now fully superseded by ADR-0123 for both `mlops`-namespace
+> tenants. Decisions #1 (S3 backend) and #2 (per-app auth strategy) below
+> are unaffected and remain in force as originally decided here.
 
 ## Context
 
