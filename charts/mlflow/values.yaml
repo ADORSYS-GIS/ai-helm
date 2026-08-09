@@ -5,16 +5,20 @@
 # native Keycloak OIDC + group RBAC inside MLflow itself. The chart owns no
 # workload resources; it owns the two child Applications.
 #
-# MLflow uses the existing lightbridge-main-db CNPG cluster (charts/lightbridge-db)
-# for its backend store — no separate CNPG cluster (ADR-0085, same reasoning
-# as coder in ADR-0083). STILL TRUE for MLflow's live traffic as of ADR-0123:
-# that ADR gives the mlops namespace its own dedicated CNPG cluster
-# (charts/mlops-db, a child of charts/lakefs — see that chart) and
-# provisions a `mlflow` role/Database there ahead of time, but MLflow's
-# actual connection (charts/mlflow-secrets) is NOT repointed yet — doing so
-# would abandon MLflow's existing tracking data with no migration, which
-# ADR-0123 explicitly did not clear. Repointing this app to charts/mlops-db
-# is a separate, explicitly-approved follow-up.
+# MLflow is CUT OVER to mlops-main-db, the mlops namespace's own dedicated
+# CNPG cluster (charts/mlops-db, a child of charts/lakefs — see that chart),
+# per ADR-0123 — superseding ADR-0085 decision #3's original shared
+# lightbridge-main-db placement for MLflow, same as it already did for
+# LakeFS. The `mlflow`/`mlflow_oidc` role/Database on mlops-main-db were
+# provisioned ahead of time by ai-helm#957; the actual connection repoint
+# (ai-helm-values `environments/prod/values/mlflow-app.yaml`) landed once
+# the owner confirmed, via the authenticated MLflow UI, that
+# lightbridge-main-db's `mlflow`/`mlflow_oidc` databases held nothing worth
+# migrating (only the default experiment, no run history) — clearing the
+# gate ADR-0123 explicitly left open. The now-dead role/Database on
+# lightbridge-main-db (charts/lightbridge-db) are dropped in this same PR,
+# once that connection repoint is merged and verified — hard cutover, no
+# dormant parallel path.
 
 # ────────────────────────────────────────────────────────────────────────
 # Shared ArgoCD wiring for all child Applications.
@@ -56,15 +60,15 @@ secrets:
   syncWave: "0"
 
 # ────────────────────────────────────────────────────────────────────────
-# mlflow-db child — STILL DISABLED (ADR-0123). MLflow's live traffic still
-# uses lightbridge-main-db (charts/lightbridge-db) for its backend store — a
-# managed `mlflow` role + `mlflow`/`mlflow_oidc` Database CRs stay there for
-# now. This child staying disabled is NOT the same as "no dedicated cluster
-# exists" any more: charts/mlops-db (a child of charts/lakefs, ADR-0123) IS
-# a dedicated CNPG cluster and already provisions a `mlflow` role/database on
-# it, ready for MLflow to actually use once its existing tracking data's
-# migration is explicitly cleared. Left disabled here rather than enabled to
-# avoid deploying the SAME Cluster twice from two different Applications.
+# mlflow-db child — stays DISABLED even now that MLflow is cut over
+# (ADR-0123). This does NOT mean MLflow lacks a dedicated cluster: it uses
+# mlops-main-db, provisioned by charts/mlops-db (a child of the lakefs
+# orchestrator, not this one) — the `mlflow`/`mlflow_oidc` role/Database
+# CRs already live there. This child stays disabled purely to avoid
+# deploying the SAME Cluster resource twice from two different
+# Applications; ownership of mlops-main-db isn't LakeFS- or MLflow-
+# specific, same as lightbridge-main-db being a child of
+# charts/lightbridge doesn't make Lightbridge own coder's/governance's data.
 # ────────────────────────────────────────────────────────────────────────
 db:
   enabled: false

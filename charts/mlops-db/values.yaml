@@ -13,15 +13,17 @@
 #
 # Namespace is `mlops` — the same namespace both tenants' workloads run in.
 #
-# ⚠️ TWO TENANTS, TWO DIFFERENT STATES as of this chart's introduction:
-#   - LakeFS: fully cut over (charts/lakefs-secrets points here now).
-#   - MLflow: role + Database provisioned and READY, but MLflow's actual
-#     connection string (charts/mlflow-secrets) still points at
-#     lightbridge-main-db. Repointing it means MLflow starts against an
-#     EMPTY database on this cluster — nothing here migrates MLflow's
-#     existing tracking data from lightbridge-main-db. That is a separate,
-#     explicitly-cleared follow-up, not part of the incident-response cutover
-#     this chart's introduction was. See ADR-0123.
+# BOTH TENANTS NOW CUT OVER:
+#   - LakeFS: charts/lakefs-secrets points here (ADR-0123's original
+#     incident-response cutover).
+#   - MLflow: ai-helm-values environments/prod/values/mlflow-app.yaml
+#     (backendStore.postgres.host / oidcAuth.database.postgres.host) points
+#     here too, as the explicitly-gated follow-up ADR-0123 left open —
+#     cleared once the owner confirmed, via the authenticated MLflow UI,
+#     that lightbridge-main-db's `mlflow`/`mlflow_oidc` databases held
+#     nothing worth migrating (only the default experiment, no run
+#     history). MLflow started against this cluster's empty `mlflow`/
+#     `mlflow_oidc` databases; nothing was migrated, by design.
 
 resources:
   # ────────────────────────────────────────────────────────────────────
@@ -81,17 +83,26 @@ resources:
           # (that cluster carries 7 unbounded tenants) nor left at this
           # cluster's earlier LakeFS-only 50. LakeFS: hard-capped 5-connection
           # pool (charts/lakefs lakefs-app.yaml). MLflow: 1 replica × 2
-          # gunicorn workers (environments/prod/values/mlflow-app.yaml),
-          # each holding its own SQLAlchemy pool — the upstream
-          # community-charts/mlflow chart exposes no documented pool-size
-          # value in this repo's fixtures to cap it explicitly (unlike
-          # LakeFS's documented database.postgres.max_open_connections), so
-          # this is sized for a generous WORST-CASE per-worker pool (~15
-          # connections) rather than a verified cap: 2 × 15 = 30. LakeFS (5)
-          # + MLflow worst case (30) + admin/monitoring/backup headroom
-          # (~15) + margin ⇒ 80. Capping MLflow's own pool explicitly is a
-          # follow-up once its chart's actual pool-size knob is confirmed
-          # (not guessed) — see ADR-0123.
+          # gunicorn workers (environments/prod/values/mlflow-app.yaml), each
+          # holding its own SQLAlchemy pool. This 80 figure predates
+          # confirming MLflow's actual pool-size knob and was deliberately
+          # sized for a generous WORST-CASE per-worker pool (~15 connections,
+          # SQLAlchemy's own QueuePool default) rather than a verified cap:
+          # 2 x 15 = 30. LakeFS (5) + MLflow worst case (30) +
+          # admin/monitoring/backup headroom (~15) + margin => 80.
+          #
+          # MLflow's pool knob is now confirmed and capped (ADR-0123
+          # follow-up, closed): MLFLOW_SQLALCHEMYSTORE_POOL_SIZE=3 /
+          # _MAX_OVERFLOW=2 in environments/prod/values/mlflow-app.yaml, read
+          # straight into sqlalchemy.create_engine() by MLflow's own
+          # store/db/utils.py — verified against mlflow/environment_
+          # variables.py for the deployed image (burakince/mlflow:3.14.0),
+          # not guessed. Actual MLflow ceiling is 5/worker x 2 = 10, a third
+          # of the 30 this 80 budgeted — left at 80 rather than re-sized
+          # down: preserves headroom already proven safe, and re-deriving it
+          # tighter isn't this follow-up's job (see the file this note is
+          # in — sizing changes aren't bundled with the connection-string
+          # cutover PR).
           max_connections: "80"
       resources:
         # Sized for max_connections × work_mem: worst case with Postgres's

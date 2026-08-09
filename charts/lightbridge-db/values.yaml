@@ -106,26 +106,10 @@ resources:
             login: true
             passwordSecret:
               name: coder-db-role
-          # Dedicated login role for the mlops platform (ADR-0085): MLflow's
-          # LIVE traffic still uses this shared cluster (same reasoning as
-          # coder, ADR-0083) — LakeFS used to as well, but moved to a
-          # dedicated cluster (charts/mlops-db) per ADR-0123 after an
-          # incident where an unrelated tenant on THIS shared cluster
-          # exhausted its connections and took LakeFS down with it. ADR-0123
-          # also provisions a `mlflow` role/database on charts/mlops-db
-          # ahead of time, but does NOT repoint MLflow's connection yet —
-          # that needs its existing tracking data's migration explicitly
-          # cleared first, so this role/Database stay live here until then.
-          # Password from the basic-auth Secret below (ESO-provisioned).
-          - name: mlflow
-            ensure: present
-            login: true
-            passwordSecret:
-              name: mlflow-db-role
           # Dedicated login role for lightbridge-governance (ADORSYS-GIS/lightbridge-governance),
           # the AI governance platform's registry + Copilot/Foundry connectors.
-          # Reuses this shared CNPG cluster, same reasoning as coder/mlflow
-          # (ADR-0083). Owns the `governance` Database below; password from the
+          # Reuses this shared CNPG cluster, same reasoning as coder (ADR-0083).
+          # Owns the `governance` Database below; password from the
           # basic-auth Secret `lightbridge-governance-db-role` (ESO-provisioned,
           # below).
           - name: governance
@@ -482,80 +466,15 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: coder_db_password
-  # ────────────────────────────────────────────────────────────────────
-  # MLflow (ADR-0085): a `mlflow` Database owned by the managed `mlflow`
-  # role above, plus the role's basic-auth Secret (username + password)
-  # consumed by BOTH CNPG (passwordSecret) and the MLflow app (via
-  # mlflow-db-secret assembled in charts/mlflow-secrets). Mirrors the
-  # coder pattern.
-  # NOTE: the ESO `password` template braces are double-escaped so Helm's
-  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
-  # ────────────────────────────────────────────────────────────────────
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Database
-    metadata:
-      name: mlflow
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
-        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    spec:
-      cluster:
-        name: lightbridge-main-db
-      name: mlflow
-      owner: mlflow
-      ensure: present
-  # ────────────────────────────────────────────────────────────────────
-  # MLflow OIDC auth DB (ADR-0085): a SECOND `mlflow_oidc` Database owned by
-  # the same `mlflow` role. The mlflow-oidc-auth plugin keeps its own
-  # users/groups/permissions store and auto-migrates it (Alembic → head) on
-  # first login. It MUST NOT share the tracking store's `mlflow` DB: both use
-  # a default `alembic_version` table, so the plugin reads MLflow's tracking
-  # revision, can't resolve it against its own migration chain, aborts before
-  # any DDL, and never creates its tables → every login fails
-  # "Failed to update user/groups". A dedicated DB (empty alembic_version)
-  # lets the plugin migrate from base cleanly. Found live during ADR-0085
-  # verification. No extra Secret — reuses the `mlflow` role/password.
-  # ────────────────────────────────────────────────────────────────────
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Database
-    metadata:
-      name: mlflow-oidc
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
-        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    spec:
-      cluster:
-        name: lightbridge-main-db
-      name: mlflow_oidc
-      owner: mlflow
-      ensure: present
-  - |
-    apiVersion: external-secrets.io/v1
-    kind: ExternalSecret
-    metadata:
-      name: mlflow-db-role
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "1"
-    spec:
-      refreshInterval: 1h
-      secretStoreRef:
-        kind: ClusterSecretStore
-        name: ssegning-aws
-      target:
-        name: mlflow-db-role
-        creationPolicy: Owner
-        template:
-          type: kubernetes.io/basic-auth
-          data:
-            username: "mlflow"
-            password: "{{ "{{ .password }}" }}"
-      data:
-        - secretKey: password
-          remoteRef:
-            key: ai/camer/digital/prod/env
-            property: mlflow_db_password
+  # MLflow's `mlflow`/`mlflow_oidc` Database CRs + `mlflow-db-role`
+  # ExternalSecret used to live here (ADR-0085). Removed — hard cutover, no
+  # dormant parallel path — now that MLflow is cut over to mlops-main-db
+  # (ADR-0123: `mlflow` role + `mlflow`/`mlflow_oidc` Database CRs on
+  # charts/mlops-db, provisioned by ai-helm#957; connection repointed by the
+  # companion ai-helm-values PR once the owner confirmed via the
+  # authenticated MLflow UI that these databases held nothing worth
+  # migrating). Mirrors exactly how ai-helm#957 removed LakeFS's equivalent
+  # `lakefs` Database CR + `lakefs-db-role` ExternalSecret from this same
+  # file when LakeFS cut over first. The `mlflow_db_password` Secrets
+  # Manager property is unchanged and reused as-is by charts/mlops-db's own
+  # `mlflow-db-role` ExternalSecret — same credential, new cluster.

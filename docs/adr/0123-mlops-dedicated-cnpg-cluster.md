@@ -4,6 +4,39 @@
 **Date:** 2026-08-09
 **Deciders:** @stephane-segning
 
+> **Update (2026-08-09, same day):** the two items this ADR left as
+> "Follow-up required before MLflow's cutover" are both now resolved and
+> MLflow's cutover has executed:
+> 1. **Data-safety gate** — this ADR's authors could not confirm via
+>    database access whether `lightbridge-main-db`'s `mlflow`/`mlflow_oidc`
+>    databases held anything worth migrating. The owner has since checked
+>    the authenticated MLflow UI directly and confirmed: only the default
+>    experiment exists, no run history. Nothing is abandoned by cutting
+>    over with no migration.
+> 2. **Pool-size knob** — this ADR's `max_connections: "80"` sizing used an
+>    unverified worst-case estimate (~15 connections/gunicorn-worker)
+>    because "the upstream community-charts/mlflow chart exposes no
+>    documented pool-size value in this repo's fixtures to cap it
+>    explicitly." It does: `MLFLOW_SQLALCHEMYSTORE_POOL_SIZE` /
+>    `_MAX_OVERFLOW`, read straight into `sqlalchemy.create_engine()` by
+>    MLflow's own `store/db/utils.py` (verified against
+>    `mlflow/environment_variables.py` for the deployed image,
+>    `burakince/mlflow:3.14.0`). Now set to `pool_size=3` /
+>    `max_overflow=2` (10 connections total across MLflow's 2 gunicorn
+>    workers) in `environments/prod/values/mlflow-app.yaml`.
+>
+> MLflow's connection now points at `mlops-main-db`
+> (`environments/prod/values/mlflow-app.yaml`, `ai-helm-values`); its old
+> role/Database on `lightbridge-main-db` are removed (`charts/lightbridge-db`,
+> this repo, same PR as this note) — hard cutover, no dormant parallel
+> path, mirroring exactly how LakeFS's own role/Database were removed from
+> `lightbridge-main-db` when it cut over first. `charts/mlops-db`'s
+> `max_connections: "80"` sizing is left as-is (real usage is now ~15 of
+> 80, not re-derived tighter as part of this follow-up). This is a status
+> update per this repo's ADR-immutability convention, not an edit to the
+> Decision/Sizing/Follow-up sections below, which remain the historical
+> record of what was known and decided on 2026-08-09.
+
 ## Context
 
 Incident, `hetzner-prod`, 2026-08-08/09: LakeFS's HTTP API started returning
