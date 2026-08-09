@@ -279,6 +279,19 @@ codeapi:
             runAsNonRoot: false
             seccompProfile:
               type: Unconfined
+            # ⚠️ Live-incident correction, 2026-08-10: without an explicit
+            # appArmorProfile, this cluster's kubelet (v1.35.3, native
+            # AppArmor field) defaults the container to the `RuntimeDefault`
+            # AppArmor profile on this AppArmor-enabled node (Ubuntu 24.04).
+            # That profile blocks the mount-propagation syscall NsJail needs
+            # at startup EVEN WITH SYS_ADMIN granted below — confirmed live:
+            # `unshare: cannot change root filesystem propagation:
+            # Permission denied`, CrashLoopBackOff. seccompProfile:Unconfined
+            # (above) does not also disable AppArmor confinement — they're
+            # independent LSMs. Same permanent-exception rationale as the
+            # capability list below (NsJail's namespace/mount/chroot setup).
+            appArmorProfile:
+              type: Unconfined
             capabilities:
               add:
                 - SYS_ADMIN
