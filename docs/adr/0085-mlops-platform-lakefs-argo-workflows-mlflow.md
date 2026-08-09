@@ -4,16 +4,20 @@
 **Date:** 2026-07-22
 **Deciders:** @stephane-segning
 
-> **Partially superseded by [ADR-0123](./0123-lakefs-dedicated-cnpg-cluster.md)
-> (2026-08-09):** decision #3 below (metadata DB — LakeFS gets a managed role
-> on the shared `lightbridge-main-db` cluster instead of a dedicated CNPG
-> cluster) applies to **MLflow only** as of ADR-0123. An outage where an
-> unrelated tenant on that shared cluster exhausted its Postgres connections
-> and took LakeFS down with it showed the coupling was a real production
-> risk for LakeFS's data-versioning role specifically; LakeFS now has its own
-> CNPG cluster (`charts/lakefs-db`). Decisions #1 (S3 backend) and #2 (per-app
-> auth strategy) below are unaffected and remain in force as originally
-> decided here.
+> **Partially superseded by [ADR-0123](./0123-mlops-dedicated-cnpg-cluster.md)
+> (2026-08-09):** decision #3 below (metadata DB — LakeFS and MLflow each get
+> a managed role on the shared `lightbridge-main-db` cluster instead of a
+> dedicated CNPG cluster) is superseded for **LakeFS**, which now has its own
+> dedicated CNPG cluster (`charts/mlops-db`, cluster `mlops-main-db`) — an
+> outage where an unrelated tenant on the shared cluster exhausted its
+> Postgres connections and took LakeFS down with it showed the coupling was
+> a real production risk for LakeFS's data-versioning role specifically.
+> **MLflow's role/database are provisioned on the new cluster too but its
+> live connection has NOT been repointed** — ADR-0123 explicitly did not
+> clear abandoning MLflow's existing tracking data, so decision #3 stays in
+> force for MLflow until a separate, explicitly-cleared migration lands.
+> Decisions #1 (S3 backend) and #2 (per-app auth strategy) below are
+> unaffected and remain in force as originally decided here.
 
 ## Context
 

@@ -7,7 +7,14 @@
 #
 # MLflow uses the existing lightbridge-main-db CNPG cluster (charts/lightbridge-db)
 # for its backend store — no separate CNPG cluster (ADR-0085, same reasoning
-# as coder in ADR-0083).
+# as coder in ADR-0083). STILL TRUE for MLflow's live traffic as of ADR-0123:
+# that ADR gives the mlops namespace its own dedicated CNPG cluster
+# (charts/mlops-db, a child of charts/lakefs — see that chart) and
+# provisions a `mlflow` role/Database there ahead of time, but MLflow's
+# actual connection (charts/mlflow-secrets) is NOT repointed yet — doing so
+# would abandon MLflow's existing tracking data with no migration, which
+# ADR-0123 explicitly did not clear. Repointing this app to charts/mlops-db
+# is a separate, explicitly-approved follow-up.
 
 # ────────────────────────────────────────────────────────────────────────
 # Shared ArgoCD wiring for all child Applications.
@@ -49,11 +56,15 @@ secrets:
   syncWave: "0"
 
 # ────────────────────────────────────────────────────────────────────────
-# mlflow-db child — DISABLED. MLflow uses the existing lightbridge-main-db
-# CNPG cluster (charts/lightbridge-db) for its backend store. A managed
-# `mlflow` role + `mlflow` Database CR are added to lightbridge-db instead.
-# Kept (disabled) so a future dedicated-DB path exists without a template
-# rewrite — mirrors charts/coder's db.enabled: false block.
+# mlflow-db child — STILL DISABLED (ADR-0123). MLflow's live traffic still
+# uses lightbridge-main-db (charts/lightbridge-db) for its backend store — a
+# managed `mlflow` role + `mlflow`/`mlflow_oidc` Database CRs stay there for
+# now. This child staying disabled is NOT the same as "no dedicated cluster
+# exists" any more: charts/mlops-db (a child of charts/lakefs, ADR-0123) IS
+# a dedicated CNPG cluster and already provisions a `mlflow` role/database on
+# it, ready for MLflow to actually use once its existing tracking data's
+# migration is explicitly cleared. Left disabled here rather than enabled to
+# avoid deploying the SAME Cluster twice from two different Applications.
 # ────────────────────────────────────────────────────────────────────────
 db:
   enabled: false

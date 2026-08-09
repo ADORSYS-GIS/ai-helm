@@ -106,14 +106,17 @@ resources:
             login: true
             passwordSecret:
               name: coder-db-role
-          # Dedicated login role for the mlops platform (ADR-0085): MLflow
-          # reuses this shared CNPG cluster instead of a dedicated cluster,
-          # same reasoning as coder (ADR-0083). LakeFS used to as well, but
-          # moved to its own dedicated cluster (charts/lakefs-db) per
-          # ADR-0123 after an incident where an unrelated tenant on this
-          # shared cluster exhausted its connections and took LakeFS down
-          # with it — see that ADR for the full reasoning. Password from the
-          # basic-auth Secret below (ESO-provisioned).
+          # Dedicated login role for the mlops platform (ADR-0085): MLflow's
+          # LIVE traffic still uses this shared cluster (same reasoning as
+          # coder, ADR-0083) — LakeFS used to as well, but moved to a
+          # dedicated cluster (charts/mlops-db) per ADR-0123 after an
+          # incident where an unrelated tenant on THIS shared cluster
+          # exhausted its connections and took LakeFS down with it. ADR-0123
+          # also provisions a `mlflow` role/database on charts/mlops-db
+          # ahead of time, but does NOT repoint MLflow's connection yet —
+          # that needs its existing tracking data's migration explicitly
+          # cleared first, so this role/Database stay live here until then.
+          # Password from the basic-auth Secret below (ESO-provisioned).
           - name: mlflow
             ensure: present
             login: true

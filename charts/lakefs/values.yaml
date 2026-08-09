@@ -26,11 +26,18 @@
 # users share the ONE `admin` LakeFS identity. Authentication is genuinely
 # per-Keycloak-user; in-LakeFS authorization and audit are shared. See ADR-0090.
 #
-# LakeFS has its OWN dedicated CNPG cluster (charts/lakefs-db, mlops ns) —
+# LakeFS has its OWN dedicated CNPG cluster (charts/mlops-db, mlops ns) —
 # ADR-0123 supersedes ADR-0085 decision #3 (which put LakeFS on the shared
 # lightbridge-main-db cluster instead) after an incident where an unrelated
 # converse-namespace tenant's connection load exhausted that shared cluster
-# and took LakeFS's metadata store down with it.
+# and took LakeFS's metadata store down with it. The cluster is named/scoped
+# for the whole `mlops` namespace, not LakeFS specifically — MLflow gets a
+# role + database on it too (provisioned, pending a separately-cleared data
+# migration before its connection actually cuts over — see ADR-0123). It's a
+# child of THIS orchestrator only because charts/lakefs already carried the
+# scaffolded-but-disabled `db` slot it fills; ownership isn't LakeFS-only,
+# same as lightbridge-main-db being a child of `charts/lightbridge` doesn't
+# make Lightbridge the owner of coder's/governance's data.
 
 # ────────────────────────────────────────────────────────────────────────
 # Shared ArgoCD wiring for all child Applications.
@@ -72,18 +79,21 @@ secrets:
   syncWave: "0"
 
 # ────────────────────────────────────────────────────────────────────────
-# lakefs-db child — the dedicated CNPG cluster (charts/lakefs-db, this repo),
-# ADR-0123. Was disabled (LakeFS shared lightbridge-main-db, ADR-0085); the
-# incident that ADR-0123 documents is why it's enabled now. Lowest non-secrets
-# wave — after lakefs-secrets (0, provisions its own S3/OIDC creds — NOT the
-# DB role, which this chart provisions itself) and before lakefs-app (2, the
-# app needs the DB to exist first).
+# db child — the shared mlops CNPG cluster (charts/mlops-db, this repo,
+# RENAMED from lakefs-db — it now also provisions MLflow's role/database
+# ahead of a separately-cleared cutover, ADR-0123). Was disabled (LakeFS
+# shared lightbridge-main-db, ADR-0085); the incident that ADR-0123 documents
+# is why it's enabled now. Lowest non-secrets wave — after lakefs-secrets (0,
+# provisions its own S3/OIDC creds — NOT the DB role, which this chart
+# provisions itself) and before lakefs-app (2, the app needs the DB to exist
+# first). appName/releaseName use `mlops-db`, not `lakefs-db`, so the
+# rendered Application/release names match what they actually are now.
 # ────────────────────────────────────────────────────────────────────────
 db:
   enabled: true
-  appName: lakefs-db
-  chartName: lakefs-db   # OCI chart name
-  releaseName: lakefs-db
+  appName: mlops-db
+  chartName: mlops-db   # OCI chart name
+  releaseName: mlops-db
   syncWave: "1"
   # Ignore the CNPG operator's defaulted fields on the Cluster so it doesn't
   # sit permanently OutOfSync — same reasoning/pattern as charts/lightbridge's
