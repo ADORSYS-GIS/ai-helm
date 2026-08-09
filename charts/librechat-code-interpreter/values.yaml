@@ -128,7 +128,17 @@ codeapi:
             OTEL_TRACING_ENABLED: "false"
             OTEL_SERVICE_NAME: aiml-codeapi-api
             CODEAPI_HARDENED_SANDBOX_MODE: "true"
-            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            # ⚠️ Live-incident correction, 2026-08-10: was originally written
+            # as the nonexistent hybrid `redis-ha-redis-haproxy` (NXDOMAIN,
+            # confirmed live) — a typo transposing the two real redis-system
+            # Services (`redis-ha-redis`, `redis-ha-haproxy`). Fixed to the
+            # HAProxy master-router, NOT the round-robin `redis-ha-redis` —
+            # same durable fix already applied for librechat-app's own
+            # READONLY trap (redis-ha-redis load-balances master+replica, so
+            # a write connection lands on the read-only replica ~50% of the
+            # time). See charts/librechat-app/values.yaml's REDIS_URI note
+            # for the full rationale.
+            REDIS_HOST: redis-ha-haproxy.redis-system.svc.cluster.local
             REDIS_PORT: "6379"
             REDIS_PASSWORD:
               secretKeyRef: { name: codeapi-secrets, key: redis-password }
@@ -185,7 +195,7 @@ codeapi:
           image:
             repository: busybox
             tag: "1.36.1"
-          command: ["sh", "-c", "until nc -z redis-ha-redis-haproxy.redis-system.svc.cluster.local 6379; do echo waiting for redis; sleep 2; done"]
+          command: ["sh", "-c", "until nc -z redis-ha-haproxy.redis-system.svc.cluster.local 6379; do echo waiting for redis; sleep 2; done"]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -223,7 +233,7 @@ codeapi:
             CODEAPI_HARDENED_SANDBOX_MODE: "true"
             SANDBOX_ENDPOINT: http://codeapi-sandbox-runner:2000/api/v2
             EGRESS_GATEWAY_URL: http://codeapi-egress-gateway:3190
-            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_HOST: redis-ha-haproxy.redis-system.svc.cluster.local
             REDIS_PORT: "6379"
             REDIS_PASSWORD:
               secretKeyRef: { name: codeapi-secrets, key: redis-password }
@@ -407,7 +417,7 @@ codeapi:
               secretKeyRef: { name: codeapi-secrets, key: minio-access-key }
             MINIO_SECRET_KEY:
               secretKeyRef: { name: codeapi-secrets, key: minio-secret-key }
-            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_HOST: redis-ha-haproxy.redis-system.svc.cluster.local
             REDIS_PORT: "6379"
             REDIS_PASSWORD:
               secretKeyRef: { name: codeapi-secrets, key: redis-password }
@@ -454,7 +464,7 @@ codeapi:
           env:
             OTEL_TRACING_ENABLED: "false"
             OTEL_SERVICE_NAME: aiml-codeapi-tool-call-server
-            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_HOST: redis-ha-haproxy.redis-system.svc.cluster.local
             REDIS_PORT: "6379"
             REDIS_PASSWORD:
               secretKeyRef: { name: codeapi-secrets, key: redis-password }
@@ -515,7 +525,7 @@ codeapi:
               secretKeyRef: { name: codeapi-secrets, key: codeapi-egress-grant-secret }
             CODEAPI_INTERNAL_SERVICE_TOKEN:
               secretKeyRef: { name: codeapi-secrets, key: codeapi-internal-service-token }
-            REDIS_HOST: redis-ha-redis-haproxy.redis-system.svc.cluster.local
+            REDIS_HOST: redis-ha-haproxy.redis-system.svc.cluster.local
             REDIS_PORT: "6379"
             REDIS_PASSWORD:
               secretKeyRef: { name: codeapi-secrets, key: redis-password }
