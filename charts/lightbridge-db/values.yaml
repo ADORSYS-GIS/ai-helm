@@ -106,15 +106,17 @@ resources:
             login: true
             passwordSecret:
               name: coder-db-role
-          # Dedicated login roles for the mlops platform (ADR-0085): LakeFS
-          # and MLflow both reuse this shared CNPG cluster instead of
-          # dedicated clusters, same reasoning as coder (ADR-0083). Passwords
-          # from the basic-auth Secrets below (ESO-provisioned).
-          - name: lakefs
-            ensure: present
-            login: true
-            passwordSecret:
-              name: lakefs-db-role
+          # Dedicated login role for the mlops platform (ADR-0085): MLflow's
+          # LIVE traffic still uses this shared cluster (same reasoning as
+          # coder, ADR-0083) — LakeFS used to as well, but moved to a
+          # dedicated cluster (charts/mlops-db) per ADR-0123 after an
+          # incident where an unrelated tenant on THIS shared cluster
+          # exhausted its connections and took LakeFS down with it. ADR-0123
+          # also provisions a `mlflow` role/database on charts/mlops-db
+          # ahead of time, but does NOT repoint MLflow's connection yet —
+          # that needs its existing tracking data's migration explicitly
+          # cleared first, so this role/Database stay live here until then.
+          # Password from the basic-auth Secret below (ESO-provisioned).
           - name: mlflow
             ensure: present
             login: true
@@ -122,7 +124,7 @@ resources:
               name: mlflow-db-role
           # Dedicated login role for lightbridge-governance (ADORSYS-GIS/lightbridge-governance),
           # the AI governance platform's registry + Copilot/Foundry connectors.
-          # Reuses this shared CNPG cluster, same reasoning as coder/lakefs/mlflow
+          # Reuses this shared CNPG cluster, same reasoning as coder/mlflow
           # (ADR-0083). Owns the `governance` Database below; password from the
           # basic-auth Secret `lightbridge-governance-db-role` (ESO-provisioned,
           # below).
@@ -480,56 +482,6 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: coder_db_password
-  # ────────────────────────────────────────────────────────────────────
-  # LakeFS (ADR-0085): a `lakefs` Database owned by the managed `lakefs`
-  # role above, plus the role's basic-auth Secret (username + password)
-  # consumed by BOTH CNPG (passwordSecret) and the LakeFS app (via
-  # lakefs-app-secret assembled in charts/lakefs-secrets). Mirrors the
-  # coder pattern.
-  # NOTE: the ESO `password` template braces are double-escaped so Helm's
-  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
-  # ────────────────────────────────────────────────────────────────────
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Database
-    metadata:
-      name: lakefs
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
-        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    spec:
-      cluster:
-        name: lightbridge-main-db
-      name: lakefs
-      owner: lakefs
-      ensure: present
-  - |
-    apiVersion: external-secrets.io/v1
-    kind: ExternalSecret
-    metadata:
-      name: lakefs-db-role
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "1"
-    spec:
-      refreshInterval: 1h
-      secretStoreRef:
-        kind: ClusterSecretStore
-        name: ssegning-aws
-      target:
-        name: lakefs-db-role
-        creationPolicy: Owner
-        template:
-          type: kubernetes.io/basic-auth
-          data:
-            username: "lakefs"
-            password: "{{ "{{ .password }}" }}"
-      data:
-        - secretKey: password
-          remoteRef:
-            key: ai/camer/digital/prod/env
-            property: lakefs_db_password
   # ────────────────────────────────────────────────────────────────────
   # MLflow (ADR-0085): a `mlflow` Database owned by the managed `mlflow`
   # role above, plus the role's basic-auth Secret (username + password)

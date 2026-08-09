@@ -18,16 +18,21 @@ externalSecrets:
   # coder-db-role). This chart only carries mlops-namespace Secrets.
 
   # Single Secret carrying the two values the upstream LakeFS chart natively
-  # pulls from an existingSecret (chart's `secretKeys` map). The DB is a
-  # managed `lakefs` role + `lakefs` Database CR on the existing
-  # lightbridge-main-db CNPG cluster (charts/lightbridge-db) — LakeFS does NOT
-  # have its own CNPG cluster (ADR-0085, same reasoning as coder in ADR-0083).
-  # The connection targets the RW service in the `converse` namespace.
+  # pulls from an existingSecret (chart's `secretKeys` map). The DB is the
+  # dedicated `mlops-main-db` CNPG cluster in THIS namespace (mlops) —
+  # charts/mlops-db, ADR-0123 (supersedes ADR-0085 decision #3, which put
+  # LakeFS on the shared lightbridge-main-db cluster in `converse` instead,
+  # after an incident where an unrelated tenant on that cluster exhausted
+  # its connections and took LakeFS down with it). `mlops-main-db` is
+  # namespace-scoped, not LakeFS-specific — MLflow has a role/database on it
+  # too, provisioned ahead of a separately-cleared cutover (see charts/mlops-db).
+  # The connection targets the RW service in the `mlops` namespace — no
+  # cross-namespace hop, unlike the old lightbridge-main-db target.
   # The password is URL-encoded via ESO's `urlquery` function so URL-reserved
   # characters don't break the connection string.
   lakefs-app-secret:
     templateData:
-      database_connection_string: "postgres://lakefs:{{ .dbPassword | urlquery }}@lightbridge-main-db-rw.converse.svc.cluster.local:5432/lakefs?sslmode=disable"
+      database_connection_string: "postgres://lakefs:{{ .dbPassword | urlquery }}@mlops-main-db-rw.mlops.svc.cluster.local:5432/lakefs?sslmode=disable"
       auth_encrypt_secret_key: "{{ .encryptSecretKey }}"
     data:
       - secretKey: dbPassword
