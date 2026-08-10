@@ -54,6 +54,7 @@ flowchart TB
         REPO["lightbridge-repo-auth"]
         LCI["lightbridge-code-intelligence<br/>(automated code review)"]
         AGENT["opencode-k8s-agent<br/>(in-cluster ops)"]
+        CI["librechat-code-interpreter<br/>(NsJail sandbox, ADR-0122)"]
     end
 
     subgraph infra["Platform plane"]
@@ -77,6 +78,7 @@ flowchart TB
     LC --> OBS
     MODELS --> OBS
     RST -.-> AGENT
+    LC -.execute_code, JWT.-> CI
 
 ```
 
