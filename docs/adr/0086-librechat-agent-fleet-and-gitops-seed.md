@@ -1,37 +1,58 @@
-<!-- ai-governance:stanza -->
-# ADR-0086: LibreChat Agent Fleet & GitOps Seed Mechanism
+# ADR-0086: LibreChat agent fleet (subagents) + GitOps seed via /api/agents
 
-- **Status**: Accepted
-- **Date**: 2026-06-25
-- **Authors**: @benie-joy-possi, @Guy-Ghis
-
----
+**Status:** Proposed
+**Date:** 2026-07-24
+**Deciders:** @stephane-segning
 
 ## Context
 
-LibreChat supports **DB Agents** (custom assistants created at `/api/agents` with custom instructions, avatar, model selection, capabilities like `execute_code` / `file_search`, attached tools / MCP servers, and **subagent delegation** via `@agent-name` mentions).
+LibreChat's **Agents** are first-class, tool-using assistants (a model +
+instructions + a selected tool/MCP set), and since they gained the
+**`subagents`** capability an agent can delegate to *other agents as tools*
+(isolated-context children) — the same "primary delegates to a fleet" shape we
+already run for opencode (ADR-0074). We want a curated fleet available to every
+Converse (LibreChat) user, grounded in the tooling we actually expose.
 
-Prior to this ADR, agent definitions were manually created in the LibreChat UI database. For our self-hosted AI platform, manual UI creation violates GitOps doctrine:
-1. Agent definitions are lost if MongoDB is wiped or re-created.
-2. Agent configurations drift across environments.
-3. Fleet updates cannot be code-reviewed via Pull Requests.
+Two hard facts constrain *how* we ship them (both verified against the deployed
+image, `global.librechat.version = v0.8.7`):
 
----
+1. **Agents are DB objects, not `librechat.yaml` config.** The chart's `agents`
+   block is only capability/limit config (`recursionLimit`, `capabilities`,
+   citations) and on/off toggles — there is **no schema to declare a named
+   agent** (instructions/model/tools) in YAML. Agents are created via the Agent
+   Builder UI or the REST API and stored in Mongo.
+2. **Every agent doc requires an `author` — a real `User` ObjectId.** LibreChat
+   has no service-account concept.
+
+So a reproducible/GitOps fleet needs an out-of-band **seed mechanism**, not a
+values edit. The available tool surface for LibreChat agents (after ADR-0086's
+MCP work, see below) is: the GitHub suite, `lightbridge_self_service`, `coder`,
+`terraform`, `context7`, `refero`, plus the built-in capabilities
+(`execute_code`, `file_search`, `web_search`, `artifacts`, `ocr`).
 
 ## Decision
 
-We establish an automated **GitOps Agent-Seed Mechanism** that idempotently seeds the platform agent fleet into LibreChat MongoDB on deployment.
+Adopt a **curated agent fleet** — specialist *leaf* subagents plus *orchestrator*
+primaries that delegate to them — and seed it into LibreChat **via the REST API**
+(`POST/PATCH /api/agents`) from a run-once, idempotent Job, owned by a dedicated
+platform user.
 
-### 1. Fleet Architecture & Roster
+### 1. Expose the additive gateway MCPs to LibreChat *(done)*
 
-The platform provisions a structured fleet consisting of **leaf subagents** and **orchestrator primaries**.
+Wire `terraform`, `context7`, `refero` (the `charts/mcps` children, ADR-0038/0040)
+into `charts/librechat-app` `config.mcpServers`, reusing the existing
+`self-service-mcp-api` Keycloak client (its `redirectUris` already carry a `*`
+wildcard → no keycloak-baseline change, no new secret). `brave`/`firecrawl` are
+omitted — redundant with the built-in `webSearch` pipeline.
+
+### 2. The fleet
 
 **Leaf subagents** (single-purpose, no delegation), each `model` from the
 Converse catalog (ADR-0075/0044) + a minimal tool set:
 
 | Agent | Model | Tools |
 |---|---|---|
-| `coder` | `adorsys-coder-pro` | `execute_code`, `github_repos`, `coder` (MCP) |
+| `coder` | `adorsys-coder-pro-internal` | `execute_code`, `github_repos`, `coder_mcp` |
 | `reviewer` | `adorsys-reviewer-pro` | `github_pull_requests`, `github_repos`, `file_search` |
 | `researcher` | `adorsys-researcher` | `web_search`, `file_search`, `context7_mcp` |
 | `frontend` | `adorsys-frontend-pro` | `artifacts`, `refero_mcp`, `execute_code` |
@@ -77,5 +98,41 @@ A run-once Job on the **LibreChat image** (has the mongoose models + `MONGO_URI`
 
 ## Consequences
 
-- The agent fleet is fully declaratively specified in Helm `values.yaml`.
-- The PostSync job guarantees database state matches Git state after every deployment.
+**Positive**
+- A consistent, curated fleet every user gets for free, grounded in real tooling.
+- Subagent delegation mirrors the opencode fleet doctrine — one lean primary,
+  specialist children, no single agent carrying every tool schema.
+- The roster is versioned in git and re-seeds on change (idempotent).
+
+**Negative**
+- The seed path is genuinely stateful and **cannot be fully verified from the
+  chart repo** — it needs a live LibreChat + Mongo. First deploy is a supervised
+  smoke test, not fire-and-forget.
+- Reusing `JWT_SECRET` to mint an admin token is powerful; the Job must be
+  tightly scoped (its own SA, no extra RBAC) and the platform user least-priv.
+- `refero` rides a shared Pro quota (8k calls/mo, ADR-0027) — a `frontend`-heavy
+  fleet can burn it; instructions steer agents to query deliberately.
+
+**Neutral / follow-ups**
+- If the create/visibility contract shifts in a future LibreChat bump, the seed
+  script (not the chart) is where it breaks — pin the image and re-smoke on bump.
+
+## Alternatives considered
+
+- **Declare agents in `librechat.yaml`** — impossible; no such schema exists
+  (verified v0.8.7). This is *why* a seed mechanism is needed at all.
+- **Mongo-direct upsert** (bypass the API) — rejected: skips server-side
+  validation, ACL, version tracking, and `mcpServerNames` extraction; the API is
+  the supported contract.
+- **UI-only (build + share/publish)** — rejected as the *primary* path: not
+  reproducible/GitOps'd. Still available for ad-hoc user agents.
+- **Expose all 5 gateway MCPs** — rejected: `brave`/`firecrawl` duplicate the
+  built-in `webSearch` pipeline for no added value and extra cost.
+
+## Related
+
+- ADR-0038/0040 — the `charts/mcps` gateway MCP catalog these agents consume.
+- ADR-0074 — opencode primary+fleet doctrine (the shape mirrored here).
+- ADR-0075/0044/0050 — the Converse model catalog the agents pick models from.
+- ADR-0027 — Refero Pro subscription + quota.
+- `charts/librechat-app` — where the MCP wiring + `agentSeed` + Job live.

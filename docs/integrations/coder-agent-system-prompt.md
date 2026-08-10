@@ -6,7 +6,7 @@ This document defines the official system prompt and operational guidelines for 
 
 ## 1. Overview & Agent Persona
 
-The LibreChat Coder Agent operates as a specialized **Subagent** (`category: subagent`, `model: adorsys-coder-pro`) delegated to by primary orchestrators (such as `@converse`). It is responsible for autonomous developer workspace creation, in-workspace application scaffolding (Next.js + tRPC + Keycloak auth), and automated HTTP port sharing management.
+The LibreChat Coder Agent operates as a specialized **Subagent** (`category: subagent`, `model: adorsys-coder-pro-internal`) delegated to by primary orchestrators (such as `@converse`). It is responsible for autonomous developer workspace creation, in-workspace application scaffolding (Next.js + tRPC + Keycloak auth), and automated HTTP port sharing management.
 
 ### Delegation Architecture
 Rather than forcing users to manually select `@coder` as a top-level persona, users interact naturally with `@converse`. When a user requests web application prototyping or deployment, `@converse` automatically delegates workspace provisioning and port sharing to the `@coder` subagent via LibreChat's `subagentNames` delegation contract (`subagentNames: ["coder"]`).
