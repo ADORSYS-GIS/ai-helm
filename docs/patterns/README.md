@@ -6,6 +6,7 @@ categories.
 
 | File | What it covers |
 |---|---|
+| [coder-declarative-templates.md](coder-declarative-templates.md) | Declarative Coder template management via the `coder/coderd` Terraform provider (GitOps, retire `coder templates push`) — decision + implementation pattern (ADR-0124) |
 | [self-hosted-model-serving.md](self-hosted-model-serving.md) | **The model-agnostic serving pattern** on the home GPU (VRAM budgeting, engine choice, "deploy the next model" checklist) |
 | [self-hosted-code-interpreter.md](self-hosted-code-interpreter.md) | Self-hosted LibreChat Code Interpreter (ADR-0122): secret generation checklist, install verification, known limitations |
 | [per-user-observability.md](per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki labels |
