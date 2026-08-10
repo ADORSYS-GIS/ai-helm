@@ -633,6 +633,25 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
+  # ── Qwen3.5-2B backend (cluster-local, ADR-0095) ────────────────────────
+  # The fleet coding model served by the `qwen3-5-2b` inference entry
+  # (charts/inference/values.yaml). Same cluster-local shape as every other
+  # fleet backend: ClusterIP Service, CiliumNetworkPolicy, no Ingress.
+  # `prefix: /v1` is vLLM's own OpenAI route.
+  qwen3-5-2b-local:
+    schema: OpenAI
+    prefix: "/v1"
+    fqdn:
+      hostname: qwen3-5-2b.inference.svc.cluster.local
+      port: 8080
+    securityType: APIKey
+    resourceName: qwen3-5-2b-local-svc
+    secretRef:
+      name: qwen3-5-2b-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+
 # Models — each entry becomes one child Application using the `ai-model`
 # leaf chart. Setting `enabled: false` on a model skips its Application
 # (the AppSet controller will delete a previously-generated child).
@@ -897,6 +916,79 @@ models:
         # charts/inference. Re-read /v1/models after any change to how the
         # model is defined — it is not derivable from the catalog key.
         modelNameOverride: "z-image-turbo"
+
+  # ── Qwen2.5-3B-AWQ — DISABLED (was the fleet's coding model) ───────────
+  #
+  # Swapped by qwen3-5-2b (one GPU, one model) on 2026-08-10. Kept as a
+  # rollback surface — re-enable to roll back. Its backend was removed
+  # (backends for disabled models are removed — check-model-catalogs.sh).
+  #
+  # ⚠️ PRICING WAS AN ESTIMATE at a CONSERVATIVE 100 tok/s (formula ADR-0104:
+  #   €0.2968/h ÷ 3600 ÷ tok/s × 3.45 × 1.09 = $/1M output, split 1 : 0.15 : 0.03).
+  #   Re-derive from the MEASURED gate throughput before treating as final —
+  #   never merge on a guessed number (the 30B rule, see the #938 revert).
+  #
+  # Qwen2.5 is non-thinking → `supportedParameters` is *spStandard (no
+  # `reasoning` advertised). Tool calling via the hermes parser.
+  qwen25-3b-awq-local:
+    enabled: false                  # DISABLED — swapped by qwen3-5-2b (one GPU). Re-enable to roll back.
+    kind: text
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen2.5-3B-AWQ (self-hosted)"
+      contextLength: 32768           # = vLLM --max-model-len
+      maxOutputTokens: 8192
+      supportedParameters: *spStandard
+    pricing:
+      strategy: weighted             # cost-recovery per ADR-0028, basis ADR-0104
+      standard:
+        inputPer1M: 0.47             # ESTIMATE @ 100 tok/s — re-derive from measured tok/s
+        cachedInputPer1M: 0.09       # ESTIMATE @ 100 tok/s — re-derive from measured tok/s
+        outputPer1M: 3.10            # ESTIMATE @ 100 tok/s — re-derive from measured tok/s
+    backends:
+      qwen25-3b-awq-local:
+        ref: qwen25-3b-awq-local
+        priority: 0
+        modelNameOverride: "qwen25-3b-awq"   # = vLLM --served-model-name
+
+  # ── Qwen3.5-2B — the fleet's coding model (ADR-0101 load-gated) ────────
+  #
+  # Serving spec: charts/inference/values.yaml `qwen3-5-2b`.
+  #
+  # ⚠️ PRICING IS AN ESTIMATE at a CONSERVATIVE 100 tok/s (formula ADR-0104:
+  #   €0.2968/h ÷ 3600 ÷ tok/s × 3.45 × 1.09 = $/1M output, split 1 : 0.15 : 0.03).
+  #   Re-derive from the MEASURED gate throughput before treating as final —
+  #   never merge on a guessed number (the 30B rule, see the #938 revert).
+  #
+  # Qwen3.5 is non-thinking by default → `supportedParameters` is *spStandard
+  # (no `reasoning` advertised; clients opt in per request). Tool calling via
+  # the qwen3_coder parser (Qwen's recommended parser for Qwen3.5).
+  qwen3-5-2b-local:
+    enabled: true
+    kind: text                      # multimodal, but catalogued `kind: text` (qwen3-vl-4b)
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen3.5-2B (self-hosted)"
+      contextLength: 32768           # = vLLM --max-model-len
+      maxOutputTokens: 8192
+      supportedParameters: *spStandard
+    pricing:
+      strategy: weighted             # cost-recovery per ADR-0028, basis ADR-0104
+      standard:
+        inputPer1M: 0.47             # ESTIMATE @ 100 tok/s — re-derive from measured tok/s
+        cachedInputPer1M: 0.09       # ESTIMATE @ 100 tok/s — re-derive from measured tok/s
+        outputPer1M: 3.10            # ESTIMATE @ 100 tok/s — re-derive from measured tok/s
+    backends:
+      qwen3-5-2b-local:
+        ref: qwen3-5-2b-local
+        priority: 0
+        modelNameOverride: "qwen3-5-2b"   # = vLLM --served-model-name
 
 #   # Self-hosted Qwen3-4B on the home RTX A2000 (ADR-0022). Routed exactly like a
 #   # SaaS model; pricing flat $0 (owned hardware) so no monthly-budget rule, but
