@@ -79,6 +79,32 @@ When AGENTS.md changes, run `/update-agents` to update agent configurations. The
 
 - **Agents**: `.opencode/agents/*.md` - Agent definitions
 - **Commands**: `.opencode/commands/*.md` - Command definitions
+- **Skills**: `.opencode/skills/<name>/SKILL.md` - Reusable behavior loaded on-demand
+
+## Skills
+
+Skills are Markdown files loaded on-demand by any agent via the native `skill`
+tool. The agent reads the `description` field to decide whether a skill is
+relevant, then loads the full body when needed.
+
+### Available skills
+
+| Name | Trigger | File |
+|---|---|---|
+| `governance` | Creating or editing an Epic, User Story, Dev Ticket, PR, or ADR | `.opencode/skills/governance/SKILL.md` |
+
+### Adding a skill
+
+1. Create `.opencode/skills/<kebab-name>/SKILL.md`.
+2. Add YAML frontmatter with `name` (kebab-case, matches directory name) and
+   `description` (≤ 1024 chars — this is what the agent reads to decide
+   relevance; make it specific).
+3. Write the skill body in plain Markdown.
+4. Merge to `main` — OpenCode picks it up automatically on the next session
+   (no `opencode.json` change required).
+
+See the [OpenCode Skills docs](https://opencode.ai/docs/skills/) for the full
+frontmatter spec.
 
 ## Config Notes
 

@@ -24,9 +24,17 @@ stage into an alternative public operation.
 `*-dataset-build` templates are restricted-plane operations placed on
 `nvidia.com/gpu.present=true` nodes (the live GPU node label, matching
 `charts/inference`), tolerating `nvidia.com/gpu:NoSchedule` (Exists), and
-using `runtimeClassName: nvidia` so the host CUDA driver libraries are mounted.
-They request the same reviewed CPU, memory, and one-GPU resource profile as
-candidate training (ADR-0114).
+using `runtimeClassName: nvidia`. The work itself — generation, image
+decode/resize, tensor packing, and a LakeFS upload — performs no forward pass
+and needs no GPU compute (webank-models#415); the GPU node placement is kept
+anyway because the pinned `webank-train-gpu` image links `libcuda.so.1` as a
+hard dependency, so every subcommand fails to start (exit 127) without the
+driver library the GPU claim injects (ai-helm#948). Their CPU and memory
+request/limit come from `training.datasetBuild.resources`, sized from a real
+local run of this pipeline (13,393 crops in 2:55; `materialize-synthetic-
+source` peaking at 8.81 GiB RSS after webank-models#425, down from 13.20 GiB
+— not the smaller packed-output size), kept separate from `training.gpu`
+(ADR-0114) because the two footprints differ even though placement is shared.
 Every Dataset Build form has **no inputs**. Its target repository, `main`
 branch, reviewed storage namespace, and closed source strategy come only from
 `ai-helm-values`; the dashboard cannot choose a LakeFS reference, source
@@ -65,8 +73,8 @@ The recognizer, face-detector, and SFace
 templates take a governed `dataset`, `manifest`, and `readiness` artifact plus
 the matching `lakefs_ref`; they run their closed, model-specific Rust trainer
 only after the readiness gate passes. All successful trainers write candidates
-back only through `training-data push` into the fixed per-model `model-*`
-repository, never to the model registry.
+back only through `training-data fixed-candidate publish` into the fixed
+per-model `model-*` repository, never to the model registry.
 
 `run_name` is optional on every training template. Its default includes the
 generated Argo workflow name, so it is unique even when the operator leaves

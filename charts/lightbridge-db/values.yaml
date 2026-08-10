@@ -42,13 +42,30 @@ resources:
       postgresql:
         parameters:
           archive_timeout: "30min"
+          # Incident (2026-08-08/09): max_connections was left UNSET, so CNPG
+          # applied its own default of 100 — too little for a cluster shared
+          # by 7 tenant roles (repoauth/codeintel/grafana_ro/coder/lakefs/
+          # mlflow/governance) each holding their own client-side pool, plus
+          # the reserved superuser/replication/monitoring-exporter slots.
+          # LakeFS alone defaults to a 25-connection pool (see charts/lakefs
+          # lakefs-app.yaml, now capped to 5) — a quarter of the old ceiling
+          # from one tenant. Doubled explicitly to 200 rather than left
+          # implicit, paired with the memory bump below so it isn't a bare
+          # number with no headroom behind it. Sized for max_connections ×
+          # work_mem (Postgres default work_mem=4MiB, unset here): worst case
+          # (every connection concurrently sorting) is 200 × 4MiB ≈ 800MiB,
+          # plus per-backend base overhead (roughly 200 × ~2MiB ≈ 400MiB) and
+          # CNPG's own shared_buffers default (128MiB) — call it ~1.3GiB
+          # worst-case, which the 2Gi limit below covers with headroom without
+          # requiring the node to reserve that much (500Mi→1Gi request only).
+          max_connections: "200"
       resources:
         limits:
           cpu: 300m
-          memory: 1Gi
+          memory: 2Gi
         requests:
           cpu: 200m
-          memory: 500Mi
+          memory: 1Gi
       # Declarative role for lightbridge-repo-auth (ADR-0047): a dedicated login
       # role, isolated from the bootstrap `app` role. Password from the
       # basic-auth Secret below (ESO-provisioned); CNPG creates/maintains the
@@ -89,20 +106,17 @@ resources:
             login: true
             passwordSecret:
               name: coder-db-role
-          # Dedicated login roles for the mlops platform (ADR-0085): LakeFS
-          # and MLflow both reuse this shared CNPG cluster instead of
-          # dedicated clusters, same reasoning as coder (ADR-0083). Passwords
-          # from the basic-auth Secrets below (ESO-provisioned).
-          - name: lakefs
+          # Dedicated login role for lightbridge-governance (ADORSYS-GIS/lightbridge-governance),
+          # the AI governance platform's registry + Copilot/Foundry connectors.
+          # Reuses this shared CNPG cluster, same reasoning as coder (ADR-0083).
+          # Owns the `governance` Database below; password from the
+          # basic-auth Secret `lightbridge-governance-db-role` (ESO-provisioned,
+          # below).
+          - name: governance
             ensure: present
             login: true
             passwordSecret:
-              name: lakefs-db-role
-          - name: mlflow
-            ensure: present
-            login: true
-            passwordSecret:
-              name: mlflow-db-role
+              name: lightbridge-governance-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -311,6 +325,64 @@ resources:
             key: ai/camer/digital/prod/env
             property: codeintel_db_password
   # ────────────────────────────────────────────────────────────────────
+  # lightbridge-governance: a `governance` Database owned by the managed
+  # `governance` role above, plus the role's basic-auth Secret (username +
+  # password) consumed by CNPG (passwordSecret). Mirrors the codeintel
+  # pattern above. No extensions needed -- ADR-0009: cratestack is the sole
+  # persistence layer, plain tables only.
+  #
+  # NOTE: the lightbridge-governance chart's own ExternalSecret takes ONE
+  # opaque `governance_database_url` property (a pre-assembled connection
+  # string), not username+password assembled at the pod (unlike codeintel's
+  # bjw-template $(DB_PASSWORD) substitution). An operator must construct
+  # postgresql://governance:<governance_db_password>@lightbridge-main-db-rw.converse.svc.cluster.local:5432/governance
+  # and write it into ai/camer/digital/prod/env as governance_database_url
+  # once this role's password (below) is known -- see
+  # charts/lightbridge-governance's own README in the lightbridge-governance
+  # repo for the full property list this depends on.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: governance
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: governance
+      owner: governance
+      ensure: present
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lightbridge-governance-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lightbridge-governance-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "governance"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: governance_db_password
+  # ────────────────────────────────────────────────────────────────────
   # grafana_ro role password (read-only DB user for the Grafana dashboards).
   # basic-auth Secret consumed by CNPG (passwordSecret on the managed role above)
   # to SET the role's password. The SAME password is also surfaced into the
@@ -394,130 +466,15 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: coder_db_password
-  # ────────────────────────────────────────────────────────────────────
-  # LakeFS (ADR-0085): a `lakefs` Database owned by the managed `lakefs`
-  # role above, plus the role's basic-auth Secret (username + password)
-  # consumed by BOTH CNPG (passwordSecret) and the LakeFS app (via
-  # lakefs-app-secret assembled in charts/lakefs-secrets). Mirrors the
-  # coder pattern.
-  # NOTE: the ESO `password` template braces are double-escaped so Helm's
-  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
-  # ────────────────────────────────────────────────────────────────────
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Database
-    metadata:
-      name: lakefs
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
-        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    spec:
-      cluster:
-        name: lightbridge-main-db
-      name: lakefs
-      owner: lakefs
-      ensure: present
-  - |
-    apiVersion: external-secrets.io/v1
-    kind: ExternalSecret
-    metadata:
-      name: lakefs-db-role
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "1"
-    spec:
-      refreshInterval: 1h
-      secretStoreRef:
-        kind: ClusterSecretStore
-        name: ssegning-aws
-      target:
-        name: lakefs-db-role
-        creationPolicy: Owner
-        template:
-          type: kubernetes.io/basic-auth
-          data:
-            username: "lakefs"
-            password: "{{ "{{ .password }}" }}"
-      data:
-        - secretKey: password
-          remoteRef:
-            key: ai/camer/digital/prod/env
-            property: lakefs_db_password
-  # ────────────────────────────────────────────────────────────────────
-  # MLflow (ADR-0085): a `mlflow` Database owned by the managed `mlflow`
-  # role above, plus the role's basic-auth Secret (username + password)
-  # consumed by BOTH CNPG (passwordSecret) and the MLflow app (via
-  # mlflow-db-secret assembled in charts/mlflow-secrets). Mirrors the
-  # coder pattern.
-  # NOTE: the ESO `password` template braces are double-escaped so Helm's
-  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
-  # ────────────────────────────────────────────────────────────────────
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Database
-    metadata:
-      name: mlflow
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
-        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    spec:
-      cluster:
-        name: lightbridge-main-db
-      name: mlflow
-      owner: mlflow
-      ensure: present
-  # ────────────────────────────────────────────────────────────────────
-  # MLflow OIDC auth DB (ADR-0085): a SECOND `mlflow_oidc` Database owned by
-  # the same `mlflow` role. The mlflow-oidc-auth plugin keeps its own
-  # users/groups/permissions store and auto-migrates it (Alembic → head) on
-  # first login. It MUST NOT share the tracking store's `mlflow` DB: both use
-  # a default `alembic_version` table, so the plugin reads MLflow's tracking
-  # revision, can't resolve it against its own migration chain, aborts before
-  # any DDL, and never creates its tables → every login fails
-  # "Failed to update user/groups". A dedicated DB (empty alembic_version)
-  # lets the plugin migrate from base cleanly. Found live during ADR-0085
-  # verification. No extra Secret — reuses the `mlflow` role/password.
-  # ────────────────────────────────────────────────────────────────────
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Database
-    metadata:
-      name: mlflow-oidc
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
-        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    spec:
-      cluster:
-        name: lightbridge-main-db
-      name: mlflow_oidc
-      owner: mlflow
-      ensure: present
-  - |
-    apiVersion: external-secrets.io/v1
-    kind: ExternalSecret
-    metadata:
-      name: mlflow-db-role
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "1"
-    spec:
-      refreshInterval: 1h
-      secretStoreRef:
-        kind: ClusterSecretStore
-        name: ssegning-aws
-      target:
-        name: mlflow-db-role
-        creationPolicy: Owner
-        template:
-          type: kubernetes.io/basic-auth
-          data:
-            username: "mlflow"
-            password: "{{ "{{ .password }}" }}"
-      data:
-        - secretKey: password
-          remoteRef:
-            key: ai/camer/digital/prod/env
-            property: mlflow_db_password
+  # MLflow's `mlflow`/`mlflow_oidc` Database CRs + `mlflow-db-role`
+  # ExternalSecret used to live here (ADR-0085). Removed — hard cutover, no
+  # dormant parallel path — now that MLflow is cut over to mlops-main-db
+  # (ADR-0123: `mlflow` role + `mlflow`/`mlflow_oidc` Database CRs on
+  # charts/mlops-db, provisioned by ai-helm#957; connection repointed by the
+  # companion ai-helm-values PR once the owner confirmed via the
+  # authenticated MLflow UI that these databases held nothing worth
+  # migrating). Mirrors exactly how ai-helm#957 removed LakeFS's equivalent
+  # `lakefs` Database CR + `lakefs-db-role` ExternalSecret from this same
+  # file when LakeFS cut over first. The `mlflow_db_password` Secrets
+  # Manager property is unchanged and reused as-is by charts/mlops-db's own
+  # `mlflow-db-role` ExternalSecret — same credential, new cluster.

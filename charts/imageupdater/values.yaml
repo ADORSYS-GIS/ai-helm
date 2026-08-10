@@ -37,3 +37,16 @@ imageUpdaters:
     applicationRefs:
       - namePattern: lightbridge-app
         useAnnotations: true
+  # lightbridge-governance API + copilot-sync image write-back to
+  # ai-helm-values (ai-helm#939, COSIGN-signed). The write-back annotations
+  # live on the aii-lightbridge-governance Application (charts/apps/values.yaml)
+  # -- adding those annotations alone does nothing without this CR: the
+  # CRD-based controller only scans Applications an ImageUpdater actually
+  # references. Confirmed missing 2026-08-07: #939 shipped the annotations
+  # but not this entry, so the controller's reconcile loop never once
+  # considered lightbridge-governance despite the Application carrying valid
+  # image-updater config for 6+ hours.
+  - name: lightbridge-governance
+    applicationRefs:
+      - namePattern: aii-lightbridge-governance
+        useAnnotations: true

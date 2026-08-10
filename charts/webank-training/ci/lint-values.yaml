@@ -14,6 +14,8 @@ training:
       - key: nvidia.com/gpu
         operator: Exists
         effect: NoSchedule
+  datasetBuild:
+    image: ghcr.io/adorsys-gis/webank-dataset-gpu@sha256:c4ddb832deda7854bb617d422acca099001a6ec2aea1d585b8e460a53e4f6edf
 models:
   - id: document-detector
     trainer: document-detector
@@ -28,7 +30,7 @@ models:
         repository: ds-document-detector
         branch: main
         storageNamespace: s3://governed-ci/datasets/ds-document-detector
-      model: { repository: model-document-detector, branch: main }
+      model: { repository: model-document-detector, branch: main, storageNamespace: s3://governed-ci/models/model-document-detector }
   - id: document-recognizer
     trainer: document-recognizer
     datasetBuild:
@@ -39,7 +41,7 @@ models:
       source: { strategy: hermetic-synthetic }
     lakefs:
       dataset: { repository: ds-document-recognizer, branch: main }
-      model: { repository: model-document-recognizer, branch: main }
+      model: { repository: model-document-recognizer, branch: main, storageNamespace: s3://governed-ci/models/model-document-recognizer }
   - id: face-detector
     trainer: face-detector
     datasetBuild:
@@ -50,7 +52,7 @@ models:
       source: { strategy: hermetic-synthetic }
     lakefs:
       dataset: { repository: ds-face-detector, branch: main }
-      model: { repository: model-face-detector, branch: main }
+      model: { repository: model-face-detector, branch: main, storageNamespace: s3://governed-ci/models/model-face-detector }
   - id: sface
     trainer: sface
     datasetBuild:
@@ -64,7 +66,7 @@ models:
         branch: main
     lakefs:
       dataset: { repository: ds-sface, branch: main }
-      model: { repository: model-sface, branch: main }
+      model: { repository: model-sface, branch: main, storageNamespace: s3://governed-ci/models/model-sface }
   - id: pad-liveness
     trainer: pad-liveness-pending
     datasetBuild:
@@ -78,4 +80,4 @@ models:
         branch: main
     lakefs:
       dataset: { repository: ds-pad-liveness, branch: main }
-      model: { repository: model-pad-liveness, branch: main }
+      model: { repository: model-pad-liveness, branch: main, storageNamespace: s3://governed-ci/models/model-pad-liveness }

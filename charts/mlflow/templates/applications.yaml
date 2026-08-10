@@ -7,12 +7,21 @@ mlflow App-of-Apps orchestrator — renders two child Application CRs:
 No auth-proxy child — the upstream chart bundles the mlflow-oidc-auth plugin
 natively (auth.oidcAuth in the app's values), giving real per-user Keycloak
 identity + group RBAC inside MLflow itself. See ADR-0085.
-(The mlflow-db child is disabled — MLflow uses the existing lightbridge-main-db
-CNPG cluster. See ADR-0085.)
+(The mlflow-db child stays disabled — NOT because MLflow lacks a dedicated
+CNPG cluster any more. MLflow is cut over to mlops-main-db (ADR-0123): its
+`mlflow`/`mlflow_oidc` role/Database were provisioned by ai-helm#957 and its
+connection actually repointed by the follow-up ai-helm-values PR once the
+owner confirmed, via the authenticated MLflow UI, that lightbridge-main-db
+held nothing worth migrating. mlops-db (charts/mlops-db) is that dedicated
+cluster; it stays a child of the lakefs orchestrator, not this one, and
+this chart's own db child stays disabled purely to avoid deploying the
+SAME Cluster resource twice from two different Applications — see
+charts/mlops-db and charts/lakefs/values.yaml.)
 All target home-remote (ADR-0017 guard via mlflow.argocd.destinationClusterRef).
 Rendered as direct Application CRs rather than an ApplicationSet because the
 children are fixed + heterogeneous — see ADR-0019 (lightbridge is the canonical
-example). See ADR-0085 for the MLflow-specific auth/DB/S3 decisions.
+example). See ADR-0085 for the MLflow-specific auth/S3 decisions (still
+current) and ADR-0123 for the DB decision (supersedes ADR-0085's for MLflow).
 */ -}}
 {{- $a := .Values.argocd -}}
 {{- if .Values.secrets.enabled }}

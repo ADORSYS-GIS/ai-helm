@@ -18,8 +18,16 @@ global:
   # privileged host access (/var/lib/longhorn, /dev, iSCSI) on the GPU nodes
   # it's scoped to; k3s/Hetzner's baseline-enforced default forbids that
   # without this elevation (ADR-0092).
+  #
+  # `librechat-sandbox: privileged` — the self-hosted Code Interpreter's
+  # sandbox-runner needs SYS_ADMIN/SYS_CHROOT/NET_ADMIN (NsJail namespace +
+  # mount + chroot setup) because no home-remote worker node has confirmed
+  # /dev/kvm for the chart's safer libkrun microVM mode (ADR-0122). Kept in
+  # its OWN namespace — not added to `converse` — so the elevation doesn't
+  # reach librechat-app/mongo/meilisearch, which don't need it.
   namespacePodSecurity:
     longhorn-system: privileged
+    librechat-sandbox: privileged
 
 # ────────────────────────────────────────────────────────────────────────
 # ArgoCD destination — the home-remote cluster every generated Application
@@ -587,18 +595,14 @@ applications:
       # untouched. No depsOverlay on this app, so it renders as a single source.
       repoURL: oci://ghcr.io/adorsys-gis/charts/core-gateway
       chart: "."
-      # ⚠️ TEMPORARY ROLLBACK PIN (2026-08-03 incident): 0.3.146 is the last
-      # published chart WITHOUT the ADR-0116 redact-extproc sidecar at all
-      # (0.3.147 = e7ea902/#900, the first commit that adds it). Live traffic
-      # was seeing near-half of ext_proc streams get an ImmediateResponse
-      # after #905 switched response.body to Buffered as a stopgap for the
-      # UTF-8 chunk-split bug — a bug already fixed properly upstream
-      # (lightbridge-governance#47, sha-b3c0a2e) but not yet re-verified live
-      # under that stopgap. Pinning below the whole feature is the fastest
-      # correct kill switch while the chart is reworked so Buffered/Streamed
-      # is a value, not a template literal (see redactExtproc.processingMode
-      # once that lands) — re-float to ">=0.0.0" once verified fixed.
-      targetRevision: "0.3.146"
+      # Re-floated 2026-08-06: the 2026-08-03 incident's rollback pin
+      # (0.3.146, the last chart WITHOUT the ADR-0116 redact-extproc sidecar)
+      # is lifted. The UTF-8 chunk-split bug in streaming ext_proc responses
+      # is fixed upstream (lightbridge-governance#47, sha-b3c0a2e -- already
+      # the pinned redactExtproc.image.tag in this repo's
+      # environments/prod/values/core-gateway.yaml) and has been re-verified
+      # live under production traffic. Back to the normal chart-float range.
+      targetRevision: ">=0.0.0"
       helm:
         releaseName: core-gateway
     destination:
@@ -724,12 +728,12 @@ applications:
       # declares, which otherwise show a permanent cosmetic OutOfSync + selfHeal churn.
       # ServerSideDiff ignores those server-owned fields so the app reads Synced.
       argocd.argoproj.io/compare-options: ServerSideDiff=true
-      # Images aliased: cp/disp/recon/a2a (control-plane, role-selected), web, runner (the one-shot
+      # Images aliased: cp/disp/recon/a2a/mcp (control-plane, role-selected), web, runner (the one-shot
       # agent-runner/indexer image the dispatcher launches), and review (the slimmer review-only Job
       # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
       # `a2a` = the A2A surface (RFC-0006) — the SAME control-plane image, kept in lockstep so the a2a
       # role never lags the control-plane on a build.
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/adorsys-gis/lightbridge-control-plane,disp=ghcr.io/adorsys-gis/lightbridge-control-plane,recon=ghcr.io/adorsys-gis/lightbridge-control-plane,a2a=ghcr.io/adorsys-gis/lightbridge-control-plane,notifier=ghcr.io/adorsys-gis/lightbridge-control-plane,web=ghcr.io/adorsys-gis/lightbridge-web,runner=ghcr.io/adorsys-gis/lightbridge-agent-runner,review=ghcr.io/adorsys-gis/lightbridge-agent-review
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/adorsys-gis/lightbridge-control-plane,disp=ghcr.io/adorsys-gis/lightbridge-control-plane,recon=ghcr.io/adorsys-gis/lightbridge-control-plane,a2a=ghcr.io/adorsys-gis/lightbridge-control-plane,notifier=ghcr.io/adorsys-gis/lightbridge-control-plane,mcp=ghcr.io/adorsys-gis/lightbridge-control-plane,web=ghcr.io/adorsys-gis/lightbridge-web,runner=ghcr.io/adorsys-gis/lightbridge-agent-runner,review=ghcr.io/adorsys-gis/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -788,6 +792,19 @@ applications:
       argocd-image-updater.argoproj.io/notifier.signature-type: cosign
       argocd-image-updater.argoproj.io/notifier.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/notifier.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── mcp (SAME image as control-plane, role-selected; story #508) — keeps its tag in lockstep so
+      #    the MCP surface never lags the control-plane on a build. Without this alias the `mcp` tag
+      #    seeded in ai-helm-values would never auto-update (image-updater only tracks aliases listed
+      #    here), unlike every other role. ──
+      argocd-image-updater.argoproj.io/mcp.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/mcp.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/mcp.force-update: "true"
+      argocd-image-updater.argoproj.io/mcp.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/mcp.helm.image-name: lci.controllers.mcp.containers.main.image.repository
+      argocd-image-updater.argoproj.io/mcp.helm.image-tag: lci.controllers.mcp.containers.main.image.tag
+      argocd-image-updater.argoproj.io/mcp.signature-type: cosign
+      argocd-image-updater.argoproj.io/mcp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/mcp.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── web ──
       argocd-image-updater.argoproj.io/web.update-strategy: newest-build
       argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -862,6 +879,92 @@ applications:
         ref: values
     destination:
       namespace: converse
+
+  # --- lightbridge-governance ---
+  # The AI governance platform (repo: ADORSYS-GIS/lightbridge-governance): a
+  # tenant/application/integration registry plus two connectors — GitHub
+  # Copilot (pull, RFC-0001, the copilot-sync CronJob) and Microsoft Foundry
+  # (push over OTLP, RFC-0002). One image, two binaries. Own namespace
+  # (`governance`), separate from `converse` — this is not part of the
+  # Lightbridge authz stack.
+  #
+  # OCI mode (ADR-0055): the chart lives WITH the app code (charts live here
+  # and publish to OCI on merge, matching lightbridge-authz's convention —
+  # not vendored into ai-helm). The chart renders its OWN CronJob egress
+  # CiliumNetworkPolicy (GitHub + the S3 raw archive, scoped to the
+  # copilot-sync pods), so no depsOverlay is needed for that half. depsOverlay
+  # below adds the piece the chart can't own itself: DB egress to the shared
+  # lightbridge-main-db CNPG cluster in `converse` (ADR-0083 reuse, same as
+  # coder/lakefs/mlflow — see charts/lightbridge-db) plus the DNS baseline
+  # under this namespace's default-deny-egress.
+  #
+  # Postgres role/database (`governance`) provisioned in charts/lightbridge-db
+  # (this repo). GHCR package is public (no imagePullSecret needed — verified
+  # via `gh repo view` visibility; re-check if that ever changes).
+  #
+  # ⚠️ NOT YET LIVE-READY: the chart's ExternalSecret property names
+  # (governance_database_url, governance_internal_resolve_token,
+  # governance_internal_ingest_token, governance_github_app_id,
+  # governance_github_app_private_key) are unverified against the real
+  # ssegning-aws store, copilot.tenantId + externalSecret.s3RemoteKey are
+  # empty until an operator sets them in the values-repo file below, and no
+  # ingress-side CiliumNetworkPolicy exists yet (core-gateway's Authorino
+  # calling /internal/v1/resolve and the OTel Collector calling
+  # /internal/v1/ingest need their exact live Service selectors verified
+  # before a restrictive ingress policy can be added safely — see this
+  # chart's README). See the PR description for the full pre-merge checklist.
+  - name: lightbridge-governance
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      # argocd-image-updater: float both controllers (api Deployment +
+      # copilot-sync CronJob, app-template v4 -- lightbridge-governance#56)
+      # independently onto the newest cosign-signed sha-<gitsha> tag from
+      # lightbridge-governance's own docker.yml (signing added in that
+      # repo's #60, specifically to make this possible). Both aliases point
+      # at the SAME image repo, so they resolve to the same tag on their
+      # own -- no explicit lockstep needed, unlike lightbridge-code-
+      # intelligence's role-selected same-image aliases (cp/disp/recon/...).
+      # allow-tags restricts to sha-<hex> so this can never resolve back to
+      # the floating `main` tag the values-repo file used before.
+      argocd-image-updater.argoproj.io/image-list: api=ghcr.io/adorsys-gis/lightbridge-governance,sync=ghcr.io/adorsys-gis/lightbridge-governance
+      argocd-image-updater.argoproj.io/api.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/api.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/api.force-update: "true"
+      # GHCR read cred so tag detection survives ghcr.io/adorsys-gis/* going
+      # private -- same shared secret lightbridge-code-intelligence already
+      # uses (the dockerconfigjson is keyed on the ghcr.io host, not a repo).
+      argocd-image-updater.argoproj.io/api.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/api.helm.image-name: app-template.controllers.api.containers.main.image.repository
+      argocd-image-updater.argoproj.io/api.helm.image-tag: app-template.controllers.api.containers.main.image.tag
+      argocd-image-updater.argoproj.io/api.signature-type: cosign
+      argocd-image-updater.argoproj.io/api.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/api.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-governance/\.github/workflows/docker\.yml@.*$
+      argocd-image-updater.argoproj.io/sync.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/sync.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/sync.force-update: "true"
+      argocd-image-updater.argoproj.io/sync.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/sync.helm.image-name: app-template.controllers.copilot-sync.containers.main.image.repository
+      argocd-image-updater.argoproj.io/sync.helm.image-tag: app-template.controllers.copilot-sync.containers.main.image.tag
+      argocd-image-updater.argoproj.io/sync.signature-type: cosign
+      argocd-image-updater.argoproj.io/sync.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/sync.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-governance/\.github/workflows/docker\.yml@.*$
+      # Write-back: git, to ai-helm-values, same shape as converse-ui /
+      # lightbridge-code-intelligence (ADR-0055). Without this the detected
+      # tag has nowhere to persist -- image-updater's default write-back
+      # method is `argocd` (patches the Application's own parameter
+      # overrides, not this repo), which is not what the values-repo file's
+      # own comment promises and silently diverges from GitOps. Caught in
+      # #940's review before this ever shipped a detection-only no-op.
+      argocd-image-updater.argoproj.io/write-back-method: git
+      argocd-image-updater.argoproj.io/git-repository: https://github.com/adorsys-gis/ai-helm-values.git
+      argocd-image-updater.argoproj.io/git-branch: main
+      argocd-image-updater.argoproj.io/write-back-target: helmvalues:/environments/prod/values/lightbridge-governance.yaml
+      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys-gis
+    depsOverlay: environments/prod/deps/lightbridge-governance
+    chart: lightbridge-governance
+    destination:
+      namespace: governance
 
   # ── Lightbridge observability — Grafana dashboards-as-code (ADR-0046) ──
   # Deploys the dashboards-as-code chart that lives in the APPLICATION repo
@@ -1010,6 +1113,46 @@ applications:
     depsOverlay: environments/prod/deps/mongodb-backup
     destination:
       namespace: converse-chat
+
+  # --- Self-hosted LibreChat Code Interpreter (ADR-0122) ---
+  # Vendored clickhouse/code-interpreter (not published to any Helm/OCI
+  # registry upstream — floats from OUR OCI publish like every other chart
+  # here). Deployed as a FLAT app, not a librechart child: the librechart
+  # ApplicationSet's children all share ONE destination.namespace (see
+  # charts/librechart/templates/applicationset.yaml), and this needs its OWN
+  # dedicated `privileged`-PSS namespace (global.namespacePodSecurity above),
+  # isolated from `converse`'s librechat-app/mongo/meilisearch.
+  - name: librechat-code-interpreter
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: librechat-code-interpreter
+    releaseName: librechat-code-interpreter
+    # Cilium egress for file-server → Hetzner Object Storage (the vendored
+    # chart's own NetworkPolicy templates cover everything else — see the
+    # overlay's ciliumnetworkpolicy.yaml for exactly what's missing and why).
+    depsOverlay: environments/prod/deps/librechat-code-interpreter
+    destination:
+      namespace: librechat-sandbox
+    # ⚠️ Override, NOT the repo-wide Replace=true default (live-incident
+    # correction, 2026-08-08): this chart's `packages` PVC and
+    # `package-init` Job both develop server-populated immutable fields
+    # once they exist in their normal running state (a Bound PVC's spec;
+    # a Job's spec.selector) — Replace=true (`kubectl replace`) then fails
+    # every subsequent sync forever with "spec is immutable"/"field is
+    # immutable", even once the workload itself is healthy. Confirmed live
+    # across 10+ retried sync attempts, including a per-resource
+    # `argocd.argoproj.io/sync-options: Replace=false` annotation attempt
+    # (charts/librechat-code-interpreter/values.yaml git history) that did
+    # NOT override the app-level default. Same pattern already used by
+    # other apps in this file (e.g. same-origin-proxy, apprise-api,
+    # opencode-k8s-agent) — just the two known-safe options, no Replace.
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
 
   # --- Models ---
   - name: models

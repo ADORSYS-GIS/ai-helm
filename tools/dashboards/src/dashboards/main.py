@@ -43,6 +43,7 @@ _DASHBOARD_MODULES: tuple[str, ...] = (
     "dashboards.envoy_ai_gateway.my_usage",
     "dashboards.envoy_ai_gateway.chat_overview",
     "dashboards.envoy_ai_gateway.chats_by_user",
+    "dashboards.envoy_ai_gateway.provider_billing",
     "dashboards.vllm.vllm",
     "dashboards.llamacpp.llamacpp",
     "dashboards.gpu.gpu_fleet",

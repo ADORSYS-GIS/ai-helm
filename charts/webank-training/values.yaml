@@ -18,14 +18,16 @@ training:
     secretKey: secret-access-key
   otel:
     endpoint: ""
-  # Every dataset-build and training template uses this GPU-node placement and
-  # resource profile: `nvidia.com/gpu.present=true` (the live GPU node label,
-  # matching charts/inference's `defaults.gpu` — see ADR-0114), an
-  # matching toleration and runtime class, and an explicit positive accelerator
-  # request and limit. Every cluster-specific name and placement value is
-  # supplied by ai-helm-values; this chart owns only the rendering contract.
-  # Dataset construction receives the same reviewed CPU, memory, and accelerator
-  # allocation as candidate training.
+  # Every dataset-build and training template uses this GPU-node placement:
+  # `nvidia.com/gpu.present=true` (the live GPU node label, matching
+  # charts/inference's `defaults.gpu` — see ADR-0114), a matching toleration,
+  # and `runtimeClassName`. Every cluster-specific name and placement value
+  # is supplied by ai-helm-values; this chart owns only the rendering
+  # contract. `train` also takes its CPU/memory/accelerator quantities from
+  # `resources` below; `dataset-build` uses the same placement but its own
+  # measured `training.datasetBuild.resources` quantities (see below) —
+  # placement is shared because both need the driver library the GPU claim
+  # injects (ai-helm#948), not because their resource footprints match.
   #
   # ⚠️ Prior to ADR-0114 this contract was `role: gpu`, which no node in the
   # cluster has ever carried — every GPU-requesting workflow pod was
@@ -41,6 +43,78 @@ training:
     resources:
       requests: { cpu: "4", memory: 16Gi, nvidia.com/gpu: 1 }
       limits: { cpu: "8", memory: 16Gi, nvidia.com/gpu: 1 }
+  # Both `webank-dataset-gpu` and `webank-train-gpu` run as a fixed non-root
+  # UID:GID 10001:10001 baked into the image (Dockerfile.dataset-build:74,
+  # Dockerfile.train-gpu:123 in ADORSYS-GIS/webank-models) -- not an
+  # environment literal, so this fact lives in the chart, not ai-helm-values.
+  # Every `*-dataset-build`/`*-train` pod mounts an `emptyDir` at /workspace
+  # (see templates/workflowtemplate.yaml) sized below, plus
+  # `securityContext.fsGroup: 10001` so that non-root UID can actually write
+  # it: an emptyDir/PVC volume's mount-point is chowned root:root by default
+  # on attach, and `fsGroup` is the documented, portable mechanism (works for
+  # both emptyDir and a future PVC storage class alike) that makes the
+  # kubelet chown it to that GID with the setgid bit set, instead of relying
+  # on emptyDir's undocumented default permissions. `train` also needs this
+  # for its Argo input artifacts (`inputs.artifacts[].path` under /workspace)
+  # to land somewhere the main container can actually read.
+  #
+  # `emptyDir`, not a PVC: unlike webank-models' own (undeployed,
+  # documentation-by-example) deploy/argo-workflows/dataset-build-workflowtemplate.yaml,
+  # every `build`/`train` template here runs as ONE container in ONE pod --
+  # no multi-step DAG spanning separate pods -- so nothing needs the volume
+  # to outlive that single pod or be attached from a second one. Both GPU
+  # nodes have ~1.7Ti allocatable ephemeral-storage and exactly 1
+  # `nvidia.com/gpu` each (verified live against hetzner-prod 2026-08-08), so
+  # the GPU claim itself already caps concurrency to one workflow pod per
+  # node -- a `sizeLimit` far under that headroom needs no PVC/StorageClass
+  # provisioning latency to be safe.
+  workspaceSizeLimit: 8Gi
+  # webank-models#415 argued dataset-build performs no forward pass so it
+  # needs no GPU. That reasoning was correct but incomplete (ai-helm#948):
+  # every subcommand of the pinned `webank-train-gpu` image — including a
+  # pure-CLI one like `training-data bootstrap-model-repository` — links
+  # `libcuda.so.1` as a hard ELF DT_NEEDED dependency, because candle's
+  # `cuda` feature pulls in ~30 `cu*` driver symbols at load time. The
+  # process fails at start (exit 127, "cannot open shared object file")
+  # unless the NVIDIA driver library is injected, which only happens via
+  # the GPU resource claim plus `runtimeClassName: nvidia`. Dataset-build
+  # therefore keeps the same GPU node placement as `train` (`training.gpu`
+  # nodeSelector/toleration/runtimeClassName), even though it runs no
+  # kernel — the accelerator claim exists to provision the driver, not
+  # compute.
+  #
+  # CPU/memory stay their own knob, distinct from `training.gpu.resources`,
+  # because dataset-build's measured footprint differs from training's and
+  # has already changed once: webank-models#424 measured
+  # `materialize-synthetic-source` peaking at 13.20 GiB RSS (12,799 rows,
+  # `/usr/bin/time -v`); webank-models#425 removed a redundant tensor copy
+  # and cut that peak to 8.81 GiB RSS (9,234,140 KB), byte-identical output
+  # verified by SHA-256. The request sits just above that new peak and the
+  # limit keeps ~50%+ headroom above it, consistent with the original
+  # sizing convention; do not size either from the smaller packed-output
+  # artifact.
+  datasetBuild:
+    # webank-models#435 split the combined training image: `train` uses
+    # `training.image` (candle-only, no `ort`) and `dataset-build` uses this
+    # image (the CUDA image carrying `ort` plus the Python generator venvs).
+    # GPU node placement above stays shared between both — both images link
+    # `libcuda.so.1` — but the image reference itself is no longer shared.
+    image: ""
+    resources:
+      requests: { cpu: "4", memory: 10Gi, nvidia.com/gpu: 1 }
+      limits: { cpu: "8", memory: 14Gi, nvidia.com/gpu: 1 }
+    # Overrides `training.workspaceSizeLimit` above for dataset-build's
+    # larger /workspace: a real local run of the document-recognizer
+    # hermetic-synthetic pipeline (source archive 823 MB + raw crops
+    # ~360 MB + materialized 4.4 GB + packed 4.4 GB ≈ 10 GB measured, this
+    # template's `sh`/`xtask` steps -- no unpack-round-trip step runs here,
+    # unlike the reference manifest cited below) needs headroom above that
+    # ~10 GB. Sized to the same 24Gi
+    # deploy/argo-workflows/dataset-build-workflowtemplate.yaml (webank-models,
+    # story #328) already uses for this same pipeline's PVC, so a
+    # governed-lakefs model (sface, pad-liveness) with a differently sized
+    # source checkout stays covered by the same generous margin.
+    workspaceSizeLimit: 24Gi
   documentDetector:
     stemChannels: 32
     epochs: 10

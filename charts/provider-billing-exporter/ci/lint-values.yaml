@@ -1,0 +1,26 @@
+# CI fixture (lint-mode: ci-values): a representative render with the token
+# secret enabled and a fixed billing period, so helm lint + helm template cover
+# the real path (not the empty no-op defaults).
+name: provider-billing-exporter
+
+poller:
+  apiUrl: https://api.deepinfra.com
+  apiHost: api.deepinfra.com
+  pollInterval: 3600
+  billingPeriod: "2026-08"
+  listenPort: 8080
+
+externalSecret:
+  enabled: true
+  secretName: deepinfra-billing-token
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  data:
+    - secretKey: token
+      key: ai/camer/digital/prod/env
+      property: deepinfra_api_token
+
+serviceMonitor:
+  enabled: true
+  interval: 60s
+  scrapeTimeout: 10s

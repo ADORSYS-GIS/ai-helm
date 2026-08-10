@@ -1,0 +1,384 @@
+# mlops-db — dedicated CNPG Cluster (mlops-main-db) + barman ObjectStore +
+# ScheduledBackup + PodMonitor for the mlops namespace's own tenants. Leaf
+# chart of the lakefs App-of-Apps orchestrator (ADR-0019; it needed a home
+# and charts/lakefs already carried the scaffolded-but-disabled `db` child
+# this fills — nesting under `lakefs` doesn't mean LakeFS owns this cluster,
+# same as `lightbridge-main-db` being a child of the `lightbridge`
+# orchestrator doesn't mean Lightbridge owns ITS several tenants' data).
+# Modelled directly on charts/lightbridge-db's multi-tenant pattern
+# (`managed.roles` + per-tenant `Database` CRs on one bootstrapped cluster,
+# not CNPG's single-owner initdb bootstrap) — see ADR-0123 for why LakeFS
+# and MLflow get this cluster instead of roles on the shared
+# lightbridge-main-db (supersedes ADR-0085 decision #3).
+#
+# Namespace is `mlops` — the same namespace both tenants' workloads run in.
+#
+# BOTH TENANTS NOW CUT OVER:
+#   - LakeFS: charts/lakefs-secrets points here (ADR-0123's original
+#     incident-response cutover).
+#   - MLflow: ai-helm-values environments/prod/values/mlflow-app.yaml
+#     (backendStore.postgres.host / oidcAuth.database.postgres.host) points
+#     here too, as the explicitly-gated follow-up ADR-0123 left open —
+#     cleared once the owner confirmed, via the authenticated MLflow UI,
+#     that lightbridge-main-db's `mlflow`/`mlflow_oidc` databases held
+#     nothing worth migrating (only the default experiment, no run
+#     history). MLflow started against this cluster's empty `mlflow`/
+#     `mlflow_oidc` databases; nothing was migrated, by design.
+
+resources:
+  # ────────────────────────────────────────────────────────────────────
+  # The primary CNPG cluster. Bootstraps a neutral `app` database (matching
+  # lightbridge-main-db's own bootstrap convention — the bootstrap DB isn't
+  # meant to be used directly), then each tenant gets a `managed.roles` entry
+  # + its own `Database` CR below, exactly how lightbridge-main-db provisions
+  # its several tenants (repoauth/codeintel/coder/mlflow/governance) — not
+  # CNPG's single-owner initdb-bootstrap-secret shortcut this chart used
+  # before MLflow joined it.
+  #
+  # instances: 3, NOT the 2 lightbridge-main-db and this repo's only other
+  # CNPG cluster use — a deliberate departure, not a new default. This
+  # cluster is the sole system of record for every LakeFS dataset commit
+  # (and, once MLflow's migration is cleared, every MLflow tracking run) the
+  # platform's training pipelines depend on; losing quorum here makes the
+  # whole mlops data plane unreadable, not just inconvenient for one app. A
+  # third instance keeps one standby in reserve even after a single node
+  # loss. See ADR-0123 for the full reasoning.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: mlops-main-db
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      instances: 3
+      imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+      storage:
+        # LakeFS's KV data is refs/commits/metadata; MLflow's tracking store
+        # is experiment/run/metric/param rows — both small relative to the
+        # actual object content (S3) and model artefacts they reference, but
+        # sized above the LakeFS-only 2Gi now that a second tenant's tracking
+        # tables live here too.
+        size: "4Gi"
+      bootstrap:
+        initdb:
+          database: app
+          owner: app
+      plugins:
+        # `enabled: true` explicit for the same reason as lightbridge-db: the
+        # CNPG operator defaults it on and ArgoCD compares `plugins` as an
+        # atomic LIST, so without it here the chart never matches live state.
+        - name: barman-cloud.cloudnative-pg.io
+          enabled: true
+          isWALArchiver: true
+          parameters:
+            barmanObjectName: mlops-main-db
+            serverName: mlops-main-db
+      postgresql:
+        parameters:
+          archive_timeout: "30min"
+          # Sized for TWO tenants, not copied from lightbridge-main-db's 200
+          # (that cluster carries 7 unbounded tenants) nor left at this
+          # cluster's earlier LakeFS-only 50. LakeFS: hard-capped 5-connection
+          # pool (charts/lakefs lakefs-app.yaml). MLflow: 1 replica × 2
+          # gunicorn workers (environments/prod/values/mlflow-app.yaml), each
+          # holding its own SQLAlchemy pool. This 80 figure predates
+          # confirming MLflow's actual pool-size knob and was deliberately
+          # sized for a generous WORST-CASE per-worker pool (~15 connections,
+          # SQLAlchemy's own QueuePool default) rather than a verified cap:
+          # 2 x 15 = 30. LakeFS (5) + MLflow worst case (30) +
+          # admin/monitoring/backup headroom (~15) + margin => 80.
+          #
+          # MLflow's pool knob is now confirmed and capped (ADR-0123
+          # follow-up, closed): MLFLOW_SQLALCHEMYSTORE_POOL_SIZE=3 /
+          # _MAX_OVERFLOW=2 in environments/prod/values/mlflow-app.yaml, read
+          # straight into sqlalchemy.create_engine() by MLflow's own
+          # store/db/utils.py — verified against mlflow/environment_
+          # variables.py for the deployed image (burakince/mlflow:3.14.0),
+          # not guessed. Actual MLflow ceiling is 5/worker x 2 = 10, a third
+          # of the 30 this 80 budgeted — left at 80 rather than re-sized
+          # down: preserves headroom already proven safe, and re-deriving it
+          # tighter isn't this follow-up's job (see the file this note is
+          # in — sizing changes aren't bundled with the connection-string
+          # cutover PR).
+          max_connections: "80"
+      resources:
+        # Sized for max_connections × work_mem: worst case with Postgres's
+        # 4MiB work_mem default (unset here) is 80 × 4MiB ≈ 320MiB, plus
+        # per-backend base overhead (≈80 × 2MiB ≈ 160MiB) and CNPG's own
+        # shared_buffers default (128MiB) — ≈608MiB worst case. 1536Mi
+        # (1.5Gi) covers that with real headroom given MLflow's pool
+        # footprint above is an estimate, not a verified figure.
+        limits:
+          cpu: 300m
+          memory: 1536Mi
+        requests:
+          cpu: 150m
+          memory: 768Mi
+      managed:
+        roles:
+          # LakeFS (ADR-0123): password from the lakefs-db-role Secret below
+          # (ESO-provisioned, reuses the existing lakefs_db_password
+          # property — no new operator-provisioned value needed).
+          - name: lakefs
+            ensure: present
+            login: true
+            passwordSecret:
+              name: lakefs-db-role
+          # MLflow (ADR-0123, provisioned ahead of the actual cutover):
+          # password from the mlflow-db-role Secret below, reusing the
+          # EXISTING mlflow_db_password property already consumed by
+          # MLflow's role on lightbridge-main-db — the same password either
+          # way, so a future cutover only needs a values change, not a new
+          # credential.
+          - name: mlflow
+            ensure: present
+            login: true
+            passwordSecret:
+              name: mlflow-db-role
+  # ────────────────────────────────────────────────────────────────────
+  # barman-cloud ObjectStore — same Hetzner Object Storage bucket every other
+  # CNPG cluster in this repo backs up to, own destinationPath prefix so this
+  # cluster's catalog never collides with lightbridge-main-db's.
+  # Retention/throttling match the lightbridge-db convention (7d window,
+  # jobs:1 + gzip) — found live during that cluster's own incident history
+  # (Hetzner Object Storage SlowDown on parallel multipart uploads and on a
+  # large retention-prune catalog scan); applying the same convention here
+  # from day one rather than rediscovering it.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: barmancloud.cnpg.io/v1
+    kind: ObjectStore
+    metadata:
+      name: mlops-main-db
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      retentionPolicy: "7d"
+      configuration:
+        destinationPath: s3://ssegning-k8s-state/mlops-main-db
+        endpointURL: https://nbg1.your-objectstorage.com
+        data:
+          jobs: 1
+          compression: gzip
+        s3Credentials:
+          accessKeyId:
+            name: mlops-cnpg-s3
+            key: s3_access_key_id
+          secretAccessKey:
+            name: mlops-cnpg-s3
+            key: s3_secret_access_key
+  # ────────────────────────────────────────────────────────────────────
+  # Scheduled backup — same 6h cadence as lightbridge-main-db.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: ScheduledBackup
+    metadata:
+      name: mlops-main-db-daily
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      immediate: true
+      schedule: "0 0 */6 * * *"
+      backupOwnerReference: self
+      cluster:
+        name: mlops-main-db
+      method: plugin
+      pluginConfiguration:
+        name: barman-cloud.cloudnative-pg.io
+  # ────────────────────────────────────────────────────────────────────
+  # PodMonitor so Grafana Alloy scrapes the CloudNativePG per-instance
+  # metrics exporter, same as lightbridge-main-db.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: mlops-main-db
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+    spec:
+      selector:
+        matchLabels:
+          cnpg.io/cluster: mlops-main-db
+      podMetricsEndpoints:
+        - port: metrics
+          interval: 30s
+  # ────────────────────────────────────────────────────────────────────
+  # LakeFS: a `lakefs` Database owned by the managed `lakefs` role above.
+  # Mirrors lightbridge-main-db's per-tenant Database pattern.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: lakefs
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: mlops-main-db
+      name: lakefs
+      owner: lakefs
+      ensure: present
+  # ────────────────────────────────────────────────────────────────────
+  # lakefs-db-role: password Secret for the managed `lakefs` role above AND
+  # the same Secret the app-facing connection string (charts/lakefs-secrets)
+  # reads the password from. Reuses the EXISTING lakefs_db_password Secrets
+  # Manager property (previously consumed by the now-removed lakefs role on
+  # lightbridge-main-db) — no new operator-provisioned property needed.
+  # NOTE: the ESO `password` template braces are double-escaped so Helm's
+  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lakefs-db-role
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lakefs-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "lakefs"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: lakefs_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # MLflow: a `mlflow` Database owned by the managed `mlflow` role above,
+  # PROVISIONED AHEAD OF THE ACTUAL CUTOVER (ADR-0123) — MLflow's live
+  # connection string still points at lightbridge-main-db until its existing
+  # tracking data's migration is explicitly cleared. Also provisions
+  # `mlflow_oidc`, mirroring lightbridge-main-db's SECOND database for the
+  # mlflow-oidc-auth plugin (which cannot share the tracking store's
+  # alembic_version table with the main `mlflow` database — see
+  # lightbridge-db's own comment on this exact gotcha, found live during
+  # ADR-0085 verification).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: mlflow
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: mlops-main-db
+      name: mlflow
+      owner: mlflow
+      ensure: present
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: mlflow-oidc
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: mlops-main-db
+      name: mlflow_oidc
+      owner: mlflow
+      ensure: present
+  # ────────────────────────────────────────────────────────────────────
+  # mlflow-db-role: password Secret for the managed `mlflow` role above.
+  # Reuses the EXISTING mlflow_db_password property (the same one MLflow's
+  # role on lightbridge-main-db already uses) — so a future cutover of
+  # charts/mlflow-secrets' connection string needs no new credential, only a
+  # values change once cleared.
+  # NOTE: the ESO `password` template braces are double-escaped so Helm's
+  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: mlflow-db-role
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: mlflow-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "mlflow"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: mlflow_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # mlops-cnpg-s3: barman-cloud backup credentials, mirroring
+  # lightbridge-cnpg-s3 exactly — same underlying platform S3 material every
+  # other Hetzner Object Storage / CNPG-backup consumer in this repo uses
+  # (prod/meta/test-app). The `s3_region_name` literal is required by the
+  # barman-cloud plugin's defaulting webhook, which injects an
+  # `s3Credentials.region` ref pointing at THIS secret name/key server-side —
+  # without it every ScheduledBackup fails `missing key s3_region_name`
+  # (found live on lightbridge-db; applying the fix here from day one).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: mlops-cnpg-s3
+      namespace: mlops
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: mlops-cnpg-s3
+        creationPolicy: Owner
+        template:
+          engineVersion: v2
+          mergePolicy: Merge
+          data:
+            s3_region_name: "us-east-1"
+      data:
+        - secretKey: s3_access_key_id
+          remoteRef:
+            key: prod/meta/test-app
+            property: s3_backup_cnpg_client_id
+        - secretKey: s3_secret_access_key
+          remoteRef:
+            key: prod/meta/test-app
+            property: s3_backup_cnpg_secret

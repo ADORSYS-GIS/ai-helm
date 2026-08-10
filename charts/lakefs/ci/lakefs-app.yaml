@@ -8,9 +8,12 @@
 # 2. Documentation of the exact chart schema decisions (existingSecret +
 #    secretKeys, S3 blockstore via extraEnvVars, no chart-owned ingress).
 #
-# Metadata DB: the existing lightbridge-main-db CNPG cluster (converse ns),
-# via the `lakefs` managed role/Database (charts/lightbridge-db). Blockstore:
-# Hetzner Object Storage (S3-compatible), prefix `lakefs/` inside the shared
+# Metadata DB: the dedicated mlops-main-db CNPG cluster (mlops ns,
+# charts/mlops-db), via the `lakefs` managed role/Database — ADR-0123,
+# supersedes the earlier lightbridge-main-db (converse ns) placement after
+# an incident where an unrelated shared-cluster tenant exhausted its
+# connections and took LakeFS down with it. Blockstore: Hetzner Object
+# Storage (S3-compatible), prefix `lakefs/` inside the shared
 # ssegning-k8s-state bucket, reusing the platform's existing S3 credentials
 # (same material CNPG backups + LibreChat's S3 file storage use).
 #
@@ -36,6 +39,24 @@ secretKeys:
 lakefsConfig: |
   database:
     type: postgres
+    # Incident (2026-08-08/09): lightbridge-main-db is a SHARED CNPG cluster
+    # (converse ns, ADR-0085) with no PgBouncer in front of it. LakeFS's
+    # unconfigured client fell back to the binary's own default pool
+    # (max_open_connections=25, max_idle_connections=25 — confirmed from the
+    # pod's own "Config loaded" startup log line, not guessed), which alone
+    # is a quarter of CNPG's default max_connections=100 and, combined with
+    # every other tenant's own pool (coder/mlflow/governance/codeintel/
+    # grafana_ro), exhausted it: `FATAL: sorry, too many clients already`
+    # (SQLSTATE 53300). LakeFS then fell back to rendering its first-run
+    # /setup page and returned repository-not-found/auth errors.
+    # Capped hard here — LakeFS's KV access pattern is short, low-concurrency
+    # point reads/writes, not a connection-heavy workload — so it can never
+    # again be the tenant that exhausts the shared cluster. Key names verified
+    # against the same startup log (`database.postgres.max_open_connections`,
+    # `database.postgres.max_idle_connections`), not guessed against docs.
+    postgres:
+      max_open_connections: 5
+      max_idle_connections: 2
   blockstore:
     type: s3
     s3:
@@ -69,6 +90,15 @@ extraEnvVars:
     value: "s3://ssegning-k8s-state/lakefs"
 
 replicaCount: 1
+
+# GitOps-clean rollout trigger. This chart's Deployment computes
+# checksum/config from the ConfigMap only (verified from the upstream
+# template source) — a Secret-only value change (e.g. the ADR-0123 DB
+# cutover's database_connection_string) does not trigger a rollout on its
+# own, and nothing here opts into Stakater Reloader either. Bump this dated,
+# otherwise-inert entry whenever such a change needs an explicit rollout.
+podAnnotations:
+  ai-helm.adorsys-gis.github.io/rollout-trigger: "2026-08-09-mlops-db-cutover"
 
 # Chart defaults (delay=0s, period=10s, failureThreshold=3 => killed after
 # only 30s) are too tight for LakeFS's first-boot DB migration — the pod

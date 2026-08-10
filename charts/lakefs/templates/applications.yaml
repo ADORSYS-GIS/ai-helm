@@ -11,13 +11,18 @@ lakefs App-of-Apps orchestrator — renders FOUR child Application CRs:
                     mode, whose `--upstream` is lakefs-proxy (second source: $values).
 
 Request path: browser → lakefs-auth (Keycloak OIDC) → lakefs-proxy → lakefs.
-(The lakefs-db child is disabled — LakeFS uses the existing lightbridge-main-db
-CNPG cluster. See ADR-0085.)
+(The db child — appName mlops-db — deploys the dedicated mlops-namespace CNPG
+cluster, charts/mlops-db. Renamed from an earlier LakeFS-only lakefs-db and
+now enabled: LakeFS is cut over to it, and MLflow has a role/database
+provisioned there pending its own separately-cleared cutover. See ADR-0123,
+which supersedes ADR-0085's original shared-lightbridge-main-db decision for
+these two tenants.)
 All target home-remote (ADR-0017 guard via lakefs.argocd.destinationClusterRef).
 Rendered as direct Application CRs rather than an ApplicationSet because the
 children are fixed + heterogeneous — see ADR-0019 (lightbridge is the canonical
-example). See ADR-0085 for the LakeFS-specific DB/S3 decisions and ADR-0090 for
-the SSO shim.
+example). See ADR-0085 for the LakeFS-specific auth/S3 decisions (still
+current), ADR-0123 for the DB decision (supersedes ADR-0085's), and ADR-0090
+for the SSO shim.
 */ -}}
 {{- $a := .Values.argocd -}}
 {{- if .Values.secrets.enabled }}

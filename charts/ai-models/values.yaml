@@ -633,20 +633,21 @@ backends:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
 
-  # Qwen3-Coder-30B-A3B — the fleet's CODING model (vLLM, MoE 30B/3B active,
-  # AWQ INT4). Cluster-local Service created by the `qwen3-coder-30b-a3b`
-  # inference entry. Same `vllm_local_api_key` ssegning-aws property every
-  # other fleet backend uses.
-  qwen3-coder-30b-a3b-local:
+  # ── Qwen3-4B backend (cluster-local, ADR-0095) ─────────────────────────
+  # The fleet coding model served by the `qwen3-4b` inference entry
+  # (charts/inference/values.yaml). Same cluster-local shape as every other
+  # fleet backend: ClusterIP Service, CiliumNetworkPolicy, no Ingress.
+  # `prefix: /v1` is llama-server's own OpenAI route.
+  qwen3-4b-local:
     schema: OpenAI
     prefix: "/v1"
     fqdn:
-      hostname: qwen3-coder-30b-a3b.inference.svc.cluster.local
+      hostname: qwen3-4b.inference.svc.cluster.local
       port: 8080
     securityType: APIKey
-    resourceName: qwen3-coder-30b-a3b-local-svc
+    resourceName: qwen3-4b-local-svc
     secretRef:
-      name: qwen3-coder-30b-a3b-api-key
+      name: qwen3-4b-api-key
     externalSecret:
       key: ai/camer/digital/prod/env
       property: vllm_local_api_key
@@ -685,8 +686,8 @@ models:
 #  something that could come back, and these cannot: the servers no longer exist.
 #
 #  Today `-local` is exactly: z-image-turbo-local (image generation) — one per
-#  fleet card. Both text tiers (openmythos-27b-local, qwen3-8b-fast-local) are
-#  disabled. If you add another, it is on the fleet or it does not carry -local.
+#  fleet card. The text tiers (openmythos-27b-local, qwen3-8b-fast-local) are
+#  all disabled. If you add another, it is on the fleet or it does not carry -local.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ⚠️ INTERNAL-ONLY MODELS CARRY AN `-internal` SUFFIX (2026-07-28).
@@ -758,66 +759,6 @@ models:
         ref: qwen3-8b-fast-local
         priority: 0
         modelNameOverride: "qwen3-8b-fast"   # = --served-model-name
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # Qwen3-Coder-30B-A3B — CODING model on the GPU fleet (vLLM, MoE 30B/3B
-  # active, AWQ INT4).
-  #
-  # Serving spec: charts/inference/values.yaml `qwen3-coder-30b-a3b`.
-  #
-  # ⚠️ FEDERATED WITHOUT ITS LOAD GATE (ADR-0101) — deliberate, at the
-  # operator's request, so a real coding request can be exercised through the
-  # gateway end to end. The gate is still REQUIRED before this entry is
-  # trusted with real traffic: measure tok/s, VRAM headroom and answer
-  # QUALITY (ONE lossy layer: AWQ INT4 — the FP8 KV cache risk is gone, the
-  # serving spec opts OUT of the fleet fp8 default with `kvCacheDtype: auto`,
-  # so the KV cache is 16-bit, unquantized). Update this comment with the
-  # measured numbers when done.
-  #
-  # ⚠️ PRICING IS A PLACEHOLDER. Derived from the ADR-0104 node cost at an
-  # ASSUMED 35 tok/s decode (never measured; the 8B dense measured 45 tok/s
-  # with LMCache + CUDA graphs, this model is eager-mode):
-  #   €0.2968/h ÷ 3600 ÷ 35 tok/s = €2.36/1M output at saturation
-  #   × 3.45 duty-cycle uplift     = €8.13/1M ≈ $8.85/M (1 : 0.15 : 0.03 split)
-  # RE-DERIVE from the measured rate before relying on cost boards — never
-  # scale a placeholder (same rule as every corrected price in this file).
-  #
-  # ⚠️ Context raised to 12288 input window (2026-08-05): at 8192 the
-  # catalog's own maxOutputTokens (4096) is additive on top of the input
-  # window, so a 4097-token prompt + 4096 output = 8193 > 8192 → vLLM refused
-  # (same failure as #919). The serving spec window is 16384 (see inference),
-  # exactly the advertised contextLength (12288) + maxOutputTokens (4096) — a
-  # client honouring the catalog can never exceed it. The serving spec runs
-  # the 16-bit KV cache (`kvCacheDtype: auto`, NOT the fp8 fleet default) with
-  # `parallel: 1`, so 16384 ≈ 1.50 GiB KV leaves ~1.83 GiB of the ~3.33 GiB
-  # budget (0.95 util) for activations — re-verify at the load gate, not assumed.
-  #
-  # ⚠️ Thinking is OFF at the server (`reasoning: "off"` in the serving spec),
-  # so `supportedParameters` does NOT advertise `reasoning` — same policy as
-  # z-image-turbo. Clients opt in per request via chat_template_kwargs.
-  qwen3-coder-30b-a3b-local:
-    enabled: true
-    kind: text
-    minBackends: 1                   # one GPU, one backend, by design
-    timeout:
-      requestTimeout: 600s
-      connectionIdleTimeout: 1h
-    info:
-      displayName: "Qwen3-Coder-30B (self-hosted)"
-      contextLength: 12288           # = advertised INPUT window (clients add maxOutputTokens on top; serving window is 16384)
-      maxOutputTokens: 4096
-      supportedParameters: *spStandard
-    pricing:
-      strategy: weighted
-      standard:
-        inputPer1M: 1.34
-        cachedInputPer1M: 0.27
-        outputPer1M: 8.85
-    backends:
-      qwen3-coder-30b-a3b-local:
-        ref: qwen3-coder-30b-a3b-local
-        priority: 0
-        modelNameOverride: "qwen3-coder-30b-a3b"   # = --served-model-name
 
   # ─────────────────────────────────────────────────────────────────────────
   # Z-Image-Turbo — IMAGE GENERATION, on the GPU fleet (ADR-0100).
@@ -927,6 +868,43 @@ models:
   # ⚠️ Cross-repo: ai-helm-values must rename any reference to `z-image-turbo-local`
   # → `z-image-turbo-internal` (x-ai-eg-model header, allowed-model lists, token tables)
   # in the same deployment window, or internal callers 404.
+
+  # ── Qwen3-4B — the fleet's coding model (ADR-0101 load-gated) ────────────
+  #
+  # Serving spec: charts/inference/values.yaml `qwen3-4b`.
+  #
+  # ⚠️ PRICING IS A PLACEHOLDER at the PREDICTED 65 tok/s (see the deployment
+  # plan). Re-derive from the MEASURED gate throughput — never merge on a
+  # guessed number (the 30B rule). Formula:
+  #   €0.2968/h ÷ 3600 ÷ <measured tok/s> × 3.45 × 1.09 = $/1M output,
+  #   split 1 : 0.15 : 0.03.
+  #
+  # Thinking off at the server (`reasoning: "off"`), so `supportedParameters`
+  # is *spStandard (no `reasoning` advertised) — same policy as z-image-turbo.
+  qwen3-4b-local:
+    enabled: true
+    kind: text
+    minBackends: 1                   # one GPU, one backend, by design
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "Qwen3-4B (self-hosted)"
+      contextLength: 32768           # = llama.cpp n_ctx_slot (ctx 32768 / parallel 1)
+      maxOutputTokens: 8192
+      supportedParameters: *spStandard
+    pricing:
+      strategy: weighted             # cost-recovery per ADR-0028, basis ADR-0104
+      standard:
+        inputPer1M: 0.72             # placeholder — re-derive from measured tok/s
+        cachedInputPer1M: 0.14       # placeholder — re-derive from measured tok/s
+        outputPer1M: 4.77            # placeholder — re-derive from measured tok/s
+    backends:
+      qwen3-4b-local:
+        ref: qwen3-4b-local
+        priority: 0
+        modelNameOverride: "qwen3-4b"   # = llama-server --alias
+
   z-image-turbo-internal:
     enabled: true
     kind: image

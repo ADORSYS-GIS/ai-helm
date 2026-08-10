@@ -329,20 +329,6 @@ wellKnown:
             variants:
               thinking:
                 reasoningEffort: high
-          # The fleet coding model (charts/inference `qwen3-coder-30b-a3b`).
-          # ⚠️ NO `thinking` variant: the server runs with
-          # `--default-chat-template-kwargs {"enable_thinking": false}` (reasoning
-          # OFF at the server, fleet convention for Qwen3 text models), so a
-          # `thinking` variant here would advertise a reasoning channel that
-          # cannot produce a trace. `reasoningEffort: low` is harmless (vLLM
-          # ignores the OpenAI graded knob; native knob is enable_thinking).
-          # Context/output limits come from the catalog (ai-models-info):
-          # contextLength 12288 / maxOutputTokens 4096 — the serving window is
-          # 16384 total, so input + max_tokens must not exceed 16384
-          # (12288 input + 4096 output = 16384; beyond → vLLM 400).
-          qwen3-coder-30b-a3b-local:
-            options:
-              reasoningEffort: low
           deepseek-v4-flash-0731:
             options:
               reasoningEffort: low

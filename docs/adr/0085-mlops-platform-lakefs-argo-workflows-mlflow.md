@@ -4,6 +4,25 @@
 **Date:** 2026-07-22
 **Deciders:** @stephane-segning
 
+> **Partially superseded by [ADR-0123](./0123-mlops-dedicated-cnpg-cluster.md)
+> (2026-08-09):** decision #3 below (metadata DB — LakeFS and MLflow each get
+> a managed role on the shared `lightbridge-main-db` cluster instead of a
+> dedicated CNPG cluster) is superseded for **LakeFS**, which now has its own
+> dedicated CNPG cluster (`charts/mlops-db`, cluster `mlops-main-db`) — an
+> outage where an unrelated tenant on the shared cluster exhausted its
+> Postgres connections and took LakeFS down with it showed the coupling was
+> a real production risk for LakeFS's data-versioning role specifically.
+> **MLflow is now cut over too (2026-08-09, same day):** the owner checked
+> the authenticated MLflow UI directly and confirmed `lightbridge-main-db`'s
+> `mlflow`/`mlflow_oidc` databases held nothing worth migrating (only the
+> default experiment, no run history) — clearing the gate ADR-0123 left
+> open. MLflow's connection (`environments/prod/values/mlflow-app.yaml` in
+> `ai-helm-values`) now points at `mlops-main-db`; its old role/Database on
+> `lightbridge-main-db` are removed (`charts/lightbridge-db`). Decision #3
+> below is now fully superseded by ADR-0123 for both `mlops`-namespace
+> tenants. Decisions #1 (S3 backend) and #2 (per-app auth strategy) below
+> are unaffected and remain in force as originally decided here.
+
 ## Context
 
 The platform needed three new self-hosted MLOps components on `home-remote`:

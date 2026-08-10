@@ -1,0 +1,34 @@
+apiVersion: v2
+name: librechat-code-interpreter
+description: >-
+  Self-hosted clickhouse/code-interpreter — the sandboxed code-execution
+  service behind LibreChat's Code Interpreter agent capability (ADR-0122).
+  Images are built and published by the ADORSYS-GIS/code-interpreter fork
+  (upstream ships none — see the ADR). Built on bjw-template (repo
+  convention — see charts/librechat-app for the pattern this mirrors) rather
+  than hand-rolled manifests; only the ExternalSecret (not a bjw-common
+  resource type) is a custom template.
+type: application
+version: 0.1.0
+appVersion: "2.0.0"
+keywords:
+  - code-execution
+  - sandbox
+  - librechat
+home: https://github.com/ADORSYS-GIS/code-interpreter
+maintainers:
+  - name: ai-helm
+
+dependencies:
+  - condition: codeapi.enabled
+    name: bjw-template
+    version: '4.6.2'
+    repository: file://../bjw-template
+    alias: codeapi
+
+  - name: common
+    version: '*'
+    repository: "file://../common"
+    tags:
+      - common
+      - bitnami-common
