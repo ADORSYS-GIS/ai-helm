@@ -741,21 +741,26 @@ models:
    # behaviour with the hybrid architecture is UNVERIFIED. Enable only after
    # measurement (and then kvCacheDtype MUST stay `auto` — ADR-0118).
    qwen3-5-2b:
-     enabled: true
-     engine: vllm
-     weights:
-       hfRepo: Qwen/Qwen3.5-2B
-       # Pinned via `curl -s https://huggingface.co/api/models/Qwen/Qwen3.5-2B | jq -r .sha`
-       revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
-       sizeGi: 10
-     serving:
-       contextSize: 32768
-       parallel: 4
-       dtype: bfloat16
-       toolCallParser: qwen3_coder
-       kvCacheDtype: auto            # fp8 unverified on the hybrid architecture
-       reasoning: "off"              # non-thinking default; clients opt in per request
-     resources:
+      enabled: true
+      engine: vllm
+      weights:
+        hfRepo: Qwen/Qwen3.5-2B
+        # Pinned via `curl -s https://huggingface.co/api/models/Qwen/Qwen3.5-2B | jq -r .sha`
+        revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
+        sizeGi: 10
+      serving:
+        # 128k initial: matches the fleet's GDN precedent (qwen3-5-4b-local used
+        # contextLength 131072 — linear attention → KV cheap) and the review
+        # conclusion on this PR. Native is 262,144; stretch to 262144 only after
+        # the load-gate VRAM measurement (plan §6.2). >32k avoids the prompt
+        # too-long error loop that 32768 caused for coding workloads.
+        contextSize: 131072
+        parallel: 4
+        dtype: bfloat16
+        toolCallParser: qwen3_coder
+        kvCacheDtype: auto            # fp8 unverified on the hybrid architecture
+        reasoning: "off"              # non-thinking default; clients opt in per request
+      resources:
        cpuRequest: "2"
        cpuLimit: "8"
        memoryRequest: 8Gi

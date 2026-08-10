@@ -97,7 +97,7 @@ qwen3-5-2b:
     revision: <pinned sha>          # curl -s https://huggingface.co/api/models/Qwen/Qwen3.5-2B | jq -r .sha
     sizeGi: 10
   serving:
-    contextSize: 32768               # → --max-model-len 32768
+    contextSize: 131072              # → --max-model-len 131072 (128k initial — see row 5)
     parallel: 4                      # → --max-num-seqs 4
     dtype: bfloat16                  # → --dtype bfloat16
     toolCallParser: qwen3_coder      # → --enable-auto-tool-choice --tool-call-parser qwen3_coder
@@ -121,7 +121,7 @@ qwen3-5-2b:
 | 2 | `weights.hfRepo` | — | HuggingFace repo of the weights | `Qwen/Qwen3.5-2B` — the official repo |
 | 3 | `weights.revision` | — | Pinned commit SHA of the weights | Full SHA, **never** `main`: weights are mutable on the Hub; a SHA means the bytes you measured are the bytes you serve, and the seed Job re-seeds if the SHA changes |
 | 4 | `weights.sizeGi` | — | Longhorn RWX PVC size | `10` GiB — ~4–5 GiB of BF16 weights + headroom (convention: comfortably above the file) |
-| 5 | `serving.contextSize` | `--max-model-len` | **Maximum context window** (prompt + completion) per request. vLLM does not split it across slots: it IS the per-request window | `32768` initially — same as the predecessor (apples-to-apples at the load gate). Native is 262,144; the DeltaNet architecture makes KV nearly free, so **upgrade path documented** toward 131,072 / 262,144 after measurement (see §6.5) |
+| 5 | `serving.contextSize` | `--max-model-len` | **Maximum context window** (prompt + completion) per request. vLLM does not split it across slots: it IS the per-request window | `131072` (128k) initially — **decision from the review** (PR #970, benie-joy-possi): the fleet had already concluded on 128k for a GDN linear-attention model (`qwen3-5-4b-local` precedent: *"GDN linear-attn → KV cheap; ~8.5GB of 12GB"*), and 32768 caused a prompt-too-long error loop for coding workloads. Native is 262,144; the DeltaNet architecture makes KV nearly free, so **256k (262144) is the stretch goal** after the load-gate VRAM measurement (see §6.2) |
 | 6 | `serving.parallel` | `--max-num-seqs` | **Maximum number of sequences processed concurrently** (continuous batching) | `4` initially — same as the predecessor. A 2B is light: raise toward 8–16 after measurement if VRAM allows |
 | 7 | `serving.dtype` | `--dtype` | **Precision of weights and activations** | `bfloat16` — the model's native dtype (F32/BF16 on the card). No quantization needed: 2B in BF16 fits easily on 20 GiB |
 | 8 | `serving.toolCallParser` | `--enable-auto-tool-choice` + `--tool-call-parser` | **Tool calling**: enables automatic tool choice and the parser for the tool-call format | `qwen3_coder` — the parser Qwen recommends for Qwen3.5 (the predecessor used `hermes`; Qwen3.5 has its own format) |
@@ -164,7 +164,7 @@ qwen3-5-2b-local:
     connectionIdleTimeout: 1h
   info:
     displayName: "Qwen3.5-2B (self-hosted)"
-    contextLength: 32768          # = vLLM --max-model-len
+    contextLength: 131072          # 128k = vLLM --max-model-len
     maxOutputTokens: 8192
     supportedParameters: *spStandard   # non-thinking by default → no `reasoning` advertised
   pricing:
@@ -279,7 +279,7 @@ Measure on the actual card, and record in `inference-ops`
 5. **Tool calling** — a real tool call via `qwen3_coder`.
 6. **Vision** (if multimodality kept) — a real image via
    `/v1/chat/completions` with `image_url`.
-7. **Window** — if VRAM allows, raise `contextSize` toward 131,072 / 262,144
+7. **Window** — if VRAM allows, raise `contextSize` toward 262,144
    (the DeltaNet architecture makes KV nearly free) and `parallel` toward 8–16.
 
 ### Step 6 — Federate (AFTER the load gate)
@@ -305,7 +305,7 @@ Measure on the actual card, and record in `inference-ops`
 | # | Optimization | Flag / key | Condition |
 |---|---|---|---|
 | 6.1 | fp8 KV cache | `kvCacheDtype: fp8_e4m3` | fp8 quality gate passed |
-| 6.2 | Long window | `contextSize: 131072` then `262144` | measured VRAM OK (DeltaNet architecture) |
+| 6.2 | 256k window (stretch) | `contextSize: 262144` | measured VRAM OK at 128k (DeltaNet architecture) |
 | 6.3 | More concurrency | `parallel: 8` → `16` | measured VRAM + latency OK |
 | 6.4 | LMCache | `lmcache.enabled: true` | compatibility verified with the hybrid architecture + `kvCacheDtype: auto` (ADR-0118) |
 | 6.5 | MTP (speculative decoding) | `extraArgs: ["--speculative-config", "{\"method\":\"qwen3_next_mtp\",\"num_speculative_tokens\":2}"]` | vLLM nightly supports it; measure the real gain |
