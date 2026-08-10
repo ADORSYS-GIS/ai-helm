@@ -1,8 +1,9 @@
 resource "coderd_template" "poc_ubuntu" {
-  name            = "poc-ubuntu"
-  display_name    = "POC Ubuntu"
-  description     = "Simple Kubernetes POC template (declarative delivery test — ADR-0123)"
-  organization_id = var.organization_id
+  name         = "poc-ubuntu"
+  display_name = "POC Ubuntu"
+  # No organization_id: the provider falls back to the deployment's default org
+  # (defaulting it to a string like `default` would fail — the field is a UUID).
+  description = "Simple Kubernetes POC template (declarative delivery pilot)"
 
   versions = [{
     name      = "v-${var.git_commit_sha}"

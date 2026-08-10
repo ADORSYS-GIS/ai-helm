@@ -1,8 +1,9 @@
 name: Deploy Coder Templates
 
-# GitOps apply for the declarative Coder template delivery (ADR-0123): on merge
-# to main, reconcile the `coder` `coderd` templates from git. State lives on
-# Hetzner Object Storage (S3 backend); the `coderd` provider talks to Coder.
+# GitOps apply for the declarative Coder template delivery (ADR-0124 — see
+# terraform/coder/README.md): on merge to main, reconcile the `coder` `coderd`
+# templates from git. State lives on Hetzner Object Storage (S3 backend); the
+# `coderd` provider talks to Coder.
 #
 # Required repository secrets:
 #   CODER_URL                         Coder server URL (e.g. https://coder...)
@@ -22,6 +23,12 @@ on:
 permissions:
   contents: read
 
+# Serialize deploys: two concurrent `terraform apply`s would contend on the
+# S3 state lock. Never cancel a running apply (that orphans the lock).
+concurrency:
+  group: deploy-coder-templates
+  cancel-in-progress: false
+
 env:
   # Map Actions secrets to Terraform vars via TF_VAR_ (coder_url/coder_token are
   # required vars with no default — plain env names would NOT be read by Terraform).
@@ -32,21 +39,15 @@ env:
 
 jobs:
   deploy:
-    runs-on: adorsys-gis-runner   # GitHub-hosted runners are billing-blocked org-wide (CLAUDE.md)
+    runs-on: ubuntu-latest   # ai-helm is public; GH-hosted runners are free here
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4.0.1
         with:
-          terraform_version: 1.11   # >= 1.10 for backend use_lockfile (S3-native locking)
-
-      - name: Set Git SHA
-        id: sha
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          terraform_version: "1.15"   # >= 1.10 for backend use_lockfile (S3-native locking); current line
 
       - name: Terraform Init
         run: |
@@ -58,7 +59,7 @@ jobs:
         run: |
           cd terraform/coder
           terraform plan \
-            -var="git_commit_sha=${{ steps.sha.outputs.sha }}" \
+            -var="git_commit_sha=${{ github.sha }}" \
             -no-color \
             -out=tfplan
 

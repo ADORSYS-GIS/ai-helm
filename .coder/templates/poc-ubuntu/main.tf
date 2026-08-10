@@ -1,7 +1,8 @@
 terraform {
   required_providers {
     coder = {
-      source = "coder/coder"
+      source  = "coder/coder"
+      version = "~> 2.13"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -32,11 +33,11 @@ resource "coder_agent" "main" {
   arch = data.coder_provisioner.me.arch
   os   = data.coder_provisioner.me.os
 
-  # Startup script for a minimal shell-only workspace (no IDE).
+  # `codercom/enterprise-base:ubuntu` already ships git + curl, so no package
+  # install is needed for this POC. Pod is ephemeral (no PVC) by design.
   startup_script = <<-EOT
     set -e
-    sudo apt-get update
-    sudo apt-get install -y git curl
+    echo "poc-ubuntu workspace ready"
   EOT
 }
 
@@ -44,7 +45,7 @@ resource "kubernetes_pod_v1" "workspace" {
   count = data.coder_workspace.me.start_count
 
   metadata {
-    name      = "coder-${data.coder_workspace.me.id}"
+    name      = "coder-workspace-${data.coder_workspace.me.id}"
     namespace = var.namespace
     labels = {
       "app" = "coder-workspace"
@@ -52,7 +53,10 @@ resource "kubernetes_pod_v1" "workspace" {
   }
 
   spec {
-    restart_policy = "Always"
+    # Coder's own template uses `Never`: a failed startup surfaces as *stopped*
+    # rather than a restart-looping pod — a loud failure is more useful here.
+    restart_policy                  = "Never"
+    automount_service_account_token = false
 
     container {
       name    = "workspace"

@@ -1,7 +1,6 @@
 variable "coder_url" {
   type        = string
   description = "Coder deployment URL"
-  sensitive   = true
 }
 
 variable "coder_token" {
@@ -10,14 +9,7 @@ variable "coder_token" {
   sensitive   = true
 }
 
-variable "organization_id" {
-  type        = string
-  description = "Coder organization ID"
-  default     = "default"
-}
-
 variable "git_commit_sha" {
   type        = string
-  description = "Git commit SHA used in the template version name"
-  default     = "dev"
+  description = "Git commit SHA used in the template version name (required, so version names stay unique per content change)"
 }

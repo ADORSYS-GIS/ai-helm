@@ -4,7 +4,7 @@ terraform {
   required_providers {
     coderd = {
       source  = "coder/coderd"
-      version = "~> 0.0"
+      version = "~> 0.0.3" # pin the young pre-1.0 provider; lockfile commits resolution
     }
   }
 

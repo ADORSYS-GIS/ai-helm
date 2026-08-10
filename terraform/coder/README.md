@@ -1,21 +1,27 @@
 # Declarative Coder templates — test wiring
 
-This directory is the **declarative lifecycle** for Coder templates (ADR-0123).
+This directory is the **declarative lifecycle** for Coder templates (ADR-0124).
 The template **source** lives in `.coder/templates/`; this Terraform manages the
 template/version in Coder via the `coder/coderd` provider.
 
 > ⚠️ This is a **test/scratch** setup for proving the delivery mechanism with a
 > simple template (`poc-ubuntu`). Not production.
 
+> ℹ️ **“default” means two different things.** The import ID below uses `default`
+> as the org **name** of Coder's built-in org. But `coderd_template` does NOT
+> take an `organization_id` here at all — the provider falls back to the
+> deployment's default org itself. `default` (name) ≠ a valid organization ID
+> (UUID); don't substitute one for the other.
+
 ## Layout
 
 - `main.tf` — `coder/coderd` provider + S3 (Hetzner Object Storage) state
-- `variables.tf` — `coder_url`, `coder_token`, `organization_id`, `git_commit_sha`
+- `variables.tf` — `coder_url`, `coder_token`, `git_commit_sha`
 - `templates.tf` — the `coderd_template` resource(s) pointing at `.coder/templates/*`
 
 ## Prereqs
 
-- Terraform >= 1.10 (S3-native state locking via `use_lockfile`; ADR-0123)
+- Terraform >= 1.10 (S3-native state locking via `use_lockfile`; ADR-0124)
 - A Coder API token with template-admin scope
 - Hetzner Object Storage (S3-compatible) credentials for the state backend
 
@@ -24,9 +30,10 @@ template/version in Coder via the `coder/coderd` provider.
 ```bash
 cd terraform/coder
 
-# env (or use terraform.tfvars / TF_VAR_*)
-export CODER_URL=https://<coder-host>
-export CODER_TOKEN=<token>
+# env (or use terraform.tfvars / -var). coder_url/coder_token are required.
+# Terraform reads TF_VAR_* env vars, not arbitrary names.
+export TF_VAR_coder_url=https://<coder-host>
+export TF_VAR_coder_token=<token>
 export AWS_ACCESS_KEY_ID=<from ssegning-aws>
 export AWS_SECRET_ACCESS_KEY=<from ssegning-aws>
 
@@ -63,7 +70,7 @@ terraform import coderd_template.poc_ubuntu default/poc-ubuntu
 
 For a genuinely new Coder deployment, do **not** reuse state from a previous
 one — it holds stale template/version UUIDs. Use **empty** state (fresh state
-key, or `terraform state rm`) as documented in ADR-0123.
+key, or `terraform state rm`) as documented in ADR-0124.
 
 ## Notes
 

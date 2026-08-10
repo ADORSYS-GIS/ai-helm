@@ -1,8 +1,8 @@
 name: Validate Coder Templates
 
-# PR-gate for the declarative Coder template delivery (ADR-0123): validate the
-# `coder/coderd` Terraform config and the template source without touching Coder.
-# This mirrors the local `terraform fmt` / `validate` workflow. Secrets not needed.
+# PR-gate for the declarative Coder template delivery (ADR-0124 — see
+# terraform/coder/README.md): validate the `coder/coderd` Terraform config AND
+# each template source without touching Coder. Secrets not needed.
 
 on:
   pull_request:
@@ -20,15 +20,15 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: adorsys-gis-runner   # GitHub-hosted runners are billing-blocked org-wide (CLAUDE.md)
+    runs-on: ubuntu-latest   # ai-helm is public; GH-hosted runners are free here
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4.0.1
         with:
-          terraform_version: 1.11   # >= 1.10 for backend use_lockfile (S3-native locking)
+          terraform_version: "1.15"   # >= 1.10 for backend use_lockfile (S3-native locking); current line
 
       - name: Terraform Format
         run: terraform fmt -check -recursive terraform/coder
@@ -38,14 +38,16 @@ jobs:
           cd terraform/coder
           terraform init -backend=false
 
-      - name: Terraform Validate
+      - name: Terraform Validate (terraform/coder)
         run: |
           cd terraform/coder
           terraform validate
 
-      - name: Check template source files
+      - name: Validate template sources
         run: |
+          terraform fmt -check -recursive .coder/templates
           for d in .coder/templates/*/; do
-            [ -f "$d/main.tf" ] || { echo "ERROR: missing main.tf in $d"; exit 1; }
-            [ -f "$d/variables.tf" ] && echo "ok: $d" || echo "warn: no variables.tf in $d"
+            echo "validating $d"
+            terraform -chdir="$d" init -backend=false
+            terraform -chdir="$d" validate
           done
