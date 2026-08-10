@@ -728,12 +728,12 @@ applications:
       # declares, which otherwise show a permanent cosmetic OutOfSync + selfHeal churn.
       # ServerSideDiff ignores those server-owned fields so the app reads Synced.
       argocd.argoproj.io/compare-options: ServerSideDiff=true
-      # Images aliased: cp/disp/recon/a2a (control-plane, role-selected), web, runner (the one-shot
+      # Images aliased: cp/disp/recon/a2a/mcp (control-plane, role-selected), web, runner (the one-shot
       # agent-runner/indexer image the dispatcher launches), and review (the slimmer review-only Job
       # image — no Python/Graphify — picked for review tasks; ADR-0004 per-kind images, #207).
       # `a2a` = the A2A surface (RFC-0006) — the SAME control-plane image, kept in lockstep so the a2a
       # role never lags the control-plane on a build.
-      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/adorsys-gis/lightbridge-control-plane,disp=ghcr.io/adorsys-gis/lightbridge-control-plane,recon=ghcr.io/adorsys-gis/lightbridge-control-plane,a2a=ghcr.io/adorsys-gis/lightbridge-control-plane,notifier=ghcr.io/adorsys-gis/lightbridge-control-plane,web=ghcr.io/adorsys-gis/lightbridge-web,runner=ghcr.io/adorsys-gis/lightbridge-agent-runner,review=ghcr.io/adorsys-gis/lightbridge-agent-review
+      argocd-image-updater.argoproj.io/image-list: cp=ghcr.io/adorsys-gis/lightbridge-control-plane,disp=ghcr.io/adorsys-gis/lightbridge-control-plane,recon=ghcr.io/adorsys-gis/lightbridge-control-plane,a2a=ghcr.io/adorsys-gis/lightbridge-control-plane,notifier=ghcr.io/adorsys-gis/lightbridge-control-plane,mcp=ghcr.io/adorsys-gis/lightbridge-control-plane,web=ghcr.io/adorsys-gis/lightbridge-web,runner=ghcr.io/adorsys-gis/lightbridge-agent-runner,review=ghcr.io/adorsys-gis/lightbridge-agent-review
       # ── control-plane ──
       argocd-image-updater.argoproj.io/cp.update-strategy: newest-build
       argocd-image-updater.argoproj.io/cp.allow-tags: regexp:^sha-[0-9a-f]+$
@@ -792,6 +792,19 @@ applications:
       argocd-image-updater.argoproj.io/notifier.signature-type: cosign
       argocd-image-updater.argoproj.io/notifier.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/notifier.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
+      # ── mcp (SAME image as control-plane, role-selected; story #508) — keeps its tag in lockstep so
+      #    the MCP surface never lags the control-plane on a build. Without this alias the `mcp` tag
+      #    seeded in ai-helm-values would never auto-update (image-updater only tracks aliases listed
+      #    here), unlike every other role. ──
+      argocd-image-updater.argoproj.io/mcp.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/mcp.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/mcp.force-update: "true"
+      argocd-image-updater.argoproj.io/mcp.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/mcp.helm.image-name: lci.controllers.mcp.containers.main.image.repository
+      argocd-image-updater.argoproj.io/mcp.helm.image-tag: lci.controllers.mcp.containers.main.image.tag
+      argocd-image-updater.argoproj.io/mcp.signature-type: cosign
+      argocd-image-updater.argoproj.io/mcp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+      argocd-image-updater.argoproj.io/mcp.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-code-intelligence/\.github/workflows/build-images\.yml@.*$
       # ── web ──
       argocd-image-updater.argoproj.io/web.update-strategy: newest-build
       argocd-image-updater.argoproj.io/web.allow-tags: regexp:^sha-[0-9a-f]+$

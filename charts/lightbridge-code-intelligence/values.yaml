@@ -952,6 +952,86 @@ lci:
             capabilities:
               drop: [ALL]
 
+    # ── mcp (Model Context Protocol) ──────────────────────────────────────────────────────────────
+    # The SAME control-plane image in the `mcp` role. It serves the RMCP over SSE on :8080.
+    mcp:
+      enabled: false
+      type: deployment
+      strategy: RollingUpdate
+      replicas: 2
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+      containers:
+        main:
+          image:
+            repository: ghcr.io/adorsys-gis/lightbridge-control-plane
+            tag: "0.1.0"
+            pullPolicy: IfNotPresent
+          env:
+            CONTROL_PLANE_ROLE: "mcp"
+            RUST_LOG: "info"
+            MCP_BIND: "0.0.0.0:8080"
+            METRICS_ADDR: "0.0.0.0:9090"
+            PERMISSIONS_CLAIM: "permissions"
+            OIDC_ISSUER: ""
+            OIDC_AUDIENCE: ""
+            # Externally reachable base URL of this MCP surface (e.g. https://<host>/mcp) — the
+            # `resource` identifier in the role's RFC 9728 protected-resource metadata
+            # (/.well-known/oauth-protected-resource) and the `resource_metadata` pointer in its 401
+            # `WWW-Authenticate` challenge, which is how an MCP client discovers WHICH authorization
+            # server to get a token from. The pod cannot infer it — Traefik strips the `/mcp` prefix
+            # before the request arrives — so, exactly like A2A_BASE_URL, it is DEPLOYMENT-SPECIFIC
+            # → ai-helm-values; empty here. Empty = no metadata document and no challenge (the
+            # pre-discovery behaviour); the transport stays OIDC-gated either way.
+            MCP_PUBLIC_URL: ""
+            MCP_QUOTA_MAX: "20"
+            MCP_QUOTA_WINDOW_SECS: "3600"
+            DB_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: lightbridge-codeintel-db-role
+                  key: password
+            DATABASE_URL:
+              dependsOn: DB_PASSWORD
+              value: ""
+            NEO4J_URI:
+              value: "bolt://{{ .Release.Name }}-neo4j:7687"
+            NEO4J_USERNAME: "neo4j"
+            NEO4J_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-neo4j-auth'
+                  key: password
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /healthz
+                  port: 9090
+                initialDelaySeconds: 5
+                periodSeconds: 15
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: 8080
+                initialDelaySeconds: 5
+                periodSeconds: 10
+            startup:
+              enabled: false
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1000
+            capabilities:
+              drop: [ALL]
+
     # ── notifier (RFC-0006 Phase 3 / ADR-0079) ────────────────────────────────────────────────────
     # The SAME control-plane image in the `notifier` role: a HEADLESS worker (like dispatcher/
     # reconciler) that drains the A2A push-notification outbox and delivers webhook POSTs to the URLs
@@ -1080,6 +1160,12 @@ lci:
       ports:
         http:
           port: 8080
+    mcp:
+      enabled: false
+      controller: mcp
+      ports:
+        http:
+          port: 8080
     # Metrics-only Service for the notifier role (METRICS_ADDR :9090) — same pattern as the dispatcher
     # Service above: the headless notifier has no other Service, so this gives its ServiceMonitor
     # (templates/servicemonitor.yaml) a stable Endpoints target for its push-delivery metrics. `enabled`
@@ -1105,6 +1191,8 @@ lci:
     # ⚠️ This exposes a PUBLIC authenticated Ingress: the agent card is served unauthenticated (spec),
     # every A2A binding behind it is OIDC-gated in-app (no anonymous access).
     a2a:
+      enabled: false
+    mcp:
       enabled: false
 
   # NetworkPolicies (bjw-s `networkpolicies` — rendered by bjw-common as networking.k8s.io/v1
