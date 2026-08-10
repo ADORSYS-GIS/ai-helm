@@ -27,6 +27,61 @@ every push to its `main`. Chart image tags are pinned to a commit SHA
 (`sha-<short-sha>`), not `latest` — bump them deliberately when the fork
 publishes a new build.
 
+## How it's wired
+
+```mermaid
+sequenceDiagram
+    participant U as User (chat)
+    participant LC as LibreChat (converse ns)
+    participant API as codeapi-api
+    participant SW as codeapi-service-worker
+    participant SR as codeapi-sandbox-runner<br/>(NsJail)
+    participant EG as codeapi-egress-gateway
+    participant FS as codeapi-file-server
+
+    U->>LC: "run this code"
+    LC->>LC: mint short-lived Ed25519 JWT<br/>(CODEAPI_JWT_*)
+    LC->>API: POST /v1/... (Bearer JWT,<br/>X-LibreChat-User)
+    API->>SW: enqueue job (Redis, redis-ha-haproxy)
+    SW->>SW: sign execution manifest<br/>(execution-manifest keypair)
+    SW->>SR: dispatch job (SANDBOX_ENDPOINT)
+    SR->>SR: unshare --mount, bind-mount<br/>guest rootfs, NsJail exec
+    SR->>EG: egress request (signed grant)<br/>network calls from inside the sandbox
+    SR->>FS: upload result artifacts (S3-backed)
+    SR-->>SW: job result
+    SW-->>API: job result
+    API-->>LC: job result
+    LC-->>U: rendered output
+```
+
+`tool-call-server` sits alongside as an additional callback surface for
+long-running/streaming tool calls; not shown above for clarity. Every
+controller's env in `charts/librechat-code-interpreter/values.yaml` maps
+directly onto this flow — `SANDBOX_ENDPOINT`, `EGRESS_GATEWAY_URL`,
+`FILE_SERVER_URL`, `TOOL_CALL_SERVER_URL` are literally these arrows.
+
+**Two separate JWT/keypair boundaries, easy to conflate:**
+
+1. **LibreChat ↔ codeapi `api`** — the `CODEAPI_JWT_*` Ed25519 keypair
+   (§ below, item 4). LibreChat signs, `api` verifies. This is the outer
+   "are you allowed to use this service at all" boundary.
+2. **`service-worker` ↔ `sandbox-runner`** — the *execution-manifest*
+   Ed25519 keypair (item 3). `service-worker` signs a manifest describing
+   exactly what a given job is allowed to do (packages, egress budget,
+   timeouts); `sandbox-runner` verifies it before running anything. This
+   is the inner "is this specific job's manifest genuine" boundary,
+   scoped per-execution, not per-user.
+
+**Inside `sandbox-runner`, one process per job.** `start-direct-sandbox.sh`
+(the container entrypoint) does the heavy lifting once at container start
+— `unshare --mount` into a private mount namespace, bind-mount the guest
+rootfs (a Debian tree baked into the image, `$ROOTFS`) over `/usr/{sbin,
+lib,lib64,local,bin}`, run an NsJail smoke test, then `exec
+/sandbox_api/entrypoint.sh` (the actual Node/Bun sandbox API). **Every
+sandboxed job execution after that goes through NsJail itself** — the
+`unshare`/bind-mount dance only happens once, to assemble the environment
+NsJail's own per-job sandboxing runs inside.
+
 ## One-time setup: generate and store the secrets
 
 Every property below must exist in `ssegning-aws` **before** the app first
@@ -138,4 +193,87 @@ Push to `main` on [`ADORSYS-GIS/code-interpreter`](https://github.com/ADORSYS-GI
 (e.g. merging an upstream sync PR) to publish new `sha-<short-sha>`-tagged
 images, then bump every `tag:` in `charts/librechat-code-interpreter/values.yaml`
 to the new SHA and `helm template` to confirm nothing else changed shape
-(env var names, ports, probe paths) before merging.
+(env var names, ports, probe paths) before merging. As of this writing the
+fleet is pinned to `sha-d3b0f05` — see the live-incident log below before
+bumping past it; several of those commits fix real bugs in `sandbox-runner`'s
+startup, not upstream feature work.
+
+## Live-incident log (first deploy, 2026-08-09/10)
+
+The first real deploy — after #941 merged and the maintainer generated the
+`ssegning-aws` secrets — needed six follow-up fixes before every pod came up
+healthy. Recorded here because most of these are non-obvious and would bite
+again on a from-scratch redeploy or a naive image bump. Chronological:
+
+1. **ArgoCD `Replace=true` vs. immutable PVC/Job fields** ([#951](https://github.com/ADORSYS-GIS/ai-helm/pull/951)/[#952](https://github.com/ADORSYS-GIS/ai-helm/pull/952)).
+   The repo-wide default `syncPolicy` uses `Replace=true` (`kubectl
+   replace`, not `apply`). Once the `packages` PVC is `Bound` or the
+   `package-init` Job's pod exists, both develop server-populated
+   immutable fields — every subsequent sync then fails forever with `spec
+   is immutable` / `field is immutable`, even though the workload itself
+   is healthy. A per-resource `argocd.argoproj.io/sync-options:
+   Replace=false` annotation does **not** work for `Replace` (unlike
+   `Prune`/`Validate`, it isn't resource-level-overridable in this ArgoCD
+   version — confirmed by testing it). Fixed with a `syncPolicy` override
+   on this app's `charts/apps/values.yaml` entry instead (drops
+   `Replace=true`, keeps `CreateNamespace=true` + `ServerSideApply=true` +
+   `automated.prune/selfHeal`).
+2. **`sandbox-runner` needs `appArmorProfile: Unconfined`** ([#962](https://github.com/ADORSYS-GIS/ai-helm/pull/962)).
+   Without an explicit `appArmorProfile`, the kubelet (native AppArmor
+   field, GA since 1.30) defaults new containers to `RuntimeDefault` on an
+   AppArmor-enabled node (Ubuntu 24.04). That profile blocks the
+   mount-propagation syscall NsJail needs at startup even with `SYS_ADMIN`
+   granted — `seccompProfile: Unconfined` (already set) only disables
+   seccomp filtering, AppArmor is a separate, independently-enforced LSM.
+   Symptom: `unshare: cannot change root filesystem propagation:
+   Permission denied`.
+3. **`REDIS_HOST` was a nonexistent hybrid hostname** ([#963](https://github.com/ADORSYS-GIS/ai-helm/pull/963)).
+   Written as `redis-ha-redis-haproxy...` — a typo transposing the two
+   real `redis-system` Services (`redis-ha-redis`, `redis-ha-haproxy`).
+   Fixed to `redis-ha-haproxy` specifically (not the round-robin
+   `redis-ha-redis`), matching the durable fix `librechat-app` already
+   needed for its own Redis connection: `redis-ha-redis` load-balances
+   master+replica, so a write connection lands on the read-only replica
+   ~50% of the time.
+4. **Upstream bash command-hashing bugs in `start-direct-sandbox.sh`**
+   ([#964](https://github.com/ADORSYS-GIS/ai-helm/pull/964)/[#965](https://github.com/ADORSYS-GIS/ai-helm/pull/965),
+   [ADORSYS-GIS/code-interpreter@1d37e37](https://github.com/ADORSYS-GIS/code-interpreter/commit/1d37e37c5bc6b194309b400ceb55d312b77cdd49)).
+   The script bind-mounts the guest rootfs's `/usr/sbin` over the
+   container's own `/usr/sbin` as its first step, then keeps calling bare
+   `mount` for every later bind. Bash caches a bare command's resolved
+   path and does not re-search `$PATH` on later calls — once the bind
+   replaces `/usr/sbin`'s content, the cached `mount` path breaks. A first
+   attempt (pin `mount`'s path to a variable) does **not** work either — a
+   bind-mount replaces file content at a path system-wide, not just
+   bash's belief about where it lives. Real fix: copy `mount` and its
+   full shared-library closure (`ldd`) to `/host-tools`, a path none of
+   the binds ever touch, before the first bind runs.
+5. **NsJail's smoke test swallowed its own error output** ([#966](https://github.com/ADORSYS-GIS/ai-helm/pull/966)).
+   `api/src/entrypoint.sh`'s smoke test redirected nsjail's stdout/stderr
+   to `/dev/null`, relying only on nsjail's `--log` file for diagnostics —
+   which came back completely empty on the actual failure. Now captures
+   and prints raw stdout/stderr too.
+6. **`/usr/sbin` is a symlink to `/usr/bin` on the `fedora:43` base image**
+   ([#967](https://github.com/ADORSYS-GIS/ai-helm/pull/967)/[#968](https://github.com/ADORSYS-GIS/ai-helm/pull/968),
+   [@5d53fcc](https://github.com/ADORSYS-GIS/code-interpreter/commit/5d53fcc945b9184c4c6e5c5ed37cfe6682a76c5e)/[@d3b0f05](https://github.com/ADORSYS-GIS/code-interpreter/commit/d3b0f054c90936f3855c8a00169e22786787c2ba)).
+   The root cause behind `nsjail` itself vanishing after the bind-mount
+   sequence (`timeout: failed to run command '/usr/sbin/nsjail': No such
+   file or directory`), confirmed by manually replaying each bind-mount
+   step in a debug pod. `/usr/sbin -> bin` means binding the guest
+   rootfs's `usr/sbin` onto `/usr/sbin` actually lands on `/usr/bin`; the
+   later bind of the guest rootfs's own `usr/bin` then stacks on top and
+   shadows it, hiding `nsjail` (which lives only in the guest rootfs's
+   `usr/sbin`, a real, separate directory there). Fix: if `/usr/sbin` is a
+   symlink, delete it and `mkdir` a real directory in its place, inside
+   the private mount namespace, before binding — namespace-local, never
+   touches the node. (The `mkdir` call itself then needed a `hash -r`
+   between the `rm` and the `mkdir`, for the identical hashing reason as
+   #4 — the fix briefly re-introduced the bug it was fixing.)
+
+**If you're debugging a similar `sandbox-runner` failure**, the fastest path
+is a throwaway debug pod using the same image with `command: ["sleep",
+"3600"]` and a matching `securityContext` (including `appArmorProfile`), so
+you can `kubectl exec` in and manually replay
+`start-direct-sandbox.sh`'s `unshare --mount` sequence step by step,
+checking file existence with `[ -f ... ]` after each bind (not `ls`, which
+itself becomes unresolvable once `/usr/sbin` is bound over).
