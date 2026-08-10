@@ -644,7 +644,9 @@ defaults:
 models:
 
    # ─────────────────────────────────────────────────────────────────────────
-   # Qwen3-4B (Q6_K GGUF, llama.cpp) — the fleet's coding model.
+   # Qwen3-4B (Q6_K GGUF, llama.cpp) — DISABLED.
+   # Was the fleet's coding model; swapped by qwen25-3b-awq (one GPU, one
+   # model) on 2026-08-10. Kept as a rollback surface — re-enable to roll back.
    #
    # Full deployment plan + sizing:
    #   inference-ops docs/benchmarks/2026-08-06-qwen3-4b-q6k-rtx4000-ada-deployment.md
@@ -658,7 +660,7 @@ models:
    # ctx 65536 (two full-window slots) is a load-gate comparison, not the
    # initial setting — it implies rope scaling.
    qwen3-4b:
-     enabled: true
+     enabled: false                  # DISABLED — swapped by qwen25-3b-awq (one GPU). Re-enable to roll back.
      engine: llamacpp
      weights:
        hfRepo: Qwen/Qwen3-4B-GGUF
@@ -677,6 +679,86 @@ models:
        cpuRequest: "2"
        cpuLimit: "8"
        memoryRequest: 4Gi
+       memoryLimit: 16Gi
+
+   # ─────────────────────────────────────────────────────────────────────────
+   # Qwen2.5-3B-Instruct-AWQ (AWQ INT4, vLLM) — DISABLED.
+   # Was the fleet's coding model; swapped by qwen3-5-2b (one GPU, one model)
+   # on 2026-08-10. Kept as a rollback surface — re-enable to roll back.
+   #
+   # Qwen2.5 is a non-thinking causal LM with 32K native context; AWQ INT4
+   # fits the full window comfortably on the 20 GiB Ada card (~2.5 GiB
+   # weights). Tool calling via the hermes parser (same as the legacy
+   # charts/model-serving-qwen25-3b-awq deployment, which ran this exact
+   # model + LMCache on the home GPU).
+   #
+   # ⚠️ LMCache ON → kvCacheDtype MUST be `auto`: fp8 KV cache + LMCache is
+   # UNVERIFIED on this fleet and fails the render (ADR-0118). This is the
+   # exact combination the legacy chart ran (LMCache in-process, 16-bit KV).
+   qwen25-3b-awq:
+     enabled: false                 # DISABLED — swapped by qwen3-5-2b (one GPU). Re-enable to roll back.
+     engine: vllm
+     weights:
+       hfRepo: Qwen/Qwen2.5-3B-Instruct-AWQ
+       # Pinned via `curl -s https://huggingface.co/api/models/Qwen/Qwen2.5-3B-Instruct-AWQ | jq -r .sha`
+       revision: 3559b226e8ce77211e2c1bd7ddfb7686fec4d6dd
+       sizeGi: 10
+     serving:
+       contextSize: 32768
+       parallel: 4
+       quantization: awq
+       dtype: float16
+       toolCallParser: hermes
+       kvCacheDtype: auto            # required with LMCache (fp8+LMCache unverified)
+     lmcache:
+       enabled: true
+     resources:
+       cpuRequest: "2"
+       cpuLimit: "8"
+       memoryRequest: 8Gi
+       memoryLimit: 16Gi             # above LMCACHE_MAX_LOCAL_CPU_SIZE (4 GiB) + vLLM overhead
+
+   # ─────────────────────────────────────────────────────────────────────────
+   # Qwen3.5-2B (BF16, vLLM) — the fleet's coding model.
+   #
+   # Replaces qwen25-3b-awq (one GPU, one model). Multimodal causal LM (vision
+   # + text), 2B params, hybrid Gated DeltaNet + Gated Attention + MoE FFN
+   # architecture, 262,144 native context, Apache-2.0. Non-thinking by default;
+   # thinking opt-in per request via `enable_thinking`.
+   #
+   # ⚠️ REQUIRES vLLM FROM THE `main`/NIGHTLY BRANCH (model card). The profile
+   # image `lmcache/vllm-openai:nightly-2026-05-01` MUST be verified with a
+   # real `import vllm` + ModelRegistry check for the Qwen3_5 architecture on
+   # the actual card BEFORE this entry is enabled in prod (Step 0 of
+   # plans/qwen3-5-2b-replacing-qwen25-3b-awq.md). If it does not support
+   # Qwen3.5, bump the image and re-verify — never assume.
+   #
+   # ⚠️ kvCacheDtype `auto` (16-bit): fp8_e4m3 is UNVERIFIED on the hybrid
+   # architecture (DeltaNet layers have no classic KV cache). Measure at the
+   # load gate, then try fp8_e4m3 (÷2 KV).
+   #
+   # ⚠️ LMCache OFF: LMCache serializes KV tensors as stored on the GPU; its
+   # behaviour with the hybrid architecture is UNVERIFIED. Enable only after
+   # measurement (and then kvCacheDtype MUST stay `auto` — ADR-0118).
+   qwen3-5-2b:
+     enabled: true
+     engine: vllm
+     weights:
+       hfRepo: Qwen/Qwen3.5-2B
+       # Pinned via `curl -s https://huggingface.co/api/models/Qwen/Qwen3.5-2B | jq -r .sha`
+       revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
+       sizeGi: 10
+     serving:
+       contextSize: 32768
+       parallel: 4
+       dtype: bfloat16
+       toolCallParser: qwen3_coder
+       kvCacheDtype: auto            # fp8 unverified on the hybrid architecture
+       reasoning: "off"              # non-thinking default; clients opt in per request
+     resources:
+       cpuRequest: "2"
+       cpuLimit: "8"
+       memoryRequest: 8Gi
        memoryLimit: 16Gi
 
    # ─────────────────────────────────────────────────────────────────────────
