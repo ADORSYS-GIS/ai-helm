@@ -975,6 +975,15 @@ lci:
             PERMISSIONS_CLAIM: "permissions"
             OIDC_ISSUER: ""
             OIDC_AUDIENCE: ""
+            # Externally reachable base URL of this MCP surface (e.g. https://<host>/mcp) — the
+            # `resource` identifier in the role's RFC 9728 protected-resource metadata
+            # (/.well-known/oauth-protected-resource) and the `resource_metadata` pointer in its 401
+            # `WWW-Authenticate` challenge, which is how an MCP client discovers WHICH authorization
+            # server to get a token from. The pod cannot infer it — Traefik strips the `/mcp` prefix
+            # before the request arrives — so, exactly like A2A_BASE_URL, it is DEPLOYMENT-SPECIFIC
+            # → ai-helm-values; empty here. Empty = no metadata document and no challenge (the
+            # pre-discovery behaviour); the transport stays OIDC-gated either way.
+            MCP_PUBLIC_URL: ""
             MCP_QUOTA_MAX: "20"
             MCP_QUOTA_WINDOW_SECS: "3600"
             DB_PASSWORD:
