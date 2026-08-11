@@ -114,6 +114,13 @@ jobs:
       - name: Check the model catalogs agree
         run: ./tools/check-model-catalogs.sh
 
+      # Agent-fleet seed config (charts/librechat-app agentSeed.agents, ADR-0088):
+      # a wrong model id or MCP-server name renders fine in helm but seeds a
+      # broken agent at PostSync. This guard validates model ids + the mcpServers
+      # → sys__all__sys_mcp_<name> token expansion early. (See tools/check-agent-seed.sh.)
+      - name: Check the agent-seed fleet resolves
+        run: ./tools/check-agent-seed.sh
+
       - name: Summary
         if: always()
         run: echo "📊 Helm linting completed with status:${{ job.status }}"
