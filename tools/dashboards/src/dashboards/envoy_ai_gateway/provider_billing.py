@@ -182,10 +182,7 @@ def _panel_last_success() -> object:
     # Guard: `and (gauge > 0)` drops the series while the gauge is still 0
     # (never succeeded), so the panel shows "no data" instead of a bogus
     # ~55-year value (time() - 0 = current Unix epoch).
-    expr = (
-        f"(time() - {METRIC_PROVIDER_LAST_SUCCESS}) "
-        f"and ({METRIC_PROVIDER_LAST_SUCCESS} > 0)"
-    )
+    expr = f"(time() - {METRIC_PROVIDER_LAST_SUCCESS}) and ({METRIC_PROVIDER_LAST_SUCCESS} > 0)"
     return _stat_panel(
         title="Seconds since last successful poll",
         expr=expr,

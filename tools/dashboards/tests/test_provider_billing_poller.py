@@ -192,6 +192,7 @@ def test_fetch_usage_uses_dot_period_format(monkeypatch) -> None:
         captured["url"] = req.full_url
         captured["auth"] = req.get_header("Authorization")
         import io
+
         return io.BytesIO(b'{"months": []}')
 
     monkeypatch.setattr(poller.urllib.request, "urlopen", _fake_urlopen)
@@ -220,8 +221,10 @@ def test_transient_errors() -> None:
 
 def test_poll_returns_transient_on_network_error(monkeypatch) -> None:
     """A network/transient failure is surfaced with permanent=False (retryable)."""
+
     def _raise(api_url, token, from_period, to_period=None):
         raise urllib.error.URLError("no network")
+
     monkeypatch.setattr(poller, "fetch_usage", _raise)
     metrics = poller.Metrics(registry=prometheus_client.CollectorRegistry())
     ok, err, permanent = poller.poll("https://api.deepinfra.com", "tok", ["2026-08"], metrics)
@@ -234,8 +237,10 @@ def test_poll_returns_transient_on_network_error(monkeypatch) -> None:
 
 def test_poll_returns_permanent_on_http_error(monkeypatch) -> None:
     """A bad token (403) is surfaced as permanent so main() logs it loudly."""
+
     def _raise(api_url, token, from_period, to_period=None):
         raise urllib.error.HTTPError(url="u", code=403, msg="Forbidden", hdrs=None, fp=None)
+
     monkeypatch.setattr(poller, "fetch_usage", _raise)
     metrics = poller.Metrics(registry=prometheus_client.CollectorRegistry())
     ok, err, permanent = poller.poll("https://api.deepinfra.com", "tok", ["2026-08"], metrics)
@@ -299,6 +304,13 @@ def test_dashboard_json_matches_generator() -> None:
     compare the query expressions (not the whole dict — the orchestrator in
     main.py additionally injects the report link and schema-version stamp).
     """
-    out = Path(__file__).resolve().parents[3] / "charts" / "observability-dashboards" / "files" / "envoy-ai-gateway" / "provider-billing.json"
+    out = (
+        Path(__file__).resolve().parents[3]
+        / "charts"
+        / "observability-dashboards"
+        / "files"
+        / "envoy-ai-gateway"
+        / "provider-billing.json"
+    )
     committed = json.loads(out.read_text())
     assert sorted(_panel_exprs(committed)) == sorted(_panel_exprs(provider_billing.build()))
