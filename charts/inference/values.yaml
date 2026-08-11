@@ -749,12 +749,13 @@ models:
         revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
         sizeGi: 10
       serving:
-        # 128k initial: matches the fleet's GDN precedent (qwen3-5-4b-local used
-        # contextLength 131072 — linear attention → KV cheap) and the review
-        # conclusion on this PR. Native is 262,144; stretch to 262144 only after
-        # the load-gate VRAM measurement (plan §6.2). >32k avoids the prompt
-        # too-long error loop that 32768 caused for coding workloads.
-        contextSize: 131072
+        # 256k = the model's FULL native context (verified: tokenizer_config
+        # model_max_length 262144). Decision: serve the max window — the hybrid
+        # Gated DeltaNet architecture makes KV nearly free (fleet GDN precedent
+        # qwen3-5-4b-local: "KV cheap"), and agentic clients (OpenCode) need the
+        # headroom. VRAM is confirmed at the load gate (ticket #973); if the
+        # gate shows pressure, drop back to 131072.
+        contextSize: 262144
         parallel: 4
         dtype: bfloat16
         toolCallParser: qwen3_coder
