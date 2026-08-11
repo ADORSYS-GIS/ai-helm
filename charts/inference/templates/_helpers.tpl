@@ -244,10 +244,12 @@ Output: a YAML list of strings.
          accepts OpenAI `image_url` content parts natively (fleet precedent
          qwen3-vl-4b, ADR-0094) — this knob EXPLICITLY caps media per prompt
          (`--limit-mm-per-prompt`) so a model or image default change cannot
-         silently reject or unbounded-accept images. `image=N` = up to N images
-         per request. */ -}}
+         silently reject or unbounded-accept images. ⚠️ The flag is typed
+         `json.loads`, so the value MUST be a JSON object (e.g. {"image": 4}) —
+         a bare `image=4` is rejected by the parser and crash-loops the pod
+         (same gotcha as --allowed-origins). `toJson` produces the object form. */ -}}
   {{- with $s.limitMmPerPrompt -}}
-    {{- $args = concat $args (list "--limit-mm-per-prompt" .) -}}
+    {{- $args = concat $args (list "--limit-mm-per-prompt" (toJson .)) -}}
   {{- end -}}
   {{- if .lmcache -}}
     {{- $args = concat $args (list "--kv-transfer-config" "{\"kv_connector\":\"LMCacheConnectorV1\",\"kv_role\":\"kv_both\"}") -}}
