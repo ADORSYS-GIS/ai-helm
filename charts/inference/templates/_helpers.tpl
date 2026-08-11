@@ -209,9 +209,9 @@ Output: a YAML list of strings.
          since v0.6, but we pin it EXPLICITLY so a nightly image bump cannot
          silently flip it off. This is the engine-internal prefix cache (GPU KV
          reuse) — NO host-RAM offload. LMCache (`--kv-transfer-config`, opt-in
-         per model via the `lmcache:` block) is a separate, offload-based path
-         and stays OFF for qwen3-5-2b (ADR-0118: unverified on the hybrid Gated
-         DeltaNet architecture; requires kvCacheDtype auto). */ -}}
+         per model via the `lmcache:` block) is a separate, offload-based path,
+         currently ON for qwen3-5-2b (ticket #973) with kvCacheDtype `auto` per
+         ADR-0118 (fp8 + LMCache unverified on the hybrid Gated DeltaNet arch). */ -}}
   {{- $args = concat $args (list "--enable-prefix-caching") -}}
   {{- with $s.quantization -}}
     {{- $args = concat $args (list "--quantization" .) -}}
