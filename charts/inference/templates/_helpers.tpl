@@ -240,6 +240,15 @@ Output: a YAML list of strings.
   {{- with $s.toolCallParser -}}
     {{- $args = concat $args (list "--enable-auto-tool-choice" "--tool-call-parser" .) -}}
   {{- end -}}
+  {{- /* Multimodal (vision) input. vLLM auto-detects the model's vision tower and
+         accepts OpenAI `image_url` content parts natively (fleet precedent
+         qwen3-vl-4b, ADR-0094) — this knob EXPLICITLY caps media per prompt
+         (`--limit-mm-per-prompt`) so a model or image default change cannot
+         silently reject or unbounded-accept images. `image=N` = up to N images
+         per request. */ -}}
+  {{- with $s.limitMmPerPrompt -}}
+    {{- $args = concat $args (list "--limit-mm-per-prompt" .) -}}
+  {{- end -}}
   {{- if .lmcache -}}
     {{- $args = concat $args (list "--kv-transfer-config" "{\"kv_connector\":\"LMCacheConnectorV1\",\"kv_role\":\"kv_both\"}") -}}
   {{- end -}}

@@ -764,6 +764,11 @@ models:
         toolCallParser: qwen3_coder
         kvCacheDtype: auto            # REQUIRED with LMCache (ADR-0118: fp8+LMCache unverified)
         reasoning: "off"              # non-thinking default; clients opt in per request
+        # Multimodal: the model has a vision tower (Qwen3_5ForConditionalGeneration,
+        # same multimodal family as the retired qwen3-vl-4b, ADR-0094). vLLM accepts
+        # OpenAI `image_url` content parts natively; the cap below is explicit so an
+        # image default change cannot silently reject inputs.
+        limitMmPerPrompt: "image=4"   # up to 4 images per request
       lmcache:
         enabled: true                 # KV offload L0 GPU → L1 host RAM for prefix reuse
       resources:
