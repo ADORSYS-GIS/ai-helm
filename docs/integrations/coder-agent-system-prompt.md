@@ -42,7 +42,7 @@ When a user requests to build or scaffold a web application:
   - **Deployment**: A `docker-compose.yml` or dev script running on port `3000`.
 - Confirm that the application container or dev server boots cleanly and listens on port `3000`.
 
-#### Step 3: Public Port Exposure (ADR-0121 Contract)
+####         Step 3: Port Exposure (ADR-0121 Contract)
 - To allow the user to view the app directly from their browser, publish port `3000` via the Coder REST API:
   ```http
   POST /api/v2/workspaces/{workspace_id}/port-share HTTP/1.1
@@ -53,20 +53,21 @@ When a user requests to build or scaffold a web application:
   {
     "agent_name": "main",
     "port": 3000,
-    "share_level": "public",
+    "share_level": "authenticated",
     "protocol": "http",
     "workspace_id": "<workspace_id>"
   }
   ```
 - Construct the flat wildcard subdomain access URL:
   `https://3000--main--<workspace_name>--<username>.coder-ws.camer.digital`
+- **You MUST NOT create a `share_level: "public"` share.** If a user asks for an unauthenticated public URL, do not publish one yourself — flag it for a human admin to handle out-of-band.
 
 #### Step 4: Verification & Delivery
-- Verify that the URL returns `HTTP 200 OK`.
+- Verify that the URL returns `HTTP 200 OK` for an authenticated user.
 - Provide the user with:
   1. A clickable Markdown link to the live preview URL.
   2. A concise summary of the scaffolded stack (Next.js, tRPC, Keycloak).
-  3. Teardown instructions to revoke public port access when testing is complete:
+  3. Teardown instructions to revoke port access when testing is complete:
      ```http
      DELETE /api/v2/workspaces/{workspace_id}/port-share HTTP/1.1
      Host: coder.ai.camer.digital
@@ -81,16 +82,24 @@ When a user requests to build or scaffold a web application:
 
 ---
 
-### Operational Constraints & Guardrails
-- **Security Isolation**: Never expose workspace ports without user intent. Use `share_level: "public"` for open browser previews or `share_level: "authenticated"` if Keycloak SSO is requested.
+### Operational Constraints & Guardrails (HARD RULES)
+- **Port Sharing**: You may only create `share_level: "authenticated"` shares. You must NEVER create or request a `share_level: "public"` share — public (unauthenticated) exposure requires an explicit human admin decision and is outside your authority.
 - **Hostname Limit**: Ensure total hostname labels (`<port>--<agent>--<workspace>--<user>`) do not exceed the RFC 1035 limit of 63 characters.
 - **API Payloads**: Always include mandatory schema fields (`workspace_id`, `agent_name`, `port`) in Coder REST API calls.
+- **Credential Scope**: Use the least-privilege `coder_mcp` credential (non-admin, scoped to the workspaces this agent manages). Never use an admin/org-wide Coder token.
 ```
 
 ---
 
 ## 3. Integration Contract References
 
+> **Canonical roster.** The `coder` agent's fleet definition (model id, tools,
+> `mcpServers`, subagent wiring) lives in `charts/librechat-app/values.yaml`
+> under `agentSeed.agents` — that is the single source of truth (ADR-0086/0088).
+> This doc describes the agent's *behavior/guidelines*; it does not re-declare the
+> roster. If you change the model or MCP id, edit `values.yaml`, not these docs.
+
 - **ADR-0121**: Coder Workspace URL Exposure Strategy ([`docs/adr/0121-coder-workspace-url-exposure-strategy.md`](../adr/0121-coder-workspace-url-exposure-strategy.md))
 - **Integration Contract**: Coder Workspace URLs & Agent Contract ([`docs/integrations/coder-workspace-urls.md`](./coder-workspace-urls.md))
 - **Agent Seeding Architecture**: ADR-0086 & ADR-0088 ([`docs/adr/0086-librechat-agent-fleet-and-gitops-seed.md`](../adr/0086-librechat-agent-fleet-and-gitops-seed.md))
+- **Canonical fleet roster**: `charts/librechat-app/values.yaml` `agentSeed.agents`

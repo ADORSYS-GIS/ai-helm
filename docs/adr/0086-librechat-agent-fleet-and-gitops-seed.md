@@ -70,7 +70,10 @@ Converse catalog (ADR-0075/0044) + a minimal tool set:
 
 The roster lives as a values block in `charts/librechat-app`
 (`agentSeed.agents[]`), rendered to a ConfigMap the Job consumes — so the fleet
-is versioned in git like everything else.
+is versioned in git like everything else. The tables above are **illustrative**;
+`charts/librechat-app/values.yaml` `agentSeed.agents` is the **canonical** source
+of the fleet (model ids, tools, `mcpServers`, subagent wiring). When they differ,
+the values block wins.
 
 ### 3. The seed mechanism (verified contract)
 

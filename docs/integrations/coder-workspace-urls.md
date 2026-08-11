@@ -563,7 +563,7 @@ The LibreChat Coder agent (`coder`) is registered as a **Subagent** delegated to
    `https://<port>--<agent>--<workspace>--<user>.coder-ws.camer.digital`
 
 2. **Programmatic Port Publishing**:
-   To allow external access without forcing Keycloak authentication redirects (`303` / `404`), send a `POST` request to the Coder REST API:
+   To allow authenticated users to reach the app without forcing Keycloak SSO redirects (`303` / `404`), send a `POST` request to the Coder REST API:
    ```http
    POST /api/v2/workspaces/{workspace_id}/port-share HTTP/1.1
    Host: coder.ai.camer.digital
@@ -573,12 +573,17 @@ The LibreChat Coder agent (`coder`) is registered as a **Subagent** delegated to
    {
      "agent_name": "main",
      "port": 3000,
-     "share_level": "public",
+     "share_level": "authenticated",
      "protocol": "http",
      "workspace_id": "<workspace_id>"
    }
    ```
-   *Note*: `share_level` can be set to `"public"` for instant browser previews or `"authenticated"` if Keycloak SSO is required.
+   > ⚠️ **The `coder` agent must only ever create `share_level: "authenticated"`**
+   > shares. It must never create a `share_level: "public"` (unauthenticated)
+   > share; public exposure requires an explicit human admin decision and is
+   > outside the agent's authority. This is a **hard rule**, not a preference —
+   > a public share exposes a freshly-scaffolded dev server (and any keys it
+   > holds) to anyone with the URL.
 
 3. **URL Verification**:
    Verify that the URL returns `HTTP 200 OK` (or appropriate app status) rather than `303 See Other` (`auth-redirect`).

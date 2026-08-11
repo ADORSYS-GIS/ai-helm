@@ -76,6 +76,12 @@ librechatSecrets:
       client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_id }
       client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_secret }
     librechat-mcp-coder-credentials:
+      # LibreChat OAuth client for the `coder` MCP server (Coder, scope `coder:all`).
+      # This is a SHARED deployment-level client, not per-user. Per-user isolation
+      # is enforced at the Coder side via the X-USER-* forwarded headers — do NOT
+      # rely on the OAuth client itself to be per-user. Keep it the narrowest Coder
+      # role that still works (non-admin, workspace-scoped); the coder agent must
+      # never use an admin/org-wide Coder token.
       client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_id }
       client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_secret }
     librechat-websearch-config:
@@ -153,22 +159,24 @@ agentSeed:
         - Pass instructions to the in-workspace OpenCode assistant to generate Next.js (App Router), tRPC router/client, Keycloak OIDC authentication (`https://auth.verif.fyi/realms/camer-digital`), and a `docker-compose.yml` or dev script running on port `3000`.
         - Confirm that the dev server/container boots cleanly and listens on port `3000`.
 
-        Step 3: Public Port Exposure (ADR-0121 Contract)
+        Step 3: Port Exposure (ADR-0121 Contract)
         - To allow the user to view the app directly from their browser, publish port `3000` via the Coder REST API:
           POST /api/v2/workspaces/{workspace_id}/port-share with JSON payload:
-          {"agent_name": "main", "port": 3000, "share_level": "public", "protocol": "http", "workspace_id": "<workspace_id>"}
+          {"agent_name": "main", "port": 3000, "share_level": "authenticated", "protocol": "http", "workspace_id": "<workspace_id>"}
         - Construct the flat wildcard subdomain access URL: `https://3000--main--<workspace_name>--<username>.coder-ws.camer.digital`.
+        - The share level is HARD-set to `authenticated`. You MUST NOT create a `share_level: "public"` share. If a user explicitly asks for an unauthenticated public URL, do not publish one yourself — flag it for an admin to handle out-of-band.
 
         Step 4: Verification & Delivery
-        - Verify that the URL returns HTTP 200 OK.
+        - Verify that the URL returns HTTP 200 OK for an authenticated user.
         - Provide the user with a clickable Markdown link to the live preview URL, a concise summary of the scaffolded stack, and teardown instructions:
           DELETE /api/v2/workspaces/{workspace_id}/port-share with JSON payload:
           {"agent_name": "main", "port": 3000}
 
-        ### Operational Constraints & Guardrails
-        - Security Isolation: Never expose workspace ports without user intent. Use `share_level: "public"` for open browser previews or `share_level: "authenticated"` if Keycloak SSO is requested.
+        ### Operational Constraints & Guardrails (HARD RULES)
+        - Port Sharing: You may only create `share_level: "authenticated"` shares. You must NEVER create or request a `share_level: "public"` share. Public (unauthenticated) exposure requires an explicit human admin decision and is outside your authority.
         - Hostname Limit: Ensure total hostname labels (`<port>--<agent>--<workspace>--<user>`) do not exceed the RFC 1035 limit of 63 characters.
         - API Payloads: Always include mandatory schema fields (`workspace_id`, `agent_name`, `port`) in Coder REST API calls.
+        - Credential Scope: Use the least-privilege `coder_mcp` credential (non-admin, scoped to manage only the workspaces this agent needs). Never use an admin/org-wide Coder token.
 
 global:
   librechat:
