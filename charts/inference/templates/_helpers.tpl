@@ -205,6 +205,14 @@ Output: a YAML list of strings.
       "--max-model-len" (toString (required "serving.contextSize is required" $s.contextSize))
       "--max-num-seqs" (toString (default 4 $s.parallel))
       "--gpu-memory-utilization" (toString (default 0.90 $s.gpuMemoryUtilization))) -}}
+  {{- /* Prefix caching. vLLM's Automatic Prefix Caching (APC) has been default-ON
+         since v0.6, but we pin it EXPLICITLY so a nightly image bump cannot
+         silently flip it off. This is the engine-internal prefix cache (GPU KV
+         reuse) — NO host-RAM offload. LMCache (`--kv-transfer-config`, opt-in
+         per model via the `lmcache:` block) is a separate, offload-based path,
+         currently ON for qwen3-5-2b (ticket #973) with kvCacheDtype `auto` per
+         ADR-0118 (fp8 + LMCache unverified on the hybrid Gated DeltaNet arch). */ -}}
+  {{- $args = concat $args (list "--enable-prefix-caching") -}}
   {{- with $s.quantization -}}
     {{- $args = concat $args (list "--quantization" .) -}}
   {{- end -}}
@@ -231,6 +239,15 @@ Output: a YAML list of strings.
   {{- end -}}
   {{- with $s.toolCallParser -}}
     {{- $args = concat $args (list "--enable-auto-tool-choice" "--tool-call-parser" .) -}}
+  {{- end -}}
+  {{- /* Multimodal (vision) input. vLLM auto-detects the model's vision tower and
+         accepts OpenAI `image_url` content parts natively (fleet precedent
+         qwen3-vl-4b, ADR-0094) — this knob EXPLICITLY caps media per prompt
+         (`--limit-mm-per-prompt`) so a model or image default change cannot
+         silently reject or unbounded-accept images. `image=N` = up to N images
+         per request. */ -}}
+  {{- with $s.limitMmPerPrompt -}}
+    {{- $args = concat $args (list "--limit-mm-per-prompt" .) -}}
   {{- end -}}
   {{- if .lmcache -}}
     {{- $args = concat $args (list "--kv-transfer-config" "{\"kv_connector\":\"LMCacheConnectorV1\",\"kv_role\":\"kv_both\"}") -}}

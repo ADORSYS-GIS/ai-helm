@@ -737,9 +737,12 @@ models:
    # architecture (DeltaNet layers have no classic KV cache). Measure at the
    # load gate, then try fp8_e4m3 (÷2 KV).
    #
-   # ⚠️ LMCache OFF: LMCache serializes KV tensors as stored on the GPU; its
-   # behaviour with the hybrid architecture is UNVERIFIED. Enable only after
-   # measurement (and then kvCacheDtype MUST stay `auto` — ADR-0118).
+   # ⚠️ LMCache ON (decision 2026-08-11, ticket #973): LMCache serializes KV
+   # tensors as stored on the GPU; its behaviour with the hybrid architecture
+   # was UNVERIFIED. Enabled at the owner's request to test prefix reuse;
+   # kvCacheDtype MUST stay `auto` (ADR-0118). The load gate measures
+   # hit-rate/VRAM; if the hybrid arch misbehaves, roll back = delete the
+   # `lmcache:` block.
    qwen3-5-2b:
       enabled: true
       engine: vllm
@@ -759,13 +762,20 @@ models:
         parallel: 4
         dtype: bfloat16
         toolCallParser: qwen3_coder
-        kvCacheDtype: auto            # fp8 unverified on the hybrid architecture
+        kvCacheDtype: auto            # REQUIRED with LMCache (ADR-0118: fp8+LMCache unverified)
         reasoning: "off"              # non-thinking default; clients opt in per request
+        # Multimodal: the model has a vision tower (Qwen3_5ForConditionalGeneration,
+        # same multimodal family as the retired qwen3-vl-4b, ADR-0094). vLLM accepts
+        # OpenAI `image_url` content parts natively; the cap below is explicit so an
+        # image default change cannot silently reject inputs.
+        limitMmPerPrompt: "image=4"   # up to 4 images per request
+      lmcache:
+        enabled: true                 # KV offload L0 GPU → L1 host RAM for prefix reuse
       resources:
-       cpuRequest: "2"
-       cpuLimit: "8"
-       memoryRequest: 8Gi
-       memoryLimit: 16Gi
+        cpuRequest: "2"
+        cpuLimit: "8"
+        memoryRequest: 8Gi
+        memoryLimit: 16Gi             # above LMCACHE_MAX_LOCAL_CPU_SIZE (4 GiB) + vLLM overhead
 
    # ─────────────────────────────────────────────────────────────────────────
    # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102/0103/0105).
