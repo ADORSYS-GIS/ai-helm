@@ -737,12 +737,13 @@ models:
    # architecture (DeltaNet layers have no classic KV cache). Measure at the
    # load gate, then try fp8_e4m3 (÷2 KV).
    #
-   # ⚠️ LMCache ON (decision 2026-08-11, ticket #973): LMCache serializes KV
-   # tensors as stored on the GPU; its behaviour with the hybrid architecture
-   # was UNVERIFIED. Enabled at the owner's request to test prefix reuse;
-   # kvCacheDtype MUST stay `auto` (ADR-0118). The load gate measures
-   # hit-rate/VRAM; if the hybrid arch misbehaves, roll back = delete the
-   # `lmcache:` block.
+   # ⚠️ LMCache OFF (verified 2026-08-11, ticket #973): LMCache (`--kv-transfer-config`)
+   # forces vLLM to disable its hybrid KV cache manager, which Qwen3.5-2B's hybrid
+   # Gated DeltaNet + Mamba architecture REQUIRES to unify the attention/mamba KV
+   # cache specs — the engine crashes at KV-cache init ("Hybrid KV cache manager is
+   # disabled but failed to convert the KV cache specs to one unified type"). This is
+   # the ADR-0118 risk confirmed in prod. Prefix reuse is still provided by vLLM's
+   # built-in APC (`--enable-prefix-caching`), which is independent of LMCache.
    qwen3-5-2b:
       enabled: true
       engine: vllm
@@ -762,7 +763,7 @@ models:
         parallel: 4
         dtype: bfloat16
         toolCallParser: qwen3_coder
-        kvCacheDtype: auto            # REQUIRED with LMCache (ADR-0118: fp8+LMCache unverified)
+        kvCacheDtype: auto            # fp8 unverified on the hybrid architecture (ADR-0118)
         reasoning: "off"              # non-thinking default; clients opt in per request
         # Multimodal: the model has a vision tower (Qwen3_5ForConditionalGeneration,
         # same multimodal family as the retired qwen3-vl-4b, ADR-0094). vLLM accepts
@@ -771,13 +772,11 @@ models:
         # object (--limit-mm-per-prompt is typed json.loads).
         limitMmPerPrompt:
           image: 4                    # up to 4 images per request
-      lmcache:
-        enabled: true                 # KV offload L0 GPU → L1 host RAM for prefix reuse
       resources:
         cpuRequest: "2"
         cpuLimit: "8"
         memoryRequest: 8Gi
-        memoryLimit: 16Gi             # above LMCACHE_MAX_LOCAL_CPU_SIZE (4 GiB) + vLLM overhead
+        memoryLimit: 16Gi
 
    # ─────────────────────────────────────────────────────────────────────────
    # Z-Image-Turbo — IMAGE GENERATION, served by LocalAI (ADR-0102/0103/0105).
