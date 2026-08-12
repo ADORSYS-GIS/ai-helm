@@ -73,8 +73,12 @@ regression versus a Marlin/AWQ kernel.
 helm dep build charts/inference && helm dep build charts/inference-server
 helm lint charts/inference --strict
 helm template chk charts/inference --dry-run > /dev/null
-./tools/check-model-catalogs.sh
 ```
+
+The cross-catalog check (`this fleet ↔ the gateway's federated backends`) runs in
+`ai-helm-values` (`./tools/check-model-catalogs.sh` there), because the gateway
+catalog moved to that repo in ADR-0126. Run it from an `ai-helm-values` checkout
+after publishing a fleet change here.
 
 To render what a child will actually receive — the check worth doing after
 editing `_helpers.tpl`, since it exercises the orchestrator *and* the leaf:

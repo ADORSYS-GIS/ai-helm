@@ -13,10 +13,13 @@
 #
 #   2. Serving a model and OFFERING it to users are two different steps. This file
 #      makes the model run on a GPU. To let users reach it through the gateway you
-#      also add a backend + model entry in `charts/ai-models/values.yaml` — and
-#      that is deliberate: it means you can deploy and measure a model before any
-#      user can see it. `tools/check-model-catalogs.sh` fails CI if an entry here
-#      is federated inconsistently there.
+#      also add a backend + model entry to the gateway catalog, which since
+#      ADR-0126 lives in the private values repo at
+#      `ai-helm-values environments/prod/values/models.yaml` — and that split is
+#      deliberate: it means you can deploy and measure a model before any user
+#      can see it. `check-model-catalogs.sh` fails CI if an entry here is
+#      federated inconsistently there; it runs in ai-helm-values now (that repo
+#      can pull these charts from OCI, this repo cannot read that one).
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ────────────────────────────────────────────────────────────────────────

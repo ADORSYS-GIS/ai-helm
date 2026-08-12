@@ -1,0 +1,192 @@
+# CI fixture for charts/ai-models (Chart.yaml annotation lint-mode: ci-values).
+#
+# Since ADR-0126 the real catalog lives in ai-helm-values
+# (environments/prod/values/models.yaml) and this chart's own values.yaml is an
+# empty skeleton that deliberately fails to render — see the requireCatalog
+# guard in templates/_helpers.tpl. So `helm lint`/`helm template` run against
+# this fixture instead.
+#
+# ⚠️ This is a TEMPLATE-COVERAGE fixture, not a mirror of production. It carries
+# the smallest catalog that exercises every branch of the ApplicationSet: a
+# provider backend with an ExternalSecret, a cluster-local backend, one model of
+# each pricing strategy, an internal-only model, and a plan list. Do NOT sync it
+# with the production catalog — a fixture that tracks prod is just the duplicate
+# source of truth the move was meant to remove. Add to it only when a template
+# branch is otherwise unexercised.
+
+argocd:
+  namespace: argocd
+  project: ai
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: ">=0.0.0"
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: converse
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+
+gatewayRef:
+  name: core-gateway
+  namespace: converse-gateway
+  sectionName: api-https
+  internalSectionName: api-internal
+  internalHostname: core-gateway-internal.envoy-gateway-system.svc.cluster.local
+
+sharedBudget:
+  enabled: true
+
+# Two plans so the per-model BackendTrafficPolicy renders both a budget rule and
+# a burst rule family. Order is the append-only index contract in production
+# (ADR-0084/0085); here it only needs to be stable.
+rateLimitBudgeting:
+  plans:
+    - id: free
+      monthlyBudgetUsd: 15
+      burst:
+        requestsPerMin: 2000
+        tokensPerMin: 10000000
+    - id: internal
+
+modelsInfo:
+  enabled: true
+  excludeKinds:
+    - embedding
+    - reranker
+
+externalSecrets:
+  enabled: true
+  secretStore: ssegning-aws
+  refreshInterval: 1h
+  apiKeyDataKey: apiKey
+
+backends:
+  # A SaaS provider backend: FQDN over TLS, API key from an ExternalSecret.
+  ci-provider-01:
+    schema: OpenAI
+    prefix: "/v1/openai"
+    fqdn:
+      hostname: api.example.invalid
+      port: 443
+    securityType: APIKey
+    tlsHostname: api.example.invalid
+    resourceName: ci-provider-01-svc
+    secretRef:
+      name: ci-provider-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: ci_provider_api_key
+  # A cluster-local backend: plain HTTP to a Service in the inference namespace.
+  ci-local-01:
+    schema: OpenAI
+    prefix: "/v1"
+    fqdn:
+      hostname: ci-local.inference.svc.cluster.local
+      port: 8080
+    securityType: APIKey
+    resourceName: ci-local-01-svc
+    secretRef:
+      name: ci-local-api-key
+    externalSecret:
+      key: ai/camer/digital/prod/env
+      property: ci_local_api_key
+
+models:
+  # weighted — the common case (separate input / cached / output prices).
+  ci-weighted:
+    kind: text
+    minBackends: 1
+    info:
+      displayName: "CI Weighted"
+      contextLength: 131072
+      maxOutputTokens: 16384
+      supportedParameters:
+        - tools
+        - temperature
+        - reasoning
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 1.00
+        cachedInputPer1M: 0.20
+        outputPer1M: 4.00
+    backends:
+      ci-provider-01:
+        ref: ci-provider-01
+        priority: 0
+        bodyMutation:
+          set:
+            - path: service_tier
+              value: '"priority"'
+  # tieredWeighted — long-context prices above a token threshold.
+  ci-tiered:
+    kind: text
+    minBackends: 1
+    info:
+      displayName: "CI Tiered"
+      contextLength: 262144
+      maxOutputTokens: 16384
+    pricing:
+      strategy: tieredWeighted
+      thresholdTokens: 128000
+      standard:
+        inputPer1M: 1.00
+        cachedInputPer1M: 0.20
+        outputPer1M: 4.00
+      longContext:
+        inputPer1M: 2.00
+        cachedInputPer1M: 0.40
+        outputPer1M: 8.00
+    backends:
+      ci-provider-01:
+        ref: ci-provider-01
+        priority: 0
+  # flat — one blended price for total tokens (embeddings, rerankers).
+  ci-flat:
+    kind: embedding
+    minBackends: 1
+    pricing:
+      strategy: flat
+      standard:
+        effectivePer1M: 0.10
+    backends:
+      ci-provider-01:
+        ref: ci-provider-01
+        priority: 0
+  # flatPerRequest + internal-only + a cluster-local backend, in one entry.
+  ci-per-request-internal:
+    kind: image
+    minBackends: 1
+    disableExternal: true
+    timeout:
+      requestTimeout: 600s
+      connectionIdleTimeout: 1h
+    info:
+      displayName: "CI Per-Request (internal)"
+    pricing:
+      strategy: flatPerRequest
+      standard:
+        effectivePerRequest: 0.02
+    backends:
+      ci-local-01:
+        ref: ci-local-01
+        priority: 0
+  # A disabled entry must generate no child Application.
+  ci-disabled:
+    enabled: false
+    kind: text
+    pricing:
+      strategy: weighted
+      standard:
+        inputPer1M: 1.00
+        cachedInputPer1M: 0.20
+        outputPer1M: 4.00
+    backends:
+      ci-provider-01:
+        ref: ci-provider-01
+        priority: 0

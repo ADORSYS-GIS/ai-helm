@@ -68,7 +68,7 @@ converse-gateway/core-gateway_converse-gateway/core-gateway/rule/<N>_...
 Burst (per-minute) keys used to exist alongside these but churned every minute
 and were never a budget signal, so they were deliberately not scraped. ⚠️ **Since
 2026-08-01 they don't exist at all**: every plan's `burst:` block is commented out
-in `charts/ai-models/values.yaml`, so the per-model `BackendTrafficPolicy` now
+in `ai-helm-values` `environments/prod/values/models.yaml`, so the per-model `BackendTrafficPolicy` now
 emits no rules whatsoever (its budget rule had already moved to the gateway-wide
 policy at the #532 cutover) and the shared monthly budgets below are the only
 rate-limit counters in Redis. Keys written before ADR-0111

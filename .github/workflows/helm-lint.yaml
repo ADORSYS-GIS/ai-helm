@@ -107,12 +107,17 @@ jobs:
             echo "✅ $chart_name OK"
           done
 
-      # Cross-chart invariant that no single chart's render can catch: a model
-      # federated into the gateway (charts/ai-models) must have a server behind
-      # it on the GPU fleet (charts/inference). Getting this wrong produces a
-      # green sync and 503s at request time. See ADR-0094.
-      - name: Check the model catalogs agree
-        run: ./tools/check-model-catalogs.sh
+      # ⚠️ The cross-catalog check that used to run here MOVED to ai-helm-values
+      # (tools/check-model-catalogs.sh + the model-catalogs job in
+      # render-check.yml). It compared the GPU fleet catalog (charts/inference,
+      # still here) with the gateway catalog (charts/ai-models), and since
+      # ADR-0126 the gateway half lives in the private values repo — which this
+      # public repo's CI cannot read, while that repo can pull these charts
+      # anonymously from the public OCI registry. It runs there on every change
+      # to the catalog, and a fleet change published from here is checked by the
+      # next run there. Do NOT re-add a copy here that reads chart defaults: the
+      # ai-models defaults are now an empty skeleton, so it would pass vacuously
+      # and quietly stop guarding anything.
 
       - name: Summary
         if: always()
