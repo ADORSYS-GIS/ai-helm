@@ -416,5 +416,5 @@ measured before users can reach it.
 | Hardware facts, model catalog | `inference-ops` `docs/reference/` |
 | Measured performance | `inference-ops` `docs/benchmarks/` |
 | GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage), ADR-0100/0102 (image generation), ADR-0101 (federation gate) |
-| Pricing basis | ADR-0028 |
+| Pricing basis | ADR-0128 (nominal — amends ADR-0028's cost recovery) |
 | Per-model papers (this repo) | [`../models/`](../models/) — legacy generation |

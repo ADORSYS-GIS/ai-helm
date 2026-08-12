@@ -32,7 +32,7 @@ overlays) lives in the private `ai-helm-values` repo (ADR-0055/0056).
 | 2 | **Observability / attribution** | Every request attributable to a user, plan, and model; usage/cost queryable in Grafana in near-real-time |
 | 3 | **Security / multi-tenancy** | Keycloak JWT is the authorization boundary; per-plan burst + monthly budget enforced at the gateway; tenant isolation by claim |
 | 4 | **Operability (GitOps)** | Every change is a reviewed Git diff; reproducible, declarative, env-overlayable; merge to `main` is the deploy |
-| 5 | **Cost control** | Per-person monthly USD budget enforced; self-hosted object storage; self-hosted GPU inference at cost-recovery; no per-request Python hop |
+| 5 | **Cost control** | Per-person monthly USD budget enforced; self-hosted object storage; self-hosted GPU inference priced nominally so it is always the cheapest route (ADR-0128); no per-request Python hop |
 
 ### Stakeholders
 
@@ -494,6 +494,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0109 | **Ready means *served***: the image engine's startup probe performs a real generation, so a pod is endpointed only once it has actually inferred. At Ready the backend process IS running and `/readyz` 200s, but nvidia-smi shows 5 MiB — `LOAD_TO_MEMORY` works as documented; stable-diffusion.cpp defers its GPU tensor upload to first inference, below LocalAI's abstraction, so no upstream knob fixes it (32.03 s cold vs 29.23 s warm). Declared as engine-profile DATA (`warmup:`); llamacpp/vllm omit it and keep httpGet. We own the ~15 lines |
 | 0126 | **The model catalog moves to `ai-helm-values`** — the last large body of deployment state left in this repo (~2,000 lines of backends, models, prices, plans) becomes `environments/prod/values/models.yaml`; the chart keeps an empty skeleton. Load-bearing consequence: with `ignoreMissingValueFiles`, empty defaults would have rendered VALIDLY and pruned every model route, so a `requireCatalog` guard hard-fails the render instead. Move verified byte-identical |
 | 0127 | **Model prices synced from the providers' own APIs every 6h**, committed straight to `main`. Prices are the CEL coefficients behind the budget rate-limit, so drift mis-bills silently — measurement found 39 drifted fields across 16 models. DeepInfra only (Fireworks publishes no price source, verified against the live API); the write is line surgery on price scalars with a refuse-to-write assertion |
+| 0128 | **Self-hosted models priced nominally, not at cost recovery** — the fleet bills the same idle or saturated, so ADR-0028 rates made our own GPUs dearer to the user than SaaS and pushed traffic onto invoices we pay twice. Token charge ~100× under the cheapest SaaS entry; non-zero so cost series stay distinguishable from missing data. Fleet cost becomes a platform cost, and price stops being a throttle on GPU contention |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
