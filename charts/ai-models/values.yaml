@@ -22,19 +22,31 @@
 #     merge, so a stale list here would be silently discarded, or silently win
 #     if the values file ever omits the key.
 #
-#   • Rendering this chart on its defaults FAILS, by design. `argocd.destination`
-#     is empty, and the destination guard (`ai-models.argocd.destinationClusterRef`)
-#     refuses to render without one. That is the safe failure: if the values file
-#     ever goes missing or unparseable, the `aii-models` Application goes
-#     ComparisonError and every running model child is left alone — instead of
-#     the ApplicationSet successfully rendering an EMPTY catalog and pruning
-#     every route the gateway serves.
+#   • Rendering this chart on its defaults FAILS, by design — and specifically
+#     because of the `ai-models.requireCatalog` guard in templates/_helpers.tpl.
+#     ⚠️ It is NOT the destination guard that saves you here, however much it
+#     looks like it should: `argocd.destination` is empty, but
+#     `destinationClusterRef` DEFAULTS a missing name to "home-remote" and
+#     renders happily. Verified by deleting the catalog and rendering: exit 0,
+#     a valid ApplicationSet with a backends child and NO model children — which
+#     the controller reconciles by pruning every AIGatewayRoute and
+#     BackendTrafficPolicy on the gateway. So do not treat `requireCatalog` as
+#     belt-and-braces and remove it; it is the only thing standing there. With
+#     it, a missing or unparseable values file leaves `aii-models` in
+#     ComparisonError and every running model child untouched.
 #
 #   • Because the defaults do not render, CI lints and renders this chart through
 #     `ci/lint-values.yaml` instead (Chart.yaml annotation
 #     `ai-helm.adorsys-gis.github.io/lint-mode: ci-values`). That fixture is a
 #     minimal representative catalog for template coverage — it is NOT a mirror
 #     of production and must never grow into one.
+#
+#     ⚠️ That fixture is also this chart's **Trivy scan input**. The release
+#     workflow renders every chart standalone and skips whatever fails to
+#     render, so without the fixture this chart drops out of the security scan
+#     silently — a green run that scanned nothing. `release-helm-charts.yml`
+#     falls back to `ci/*-values.yaml` for exactly that reason. Deleting the
+#     fixture removes scan coverage, not just a lint convenience.
 #
 # See docs/adr/0126-model-catalog-moves-to-values-repo.md.
 
