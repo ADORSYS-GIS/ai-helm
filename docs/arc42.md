@@ -174,7 +174,7 @@ flowchart TB
 |---|---|---|
 | `core-gateway` | Envoy AI Gateway, listeners (external + internal), ClientTrafficPolicy, BackendTrafficPolicy, ACME issuer, OTel collector, `gateway.redirectHosts` (vanity redirects, ADR-0053) | Direct |
 | `kuadrant-policies` / `security-policies` | Authorino instance + per-host AuthConfigs + SecurityPolicy (values in `ai-helm-values`) | Direct |
-| `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget) | Orchestrator + leaves (ADR-0012) |
+| `ai-models` → `ai-model` | Orchestrator ApplicationSet → one Application per model (route + budget). The catalog itself lives in `ai-helm-values` (ADR-0126); chart defaults are an empty skeleton that refuses to render | Orchestrator + leaves (ADR-0012) |
 | `ai-models-backends` | `AIServiceBackend`/`Backend`/`BackendSecurityPolicy`/`BackendTLSPolicy` + key ExternalSecrets | Direct |
 | `inference` → `inference-server` | Orchestrator ApplicationSet → one Application per self-hosted model on the Hetzner GPU fleet (`inference` ns, `home-remote`). THREE engine profiles (llama.cpp / vLLM+LMCache / **LocalAI**, image generation) expand a ~15-line catalog entry into the workload. Cluster-local: no Ingress, cert, API key or proxy sidecar | Orchestrator + leaves (ADR-0094/0095/0100/0102) |
 | `model-serving-*` (qwen3-5, qwen3-4b, deepseek-r1-1-5b, qwen25-3b-awq, qwen3-8b, ministral-3b, qwen2-vl-2b) | ⚠️ **LEGACY, ALL DISABLED since 2026-07-27 (ADR-0100)** — per-model charts targeting the *other* cluster (`admin@homeos`) over a public edge; `homeCluster: true`. `zimage-turbo` was the last live one, moved to the fleet, and its chart was **deleted** by ADR-0106; the rest are a rollback surface only | Hybrid bjw (ADR-0022/0029/0030/0032) |
@@ -492,6 +492,8 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0107 | `model-serving`/`model-server` charts renamed to **`inference`/`inference-server`** — the two differed by two characters, and the seven LEGACY `model-serving-<model>` charts read as variants of the first rather than a different generation. `inference` matches the workload namespace and the `inference-ops` repo. Legacy charts keep the old name (now the legacy marker); accepted ADRs keep their historical paths. ⚠️ Child Applications are recreated, so qwen3-vl's weights re-seed once |
 | 0108 | **LocalAI's backend signature verification is unsatisfiable — drop it, and correct 0105's pinning claim.** Supersedes 0105's *verification* decision only. Upstream signs backend images with LEGACY cosign; LocalAI v4.7.1 verifies only the NEW Sigstore bundle format, so the policy could never succeed and crash-looped the pod on the first fresh volume — the identity regex was never reached. Also: the gallery index hardcodes `latest` in the entry `uri`, so `--backend-images-release-tag` never applied and the backend tag was never pinned. Weights (`download_files` sha256) and the gallery-index pin are unaffected |
 | 0109 | **Ready means *served***: the image engine's startup probe performs a real generation, so a pod is endpointed only once it has actually inferred. At Ready the backend process IS running and `/readyz` 200s, but nvidia-smi shows 5 MiB — `LOAD_TO_MEMORY` works as documented; stable-diffusion.cpp defers its GPU tensor upload to first inference, below LocalAI's abstraction, so no upstream knob fixes it (32.03 s cold vs 29.23 s warm). Declared as engine-profile DATA (`warmup:`); llamacpp/vllm omit it and keep httpGet. We own the ~15 lines |
+| 0126 | **The model catalog moves to `ai-helm-values`** — the last large body of deployment state left in this repo (~2,000 lines of backends, models, prices, plans) becomes `environments/prod/values/models.yaml`; the chart keeps an empty skeleton. Load-bearing consequence: with `ignoreMissingValueFiles`, empty defaults would have rendered VALIDLY and pruned every model route, so a `requireCatalog` guard hard-fails the render instead. Move verified byte-identical |
+| 0127 | **Model prices synced from the providers' own APIs every 6h**, committed straight to `main`. Prices are the CEL coefficients behind the budget rate-limit, so drift mis-bills silently — measurement found 39 drifted fields across 16 models. DeepInfra only (Fireworks publishes no price source, verified against the live API); the write is line surgery on price scalars with a refuse-to-write assertion |
 
 ADRs are immutable once Accepted; supersede with a new ADR.
 
@@ -508,7 +510,8 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Observability** | "What did user X spend on model Y this month?" | Answerable in Grafana from Mimir counters | Shipped (ADR-0058/0063) |
 | **Security** | Forged/expired JWT | Rejected at Authorino; no backend reached | Enforced |
 | **Cost** | User exceeds monthly budget | Budget bucket denies; alert at threshold | Enforced + alerted (ADR-0021/0059) |
-| **Operability** | Add a model | List edit in `ai-models` values → new Application | Mechanical |
+| **Operability** | Add a model | Entry in `ai-helm-values` `values/models.yaml` → new Application; no chart change (ADR-0126) | Mechanical |
+| **Cost** | A provider changes its price | Synced from its API within 6h and committed to `main`, instead of drifting until someone re-reads a price page (ADR-0127) | Automated |
 | **Operability** | Add a *self-hosted* model | ~15-line entry in `inference` values → new Application; GPU assigned by the scheduler (ADR-0094) | Mechanical |
 
 ---

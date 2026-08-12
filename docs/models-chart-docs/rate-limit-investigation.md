@@ -89,7 +89,7 @@ This is the key point of the ticket.
 
 The cost estimation happens in `charts/ai-models/templates/aigatewayroute.yaml` inside
 `spec.llmRequestCosts`. The chart renders a CEL expression per model using the pricing strategy from
-`charts/ai-models/values.yaml`.
+`ai-helm-values` `environments/prod/values/models.yaml`.
 
 For `pricing.strategy: weighted`, the rendered CEL is:
 
@@ -139,7 +139,7 @@ So the same metadata used for rate limiting is already available in telemetry.
 
 ### Per-model pricing is model-specific
 
-The pricing constants are rendered per route from `charts/ai-models/values.yaml`. This is not a
+The pricing constants are rendered per route from `ai-helm-values` `environments/prod/values/models.yaml`. This is not a
 single shared multiplier across all models.
 
 For example:
@@ -285,7 +285,7 @@ applied independently whenever the request matched its headers.
 
 Besides documenting the current behavior, this branch makes four chart changes:
 
-1. Model pricing now lives under an explicit `pricing.strategy` block in `charts/ai-models/values.yaml`.
+1. Model pricing now lives under an explicit `pricing.strategy` block in `ai-helm-values` `environments/prod/values/models.yaml`.
 2. Vendor prices were refreshed from the current Fireworks, OpenAI, and Gemini pricing pages.
 3. Gemini long-context tiers are now represented explicitly with `tieredWeighted` pricing.
 4. The separate request-rate rule was removed so only the monthly cost-based rule remains.

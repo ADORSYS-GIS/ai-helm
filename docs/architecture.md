@@ -182,8 +182,12 @@ by name (no Application here): **Traefik**, **CloudNativePG** + Barman,
 Operator** + the `ssegning-aws` store, the **OpenTelemetry Operator**, and the
 k3s-bundled **metrics-server** (ADR-0054). The old `ai-gitops` repo was never
 built: under continuous delivery (ADR-0055/0056) the private **`ai-helm-values`**
-repo holds the written-back image tags, the per-env `environments/` overlays, and
-every workload `valuesObject` — values-only. The root `ai-apps-v2` Application is
+repo holds the written-back image tags, the per-env `environments/` overlays,
+every workload `valuesObject`, and — since ADR-0126 — the whole **model catalog**
+(`environments/prod/values/models.yaml`: provider backends, models, prices,
+rate-limit plans), whose prices a scheduled job keeps in step with the providers'
+own price APIs (ADR-0127). Values-only, still: `charts/ai-models` renders it, and
+hard-fails rather than deploying an empty catalog if the file goes missing. The root `ai-apps-v2` Application is
 applied from `home-os` (tracking `main`, pinned in `home-os` `charts/cd`). Detail:
 [suite · 07 Data & secrets](architecture/07-data-secrets.md).
 

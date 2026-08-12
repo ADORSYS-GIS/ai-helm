@@ -82,7 +82,7 @@ attributed.
 - **`chat-overview`** — no input. Loki/Mimir volume/cost/tokens/error-rate/
   latency (embeddings excluded via a `model!~` regex, see
   `EMBEDDING_MODEL_KEYS` in `tools/dashboards/src/dashboards/_common.py` —
-  keep in sync with `kind: embedding` entries in `charts/ai-models/values.yaml`),
+  keep in sync with `kind: embedding` entries in `ai-helm-values` `environments/prod/values/models.yaml`),
   plus a live Tempo trace-list panel (Grafana's native `type="traces"` panel,
   the same one `scoreboard.py` already uses) scoped to
   `{ resource.service.name = "core-gateway" && span.openinference.span.kind = "LLM" }`.

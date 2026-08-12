@@ -112,8 +112,18 @@ The `ai-gateway-billing-reconcile` alert fires when
 3. Compare provider vs gateway by model — the mismatch is usually one model with
    an unverified pricing (e.g. the 2026-08-04 claude-sonnet-5 cache-read case:
    gateway estimated $0.30/M cache reads, DeepInfra billed $2/M).
-4. Fix the gateway pricing in `charts/ai-models/values.yaml` (the AIEG cost
+4. Fix the gateway pricing in `ai-helm-values` `environments/prod/values/models.yaml` (the AIEG cost
    inputs) — see commit `cf65269` for the pattern.
+   ⚠️ Since ADR-0127 those prices are **machine-maintained**: a six-hourly job
+   syncs them from the provider's own API, so a hand-edit is reverted within six
+   hours unless you also set `pricingAutoUpdate: false` on the entry. Read the
+   sync's own view first (`uv run --with pyyaml python tools/update-model-prices.py
+   --dry-run` in that repo) — if it reports the model as *managed and current*,
+   the gateway price already matches the provider's published rate and the
+   mismatch is elsewhere: a billing dimension the published rate does not cover.
+   The 2026-08-04 claude-sonnet-5 case is exactly that shape — DeepInfra
+   publishes no cache-read ratio for it, so the sync now prices cache reads at
+   the full input rate rather than guessing a discount.
 5. If the provider figure itself is wrong, correct it in DeepInfra; the next poll
    overwrites the gauge.
 
