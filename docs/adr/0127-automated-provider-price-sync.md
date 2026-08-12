@@ -55,12 +55,12 @@ every six hours and commits any drift straight to `main`.**
 - The derivation reproduces the conventions the hand-maintained values already
   encoded: `$/1M = cents_per_token × 10⁴`; cached = input × the published cache
   ratio, or input where none is published; × the priority multiplier, because
-  every DeepInfra backend forces `service_tier: priority`. Where the API reports
-  no priority rate the model does not support the tier and DeepInfra bills
-  standard — we still multiply by 1.5, deliberately over-estimating, because the
-  number feeds a budget and a budget that trips early is safe while one that
-  trips late is not. Embeddings and rerankers (`type: input_tokens`) get no
-  multiplier: the `service_tier` body field is ignored on those endpoints.
+  every DeepInfra backend forces `service_tier: priority`. The multiplier is
+  per-model API data, **never a hardcoded 1.5**: where the API publishes no
+  priority rate the model does not offer the tier, DeepInfra ignores the injected
+  `service_tier` and bills standard, so the multiplier is 1. Embeddings and
+  rerankers (`type: input_tokens`) get no multiplier either — the `service_tier`
+  body field is ignored on those endpoints.
 - **The write is line surgery on price scalars only.** The catalog is 1,700 lines
   of hand-written comments, anchors and merge keys; a YAML round-trip would
   reflow all of it. Before writing, the script asserts that the set of changed
@@ -95,10 +95,23 @@ every six hours and commits any drift straight to `main`.**
 - A provider price cut immediately loosens everyone's effective budget and a rise
   tightens it, with no human in the loop. That is the intended behaviour, but it
   does mean budget headroom now moves on its own.
-- The uniform priority-multiplier rule changes two disabled entries that had been
-  hand-set inconsistently (`claude-sonnet-5` +50%, `claude-fable-5` cached
-  1.50 → 15.00 where no cache ratio is published). No live effect; both are
-  `enabled: false`.
+- ⚠️ **The first implementation got the priority multiplier wrong, and it reached
+  production.** It fell back to 1.5 where the API published no priority rate,
+  rationalised as a safe over-estimate ("a budget that trips early beats one that
+  trips late"). The first scheduled run inflated eight of the 24 managed models by
+  50% — including MiniMax-M2.7 behind `adorsys-coder`/`adorsys-reviewer`,
+  GLM-4.7-Flash and MiniMax-M3 — until the maintainer spotted `claude-sonnet-5`
+  reporting $15/1M against a published $10 and it was corrected the same day
+  (`ai-helm-values` PR #224). Two lessons worth keeping, because both are general:
+  a number that is simultaneously a *limit* and a *measurement* has no safe
+  direction to err in — inflating it protected the budget and corrupted the cost
+  dashboards and invoice reconciliation at the same time; and the fallback was
+  defended as "reproducing the hand-maintained values" when the catalog was in
+  fact inconsistent on that exact point (`claude-sonnet-5` at 1×, `minimax-m2.7`
+  at 1.5×). The counter-example was visible in the same table it was derived from.
+- The corrected rule still changes `claude-fable-5`'s cached price (1.50 → 10.00),
+  because DeepInfra publishes no cache-read ratio for it and cached input then
+  bills as input. No live effect; it is `enabled: false`.
 - One more scheduled job to notice when it goes red, in a repo whose other
   automated commits (argocd-image-updater) nobody watches closely.
 
