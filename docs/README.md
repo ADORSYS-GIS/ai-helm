@@ -70,7 +70,6 @@ Step-by-step runbooks, setup guides, and break-glass recipes.
 | [`lakefs-sso.md`](playbooks/lakefs-sso.md) | **LakeFS Keycloak SSO** via the `lakefs-proxy` session shim (ADR-0090): why LakeFS OSS 1.83 has no OIDC and is single-user, the securecookie relay, the admin-credential runbook, symptom→fix table |
 | [`mlops-app-auth.md`](playbooks/mlops-app-auth.md) | **Argo Workflows SSO/RBAC + MLflow OIDC** (ADR-0085, ADR-0091): the three independent Argo identities (SSO delegate / workflow pod / API client), `code:7` vs `code:5`, the `<sa>.service-account-token` name, Argo Events CRD stubs, `--auth-mode=client` for CI, the `mlflow-oidc-auth` plugin's dedicated DB + the `OIDC_AUDIENCE` bearer gate, mounting the LakeFS key in a workflow step |
 | [`webank-model-workflows.md`](playbooks/webank-model-workflows.md) | **Webank dataset and training workflow submission** — choose each model's explicit Argo template, provide governed inputs, verify GPU placement, and handle the PAD fail-closed path |
-| [`verify-coder-scaffold-e2e.md`](playbooks/verify-coder-scaffold-e2e.md) | **LibreChat Coder scaffold e2e (Ticket #832)** — verify the agent creates a workspace, scaffolds Next.js+tRPC+Keycloak in-workspace, boots on :3000, and returns an authenticated reachable link; record evidence |
 
 ---
 
