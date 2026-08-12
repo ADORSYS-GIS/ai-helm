@@ -22,6 +22,19 @@
 {{- $id := required "webank-training: models[].id is required" $model.id -}}
 {{- $trainer := required (printf "webank-training: %s trainer is required" $id) $model.trainer -}}
 {{- $datasetBuild := required (printf "webank-training: %s datasetBuild is required" $id) $model.datasetBuild -}}
+{{- /*
+Interim governance gate (webank-models issue #482, ADR-0046): every
+dataset-build publish call in this template lacks a readiness-gate step
+because dataset-build produces none of the /workspace/governance/* evidence
+the gate needs to check. Until each dataset has a source manifest and a
+readiness attestation, its WorkflowTemplate must not exist in the cluster, so
+it cannot be `argo submit`-able. Default OFF and safe: an entry that omits
+`datasetBuild.enabled` renders no `<id>-dataset-build` WorkflowTemplate at
+all. Flip to `true` per model only once that model's dataset-build path can
+satisfy the gate; this does not touch the *-train templates, which are
+already gated.
+*/ -}}
+{{- $datasetBuildEnabled := $datasetBuild.enabled | default false -}}
 {{- $datasetTarget := required (printf "webank-training: %s datasetBuild.target is required" $id) $datasetBuild.target -}}
 {{- $datasetSource := required (printf "webank-training: %s datasetBuild.source is required" $id) $datasetBuild.source -}}
 {{- $sourceStrategy := required (printf "webank-training: %s datasetBuild.source.strategy is required" $id) $datasetSource.strategy -}}
@@ -54,6 +67,7 @@
 {{- if or (eq $sourceRepository $datasetTargetRepository) (eq $sourceRepository $candidateRepository) }}{{ fail (printf "webank-training: %s governed source repository must be distinct from its targets" $id) }}{{- end }}
 {{- end }}
 {{- if not (has $trainer (list "document-detector" "document-recognizer" "face-detector" "sface" "pad-liveness-pending")) }}{{ fail (printf "webank-training: %s has an unknown trainer" $id) }}{{- end }}
+{{- if $datasetBuildEnabled }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
@@ -231,6 +245,7 @@ spec:
             mountPath: /workspace
         resources:
           {{- toYaml $training.datasetBuild.resources | nindent 10 }}
+{{- end }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate

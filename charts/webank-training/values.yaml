@@ -122,8 +122,20 @@ training:
     learningRate: 0.001
     shrinkRatio: 0.6
 
-# One entry produces exactly two public WorkflowTemplates: `<id>-dataset-build`
-# and `<id>-train`. `datasetBuild` selects one closed source strategy and fixes
-# its target route; `lakefs` retains the fixed training input/candidate routes.
-# Values never provide executable shell text.
+# One entry produces up to two public WorkflowTemplates: `<id>-dataset-build`
+# (only when `datasetBuild.enabled: true`) and `<id>-train`. `datasetBuild`
+# selects one closed source strategy and fixes its target route; `lakefs`
+# retains the fixed training input/candidate routes. Values never provide
+# executable shell text.
+#
+# `datasetBuild.enabled` (bool, default `false` when omitted): interim
+# governance gate (webank-models issue #482, ADR-0046). No dataset-build
+# publish call in templates/workflowtemplate.yaml is preceded by a
+# readiness-gate step, because dataset-build produces none of the
+# /workspace/governance/* evidence the gate needs — unlike `<id>-train`,
+# which already enforces it. Until a model's dataset has a source manifest
+# and readiness attestation, leave this unset/false so its
+# `<id>-dataset-build` WorkflowTemplate does not exist in the cluster at all
+# and cannot be `argo submit`-able. Flip to `true` per model only once that
+# gate can be satisfied.
 models: []
