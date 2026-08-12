@@ -76,6 +76,12 @@ librechatSecrets:
       client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_id }
       client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_secret }
     librechat-mcp-coder-credentials:
+      # LibreChat OAuth client for the `coder` MCP server (Coder, scope `coder:all`).
+      # This is a SHARED deployment-level client, not per-user. Per-user isolation
+      # is enforced at the Coder side via the X-USER-* forwarded headers — do NOT
+      # rely on the OAuth client itself to be per-user. Keep it the narrowest Coder
+      # role that still works (non-admin, workspace-scoped); the coder agent must
+      # never use an admin/org-wide Coder token.
       client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_id }
       client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_secret }
     librechat-websearch-config:
@@ -112,7 +118,7 @@ librechatSecrets:
 #     enabled: true
 #     platformUserEmail: platform@ai.camer.digital   # must have logged in once
 #     agents: [ {name, description, provider, model, instructions, category,
-#                subagentNames?}, … ]
+#                tools?, mcpServers?, subagentNames?}, … ]
 # `image`/`librechatUrl` default to the LibreChat image + the in-cluster
 # librechat-app Service (:3080). Runs as an ArgoCD PostSync hook; the seed script
 # is idempotent (GET-by-name → PATCH/POST) and two-phase (leaves → orchestrators).
@@ -124,6 +130,10 @@ agentSeed:
   librechatUrl: ""
   image: ""
   agents: []
+  # ⚠️ The agent fleet (DB Agents incl. `converse` + `coder`) is managed in
+  # ai-helm-values (environments/<env>/values/librechat-app.yaml agentSeed.agents),
+  # NOT here — see Stephane's note on PR #937. This chart holds structural
+  # defaults only; the live fleet + enable live in ai-helm-values (ADR-0055/56).
 
 global:
   librechat:
@@ -739,7 +749,7 @@ db:
     members: 1
   # Pod + container hardening so the mongod StatefulSet clears Trivy
   # KSV-0118 (non-default securityContext) + KSV-0014 (readOnlyRootFilesystem).
-  # The official `mongo` image runs fine as UID 999 (its own `mongodb` user);
+  # The official `mongo` image runs as UID 999 (its own `mongodb` user);
   # the chart already sets fsGroup 999 so the data PVC stays writable. With a
   # read-only root fs mongod still needs a writable /tmp — it puts its unix
   # socket at /tmp/mongodb-27017.sock — so a `tmp` emptyDir is mounted there via
