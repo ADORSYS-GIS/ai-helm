@@ -248,6 +248,55 @@ keycloak-config:
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "mlflow"
 
+    # ── Lightbridge Code Intelligence MCP (lightbridge-code-intelligence#508) ──
+    # Unlike the gateway-fronted MCPs in charts/mcps — where Envoy verifies the JWT
+    # and the backend trusts it (ADR-0038/0040) — this one is served by the code
+    # intelligence control plane itself, on its own domain, and validates tokens
+    # independently: it checks `aud` against OIDC_AUDIENCE and authorizes each tool
+    # off a FLAT `permissions` claim (PERMISSIONS_CLAIM, ADR-0023). Neither is emitted
+    # by Keycloak's stock scopes — `roles` puts roles under `realm_access.roles` — so
+    # without this scope a caller authenticates and is then denied on every tool call.
+    # Mirrors the server's own reference realm (deploy/keycloak/realm-lightbridge.json
+    # in that repo): two mappers, no dedicated resource client.
+    codeIntelligence:
+      name: "code-intelligence"
+      description: "Audience + permissions claim for the Code Intelligence MCP server"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        # Without this the server rejects every request with 401 — it validates
+        # `aud == code-intelligence`. A free-string audience (no backing client), as
+        # the resource server is not a Keycloak client and nothing logs in as it.
+        - name: code_intelligence_audience
+          protocol: "openid-connect"
+          protocolMapper: "oidc-audience-mapper"
+          consentRequired: false
+          config:
+            included.custom.audience: "code-intelligence"
+            introspection.token.claim: "true"
+            id.token.claim: "false"
+            access.token.claim: "true"
+        # MUST be multivalued: the control plane reads this claim as a JSON array of
+        # permission strings (`Claims::permissions`); a bare string yields an empty
+        # permission set and every `Caller::require` fails closed. Sourced from the
+        # self-service-mcp-api client roles below — that is the client callers get
+        # their tokens from, so its roles are the ones present at mapping time.
+        - name: code_intelligence_permissions
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "true"
+            userinfo.token.claim: "false"
+            id.token.claim: "false"
+            access.token.claim: "true"
+            claim.name: "permissions"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "self-service-mcp-api"
+
   # OIDC Clients
   clients:
     converse:
@@ -557,6 +606,13 @@ keycloak-config:
         - roles
         - basic
         - email
+        # DEFAULT, not optional: LibreChat's per-MCP `oauth.scope` is a fixed string
+        # ("email openid offline_access") shared by every entry in its mcpServers
+        # registry, so an optional scope would never be requested and the Code
+        # Intelligence MCP would 401. Harmless for callers of the other MCPs on this
+        # client — the permissions claim is omitted for users holding none of the roles
+        # below, and an extra audience entry is additive.
+        - code-intelligence
       optionalClientScopes:
         - address
         - librechat
@@ -564,6 +620,20 @@ keycloak-config:
         - organization
         - offline_access
         - microprofile-jwt
+      # Code Intelligence MCP permissions — the exact strings its handler.rs passes to
+      # `Caller::require`, compared literally, so the colons are part of the name. They
+      # reach the token as the flat `permissions` claim via the code-intelligence scope
+      # above; a user without them authenticates fine and is denied per tool.
+      # NOTE: descriptions must not contain ": " — realm-configmap.yaml renders
+      # `description:` as an UNQUOTED plain scalar, and a colon-space turns the value
+      # into a nested mapping, making the whole realm document unparseable at import.
+      roles:
+        - name: "repo:read"
+          description: "Code Intelligence — read repository settings and the structural code graph"
+        - name: "review:read"
+          description: "Code Intelligence — read a run's review status and findings"
+        - name: "review:trigger"
+          description: "Code Intelligence — start a deep review (spends runner compute, quota-limited)"
 
     converseFrontend:
       enabled: true
