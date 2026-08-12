@@ -106,10 +106,28 @@ jobs:
             # never deployed, so they are not part of the security surface.
             if helm template "$name" "$c" --kube-version 1.31.0 --skip-tests > "rendered/$name.yaml" 2>/dev/null && [ -s "rendered/$name.yaml" ]; then
               echo "rendered $name"
-            else
-              echo "skip (does not render standalone): $name"
-              rm -f "rendered/$name.yaml"
+              continue
             fi
+            # A chart that can't render on its defaults is not necessarily
+            # unscannable — it may just be one that fail-guards on values the
+            # orchestrator injects (annotation lint-mode: ci-values). Those ship
+            # representative fixtures; render each one so the chart stays in the
+            # scan instead of silently dropping out of it. Without this,
+            # charts/ai-model has never been scanned, and charts/ai-models left
+            # the scan the moment its catalog moved out (ADR-0126).
+            rm -f "rendered/$name.yaml"
+            rendered_any=""
+            for vf in "$c"/ci/*-values.yaml; do
+              [ -e "$vf" ] || continue
+              out="rendered/$name-$(basename "$vf" .yaml).yaml"
+              if helm template "$name" "$c" -f "$vf" --kube-version 1.31.0 --skip-tests > "$out" 2>/dev/null && [ -s "$out" ]; then
+                echo "rendered $name via $(basename "$vf")"
+                rendered_any=1
+              else
+                rm -f "$out"
+              fi
+            done
+            [ -n "$rendered_any" ] || echo "skip (does not render standalone, no usable fixture): $name"
           done
 
       - name: Run Trivy config scan (over rendered manifests)

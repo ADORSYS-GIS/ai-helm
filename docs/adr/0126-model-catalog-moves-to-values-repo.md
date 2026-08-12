@@ -101,6 +101,17 @@ own values to an empty structural skeleton.**
 - `tools/dashboards/src/dashboards/_common.py` keeps `EMBEDDING_MODEL_KEYS` in
   manual sync with the catalog; it is now syncing against a file in another
   repo. Unchanged in kind, slightly worse in ergonomics.
+- A chart that no longer renders on its defaults also drops out of the release
+  workflow's Trivy scan, which renders each chart standalone and skips whatever
+  fails. `ai-models` would have left the scan silently. The render step now falls
+  back to a chart's `ci/*-values.yaml` fixtures, which restores it — and, as a
+  side effect, scans `ai-model`, `inference-server` and `webank-training` for the
+  first time. `inference-server`'s findings are the same containers and the same
+  documented exemption its `model-serving-*` predecessors already carry
+  (ADR-0107 renamed them), so `.trivyignore.yaml` extends that entry rather than
+  making a new judgement. Note `helm lint` does NOT fail on a template `fail` —
+  it logs `funcMap fail` at INFO and reports "0 chart(s) failed" — so the lint
+  step in that workflow was never affected.
 
 ## Alternatives considered
 
