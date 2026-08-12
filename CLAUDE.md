@@ -437,7 +437,15 @@ benchmarks, runbooks, the add/replace/roll-back/measure recipes — lives in the
 team's **`inference-ops`** repo (checked out alongside this one; Diátaxis + ADRs +
 immutable benchmark reports). Put inference knowledge THERE, not here;
 ai-helm ADRs own the GitOps shape, inference-ops ADRs own the inference decisions.
-Pricing stays €/hour-TCO → cost-recovery (ADR-0028).
+⚠️ Pricing is **nominal, not cost-recovery** (ADR-0128, amends ADR-0028): the fleet
+costs the same €/hour idle or saturated, so cost-recovery rates only pushed traffic
+onto SaaS invoices we then pay again. Self-hosted models carry a token charge
+(`0.001/0.0002/0.005` per 1M; `0.00001`/image) ~2 orders of magnitude under the
+cheapest SaaS entry — non-zero on purpose, so cost series stay alive and are not
+confused with missing data. ⚠️ Coefficients render at `%.4f`, so anything below
+~0.00005 silently becomes free. The €/hour-TCO derivation (ADR-0028/0096/0104) is
+still the right answer to "what does this cost US to run" — it is just no longer
+what users are charged; that question lives in inference-ops.
 
 ## When you finish substantive work
 
