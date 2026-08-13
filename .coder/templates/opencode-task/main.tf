@@ -1,27 +1,27 @@
 terraform {
-  required_version = ">= 1.0"
+  required_version = "~> 1.0"
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = ">= 2.13"
+      version = "~> 2.13"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = ">= 2.23"
+      version = "~> 2.23"
     }
   }
 }
 
 # --- PROVIDERS ---
+# This template runs inside the Coder provisioner (in-cluster), so the
+# kubernetes provider uses the pod's projected service-account token. That makes
+# `terraform validate`/`apply` only work in-cluster — the file() paths below do
+# not exist outside it. Do not "fix" these validate errors; the provisioner runs
+# in-cluster. (ADR-0120's PR-time plan job cannot cover this template dir.)
 provider "kubernetes" {
-  # If Coder is running INSIDE k3s (same cluster), use the service account token
-  # This is the standard setup for k3s deployments
   host                   = "https://kubernetes.default.svc"
   cluster_ca_certificate = file("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
   token                  = file("/var/run/secrets/kubernetes.io/serviceaccount/token")
-
-  # If Coder is OUTSIDE k3s, comment out the above and uncomment below:
-  # config_path = "~/.kube/config"
 }
 
 provider "coder" {}
@@ -127,16 +127,17 @@ resource "coder_agent" "main" {
   # CRITICAL: Install Node.js (required for OpenCode). No OAuth cache pre-seed
   # is needed — OpenCode uses a dummy key through the local openresty sidecar,
   # which injects the real SA token at the gateway.
+  # The image is Ubuntu (codercom/enterprise-base:ubuntu), so apt is present —
+  # no guard around the install. Run-as-is: the workspace is ephemeral (no PVC),
+  # so this re-runs on each fresh start.
   startup_script = <<-EOT
     set -e
 
     # 1. Install Node.js (Required for OpenCode)
-    if command -v apt-get &> /dev/null; then
-      sudo apt-get update
-      sudo apt-get install -y curl gnupg
-      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-      sudo apt-get install -y nodejs
-    fi
+    sudo apt-get update
+    sudo apt-get install -y curl gnupg
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
 
     # 2. Install basic tools
     sudo apt-get install -y git build-essential
@@ -181,7 +182,11 @@ resource "kubernetes_config_map_v1" "nginx_conf" {
           scgi_temp_path /tmp/scgi;
           access_log /dev/stdout;
           server {
-              listen 8080;
+              # Bind loopback-only: the sidecar injects the workspace SA token
+              # (the user's gateway credential + identity), so it must not be
+              # reachable by other in-cluster workloads. OpenCode connects via
+              # localhost:8080 (same pod), so loopback-only is fully compatible.
+              listen 127.0.0.1:8080;
               location = /healthz {
                   default_type text/plain;
                   return 200 "ok\\n";
@@ -208,17 +213,12 @@ resource "kubernetes_config_map_v1" "nginx_conf" {
   }
 }
 
-# This is what was missing!
 resource "kubernetes_pod_v1" "workspace" {
   count = data.coder_workspace.me.start_count
 
   metadata {
-    # Fix: Use a guaranteed RFC 1123 compliant name
-    # Option A: Use Workspace ID (UUID) - Safest
+    # RFC 1123-compliant pod name derived from the workspace UUID.
     name = "coder-${data.coder_workspace.me.id}"
-
-    # Option B (Alternative): If you prefer readable names, use a hash to avoid special chars
-    # name      = "coder-${substr(md5("${data.coder_workspace_owner.me.name}-${data.coder_workspace.me.name}"), 0, 16)}"
 
     namespace = var.namespace
     labels = {
@@ -226,8 +226,10 @@ resource "kubernetes_pod_v1" "workspace" {
     }
   }
   spec {
-    restart_policy       = "Always" # Changed from Never to keep workspace alive
-    service_account_name = local.sa_name
+    restart_policy                  = "Always" # keep the workspace pod alive while running
+    service_account_name            = local.sa_name
+    automount_service_account_token = false # the pod never calls the k8s API; no default SA token
+
 
     container {
       name  = "workspace"
@@ -359,7 +361,7 @@ module "opencode" {
   agent_id             = coder_agent.main.id
   workdir              = local.workdir
   opencode_version     = "latest"
-  ai_prompt            = data.coder_task.me.prompt != "" ? data.coder_task.me.prompt : ""
+  ai_prompt            = data.coder_task.me.prompt
   report_tasks         = true
   install_agentapi     = true
   agentapi_version     = "v0.11.2"

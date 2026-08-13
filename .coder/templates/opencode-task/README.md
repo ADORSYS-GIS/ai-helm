@@ -1,41 +1,48 @@
 # opencode-task
 
-A Coder template that provisions an OpenCode workspace in Kubernetes and
-authenticates it to the Camer Digital AI gateway **without any interactive
-login**. The template is URL-driven and task-capable, so an OpenCode agent can
-be given tasks programmatically (via the Coder tasks API / MCP) with no UI.
+A Coder template that runs OpenCode in a Coder workspace and authenticates it to
+the **internal** Camer Digital AI gateway with **per-user attribution** and no
+interactive login and no real credential in the pod. See
+**ADR-0130** (`docs/adr/0130-coder-workspace-opencode-internal-sa-auth.md`).
 
 ## What it does
 
-- Provisions a `codercom/enterprise-base:ubuntu` pod in the target namespace.
-- Points OpenCode at the opend server URL (`https://ai.camer.digital/opencode`)
-  — OpenCode fetches its full config (the `camer-digital` provider, agents, MCP
-  servers, models) from `<url>/.well-known/opencode`. No provider block is
-  hand-built in the template.
-- Authenticates with the workspace owner's own Keycloak OIDC token:
-  - Seeds `~/.local/share/opencode/auth.json` with a "wellknown" auth entry
-    (keyed by the URL) so OpenCode sets `OPENAI_API_KEY` and fetches remote
-    config automatically.
-  - Pre-seeds the `@vymalo/opencode-oauth2` plugin cache under
-    `opencode-oauth2-model-sync/camer-digital.json` (no `expiresAt` on purpose,
-    so the plugin treats the injected token as always-valid and never opens a
-    device-code prompt).
-- No client secrets and no refresh tokens are ever written to the pod.
+- Provisions a two-container pod (`codercom/enterprise-base:ubuntu`) in the
+  target namespace: **OpenCode** + an **openresty sidecar**.
+- OpenCode points at the sidecar (`localhost:8080`) with a **dummy key**; it
+  fetches its full config (the `camer-digital` provider, agents, MCP servers,
+  models) from `<opencode_url>/.well-known/opencode`.
+- Proves a **per-workspace ServiceAccount** named `coder-<sub>.<plan>` (the
+  owner's Keycloak `sub` and billing plan in the name).
+- The openresty sidecar reads the projected SA token (audience
+  `core-gateway-internal`) **per request** and injects it as `Bearer`, then
+  forwards to `core-gateway-internal.envoy-gateway-system.svc` (trusting the
+  internal CA).
+- **Authorino** validates the SA token (`kubernetesTokenReview`) and derives
+  `x-account-id` (the owner `sub`) and `x-billing-plan` (the plan) by pure CEL
+  from the SA name — no SA-label read, no K8s-API metadata call.
+- No client secrets, no refresh tokens, and **no owner credential** are ever
+  written to the pod.
 
 ## Task capability
 
 The template defines a `coder_ai_task` (`app_id = module.opencode.task_app_id`)
 and reads the prompt via `data.coder_task.me`, so a task submitted through the
-Coder tasks API (`POST /api/v2/tasks/{user}`) auto-provisions the workspace and
-starts the OpenCode agent with that prompt (`ai_prompt`).
+Coder tasks API auto-provisions the workspace and starts the OpenCode agent with
+that prompt (`ai_prompt`).
+
+## ⚠️ Ephemeral (no PVC) — deliberate
+
+This is a **task-scoped, ephemeral workspace**: there is no persistent volume.
+Every stop/start recreates the pod, wiping `/home/coder/project`, `node_modules`,
+and any caches. **Do not store work here — use git.** This is intentional:
+a clean, disposable pod means no residual credentials, caches, or state in a
+user-controlled environment. If you need a persistent *interactive* OpenCode
+workspace, that is a separate template variant (not this one).
 
 ## Usage
 
 ```bash
-# Provision from git (declarative delivery — see terraform/coder/README.md)
-# The template is managed from terraform/coder via the coderd_template provider.
-
-# Manual push (alternative)
 coder templates push opencode-task --directory=. --var namespace=coder
 ```
 
@@ -43,8 +50,8 @@ coder templates push opencode-task --directory=. --var namespace=coder
 
 | Variable | Default | Description |
 |---|---|---|
-| `namespace` | `coder` | Kubernetes namespace for the workspace pod (override to `coder-flows` locally) |
+| `namespace` | `coder` | Kubernetes namespace for the workspace pod |
 | `opencode_url` | `https://ai.camer.digital/opencode` | OpenCode server URL; remote config is fetched from `<url>/.well-known/opencode` |
-| `provider_key` | `camer-digital` | Provider/server id used as the oauth2 plugin cache filename (must match the provider key in the remote config) |
-| `model` | `adorsys-coder` | Default model name (models come from the remote config) |
-| `openai_base_url` | `https://api.ai.camer.digital/v1` | OpenAI-compatible API base URL |
+| `provider_key` | `camer-digital` | Provider key used in the local OpenCode provider override (must match the key in the remote config) |
+| `workdir` | `/home/coder/project` | Working directory |
+| `coder_agent_url` | *(empty)* | In-cluster Coder server URL for the agent (empty = public access URL) |
