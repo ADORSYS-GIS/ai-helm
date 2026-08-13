@@ -119,11 +119,25 @@ Folder **AI Gateway**.
 | `envoy-ai-gateway-actor-consumption` | `actor_consumption.py` | one actor's (user **or** repo) consumption per month/day + which models | Mimir |
 | `envoy-ai-gateway-user-tokens-cost` | `user_tokens_cost.py` | per-actor table (requests·tokens·cost) + daily breakdowns + leaderboards | Mimir |
 | `envoy-ai-gateway-scoreboard` | `scoreboard.py` | the gamified hub (§5) | Mimir + Tempo + alerts |
-| `envoy-ai-gateway-per-user` | `per_user.py` | raw per-user activity | **Loki** (unchanged) |
+| `envoy-ai-gateway-per-user` | `per_user.py` | per-user activity (requests/tokens/cost/latency by user/model/channel) | Mimir (+ 2 status-code panels on Loki) |
+| `envoy-ai-gateway-my-usage` | `my_usage.py` | the authenticated user's own usage + budget burn | Mimir |
+| `envoy-ai-gateway-chat-overview` | `chat_overview.py` | live chat trace feed + headline chats/tokens/cost/latency | Mimir + Tempo (+ 5xx on Loki) |
+| `envoy-ai-gateway-chats-by-user` | `chats_by_user.py` | one user's chat requests (headline stats + per-request log) | Mimir + Keycloak (+ request log on Loki) |
+| `envoy-ai-gateway-provider-billing` | `provider_billing.py` | provider-billed cost vs gateway estimate vs limiter | Mimir (+ missing-cost on Loki) |
 
-`per_user.py` stays Loki-backed for raw log inspection; the cost boards are
-Mimir-backed. Shared PromQL helpers: `envoy_ai_gateway/_shared.py`. Counters →
-`increase(metric[window])`; cost via `usd()` (÷1e6).
+The AI Gateway dashboards are Mimir-backed (ADR-0058) — cost/token/request/
+latency read the precomputed `loki_process_custom_gen_ai_*` counters + the
+`gen_ai_usage_duration` histogram via PromQL `increase()`/`histogram_quantile()`,
+instant at any range on the rate-limited object store. Panels that stay on Loki
+are those that fundamentally need log data Mimir doesn't hold: the per-user /
+chat-overview **status-code** panels (`response_code` is deliberately not a
+metric label — bounded ~15 values but multiplying it onto every stream is what
+the per-user-observability doc avoided), the **per-request log** listing in
+chats-by-user, and the **missing-cost** diagnostic in provider-billing.
+`by_client.py` (needs `user-agent`) and `jwt_tokens.py` (needs `oidc_jti`,
+ADR-0064) remain fully Loki-backed for the same reason. Shared PromQL helpers:
+`envoy_ai_gateway/_shared.py`. Counters → `increase(metric[window])`; cost via
+`usd()` (÷1e6); latency via `histogram_quantile()`.
 
 > ⚠️ **Daily bars use `increase(metric[1d])` pinned to a 1d step.** PromQL
 > `increase()` over a window needs **≥2 samples inside it** — a counter sampled

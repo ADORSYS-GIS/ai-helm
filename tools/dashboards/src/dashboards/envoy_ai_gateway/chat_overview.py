@@ -14,6 +14,13 @@ live in `cost-by-model` and `actor-consumption`. This board keeps only a thin
 headline row + a latency view (chat-experience signal, not a cost signal) as
 context above the trace feed, to avoid duplicating the cost dashboards.
 
+Repointed to Mimir (ADR-0058): the chats/tokens/cost headline stats and the
+latency view read the precomputed ``loki_process_custom_gen_ai_*`` counters +
+the ``gen_ai_usage_duration`` histogram via PromQL — instant at any range on
+the rate-limited object store. Only the 5xx error-rate panel stays on Loki
+(response_code is deliberately not a Mimir metric label). The trace feed stays
+on Tempo (it's trace data, not metrics).
+
 The JSON file is regenerated from this module — do **not** hand-edit it::
 
     uv run dashboards build
@@ -37,6 +44,10 @@ from dashboards._common import (
     GATEWAY_SERVICE_NAME,
     LABEL_MODEL,
     LOKI_UID,
+    METRIC_COST_MICRO_USD,
+    METRIC_DURATION,
+    METRIC_REQUESTS,
+    METRIC_TOKENS,
     TEMPO_SERVICE_NAME,
     TEMPO_UID,
 )
@@ -46,10 +57,14 @@ OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/chat-
 
 _LOKI_DS = dm.DataSourceRef(type_val="loki", uid=LOKI_UID)
 _TEMPO_DS = dm.DataSourceRef(type_val="tempo", uid=TEMPO_UID)
+_MIMIR_DS = dm.DataSourceRef(type_val="prometheus", uid=sh.MIMIR_DS.uid)
 
-# Excludes embedding-model traffic on the Loki side (Loki has no span-kind
+# Excludes embedding-model traffic on the Mimir side (Loki has no span-kind
 # concept — that's Tempo/OpenInference-only; see EMBEDDING_MODEL_KEYS docstring).
 _NOT_EMBEDDING = "|".join(EMBEDDING_MODEL_KEYS)
+_MIMIR_SEL = sh.selector(f'{LABEL_MODEL}!~"{_NOT_EMBEDDING}"')
+
+# Loki selector for the 5xx error-rate panel (response_code is body-only).
 _LOKI_SEL = f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_MODEL}!~"{_NOT_EMBEDDING}"}}'
 
 # TraceQL: chat completions only (excludes EMBEDDING-kind spans). Scoped to the
@@ -58,9 +73,6 @@ _LOKI_SEL = f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_MODEL}!~"{_NOT_EMB
 _TRACEQL_CHATS = (
     f'{{ resource.service.name = "{TEMPO_SERVICE_NAME}" && span.openinference.span.kind = "LLM" }}'
 )
-
-_JSON_TOKENS = 'tokens=`["gen_ai.usage.total_tokens"]`'
-_JSON_COST = 'cost=`["gen_ai.usage.custom_total_cost"]`'
 
 
 def _loki_target(expr: str, *, legend: str = "", ref_id: str = "A") -> loki.Dataquery:
@@ -74,53 +86,33 @@ def _thresholds(color: str) -> db.ThresholdsConfig:
     return db.ThresholdsConfig().mode(dm.ThresholdsMode.ABSOLUTE).steps([dm.Threshold(color=color)])
 
 
-def _stat(
-    *, title: str, expr: str, unit: str, color: str, grid: tuple[int, int, int, int]
-) -> stat.Panel:
-    h, w, x, y = grid
-    return (
-        stat.Panel()
-        .title(title)
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
-        .unit(unit)
-        .thresholds(_thresholds(color))
-        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
-        .text_mode(cm.BigValueTextMode.AUTO)
-        .color_mode(cm.BigValueColorMode.VALUE)
-        .graph_mode(cm.BigValueGraphMode.AREA)
-        .with_target(_loki_target(expr))
-    )
+# --- thin headline row (context only, not per-model breakdowns) -------------
 
 
-# --- thin headline row (context only, not per-model breakdowns) --------------
-
-
-def _panel_chats() -> stat.Panel:
-    return _stat(
+def _panel_chats() -> object:
+    return sh.stat_panel(
         title="Chats (range)",
-        expr=f"sum(count_over_time({_LOKI_SEL}[$__range]))",
+        expr=f"sum(increase({METRIC_REQUESTS}{_MIMIR_SEL}[$__range]))",
         unit="short",
         color="blue",
         grid=(4, 6, 0, 1),
     )
 
 
-def _panel_tokens() -> stat.Panel:
-    return _stat(
+def _panel_tokens() -> object:
+    return sh.stat_panel(
         title="Tokens (range)",
-        expr=f'sum(sum_over_time({_LOKI_SEL} | json {_JSON_TOKENS} | unwrap tokens | __error__="" [$__range]))',
+        expr=f"sum(increase({METRIC_TOKENS}{_MIMIR_SEL}[$__range]))",
         unit="short",
         color="green",
         grid=(4, 6, 6, 1),
     )
 
 
-def _panel_cost() -> stat.Panel:
-    inner = f'sum(sum_over_time({_LOKI_SEL} | json {_JSON_COST} | unwrap cost | __error__="" [$__range]))'
-    return _stat(
+def _panel_cost() -> object:
+    return sh.stat_panel(
         title="Cost (range)",
-        expr=f"(({inner}) / 1e6)",
+        expr=sh.usd(f"sum(increase({METRIC_COST_MICRO_USD}{_MIMIR_SEL}[$__range]))"),
         unit="currencyUSD",
         color="orange",
         grid=(4, 6, 12, 1),
@@ -128,6 +120,9 @@ def _panel_cost() -> stat.Panel:
 
 
 def _panel_error_rate() -> stat.Panel:
+    # response_code is deliberately NOT a Mimir metric label (bounded ~15 values
+    # but multiplying it onto every stream is what the per-user-observability
+    # doc avoided). So the 5xx error-rate stays on Loki — a single small panel.
     total = f"sum(count_over_time({_LOKI_SEL}[$__range]))"
     errors = f'sum(count_over_time({_LOKI_SEL} | json | response_code=~"5.."[$__range]))'
     return (
@@ -158,14 +153,22 @@ def _panel_error_rate() -> stat.Panel:
 # --- latency (chat-experience signal, distinct from the cost dashboards) -----
 
 
+def _latency_quantile(q: float) -> str:
+    # Reads the ADR-0058 latency histogram from Mimir. Fixed [5m] window — NOT
+    # [$__auto]: the auto step for a 6h range is ~21s, which is < the 60s
+    # scrape interval, so rate()[<60s] has <2 samples → silent "no data" (same
+    # trap as the per-user requests panel). [5m] holds ~5 samples.
+    return (
+        f"histogram_quantile({q}, sum by (le) "
+        f"(rate({METRIC_DURATION}_bucket{_MIMIR_SEL}[5m])))"
+    )
+
+
 def _panel_latency() -> timeseries.Panel:
-    unwrap = f'{_LOKI_SEL} | json | unwrap duration | __error__=""'
-    p50 = f"quantile_over_time(0.50, {unwrap} [$__auto]) by ()"
-    p95 = f"quantile_over_time(0.95, {unwrap} [$__auto]) by ()"
     return (
         timeseries.Panel()
         .title("Chat latency (p50 / p95)")
-        .datasource(_LOKI_DS)
+        .datasource(_MIMIR_DS)
         .grid_pos(dm.GridPos(h=8, w=24, x=0, y=6))
         .unit("ms")
         .draw_style(cm.GraphDrawStyle.LINE)
@@ -176,8 +179,12 @@ def _panel_latency() -> timeseries.Panel:
             cb.VizLegendOptions().display_mode(cm.LegendDisplayMode.LIST).calcs(["mean", "max"])
         )
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
-        .with_target(_loki_target(p50, legend="p50", ref_id="A"))
-        .with_target(_loki_target(p95, legend="p95", ref_id="B"))
+        .with_target(
+            sh.prom_target(_latency_quantile(0.50), legend="p50", ref_id="A", instant=False)
+        )
+        .with_target(
+            sh.prom_target(_latency_quantile(0.95), legend="p95", ref_id="B", instant=False)
+        )
     )
 
 
@@ -212,10 +219,11 @@ _DESCRIPTION = (
     "Global chat-completion overview (embeddings excluded). The point is the "
     "live Tempo trace feed — click any trace to read the full prompt/response "
     "content the AI Gateway ext-proc already sends to Tempo (ADR-0077). The "
-    "headline stats + latency are thin context; per-model request/cost "
-    "breakdowns deliberately live in the cost-by-model / actor-consumption "
-    "dashboards, not here. No input variables by design; see chats-by-user for "
-    "a per-user cut. "
+    "headline stats + latency read the precomputed Mimir metrics (ADR-0058) — "
+    "instant at any range; only the 5xx error-rate stays on Loki. Per-model "
+    "request/cost breakdowns deliberately live in the cost-by-model / "
+    "actor-consumption dashboards, not here. No input variables by design; see "
+    "chats-by-user for a per-user cut. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/chat_overview.py."
 )
 

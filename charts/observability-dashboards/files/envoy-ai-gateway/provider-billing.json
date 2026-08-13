@@ -1193,20 +1193,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(count_over_time({service_name=\"envoy-ai-gateway\"} [$__range]))",
+          "expr": "sum(increase(loki_process_custom_gen_ai_requests{service_name=\"envoy-ai-gateway\"}[$__range]))",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Gateway requests (range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -1230,7 +1232,7 @@
           "fields": ""
         },
         "percentChangeColorMode": "standard",
-        "orientation": "auto"
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {

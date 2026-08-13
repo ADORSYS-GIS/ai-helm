@@ -36,6 +36,7 @@ from dashboards._common import (
     LOKI_UID,
     METRIC_COST_MICRO_USD,
     METRIC_RATELIMIT_SPEND_MICRO_USD,
+    METRIC_REQUESTS,
     MIMIR_UID,
 )
 from dashboards.envoy_ai_gateway import _shared as sh
@@ -327,10 +328,11 @@ def _panel_missing_cost() -> object:
 
 
 def _panel_gateway_requests() -> object:
-    expr = f'sum(count_over_time({{service_name="{GATEWAY_SERVICE_NAME}"}} [$__range]))'
-    return _loki_stat(
+    # Total gateway requests over the range — reads the ADR-0058 Mimir counter
+    # (instant at any range) instead of a Loki log-scan.
+    return sh.stat_panel(
         title="Gateway requests (range)",
-        expr=expr,
+        expr=f'sum(increase({METRIC_REQUESTS}{{service_name="{GATEWAY_SERVICE_NAME}"}}[$__range]))',
         unit="short",
         color="blue",
         grid=(4, 12, 12, 33),
