@@ -44,6 +44,22 @@ spec:
 }}
 {{ $infoValues | toYaml | indent 14 }}
 {{- end }}
+{{- if .Values.openCodeWellKnown.enabled }}
+          # ── opencode well-known descriptor — sync-wave 1 ──────────────
+          # Lives here rather than under `librechart` (ADR-0125) because its
+          # `provider.camer-digital.models` block — the per-model reasoning-effort
+          # caps — is DERIVED from the catalog, and this is the only orchestrator
+          # that can hand a child `.Values.models`. Same shape as the info child
+          # above: the descriptor's own content (plugins, MCP list, auth command)
+          # stays in `charts/librechat-opencode-wellknown`'s defaults; only the
+          # catalog-derived part is passed in.
+          - appName: {{ printf "%s-opencode-wellknown" .Release.Name | quote }}
+            chartName: librechat-opencode-wellknown
+            syncWave: "1"
+            valuesYaml: |-
+{{- $wkValues := dict "models" .Values.models }}
+{{ $wkValues | toYaml | indent 14 }}
+{{- end }}
 {{- range $modelName, $modelConfig := .Values.models }}
 {{- if not (eq $modelConfig.enabled false) }}
           # ── Model: {{ $modelName }} — sync-wave 0 ───────────────────────

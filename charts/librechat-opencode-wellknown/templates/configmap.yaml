@@ -60,6 +60,21 @@ metadata:
 data:
   # The well-known JSON. Render the structured `wellKnown` value as JSON
   # (compact, deterministic) so a YAML→JSON drift in the values doesn't
-  # change the serialized output.
+  # change the serialized output. Auto-derive reasoning models from the catalog.
   opencode: |
-    {{- .Values.wellKnown | toJson | nindent 4 }}
+    {{- $wk := .Values.wellKnown | deepCopy -}}
+    {{- $models := dict -}}
+    {{- range $name, $cfg := .Values.models -}}
+      {{- if $cfg.reasoningEffort -}}
+        {{- $m := dict "options" (dict "reasoningEffort" $cfg.reasoningEffort) -}}
+        {{- if $cfg.reasoningEffortHigh -}}
+          {{- $_ := set $m "variants" (dict "thinking" (dict "reasoningEffort" $cfg.reasoningEffortHigh)) -}}
+        {{- end -}}
+        {{- $_ := set $models $name $m -}}
+      {{- end -}}
+    {{- end -}}
+    {{- if $models -}}
+      {{- $prov := index $wk.config.provider "camer-digital" -}}
+      {{- $_ := set $prov "models" $models -}}
+    {{- end -}}
+    {{- $wk | toJson | nindent 4 }}
