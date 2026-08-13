@@ -78,3 +78,7 @@ key, or `terraform state rm`) as documented in ADR-0124.
 - A second `terraform plan` should show **no changes** (idempotent).
 - State locking is provided by `use_lockfile = true` (S3-native); verify the
   Hetzner Object Storage / Ceph-RGW backend honours conditional writes.
+- **Fallback:** if `use_lockfile` isn't honoured by the backend, set
+  `use_lockfile = false` — deploys then lose state-layer serialization, but the
+  deploy workflow's `concurrency` group still serializes them (most of the
+  protection), so it fails hard and is documented rather than a 2am surprise.

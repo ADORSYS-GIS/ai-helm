@@ -6,7 +6,7 @@ terraform {
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = ">= 2.23"
+      version = "~> 3.2" # pin major (was >= 2.23, which silently resolved to v3)
     }
   }
 }
