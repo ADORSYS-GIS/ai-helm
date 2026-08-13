@@ -43,7 +43,17 @@ misconfigurations:
     # hardened for all of them (pod + container securityContext: drop ALL caps,
     # no priv-esc, seccomp RuntimeDefault), only the read-only rootfs is exempt.
     #
-    # In-scope inference fleet (bjw-template alias `modelServing`) + llm-d:
+    # In-scope inference fleet (bjw-template alias `modelServing`) + llm-d.
+    # ⚠️ `inference-server-*-values.yaml` are the CURRENT fleet (ADR-0107 renamed
+    # model-serving-<model> → inference/inference-server). They enter the scan for
+    # the first time here: the render step now falls back to a chart's ci/*-values
+    # fixtures when its defaults do not render, so render-only leaves stop dropping
+    # out of the scan silently. The findings are the SAME containers and the SAME
+    # reason already exempted for their `model-serving-*` predecessors below —
+    # `model` (Torch/CUDA compile cache) and `seed` (pip install into /usr/local) —
+    # not new debt, just newly visible. One file per engine fixture, because the
+    # path scope is the rendered file name.
+    #
     #  - `model`   — the vLLM/lmcache GPU container writes its Torch/CUDA compile
     #    cache + KV scratch to the rootfs; readOnlyRootFilesystem crashes startup.
     #  - `proxy`   — the Caddy edge-auth sidecar writes its autosave config to
@@ -82,6 +92,9 @@ misconfigurations:
       chart is hardened.
     paths:
       - "llm-d.yaml"
+      - "inference-server-llamacpp-values.yaml"
+      - "inference-server-vllm-values.yaml"
+      - "inference-server-localai-values.yaml"
       - "model-serving-deepseek-r1-1-5b.yaml"
       - "model-serving-ministral-3b.yaml"
       - "model-serving-qwen2-vl-2b.yaml"

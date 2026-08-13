@@ -1,0 +1,261 @@
+# CI fixture for charts/inference (Chart.yaml annotation lint-mode: ci-values).
+#
+# Since ADR-0129 the fleet catalog lives in ai-helm-values
+# (environments/prod/values/inference.yaml) and this chart's own values.yaml is
+# an empty skeleton that deliberately fails to render — see the requireCatalog
+# guard in templates/_helpers.tpl. So `helm lint`/`helm template` run against
+# this fixture instead, and release-helm-charts.yml Trivy-scans its render.
+#
+# `defaults` is the REAL fleet defaults block, copied verbatim on purpose: it is
+# the machinery the templates actually exercise (engine profiles, GPU placement,
+# storage class, network policy), and a hand-shrunk copy would just be a second
+# place for it to drift. What is cut down is `models:` — one entry per engine
+# profile (llamacpp / vllm / localai) so every branch renders, plus a disabled
+# entry that must generate no child.
+#
+# ⚠️ Template coverage, NOT a mirror of the fleet. Do not sync it with the real
+# catalog; extend it only when a template branch is otherwise unexercised.
+argocd:
+  namespace: argocd
+  project: ai
+  chartRegistry: oci://ghcr.io/adorsys-gis/charts
+  chartVersionRange: '>=0.0.0'
+  destination:
+    name: home-remote
+    allowInCluster: false
+    namespace: inference
+  syncPolicy:
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+    automated:
+      prune: true
+      selfHeal: true
+defaults:
+  gpu:
+    count: 1
+    runtimeClassName: nvidia
+    nodeSelector:
+      nvidia.com/gpu.present: 'true'
+    tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  priorityClassName: inference-serving
+  storageClassName: longhorn
+  seedImage:
+    repository: python
+    tag: 3.12-slim
+  hfToken:
+    enabled: true
+    secretName: hf-token
+    dataKey: token
+    externalSecret:
+      enabled: true
+      secretStore: ssegning-aws
+      refreshInterval: 1h
+      key: ai/camer/digital/prod/env
+      property: hf_token
+  security:
+    apiKey:
+      enabled: true
+      secretStore: ssegning-aws
+      key: ai/camer/digital/prod/env
+      property: vllm_local_api_key
+    disableWebUI: true
+    corsOrigins: https://api.ai.camer.digital
+  networkPolicy:
+    enabled: true
+    allowFromNamespaces:
+    - envoy-gateway-system
+    - observability
+    allowFromEntities:
+    - host
+    - remote-node
+    - health
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    path: /metrics
+  kvCacheDtype: fp8_e4m3
+  lmcacheEnv:
+    LMCACHE_USE_EXPERIMENTAL: 'False'
+    LMCACHE_CHUNK_SIZE: '256'
+    LMCACHE_LOCAL_CPU: 'True'
+    LMCACHE_MAX_LOCAL_CPU_SIZE: '4'
+    LMCACHE_SAVE_DECODE_CACHE: 'False'
+    LMCACHE_MIN_RETRIEVE_TOKENS: '64'
+    LMCACHE_LOG_LEVEL: INFO
+  engines:
+    llamacpp:
+      image:
+        repository: ghcr.io/ggml-org/llama.cpp
+        tag: server-cuda
+        pullPolicy: IfNotPresent
+      healthPath: /health
+      apiKey:
+        mode: file
+        path: /etc/model-api-key
+      podSecurityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+          - ALL
+    vllm:
+      image:
+        repository: lmcache/vllm-openai
+        tag: nightly-2026-05-01
+        pullPolicy: IfNotPresent
+      healthPath: /health
+      apiKey:
+        mode: env
+        envName: VLLM_API_KEY
+      devShm: true
+      podSecurityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+          - ALL
+    localai:
+      image:
+        repository: quay.io/go-skynet/local-ai
+        tag: v4.7.1-gpu-nvidia-cuda-12
+        pullPolicy: IfNotPresent
+      startupFailureThreshold: 960
+      healthPath: /readyz
+      warmup:
+        path: /v1/images/generations
+        timeoutSeconds: 60
+        body:
+          prompt: warmup
+          size: 256x256
+          n: 1
+          response_format: b64_json
+      apiKey:
+        mode: env
+        envName: API_KEY
+      metrics: true
+      backendImagesReleaseTag: v4.7.1
+      backendGalleries:
+      - name: localai
+        url: github:mudler/LocalAI/backend/index.yaml@v4.7.1
+      seedJob: false
+      writableModelStore: true
+      podSecurityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop:
+          - ALL
+models:
+  ci-llamacpp:
+    enabled: true
+    engine: llamacpp
+    weights:
+      hfRepo: Qwen/Qwen3-4B-GGUF
+      revision: bc640142c66e1fdd12af0bd68f40445458f3869b
+      include: Qwen3-4B-Q6_K.gguf
+      sizeGi: 10
+    serving:
+      contextSize: 32768
+      parallel: 1
+      reasoning: 'off'
+    resources:
+      cpuRequest: '2'
+      cpuLimit: '8'
+      memoryRequest: 4Gi
+      memoryLimit: 16Gi
+  ci-vllm:
+    enabled: true
+    engine: vllm
+    weights: &id001
+      hfRepo: Qwen/Qwen2.5-3B-Instruct-AWQ
+      revision: 3559b226e8ce77211e2c1bd7ddfb7686fec4d6dd
+      sizeGi: 10
+    serving: &id002
+      contextSize: 32768
+      parallel: 4
+      quantization: awq
+      dtype: float16
+      toolCallParser: hermes
+      kvCacheDtype: auto
+    lmcache: &id003
+      enabled: true
+    resources: &id004
+      cpuRequest: '2'
+      cpuLimit: '8'
+      memoryRequest: 8Gi
+      memoryLimit: 16Gi
+  ci-localai:
+    enabled: true
+    engine: localai
+    serving:
+      backends:
+      - cuda12-stablediffusion-ggml
+      modelConfigFile: z-image-turbo.yaml
+      servedModel: z-image-turbo
+      modelConfig: "backend: stablediffusion-ggml\nname: z-image-turbo\ncfg_scale: 1\n# \u26A0\uFE0F 8,\
+        \ not the gallery's 25. Z-Image-**Turbo** is distilled for 8 steps;\n# 25 is ~3x the sampling\
+        \ work for no quality gain, and step count is the\n# dominant term in image latency. Measured\
+        \ at 25: 94.2 s per 1024x1024;\n# at 8: 32.4 s, and the output is visibly better, not merely faster.\n\
+        step: 8\noptions:\n    - diffusion_model\n    - llm_path:Qwen3-4B.Q4_K_M.gguf\n    - vae_path:ae.safetensors\n\
+        \    # \u26A0\uFE0F `offload_params_to_cpu:true` is DELIBERATELY ABSENT. The gallery\n    # sets\
+        \ it for small cards; on ours it left 815 MiB of 20475 MiB in\n    # use while parameters streamed\
+        \ over PCIe every step. ~6.7 GB of\n    # quantized weights fit the card many times over \u2014\
+        \ put them on it.\n    # Removing it is what moved VRAM 815 MiB \u2192 7985 MiB and latency\n\
+        \    # 94.2 s \u2192 32.4 s. Both reproduced on 2026-07-29: 7985 MiB resident,\n    # held across\
+        \ 190 s of idle. A 1024x1024 generation transiently\n    # peaks at 14643 MiB (activations, released\
+        \ afterwards) \u2014 budget the\n    # peak when sizing a co-tenant for this card.\nparameters:\n\
+        \    model: z_image_turbo-Q4_0.gguf\n# sha256-pinned, so the bytes measured at the load gate are\
+        \ the bytes\n# served. Digests are the LocalAI gallery's own, copied deliberately and\n# verified\
+        \ against its index.yaml rather than trusted from a summary \u2014\n# only the TUNING above is\
+        \ ours.\n#\n# \u26A0\uFE0F The Z-Image `filename` says Q4_0 while its `uri` fetches Q4_K. That\n\
+        # mismatch is the gallery's, not a typo here: the file is stored under\n# the name `parameters.model`\
+        \ refers to, and the sha256 is the one that\n# is actually checked. Sizes confirmed via the HF\
+        \ tree API \u2014 Q4_K\n# 3.86 GB, Qwen3-4B Q4_K_M 2.50 GB, ae 0.34 GB (~6.7 GB total).\ndownload_files:\n\
+        \    - filename: z_image_turbo-Q4_0.gguf\n      sha256: 14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd\n\
+        \      uri: https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_K.gguf\n\
+        \    - filename: Qwen3-4B.Q4_K_M.gguf\n      sha256: a37931937683a723ae737a0c6fc67dab7782fd8a1b9dea2ca445b7a1dbd5ca3a\n\
+        \      uri: huggingface://MaziyarPanahi/Qwen3-4B-GGUF/Qwen3-4B.Q4_K_M.gguf\n    - filename: ae.safetensors\n\
+        \      sha256: afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38\n      uri: https://huggingface.co/ChuckMcSneed/FLUX.1-dev/resolve/main/ae.safetensors\n"
+    weights:
+      sizeGi: 40
+    resources:
+      cpuRequest: '4'
+      cpuLimit: '12'
+      memoryRequest: 12Gi
+      memoryLimit: 32Gi
+  ci-disabled:
+    enabled: false
+    engine: vllm
+    weights: *id001
+    serving: *id002
+    lmcache: *id003
+    resources: *id004

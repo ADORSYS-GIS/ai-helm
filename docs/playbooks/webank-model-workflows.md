@@ -17,6 +17,18 @@ There is one template of each kind for document detector, document recognizer,
 face detector, SFace, and PAD liveness. Do not choose a different entrypoint:
 the displayed `build` or `train` entrypoint is fixed by the selected template.
 
+> **All five `webank-<model>-dataset-build` templates are currently disabled**
+> (`datasetBuild.enabled` unset/`false` in `ai-helm-values`) and will not
+> appear in the Argo Workflows dashboard. None of their publish calls is
+> preceded by a `readiness-gate` step — dataset-build produces none of the
+> `/workspace/governance/*` evidence that gate needs — so, per webank-models
+> [ADR-0046](https://github.com/ADORSYS-GIS/webank-models/blob/main/docs/adr/0046-fixed-dataset-publish-governance-gate.md)
+> and issue [#482](https://github.com/ADORSYS-GIS/webank-models/issues/482),
+> they must not be able to publish ungoverned data. `*-train` is unaffected
+> and already enforces the gate. Re-enabling a given model's dataset-build
+> template is gated on that model having a source manifest and a readiness
+> attestation.
+
 Each template's LakeFS routes are fixed in reviewed `ai-helm-values`, not in
 the Argo form. Dataset builds use `ds-<model>/main`; training candidates use
 `model-<model>/main`. Every Dataset Build target may be created from its

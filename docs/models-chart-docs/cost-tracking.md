@@ -5,7 +5,7 @@ This file is the plain-English guide to how rate limiting works in this chart.
 If you only remember four things, remember these:
 
 1. The monthly limit is based on estimated model cost, not raw request count.
-2. The estimate comes from the model prices in `charts/ai-models/values.yaml`.
+2. The estimate comes from the model prices in `ai-helm-values` `environments/prod/values/models.yaml`.
 3. Input tokens, cached input tokens, and output tokens can cost different amounts.
 4. The request that crosses the monthly budget can still succeed, because the budget is reduced after the response comes back.
 
@@ -278,7 +278,7 @@ Meaning:
 
 If you need to trace the implementation:
 
-1. `charts/ai-models/values.yaml` holds the pricing data.
+1. `ai-helm-values` `environments/prod/values/models.yaml` holds the pricing data.
 2. `charts/ai-models/templates/_helpers.tpl` builds the CEL expressions.
 3. `charts/ai-models/templates/aigatewayroute.yaml` emits `llm_custom_total_cost`.
 4. `charts/ai-models/templates/backendtrafficpolicy.yaml` uses that metadata as response cost.

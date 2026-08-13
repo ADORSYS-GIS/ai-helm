@@ -102,7 +102,7 @@ Per-env knobs (`clusterIssuer`, `secretStore`, `ingressClass`, `storageClass`, `
 
 Ownership split: umbrellas own **app-scoped** secrets/certs (referencing `ssegning-aws` by name). The store is never defined here. ⚠️ The wholesale-provisioner `secrets` Application (`ai-ops-secrets.git`) was **removed (2026-06-04)** — secrets are now **chart-owned** (in-chart ExternalSecrets + the `environments/<env>/deps/*` overlays). **App** secrets resolve against the consolidated `ssegning-aws` key **`ai/camer/digital/prod/env`** (one property each); **platform** secrets (S3, redis password) against `prod/meta/test-app`. LESSON: re-home a secret in-chart *before* retiring its provisioner — pruning `secrets` cascade-deleted the lightbridge secrets (incl. `lightbridge-opa-auth`) and caused a gateway outage.
 
-**Workload values can also live in `ai-helm-values` (ADR-0056).** Set `valuesFromRepo: true` on a singular-`source:` app entry and the template injects `helm.valueFiles: [$values/environments/<env>/values/<app>.yaml]` (+ `ignoreMissingValueFiles`, + the `ref: values` source) — so the app's big `valuesObject` moves to a file in `ai-helm-values` instead of sitting inline in `charts/apps/values.yaml`. ⚠️ **Cut over values-repo-FIRST**: the file must exist on `ai-helm-values` `main` before the `charts/apps` change merges, or `ignoreMissingValueFiles` silently falls back to chart defaults (for `security-policies` that DROPS the gateway AuthConfig). A `render-check.yml` in `ai-helm-values` guards this (YAML-validates + `helm template`s the OCI charts). Migrated: **every flat `charts/apps` app that had a `valuesObject`** — `security-policies` (the ~405-line AuthConfig, now in the *private* repo), `eg`, `opencode-k8s-agent`, `apprise-api`, `aieg`, `core-gateway`, `lightbridge-repo-auth`, `mongodb-backup`, `converse-ui`. (`converse-ui`'s config was deep-merged into its existing image-updater-owned values file; `mongodb-backup`, a top-level-`chart:` OCI app, already had the `$values` ref injected so it needed no flag.) Don't leave a stale inline `valuesObject` behind — it would layer on top of the file. **The orchestrators are also done (ADR-0056 phase 3):** the `observability` (8 children incl. the Alloy River config) and `lightbridge` App-of-Apps templates gained the same per-child `valuesFromRepo` injection, and their child configs live in `ai-helm-values` too (e.g. `environments/prod/values/{alloy,mimir,loki,tempo,grafana,…,lightbridge-app}.yaml`). ⚠️ observability children shared YAML anchors (`*s3-endpoint` etc., a `global:` block) — separate `$values` files can't share anchors, so those were **inlined to literals** per file and the `global:` block removed; the Alloy River config moved free of any Go-template double-braces (it's `tpl`'d). `ai-models`/`librechart`/`mcps` have no inline `valuesObject` (leaf-chart config, ADR-0012/0014). **Every inline `valuesObject` with real config now lives in `ai-helm-values`.**
+**Workload values can also live in `ai-helm-values` (ADR-0056).** Set `valuesFromRepo: true` on a singular-`source:` app entry and the template injects `helm.valueFiles: [$values/environments/<env>/values/<app>.yaml]` (+ `ignoreMissingValueFiles`, + the `ref: values` source) — so the app's big `valuesObject` moves to a file in `ai-helm-values` instead of sitting inline in `charts/apps/values.yaml`. ⚠️ **Cut over values-repo-FIRST**: the file must exist on `ai-helm-values` `main` before the `charts/apps` change merges, or `ignoreMissingValueFiles` silently falls back to chart defaults (for `security-policies` that DROPS the gateway AuthConfig). A `render-check.yml` in `ai-helm-values` guards this (YAML-validates + `helm template`s the OCI charts). Migrated: **every flat `charts/apps` app that had a `valuesObject`** — `security-policies` (the ~405-line AuthConfig, now in the *private* repo), `eg`, `opencode-k8s-agent`, `apprise-api`, `aieg`, `core-gateway`, `lightbridge-repo-auth`, `mongodb-backup`, `converse-ui`. (`converse-ui`'s config was deep-merged into its existing image-updater-owned values file; `mongodb-backup`, a top-level-`chart:` OCI app, already had the `$values` ref injected so it needed no flag.) Don't leave a stale inline `valuesObject` behind — it would layer on top of the file. **The orchestrators are also done (ADR-0056 phase 3):** the `observability` (8 children incl. the Alloy River config) and `lightbridge` App-of-Apps templates gained the same per-child `valuesFromRepo` injection, and their child configs live in `ai-helm-values` too (e.g. `environments/prod/values/{alloy,mimir,loki,tempo,grafana,…,lightbridge-app}.yaml`). ⚠️ observability children shared YAML anchors (`*s3-endpoint` etc., a `global:` block) — separate `$values` files can't share anchors, so those were **inlined to literals** per file and the `global:` block removed; the Alloy River config moved free of any Go-template double-braces (it's `tpl`'d). `ai-models`/`librechart`/`mcps` have no inline `valuesObject` (leaf-chart config, ADR-0012/0014) — ⚠️ but for `ai-models` that was never the whole story, and **ADR-0126 finished the job**: its config wasn't inline in `charts/apps` because it *was* `charts/ai-models/values.yaml`, ~2,000 lines of backends, models, prices and plans shipped as chart defaults. That whole file is now `ai-helm-values environments/prod/values/models.yaml`, and the chart's defaults are an empty skeleton whose `requireCatalog` guard **hard-fails the render** rather than letting an absent file prune every model route. `librechart`/`mcps` are the same shape and remain candidates. **Every inline `valuesObject` with real config now lives in `ai-helm-values`.**
 
 **How to attach deps:** add one field to the app entry — `depsOverlay: environments/<env>/deps/<app>`. `applications.yaml` folds it in as a Source pointing at the **`ai-helm-values`** repo (`argocd.depsRepoURL` @ `depsTargetRevision` = `main`, where `environments/` lives post-ADR-0055), keeping the workload's `source:`/`chart:` + `valuesObject` verbatim (no re-indenting big value blocks). Also drop the `cert-manager.io/cluster-issuer` annotation from that chart's ingress — the overlay `Certificate` now owns the TLS secret. Flat umbrella: `lightbridge-backend`. Dep-less infra/backends stay single-source. (`coder` and `grafana` also consume `environments/<env>/deps/<app>` cert overlays, but as **children of App-of-Apps orchestrators** — `coder` ADR-0019, `grafana` under `observability` ADR-0020 — not as flat umbrellas. The orchestrator templates support `depsOverlay` on children too.) Also drop the `cert-manager.io/cluster-issuer` annotation from that chart's ingress — the overlay `Certificate` now owns the TLS secret. Flat umbrella: `lightbridge-backend`. Dep-less infra/backends stay single-source. (`coder` and `grafana` also consume `environments/<env>/deps/<app>` cert overlays, but as **children of App-of-Apps orchestrators** — `coder` ADR-0019, `grafana` under `observability` ADR-0020 — not as flat umbrellas. The orchestrator templates support `depsOverlay` on children too.)
 
@@ -123,10 +123,13 @@ the summary:
 | Chart **defaults** (structural only) | ✅ `charts/<x>/values.yaml` | — |
 | **Workload config** (per-app `valuesObject`) | ❌ moved out (ADR-0056) | ✅ `environments/<env>/values/<app>.yaml` |
 | **Image tags** | ❌ | ✅ same files, written back by argocd-image-updater |
+| **The model catalog** (backends, models, prices, rate-limit plans) | ❌ moved out (ADR-0126) — `charts/ai-models/values.yaml` is an empty skeleton that refuses to render | ✅ `environments/prod/values/models.yaml` |
+| **The GPU fleet catalog** (which model runs on which card, engine profiles) | ❌ moved out (ADR-0129) — `charts/inference/values.yaml` is an empty skeleton too | ✅ `environments/prod/values/inference.yaml` |
+| **Model prices** | ❌ | ✅ machine-maintained — a 6-hourly job syncs them from the providers' APIs and commits to `main` (ADR-0127) |
 | **Per-env deps overlays** (Certificate / ExternalSecret / CiliumNetworkPolicy) + `cluster.yaml` | ❌ moved out (ADR-0055) | ✅ `environments/<env>/deps/<app>/` |
 | ArgoCD **root** `ai-apps-v2` | — | ❌ — pinned in **`home-os`** `charts/cd` |
 
-**Rule of thumb:** if you're about to add or edit a Helm `valuesObject`, an image tag, or a
+**Rule of thumb:** if you're about to add or edit a Helm `valuesObject`, a model, a price, an image tag, or a
 per-env CR in `ai-helm`, stop — it belongs in `ai-helm-values`. ai-helm holds *how to render*;
 ai-helm-values holds *what is deployed*. ⚠️ Always cut over **values-repo-first**: the file
 must exist on `ai-helm-values` `main` before the ai-helm chart change merges, or
@@ -369,7 +372,9 @@ Caddy sidecar. `charts/inference` (orchestrator) + `charts/inference-server`
 (generic leaf) serve them in ns `inference`; the gateway `Backend` points at
 `<model>.inference.svc.cluster.local:8080` and a `CiliumNetworkPolicy` is the
 control. **Adding/replacing a model = ONE ~15-line entry in
-`charts/inference/values.yaml`** (+ its `charts/ai-models` backend + model
+`ai-helm-values environments/prod/values/inference.yaml`** (ADR-0129 — NOT the
+chart any more; its defaults are an empty skeleton that refuses to render) (+ its
+gateway backend + model
 entry to make it user-reachable). Do NOT create a new chart per model.
 - Engine profiles live in the ORCHESTRATOR's `_helpers.tpl` — a Helm parent can't
   compute SUBCHART values at render time, which is why the old charts hardcoded
@@ -408,9 +413,14 @@ entry to make it user-reachable). Do NOT create a new chart per model.
   (not the cluster default; omitting it silently targets `hcloud-volumes` and never
   binds). ⚠️ The CNP MUST allow `fromEntities: [host, remote-node, health]` or
   KUBELET PROBES fail and the pod never goes Ready (looks like a crash-loop).
-- `tools/check-model-catalogs.sh` (in `helm-lint` CI) fails if a cluster-local
-  gateway backend has no server behind it. Serving *without* federating is allowed
-  on purpose — that's how a model is load-gated before users can reach it.
+- `check-model-catalogs.sh` fails if a cluster-local gateway backend has no server
+  behind it. Serving *without* federating is allowed on purpose — that's how a
+  model is load-gated before users can reach it. ⚠️ It lives in **`ai-helm-values`**
+  now (ADR-0126), not here: the gateway half of the comparison moved to that repo,
+  and only that repo can see both (it pulls these charts anonymously from public
+  OCI; this repo cannot read a private one). Don't re-add a copy here that renders
+  `charts/ai-models` defaults — they're an empty skeleton, so it would pass
+  vacuously and guard nothing.
 
 *Legacy.* The `charts/model-serving-*` charts (seven left) target the OTHER
 cluster (`admin@homeos`) over a public edge with `homeCluster: true`. ⚠️ **Since
@@ -430,7 +440,15 @@ benchmarks, runbooks, the add/replace/roll-back/measure recipes — lives in the
 team's **`inference-ops`** repo (checked out alongside this one; Diátaxis + ADRs +
 immutable benchmark reports). Put inference knowledge THERE, not here;
 ai-helm ADRs own the GitOps shape, inference-ops ADRs own the inference decisions.
-Pricing stays €/hour-TCO → cost-recovery (ADR-0028).
+⚠️ Pricing is **nominal, not cost-recovery** (ADR-0128, amends ADR-0028): the fleet
+costs the same €/hour idle or saturated, so cost-recovery rates only pushed traffic
+onto SaaS invoices we then pay again. Self-hosted models carry a token charge
+(`0.001/0.0002/0.005` per 1M; `0.00001`/image) ~2 orders of magnitude under the
+cheapest SaaS entry — non-zero on purpose, so cost series stay alive and are not
+confused with missing data. ⚠️ Coefficients render at `%.4f`, so anything below
+~0.00005 silently becomes free. The €/hour-TCO derivation (ADR-0028/0096/0104) is
+still the right answer to "what does this cost US to run" — it is just no longer
+what users are charged; that question lives in inference-ops.
 
 ## When you finish substantive work
 

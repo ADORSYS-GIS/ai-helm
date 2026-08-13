@@ -65,7 +65,9 @@ children:
     # ApplicationSet overlays it via every child's $values ref + valueFiles
     # (ADR-0087). No per-child flag: the file's presence is the opt-in.
 
-  - name: librechat-opencode-wellknown
-    chartName: librechat-opencode-wellknown
-    syncWave: "1"
-    enabled: true
+  # ⚠️ librechat-opencode-wellknown MOVED to the `ai-models` orchestrator
+  # (ADR-0125). The descriptor's `provider.camer-digital.models` block is derived
+  # from the model catalog, and only that orchestrator can pass `.Values.models`
+  # to a child — from here the derivation silently produced an empty map. It sits
+  # beside `ai-models-info` now, which is the same kind of artifact: a
+  # client-facing view rendered from the catalog. Do NOT re-add it here.

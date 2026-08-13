@@ -554,7 +554,7 @@ origin), which is why subdomain apps are the default here.
 
 ## LibreChat Coder Agent (`coder_mcp`) Integration Contract
 
-When the LibreChat Coder agent provisions or interacts with a workspace application (e.g., scaffolding a Next.js / tRPC app on port 3000), it must ensure the resulting workspace URL is reachable by human users.
+The LibreChat Coder agent (`coder`) is registered as a **Subagent** delegated to by primary orchestrators (such as `@converse` via `subagentNames: ["coder"]`). When a user in LibreChat requests app prototyping or hosting, `@converse` delegates workspace provisioning to `@coder`. When `@coder` provisions or interacts with a workspace application (e.g., scaffolding a Next.js / tRPC app on port 3000), it must ensure the resulting workspace URL is reachable by human users.
 
 ### Step-by-Step Publishing Lifecycle
 
@@ -563,7 +563,7 @@ When the LibreChat Coder agent provisions or interacts with a workspace applicat
    `https://<port>--<agent>--<workspace>--<user>.coder-ws.camer.digital`
 
 2. **Programmatic Port Publishing**:
-   To allow external access without forcing Keycloak authentication redirects (`303` / `404`), send a `POST` request to the Coder REST API:
+   To allow authenticated users to reach the app without forcing Keycloak SSO redirects (`303` / `404`), send a `POST` request to the Coder REST API:
    ```http
    POST /api/v2/workspaces/{workspace_id}/port-share HTTP/1.1
    Host: coder.ai.camer.digital
@@ -573,12 +573,17 @@ When the LibreChat Coder agent provisions or interacts with a workspace applicat
    {
      "agent_name": "main",
      "port": 3000,
-     "share_level": "public",
+     "share_level": "authenticated",
      "protocol": "http",
      "workspace_id": "<workspace_id>"
    }
    ```
-   *Note*: `share_level` can be set to `"public"` for instant browser previews or `"authenticated"` if Keycloak SSO is required.
+   > ⚠️ **The `coder` agent must only ever create `share_level: "authenticated"`**
+   > shares. It must never create a `share_level: "public"` (unauthenticated)
+   > share; public exposure requires an explicit human admin decision and is
+   > outside the agent's authority. This is a **hard rule**, not a preference —
+   > a public share exposes a freshly-scaffolded dev server (and any keys it
+   > holds) to anyone with the URL.
 
 3. **URL Verification**:
    Verify that the URL returns `HTTP 200 OK` (or appropriate app status) rather than `303 See Other` (`auth-redirect`).
@@ -600,6 +605,7 @@ When the LibreChat Coder agent provisions or interacts with a workspace applicat
 ## References
 
 - [ADR-0121: Coder Workspace URL Exposure Strategy](../adr/0121-coder-workspace-url-exposure-strategy.md)
+- [`coder-agent-system-prompt.md`](coder-agent-system-prompt.md) — LibreChat Coder Agent System Prompt Specification (Ticket #832)
 - ADR-0019 — App-of-Apps orchestrator pattern (`charts/coder`)
 - ADR-0083 — Coder re-introduction
 - [`coder-platform-integration.md`](coder-platform-integration.md) — the wider Coder integration

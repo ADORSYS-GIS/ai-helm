@@ -1,4 +1,41 @@
 {{/*
+ai-models.requireCatalog
+
+Preflight guard. Renders nothing; hard-fails if the model catalog is absent.
+
+Since ADR-0126 the catalog does not live in this chart — it is supplied by
+`ai-helm-values environments/prod/values/models.yaml` through the `aii-models`
+Application's `$values` source, and this chart's own values.yaml is an empty
+skeleton. That source is mounted with `ignoreMissingValueFiles: true`, so a
+file that is missing, renamed, or unreadable does NOT fail the ArgoCD render on
+its own — it silently yields the chart defaults.
+
+Without this guard those defaults render PERFECTLY VALIDLY: an ApplicationSet
+whose list generator has one element (the backends child) and no model
+elements. The ApplicationSet controller would then treat every model child as
+deleted and prune the whole gateway catalog — every AIGatewayRoute, every
+BackendTrafficPolicy — on a green sync. The destination guard below does not
+catch it: `argocd.destination` defaults to "home-remote" and renders happily.
+
+So an empty catalog is a render failure instead. The `aii-models` Application
+goes ComparisonError, stops syncing, and every running model child is left
+exactly as it is — which is the only safe direction for this particular
+failure.
+
+Input: the root context.
+*/}}
+{{- define "ai-models.requireCatalog" -}}
+{{- $missing := list -}}
+{{- if not .Values.models -}}{{- $missing = append $missing "models" -}}{{- end -}}
+{{- if not .Values.backends -}}{{- $missing = append $missing "backends" -}}{{- end -}}
+{{- if not .Values.gatewayRef -}}{{- $missing = append $missing "gatewayRef" -}}{{- end -}}
+{{- if not (.Values.argocd.destination).namespace -}}{{- $missing = append $missing "argocd.destination.namespace" -}}{{- end -}}
+{{- if $missing -}}
+{{- fail (printf "\n\n  REFUSING TO RENDER: the model catalog is missing (%s).\n\n  This chart carries no catalog of its own (ADR-0126) — it is supplied by\n  ai-helm-values at environments/prod/values/models.yaml via the aii-models\n  Application's $values source. Rendering without it would emit an\n  ApplicationSet with NO model children, and the controller would prune every\n  model route on the gateway.\n\n  If you are rendering locally, pass that file with -f. If you are seeing this\n  from ArgoCD, the values repo file is missing or unparseable — fix it there;\n  the running model children are untouched until it is.\n" (join ", " $missing)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 ai-models.argocd.destinationClusterRef
 
 Emits the ArgoCD destination cluster identity line — `name: <ctx>` or

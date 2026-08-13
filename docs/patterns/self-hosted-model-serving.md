@@ -40,7 +40,8 @@ is applied before the request reaches it.
 | **`charts/inference-server`** | Generic leaf. One model's resources: bjw-template renders the Deployment + seed Job + Service; own templates render PVC, ExternalSecrets, CiliumNetworkPolicy, ServiceMonitor. |
 | **`charts/ai-models`** | Unchanged. The gateway catalog — a backend entry + a model entry federate a served model to users. |
 
-**Adding a model is one ~15-line entry** in `charts/inference/values.yaml`
+**Adding a model is one ~15-line entry** in `ai-helm-values`
+`environments/prod/values/inference.yaml` (moved out of the chart by ADR-0129)
 (plus its `charts/ai-models` entries to make it user-reachable). No new chart, no
 new Application, no ADR. The step-by-step recipe with verification is
 `inference-ops` → `docs/how-to/add-a-model.md`.
@@ -416,5 +417,5 @@ measured before users can reach it.
 | Hardware facts, model catalog | `inference-ops` `docs/reference/` |
 | Measured performance | `inference-ops` `docs/benchmarks/` |
 | GitOps shape decisions | ADR-0094 (charts), ADR-0095 (exposure), ADR-0092 (storage), ADR-0100/0102 (image generation), ADR-0101 (federation gate) |
-| Pricing basis | ADR-0028 |
+| Pricing basis | ADR-0128 (nominal — amends ADR-0028's cost recovery) |
 | Per-model papers (this repo) | [`../models/`](../models/) — legacy generation |
