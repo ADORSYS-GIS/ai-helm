@@ -94,35 +94,50 @@ locals {
 
   # The opencode server base URL (without trailing slash). opencode fetches its
   # remote config from <opencode_url>/.well-known/opencode, which serves the
-  # camer-digital provider, agents, MCP servers and models — so we do NOT hand
-  # build a provider block here anymore.
+  # camer-digital provider, agents, MCP servers and models.
   opencode_url = trimsuffix(var.opencode_url, "/")
 
-  # The workspace owner's own Coder/Keycloak OIDC access token (aud=coder).
-  # The AI gateway accepts any valid realm token (verified), so no token
-  # exchange is needed. NO secrets are passed to the pod — the token is the
-  # only credential present, and it is the user's own.
-  owner_token = data.coder_workspace_owner.me.oidc_access_token
+  # Decode the workspace owner's Keycloak OIDC access token to get the `sub`
+  # (identity) and the `billing_plan`. The `coder` client carries a
+  # `billing_plan` claim via the billing-plan client-scope protocol mapper.
+  owner_token   = data.coder_workspace_owner.me.oidc_access_token
+  owner_payload = jsondecode(base64decode(split(".", local.owner_token)[1]))
+  owner_sub     = local.owner_payload.sub
+  billing_plan  = try(local.owner_payload.billing_plan, "free")
 
-  # Seed opencode's credential store with a "wellknown" entry keyed by the
-  # opencode server URL. On startup opencode sets OPENAI_API_KEY to this token
-  # (auth.env) and fetches the remote config from <url>/.well-known/opencode,
-  # which provides the camer-digital provider (audience/oauth2), agents, models
-  # and MCP servers. This is exactly what `opencode auth login <url>` writes,
-  # but done non-interactively here.
+  # Per-workspace ServiceAccount: identity (sub) + plan in the NAME so Authorino
+  # can derive both via pure CEL (kubernetesTokenReview) — no SA-label read / no
+  # K8s-API metadata call (which is operationally fragile: CA trust + token RBAC
+  # + per-request API call). Format: coder-<sub>.<plan> — the `.` separates the
+  # owner sub from the plan (UUIDs/plans never contain `.`), making the parse
+  # robust to any sub length. The `coder-` prefix marks it as a workspace SA.
+  sa_name = "coder-${local.owner_sub}.${local.billing_plan}"
+
+  # OpenCode uses a DUMMY key and points at the local openresty sidecar, which
+  # injects the real SA token. The wellknown auth entry (with a dummy token)
+  # still triggers the remote-config fetch so agents/MCP/models load.
   opencode_auth = jsonencode({
     (local.opencode_url) = {
       type  = "wellknown"
       key   = "OPENAI_API_KEY"
-      token = local.owner_token
+      token = "dummy-key"
     }
   })
 
-  # Minimal local config. The provider (camer-digital) comes from the remote
-  # config fetched from the URL; we only set runtime defaults/permissions here.
+  # Local provider override forces opencode to the sidecar (localhost) with the
+  # dummy key. The remote config supplies agents/MCP/models; this wins on the
+  # provider baseURL.
   opencode_config = jsonencode({
     "$schema" = "https://opencode.ai/config.json"
     logLevel  = "DEBUG"
+    provider = {
+      (var.provider_key) = {
+        options = {
+          baseURL = "http://localhost:8080/v1"
+          apiKey  = "dummy-key"
+        }
+      }
+    }
     permission = {
       edit = "allow"
       bash = "allow"
@@ -134,7 +149,9 @@ resource "coder_agent" "main" {
   arch = "amd64"
   os   = "linux"
 
-  # CRITICAL: Install Node.js + pre-seed OAuth plugin cache
+  # CRITICAL: Install Node.js (required for OpenCode). No OAuth cache pre-seed
+  # is needed — OpenCode uses a dummy key through the local openresty sidecar,
+  # which injects the real SA token at the gateway.
   startup_script = <<-EOT
     set -e
 
@@ -149,65 +166,73 @@ resource "coder_agent" "main" {
     # 2. Install basic tools
     sudo apt-get install -y git build-essential
 
-    # 3. Pre-seed opencode so no interactive login / device-code prompt ever
-    #    fires inside the workspace. Two pieces:
-    #
-    #    a) OPENCODE_OAUTH_AUTH_JSON -> $HOME/.local/share/opencode/auth.json has
-    #       a "wellknown" entry keyed by the opencode URL. opencode reads this on
-    #       startup: it sets OPENAI_API_KEY to the owner token and fetches the
-    #       remote config from <url>/.well-known/opencode (camer-digital provider,
-    #       agents, MCP servers, models). Path is $HOME/.local/share/opencode/auth.json.
-    #
-    #    b) The @vymalo/opencode-oauth2 plugin cache is pre-seeded with the same
-    #       token so any oauth2 path uses a valid Bearer. NO refresh token and NO
-    #       client secret are written — only the user's own access token (aud=coder,
-    #       accepted by the gateway). Cache path mirrors the plugin's
-    #       resolveDefaultCacheRoot(): $XDG_CACHE_HOME ?? ~/.cache, then
-    #       opencode-oauth2/<namespace>/<serverId>.json.
-    #
-    # NOTE: the cache root is computed INSIDE node (os.homedir() + XDG) — never via
-    # Terraform $$ escaping, which previously rendered a mangled "35HOME/.cache"
-    # path and wrote the seed to the wrong directory.
-
-    # (a) Wellknown auth entry -> enables remote config fetch from the URL
-    if [ -n "$${OPENCODE_OAUTH_AUTH_JSON:-}" ]; then
-      mkdir -p "$$HOME/.local/share/opencode"
-      printf '%s\n' "$${OPENCODE_OAUTH_AUTH_JSON}" > "$$HOME/.local/share/opencode/auth.json"
-      chmod 0600 "$$HOME/.local/share/opencode/auth.json"
-      echo "seeded auth.json (wellknown)"
-    fi
-
-    # (b) oauth2 plugin cache under <serverId>.json (serverId = camer-digital)
-    node -e '
-      const fs = require("fs");
-      const path = require("path");
-      const os = require("os");
-      const token = process.env.OPENCODE_OAUTH_ACCESS_TOKEN;
-      if (!token) { console.error("OPENCODE_OAUTH_ACCESS_TOKEN not set"); process.exit(1); }
-      // Mirror @vymalo/opencode-oauth2 resolveDefaultCacheRoot()
-      const root = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
-      const dir = path.join(root, "opencode-oauth2", process.env.OPENCODE_OAUTH_NAMESPACE);
-      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const file = path.join(dir, process.env.OPENCODE_OAUTH_SERVER_ID + ".json");
-      // NOTE: intentionally NO expiresAt. This oauth2 plugin (device_code flow,
-      // not a machine flow) treats a cached token WITHOUT expiresAt as always
-      // valid (oauth/client.js#isTokenValid returns true), so it never triggers
-      // a device-code prompt or a refresh attempt. The token we inject is a
-      // long-TTL (or delivered-fresh-each-start) owner token whose real lifetime
-      // is governed by Keycloak, so we must not let the plugin re-auth based on
-      // its own expiry bookkeeping.
-      const tokenObj = { accessToken: token, tokenType: "Bearer" };
-      const data = { serverId: process.env.OPENCODE_OAUTH_SERVER_ID, models: [], rawModels: [], token: tokenObj };
-      fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
-      console.log("seeded cache " + file + " (no expiresAt; plugin treats as always-valid)");
-    '
-
-    # 4. Verify installation
+    # 3. Verify installation
     node --version
     npm --version
   EOT
 }
 # --- KUBERNETES POD (The Actual Container) ---
+# --- PER-WORKSPACE SERVICEACCOUNT (identity + plan carrier) ---
+resource "kubernetes_service_account_v1" "workspace" {
+  metadata {
+    name      = local.sa_name
+    namespace = var.namespace
+  }
+}
+
+# --- OPENRESTY SIDECAR CONFIG ---
+resource "kubernetes_config_map_v1" "nginx_conf" {
+  metadata {
+    name      = "coder-${data.coder_workspace.me.id}-nginx-conf"
+    namespace = var.namespace
+  }
+  data = {
+    # openresty reads the projected SA token file PER REQUEST (Lua), so token
+    # rotation is picked up automatically — stock Caddy's {file.read} does not
+    # resolve in header_up (verified), so openresty is the rotation-safe proxy.
+    "nginx.conf" = <<-EOT
+      worker_processes 1;
+      # pid + temp dirs must go to a writable path under the read-only root FS
+      # (the sidecar-tmp emptyDir mounted at /tmp). Single-level paths so nginx
+      # can create them (it does not mkdir intermediate dirs).
+      pid /tmp/nginx.pid;
+      error_log /dev/stdout info;
+      events { worker_connections 1024; }
+      http {
+          client_body_temp_path /tmp/cbt;
+          proxy_temp_path /tmp/proxy;
+          fastcgi_temp_path /tmp/fastcgi;
+          uwsgi_temp_path /tmp/uwsgi;
+          scgi_temp_path /tmp/scgi;
+          access_log /dev/stdout;
+          server {
+              listen 8080;
+              location = /healthz {
+                  default_type text/plain;
+                  return 200 "ok\\n";
+              }
+              location / {
+                  access_by_lua_block {
+                      ngx.req.clear_header("Authorization");
+                      ngx.req.clear_header("X-Coder-User");
+                      ngx.req.clear_header("X-LibreChat-User");
+                      ngx.req.clear_header("X-Account-Id");
+                      ngx.req.clear_header("X-Org-Id");
+                      ngx.req.clear_header("X-Billing-Plan");
+                      local f = io.open("/var/run/secrets/gateway-token/token", "r")
+                      local token = f:read("*a"); f:close()
+                      token = token:gsub("%s+", "")
+                      ngx.req.set_header("Authorization", "Bearer " .. token)
+                  }
+                  proxy_pass https://core-gateway-internal.envoy-gateway-system.svc;
+                  proxy_ssl_trusted_certificate /etc/internal-ca/ca.crt;
+              }
+          }
+      }
+    EOT
+  }
+}
+
 # This is what was missing!
 resource "kubernetes_pod_v1" "workspace" {
   count = data.coder_workspace.me.start_count
@@ -226,7 +251,8 @@ resource "kubernetes_pod_v1" "workspace" {
     }
   }
   spec {
-    restart_policy = "Always" # Changed from Never to keep workspace alive
+    restart_policy       = "Always" # Changed from Never to keep workspace alive
+    service_account_name = local.sa_name
 
     container {
       name  = "workspace"
@@ -248,35 +274,15 @@ resource "kubernetes_pod_v1" "workspace" {
         }
       }
 
+      # OpenCode uses a dummy key through the local openresty sidecar; no real
+      # credential is present in this container.
       env {
-        name  = "CAMER_API_KEY"
-        value = var.openai_api_key
+        name  = "OPENCODE_BASE_URL"
+        value = "http://localhost:8080/v1"
       }
-
-      # Owner's own OIDC access token for the @vymalo/opencode-oauth2 plugin
-      # cache. This is the user's own token (aud=coder) — No client secret and
-      # no refresh token are provided to the pod; only this short-lived token.
       env {
-        name  = "OPENCODE_OAUTH_ACCESS_TOKEN"
-        value = local.owner_token
-      }
-
-      # JSON containing the "wellknown" auth entry (keyed by opencode URL) so the
-      # startup script can write $HOME/.local/share/opencode/auth.json. This is
-      # what makes opencode fetch the remote config from the URL automatically.
-      env {
-        name  = "OPENCODE_OAUTH_AUTH_JSON"
-        value = local.opencode_auth
-      }
-
-      env {
-        name  = "OPENCODE_OAUTH_NAMESPACE"
-        value = "opencode-oauth2-model-sync"
-      }
-
-      env {
-        name  = "OPENCODE_OAUTH_SERVER_ID"
-        value = var.provider_key
+        name  = "OPENCODE_API_KEY"
+        value = "dummy-key"
       }
 
       resources {
@@ -288,6 +294,81 @@ resource "kubernetes_pod_v1" "workspace" {
           cpu    = "2"
           memory = "4Gi"
         }
+      }
+    }
+
+    # openresty sidecar — reads the projected SA token PER REQUEST and injects
+    # it as Bearer; forwards (TLS to the internal gateway, trusting its CA).
+    # Holds no user credential itself.
+    container {
+      name  = "sidecar"
+      image = "openresty/openresty:alpine"
+      args  = ["nginx", "-g", "daemon off;", "-c", "/etc/nginx/nginx.conf"]
+
+      security_context {
+        run_as_non_root            = true
+        run_as_user                = 101
+        run_as_group               = 101
+        read_only_root_filesystem  = true
+        allow_privilege_escalation = false
+        capabilities {
+          drop = ["ALL"]
+        }
+      }
+
+      volume_mount {
+        name       = "gateway-token"
+        mount_path = "/var/run/secrets/gateway-token"
+        read_only  = true
+      }
+      volume_mount {
+        name       = "nginx-conf"
+        mount_path = "/etc/nginx/nginx.conf"
+        sub_path   = "nginx.conf"
+        read_only  = true
+      }
+      volume_mount {
+        name       = "internal-ca"
+        mount_path = "/etc/internal-ca"
+        read_only  = true
+      }
+      # nginx buffers proxy bodies/responses + pid; needs a writable tmp under a
+      # read-only root FS.
+      volume_mount {
+        name       = "sidecar-tmp"
+        mount_path = "/tmp"
+      }
+    }
+
+    volume {
+      name = "gateway-token"
+      projected {
+        sources {
+          service_account_token {
+            audience           = "core-gateway-internal"
+            expiration_seconds = 3600
+            path               = "token"
+          }
+        }
+      }
+    }
+    volume {
+      name = "nginx-conf"
+      config_map {
+        name = kubernetes_config_map_v1.nginx_conf.metadata[0].name
+      }
+    }
+    volume {
+      name = "sidecar-tmp"
+      empty_dir {}
+    }
+    volume {
+      name = "internal-ca"
+      secret {
+        # The internal-CA Certificate (deps/coder base) produces this secret in
+        # the coder namespace; its ca.crt is the root that signs the api-internal
+        # listener, so the sidecar trusts it to reach core-gateway-internal.
+        secret_name = "coder-internal-ca"
       }
     }
 
