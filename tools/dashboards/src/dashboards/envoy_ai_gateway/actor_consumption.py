@@ -125,7 +125,7 @@ def _dashboard() -> db.Dashboard:
         .editable()
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
         .refresh("5m")
-        .time("now-30d", "now")
+        .time("now/M", "now")
         .with_variable(
             sh.actor_var(
                 name="actor",

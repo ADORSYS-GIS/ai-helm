@@ -359,7 +359,7 @@ def _dashboard() -> db.Dashboard:
         .editable()
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
         .refresh("1h")
-        .time("now-30d", "now")
+        .time("now/M", "now")
         .with_variable(
             sh.multi_var(
                 name="provider",
