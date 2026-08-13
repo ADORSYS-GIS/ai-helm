@@ -32,12 +32,6 @@ data "coder_workspace_owner" "me" {}
 data "coder_task" "me" {}
 
 # --- VARIABLES ---
-variable "openai_base_url" {
-  type        = string
-  description = "OpenAI-compatible API endpoint URL"
-  default     = "https://api.ai.camer.digital/v1"
-}
-
 variable "opencode_url" {
   type        = string
   description = "opencode server URL. opencode fetches remote config + auth metadata from <this>/.well-known/opencode (serves the camer-digital provider, agents, MCP servers, models)."
@@ -50,19 +44,6 @@ variable "provider_key" {
   default     = "camer-digital"
 }
 
-variable "openai_api_key" {
-  type        = string
-  description = "API key for the OpenAI-compatible endpoint"
-  sensitive   = true
-  default     = ""
-}
-
-variable "model" {
-  type        = string
-  description = "Model to use (must be a model routed on the AI gateway; see https://api.ai.camer.digital/v1/models)"
-  default     = "adorsys-coder"
-}
-
 variable "workdir" {
   type        = string
   description = "Working directory"
@@ -70,12 +51,6 @@ variable "workdir" {
 }
 
 # --- KEYCLOAK OAUTH2 VARIABLES ---
-variable "keycloak_issuer_url" {
-  type        = string
-  description = "Keycloak realm issuer URL"
-  default     = "https://auth.verif.fyi/realms/camer-digital"
-}
-
 variable "namespace" {
   type        = string
   description = "Kubernetes namespace for the workspace pod (defaults to prod 'coder'; override to 'coder-flows' for local test)"
