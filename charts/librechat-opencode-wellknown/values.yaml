@@ -273,20 +273,14 @@ wellKnown:
                   action: error
 
         # ────────────────────────────────────────────────────────────────
-        # Reasoning CAP (not kill-switch) — issue #534 / PR #631.
+        # Reasoning effort — RESTORED as an explicit list at the root.
         #
-        # These are all thinking-capable models. Rather than disable thinking
-        # (too radical for an agentic coding fleet — it regresses exactly the
-        # work these models are chosen for), we set a LOW default reasoning
-        # budget via the OpenAI-standard graded knob `reasoningEffort`
-        # (minimal|low|medium|high). opencode reads it at
-        # provider.camer-digital.models.<id>.options.reasoningEffort. Users who
-        # want deep reasoning on a hard task cycle to the `thinking` variant
-        # (reasoningEffort: high) via the variant_cycle keybind. Well-known is
-        # the LOWEST-precedence config source, so a local opencode.json still
-        # wins — this is a calmer/cheaper default, not an enforced policy.
+        # The `models:` section could not be auto-derived from the catalog because
+        # ai-models is not a dependency of this chart, so `.Values.models` was empty.
+        # We restored the explicit list at the ROOT of this file (bottom), and the
+        # template loops over it to inject reasoning caps into the well-known JSON.
         #
-        # EXCLUDED (deliberately, do not add):
+        # EXCLUDED from reasoning effort (deliberately, do not add):
         #   • kimi-k2.7-code, adorsys-frontend-pro → thinking is ALWAYS ON
         #     (Moonshot rejects a suppression/cap param on K2.7-Code).
         #   • deepseek-r1-1-5b-local → pure R1 distill; CoT is intrinsic, no
@@ -294,177 +288,12 @@ wellKnown:
         #   • claude-sonnet-5, claude-fable-5 → Anthropic resold via DeepInfra.
         #     DeepInfra maps `reasoning_effort` onto the DEPRECATED Anthropic
         #     `thinking.type.enabled`, which Sonnet 5 rejects with a 500
-        #     ("use thinking.type.adaptive and output_config.effort"). Sending
-        #     ANY reasoning_effort breaks them; they self-regulate via adaptive
-        #     thinking with no param. Verified live 2026-07-22. Revisit if we
-        #     wire `output_config.effort` (ACCEPTED with HTTP 200 in testing;
-        #     not yet proven to cap) or if DeepInfra fixes the translation.
-        #   • non-reasoning models (gemma-4, ministral-3b-local,
-        #     qwen25-3b-awq-local) → no reasoning channel to cap. (NB
-        #     mimo-v2p5-pro + minimax-m3 were RECLASSIFIED as reasoning on
-        #     2026-07-16 and ARE capped below — they are no longer excluded.)
-        #
-        # ⚠️ VERIFY per backend before trusting the effect: each provider must
-        # honor `reasoning_effort` on its OpenAI-compat endpoint (the catalog
-        # verifies params against the backend model pages the same way). The
-        # self-hosted vLLM/llama.cpp models may ignore it (native knob is
-        # enable_thinking) until confirmed. See docs/spike-thinking-suppression.md.
+        #     ("use thinking.type.adaptive and output_config.effort").
+        #   • gemma-4 → no exposed thinking mode (*spStandard), Gemma rejects
+        #     reasoning_effort with 400.
+        #   • qwen3-4b-local → llama.cpp reasoning is OFF at the server
+        #     (charts/inference/values.yaml `serving.reasoning: "off"`).
         # ────────────────────────────────────────────────────────────────
-        models:
-          qwen3-4b-local:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          qwen3-5-4b-local:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          qwen3-8b-local:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          deepseek-v4-flash-0731:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          reviewer:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          adorsys-planner:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          adorsys-planner-pro:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          kimi-k2.5:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          minimax-m2p5:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          glm-5p2:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          qwen3p7-plus:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          gemini-3p1-flash-lite:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          glm-4.7-flash:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          minimax-m2.7:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          mimo-v2p5:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          ornith-1p0-35b:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          # claude-sonnet-5 / claude-fable-5 are EXCLUDED — see the header note.
-          # Anthropic-via-DeepInfra rejects reasoning_effort (DeepInfra maps it
-          # to the deprecated `thinking.type.enabled`, which Sonnet 5 refuses
-          # with a 500). Verified live 2026-07-22.
-          adorsys-researcher:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          adorsys-coder:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          adorsys-coder-pro:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          adorsys-reviewer:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          adorsys-reviewer-pro:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          # → nvidia/Nemotron-3-Nano-Omni-…-Reasoning. (The `-pro` sibling is
-          # excluded above: it routes to always-on Kimi K2.7-Code.)
-          adorsys-frontend:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          # Both RECLASSIFIED 2026-07-16 — shipped as "(Non-Thinking)" but
-          # verified live to emit reasoning_content, so they were thinking
-          # uncapped with no reasoning channel declared. See charts/ai-models.
-          mimo-v2p5-pro:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-          minimax-m3:
-            options:
-              reasoningEffort: low
-            variants:
-              thinking:
-                reasoningEffort: high
-
     # MCP servers (ADR-0042, scoping ADR-0044, OPT-IN default ADR-0074). Two axes:
     #   • CONNECTIVITY — `enabled` here decides whether opencode connects to
     #     the server AT ALL. A tool only exists if its server is connected.
@@ -2122,3 +1951,28 @@ opencode-wellknown:
         main:
           nginx:
             - path: /var/run
+
+# ────────────────────────────────────────────────────────────────
+# Reasoning effort — EXPLICIT LIST (ADR-0125 fallback).
+#
+# The `models:` section is explicitly listed here because the catalog
+# (charts/ai-models/values.yaml) cannot be wired into this chart at render time.
+# The template (templates/configmap.yaml) loops over this list to inject
+# reasoning effort caps into the well-known JSON.
+# ────────────────────────────────────────────────────────────────
+# ── Catalog-derived values (ADR-0125) ─────────────────────────────────────
+# `models:` is NOT set here. It is injected by the `ai-models` orchestrator,
+# which passes its catalog straight through — that is the entire reason this
+# chart moved under that ApplicationSet. templates/configmap.yaml turns each
+# entry's `reasoningEffort` / `reasoningEffortHigh` into the descriptor's
+# `provider.camer-digital.models.<id>.options.reasoningEffort` (+ the `thinking`
+# variant), so the catalog is the single source and this file holds no copy.
+#
+# ⚠️ Do NOT reintroduce a `models:` map here. The orchestrator's value would
+# override it anyway, so a list here is not a fallback — it is silent dead
+# config, which is exactly what an earlier revision of this change shipped.
+# A model opts into a reasoning cap by carrying `reasoningEffort` in the
+# catalog (ai-helm-values environments/prod/values/models.yaml); a model that
+# carries none gets no `options` block, which is how the exclusions above are
+# expressed now.
+models: {}

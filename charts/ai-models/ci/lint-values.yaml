@@ -55,6 +55,10 @@ rateLimitBudgeting:
 
 modelsInfo:
   enabled: true
+
+# Exercises the ADR-0125 well-known child + its catalog-derived reasoning caps.
+openCodeWellKnown:
+  enabled: true
   excludeKinds:
     - embedding
     - reranker
@@ -101,6 +105,11 @@ models:
   ci-weighted:
     kind: text
     minBackends: 1
+    # ADR-0125: opts this model into an opencode reasoning cap. A model with no
+    # reasoningEffort gets no `options` block in the descriptor — that is how the
+    # always-on-thinking exclusions are expressed.
+    reasoningEffort: low
+    reasoningEffortHigh: high
     info:
       displayName: "CI Weighted"
       contextLength: 131072
