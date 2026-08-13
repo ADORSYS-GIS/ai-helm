@@ -20,9 +20,12 @@ models:
   - id: document-detector
     trainer: document-detector
     datasetBuild:
-      # Only model kept `enabled: true` in this CI fixture so `helm
-      # template`/`helm lint` still render-cover the dataset-build
-      # WorkflowTemplate branch itself, not just its default-off state.
+      # All three hermetic-synthetic models are kept `enabled: true` in this
+      # CI fixture (matching production, ai-helm-values
+      # environments/prod/values/webank-training.yaml) so `helm
+      # template`/`helm lint` render-cover every dataset-build
+      # WorkflowTemplate branch, including each one's readiness-gate step,
+      # not just document-detector's.
       enabled: true
       target:
         repository: ds-document-detector
@@ -38,6 +41,7 @@ models:
   - id: document-recognizer
     trainer: document-recognizer
     datasetBuild:
+      enabled: true
       target:
         repository: ds-document-recognizer
         branch: main
@@ -49,6 +53,7 @@ models:
   - id: face-detector
     trainer: face-detector
     datasetBuild:
+      enabled: true
       target:
         repository: ds-face-detector
         branch: main
