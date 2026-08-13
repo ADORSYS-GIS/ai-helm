@@ -93,22 +93,13 @@ librechatSecrets:
     # once ai-helm is private, #640). Injected as GITHUB_SKILLS_TOKEN below.
     librechat-skills-sync:
       github_token: { key: ai/camer/digital/prod/env, property: librechat_skills_sync_github_token }
-    # LibreChat Code Interpreter API key — dormant fallback for the MANAGED
-    # librechat.ai sandbox API (issue #734). Superseded by the self-hosted
-    # instance (ADR-0122); LIBRECHAT_CODE_API_KEY is unused by the JWT auth
-    # path below (danny-avila/LibreChat's OSS codebase never references that
-    # env var — it's a managed-cloud-client-only path) but left wired in case
-    # the managed API is ever wanted again.
+    # LibreChat Code Interpreter API key (the managed sandbox service — code runs
+    # on LibreChat/Clickhouse infra, not our cluster). Activates the already-on
+    # `execute_code` agent capability. Injected as LIBRECHAT_CODE_API_KEY below.
+    # Get the key from your librechat.ai account (Code Interpreter is GA/free
+    # now — no pricing; a key is still required to call the managed API).
     librechat-code-config:
       code_api_key: { key: ai/camer/digital/prod/env, property: librechat_code_api_key }
-    # Ed25519 keypair LibreChat signs per-request Code Interpreter auth JWTs
-    # with (danny-avila/LibreChat packages/api/src/auth/codeapi.ts) — the
-    # PRIVATE half. The public half is a separate property consumed by the
-    # librechat-code-interpreter chart's API component (ADR-0122); both must
-    # come from the SAME generated keypair. See docs/patterns/
-    # self-hosted-code-interpreter.md for the openssl generation commands.
-    librechat-codeapi-jwt:
-      private_key_base64: { key: ai/camer/digital/prod/env, property: librechat_codeapi_jwt_private_key_base64 }
 
 # ────────────────────────────────────────────────────────────────────────
 # Agent-seed Job (ADR-0088). Idempotently provisions the LibreChat agent fleet
@@ -290,6 +281,21 @@ librechat:
   # would crashloop the live app (KSV-0014 is path-scoped-ignored in
   # .trivyignore.yaml with that justification).
   defaultPodOptions:
+    # Split-horizon DNS for Coder MCP (LB hairpin fix). LibreChat connects to
+    # coder_mcp server-side (Node.js backend, NOT the user's browser). Without
+    # this alias, the LibreChat pod resolves coder.ai.camer.digital to the
+    # external Hetzner LB IP (46.225.40.134), which does NOT support hairpin
+    # (pod→LB→same-pod) — the SYN black-holes and every MCP tool initialisation
+    # fails with `i/o timeout`, making the coder_mcp tool invisible to agents.
+    # Fix: pin to Traefik's in-cluster ClusterIP so the request stays in-cluster.
+    # ⚠️ IP = Traefik ClusterIP (svc traefik/traefik, k3s addon). Stable for the
+    # life of that Service. If coder_mcp stops working, re-verify:
+    #   kubectl -n traefik get svc traefik -o jsonpath='{.spec.clusterIP}'
+    # and update this IP + the matching entry in coder-app.yaml hostAliases.
+    hostAliases:
+      - ip: "10.43.253.70"
+        hostnames:
+          - "coder.ai.camer.digital"
     securityContext:
       runAsNonRoot: true
       runAsUser: 1000
@@ -396,33 +402,11 @@ librechat:
                 name: librechat-skills-sync
                 key: github_token
 
-            # Code Interpreter — self-hosted (ADR-0122). LIBRECHAT_CODE_BASEURL
-            # points at the in-cluster librechat-code-interpreter API Service
-            # instead of the managed librechat.ai one; LIBRECHAT_CODE_API_KEY
-            # stays wired (dormant, see librechat-code-config above) but is
-            # unused once the JWT path below is active.
-            LIBRECHAT_CODE_BASEURL: "http://codeapi-api.librechat-sandbox.svc.cluster.local:3112/v1"
+            # Code Interpreter (managed sandbox API) — activates execute_code.
             LIBRECHAT_CODE_API_KEY:
               secretKeyRef:
                 name: librechat-code-config
                 key: code_api_key
-
-            # Mint a short-lived Ed25519-signed JWT per Code Interpreter
-            # request instead of a static key — the self-hosted service
-            # rejects a static API key outside its own local/dev mode.
-            # CODEAPI_JWT_KID/_ALGORITHM/issuer/audience must match the
-            # librechat-code-interpreter chart's api.extraEnv (CODEAPI_JWT_KID,
-            # CODEAPI_JWT_PUBLIC_KEY) — both sides derive from the SAME
-            # generated Ed25519 keypair. Issuer ("librechat") and audience
-            # ("codeapi") are each side's compiled-in default; left unset here
-            # to keep them in sync without repeating the values twice.
-            CODEAPI_JWT_ENABLED: "true"
-            CODEAPI_JWT_ALGORITHM: EdDSA
-            CODEAPI_JWT_KID: lc-codeapi-2026-05
-            CODEAPI_JWT_PRIVATE_KEY_BASE64:
-              secretKeyRef:
-                name: librechat-codeapi-jwt
-                key: private_key_base64
 
             OPENID_CLIENT_ID:
               secretKeyRef:
