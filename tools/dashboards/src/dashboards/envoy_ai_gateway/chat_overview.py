@@ -158,10 +158,7 @@ def _latency_quantile(q: float) -> str:
     # [$__auto]: the auto step for a 6h range is ~21s, which is < the 60s
     # scrape interval, so rate()[<60s] has <2 samples → silent "no data" (same
     # trap as the per-user requests panel). [5m] holds ~5 samples.
-    return (
-        f"histogram_quantile({q}, sum by (le) "
-        f"(rate({METRIC_DURATION}_bucket{_MIMIR_SEL}[5m])))"
-    )
+    return f"histogram_quantile({q}, sum by (le) (rate({METRIC_DURATION}_bucket{_MIMIR_SEL}[5m])))"
 
 
 def _panel_latency() -> timeseries.Panel:

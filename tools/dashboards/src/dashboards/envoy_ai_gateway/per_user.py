@@ -541,7 +541,9 @@ def _panel_cost_per_channel_ts() -> timeseries.Panel:
             sh.prom_target(
                 # rate()[5m]*60 = USD per minute. NOT increase()[1m] — same
                 # 60s-scrape / ≥2-samples trap as the requests-per-user panel.
-                _usd(f"sum by ({LABEL_AZP}) (rate({METRIC_COST_MICRO_USD}{_OVERALL_SEL}[5m]) * 60)"),
+                _usd(
+                    f"sum by ({LABEL_AZP}) (rate({METRIC_COST_MICRO_USD}{_OVERALL_SEL}[5m]) * 60)"
+                ),
                 legend=f"{{{{{LABEL_AZP}}}}}",
                 instant=False,
             )
