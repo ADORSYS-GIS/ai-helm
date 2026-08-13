@@ -124,6 +124,7 @@ the summary:
 | **Workload config** (per-app `valuesObject`) | ❌ moved out (ADR-0056) | ✅ `environments/<env>/values/<app>.yaml` |
 | **Image tags** | ❌ | ✅ same files, written back by argocd-image-updater |
 | **The model catalog** (backends, models, prices, rate-limit plans) | ❌ moved out (ADR-0126) — `charts/ai-models/values.yaml` is an empty skeleton that refuses to render | ✅ `environments/prod/values/models.yaml` |
+| **The GPU fleet catalog** (which model runs on which card, engine profiles) | ❌ moved out (ADR-0129) — `charts/inference/values.yaml` is an empty skeleton too | ✅ `environments/prod/values/inference.yaml` |
 | **Model prices** | ❌ | ✅ machine-maintained — a 6-hourly job syncs them from the providers' APIs and commits to `main` (ADR-0127) |
 | **Per-env deps overlays** (Certificate / ExternalSecret / CiliumNetworkPolicy) + `cluster.yaml` | ❌ moved out (ADR-0055) | ✅ `environments/<env>/deps/<app>/` |
 | ArgoCD **root** `ai-apps-v2` | — | ❌ — pinned in **`home-os`** `charts/cd` |
@@ -371,7 +372,9 @@ Caddy sidecar. `charts/inference` (orchestrator) + `charts/inference-server`
 (generic leaf) serve them in ns `inference`; the gateway `Backend` points at
 `<model>.inference.svc.cluster.local:8080` and a `CiliumNetworkPolicy` is the
 control. **Adding/replacing a model = ONE ~15-line entry in
-`charts/inference/values.yaml`** (+ its `charts/ai-models` backend + model
+`ai-helm-values environments/prod/values/inference.yaml`** (ADR-0129 — NOT the
+chart any more; its defaults are an empty skeleton that refuses to render) (+ its
+gateway backend + model
 entry to make it user-reachable). Do NOT create a new chart per model.
 - Engine profiles live in the ORCHESTRATOR's `_helpers.tpl` — a Helm parent can't
   compute SUBCHART values at render time, which is why the old charts hardcoded

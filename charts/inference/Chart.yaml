@@ -22,6 +22,11 @@ description: |
   The ApplicationSet is a CONTROL object, so the charts/apps entry sets
   `controlPlane: true` and it lands in-cluster/argocd (ADR-0017); the CHILDREN
   it generates target home-remote, namespace `inference`.
+annotations:
+  # The catalog moved to ai-helm-values (ADR-0129), so this chart's own
+  # values.yaml is an empty skeleton that deliberately fails to render (see the
+  # requireCatalog guard). CI lints + renders it through ci/*-values.yaml.
+  ai-helm.adorsys-gis.github.io/lint-mode: ci-values
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

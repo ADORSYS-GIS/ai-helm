@@ -40,7 +40,8 @@ is applied before the request reaches it.
 | **`charts/inference-server`** | Generic leaf. One model's resources: bjw-template renders the Deployment + seed Job + Service; own templates render PVC, ExternalSecrets, CiliumNetworkPolicy, ServiceMonitor. |
 | **`charts/ai-models`** | Unchanged. The gateway catalog — a backend entry + a model entry federate a served model to users. |
 
-**Adding a model is one ~15-line entry** in `charts/inference/values.yaml`
+**Adding a model is one ~15-line entry** in `ai-helm-values`
+`environments/prod/values/inference.yaml` (moved out of the chart by ADR-0129)
 (plus its `charts/ai-models` entries to make it user-reachable). No new chart, no
 new Application, no ADR. The step-by-step recipe with verification is
 `inference-ops` → `docs/how-to/add-a-model.md`.

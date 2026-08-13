@@ -20,6 +20,39 @@
 */}}
 
 {{/*
+inference.requireCatalog
+
+Preflight guard. Renders nothing; hard-fails if the fleet catalog is absent.
+
+Since ADR-0129 the catalog lives in `ai-helm-values environments/prod/values/
+inference.yaml` and this chart's own values.yaml is an empty skeleton. That
+source is mounted with `ignoreMissingValueFiles: true`, so a file that is
+missing, renamed or unparseable does NOT fail the ArgoCD render on its own — it
+silently yields the chart defaults.
+
+Without this guard those defaults render PERFECTLY VALIDLY: an ApplicationSet
+whose list generator is empty. The controller then treats every model child as
+deleted and prunes the fleet — each model's StatefulSet, its Service, its
+CiliumNetworkPolicy and the PVC holding tens of GB of downloaded weights, which
+then have to be re-seeded from HuggingFace. The destination guard below does not
+catch it: `argocd.destination` defaults to "home-remote" and renders happily.
+
+So an empty catalog is a render failure instead. `aii-inference` goes
+ComparisonError, stops syncing, and every GPU model keeps serving untouched.
+
+Input: the root context.
+*/}}
+{{- define "inference.requireCatalog" -}}
+{{- $missing := list -}}
+{{- if not .Values.models -}}{{- $missing = append $missing "models" -}}{{- end -}}
+{{- if not .Values.defaults -}}{{- $missing = append $missing "defaults" -}}{{- end -}}
+{{- if not (.Values.argocd.destination).namespace -}}{{- $missing = append $missing "argocd.destination.namespace" -}}{{- end -}}
+{{- if $missing -}}
+{{- fail (printf "\n\n  REFUSING TO RENDER: the GPU fleet catalog is missing (%s).\n\n  This chart carries no catalog of its own (ADR-0129) — it is supplied by\n  ai-helm-values at environments/prod/values/inference.yaml via the aii-inference\n  Application's $values source. Rendering without it would emit an ApplicationSet\n  with NO children, and the controller would prune every model on the fleet,\n  including the PVCs holding their downloaded weights.\n\n  Rendering locally? Pass that file with -f. Seeing this from ArgoCD? The values\n  repo file is missing or unparseable — fix it there; the running models are\n  untouched until it is.\n" (join ", " $missing)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 inference.argocd.destinationClusterRef
 
 Emits the ArgoCD destination cluster identity line and HARD-FAILS if it resolves
