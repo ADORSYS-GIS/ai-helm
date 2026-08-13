@@ -258,6 +258,13 @@ keycloak-config:
     # without this scope a caller authenticates and is then denied on every tool call.
     # Mirrors the server's own reference realm (deploy/keycloak/realm-lightbridge.json
     # in that repo): two mappers, no dedicated resource client.
+    #
+    # Verified against a real token (azp=self-service-mcp-api): the permission roles
+    # ALREADY exist and are already granted, as CLIENT roles on the `code-intelligence`
+    # client — `resource_access["code-intelligence"].roles` carries repo:read,
+    # review:read, task:read, repo:approve, … The token was missing only the flat
+    # `permissions` claim, which is why this scope maps FROM that client and declares
+    # no roles of its own.
     codeIntelligence:
       name: "code-intelligence"
       description: "Audience + permissions claim for the Code Intelligence MCP server"
@@ -266,9 +273,12 @@ keycloak-config:
         include.in.token.scope: "false"
         display.on.consent.screen: "true"
       protocolMappers:
-        # Without this the server rejects every request with 401 — it validates
-        # `aud == code-intelligence`. A free-string audience (no backing client), as
-        # the resource server is not a Keycloak client and nothing logs in as it.
+        # The server validates `aud == code-intelligence`. Today that audience already
+        # arrives INCIDENTALLY, via Keycloak's built-in audience-resolve mapper in the
+        # stock `roles` scope: it adds every client whose roles appear in the token, and
+        # holders of code-intelligence roles therefore get it for free. This mapper makes
+        # it explicit and deterministic rather than a side effect of role membership.
+        # A free-string audience — the resource server is not a login client.
         - name: code_intelligence_audience
           protocol: "openid-connect"
           protocolMapper: "oidc-audience-mapper"
@@ -280,9 +290,13 @@ keycloak-config:
             access.token.claim: "true"
         # MUST be multivalued: the control plane reads this claim as a JSON array of
         # permission strings (`Claims::permissions`); a bare string yields an empty
-        # permission set and every `Caller::require` fails closed. Sourced from the
-        # self-service-mcp-api client roles below — that is the client callers get
-        # their tokens from, so its roles are the ones present at mapping time.
+        # permission set and every `Caller::require` fails closed.
+        #
+        # Sourced from the `code-intelligence` client's roles, NOT this client's — that
+        # is where the permission model actually lives (repo:*, review:*, task:*), and a
+        # real token confirms users already hold them there. A client-role mapper reads
+        # the named client's roles regardless of which client issued the token, so this
+        # correctly projects them into a token minted by self-service-mcp-api.
         - name: code_intelligence_permissions
           protocol: "openid-connect"
           protocolMapper: "oidc-usermodel-client-role-mapper"
@@ -295,7 +309,7 @@ keycloak-config:
             access.token.claim: "true"
             claim.name: "permissions"
             jsonType.label: "String"
-            usermodel.clientRoleMapping.clientId: "self-service-mcp-api"
+            usermodel.clientRoleMapping.clientId: "code-intelligence"
 
   # OIDC Clients
   clients:
@@ -620,20 +634,13 @@ keycloak-config:
         - organization
         - offline_access
         - microprofile-jwt
-      # Code Intelligence MCP permissions — the exact strings its handler.rs passes to
-      # `Caller::require`, compared literally, so the colons are part of the name. They
-      # reach the token as the flat `permissions` claim via the code-intelligence scope
-      # above; a user without them authenticates fine and is denied per tool.
-      # NOTE: descriptions must not contain ": " — realm-configmap.yaml renders
-      # `description:` as an UNQUOTED plain scalar, and a colon-space turns the value
-      # into a nested mapping, making the whole realm document unparseable at import.
-      roles:
-        - name: "repo:read"
-          description: "Code Intelligence — read repository settings and the structural code graph"
-        - name: "review:read"
-          description: "Code Intelligence — read a run's review status and findings"
-        - name: "review:trigger"
-          description: "Code Intelligence — start a deep review (spends runner compute, quota-limited)"
+      # NOTE: no Code Intelligence roles are declared here. The permission model lives on
+      # the `code-intelligence` client (repo:*, review:*, task:*, verified present and
+      # already granted in a live token), and the scope above maps FROM that client.
+      # Declaring copies here would create a second, silently-unused set of role names.
+      # `review:trigger` (#591) is the one permission not yet present there — it needs
+      # creating and granting on that client, which this chart cannot express because
+      # that client is not chart-managed. See the PR description.
 
     converseFrontend:
       enabled: true
