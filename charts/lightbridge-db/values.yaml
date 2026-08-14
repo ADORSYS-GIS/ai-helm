@@ -227,21 +227,55 @@ resources:
   # lightbridge-usage-db — RESTORED (reverses the usage-db half of ADR-0026).
   # lightbridge-authz-usage (crates/lightbridge-authz-usage,
   # migrations-usage/) needs a Postgres it can call `create_hypertable()` on.
-  # It is NOT a `Database` CR on the shared lightbridge-main-db cluster like
-  # repoauth/codeintel/coder/governance below — those all work because their
-  # extensions (pgvector for codeintel) ship in the standard/system
-  # cloudnative-pg/postgresql image. TimescaleDB does NOT: it isn't in the
-  # Debian apt repos cloudnative-pg's images build from (unlike pgvector),
-  # so `CREATE EXTENSION timescaledb` would fail on lightbridge-main-db's
-  # plain ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie image — there
-  # is no shared library for it to load. A dedicated Cluster on a
-  # Timescale-vendor image (via ClusterImageCatalog, since imageCatalogRef
-  # doesn't accept arbitrary third-party repos as imageName-equivalent
-  # inline) is the only viable mechanism, exactly as it was before
-  # ADR-0026 dropped it — see the restore runbook at
-  # docs/cnpg-native-backup/lightbridge-usage-db-restore.yaml, which still
-  # references this ClusterImageCatalog/Cluster pair and proves the prior
-  # setup was live and backed up. migrations-usage/20260223000001_init_usage.sql
+  #
+  # It is NOT a `Database` CR on the shared lightbridge-main-db cluster —
+  # confirmed against the LIVE cluster, not just the chart: lightbridge-main-db
+  # carries FIVE tenants today (database `app` — lightbridge-authz's own,
+  # verified via `\dt` → accounts/api_keys/projects/budget_grants/...— plus
+  # Database CRs `codeintel`/`coder`/`governance`/`repoauth` below), its image
+  # is the unmodified ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+  # (no imageCatalogRef), and `codeintel` has pgvector ACTIVELY INSTALLED
+  # (`select extname, extversion from pg_extension` → vector 0.8.2) while
+  # `pg_available_extensions` on that same cluster does not list `timescaledb`
+  # at all. A `Database` CR's `extensions` field can only `CREATE EXTENSION`
+  # something the running image already ships, so `timescaledb` is out on the
+  # current image.
+  #
+  # Swapping lightbridge-main-db's image to a Timescale vendor image was
+  # evaluated too (both `timescale/timescaledb` and `timescale/timescaledb-ha`
+  # DO bundle pgvector — confirmed from their own Dockerfiles — so pgvector
+  # parity for codeintel is not actually the blocker one might expect).
+  # Rejected anyway: that image change would move ALL FIVE tenants —
+  # including lightbridge-authz's own `app` database, the platform's
+  # auth boundary — onto a different vendor image in one rolling operation,
+  # for a feature (`usage`) that has never been live in prod before now.
+  # Two concrete, checkable reasons this is not a routine image bump:
+  # (1) CNPG's admission webhook makes `.spec.postgresUID`/`postgresGID`
+  #     immutable once a Cluster has bootstrapped. lightbridge-main-db has
+  #     neither field set today, so it runs at CNPG's own default (26, the
+  #     `ghcr.io/cloudnative-pg/postgresql` convention). Timescale's
+  #     Alpine-based `timescaledb` image defaults postgres to UID 70 (why
+  #     THIS cluster, below, sets postgresUID/GID to 70 explicitly); the
+  #     Ubuntu-based `timescaledb-ha` image creates it at UID 1000. Neither
+  #     matches — an in-place swap is blocked short of re-bootstrapping,
+  #     which is a new cluster + a live data migration in every way that
+  #     matters, not a reuse of the existing one.
+  # (2) Debian trixie (glibc) → Alpine (musl) or → Ubuntu 22.04 (a different
+  #     glibc build) changes the C library backing Postgres's collations,
+  #     the textbook trigger for a collation-version mismatch: existing text
+  #     indexes across all five tenants (including codeintel's vector/text
+  #     indexes) would need an audited REINDEX pass to rule out silently
+  #     wrong comparisons post-swap.
+  # Given both, a small, fully isolated dedicated cluster is the lower-risk
+  # path to unblock a currently-broken service; consolidating onto
+  # lightbridge-main-db is a legitimate idea to revisit deliberately later,
+  # not something to fold into this fix. See the PR description for the
+  # full evaluation.
+  #
+  # This is exactly what existed before ADR-0026 dropped it — see the
+  # restore runbook at docs/cnpg-native-backup/lightbridge-usage-db-restore.yaml,
+  # which still references this ClusterImageCatalog/Cluster pair and proves
+  # the prior setup was live and backed up. migrations-usage/20260223000001_init_usage.sql
   # already guards this defensively (`IF EXISTS (SELECT 1 FROM
   # pg_available_extensions WHERE name = 'timescaledb') THEN CREATE
   # EXTENSION ...`), so it degrades to plain Postgres if this ever regresses
@@ -250,7 +284,22 @@ resources:
   #
   # instances/storage/resources/archive_timeout mirror the pre-ADR-0026 spec
   # verbatim (dedicated cluster, not shared, so no need for main-db's later
-  # max_connections/memory bump — that was sized for 7 shared tenant roles).
+  # max_connections/memory bump — that was sized for its shared tenants).
+  #
+  # Image major PINNED TO 18 (was 17 — wrong: latest TimescaleDB targets
+  # Postgres 18, and pg18 also matches lightbridge-main-db's own major, so a
+  # pg17 usage DB next to a pg18 estate would have been its own, unforced
+  # inconsistency). Tag verified live on Docker Hub: `GET
+  # https://hub.docker.com/v2/repositories/timescale/timescaledb/tags/2.29.1-pg18`
+  # → exists, multi-arch (amd64/arm64/...), pushed 2026-08-04 — the latest
+  # published TimescaleDB (2.29.1) built against Postgres 18. Deliberately
+  # the plain `timescale/timescaledb` image, not `timescale/timescaledb-ha`:
+  # the `-ha` variant bundles Patroni, pgBackRest, and Spilo glue for
+  # Zalando/Patroni-style HA — all of which CNPG replaces with its own
+  # controller and the barman-cloud plugin sidecar (already used below), so
+  # none of that tooling is used here; it would only add ~1.5GB of unused
+  # surface and move the default postgres UID to 1000 instead of the 70 this
+  # Cluster is already pinned to for the plain image.
   # ────────────────────────────────────────────────────────────────────
   - |
     apiVersion: postgresql.cnpg.io/v1
@@ -260,8 +309,8 @@ resources:
       namespace: converse
     spec:
       images:
-        - major: 17
-          image: timescale/timescaledb:2.21.1-pg17
+        - major: 18
+          image: timescale/timescaledb:2.29.1-pg18
   - |
     apiVersion: postgresql.cnpg.io/v1
     kind: Cluster
@@ -276,7 +325,7 @@ resources:
         apiGroup: postgresql.cnpg.io
         kind: ClusterImageCatalog
         name: lightbridge-usage-db
-        major: 17
+        major: 18
       storage:
         size: "10Gi"
       plugins:
