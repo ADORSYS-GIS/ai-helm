@@ -1,0 +1,501 @@
+# MIDV-2020 real-crop dataset build for the document-recognizer (RFC-0009,
+# webank-models story #328 / epic #326 / ticket #408). Distinct from the
+# `<id>-dataset-build` templates rendered by workflowtemplate.yaml above:
+# those are one hermetic-synthetic Python generator running in a single
+# container/pod. This is a six-step DAG spanning separate pods (deriving the
+# governed CTC labels vocabulary, a real archive fetch, a release-mode
+# `xtask` crop pass, materialization, packing, and a round-trip validation),
+# so it needs a PVC that outlives any one pod, not an `emptyDir`.
+#
+# This is a fidelity adoption of an object that was already applied directly
+# to hetzner-prod with `kubectl apply` (self-inflicted GitOps drift, not
+# another team's work) and has already run to completion twice, producing
+# the project's only real MIDV-2020 dataset now in LakeFS-adjacent storage.
+# Bringing it under this chart does not change its DAG, its commands, or its
+# step order — see the per-step comments below for exactly what carried over
+# unchanged versus what is now Helm-values-driven.
+#
+# This workflow deliberately never calls LakeFS or `fixed-dataset publish`.
+# MIDV-2020's `source_class: third_party_licensed` cannot clear
+# `readiness-gate` today: RFC-0006's `third_party_licensed` amendment landed
+# as a spec change only (webank-models#402), the schema/xtask/
+# `validate_run_start` implementation remains outstanding (webank-models#401),
+# and webank-models#505's own risk-acceptance PR is still unmerged. It stops
+# after producing a validated bundle staged two ways: as this workflow's one
+# Argo output artifact (archived to the cluster's already-configured default
+# artifact repository), and as a durable copy on a pre-existing, separately
+# managed PVC (`webank-document-recognizer-midv-dataset-build-output`) that
+# survives workflow completion/GC — both stagings already exist on the live
+# object; neither is new. Adding a dormant, always-false-guarded publish step
+# here would be dead code standing in for a capability that does not exist
+# yet, not a kill-switch, so none is added.
+{{- $workflow := .Values.workflow -}}
+{{- $training := .Values.training -}}
+{{- $midv := $training.midvDatasetBuild -}}
+{{- $name := "webank-document-recognizer-midv-dataset-build" -}}
+{{- $outputPvcClaimName := printf "%s-output" $name -}}
+{{- if $midv.enabled }}
+{{- if not $training.datasetBuild.image }}{{ fail "webank-training: training.datasetBuild.image must be an immutable image digest" }}{{- end }}
+{{- if not (contains "@sha256:" $training.datasetBuild.image) }}{{ fail "webank-training: training.datasetBuild.image must be digest-pinned" }}{{- end }}
+{{- if not $workflow.serviceAccountName }}{{ fail "webank-training: workflow.serviceAccountName is required" }}{{- end }}
+{{- if eq (len $training.gpu.nodeSelector) 0 }}{{ fail "webank-training: GPU-capable templates require a non-empty training.gpu.nodeSelector" }}{{- end }}
+{{- if not ($training.gpu.runtimeClassName | default "") }}{{ fail "webank-training: GPU-capable templates require training.gpu.runtimeClassName" }}{{- end }}
+{{- if eq (len $training.gpu.tolerations) 0 }}{{ fail "webank-training: GPU-capable templates require at least one training.gpu.toleration" }}{{- end }}
+{{- if not $training.otel.endpoint }}{{ fail "webank-training: training.otel.endpoint is required" }}{{- end }}
+{{- if not $midv.labelsVocabulary.repository }}{{ fail "webank-training: training.midvDatasetBuild.labelsVocabulary.repository is required" }}{{- end }}
+{{- if not $midv.labelsVocabulary.revision }}{{ fail "webank-training: training.midvDatasetBuild.labelsVocabulary.revision is required" }}{{- end }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: {{ $name | quote }}
+  labels:
+    {{- include "common.labels.standard" $ | nindent 4 }}
+    app.kubernetes.io/part-of: webank-models
+    app.kubernetes.io/component: dataset-build
+    webank.io/model: document-recognizer
+  annotations:
+    webank.io/adr: "0034"
+    webank.io/rfc: "0009"
+    webank.io/ticket: "408"
+    webank.io/source-strategy: midv-2020-real
+spec:
+  entrypoint: build
+  # Live value, distinct from the shared `workflow.activeDeadlineSeconds`
+  # (21600s) every other template here uses: this DAG measured well under 4
+  # minutes of compute locally (release build, real 825 MB / 10-document-type
+  # MIDV-2020 cache), so 3600s already budgets generously for a slower
+  # in-cluster archive fetch, image pull, and PVC provisioning while still
+  # bounding a stuck run.
+  activeDeadlineSeconds: 3600
+  ttlStrategy:
+    secondsAfterCompletion: {{ $workflow.ttlSecondsAfterCompletion }}
+  serviceAccountName: {{ $workflow.serviceAccountName | quote }}
+  {{- with $workflow.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  # One PVC shared by every task in this DAG, so the raw crops, the
+  # materialized inputs.safetensors, the packed bundle, and its unpacked
+  # round-trip copy are never re-uploaded/re-downloaded between steps.
+  # ReadWriteOnce is sufficient: this DAG is a straight-line sequence, never
+  # two tasks mounting the volume concurrently. `longhorn` (not the cluster's
+  # default `hcloud-volumes`): both GPU nodes run the Longhorn CSI plugin,
+  # while the Hetzner Cloud CSI driver's managed fleet does not include them,
+  # so a default-class PVC first bound by a non-GPU step's pod could never
+  # later attach to a GPU node.
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: {{ $midv.workspaceSizeLimit | quote }}
+  arguments:
+    parameters:
+      - name: run_name
+        description: >-
+          Human-chosen identifier, this build's correlation key across its
+          OTLP traces/logs (ADR-0015).
+        value: {{ printf "midv-dataset-build-{{workflow.name}}" | quote }}
+      - name: exclude_doc_types
+        description: >-
+          Comma-separated MIDV-2020 document-type codes to exclude (e.g.
+          "alb_id,aze_passport") for a doc-type-disjoint holdout split.
+          Empty means no exclusion.
+        value: ""
+      - name: crop_limit
+        description: >-
+          Optional cap on the number of crops materialized. Empty means the
+          full subset.
+        value: {{ $midv.cropLimit | default "" | quote }}
+      - name: midv_archive
+        description: >-
+          Optional override of scripts/fetch-midv2020.sh's own --archive
+          flag. Empty uses the script's own default (templates.tar).
+        value: ""
+      - name: output_destination
+        description: >-
+          Relative directory the validated bundle plus its round-trip
+          SHA-256 report are staged under, both on /workspace/output (this
+          workflow's Argo output artifact) and on the durable outputPvc
+          mounted at /durable. Not a LakeFS path.
+        value: "document-recognizer/midv-dataset-build"
+  templates:
+    - name: build
+      dag:
+        tasks:
+          - name: derive-labels-vocabulary
+            template: derive-labels-vocabulary
+          - name: fetch-midv-source
+            template: fetch-midv-source
+          - name: midv-raw-source
+            dependencies: [fetch-midv-source, derive-labels-vocabulary]
+            template: midv-raw-source
+          - name: materialize-synthetic-source
+            dependencies: [midv-raw-source]
+            template: materialize-synthetic-source
+          - name: pack-dataset
+            dependencies: [materialize-synthetic-source]
+            template: pack-dataset
+          - name: validate-round-trip
+            dependencies: [pack-dataset]
+            template: validate-round-trip
+
+    # Derive the governed document-recognizer CTC vocabulary (labels.json)
+    # in-pod: fetch the publisher's pinned preprocessor_config.json and
+    # extract its character_list (18710 entries, index 0 "blank"). The
+    # HuggingFace repository/revision are Helm values, not hardcoded, so an
+    # environment can re-pin the source without a template change.
+    - name: derive-labels-vocabulary
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: webank-models
+          webank.io/step: derive-labels-vocabulary
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $training.gpu.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        fsGroup: 10001
+      container:
+        image: {{ $training.datasetBuild.image | quote }}
+        command: ["sh", "-ceu"]
+        args:
+          - |
+            curl -fSL --connect-timeout 30 --max-time 120 \
+              "https://huggingface.co/{{ $midv.labelsVocabulary.repository }}/resolve/{{ $midv.labelsVocabulary.revision }}/preprocessor_config.json" \
+              -o /workspace/preprocessor_config.json
+            python3 -c '
+            import json
+            cfg = json.load(open("/workspace/preprocessor_config.json"))
+            labels = cfg["character_list"]
+            assert isinstance(labels, list) and len(labels) == 18710, "expected 18710 labels, got %d" % len(labels)
+            assert labels[0] == "blank", "index 0 must be blank, got %r" % (labels[0],)
+            json.dump(labels, open("/workspace/labels.json", "w"), ensure_ascii=False, separators=(",", ":"))
+            print("labels %d entries, index0=%r indexN=%r" % (len(labels), labels[0], labels[-1]))
+            '
+        env:
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: "webank-dataset-build-derive-labels-vocabulary"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests: { cpu: "250m", memory: "256Mi", ephemeral-storage: "256Mi" }
+          limits: { cpu: "500m", memory: "512Mi", ephemeral-storage: "512Mi" }
+
+    # Pull the pinned, checksum-verified MIDV-2020 archive
+    # (scripts/fetch-midv2020.sh, baked into the image: CC BY-SA 2.5,
+    # mock/synthetic documents, no consent gate). This step never touches
+    # the xtask binary, but still needs GPU node placement: `longhorn`
+    # (this DAG's shared-PVC StorageClass) runs its CSI plugin only on
+    # `nvidia.com/gpu.present=true` nodes, and every pod that mounts this PVC
+    # must land on that same node pool regardless of its own compute needs.
+    - name: fetch-midv-source
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: webank-models
+          webank.io/step: fetch-midv-source
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $training.gpu.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        fsGroup: 10001
+      container:
+        image: {{ $training.datasetBuild.image | quote }}
+        command: ["sh", "-ceu"]
+        args:
+          - |
+            if [ -n "${MIDV_ARCHIVE:-}" ]; then
+              /opt/webank-models/scripts/fetch-midv2020.sh \
+                --dest /workspace/midv-2020 --archive "$MIDV_ARCHIVE"
+            else
+              /opt/webank-models/scripts/fetch-midv2020.sh --dest /workspace/midv-2020
+            fi
+        env:
+          - name: MIDV_ARCHIVE
+            value: "{{`{{workflow.parameters.midv_archive}}`}}"
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: "webank-dataset-build-fetch-midv-source"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests: { cpu: "250m", memory: "256Mi", ephemeral-storage: "256Mi" }
+          limits: { cpu: "500m", memory: "512Mi", ephemeral-storage: "512Mi" }
+
+    # Real MIDV-2020 crops in the exact raw source-directory shape
+    # `training-data materialize-synthetic-source --model document-recognizer`
+    # expects. GPU node placement only because the image's release `xtask`
+    # binary links `libcuda.so.1` and cannot start otherwise (ai-helm#949) —
+    # this step's own work stays CPU/IO only.
+    - name: midv-raw-source
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: webank-models
+          webank.io/step: midv-raw-source
+      podSpecPatch: |
+        runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $training.gpu.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        fsGroup: 10001
+      container:
+        image: {{ $training.datasetBuild.image | quote }}
+        command: ["sh", "-ceu"]
+        args:
+          - |
+            set -- --cache /workspace/midv-2020 \
+                    --labels /workspace/labels.json \
+                    --output-dir /workspace/raw-source
+            if [ -n "${CROP_LIMIT:-}" ]; then
+              set -- "$@" --limit "$CROP_LIMIT"
+            fi
+            if [ -n "${EXCLUDE_DOC_TYPES:-}" ]; then
+              old_ifs=$IFS
+              IFS=,
+              for doc_type in $EXCLUDE_DOC_TYPES; do
+                [ -n "$doc_type" ] && set -- "$@" --exclude-doc-type "$doc_type"
+              done
+              IFS=$old_ifs
+            fi
+            exec xtask midv-raw-source "$@"
+        env:
+          - name: EXCLUDE_DOC_TYPES
+            value: "{{`{{workflow.parameters.exclude_doc_types}}`}}"
+          - name: CROP_LIMIT
+            value: "{{`{{workflow.parameters.crop_limit}}`}}"
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: "webank-dataset-build-midv-raw-source"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          {{- toYaml $training.datasetBuild.resources | nindent 10 }}
+
+    # Apply the document-recognizer's typed model-io/Candle training
+    # contract to the raw crops — the same adapter the document-recognizer
+    # hermetic-synthetic builder already uses. Filesystem-only.
+    - name: materialize-synthetic-source
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: webank-models
+          webank.io/step: materialize-synthetic-source
+      podSpecPatch: |
+        runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $training.gpu.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        fsGroup: 10001
+      container:
+        image: {{ $training.datasetBuild.image | quote }}
+        command: ["xtask"]
+        args:
+          - training-data
+          - materialize-synthetic-source
+          - --model
+          - document-recognizer
+          - --source
+          - /workspace/raw-source
+          - --output
+          - /workspace/materialized
+        env:
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: "webank-dataset-build-materialize-synthetic-source"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          {{- toYaml $training.datasetBuild.resources | nindent 10 }}
+
+    # Seal the materialized directory into the one archive shape
+    # `fixed-dataset unpack` / the train workflow's `fixed-dataset fetch`
+    # already expect. No network access.
+    - name: pack-dataset
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: webank-models
+          webank.io/step: pack-dataset
+      podSpecPatch: |
+        runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $training.gpu.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        fsGroup: 10001
+      container:
+        image: {{ $training.datasetBuild.image | quote }}
+        command: ["xtask"]
+        args:
+          - training-data
+          - fixed-dataset
+          - pack
+          - --model
+          - document-recognizer
+          - --input
+          - /workspace/materialized
+          - --output
+          - /workspace/bundle.tar
+        env:
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: "webank-dataset-build-pack-dataset"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          {{- toYaml $training.datasetBuild.resources | nindent 10 }}
+
+    # Unpack the sealed bundle and prove it is byte-identical to what was
+    # packed, then stage the validated bundle two ways: as this workflow's
+    # one output artifact, and as a durable copy on a pre-existing PVC that
+    # survives workflow completion/GC (that PVC is provisioned and owned
+    # outside this chart — see the values.yaml comment on
+    # `midvDatasetBuild.durableOutputPvcClaimName`). No LakeFS publication
+    # step exists — see the top-of-file comment.
+    - name: validate-round-trip
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: webank-models
+          webank.io/step: validate-round-trip
+      podSpecPatch: |
+        runtimeClassName: {{ $training.gpu.runtimeClassName | quote }}
+      nodeSelector:
+        {{- toYaml $training.gpu.nodeSelector | nindent 8 }}
+      {{- with $training.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $training.gpu.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        fsGroup: 10001
+      volumes:
+        - name: durable-output
+          persistentVolumeClaim:
+            claimName: {{ $midv.durableOutputPvcClaimName | default $outputPvcClaimName | quote }}
+      container:
+        image: {{ $training.datasetBuild.image | quote }}
+        command: ["sh", "-ceu"]
+        args:
+          - |
+            xtask training-data fixed-dataset unpack \
+              --model document-recognizer \
+              --bundle /workspace/bundle.tar \
+              --output /workspace/unpacked
+
+            materialized_dir=/workspace/materialized
+            unpacked_dir=/workspace/unpacked/dataset
+            failed=0
+            for original in "$materialized_dir"/*; do
+              name="$(basename "$original")"
+              original_sha="$(sha256sum "$original" | awk '{print $1}')"
+              roundtrip_sha="$(sha256sum "$unpacked_dir/$name" 2>/dev/null | awk '{print $1}')"
+              if [ "$original_sha" = "$roundtrip_sha" ]; then
+                echo "round-trip ok: $name $original_sha"
+              else
+                echo "ROUND-TRIP MISMATCH: $name original=$original_sha roundtrip=${roundtrip_sha:-<missing>}" >&2
+                failed=1
+              fi
+            done
+            if [ "$failed" -ne 0 ]; then
+              echo "fixed-dataset pack -> unpack is not byte-identical; refusing to stage an output artifact" >&2
+              exit 1
+            fi
+
+            mkdir -p "/workspace/output/$OUTPUT_DESTINATION"
+            cp /workspace/bundle.tar "/workspace/output/$OUTPUT_DESTINATION/training-bundle.tar"
+            sha256sum "$materialized_dir"/* > "/workspace/output/$OUTPUT_DESTINATION/round-trip-sha256.txt"
+            echo "local bundle validated and staged at /workspace/output/$OUTPUT_DESTINATION -- nothing published to LakeFS (webank-models#401, RFC-0006 IP-counsel questions open)"
+
+            # Durable copy: stage into a per-run directory on the outputPvc,
+            # then atomically rename it over the previous run's output. Both
+            # directories live on the same PVC mount, so the final `mv` is a
+            # same-device rename, not a copy.
+            durable_root=/durable
+            dest_dir="$durable_root/$OUTPUT_DESTINATION"
+            stage_dir="$durable_root/.staging-$TRAINING_RUN_ID"
+            rm -rf "$stage_dir"
+            mkdir -p "$stage_dir/$OUTPUT_DESTINATION"
+            cp /workspace/bundle.tar "$stage_dir/$OUTPUT_DESTINATION/training-bundle.tar"
+            sha256sum "$materialized_dir"/* > "$stage_dir/$OUTPUT_DESTINATION/round-trip-sha256.txt"
+            rm -rf "$dest_dir"
+            mkdir -p "$(dirname "$dest_dir")"
+            mv "$stage_dir/$OUTPUT_DESTINATION" "$dest_dir"
+            rmdir "$stage_dir" 2>/dev/null || true
+            echo "durable bundle staged at $dest_dir on PVC $DURABLE_OUTPUT_PVC (overwrites the previous run's output; this copy survives workflow completion/GC)"
+        env:
+          - name: OUTPUT_DESTINATION
+            value: "{{`{{workflow.parameters.output_destination}}`}}"
+          - name: TRAINING_RUN_ID
+            value: "{{`{{workflow.parameters.run_name}}`}}"
+          - name: DURABLE_OUTPUT_PVC
+            value: {{ $midv.durableOutputPvcClaimName | default $outputPvcClaimName | quote }}
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: {{ $training.otel.endpoint | quote }}
+          - name: OTEL_SERVICE_NAME
+            value: "webank-dataset-build-validate-round-trip"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: durable-output
+            mountPath: /durable
+        resources:
+          {{- toYaml $training.datasetBuild.resources | nindent 10 }}
+      outputs:
+        artifacts:
+          - name: dataset-bundle
+            path: /workspace/output
+{{- end }}
