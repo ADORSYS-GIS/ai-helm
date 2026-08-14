@@ -589,13 +589,13 @@ alerting:
         - uid: cost-monthly-burn
           title: AI Gateway — monthly burn high
           datasourceUid: mimir
-          expr: sum(ai_gateway_cost_mtd_total_usd)/1e6
+          expr: sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[30d]))/1e6
           fromSeconds: 2592000
           op: gt
           threshold: 6000
           for: 1h
           severity: warning
-          summary: "AI Gateway month-to-date spend exceeded $6000 (budget knob — set to your actual monthly budget; run-rate ~$5k)."
+          summary: "AI Gateway 30-day spend exceeded $6000 (budget knob — set to your actual monthly budget; run-rate ~$5k)."
         # Per-actor: fires when a SINGLE person's own rolling 30d spend crosses
         # their OWN plan's monthly cap. Free-tier budget is $15, alerted in TWO
         # TIERS — a $15 WARNING (reached budget) and a $30 CRITICAL (2x over);
@@ -612,7 +612,7 @@ alerting:
           datasourceUid: mimir
           expr: >-
             sum by (email, display_name)
-              (ai_gateway_cost_mtd_usd{billing_plan="free"}) / 1e6
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free"}[30d])) / 1e6
           fromSeconds: 2592000
           op: gt
           threshold: 15
@@ -620,16 +620,15 @@ alerting:
           severity: warning
           summary: >-
             ⚠️ {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} this month —
+            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
             reached their $15.00/month free-tier budget.
           description: >-
-            Per-actor calendar MONTH-TO-DATE spend (ADR-0058 precomputed Mimir
-            metric, via the ai_gateway_cost_mtd_usd recording rule) reached the
-            free-tier monthlyBudgetUsd cap of $15 (warning tier; the $30 rule
-            below escalates to critical). Value = dollars spent this calendar
-            month. ⚠️ This is MTD spend, NOT the same window the rate limiter
-            enforces against (ADR-0070's fixed 30-day epoch bucket in redis,
-            which resets on a schedule, not calendar-month) — someone can be over
+            Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
+            reached the free-tier monthlyBudgetUsd cap of $15 (warning tier; the
+            $30 rule below escalates to critical). Value = dollars spent (trailing
+            30d). ⚠️ This is cumulative trailing-30d spend, NOT the same window the
+            rate limiter enforces against (ADR-0070's fixed 30-day epoch bucket in
+            redis, which resets on a schedule, not rolling) — someone can be over
             budget here while their LIVE enforcement budget is well under cap.
             Check the AI Gateway — rate-limit quota dashboard for the live state.
         - uid: cost-actor-budget-free
@@ -637,7 +636,7 @@ alerting:
           datasourceUid: mimir
           expr: >-
             sum by (email, display_name)
-              (ai_gateway_cost_mtd_usd{billing_plan="free"}) / 1e6
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free"}[30d])) / 1e6
           fromSeconds: 2592000
           op: gt
           threshold: 30
@@ -645,17 +644,16 @@ alerting:
           severity: critical
           summary: >-
             🚨 {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} this month —
+            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
             at least 2x over their $15.00/month free-tier budget.
           description: >-
-            Per-actor calendar MONTH-TO-DATE spend (ADR-0058 precomputed Mimir
-            metric, via the ai_gateway_cost_mtd_usd recording rule) passed $30 —
-            at least 2x over the free-tier monthlyBudgetUsd cap of $15 (critical
-            escalation of the $15 warning above). Value = dollars spent this
-            calendar month. See the AI Gateway — actor consumption / chats-by-user
-            dashboards for the breakdown. ⚠️ This is MTD spend, NOT the same
-            window the rate limiter enforces against (ADR-0070's fixed 30-day
-            epoch bucket in redis, which resets on a schedule, not calendar-month)
+            Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
+            passed $30 — at least 2x over the free-tier monthlyBudgetUsd cap of $15
+            (critical escalation of the $15 warning above). Value = dollars spent
+            (trailing 30d). See the AI Gateway — actor consumption / chats-by-user
+            dashboards for the breakdown. ⚠️ This is cumulative trailing-30d spend,
+            NOT the same window the rate limiter enforces against (ADR-0070's fixed
+            30-day epoch bucket in redis, which resets on a schedule, not rolling)
             — someone can be over here while their LIVE enforcement budget is well
             under cap. Check the AI Gateway — rate-limit quota dashboard for their
             actual current enforcement state before assuming they're blocked.
@@ -664,7 +662,7 @@ alerting:
           datasourceUid: mimir
           expr: >-
             sum by (email, display_name)
-              (ai_gateway_cost_mtd_usd{billing_plan="pro"}) / 1e6
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="pro"}[30d])) / 1e6
           fromSeconds: 2592000
           op: gt
           threshold: 30
@@ -672,15 +670,14 @@ alerting:
           severity: critical
           summary: >-
             🚨 {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} this month —
+            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
             over their $30.00/month pro budget.
           description: >-
-            Per-actor calendar MONTH-TO-DATE spend (ADR-0058 precomputed Mimir
-            metric, via the ai_gateway_cost_mtd_usd recording rule) exceeded the
-            pro monthlyBudgetUsd cap of $30. Value = dollars spent this calendar
-            month. Same MTD-vs-enforcement caveat as the free-tier rule above —
-            check the AI Gateway — rate-limit quota dashboard for the live
-            enforcement state.
+            Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
+            exceeded the pro monthlyBudgetUsd cap of $30. Value = dollars spent
+            (trailing 30d). Same rolling-vs-enforcement caveat as the free-tier
+            rule above — check the AI Gateway — rate-limit quota dashboard for
+            the live enforcement state.
 
     # ── Provider billing reconciliation (provider-billing-exporter) ─────────
     # Fires when PROVIDER-BILLED cost (invoice truth, polled from DeepInfra by
@@ -698,7 +695,7 @@ alerting:
           datasourceUid: mimir
           expr: >-
             (sum(provider_billing_total_cost_micro_usd) / 1e6)
-            / clamp_min(sum(ai_gateway_cost_mtd_total_usd) / 1e6, 1)
+            / clamp_min(sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[30d])) / 1e6, 1)
           fromSeconds: 2592000
           op: gt
           threshold: 1.5
