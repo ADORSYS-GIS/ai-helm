@@ -312,12 +312,63 @@ backendTrafficPolicy:
 # lightbridge-authz-usage's TLS listener — see that template for why this is
 # a same-namespace Certificate off the same issuer rather than a literal
 # cross-namespace `authz-tls` Secret reference.
+#
+# debug: the `debug` exporter (templates/otel.yaml) — stdout diagnostic
+# output on top of, never instead of, each collector's real exporters.
+# Added to confirm data is actually flowing (both collectors'
+# otelcol_receiver_accepted_* metrics had been absent — the `-usage` one
+# because Envoy's access-log sink pointed at a hostname missing its
+# `-collector` suffix) and that the expected attributes
+# (account_id/project_id/api_key_id/user_id/gen_ai.request.model/token
+# counts/cost) are present with the right names once it does.
+#
+# `enabled: false` removes the `debug` EXPORTER and its pipeline entry
+# entirely — no telemetry payloads/attribute values get printed. It does
+# NOT touch `service.telemetry.logs.level: debug`, which templates/otel.yaml
+# sets unconditionally on both collectors: that's the collector binary's own
+# internal operational logging (component startup, config validation,
+# export errors), not a telemetry-payload dump, so it carries no
+# attribute/PII values and is left on regardless of this toggle.
+#
+# `verbosity: basic | normal | detailed`. `basic` only counts records per
+# batch — proves data is flowing without printing a single attribute
+# value. `detailed` prints every attribute's NAME AND VALUE.
+#
+#   - usage: the access-log JSON this collector receives carries real PII
+#     (lc_user_email, oidc_email, oidc_name, lc_user_name, user_id,
+#     oidc_jti, x-forwarded-for — see templates/envoy-proxy.yaml's
+#     accessLog json block). At `detailed` every one of those VALUES gets
+#     written into this collector pod's own logs, which ship to Loki — PII
+#     duplicated into a logging backend with Loki's retention, not a
+#     transient debug session. Defaults to `basic` for that reason.
+#   - traces: every span carries a `user.id` tag (EnvoyProxy
+#     `telemetry.tracing.tags`, sourced from x-oidc-user-id) — a
+#     correlatable user identifier. The debug exporter's `normal`
+#     verbosity already prints per-span attributes inline (it is not a
+#     bare counts view like `basic`), so `user.id` would land in
+#     pod logs/Loki at `normal`, before ever reaching `detailed`. Defaults
+#     to `basic` here too, for the same reason.
+#
+# To check the attribute MAPPING specifically (names/values, not just
+# flow), temporarily set the relevant collector's verbosity to `detailed`
+# in ai-helm-values (environments/<env>/values/core-gateway.yaml):
+#   otelCollector.debug.usage.verbosity: detailed   (PII — revert after)
+#   otelCollector.debug.traces.verbosity: detailed  (user.id — revert after)
+# then set it back to `basic` once verified. Don't leave `detailed`
+# deployed.
 # ────────────────────────────────────────────────────────────────────────
 otelCollector:
   mode: deployment
   usageCa:
     issuer: self-signed-ca
     issuerKind: ClusterIssuer
+  debug:
+    traces:
+      enabled: true
+      verbosity: basic
+    usage:
+      enabled: true
+      verbosity: basic
 
 # ────────────────────────────────────────────────────────────────────────
 # ExtProc sidecar (the Envoy AI Gateway's per-request processor: token
