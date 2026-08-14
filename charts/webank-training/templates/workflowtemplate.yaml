@@ -40,6 +40,18 @@ ungated. `datasetBuild.enabled` still guards whether a model's
 *-train templates, which were already gated.
 */ -}}
 {{- $datasetBuildEnabled := $datasetBuild.enabled | default false -}}
+{{- /*
+`default` treats Go zero values (including `false`) as absent, so a naive
+`$datasetBuild.publishToLakefsDefault | default $training.datasetBuild
+.publishToLakefsDefault` would silently discard an explicit per-model
+`false` override and always fall back to the chart-wide default -- exactly
+the config this parameter exists to allow. `hasKey` distinguishes "the key
+is absent" from "the key is present and false".
+*/ -}}
+{{- $publishToLakefsDefault := $training.datasetBuild.publishToLakefsDefault -}}
+{{- if hasKey $datasetBuild "publishToLakefsDefault" -}}
+{{- $publishToLakefsDefault = $datasetBuild.publishToLakefsDefault -}}
+{{- end -}}
 {{- $datasetTarget := required (printf "webank-training: %s datasetBuild.target is required" $id) $datasetBuild.target -}}
 {{- $datasetSource := required (printf "webank-training: %s datasetBuild.source is required" $id) $datasetBuild.source -}}
 {{- $sourceStrategy := required (printf "webank-training: %s datasetBuild.source.strategy is required" $id) $datasetSource.strategy -}}
@@ -104,6 +116,42 @@ spec:
   imagePullSecrets:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+{{- /*
+Dataset-build knobs (webank-models#507 sharding, ai-helm proposition
+0037-019220). Scoped to the three hermetic-synthetic ids only: sface and
+pad-liveness stay on the untouched governed-lakefs path below, per that
+proposition's explicit hard constraint. Every default is a Helm value, never
+a template literal, so an environment's own values file is the reviewed
+record of what a bare `argo submit` actually does; `-p name=value` overrides
+one run without touching the chart.
+*/}}
+{{- if eq $sourceStrategy "hermetic-synthetic" }}
+  arguments:
+    parameters:
+      - name: publish_to_lakefs
+        value: {{ $publishToLakefsDefault | quote }}
+        description: >-
+          Whether this run commits its packed, readiness-gated bundle to
+          LakeFS. "false" still produces and validates the local bundle, then
+          stops before the publish call -- nothing is written to LakeFS.
+{{- if eq $id "document-recognizer" }}
+      - name: shard_rows
+        value: {{ $training.documentRecognizer.shardRows | quote }}
+        description: >-
+          Max rows per ds-<index>.safetensors shard (webank-models
+          --shard-rows / WEBANK_RECOGNIZER_SHARD_ROWS on
+          materialize-synthetic-source; requires webank-models#507 merged and
+          this template's datasetBuild.image bumped to a build that reads it
+          -- inert (silently ignored) on an older image). Larger shards trade
+          lower per-shard overhead for more RAM per load_shard call.
+      - name: samples
+        value: {{ $training.documentRecognizer.samples | quote }}
+        description: >-
+          Synthetic OCR lines to generate (webank_document_recognizer_dataset
+          --samples, 1..10000). Lower this for a fast local iteration run;
+          the default reproduces the reviewed dataset size.
+{{- end }}
+{{- end }}
   templates:
     - name: build
       podSpecPatch: |
@@ -147,16 +195,20 @@ spec:
               --manifest /workspace/output/document-detector-bootstrap/governance/source-manifest.json \
               --lakefs-ref "$BASE_REF" \
               --readiness /workspace/output/document-detector-bootstrap/governance/readiness.json
-            cargo xtask training-data fixed-dataset publish \
-              --model document-detector \
-              --bundle /workspace/output/document-detector-bootstrap/document-detector-training-v1.tar \
-              --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
-              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
-              --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE" \
-              --manifest /workspace/output/document-detector-bootstrap/governance/source-manifest.json \
-              --readiness /workspace/output/document-detector-bootstrap/governance/readiness.json \
-              --lakefs-ref "$BASE_REF"
+            if [ "$WEBANK_PUBLISH_TO_LAKEFS" = "true" ]; then
+              cargo xtask training-data fixed-dataset publish \
+                --model document-detector \
+                --bundle /workspace/output/document-detector-bootstrap/document-detector-training-v1.tar \
+                --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
+                --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+                --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
+                --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE" \
+                --manifest /workspace/output/document-detector-bootstrap/governance/source-manifest.json \
+                --readiness /workspace/output/document-detector-bootstrap/governance/readiness.json \
+                --lakefs-ref "$BASE_REF"
+            else
+              echo "publish_to_lakefs=false: bundle produced and readiness-gated locally; skipping LakeFS publish." >&2
+            fi
 {{- else if eq $id "document-recognizer" }}
             BASE_REF="$(cargo xtask training-data bootstrap-model-repository \
               --model document-recognizer \
@@ -171,7 +223,8 @@ spec:
               --output /workspace/output/document-recognizer-raw \
               --lakefs-ref "$BASE_REF" \
               --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
-              --code-revision "$WEBANK_SOURCE_REVISION"
+              --code-revision "$WEBANK_SOURCE_REVISION" \
+              --samples "$WEBANK_RECOGNIZER_SAMPLES"
             cargo xtask training-data readiness-gate \
               --manifest /workspace/output/document-recognizer-raw/governance/source-manifest.json \
               --lakefs-ref "$BASE_REF" \
@@ -184,16 +237,20 @@ spec:
               --model document-recognizer \
               --input /workspace/output/document-recognizer-materialized \
               --output /workspace/output/document-recognizer-training-bundle.tar
-            cargo xtask training-data fixed-dataset publish \
-              --model document-recognizer \
-              --bundle /workspace/output/document-recognizer-training-bundle.tar \
-              --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
-              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
-              --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE" \
-              --manifest /workspace/output/document-recognizer-raw/governance/source-manifest.json \
-              --readiness /workspace/output/document-recognizer-raw/governance/readiness.json \
-              --lakefs-ref "$BASE_REF"
+            if [ "$WEBANK_PUBLISH_TO_LAKEFS" = "true" ]; then
+              cargo xtask training-data fixed-dataset publish \
+                --model document-recognizer \
+                --bundle /workspace/output/document-recognizer-training-bundle.tar \
+                --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
+                --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+                --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
+                --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE" \
+                --manifest /workspace/output/document-recognizer-raw/governance/source-manifest.json \
+                --readiness /workspace/output/document-recognizer-raw/governance/readiness.json \
+                --lakefs-ref "$BASE_REF"
+            else
+              echo "publish_to_lakefs=false: bundle produced and readiness-gated locally; skipping LakeFS publish." >&2
+            fi
 {{- else if eq $id "face-detector" }}
             BASE_REF="$(cargo xtask training-data bootstrap-model-repository \
               --model face-detector \
@@ -221,16 +278,20 @@ spec:
               --model face-detector \
               --input /workspace/output/face-detector-materialized \
               --output /workspace/output/face-detector-training-bundle.tar
-            cargo xtask training-data fixed-dataset publish \
-              --model face-detector \
-              --bundle /workspace/output/face-detector-training-bundle.tar \
-              --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
-              --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
-              --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
-              --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE" \
-              --manifest /workspace/output/face-detector-raw/governance/source-manifest.json \
-              --readiness /workspace/output/face-detector-raw/governance/readiness.json \
-              --lakefs-ref "$BASE_REF"
+            if [ "$WEBANK_PUBLISH_TO_LAKEFS" = "true" ]; then
+              cargo xtask training-data fixed-dataset publish \
+                --model face-detector \
+                --bundle /workspace/output/face-detector-training-bundle.tar \
+                --lakefs-branch "$WEBANK_DATASET_LAKEFS_BRANCH" \
+                --lakefs-endpoint "$WEBANK_LAKEFS_ENDPOINT" \
+                --lakefs-repository "$WEBANK_DATASET_LAKEFS_REPOSITORY" \
+                --lakefs-storage-namespace "$WEBANK_DATASET_LAKEFS_STORAGE_NAMESPACE" \
+                --manifest /workspace/output/face-detector-raw/governance/source-manifest.json \
+                --readiness /workspace/output/face-detector-raw/governance/readiness.json \
+                --lakefs-ref "$BASE_REF"
+            else
+              echo "publish_to_lakefs=false: bundle produced and readiness-gated locally; skipping LakeFS publish." >&2
+            fi
 {{- else }}
             SOURCE_REF="$(cargo xtask training-data resolve-governed-source-branch \
               --model {{ $id }} \
@@ -272,6 +333,21 @@ spec:
             value: {{ $datasetStorageNamespace | quote }}
           - name: WEBANK_DATASET_SOURCE_STRATEGY
             value: {{ $sourceStrategy | quote }}
+{{- if eq $sourceStrategy "hermetic-synthetic" }}
+          - name: WEBANK_PUBLISH_TO_LAKEFS
+            value: "{{`{{workflow.parameters.publish_to_lakefs}}`}}"
+{{- end }}
+{{- if eq $id "document-recognizer" }}
+          # Consumed directly by materialize-synthetic-source's own `env =
+          # "WEBANK_RECOGNIZER_SHARD_ROWS"` clap attribute (webank-models#507)
+          # -- no --shard-rows CLI flag needed here. An image built before
+          # that PR merges simply never reads this var, so setting it ahead
+          # of the image bump is inert, not breaking.
+          - name: WEBANK_RECOGNIZER_SHARD_ROWS
+            value: "{{`{{workflow.parameters.shard_rows}}`}}"
+          - name: WEBANK_RECOGNIZER_SAMPLES
+            value: "{{`{{workflow.parameters.samples}}`}}"
+{{- end }}
 {{- if eq $sourceStrategy "governed-lakefs" }}
           - name: WEBANK_SOURCE_LAKEFS_REPOSITORY
             value: {{ $datasetSource.repository | quote }}

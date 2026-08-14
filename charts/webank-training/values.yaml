@@ -115,6 +115,44 @@ training:
     # governed-lakefs model (sface, pad-liveness) with a differently sized
     # source checkout stays covered by the same generous margin.
     workspaceSizeLimit: 24Gi
+    # Default for the `publish_to_lakefs` Argo parameter on every
+    # hermetic-synthetic `<id>-dataset-build` template (document-detector,
+    # document-recognizer, face-detector; sface/pad-liveness are untouched
+    # governed-lakefs templates and never render this parameter). `true`
+    # preserves this chart's existing behavior -- every one of those three
+    # templates has always published unconditionally -- because none of
+    # their sources carries an unresolved redistribution-scope determination
+    # today (all three are CC0 hermetic-synthetic output, see each model's
+    # bootstrap-policy.json `generated_output_licence_reference`). A future
+    # model whose dataset-build must stop short of LakeFS by default (for
+    # example, an unresolved-licence real-photo source) sets its own
+    # `models[].datasetBuild.publishToLakefsDefault: false` in
+    # ai-helm-values; that per-model field overrides this one when present.
+    publishToLakefsDefault: true
+  # document-recognizer-only dataset-build knobs. Both back a real,
+  # already-existing CLI surface on the webank-models side (see this PR's
+  # description for the exact commands/flags/env vars matched); neither is
+  # invented, and neither applies to document-detector or face-detector,
+  # whose row counts come from a reviewed, signed bootstrap-policy.json
+  # instead of a CLI flag.
+  documentRecognizer:
+    # `materialize-synthetic-source --shard-rows` / env
+    # `WEBANK_RECOGNIZER_SHARD_ROWS` (webank-models#507, open at the time of
+    # writing -- see that PR for status before relying on this taking
+    # effect). Rows per `ds-<index>.safetensors` shard; the last shard is
+    # short. 2000 is the accountable
+    # owner's chosen default: a desktop and a dedicated training server want
+    # different chunk sizes, and networking is not the constraint (this
+    # tensor never leaves the pod that writes it), so there is no single
+    # "right" size to hardcode. At U8 [2000, 3, 48, 640] one shard is
+    # ~184 MB.
+    shardRows: 2000
+    # webank_document_recognizer_dataset --samples (1..10000), already live
+    # on `main` today. Not passed by this template before this change, so
+    # the tool's own argparse default (256) applied silently; this makes
+    # that default an explicit, reviewable Helm value instead, and lets an
+    # operator drop it for a fast local iteration run.
+    samples: 256
   documentDetector:
     stemChannels: 32
     epochs: 10
@@ -138,4 +176,10 @@ training:
 # `<id>-dataset-build` WorkflowTemplate does not exist in the cluster at all
 # and cannot be `argo submit`-able. Flip to `true` per model only once that
 # gate can be satisfied.
+#
+# `datasetBuild.publishToLakefsDefault` (bool, optional, hermetic-synthetic
+# ids only): per-model override for `training.datasetBuild
+# .publishToLakefsDefault` above. Leave unset to inherit that chart-wide
+# default; set explicitly only when one model's dataset-build must default
+# to stopping short of LakeFS while the others still publish.
 models: []
