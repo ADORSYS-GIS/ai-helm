@@ -30,10 +30,29 @@ spec:
       # (an OOM loses data entirely). Tuned batch cuts export frequency. Both
       # were dropped in the rewrite (and a per-request `debug` stdout flood
       # re-added); restored per ADR-0034.
+      #
+      # limit_mib/spike_limit_mib doubled 400/100 → 800/200 alongside the
+      # otlp/alloy exporter's gRPC message-size fix below (see the batch
+      # processor comment): oversized multimodal spans that previously
+      # failed export instantly (Permanent error, dropped with no queueing)
+      # now succeed and sit in the exporter's sending_queue (capacity 1000
+      # batches; send_batch_size: 1 means up to 1000 individual spans) until
+      # Alloy acks them. That changes this collector's in-flight memory
+      # profile from "oversized spans barely touch memory" to "oversized
+      # spans occupy memory for the round-trip". The container has no
+      # Kubernetes-level memory limit (`kubectl get deploy
+      # core-gateway-traces-collector -o jsonpath='{.spec.template.spec.containers[0].resources}'`
+      # returns `{}` live in prod), so this Go-heap threshold is the only
+      # backstop against a burst of concurrent large-image requests. Not a
+      # measured number — a proportional response sized to the ~8x jump in
+      # the receive-side message-size ceiling (4 MiB → 32 MiB, see
+      # ai-helm-values' alloy.yaml/tempo.yaml) — revisit if
+      # otelcol_process_memory_rss shows sustained pressure toward the new
+      # ceiling.
       memory_limiter:
         check_interval: 1s
-        limit_mib: 400
-        spike_limit_mib: 100
+        limit_mib: 800
+        spike_limit_mib: 200
       batch:
         # send_batch_size: 1, NOT a throughput tuning knob. Live prod
         # metrics (2026-08-14/15) on this collector showed
@@ -81,6 +100,27 @@ spec:
         # the `otelcol.receiver.otlp "default" { grpc { ... } }` block)
         # — flagged for a follow-up there, not silently worked around
         # here.
+        #
+        # FOLLOW-UP CLOSED: ai-helm-values raised both remaining hops to
+        # 32 MiB — Alloy's `otelcol.receiver.otlp "default" { grpc {
+        # max_recv_msg_size = "32MiB" } }` (environments/prod/values/alloy.yaml)
+        # and Tempo's `receivers.otlp.protocols.grpc.max_recv_msg_size_mib:
+        # 32` plus an explicit `server.grpc_server_max_recv/send_msg_size`
+        # (environments/prod/values/tempo.yaml, matching the chart's own
+        # 16 MiB default so it's no longer an implicit fallback). 32 MiB
+        # was sized from `limitMmPerPrompt.image: 4` on the Qwen3-VL-class
+        # vision model (environments/prod/values/inference.yaml) — up to 4
+        # base64-encoded images per request/response pair, each assumed up
+        # to ~8 MiB (generous for a phone-camera photo before base64's
+        # 1.33x inflation), landing around 32 MiB before any OpenInference
+        # duplication into both the aggregate `input.value`/`output.value`
+        # and the per-message `llm.input_messages.{i}...` attributes. No
+        # exporter-side (collector→Alloy) size setting was needed: gRPC
+        # clients have no default send-size cap, only the receiver caps
+        # what it will accept — confirmed live, this collector's own otlp
+        # HTTP receiver already showed 0 refused/failed spans throughout
+        # (otelcol_receiver_refused_spans{receiver="otlp"}), i.e. it was
+        # never the bottleneck; only the otlp/alloy *exporter* was failing.
         send_batch_size: 1
         timeout: 5s
 
