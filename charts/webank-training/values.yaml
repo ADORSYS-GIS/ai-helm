@@ -153,6 +153,47 @@ training:
     # that default an explicit, reviewable Helm value instead, and lets an
     # operator drop it for a fast local iteration run.
     samples: 256
+  # MIDV-2020 real-crop dataset build for document-recognizer only
+  # (webank-models RFC-0009, story #328, epic #326, ticket #408). Distinct
+  # from `datasetBuild` above: a six-step DAG across separate pods (one
+  # shared PVC plus a second, pre-existing durable-output PVC, not the
+  # single-container/emptyDir pattern the per-model loop below renders), and
+  # it deliberately never calls LakeFS — MIDV-2020's `third_party_licensed`
+  # source_class cannot clear `readiness-gate` today (webank-models#401,
+  # open RFC-0006 IP-counsel questions). `enabled: false` here follows the
+  # same interim-governance-gate convention `models[].datasetBuild.enabled`
+  # already uses in this chart: a real capability whose environment-specific
+  # activation is an explicit, documented per-environment decision, not a
+  # dormant flag. Flipping this to `true` in an environment values file
+  # alone does not reconcile the pre-existing, unmanaged live object this
+  # template adopts — that is a separate, human-owned follow-up.
+  midvDatasetBuild:
+    enabled: false
+    workspaceSizeLimit: 24Gi
+    # Optional cap on crops materialized, wired straight through to
+    # `xtask midv-raw-source --limit`. Empty (the live default) means the
+    # full MIDV-2020 subset; both real production runs so far used the
+    # default. Set per environment, or override per-run with
+    # `argo submit -p crop_limit=<n>`.
+    cropLimit: ""
+    # Name of the pre-existing, separately provisioned PersistentVolumeClaim
+    # (Longhorn, ReadWriteOnce) the validate-round-trip step's durable output
+    # copy lands on. This chart does not create or manage that PVC — it
+    # already exists in hetzner-prod (`webank-document-recognizer-midv-
+    # dataset-build-output`, 20Gi, Bound), itself provisioned outside GitOps
+    # the same way the WorkflowTemplate this file adopts was. Reconciling
+    # that PVC's own ownership is a separate, human decision; leaving this
+    # unset reproduces the live claimName unchanged
+    # (`<WorkflowTemplate name>-output`).
+    durableOutputPvcClaimName: ""
+    labelsVocabulary:
+      # Pinned HuggingFace revision webank-models' own
+      # scripts/fetch-document-recognizer-model.sh derives the governed CTC
+      # vocabulary from (preprocessor_config.json's character_list — 18710
+      # entries, index 0 "blank"). Fetched in-pod at run time so this
+      # template never needs a placeholder labels_vocabulary_url.
+      repository: ""
+      revision: ""
   documentDetector:
     stemChannels: 32
     epochs: 10
