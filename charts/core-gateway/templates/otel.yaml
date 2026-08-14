@@ -49,8 +49,99 @@ spec:
             - batch
           exporters:
             - otlp/alloy
-# NOTE: the `-usage` OpenTelemetryCollector was removed. Usage/billing
-# metering now goes through the Envoy AI Gateway + OAuth2 path, not a
-# dedicated OTel access-log pipeline to lightbridge-usage. The Envoy
-# access logs that fed it are pointed straight at Alloy (-> Loki) for the
-# per-user observability of ADR-0005 — see templates/envoy-proxy.yaml.
+---
+# Restores the `-usage` collector removed in 948814de ("remove usage-collector
+# + otel-operator (external)"). That commit repointed the Envoy access-log
+# OTLP sink straight at Alloy, which is correct for the per-user Loki path
+# (ADR-0005) but dropped the second leg that used to feed
+# lightbridge-authz-usage's billing ingest. Restoring the collector as a fan-
+# out point lets both consumers keep receiving the exact same access-log
+# stream: Envoy's accessLog sink (templates/envoy-proxy.yaml) now points here
+# instead of at Alloy directly, and this collector re-exports unchanged to
+# both `otlp/alloy` (byte-identical to the pre-restore direct path) and the
+# new `otlphttp/lightbridge_usage` leg.
+#
+# Not merged into the `-traces` collector above: that one is a traces-only
+# pipeline reconciled independently, and keeping them separate matches the
+# pre-948814de shape (two collectors, one per signal grouping) rather than
+# coupling trace and access-log volume/scaling together.
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-usage
+  namespace: {{ .Release.Namespace }}
+spec:
+  # See the `mode` comment on the `-traces` collector above — same webhook
+  # requirement applies here.
+  mode: {{ (.Values.otelCollector | default dict).mode | default "deployment" }}
+  # `<fullname>-usage-ca` (certificate-usage-ca.yaml) chains to the same
+  # ClusterIssuer (self-signed-ca) that signs lightbridge-authz-usage's own
+  # `authz-tls` cert in the `converse` namespace — see that template for why
+  # this mounts our own same-namespace Certificate rather than the literal
+  # `authz-tls` Secret name (which lives in a different namespace and isn't
+  # replicated here). Mounting its ca.crt lets the otlphttp/lightbridge_usage
+  # exporter below verify the usage service's HTTPS listener for real — no
+  # `insecure`/skip-verify.
+  volumes:
+    - name: usage-ca
+      secret:
+        secretName: {{ include "core-gateway.fullname" . }}-usage-ca
+        items:
+          - key: ca.crt
+            path: ca.crt
+  volumeMounts:
+    - name: usage-ca
+      mountPath: /etc/otel/tls
+      readOnly: true
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # Same rationale as the `-traces` collector: memory_limiter first so a
+      # spike sheds load instead of OOMing the pod and losing everything in
+      # flight; batch cuts export frequency.
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      batch:
+        send_batch_size: 512
+        timeout: 5s
+
+    exporters:
+      # lightbridge-authz-usage's OTLP/HTTP ingest only exposes a logs path
+      # (/v1/otel/logs — see crates/lightbridge-authz-usage/src/routers/mod.rs
+      # in the lightbridge-authz repo); there is no gRPC receiver on that
+      # service, which is exactly why this has to be `otlphttp` (path-aware)
+      # rather than a plain `otlp` gRPC exporter.
+      otlphttp/lightbridge_usage:
+        logs_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/logs"
+        tls:
+          ca_file: /etc/otel/tls/ca.crt
+
+      # Fan the same access-log stream out to Grafana Alloy, which forwards
+      # to Loki (ADR-0005 per-user observability). Identical endpoint/TLS
+      # shape to the sink Envoy used to hit directly pre-restore, so this
+      # leg's behavior is unchanged — only the hop is new.
+      otlp/alloy:
+        endpoint: "alloy.observability.svc.cluster.local:4317"
+        tls:
+          insecure: true
+
+    service:
+      pipelines:
+        logs:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - otlphttp/lightbridge_usage
+            - otlp/alloy

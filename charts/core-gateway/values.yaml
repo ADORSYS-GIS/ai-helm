@@ -300,13 +300,24 @@ backendTrafficPolicy:
     - Gzip
 
 # ────────────────────────────────────────────────────────────────────────
-# OpenTelemetryCollector (-traces): receives OTLP, forwards to Alloy → Tempo.
-# `mode` MUST be set (otel-operator v1beta1 webhook rejects an empty mode);
-# it is immutable on an existing collector. deployment | daemonset |
-# statefulset | sidecar.
+# OpenTelemetryCollector (-traces, -usage): receive OTLP. -traces forwards to
+# Alloy → Tempo; -usage receives Envoy's access-log stream and fans it out to
+# both Alloy → Loki (per-user observability, ADR-0005, unchanged) and
+# lightbridge-authz-usage's OTLP/HTTP ingest (billing). `mode` MUST be set on
+# both (otel-operator v1beta1 webhook rejects an empty mode); it is immutable
+# on an existing collector. deployment | daemonset | statefulset | sidecar.
+#
+# usageCa: issuer for the `<fullname>-usage-ca` Certificate
+# (certificate-usage-ca.yaml) the -usage collector mounts to verify
+# lightbridge-authz-usage's TLS listener — see that template for why this is
+# a same-namespace Certificate off the same issuer rather than a literal
+# cross-namespace `authz-tls` Secret reference.
 # ────────────────────────────────────────────────────────────────────────
 otelCollector:
   mode: deployment
+  usageCa:
+    issuer: self-signed-ca
+    issuerKind: ClusterIssuer
 
 # ────────────────────────────────────────────────────────────────────────
 # ExtProc sidecar (the Envoy AI Gateway's per-request processor: token

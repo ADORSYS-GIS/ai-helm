@@ -1,0 +1,36 @@
+# CA-trust cert for the `-usage` OTel collector (templates/otel.yaml) to verify
+# lightbridge-authz-usage's TLS listener.
+#
+# lightbridge-authz-usage's own server cert is issued by the `authz-tls`
+# Certificate in the `converse` namespace (charts/lightbridge-authz-stack in
+# the lightbridge-authz repo) — but that Secret lives in `converse`, and
+# cert-manager Secrets aren't cluster-readable across namespaces (no reflector
+# controller is running here — verified: no `reflection-allowed`-style
+# annotations anywhere in this repo or ai-helm-values). Copying the literal
+# `authz-tls` Secret name into this chart's namespace and hoping it already
+# exists there (which is what the pre-948814de version of this collector did)
+# would silently fail to mount if that assumption were ever wrong.
+#
+# Instead, issue our OWN Certificate here, from the SAME ClusterIssuer
+# (self-signed-ca) that signs `authz-tls`. Because both certs chain to the
+# same CA root, the `ca.crt` this one writes is sufficient to verify
+# lightbridge-authz-usage's server cert — exactly the pattern
+# ai-helm-values/environments/prod/deps/security-policies already uses for
+# Authorino trusting lightbridge-opa's cert (a second `authorino-lightbridge-ca`
+# Certificate off the same issuer, not a cross-namespace Secret copy).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "core-gateway.fullname" . }}-usage-ca
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "core-gateway.fullname" . }}-usage-ca
+  # Only `ca.crt` from this Secret is ever mounted (otel.yaml) — this
+  # Certificate is never presented as a server/client cert itself, so the
+  # commonName/dnsNames just need to be valid, not meaningful.
+  commonName: {{ include "core-gateway.fullname" . }}-usage-collector
+  dnsNames:
+    - {{ include "core-gateway.fullname" . }}-usage-collector
+  issuerRef:
+    name: {{ ((.Values.otelCollector | default dict).usageCa | default dict).issuer | default "self-signed-ca" }}
+    kind: {{ ((.Values.otelCollector | default dict).usageCa | default dict).issuerKind | default "ClusterIssuer" }}
