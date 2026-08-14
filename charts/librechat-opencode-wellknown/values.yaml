@@ -58,6 +58,31 @@ wellKnown:
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
       - "@vymalo/opencode-ratelimit@0.12.0"
+      # OpenTelemetry export for OpenCode — the same maintainer's counterpart
+      # to Claude Code's native OTLP monitoring and Codex's `[otel]` block
+      # ([[ai-usage-telemetry-vendors]]). Ships cost (real USD, from
+      # `AssistantMessage.cost` — no price table to maintain), all five
+      # token types (input/output/reasoning/cache_read/cache_write), tool
+      # results, permission decisions, API errors and lines-of-code as OTLP
+      # traces/metrics/logs. NO CONTENT is captured — prompts/responses/tool
+      # args/API bodies are never read, only shape (lengths, counts,
+      # durations, outcomes). Resource attributes identify machine + project,
+      # never the developer, by design (no git-author-email collection).
+      # OTLP/HTTP+protobuf only (no gRPC — Bun compatibility).
+      #
+      # `endpoint` points at the governance OTLP ingestion host
+      # (`otel.ai.camer.digital`) — the same public core-gateway endpoint
+      # the Foundry/Copilot governance connectors are designed to land on
+      # (`plans/microsoft-foundry-governance.md` §2: Authorino AuthConfig →
+      # OTel Collector). ⚠️ That gateway listener + AuthConfig are still a
+      # PROPOSED plan, not yet deployed — until it ships, exported spans just
+      # fail to send (the plugin logs `otel_traces_init_failed`/etc. and
+      # keeps every other signal independent; nothing in opencode breaks).
+      # Once the listener is live, traffic starts flowing with zero opencode-
+      # side change. NOT pinned to the 0.12.0 vymalo line above (own release
+      # cadence) — bump deliberately, same rule as every other plugin here.
+      - - "@vymalo/opencode-otel@0.13.0"
+        - endpoint: "https://otel.ai.camer.digital"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
