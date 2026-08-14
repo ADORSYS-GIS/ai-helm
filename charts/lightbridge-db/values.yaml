@@ -2,7 +2,16 @@
 # ScheduledBackup + PodMonitor. Leaf chart of the lightbridge orchestrator
 # (ADR-0019). Moved verbatim from the old flat app's rawRessources EXCEPT the
 # ObjectStore, which is modernised to Hetzner Object Storage (the old MinIO
-# s3.ssegning.me / ai-ops-backups is decommissioned). The usage DB is dropped.
+# s3.ssegning.me / ai-ops-backups is decommissioned). lightbridge-usage-db was
+# dropped by ADR-0026 and is restored below as a `usage` Database CR on this
+# same shared cluster (repoauth/codeintel/governance/coder pattern) — NOT a
+# dedicated Cluster. `lightbridge-authz-usage` does not need TimescaleDB: its
+# bucketed aggregation uses stock PostgreSQL 14+ `date_bin`
+# (crates/lightbridge-authz-usage/src/repo.rs), and every Timescale statement
+# in migrations-usage/20260223000001_init_usage.sql is guarded behind an
+# `IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'timescaledb')`
+# check, so it degrades to a plain heap table on this cluster's stock CNPG
+# image.
 #
 # Namespace is `converse` (the orchestrator targets that namespace; these CRs
 # pin it explicitly to match the old flat-app behaviour).
@@ -117,6 +126,18 @@ resources:
             login: true
             passwordSecret:
               name: lightbridge-governance-db-role
+          # Dedicated login role for lightbridge-authz-usage
+          # (ADORSYS-GIS/lightbridge-authz, crates/lightbridge-authz-usage),
+          # isolated from `app`/repoauth/codeintel/etc. Owns the `usage`
+          # Database below; password from the basic-auth Secret
+          # `lightbridge-usage-db-role` (ESO-provisioned, below). No
+          # extensions required — see the top-of-file note on why this is a
+          # plain Database CR, not a dedicated TimescaleDB Cluster.
+          - name: usage
+            ensure: present
+            login: true
+            passwordSecret:
+              name: lightbridge-usage-db-role
   # ────────────────────────────────────────────────────────────────────
   # barman-cloud ObjectStore — MODERNISED TO HETZNER OBJECT STORAGE.
   #
@@ -466,6 +487,64 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: coder_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # lightbridge-authz-usage: a `usage` Database owned by the managed `usage`
+  # role above, plus the role's basic-auth Secret (username + password)
+  # consumed by BOTH CNPG (passwordSecret) and the app. Mirrors the codeintel
+  # pattern (ADR-0047) — a dedicated login role + dedicated Database on this
+  # shared cluster, NOT a bootstrap-app-role/dedicated-cluster setup.
+  # ai-helm-values assembles DATABASE_URL as
+  # postgresql://usage:$(DB_PASSWORD)@lightbridge-main-db-rw.converse.svc.cluster.local:5432/usage,
+  # with $(DB_PASSWORD) sourced from this Secret's `password` key (same
+  # $(DB_PASSWORD) kubelet-interpolation pattern lightbridge-code-intelligence
+  # uses for codeintel).
+  #
+  # ⚠️ Without TimescaleDB's `add_retention_policy`, `usage_events` has no
+  # automatic pruning on this plain Postgres database — it grows unbounded.
+  # Tracked as a follow-up (pg_cron, a scheduled job, or app-side pruning),
+  # not implemented here.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Database
+    metadata:
+      name: usage
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      cluster:
+        name: lightbridge-main-db
+      name: usage
+      owner: usage
+      ensure: present
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lightbridge-usage-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lightbridge-usage-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "usage"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: usage_db_password
   # MLflow's `mlflow`/`mlflow_oidc` Database CRs + `mlflow-db-role`
   # ExternalSecret used to live here (ADR-0085). Removed — hard cutover, no
   # dormant parallel path — now that MLflow is cut over to mlops-main-db
