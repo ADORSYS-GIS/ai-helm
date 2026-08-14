@@ -156,11 +156,19 @@ spec:
         - sinks:
             - type: OpenTelemetry
               openTelemetry:
-                # Send access logs straight to Alloy (→ Loki) for per-user
-                # observability (ADR-0005). The old `-usage` OTel collector
-                # middleman (→ lightbridge-usage billing) was removed —
-                # usage/billing is handled via the AI Gateway + OAuth2 path.
-                host: alloy.observability.svc.cluster.local
+                # Restored fan-out (see templates/otel.yaml, `-usage`
+                # collector): the collector re-exports this exact stream to
+                # BOTH Alloy (→ Loki, ADR-0005 per-user observability —
+                # unchanged) and lightbridge-authz-usage's OTLP/HTTP ingest
+                # (→ usage_events, billing). This EnvoyProxy access-log sink
+                # only speaks OTLP/gRPC (host:port, no URL path, no per-sink
+                # TLS/CA) — verified against the OpenTelemetryEnvoyProxyAccessLog
+                # type in envoyproxy/gateway release/v1.8 — so it cannot reach
+                # lightbridge-authz-usage's HTTP+path ingest
+                # (/v1/otel/logs, no gRPC receiver) directly. The collector
+                # hop is what makes both destinations reachable from one
+                # sink.
+                host: {{ include "core-gateway.fullname" . }}-usage.{{ .Release.Namespace }}.svc.cluster.local
                 port: 4317
                 resources:
                   k8s.cluster.name: "converse-llm-1"
