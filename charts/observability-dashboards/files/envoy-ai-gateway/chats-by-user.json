@@ -26,7 +26,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-chats-by-user",
   "title": "AI Gateway — chats by user",
-  "description": "Per-user chat requests (embeddings excluded). The $user picker is sourced from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so it lists real people regardless of recent traffic. The hero is an itemised per-request log (model/status/tokens/cost/latency) filtered on the `email` label — distinct from the per_user / actor-consumption rollup charts. ⚠️ Metadata only: prompt/response CONTENT can't be filtered per user — the AIEG ext-proc runs before Authorino so its Tempo spans carry no identity (ADR-0079, confirmed live); read content in the global chat-overview board. GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py.",
+  "description": "Per-user chat requests (embeddings excluded). The $user picker is sourced from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so it lists real people regardless of recent traffic. The headline stats read the precomputed Mimir metrics (ADR-0058); the hero is an itemised per-request log (model/status/tokens/cost/latency) filtered on the `email` label — distinct from the per_user / actor-consumption rollup charts. ⚠️ Metadata only: prompt/response CONTENT can't be filtered per user — the AIEG ext-proc runs before Authorino so its Tempo spans carry no identity (ADR-0079, confirmed live); read content in the global chat-overview board. GENERATED — source: tools/dashboards/envoy_ai_gateway/chats_by_user.py.",
   "tags": [
     "ai-gateway",
     "chats",
@@ -60,20 +60,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(count_over_time({service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"}[$__range]))",
+          "expr": "sum(increase(loki_process_custom_gen_ai_requests{service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"}[$__range]))",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Chats (range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -97,7 +99,7 @@
           "fields": ""
         },
         "percentChangeColorMode": "standard",
-        "orientation": "auto"
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
@@ -119,20 +121,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(sum_over_time({service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"} | json tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap tokens | __error__=\"\" [$__range]))",
+          "expr": "sum(increase(loki_process_custom_gen_ai_usage_tokens{service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"}[$__range]))",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Tokens (range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -156,7 +160,7 @@
           "fields": ""
         },
         "percentChangeColorMode": "standard",
-        "orientation": "auto"
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
@@ -178,20 +182,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "((sum(sum_over_time({service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"} | json cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap cost | __error__=\"\" [$__range]))) / 1e6)",
+          "expr": "((sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", email=\"$user\", model!~\"qwen3-embedding-8b\"}[$__range]))) / 1e6)",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Cost (range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -215,7 +221,7 @@
           "fields": ""
         },
         "percentChangeColorMode": "standard",
-        "orientation": "auto"
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {

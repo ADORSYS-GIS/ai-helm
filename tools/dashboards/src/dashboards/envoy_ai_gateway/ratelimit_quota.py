@@ -468,7 +468,7 @@ def _dashboard() -> db.Dashboard:
         .editable()
         .tooltip(dm.DashboardCursorSync.CROSSHAIR)
         .refresh("1m")
-        .time("now-30d", "now")
+        .time("now/M", "now")
         .with_variable(_billing_period_var())
         .with_variable(_billing_week_var())
         .with_variable(sh.multi_var(name="plan", label="Plan", definition=sh.label_values(_M, _PL)))

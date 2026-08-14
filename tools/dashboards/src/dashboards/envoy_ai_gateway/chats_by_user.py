@@ -12,6 +12,11 @@ selected person's `email` label. No existing dashboard shows this — per_user
 and actor-consumption are rollup charts; this is the itemised "what did Sarah
 actually run, and when" list.
 
+Repointed to Mimir (ADR-0058): the chats/tokens/cost headline stats read the
+precomputed ``loki_process_custom_gen_ai_*`` counters via PromQL — instant at
+any range. The per-request log panel stays on Loki (it's a log listing; Mimir
+stores metrics, not individual log lines).
+
 ⚠️ **This shows request METADATA, not the prompt/response CONTENT** — and that
 is now a *confirmed structural* limit, not a choice (ADR-0079, superseding
 ADR-0078). The chat content lives in Tempo (OpenInference spans), but those
@@ -34,9 +39,8 @@ from __future__ import annotations
 
 import json
 
-from grafana_foundation_sdk.builders import common as cb
 from grafana_foundation_sdk.builders import dashboard as db
-from grafana_foundation_sdk.builders import logs, loki, stat
+from grafana_foundation_sdk.builders import logs, loki
 from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import common as cm
 from grafana_foundation_sdk.models import dashboard as dm
@@ -49,6 +53,9 @@ from dashboards._common import (
     LABEL_EMAIL,
     LABEL_MODEL,
     LOKI_UID,
+    METRIC_COST_MICRO_USD,
+    METRIC_REQUESTS,
+    METRIC_TOKENS,
 )
 from dashboards.envoy_ai_gateway import _shared as sh
 
@@ -59,6 +66,9 @@ _KEYCLOAK_DS = dm.DataSourceRef(type_val="postgres", uid=KEYCLOAK_UID)
 
 _NOT_EMBEDDING = "|".join(EMBEDDING_MODEL_KEYS)
 # Exact match on the selected email (single-select variable, no regex needed).
+_MIMIR_SEL = sh.selector(f'{LABEL_EMAIL}="$user"', f'{LABEL_MODEL}!~"{_NOT_EMBEDDING}"')
+
+# Loki selector for the per-request log panel (same email/model scope).
 _LOKI_SEL = (
     f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_EMAIL}="$user", '
     f'{LABEL_MODEL}!~"{_NOT_EMBEDDING}"}}'
@@ -78,9 +88,6 @@ _USER_VAR_SQL = (
     f"WHERE realm_id = '{CAMER_DIGITAL_REALM_ID}' AND email IS NOT NULL "
     "ORDER BY __text"
 )
-
-_JSON_TOKENS = 'tokens=`["gen_ai.usage.total_tokens"]`'
-_JSON_COST = 'cost=`["gen_ai.usage.custom_total_cost"]`'
 
 
 def _user_var() -> db.QueryVariable:
@@ -111,57 +118,33 @@ def _loki_target(expr: str, *, legend: str = "", ref_id: str = "A") -> loki.Data
     return q.legend_format(legend) if legend else q
 
 
-def _thresholds(color: str) -> db.ThresholdsConfig:
-    return db.ThresholdsConfig().mode(dm.ThresholdsMode.ABSOLUTE).steps([dm.Threshold(color=color)])
-
-
-def _stat(
-    *, title: str, expr: str, unit: str, color: str, grid: tuple[int, int, int, int]
-) -> stat.Panel:
-    h, w, x, y = grid
-    return (
-        stat.Panel()
-        .title(title)
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
-        .unit(unit)
-        .thresholds(_thresholds(color))
-        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
-        .text_mode(cm.BigValueTextMode.AUTO)
-        .color_mode(cm.BigValueColorMode.VALUE)
-        .graph_mode(cm.BigValueGraphMode.AREA)
-        .with_target(_loki_target(expr))
-    )
-
-
 # --- thin per-user headline row ---------------------------------------------
 
 
-def _panel_chats() -> stat.Panel:
-    return _stat(
+def _panel_chats() -> object:
+    return sh.stat_panel(
         title="Chats (range)",
-        expr=f"sum(count_over_time({_LOKI_SEL}[$__range]))",
+        expr=f"sum(increase({METRIC_REQUESTS}{_MIMIR_SEL}[$__range]))",
         unit="short",
         color="blue",
         grid=(4, 8, 0, 1),
     )
 
 
-def _panel_tokens() -> stat.Panel:
-    return _stat(
+def _panel_tokens() -> object:
+    return sh.stat_panel(
         title="Tokens (range)",
-        expr=f'sum(sum_over_time({_LOKI_SEL} | json {_JSON_TOKENS} | unwrap tokens | __error__="" [$__range]))',
+        expr=f"sum(increase({METRIC_TOKENS}{_MIMIR_SEL}[$__range]))",
         unit="short",
         color="green",
         grid=(4, 8, 8, 1),
     )
 
 
-def _panel_cost() -> stat.Panel:
-    inner = f'sum(sum_over_time({_LOKI_SEL} | json {_JSON_COST} | unwrap cost | __error__="" [$__range]))'
-    return _stat(
+def _panel_cost() -> object:
+    return sh.stat_panel(
         title="Cost (range)",
-        expr=f"(({inner}) / 1e6)",
+        expr=sh.usd(f"sum(increase({METRIC_COST_MICRO_USD}{_MIMIR_SEL}[$__range]))"),
         unit="currencyUSD",
         color="orange",
         grid=(4, 8, 16, 1),
@@ -174,6 +157,8 @@ def _panel_cost() -> stat.Panel:
 def _panel_request_log() -> logs.Panel:
     # One line per request, newest first — the itemised "what did they run".
     # line_format renders: model · status · tokens · cost($) · latency(ms).
+    # Stays on Loki: it's a per-request LOG listing; Mimir stores metrics, not
+    # individual log lines.
     line_fmt = (
         "{{.gen_ai_request_model}} · rc={{.response_code}} · "
         "{{.gen_ai_usage_total_tokens}}tok · {{.gen_ai_usage_custom_total_cost}}µ$ · "
@@ -204,7 +189,8 @@ def _panel_request_log() -> logs.Panel:
 _DESCRIPTION = (
     "Per-user chat requests (embeddings excluded). The $user picker is sourced "
     "from a read-only Postgres datasource onto the Keycloak DB (ADR-0063), so "
-    "it lists real people regardless of recent traffic. The hero is an itemised "
+    "it lists real people regardless of recent traffic. The headline stats read "
+    "the precomputed Mimir metrics (ADR-0058); the hero is an itemised "
     "per-request log (model/status/tokens/cost/latency) filtered on the `email` "
     "label — distinct from the per_user / actor-consumption rollup charts. "
     "⚠️ Metadata only: prompt/response CONTENT can't be filtered per user — the "

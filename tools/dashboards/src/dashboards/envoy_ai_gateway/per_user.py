@@ -12,13 +12,22 @@ Regenerate with::
 
 Architecture decision: see ``docs/adr/0008-python-dashboard-generation.md``.
 Data path the dashboard consumes: ``docs/patterns/per-user-observability.md``.
+
+Repointed to Mimir (ADR-0058): the cost/token/request/model/azp/display_name
+panels and the email/azp/model variables read the precomputed
+``loki_process_custom_gen_ai_*`` counters via PromQL ``increase()`` — instant
+at any range on the rate-limited object store. The latency panels read the
+``gen_ai_usage_duration`` histogram (same ADR-0058 stage). Only the two
+status-code panels stay on Loki (response_code is deliberately not a Mimir
+metric label — bounded ~15 values but multiplying it onto every stream is what
+the per-user-observability doc avoided; see the panel docstrings).
 """
 
 from __future__ import annotations
 
 import json
 
-from grafana_foundation_sdk.builders import bargauge, loki, piechart, stat, timeseries
+from grafana_foundation_sdk.builders import bargauge, loki, piechart, timeseries
 from grafana_foundation_sdk.builders import common as cb
 from grafana_foundation_sdk.builders import dashboard as db
 from grafana_foundation_sdk.cog.encoder import JSONEncoder
@@ -34,7 +43,12 @@ from dashboards._common import (
     LABEL_MODEL,
     LABEL_USER_ID,
     LOKI_UID,
+    METRIC_COST_MICRO_USD,
+    METRIC_DURATION,
+    METRIC_REQUESTS,
+    METRIC_TOKENS,
 )
+from dashboards.envoy_ai_gateway import _shared as sh
 
 # ---------------------------------------------------------------------------
 # Module contract for the orchestrator (tools/dashboards/main.py)
@@ -47,8 +61,9 @@ OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/per-u
 # ---------------------------------------------------------------------------
 
 _LOKI_DS = dm.DataSourceRef(type_val="loki", uid=LOKI_UID)
+_MIMIR_DS = dm.DataSourceRef(type_val="prometheus", uid=sh.MIMIR_DS.uid)
 
-# Stream selector filtered by all dashboard variables (per-user scope).
+# Mimir metric selector filtered by all dashboard variables (per-user scope).
 # Filters on email (not user_id UUID) so the User picker is human-readable.
 #
 # `email!~"(missing|unstamped):.*"` keeps the per-user (human) panels clean.
@@ -61,69 +76,50 @@ _LOKI_DS = dm.DataSourceRef(type_val="loki", uid=LOKI_UID)
 # explicitly. That traffic stays VISIBLE in the Overall section (via
 # _OVERALL_SELECTOR) and as a "missing:*"/"unstamped:*" row in the Top-15 — the
 # whole point of the sentinels is that the gap is named, not hidden.
-_SELECTOR = (
-    f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_AZP}=~"$azp",'
-    f' {LABEL_EMAIL}=~"$email", {LABEL_EMAIL}!~"(missing|unstamped):.*",'
-    f' {LABEL_MODEL}=~"$model"}}'
+_SEL = sh.selector(
+    f'{LABEL_AZP}=~"$azp"',
+    f'{LABEL_EMAIL}=~"$email"',
+    f'{LABEL_EMAIL}!~"(missing|unstamped):.*"',
+    f'{LABEL_MODEL}=~"$model"',
 )
 
-# Stream selector that always spans ALL attributed users regardless of $email.
+# Metric selector that always spans ALL attributed users regardless of $email.
 # user_id=~".+" (not email) so SA traffic is included in overall aggregates.
-_OVERALL_SELECTOR = (
-    f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_AZP}=~"$azp",'
-    f' {LABEL_USER_ID}=~".+", {LABEL_MODEL}=~"$model"}}'
+_OVERALL_SEL = sh.selector(
+    f'{LABEL_AZP}=~"$azp"',
+    f'{LABEL_USER_ID}=~".+"',
+    f'{LABEL_MODEL}=~"$model"',
 )
 
-
-_JSON_PATHS = {
-    "gen_ai_usage_total_tokens": "gen_ai.usage.total_tokens",
-    "gen_ai_usage_custom_total_cost": "gen_ai.usage.custom_total_cost",
-}
-
-
-def _unwrap(field: str) -> str:
-    """`| json <field> | unwrap <field>` with the error guard ADR-0046 requires.
-
-    Numeric access-log fields arrive as strings and absent ones as "-";
-    `__error__=""` drops samples that fail conversion instead of failing
-    the whole query.
-
-    Extracts ONLY `field` -- a bare `| json` (no field list) pulls every
-    field on the line (trace_id, jti, ...) into the per-line label set, and
-    sum_over_time/quantile_over_time default-group by that whole set when no
-    explicit grouping is given, blowing past Loki's 500-series cap under real
-    traffic. Restricting extraction to the one field we unwrap keeps the
-    per-line label set down to just the genuine stream labels.
-
-    Envoy's access-log format.json (charts/core-gateway/templates/envoy-proxy.yaml)
-    declares the GenAI usage fields with LITERAL DOTS in the key name
-    (`gen_ai.usage.total_tokens`, not a nested object) -- a bare `| json` auto-
-    flattens that into the underscored label we use here, but the explicit
-    `| json <name>` form treats `<name>` as a path lookup, which does NOT
-    match a literal dotted key by bare name. Loki's json-field grammar isn't
-    full JMESPath -- a literal/quoted key isn't a valid expression on its
-    own, it must be wrapped in brackets: `["dotted.key"]` (confirmed via the
-    parser's own error: "unexpected STRING, expecting LSB or FIELD"). Flat
-    keys like `duration` have no dot and extract by bare name as before.
-    """
-    path = _JSON_PATHS.get(field)
-    extract = f'{field}=`["{path}"]`' if path else field
-    return f'| json {extract} | unwrap {field} | __error__=""'
+# Selector for the email variable — scoped to the selected azp (like the old
+# Loki label_values), but against the Mimir metric (instant, no log scan).
+_EMAIL_VAR_SEL = f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_AZP}=~"$azp"}}'
 
 
 def _usd(expr: str) -> str:
-    """Convert a raw micro-USD LogQL aggregation to USD for display.
+    """Convert a raw micro-USD PromQL aggregation to USD for display.
 
     The pricing CEL (ai-model.costExpression, ADR-0028/ADR-0051) emits
     gen_ai_usage_custom_total_cost in micro-USD. Every cost panel must
     divide by 1e6 before applying the currencyUSD unit, or values display
     1,000,000x too large.
     """
-    return f"(({expr}) / 1e6)"
+    return sh.usd(expr)
+
+
+def _latency_quantile(q: float, *, by: str = "") -> str:
+    """`histogram_quantile(q, sum by (le[, by]) (rate(<dur>_bucket{sel}[5m])))`.
+
+    Reads the ADR-0058 latency histogram from Mimir. `by` is an optional extra
+    grouping label (e.g. email for the per-user latency panel). [5m] gives
+    "current p95 latency" — same window the old Loki panel used.
+    """
+    group = f" by ({by}, le)" if by else " by (le)"
+    return f"histogram_quantile({q}, sum{group} (rate({METRIC_DURATION}_bucket{_SEL}[5m])))"
 
 
 # ---------------------------------------------------------------------------
-# Small builder helpers
+# Loki helpers (status-code panels only)
 # ---------------------------------------------------------------------------
 
 
@@ -146,44 +142,7 @@ def _loki_target(
     return q
 
 
-def _single_color_thresholds(color: str) -> db.ThresholdsConfig:
-    return db.ThresholdsConfig().mode(dm.ThresholdsMode.ABSOLUTE).steps([dm.Threshold(color=color)])
-
-
-def _stat_panel(
-    *,
-    title: str,
-    expr: str,
-    unit: str,
-    color: str,
-    grid: tuple[int, int, int, int],
-    calcs: list[str] | None = None,
-) -> stat.Panel:
-    """Single-value stat panel with sparkline. `grid` is (h, w, x, y)."""
-    h, w, x, y = grid
-    return (
-        stat.Panel()
-        .title(title)
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
-        .unit(unit)
-        .thresholds(_single_color_thresholds(color))
-        .reduce_options(
-            cb.ReduceDataOptions()
-            .calcs(calcs if calcs is not None else ["lastNotNull"])
-            .fields("")
-            .values(False)
-        )
-        .orientation(cm.VizOrientation.HORIZONTAL)
-        .text_mode(cm.BigValueTextMode.AUTO)
-        .color_mode(cm.BigValueColorMode.VALUE)
-        .graph_mode(cm.BigValueGraphMode.AREA)
-        .justify_mode(cm.BigValueJustifyMode.AUTO)
-        .with_target(_loki_target(expr))
-    )
-
-
-def _pie_panel(
+def _loki_pie_panel(
     *,
     title: str,
     expr: str,
@@ -192,7 +151,6 @@ def _pie_panel(
 ) -> piechart.Panel:
     # Range query (not instant): the Loki Grafana plugin does not substitute
     # $__range in instant queries, causing them to silently return no data.
-    # Range mode returns a time series per slice; the pie uses the last value.
     h, w, x, y = grid
     return (
         piechart.Panel()
@@ -231,86 +189,50 @@ def _row(title: str, *, y: int) -> _RowBuilder:
     return _RowBuilder(dm.RowPanel(title=title, grid_pos=dm.GridPos(h=1, w=24, x=0, y=y)))
 
 
-def _query_var(
-    *,
-    name: str,
-    label: str,
-    definition: str,
-) -> db.QueryVariable:
-    return (
-        db.QueryVariable(name)
-        .label(label)
-        .datasource(_LOKI_DS)
-        .query(definition)
-        .refresh(dm.VariableRefresh.ON_TIME_RANGE_CHANGED)
-        .sort(dm.VariableSort.ALPHABETICAL_ASC)
-        .multi(True)
-        .include_all(True)
-        .all_value(".+")
-        .current(dm.VariableOption(selected=True, text=["All"], value=["$__all"]))
-    )
-
-
 # ---------------------------------------------------------------------------
 # Overview stats  (y=0)
 # ---------------------------------------------------------------------------
 
 
-def _panel_requests_range() -> stat.Panel:
-    return _stat_panel(
+def _panel_requests_range() -> object:
+    return sh.stat_panel(
         title="Requests (range)",
-        expr=f"sum(count_over_time({_SELECTOR} [$__range]))",
+        expr=f"sum(increase({METRIC_REQUESTS}{_SEL}[$__range]))",
         unit="short",
         color="blue",
         grid=(4, 6, 0, 1),
     )
 
 
-def _panel_unique_users() -> stat.Panel:
-    return _stat_panel(
+def _panel_unique_users() -> object:
+    return sh.stat_panel(
         title="Unique users (range)",
-        expr=f"count(sum by ({LABEL_EMAIL}) (count_over_time({_SELECTOR} [$__range])))",
+        expr=f"count(sum by ({LABEL_EMAIL}) (increase({METRIC_REQUESTS}{_SEL}[$__range])))",
         unit="short",
         color="purple",
         grid=(4, 6, 6, 1),
     )
 
 
-def _panel_total_tokens() -> stat.Panel:
-    return _stat_panel(
+def _panel_total_tokens() -> object:
+    return sh.stat_panel(
         title="Total tokens (range)",
-        expr=f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
+        expr=f"sum(increase({METRIC_TOKENS}{_SEL}[$__range]))",
         unit="short",
         color="green",
         grid=(4, 6, 12, 1),
     )
 
 
-def _panel_p95_latency() -> stat.Panel:
-    # Use [5m] instead of [$__range] — quantile_over_time with a 1h window
-    # scans too much data per step and times out in Loki for this panel size.
-    # [5m] gives "current p95 latency" which is more actionable anyway.
-    # `by ()` collapses to ONE overall series — without a grouping clause,
-    # quantile_over_time keys its output by each underlying stream's full
-    # label set (not just the dashboard variables), which blows past Loki's
-    # 500-series-per-query cap and surfaces as a silent "No data" stat panel.
-    panel = _stat_panel(
+def _panel_p95_latency() -> object:
+    # [5m] window — "current p95 latency", same as the old Loki panel. Reads the
+    # ADR-0058 latency histogram from Mimir (instant, no log scan).
+    return sh.stat_panel(
         title="p95 latency (5m)",
-        expr=f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m]) by ()",
+        expr=_latency_quantile(0.95),
         unit="ms",
         color="green",
         grid=(4, 6, 18, 1),
-    )
-    return panel.thresholds(
-        db.ThresholdsConfig()
-        .mode(dm.ThresholdsMode.ABSOLUTE)
-        .steps(
-            [
-                dm.Threshold(color="green"),
-                dm.Threshold(color="orange", value=1000.0),
-                dm.Threshold(color="red", value=5000.0),
-            ]
-        )
     )
 
 
@@ -323,7 +245,7 @@ def _panel_requests_per_user() -> timeseries.Panel:
     return (
         timeseries.Panel()
         .title("Requests per user / minute")
-        .datasource(_LOKI_DS)
+        .datasource(_MIMIR_DS)
         .grid_pos(dm.GridPos(h=8, w=24, x=0, y=5))
         .unit("short")
         .draw_style(cm.GraphDrawStyle.LINE)
@@ -339,9 +261,14 @@ def _panel_requests_per_user() -> timeseries.Panel:
         )
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
         .with_target(
-            _loki_target(
-                f"sum by ({LABEL_EMAIL}) (count_over_time({_SELECTOR} [1m]))",
+            sh.prom_target(
+                # rate()[5m]*60 = requests per minute. NOT increase()[1m]: the
+                # Mimir metrics are scraped every 60s, so a [1m] window holds
+                # only 1 sample and increase() needs ≥2 → silent "no data"
+                # (same trap as the cost-observability daily-bars note).
+                f"sum by ({LABEL_EMAIL}) (rate({METRIC_REQUESTS}{_SEL}[5m]) * 60)",
                 legend="{{email}}",
+                instant=False,
             )
         )
     )
@@ -355,35 +282,24 @@ def _panel_requests_per_user() -> timeseries.Panel:
 def _panel_top_users_bar() -> bargauge.Panel:
     # label_replace extracts the first whitespace-delimited token from
     # display_name ("Kunga Derick" -> "Kunga") so 15 bars fit comfortably.
-    # Uses _OVERALL_SELECTOR so the ranking always reflects all users
-    # regardless of the $user_id filter variable.
-    # sum_over_time doesn't accept an inline `by (...)` clause in this Loki
-    # version ("grouping not allowed for sum_over_time aggregation") -- only
-    # quantile_over_time does. Grouping happens via the outer `sum by (...)`;
-    # cardinality stays bounded because _unwrap now extracts only the cost
-    # field, so the inner result is already keyed by stream labels only.
+    # Uses _OVERALL_SEL so the ranking always reflects all users regardless of
+    # the $email filter variable.
     _cost_sum = (
-        f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range])"
+        f"sum by ({LABEL_DISPLAY_NAME}) (increase({METRIC_COST_MICRO_USD}{_OVERALL_SEL}[$__range]))"
     )
     expr = (
         f"label_replace("
-        f"topk(15, sum by ({LABEL_DISPLAY_NAME}) ({_usd(_cost_sum)})),"
+        f"topk(15, {_usd(_cost_sum)}),"
         f'"given_name", "$1", "{LABEL_DISPLAY_NAME}", "^(\\\\S+).*"'
         f")"
     )
-    return (
-        bargauge.Panel()
-        .title("Top 15 users — cost (selected range)")
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=10, w=24, x=0, y=13))
-        .unit("currencyUSD")
-        .orientation(cm.VizOrientation.HORIZONTAL)
-        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
-        .display_mode(cm.BarGaugeDisplayMode.BASIC)
-        .thresholds(_single_color_thresholds("blue"))
-        # Range query (not instant): same $__range-not-substituted bug as the
-        # pie charts above — instant queries silently return no data here too.
-        .with_target(_loki_target(expr, legend="{{given_name}}", instant=False))
+    return sh.bargauge_panel(
+        title="Top 15 users — cost (selected range)",
+        expr=expr,
+        legend="{{given_name}}",
+        unit="currencyUSD",
+        color="blue",
+        grid=(10, 24, 0, 13),
     )
 
 
@@ -392,22 +308,10 @@ def _panel_top_users_bar() -> bargauge.Panel:
 # ---------------------------------------------------------------------------
 
 
-def _panel_user_total_cost() -> stat.Panel:
-    # [$__range] + the default lastNotNull calc, same trick as the top-row
-    # "Requests (range)" stat: at the LAST evaluated point, the window
-    # stretches back exactly to the start of the dashboard's selected range,
-    # so that one point already IS the total -- lastNotNull just reads it.
-    # (The previous [1m]-bucket + calcs=["sum"] version double/triple-counted:
-    # Grafana's auto step for a range query is normally well under 60s, so a
-    # 1-minute window evaluated every ~10-15s overlaps itself 4-6x, and
-    # summing those overlapping buckets inflated the total by that same
-    # factor -- this is why "User"/"Overall" totals looked implausibly large
-    # relative to e.g. the Top-15 cost breakdown.)
-    return _stat_panel(
+def _panel_user_total_cost() -> object:
+    return sh.stat_panel(
         title="User — total cost",
-        expr=_usd(
-            f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
-        ),
+        expr=_usd(f"sum(increase({METRIC_COST_MICRO_USD}{_SEL}[$__range]))"),
         unit="currencyUSD",
         color="orange",
         grid=(8, 12, 0, 24),
@@ -418,7 +322,7 @@ def _panel_latency_per_user() -> timeseries.Panel:
     return (
         timeseries.Panel()
         .title("Latency per user — p50 / p95")
-        .datasource(_LOKI_DS)
+        .datasource(_MIMIR_DS)
         .grid_pos(dm.GridPos(h=8, w=12, x=12, y=24))
         .unit("ms")
         .draw_style(cm.GraphDrawStyle.LINE)
@@ -433,59 +337,62 @@ def _panel_latency_per_user() -> timeseries.Panel:
         )
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
         .with_target(
-            _loki_target(
-                f"quantile_over_time(0.50, {_SELECTOR} {_unwrap('duration')} [5m]) by ({LABEL_EMAIL})",
+            sh.prom_target(
+                _latency_quantile(0.50, by=LABEL_EMAIL),
                 legend="p50 {{email}}",
                 ref_id="A",
+                instant=False,
             )
         )
         .with_target(
-            _loki_target(
-                f"quantile_over_time(0.95, {_SELECTOR} {_unwrap('duration')} [5m]) by ({LABEL_EMAIL})",
+            sh.prom_target(
+                _latency_quantile(0.95, by=LABEL_EMAIL),
                 legend="p95 {{email}}",
                 ref_id="B",
+                instant=False,
             )
         )
     )
 
 
-def _panel_user_model_by_requests() -> piechart.Panel:
-    return _pie_panel(
+def _panel_user_model_by_requests() -> object:
+    return sh.pie_panel(
         title="User — model distribution (requests)",
-        expr=f"sum by ({LABEL_MODEL}) (count_over_time({_SELECTOR} [$__range]))",
+        expr=f"sum by ({LABEL_MODEL}) (increase({METRIC_REQUESTS}{_SEL}[$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 0, 32),
     )
 
 
-def _panel_user_model_by_cost() -> piechart.Panel:
-    return _pie_panel(
+def _panel_user_model_by_cost() -> object:
+    return sh.pie_panel(
         title="User — model distribution (cost $)",
-        expr=_usd(
-            f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
-        ),
+        expr=_usd(f"sum by ({LABEL_MODEL}) (increase({METRIC_COST_MICRO_USD}{_SEL}[$__range]))"),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 6, 32),
     )
 
 
-def _panel_user_model_by_tokens() -> piechart.Panel:
-    return _pie_panel(
+def _panel_user_model_by_tokens() -> object:
+    return sh.pie_panel(
         title="User — model distribution (tokens)",
-        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
+        expr=f"sum by ({LABEL_MODEL}) (increase({METRIC_TOKENS}{_SEL}[$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 12, 32),
     )
 
 
 def _panel_user_status_codes() -> piechart.Panel:
-    # response_code is in the log body (not a label); | json extracts it.
-    # The ^(-|)$ filter drops absent/placeholder values before grouping.
-    return _pie_panel(
+    # response_code is deliberately NOT a Mimir metric label (bounded ~15 values
+    # but multiplying it onto every stream is what the per-user-observability
+    # doc avoided). So this panel stays on Loki — it's a small part of the board.
+    return _loki_pie_panel(
         title="User — status codes",
         expr=(
             f"sum by (response_code) ("
-            f'count_over_time({_SELECTOR} | json | response_code !~ "^(-|)$" [$__range])'
+            f'count_over_time({{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_AZP}=~"$azp",'
+            f' {LABEL_EMAIL}=~"$email", {LABEL_EMAIL}!~"(missing|unstamped):.*",'
+            f' {LABEL_MODEL}=~"$model"}} | json | response_code !~ "^(-|)$" [$__range])'
             f")"
         ),
         legend_label="{{response_code}}",
@@ -498,41 +405,44 @@ def _panel_user_status_codes() -> piechart.Panel:
 # ---------------------------------------------------------------------------
 
 
-def _panel_overall_model_by_requests() -> piechart.Panel:
-    return _pie_panel(
+def _panel_overall_model_by_requests() -> object:
+    return sh.pie_panel(
         title="Overall — model distribution (requests)",
-        expr=f"sum by ({LABEL_MODEL}) (count_over_time({_OVERALL_SELECTOR} [$__range]))",
+        expr=f"sum by ({LABEL_MODEL}) (increase({METRIC_REQUESTS}{_OVERALL_SEL}[$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 0, 41),
     )
 
 
-def _panel_overall_model_by_cost() -> piechart.Panel:
-    return _pie_panel(
+def _panel_overall_model_by_cost() -> object:
+    return sh.pie_panel(
         title="Overall — model distribution (cost $)",
         expr=_usd(
-            f"sum by ({LABEL_MODEL}) (sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+            f"sum by ({LABEL_MODEL}) (increase({METRIC_COST_MICRO_USD}{_OVERALL_SEL}[$__range]))"
         ),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 6, 41),
     )
 
 
-def _panel_overall_model_by_tokens() -> piechart.Panel:
-    return _pie_panel(
+def _panel_overall_model_by_tokens() -> object:
+    return sh.pie_panel(
         title="Overall — model distribution (tokens)",
-        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
+        expr=f"sum by ({LABEL_MODEL}) (increase({METRIC_TOKENS}{_OVERALL_SEL}[$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 12, 41),
     )
 
 
 def _panel_overall_status_codes() -> piechart.Panel:
-    return _pie_panel(
+    # Same Loki-only rationale as _panel_user_status_codes.
+    return _loki_pie_panel(
         title="Overall — status codes",
         expr=(
             f"sum by (response_code) ("
-            f'count_over_time({_OVERALL_SELECTOR} | json | response_code !~ "^(-|)$" [$__range])'
+            f'count_over_time({{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_AZP}=~"$azp",'
+            f' {LABEL_USER_ID}=~".+", {LABEL_MODEL}=~"$model"}}'
+            f' | json | response_code !~ "^(-|)$" [$__range])'
             f")"
         ),
         legend_label="{{response_code}}",
@@ -540,35 +450,30 @@ def _panel_overall_status_codes() -> piechart.Panel:
     )
 
 
-def _panel_overall_total_cost() -> stat.Panel:
-    # See _panel_user_total_cost -- same [$__range]+lastNotNull fix, same
-    # reason (the prior [1m]+sum form double/triple-counted via overlapping
-    # auto-step windows).
-    return _stat_panel(
+def _panel_overall_total_cost() -> object:
+    return sh.stat_panel(
         title="Overall — total cost",
-        expr=_usd(
-            f"sum(sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
-        ),
+        expr=_usd(f"sum(increase({METRIC_COST_MICRO_USD}{_OVERALL_SEL}[$__range]))"),
         unit="currencyUSD",
         color="orange",
         grid=(4, 8, 0, 49),
     )
 
 
-def _panel_overall_total_tokens() -> stat.Panel:
-    return _stat_panel(
+def _panel_overall_total_tokens() -> object:
+    return sh.stat_panel(
         title="Overall — total tokens",
-        expr=f"sum(sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
+        expr=f"sum(increase({METRIC_TOKENS}{_OVERALL_SEL}[$__range]))",
         unit="short",
         color="green",
         grid=(4, 8, 8, 49),
     )
 
 
-def _panel_overall_total_requests() -> stat.Panel:
-    return _stat_panel(
+def _panel_overall_total_requests() -> object:
+    return sh.stat_panel(
         title="Overall — total requests",
-        expr=f"sum(count_over_time({_OVERALL_SELECTOR} [$__range]))",
+        expr=f"sum(increase({METRIC_REQUESTS}{_OVERALL_SEL}[$__range]))",
         unit="short",
         color="blue",
         grid=(4, 8, 16, 49),
@@ -583,24 +488,16 @@ def _panel_overall_total_requests() -> stat.Panel:
 # call (ADR-0011/0021): e.g. opencode-cli / lightbridge-api-key / converse-frontend
 # = direct API, internal-key-librechat = LibreChat, lightbridge-code-intelligence
 # = code-intel, github-actions = CI runners. Grouping cost by (display_name, azp)
-# gives the per-person / per-repo split the maintainer asked for, e.g.
-#   "stephane · lightbridge-api-key = $20  /  stephane · internal-key-librechat = $10"
-#   "adorsys-gis/ai-helm · github-actions = $30 / · lightbridge-code-intelligence = $10"
-# Uses _OVERALL_SELECTOR so SERVICE traffic (azp != a human) is included — the
-# whole point is to see every channel, not just human-attributed rows.
-# ⚠️ KNOWN GAP: LibreChat AGENT runs + RAG embeddings don't forward the end-user
-# (they fall back to azp=internal-key-librechat with user_id=internal-key-librechat),
-# so LibreChat's per-USER split is currently only its DIRECT chats. See
-# docs/patterns/per-user-observability.md / the librechat-app header-forwarding note.
+# gives the per-person / per-repo split the maintainer asked for.
+# Uses _OVERALL_SEL so SERVICE traffic (azp != a human) is included.
 # ---------------------------------------------------------------------------
 
 
-def _panel_cost_by_channel_pie() -> piechart.Panel:
-    return _pie_panel(
+def _panel_cost_by_channel_pie() -> object:
+    return sh.pie_panel(
         title="Cost by channel (azp)",
         expr=_usd(
-            f"sum by ({LABEL_AZP}) (sum_over_time({_OVERALL_SELECTOR} "
-            f"{_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
+            f"sum by ({LABEL_AZP}) (increase({METRIC_COST_MICRO_USD}{_OVERALL_SEL}[$__range]))"
         ),
         legend_label=f"{{{{{LABEL_AZP}}}}}",
         grid=(10, 8, 0, 54),
@@ -609,31 +506,15 @@ def _panel_cost_by_channel_pie() -> piechart.Panel:
 
 def _panel_cost_user_by_channel_bar() -> bargauge.Panel:
     # topk over (display_name, azp) pairs → one bar per account-per-channel.
-    # Legend "<user> · <channel>" is the literal answer to the breakdown ask.
-    # sum_over_time can't take an inline by() (Loki limitation) — group via the
-    # outer sum by; _unwrap extracts only the cost field so cardinality stays
-    # bounded (same pattern as _panel_top_users_bar).
-    _cost_sum = (
-        f"sum_over_time({_OVERALL_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range])"
-    )
-    expr = f"topk(20, sum by ({LABEL_DISPLAY_NAME}, {LABEL_AZP}) ({_usd(_cost_sum)}))"
-    return (
-        bargauge.Panel()
-        .title("Top 20 — cost by user per channel (selected range)")
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=10, w=16, x=8, y=54))
-        .unit("currencyUSD")
-        .orientation(cm.VizOrientation.HORIZONTAL)
-        .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
-        .display_mode(cm.BarGaugeDisplayMode.BASIC)
-        .thresholds(_single_color_thresholds("green"))
-        .with_target(
-            _loki_target(
-                expr,
-                legend=f"{{{{{LABEL_DISPLAY_NAME}}}}} · {{{{{LABEL_AZP}}}}}",
-                instant=False,
-            )
-        )
+    _cost_sum = f"sum by ({LABEL_DISPLAY_NAME}, {LABEL_AZP}) (increase({METRIC_COST_MICRO_USD}{_OVERALL_SEL}[$__range]))"
+    expr = f"topk(20, {_usd(_cost_sum)})"
+    return sh.bargauge_panel(
+        title="Top 20 — cost by user per channel (selected range)",
+        expr=expr,
+        legend=f"{{{{{LABEL_DISPLAY_NAME}}}}} · {{{{{LABEL_AZP}}}}}",
+        unit="currencyUSD",
+        color="green",
+        grid=(10, 16, 8, 54),
     )
 
 
@@ -641,7 +522,7 @@ def _panel_cost_per_channel_ts() -> timeseries.Panel:
     return (
         timeseries.Panel()
         .title("Cost per channel over time")
-        .datasource(_LOKI_DS)
+        .datasource(_MIMIR_DS)
         .grid_pos(dm.GridPos(h=8, w=24, x=0, y=64))
         .unit("currencyUSD")
         .draw_style(cm.GraphDrawStyle.LINE)
@@ -657,12 +538,14 @@ def _panel_cost_per_channel_ts() -> timeseries.Panel:
         )
         .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.MULTI))
         .with_target(
-            _loki_target(
+            sh.prom_target(
+                # rate()[5m]*60 = USD per minute. NOT increase()[1m] — same
+                # 60s-scrape / ≥2-samples trap as the requests-per-user panel.
                 _usd(
-                    f"sum by ({LABEL_AZP}) (sum_over_time({_OVERALL_SELECTOR} "
-                    f"{_unwrap('gen_ai_usage_custom_total_cost')} [1m]))"
+                    f"sum by ({LABEL_AZP}) (rate({METRIC_COST_MICRO_USD}{_OVERALL_SEL}[5m]) * 60)"
                 ),
                 legend=f"{{{{{LABEL_AZP}}}}}",
+                instant=False,
             )
         )
     )
@@ -679,7 +562,9 @@ _DESCRIPTION = (
     "Envoy access log JSON (OTLP attributes) -> "
     "Alloy loki.process 'ai_gateway_user_attribution' (flattens the envelope, "
     "promotes user_id/azp/model/email/display_name/billing_plan labels, "
-    "pins service_name=envoy-ai-gateway; ADR-0046) -> Loki. "
+    "pins service_name=envoy-ai-gateway; ADR-0046) -> Mimir (ADR-0058). "
+    "Cost/token/request/model/azp/latency panels read the precomputed Mimir "
+    "metrics (instant at any range); only the status-code panels stay on Loki. "
     "Shows ATTRIBUTED traffic only — unauthenticated requests carry no identity labels. "
     "See docs/patterns/per-user-observability.md. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/per_user.py."
@@ -690,7 +575,7 @@ def _dashboard() -> db.Dashboard:
     return (
         db.Dashboard("AI Gateway — per-user activity")
         .uid("envoy-ai-gateway-per-user")
-        .tags(["ai-gateway", "per-user", "loki"])
+        .tags(["ai-gateway", "per-user", "mimir"])
         .description(_DESCRIPTION)
         .timezone("browser")
         .editable()
@@ -698,26 +583,24 @@ def _dashboard() -> db.Dashboard:
         .refresh("30s")
         .time("now-1h", "now")
         .with_variable(
-            _query_var(
+            sh.multi_var(
                 name="azp",
                 label="Client (azp)",
-                definition=(f'label_values({{service_name="{GATEWAY_SERVICE_NAME}"}}, azp)'),
+                definition=sh.label_values(METRIC_REQUESTS, LABEL_AZP),
             )
         )
         .with_variable(
-            _query_var(
+            sh.multi_var(
                 name="email",
                 label="User (email)",
-                definition=(
-                    f'label_values({{service_name="{GATEWAY_SERVICE_NAME}", azp=~"$azp"}}, email)'
-                ),
+                definition=sh.label_values(_EMAIL_VAR_SEL, LABEL_EMAIL),
             )
         )
         .with_variable(
-            _query_var(
+            sh.multi_var(
                 name="model",
                 label="Model",
-                definition=(f'label_values({{service_name="{GATEWAY_SERVICE_NAME}"}}, model)'),
+                definition=sh.label_values(METRIC_REQUESTS, LABEL_MODEL),
             )
         )
         # Overview row
