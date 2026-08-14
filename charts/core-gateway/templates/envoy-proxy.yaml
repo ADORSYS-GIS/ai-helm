@@ -168,7 +168,22 @@ spec:
                 # (/v1/otel/logs, no gRPC receiver) directly. The collector
                 # hop is what makes both destinations reachable from one
                 # sink.
-                host: {{ include "core-gateway.fullname" . }}-usage.{{ .Release.Namespace }}.svc.cluster.local
+                #
+                # MUST carry the `-collector` suffix: the otel-operator names
+                # the Service it generates for an OpenTelemetryCollector
+                # named `<fullname>-usage` (templates/otel.yaml) as
+                # `<fullname>-usage-collector`, not `<fullname>-usage` — same
+                # pattern the traces leg already gets right in
+                # templates/gateway-config.yaml
+                # (`{{ include "core-gateway.fullname" $ }}-traces-collector`).
+                # Verified live: `kubectl get svc -n converse-gateway` has no
+                # `core-gateway-usage` Service, only `-collector`,
+                # `-collector-headless` and `-collector-monitoring`; the
+                # pre-fix hostname left the STRICT_DNS `accesslog_otel_0_0`
+                # cluster with zero resolved hosts and the collector's
+                # `:8888/metrics` never emitted a single
+                # `otelcol_receiver_accepted_*` series since deploy.
+                host: {{ include "core-gateway.fullname" . }}-usage-collector.{{ .Release.Namespace }}.svc.cluster.local
                 port: 4317
                 resources:
                   k8s.cluster.name: "converse-llm-1"
