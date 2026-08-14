@@ -322,8 +322,13 @@ backendTrafficPolicy:
 # (account_id/project_id/api_key_id/user_id/gen_ai.request.model/token
 # counts/cost) are present with the right names once it does.
 #
-# `enabled: false` removes the exporter and its pipeline entry entirely —
-# use it to fully turn diagnostics back off without a template edit.
+# `enabled: false` removes the `debug` EXPORTER and its pipeline entry
+# entirely — no telemetry payloads/attribute values get printed. It does
+# NOT touch `service.telemetry.logs.level: debug`, which templates/otel.yaml
+# sets unconditionally on both collectors: that's the collector binary's own
+# internal operational logging (component startup, config validation,
+# export errors), not a telemetry-payload dump, so it carries no
+# attribute/PII values and is left on regardless of this toggle.
 #
 # `verbosity: basic | normal | detailed`. `basic` only counts records per
 # batch — proves data is flowing without printing a single attribute
