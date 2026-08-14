@@ -79,9 +79,14 @@ wellKnown:
       # fail to send (the plugin logs `otel_traces_init_failed`/etc. and
       # keeps every other signal independent; nothing in opencode breaks).
       # Once the listener is live, traffic starts flowing with zero opencode-
-      # side change. NOT pinned to the 0.12.0 vymalo line above (own release
-      # cadence) — bump deliberately, same rule as every other plugin here.
-      - - "@vymalo/opencode-otel@0.13.0"
+      # side change. Part of the 0.12.0 vymalo line — pin matches the four
+      # above (verified against the npm registry, not just the package's
+      # `main`-branch source: its committed `package.json` was already ahead
+      # at 0.13.0 when this was first pinned, but nothing above 0.12.0 was
+      # actually published — an exact pin one version ahead of npm 404s on
+      # `opencode auth login`). Bump every pin deliberately when a real
+      # release lands, same rule as every other plugin here.
+      - - "@vymalo/opencode-otel@0.12.0"
         - endpoint: "https://otel.ai.camer.digital"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
@@ -97,7 +102,7 @@ wellKnown:
       # in the plugin TUPLE's second arg — this plugin reads its options from
       # there (NOT from provider.options.meta like the others), i.e.
       # opencode's `[name, {opts}]` install form, which toJson renders as a
-      # JSON 2-tuple. Part of the 0.12.0 vymalo line — pin matches the three
+      # JSON 2-tuple. Part of the 0.12.0 vymalo line — pin matches the four
       # above.
       #
       # TWO independent token levers, at different scopes:
