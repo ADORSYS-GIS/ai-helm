@@ -1,3 +1,9 @@
+{{- $tracesDebug := ((.Values.otelCollector | default dict).debug | default dict).traces | default dict -}}
+{{- $tracesDebugEnabled := $tracesDebug.enabled | default false -}}
+{{- $tracesDebugVerbosity := $tracesDebug.verbosity | default "basic" -}}
+{{- $usageDebug := ((.Values.otelCollector | default dict).debug | default dict).usage | default dict -}}
+{{- $usageDebugEnabled := $usageDebug.enabled | default false -}}
+{{- $usageDebugVerbosity := $usageDebug.verbosity | default "basic" -}}
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:
@@ -38,8 +44,34 @@ spec:
         endpoint: "alloy.observability.svc.cluster.local:4317"
         tls:
           insecure: true
+      {{- if $tracesDebugEnabled }}
+      # Diagnostic-only: dumps received spans to the collector pod's own
+      # stdout (visible via `kubectl logs`) ALONGSIDE the otlp/alloy export
+      # above — never in place of it. `logging` was the old exporter name;
+      # it was renamed to `debug` and later removed entirely upstream, and
+      # this fleet's deployed image (opentelemetry-collector-k8s:0.157.0,
+      # verified live against the CR) only ships `debug`. Toggle off via
+      # otelCollector.debug.traces.enabled.
+      #
+      # verbosity: every span here carries a `user.id` tag (see the
+      # EnvoyProxy `telemetry.tracing.tags` block in templates/envoy-proxy.yaml,
+      # sourced from x-oidc-user-id) — a correlatable user identifier, not
+      # the full email/name profile the `-usage` collector's access-log JSON
+      # carries, but real user data all the same. The debug exporter's
+      # `normal` verbosity already prints per-span attributes inline (it is
+      # NOT a bare counts view), so `user.id` would land in pod logs/Loki at
+      # `normal`, before ever reaching `detailed`. Default `basic` for that
+      # reason — it proves spans are flowing without printing any attribute
+      # value. Bump to `detailed` only to verify gen_ai.*/token/cost
+      # attribute names+values once, then set back to `basic`.
+      debug:
+        verbosity: {{ $tracesDebugVerbosity }}
+      {{- end }}
 
     service:
+      telemetry:
+        logs:
+          level: debug
       pipelines:
         traces:
           receivers:
@@ -49,6 +81,9 @@ spec:
             - batch
           exporters:
             - otlp/alloy
+            {{- if $tracesDebugEnabled }}
+            - debug
+            {{- end }}
 ---
 # Restores the `-usage` collector removed in 948814de ("remove usage-collector
 # + otel-operator (external)"). That commit repointed the Envoy access-log
@@ -133,8 +168,36 @@ spec:
         endpoint: "alloy.observability.svc.cluster.local:4317"
         tls:
           insecure: true
+      {{- if $usageDebugEnabled }}
+      # Diagnostic-only: dumps received log records (Envoy's access-log
+      # stream) to the collector pod's own stdout, ADDED alongside the two
+      # real exporters above, never replacing them. Same exporter-naming
+      # rationale as the `-traces` collector above (`debug`, not the removed
+      # `logging` name — verified against this fleet's deployed
+      # opentelemetry-collector-k8s:0.157.0 image).
+      #
+      # verbosity: the access-log JSON this collector receives carries real
+      # PII — lc_user_email, oidc_email, oidc_name, lc_user_name, user_id,
+      # oidc_jti, x-forwarded-for (see templates/envoy-proxy.yaml's
+      # accessLog json block) — alongside account_id/project_id/api_key_id
+      # and the gen_ai.*/token/cost attributes this diagnosis actually wants
+      # to check. At `detailed` verbosity every one of those fields'
+      # VALUES gets printed into this collector pod's logs, which ship to
+      # Loki — i.e. PII duplicated into a logging backend with Loki's
+      # retention, not a transient debug session. Default `basic`: it only
+      # prints per-batch record counts, which is enough to confirm data is
+      # flowing at all (the original symptom here — the usage collector's
+      # otelcol_receiver_accepted_* metrics were absent entirely). Bump to
+      # `detailed` only to verify the attribute mapping once data is
+      # confirmed flowing, then set back to `basic` immediately after.
+      debug:
+        verbosity: {{ $usageDebugVerbosity }}
+      {{- end }}
 
     service:
+      telemetry:
+        logs:
+          level: debug
       pipelines:
         logs:
           receivers:
@@ -145,3 +208,6 @@ spec:
           exporters:
             - otlphttp/lightbridge_usage
             - otlp/alloy
+            {{- if $usageDebugEnabled }}
+            - debug
+            {{- end }}
