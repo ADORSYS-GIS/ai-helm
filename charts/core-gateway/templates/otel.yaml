@@ -30,6 +30,44 @@ spec:
         spike_limit_mib: 100
       batch:
         send_batch_size: 512
+        # Hard cap, NOT a throughput tuning knob. Live prod metrics
+        # (2026-08-14/15) on this collector showed
+        # otelcol_exporter_send_failed_spans running ~74% of all spans
+        # (e.g. 10911 failed vs 3869 sent), with the exporter logging
+        # repeating "rpc error: code = ResourceExhausted desc = grpc:
+        # received message after decompression larger than max 4194304"
+        # against Alloy's OTLP receiver — which has no
+        # max_recv_msg_size override configured (ai-helm-values repo,
+        # environments/prod/values/alloy.yaml), so the otelcol default
+        # of 4 MiB stands.
+        #
+        # send_batch_size (512) was already NOT the driver of the
+        # oversized exports: otelcol_processor_batch_batch_send_size
+        # showed real exported batches averaging ~2.8 spans
+        # (batch_send_size_sum/count ≈ 14873/5307, with 99.8% of
+        # batches under 10 items) — at this traffic volume the 5s
+        # `timeout` below fires long before 512 items ever accumulate.
+        # Yet even those already-tiny batches were failing whole
+        # (exporter logs show 2-11 dropped_items per failed export),
+        # which means one oversized span in a batch — almost certainly
+        # a full multimodal request/response body (base64 image
+        # content; see values.yaml's extProc memory-limit comment on
+        # this exact class of payload) captured as a span attribute by
+        # the AI Gateway's ExtProc — was taking every other,
+        # normal-sized span sharing its 5s window down with it.
+        #
+        # send_batch_max_size=1 forces one span per export, so an
+        # oversized span's failure can no longer drag its batch-mates
+        # down too. This is expected to recover most, not all, of the
+        # current ~74% loss: a single span that is itself >4 MiB will
+        # still fail on its own — that residual gap can only be closed
+        # by raising Alloy's OTLP receiver grpc max_recv_msg_size above
+        # 4 MiB, which lives outside this chart/repo (ai-helm-values'
+        # environments/prod/values/alloy.yaml, the
+        # `otelcol.receiver.otlp "default" { grpc { ... } }` block) —
+        # flagged for a follow-up there, not silently worked around
+        # here.
+        send_batch_max_size: 1
         timeout: 5s
 
     exporters:
