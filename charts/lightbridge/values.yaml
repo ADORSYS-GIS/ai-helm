@@ -4,8 +4,12 @@
 # three child Applications.
 #
 # Replaces the old flat `lightbridge-backend` app. Components: api (main) + mcp
-# only — opa (removed per ADR-0021) and usage (unused) are DROPPED, along with
-# the lightbridge-usage-db. Namespace stays `converse`.
+# are always on; opa and usage were dropped by ADR-0021/ADR-0026 but have since
+# been re-enabled at the values layer (ai-helm-values
+# environments/prod/values/lightbridge-app.yaml — this chart doesn't gate them
+# itself, the upstream lightbridge-authz-stack chart's own component toggles
+# do). lightbridge-usage-db (below, in the db child) was restored alongside
+# usage. Namespace stays `converse`.
 
 # ────────────────────────────────────────────────────────────────────────
 # Shared ArgoCD wiring for all child Applications.

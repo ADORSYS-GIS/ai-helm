@@ -1,8 +1,11 @@
-# lightbridge-db — CNPG Cluster (lightbridge-main-db) + barman ObjectStore +
-# ScheduledBackup + PodMonitor. Leaf chart of the lightbridge orchestrator
-# (ADR-0019). Moved verbatim from the old flat app's rawRessources EXCEPT the
-# ObjectStore, which is modernised to Hetzner Object Storage (the old MinIO
-# s3.ssegning.me / ai-ops-backups is decommissioned). The usage DB is dropped.
+# lightbridge-db — CNPG Clusters (lightbridge-main-db, lightbridge-usage-db) +
+# their barman ObjectStores + ScheduledBackups + PodMonitors. Leaf chart of
+# the lightbridge orchestrator (ADR-0019). Moved verbatim from the old flat
+# app's rawRessources EXCEPT the ObjectStores, which are modernised to
+# Hetzner Object Storage (the old MinIO s3.ssegning.me / ai-ops-backups is
+# decommissioned). lightbridge-usage-db was dropped by ADR-0026 and is
+# restored below (see the block's own comment for why it is a separate
+# Cluster+ClusterImageCatalog rather than a Database CR on lightbridge-main-db).
 #
 # Namespace is `converse` (the orchestrator targets that namespace; these CRs
 # pin it explicitly to match the old flat-app behaviour).
@@ -217,6 +220,152 @@ resources:
       selector:
         matchLabels:
           cnpg.io/cluster: lightbridge-main-db
+      podMetricsEndpoints:
+        - port: metrics
+          interval: 30s
+  # ────────────────────────────────────────────────────────────────────
+  # lightbridge-usage-db — RESTORED (reverses the usage-db half of ADR-0026).
+  # lightbridge-authz-usage (crates/lightbridge-authz-usage,
+  # migrations-usage/) needs a Postgres it can call `create_hypertable()` on.
+  # It is NOT a `Database` CR on the shared lightbridge-main-db cluster like
+  # repoauth/codeintel/coder/governance below — those all work because their
+  # extensions (pgvector for codeintel) ship in the standard/system
+  # cloudnative-pg/postgresql image. TimescaleDB does NOT: it isn't in the
+  # Debian apt repos cloudnative-pg's images build from (unlike pgvector),
+  # so `CREATE EXTENSION timescaledb` would fail on lightbridge-main-db's
+  # plain ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie image — there
+  # is no shared library for it to load. A dedicated Cluster on a
+  # Timescale-vendor image (via ClusterImageCatalog, since imageCatalogRef
+  # doesn't accept arbitrary third-party repos as imageName-equivalent
+  # inline) is the only viable mechanism, exactly as it was before
+  # ADR-0026 dropped it — see the restore runbook at
+  # docs/cnpg-native-backup/lightbridge-usage-db-restore.yaml, which still
+  # references this ClusterImageCatalog/Cluster pair and proves the prior
+  # setup was live and backed up. migrations-usage/20260223000001_init_usage.sql
+  # already guards this defensively (`IF EXISTS (SELECT 1 FROM
+  # pg_available_extensions WHERE name = 'timescaledb') THEN CREATE
+  # EXTENSION ...`), so it degrades to plain Postgres if this ever regresses
+  # — but hypertable partitioning (the reason usage_events exists on
+  # Timescale at all) only kicks in with the extension actually present.
+  #
+  # instances/storage/resources/archive_timeout mirror the pre-ADR-0026 spec
+  # verbatim (dedicated cluster, not shared, so no need for main-db's later
+  # max_connections/memory bump — that was sized for 7 shared tenant roles).
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: ClusterImageCatalog
+    metadata:
+      name: lightbridge-usage-db
+      namespace: converse
+    spec:
+      images:
+        - major: 17
+          image: timescale/timescaledb:2.21.1-pg17
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: lightbridge-usage-db
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      instances: 2
+      imageCatalogRef:
+        apiGroup: postgresql.cnpg.io
+        kind: ClusterImageCatalog
+        name: lightbridge-usage-db
+        major: 17
+      storage:
+        size: "10Gi"
+      plugins:
+        - name: barman-cloud.cloudnative-pg.io
+          enabled: true
+          isWALArchiver: true
+          parameters:
+            barmanObjectName: lightbridge-usage-db
+            serverName: lightbridge-usage-db
+      postgresql:
+        parameters:
+          archive_timeout: "30min"
+        shared_preload_libraries:
+          - timescaledb
+      resources:
+        limits:
+          cpu: 300m
+          memory: 1Gi
+        requests:
+          cpu: 200m
+          memory: 500Mi
+      postgresUID: 70
+      postgresGID: 70
+      bootstrap:
+        initdb:
+          postInitTemplateSQL:
+            - CREATE EXTENSION IF NOT EXISTS timescaledb;
+  # ────────────────────────────────────────────────────────────────────
+  # barman-cloud ObjectStore for lightbridge-usage-db. Same Hetzner bucket +
+  # throttling/retention fixes as lightbridge-main-db's ObjectStore above
+  # (7d retention, jobs:1 + gzip) rather than the old 180d/unthrottled config
+  # the pre-ADR-0026 setup shipped with — that config is what rate-limited
+  # main-db's backups on Hetzner (see the note above); no reason to
+  # reintroduce the same bug for a second cluster on the same bucket.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: barmancloud.cnpg.io/v1
+    kind: ObjectStore
+    metadata:
+      name: lightbridge-usage-db
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      retentionPolicy: "7d"
+      configuration:
+        destinationPath: s3://ssegning-k8s-state/lightbridge-usage-db
+        endpointURL: https://nbg1.your-objectstorage.com
+        data:
+          jobs: 1
+          compression: gzip
+        s3Credentials:
+          accessKeyId:
+            name: lightbridge-cnpg-s3
+            key: s3_access_key_id
+          secretAccessKey:
+            name: lightbridge-cnpg-s3
+            key: s3_secret_access_key
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: ScheduledBackup
+    metadata:
+      name: lightbridge-usage-db-daily
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    spec:
+      immediate: true
+      schedule: "0 0 */6 * * *"
+      backupOwnerReference: self
+      cluster:
+        name: lightbridge-usage-db
+      method: plugin
+      pluginConfiguration:
+        name: barman-cloud.cloudnative-pg.io
+  - |
+    apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: lightbridge-usage-db
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+    spec:
+      selector:
+        matchLabels:
+          cnpg.io/cluster: lightbridge-usage-db
       podMetricsEndpoints:
         - port: metrics
           interval: 30s
