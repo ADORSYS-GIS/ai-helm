@@ -96,10 +96,20 @@ locals {
   # Per-workspace ServiceAccount: identity (sub) + plan in the NAME so Authorino
   # can derive both via pure CEL (kubernetesTokenReview) — no SA-label read / no
   # K8s-API metadata call (which is operationally fragile: CA trust + token RBAC
-  # + per-request API call). Format: coder-<sub>.<plan> — the `.` separates the
-  # owner sub from the plan (UUIDs/plans never contain `.`), making the parse
-  # robust to any sub length. The `coder-` prefix marks it as a workspace SA.
-  sa_name = "coder-${local.owner_sub}.${local.billing_plan}"
+  # + per-request API call). Base format: coder-<sub>.<plan> — the `.` separates
+  # the owner sub from the plan (UUIDs/plans never contain `.`), making the
+  # parse robust to any sub length. The `coder-` prefix marks it as a workspace
+  # SA.
+  #
+  # PER-WORKSPACE uniqueness: append the workspace ID (a UUID — no dots, safe
+  # as a third dot-segment). Without it the SA name is keyed to the OWNER
+  # (`coder-<sub>.<plan>`), so a SECOND workspace of the same user — e.g. a
+  # workspace provisioned by a Coder task the moment one already exists —
+  # collides with `serviceaccounts "... "<sub>.<plan>" already exists"` and
+  # terraform apply fails (verified: task test-web-link-demo hit exactly this).
+  # Authorino's CEL gates (ai-helm-values security-policies.yaml) accept the
+  # optional `.workspaceId` segment; `sub` = [0], `plan` = [1] still.
+  sa_name = "coder-${local.owner_sub}.${local.billing_plan}.${data.coder_workspace.me.id}"
 
   # OpenCode uses a DUMMY key and points at the local openresty sidecar, which
   # injects the real SA token. The wellknown auth entry (with a dummy token)
@@ -462,9 +472,9 @@ module "opencode" {
   # the app is reachable at https://<subdomain_name>.coder-ws.camer.digital via
   # the *.coder-ws.camer.digital wildcard cert — the link the Coder MCP hands
   # back to LibreChat users.
-  subdomain            = true
-  config_json          = local.opencode_config
-  auth_json            = local.opencode_auth
+  subdomain   = true
+  config_json = local.opencode_config
+  auth_json   = local.opencode_auth
 }
 
 # --- TASK RESOURCE ---

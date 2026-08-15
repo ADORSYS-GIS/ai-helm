@@ -17,8 +17,10 @@ written out, not on the diagram.
 >
 > 1. **Login** — user signs into Coder via Keycloak SSO; Coder stores the token.
 > 2. **Provision** — Terraform decodes `sub` + `billing_plan` from the login JWT
->    and creates the per-workspace ServiceAccount **`coder-<sub>.<plan>`** plus
->    the workspace pod (OpenCode + an **openresty sidecar**). The SA token
+>    and creates the per-workspace ServiceAccount **`coder-<sub>.<plan>.<workspaceId>`**
+>    (workspace UUID suffix = unique per workspace, so same-owner concurrent
+>    workspaces — like task-provisioned ones — don't collide on one SA name)
+>    plus the workspace pod (OpenCode + an **openresty sidecar**). The SA token
 >    (audience `core-gateway-internal`) is projected **only into the sidecar**.
 > 3. **Prompt** — OpenCode sends a dummy key to `localhost:8080`.
 > 4. **openresty** reads the SA token file **per request** (`io.open(...)`),
@@ -26,7 +28,8 @@ written out, not on the diagram.
 >    to `core-gateway-internal.svc` (trusting the internal CA).
 > 5. **Authorino** validates the token (`kubernetesTokenReview`) and derives
 >    **both** `sub` and `plan` (after the `.` delimiter) from the SA name
->    name by pure CEL — no SA-label read / no metadata call. Stamps
+>    by pure CEL — the workspace-UUID third segment is identity-neutral —
+>    no SA-label read / no metadata call. Stamps
 >    `x-account-id`/`x-billing-plan`.
 > 6. **Envoy** enforces the per-user budget on `x-account-id`; response streams
 >    back; `user_id = sub` lands on the per-user dashboards.

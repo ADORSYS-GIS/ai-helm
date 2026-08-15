@@ -21,15 +21,19 @@ considered-and-rejected in §7.
 > the converged architecture, refined by live testing against a real Authorino:
 >
 > - **Credential + identity carrier** = a per-workspace ServiceAccount named
->   **`coder-<sub>.<plan>`** (owner's Keycloak `sub` + billing plan in the name,
->   `.`-delimited; robust to any `sub` length).
+>   **`coder-<sub>.<plan>.<workspaceId>`** (owner's Keycloak `sub`, billing plan,
+>   and workspace UUID in the name — `.`-delimited; robust to any `sub` length).
+>   The `<workspaceId>` suffix keeps the SA name unique **per workspace** so two
+>   workspaces of the same owner (e.g. a task-provisioned one while another runs)
+>   don't collide on one name (verified: `serviceaccounts "... already exists"`).
 > - **Sidecar** = **openresty** (not Caddy), reading the projected SA token
 >   **per request** in Lua (`io.open(...)`) and injecting `Bearer <token>`.
 >   Caddy was rejected in testing: `{file.read}` does not resolve in `header_up`,
 >   so it cannot inject the rotating (1h) SA token.
 > - **Authorino** validates via `kubernetesTokenReview`, then derives **both**
 >   values by pure CEL from the SA name — split the last `:`-segment on `.` for
->   `sub` and `plan` (no length assumption) — with **no SA-label read and no
+>   `sub` (`[0]`) and `plan` (`[1]`); the workspace-UUID segment is
+>   identity-neutral (no length assumption) — with **no SA-label read and no
 >   Kubernetes-API metadata call** (that path was verified fragile: needs
 >   Authorino to trust the cluster CA + a K8s token with SA-read RBAC + a
 >   per-request API call, and returned `kind: Status` in testing).
