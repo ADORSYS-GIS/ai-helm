@@ -34,8 +34,8 @@ data "coder_task" "me" {}
 # --- VARIABLES ---
 variable "opencode_url" {
   type        = string
-  description = "opencode server URL. opencode fetches remote config + auth metadata from <this>/.well-known/opencode (serves the camer-digital provider, agents, MCP servers, models)."
-  default     = "https://ai.camer.digital/opencode"
+  description = "opencode server URL. opencode fetches remote config + auth metadata from <this>/.well-known/opencode (serves the camer-digital provider, agents, MCP servers, models). Defaults to the INTERNAL wellknown service: the public URL (https://ai.camer.digital/opencode) black-holes from inside the cluster (the Hetzner LB does not hairpin — same root cause as coder_agent_url), and opencode re-fetches this on every session open, so a hairpin = a hung session."
+  default     = "http://models-opencode-wellknown.converse.svc/opencode"
 }
 
 variable "provider_key" {
@@ -164,6 +164,25 @@ resource "coder_agent" "main" {
     # 3. Verify installation
     node --version
     npm --version
+
+    # 4. Prime opencode's plugin/cache dirs BEFORE the interactive session:
+    #    the wellknown config ships 5 bun plugins + npx MCP servers that opencode
+    #    auto-installs on first server start. On an ephemeral pod (~/.cache
+    #    starts empty) that made the FIRST session open take ~30-60s. Pre-fetch
+    #    the wellknown JSON now (also a fast-fail connectivity check for the
+    #    internal wellknown pod + its netpol rule — a provision-time failure is
+    #    far easier to diagnose than an interactive hang) and let opencode
+    #    bootstrap its plugins headlessly (no session, no model call).
+    wellknown_url="${local.opencode_url}/.well-known/opencode"
+    echo "pre-fetching wellknown config: $wellknown_url"
+    curl -fsSL --max-time 15 "$wellknown_url" -o /tmp/opencode-wellknown.json
+    export PATH="/home/coder/.opencode/bin:$PATH"
+    export OPENCODE_BASE_URL="http://localhost:8080/v1"
+    export OPENCODE_API_KEY="dummy-key"
+    # Headless bootstrap primes ~/.cache/opencode (plugins + model index) and
+    # ~/.cache (npx MCP downloads). Failures here are non-fatal (timeout + || true):
+    # worst case the first interactive session performs the install as before.
+    timeout 240 opencode models camer-digital >/tmp/opencode-prime.log 2>&1 || true
   EOT
 }
 # --- KUBERNETES POD (The Actual Container) ---

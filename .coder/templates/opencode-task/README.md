@@ -51,7 +51,7 @@ coder templates push opencode-task --directory=. --var namespace=coder
 | Variable | Default | Description |
 |---|---|---|
 | `namespace` | `coder` | Kubernetes namespace for the workspace pod |
-| `opencode_url` | `https://ai.camer.digital/opencode` | OpenCode server URL; remote config is fetched from `<url>/.well-known/opencode` |
+| `opencode_url` | `http://models-opencode-wellknown.converse.svc/opencode` | OpenCode server URL; remote config is fetched from `<url>/.well-known/opencode`. **Internal** by default: the public URL (`https://ai.camer.digital/opencode`) does not hairpin through the Hetzner LB from inside the cluster, and opencode re-fetches this config on every session open — a fatal hang. See ADR-0130. |
 | `provider_key` | `camer-digital` | Provider key used in the local OpenCode provider override (must match the key in the remote config) |
 | `workdir` | `/home/coder/project` | Working directory |
 | `coder_agent_url` | *(empty)* | In-cluster Coder server URL for the agent (empty = public access URL) |
