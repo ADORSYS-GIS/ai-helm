@@ -115,6 +115,15 @@ locals {
   # Local provider override forces opencode to the sidecar (localhost) with the
   # dummy key. The remote config supplies agents/MCP/models; this wins on the
   # provider baseURL.
+  #
+  # CRITICAL: `options.oauth2 = null` — the wellknown config ships an oauth2
+  # extension (`authFlow: device_code` for the PUBLIC multi-user opencode that
+  # logs in via Keycloak). Without this override, the @vymalo/opencode-oauth2
+  # plugin intercepts auth for camer-digital and issues an interactive
+  # device-code prompt — which must NOT happen in a workspace whose identity is
+  # the injected SA token (dummy key through the sidecar). Setting it to null
+  # wins over the merged wellknown value (opencode's merge keeps null), making
+  # the plugin inert while agents/MCP/models still sync from the wellknown.
   opencode_config = jsonencode({
     "$schema" = "https://opencode.ai/config.json"
     logLevel  = "DEBUG"
@@ -123,6 +132,7 @@ locals {
         options = {
           baseURL = "http://localhost:8080/v1"
           apiKey  = "dummy-key"
+          oauth2  = null
         }
       }
     }
