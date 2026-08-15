@@ -59,8 +59,8 @@ variable "namespace" {
 
 variable "coder_agent_url" {
   type        = string
-  description = "In-cluster Coder server URL for the workspace agent to reach the coderd server. Leave empty to use the public access URL (e.g. prod). For local NodePort-only deployments set e.g. http://coder.coder-flows.svc:80"
-  default     = ""
+  description = "In-cluster Coder server URL for the workspace agent to reach the coderd server. Defaults to the internal coder ClusterIP service (prod); the external access URL (https://coder.ai.camer.digital) black-holes from inside the cluster (the Hetzner LB does not hairpin), so it must NOT be used. For local NodePort-only deployments set e.g. http://coder.coder-flows.svc:80"
+  default     = "http://coder.coder.svc.cluster.local"
 }
 
 # --- LOCALS ---
@@ -75,10 +75,23 @@ locals {
   # Decode the workspace owner's Keycloak OIDC access token to get the `sub`
   # (identity) and the `billing_plan`. The `coder` client carries a
   # `billing_plan` claim via the billing-plan client-scope protocol mapper.
-  owner_token   = data.coder_workspace_owner.me.oidc_access_token
-  owner_payload = jsondecode(base64decode(split(".", local.owner_token)[1]))
-  owner_sub     = local.owner_payload.sub
-  billing_plan  = try(local.owner_payload.billing_plan, "free")
+  #
+  # ⚠️ JWT payload segments are base64url WITHOUT padding, but Terraform's
+  # base64decode() requires standard base64 WITH `=` padding — feeding it the
+  # raw segment throws, and try() silently swallowed that into the zero-sub
+  # placeholder SA (coder-00000000-...free). So we first map the URL-safe
+  # alphabet (-_ → +/) and then re-pad to a multiple of 4.
+  # try(..., {}) still guards the template-IMPORT dry-run plan, where the
+  # provider returns an empty oidc_access_token (no JWT to split) — real
+  # workspace builds carry the token, so the real sub/plan are used there.
+  owner_token       = data.coder_workspace_owner.me.oidc_access_token
+  owner_payload_seg = try(split(".", local.owner_token)[1], "")
+  owner_payload_std = replace(replace(local.owner_payload_seg, "-", "+"), "_", "/")
+  owner_payload_pad = (4 - length(local.owner_payload_std) % 4) % 4
+  owner_payload_b64 = local.owner_payload_pad == 2 ? "${local.owner_payload_std}==" : (local.owner_payload_pad == 1 ? "${local.owner_payload_std}=" : local.owner_payload_std)
+  owner_payload     = try(jsondecode(base64decode(local.owner_payload_b64)), {})
+  owner_sub         = try(local.owner_payload.sub, "00000000-0000-0000-0000-000000000000")
+  billing_plan      = try(local.owner_payload.billing_plan, "free")
 
   # Per-workspace ServiceAccount: identity (sub) + plan in the NAME so Authorino
   # can derive both via pure CEL (kubernetesTokenReview) — no SA-label read / no
@@ -132,6 +145,12 @@ resource "coder_agent" "main" {
   # so this re-runs on each fresh start.
   startup_script = <<-EOT
     set -e
+
+    # 0. Force IPv4 for apt: the workspace pod has no IPv6 default route
+    #    (Cilium), so apt's AAAA attempts fail fast with "connect (101: Network
+    #    is unreachable)" and never fall back to IPv4. Ubuntu mirrors are only
+    #    reachable via IPv4 + HTTP :80 here.
+    echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null
 
     # 1. Install Node.js (Required for OpenCode)
     sudo apt-get update
@@ -235,20 +254,44 @@ resource "kubernetes_pod_v1" "workspace" {
       name  = "workspace"
       image = "codercom/enterprise-base:ubuntu"
 
-      # Run the agent init script
-      command = ["/bin/sh", "-c", coder_agent.main.init_script]
+      # Run the agent. We do NOT use coder_agent.main.init_script: it bakes the
+      # PUBLIC access URL into BINARY_URL (https://coder.ai.camer.digital/...),
+      # which black-holes from inside the cluster (the Hetzner LB does not
+      # hairpin — see the control-plane netpol note). Instead we download the
+      # binary from the INTERNAL coder service ($CODER_AGENT_URL), which routes
+      # to coderd's :8080 without leaving the cluster.
+      command = ["/bin/sh", "-c", <<-EOT
+        set -eux
+        BINARY_DIR="$${BINARY_DIR:-$(mktemp -d -t coder.XXXXXX)}"
+        BINARY_NAME=coder
+        BINARY_URL="$${CODER_AGENT_URL}/bin/coder-linux-amd64"
+        cd "$$BINARY_DIR"
+        while :; do
+          if command -v curl >/dev/null 2>&1; then
+            curl -fsSL --compressed "$${BINARY_URL}" -o "$${BINARY_NAME}" && break
+          else
+            echo "error: curl not available"
+            exit 127
+          fi
+          echo "error: failed to download coder agent, retrying in 30s"
+          sleep 30
+        done
+        chmod +x "$${BINARY_NAME}"
+        exec ./"$${BINARY_NAME}" agent
+      EOT
+      ]
 
       env {
         name  = "CODER_AGENT_TOKEN"
         value = coder_agent.main.token
       }
 
-      dynamic "env" {
-        for_each = var.coder_agent_url != "" ? [1] : []
-        content {
-          name  = "CODER_AGENT_URL"
-          value = var.coder_agent_url
-        }
+      # Always set CODER_AGENT_URL (defaults to the internal coder ClusterIP
+      # service). Both the binary download above and the agent's connection use
+      # it, so we avoid the external access URL / LB hairpin entirely.
+      env {
+        name  = "CODER_AGENT_URL"
+        value = var.coder_agent_url
       }
 
       # OpenCode uses a dummy key through the local openresty sidecar; no real
