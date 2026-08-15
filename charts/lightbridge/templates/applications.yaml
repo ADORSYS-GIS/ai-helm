@@ -93,12 +93,23 @@ metadata:
     # COSIGN-signed `sha-<gitsha>` build of each first-party image and git
     # write-backs the image into environments/prod/values/lightbridge-app.yaml on
     # ai-helm-values `main` (api → global.authz.image.{repository,version}, mcp →
-    # global.authz_mcp.image.{repository,version}). BOTH image-name (repository)
+    # global.authz_mcp.image.{repository,version}, usage →
+    # global.authz_usage.image.{repository,version}). BOTH image-name (repository)
     # and image-tag (version) are required — the operator errors ("could not find
     # an image-name") if only the tag param is given. cosign identity = the
     # lightbridge-authz CI workflow that signs the images. Until a signed build
     # exists the updater finds no verifiable tag and leaves the version untouched.
-    argocd-image-updater.argoproj.io/image-list: api=ghcr.io/adorsys-gis/lightbridge-authz,mcp=ghcr.io/adorsys-gis/lightbridge-authz-mcp
+    #
+    # The `usage` alias was missing entirely until this change: usage was
+    # re-enabled in ai-helm-values #247 (global.authz_usage.image.* pinned
+    # manually there to unblock a prod ImagePullBackOff), but the api/mcp
+    # write-back annotations added here in #592/#602 predate that re-enable and
+    # were never extended to cover the third image, so argocd-image-updater
+    # never once considered it — the annotations-only alias, not the CR, is the
+    # gate: `lightbridge-app` is already a `useAnnotations: true` entry in
+    # ai-helm's charts/imageupdater/values.yaml, so adding the alias here is
+    # sufficient with no change needed there.
+    argocd-image-updater.argoproj.io/image-list: api=ghcr.io/adorsys-gis/lightbridge-authz,mcp=ghcr.io/adorsys-gis/lightbridge-authz-mcp,usage=ghcr.io/adorsys-gis/lightbridge-authz-usage
     argocd-image-updater.argoproj.io/api.update-strategy: newest-build
     argocd-image-updater.argoproj.io/api.allow-tags: regexp:^sha-[0-9a-f]+$
     argocd-image-updater.argoproj.io/api.force-update: "true"
@@ -120,6 +131,15 @@ metadata:
     argocd-image-updater.argoproj.io/mcp.signature-type: cosign
     argocd-image-updater.argoproj.io/mcp.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
     argocd-image-updater.argoproj.io/mcp.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-authz/\.github/workflows/ci\.yml@.*$
+    argocd-image-updater.argoproj.io/usage.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/usage.allow-tags: regexp:^sha-[0-9a-f]+$
+    argocd-image-updater.argoproj.io/usage.force-update: "true"
+    argocd-image-updater.argoproj.io/usage.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+    argocd-image-updater.argoproj.io/usage.helm.image-name: global.authz_usage.image.repository
+    argocd-image-updater.argoproj.io/usage.helm.image-tag: global.authz_usage.image.version
+    argocd-image-updater.argoproj.io/usage.signature-type: cosign
+    argocd-image-updater.argoproj.io/usage.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
+    argocd-image-updater.argoproj.io/usage.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-authz/\.github/workflows/ci\.yml@.*$
     argocd-image-updater.argoproj.io/write-back-method: git
     argocd-image-updater.argoproj.io/git-branch: main
     argocd-image-updater.argoproj.io/git-repository: https://github.com/adorsys-gis/ai-helm-values.git
