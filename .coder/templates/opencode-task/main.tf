@@ -454,6 +454,15 @@ module "opencode" {
   agentapi_version     = "v0.11.2"
   web_app_display_name = "OpenCode"
   icon                 = "/icon/opencode.svg"
+  # Expose the opencode web app as a WILDCARD app. This deployment has
+  # CODER_DISABLE_PATH_APPS=true (ADR-0121), so a `subdomain = false` app is a
+  # path-based app pointing at localhost → 403/unreachable (verified: the app
+  # reports subdomain_name=None on running workspaces). With `subdomain = true`
+  # Coder computes a subdomain_name (e.g. opencode--<workspace>--<user>) and
+  # the app is reachable at https://<subdomain_name>.coder-ws.camer.digital via
+  # the *.coder-ws.camer.digital wildcard cert — the link the Coder MCP hands
+  # back to LibreChat users.
+  subdomain            = true
   config_json          = local.opencode_config
   auth_json            = local.opencode_auth
 }
