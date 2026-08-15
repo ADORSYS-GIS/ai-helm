@@ -263,6 +263,12 @@ resource "kubernetes_config_map_v1" "nginx_conf" {
                   # exactly. Send that SNI explicitly.
                   proxy_ssl_server_name on;
                   proxy_ssl_name core-gateway-internal.envoy-gateway-system.svc.cluster.local;
+                  # HTTPRoute hostnames match on the Host header, not the SNI.
+                  # proxy_pass would send Host: <upstream .svc>, which matches
+                  # NO route → Envoy 404. The caller reaches us at
+                  # localhost:8080, so set the Host to the route hostname the
+                  # `-internal` HTTPRoutes are configured with.
+                  proxy_set_header Host core-gateway-internal.envoy-gateway-system.svc.cluster.local;
               }
           }
       }
