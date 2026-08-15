@@ -254,6 +254,15 @@ resource "kubernetes_config_map_v1" "nginx_conf" {
                   }
                   proxy_pass https://core-gateway-internal.envoy-gateway-system.svc;
                   proxy_ssl_trusted_certificate /etc/internal-ca/ca.crt;
+                  # Envoy Gateway's `api-internal` listener terminates TLS and
+                  # matches filter chains BY SNI. nginx sends NO SNI by default,
+                  # so Envoy resets the handshake (104) → 502. Worse, the SNI
+                  # nginx would derive from proxy_pass (.svc, no .cluster.local)
+                  # does NOT match either — the listener is configured for
+                  # core-gateway-internal.envoy-gateway-system.svc.cluster.local
+                  # exactly. Send that SNI explicitly.
+                  proxy_ssl_server_name on;
+                  proxy_ssl_name core-gateway-internal.envoy-gateway-system.svc.cluster.local;
               }
           }
       }
