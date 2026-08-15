@@ -70,38 +70,34 @@ wellKnown:
       # never the developer, by design (no git-author-email collection).
       # OTLP/HTTP+protobuf only (no gRPC — Bun compatibility).
       #
-      # `endpoint` points at the governance OTLP ingestion host
-      # (`otel.ai.camer.digital`) — `OpenTelemetryCollector/lightbridge-governance-ai-cli-otel`
-      # in `governance` on the Hetzner cluster, per lightbridge-opencode-toolbeit#89.
-      # ⚠️ VERIFIED LIVE, and it hard-requires OIDC bearer auth: `POST /v1/traces`
-      # with no auth → 401 "authentication didn't succeed"; issuer
-      # `https://auth.ai.camer.digital`, audience `lightbridge-api-key`. We have
-      # no way to supply that token yet — the credential helper this plugin's
-      # `tokenCommand` option expects (`governance-auth token`, contract in
-      # lightbridge-governance ADR-0010) is still Proposed, not built. The
-      # groundwork it needs (a real OAuth2 client registry + derived id_token
-      # issuance) landed in lightbridge-authz ADR-0011 (#286/#288), but
-      # `governance-auth` itself doesn't exist yet.
-      # ⚠️ CONSEQUENCE, not cosmetic: as of this plugin's 0.13.0 line
-      # (toolbeit#89) a rejected export is no longer silent — it logs
-      # `otel_export_failed` at `warn`, up to 3× per batch interval, for as
-      # long as this ships without `tokenCommand`. Since plugins have no
-      # per-user opt-out (mandatory-on for everyone once pushed), that's a
-      # standing warning in every opencode user's logs for zero telemetry
-      # value until governance-auth ships. Add `tokenCommand:
-      # "governance-auth token"` to this tuple's config the same day that
-      # tool exists — don't ship this endpoint alone for longer than
-      # necessary.
+      # HELD OUT deliberately (not shipped, not just disabled-by-default —
+      # plugins have no per-user opt-out, so pushing this would be a standing
+      # `otel_export_failed` warning in EVERY opencode user's logs). The
+      # target, `otel.ai.camer.digital`
+      # (`OpenTelemetryCollector/lightbridge-governance-ai-cli-otel` in
+      # `governance` on the Hetzner cluster — lightbridge-opencode-toolbeit#89
+      # verified it live), hard-requires OIDC bearer auth (issuer
+      # `https://auth.ai.camer.digital`, audience `lightbridge-api-key`), and
+      # since toolbeit#89 a rejected export is loud rather than silent
+      # (`otel_export_failed` at `warn`, up to 3× per batch interval). We have
+      # no credential to give it yet: the `tokenCommand` option this plugin
+      # exposes for exactly this case (an async credential-helper hook, docs:
+      # lightbridge-opencode-toolbeit `docs/otel.md#short-lived-credentials`)
+      # expects `governance-auth token` — a CLI specified in lightbridge-
+      # governance ADR-0010 that is still Proposed, not built. Its
+      # prerequisite (a real OAuth2 client registry + derived id_token
+      # issuance) landed in lightbridge-authz ADR-0011 (#286/#288), so the
+      # groundwork exists; `governance-auth` itself doesn't yet, and
+      # separately still needs a distribution story onto each user's PATH
+      # before `tokenCommand` can even reference it.
       #
-      # Part of the 0.14.0 vymalo line — pin matches the four above (0.13.0
-      # was never published: a monorepo-wide `pnpm audit --audit-level=high`
-      # gate blocked ALL eight toolbelt packages over two CVEs in
-      # opencode-browser-mcp/-devtools-mcp's `@modelcontextprotocol/sdk`
-      # transitive deps, unrelated to this package; 0.14.0 fixed it and
-      # shipped straight through). Bump every pin deliberately when a real
-      # release lands, same rule as every other plugin here.
-      - - "@vymalo/opencode-otel@0.14.0"
-        - endpoint: "https://otel.ai.camer.digital"
+      # Wire it back in the same day governance-auth ships AND is
+      # distributable, pinned to whatever @vymalo/opencode-otel is current
+      # then (last confirmed live: 0.14.0):
+      #
+      # - - "@vymalo/opencode-otel@0.14.0"
+      #   - endpoint: "https://otel.ai.camer.digital"
+      #     tokenCommand: "governance-auth token"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
