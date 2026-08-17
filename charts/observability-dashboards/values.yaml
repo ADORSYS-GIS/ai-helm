@@ -597,10 +597,18 @@ alerting:
           severity: warning
           noDataState: NoData
           summary: "AI Gateway trailing 30-day spend exceeded $6000 (budget knob — set to your actual monthly budget; run-rate ~$5k)."
-        # Per-actor: fires when a SINGLE person's own rolling 30d spend crosses
-        # their OWN plan's monthly cap. Free-tier budget is $15, alerted in TWO
-        # TIERS — a $15 WARNING (reached budget) and a $30 CRITICAL (2x over);
-        # pro is $30. service/internal are uncapped by design and excluded.
+        # Per-actor: fires when a SINGLE person's spend crosses their OWN plan's
+        # monthly cap. Free-tier budget is $15, alerted in TWO TIERS — a $15 WARNING
+        # (reached budget) and a $30 CRITICAL (2x over); pro is $30. service/internal
+        # are uncapped by design and excluded.
+        #
+        # ⚠️ CURRENT LIMITATION: These queries use a rolling 30-day window, not
+        # calendar month-to-date. The rate limiter enforces against calendar-aligned
+        # budgets (ADR-0111/0112), but these alerts don't yet match that window.
+        # ADR-0130 documents the fix: add `billing_period` label to the gateway usage
+        # metric via Alloy configuration, then update these queries to filter by the
+        # current billing period.
+        #
         # Split into ONE RULE PER (plan, tier) so the query VALUE is the dollar
         # spend and the threshold is a real dollar figure — this lets the message
         # state the actual "$X spent of $Y budget" instead of an opaque bare
@@ -622,19 +630,19 @@ alerting:
           severity: warning
           summary: >-
             ⚠️ {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
+            ${{ printf "%.2f" $values.B.Value }} (rolling 30-day window) —
             reached their $15.00/month free-tier budget.
           description: >-
             Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
             reached the free-tier monthlyBudgetUsd cap of $15 (warning tier; the
             $30 rule below escalates to critical). Value = dollars spent (trailing
             30d). increase() handles counter resets (series are pruned after 2h
-            idle, per max_idle_duration). ⚠️ This is trailing-30d spend, NOT the
-            same window the rate limiter enforces against (ADR-0070's fixed 30-day
-            epoch bucket in redis, which resets on a schedule, not rolling) —
-            someone can be over budget here while their LIVE enforcement budget is
-            well under cap. Check the AI Gateway — rate-limit quota dashboard for
-            the live state.
+            idle, per max_idle_duration). This uses a rolling 30-day window, NOT
+            calendar month-to-date. The rate limiter enforces against calendar-aligned
+            budgets (ADR-0111/0112), so a user can be over budget here while their
+            LIVE enforcement budget is well under cap. Check the AI Gateway — rate-limit
+            quota dashboard for the live state. ADR-0130 documents the fix to align
+            these alerts with calendar months.
         - uid: cost-actor-budget-free
           title: AI Gateway — free-tier actor well over budget ($30)
           datasourceUid: mimir
@@ -649,7 +657,7 @@ alerting:
           severity: critical
           summary: >-
             🚨 {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
+            ${{ printf "%.2f" $values.B.Value }} (rolling 30-day window) —
             at least 2x over their $15.00/month free-tier budget.
           description: >-
             Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
@@ -657,12 +665,12 @@ alerting:
             (critical escalation of the $15 warning above). Value = dollars spent
             (trailing 30d). increase() handles counter resets. See the AI Gateway
             — actor consumption / chats-by-user dashboards for the breakdown.
-            ⚠️ This is trailing-30d spend, NOT the same window the rate limiter
-            enforces against (ADR-0070's fixed 30-day epoch bucket in redis, which
-            resets on a schedule, not rolling) — someone can be over here while
-            their LIVE enforcement budget is well under cap. Check the AI Gateway
-            — rate-limit quota dashboard for their actual current enforcement state
-            before assuming they're blocked.
+            ⚠️ This uses a rolling 30-day window, NOT calendar month-to-date.
+            The rate limiter enforces against calendar-aligned budgets (ADR-0111/0112),
+            so a user can be over here while their LIVE enforcement budget is well
+            under cap. Check the AI Gateway — rate-limit quota dashboard for their
+            actual current enforcement state before assuming they're blocked.
+            ADR-0130 documents the fix to align these alerts with calendar months.
         - uid: cost-actor-budget-pro
           title: AI Gateway — pro actor over budget
           datasourceUid: mimir
@@ -677,15 +685,16 @@ alerting:
           severity: critical
           summary: >-
             🚨 {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
+            ${{ printf "%.2f" $values.B.Value }} (rolling 30-day window) —
             over their $30.00/month pro budget.
           description: >-
             Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
             exceeded the pro monthlyBudgetUsd cap of $30. Value = dollars spent
             (trailing 30d). increase() handles counter resets. Same
-            trailing-30d-vs-enforcement caveat as the free-tier rule above —
+            rolling-30d-vs-enforcement caveat as the free-tier rule above —
             check the AI Gateway — rate-limit quota dashboard for the live
-            enforcement state.
+            enforcement state. ADR-0130 documents the fix to align these alerts
+            with calendar months.
 
     # ── Provider billing reconciliation (provider-billing-exporter) ─────────
     # Fires when PROVIDER-BILLED cost (invoice truth, polled from DeepInfra by
