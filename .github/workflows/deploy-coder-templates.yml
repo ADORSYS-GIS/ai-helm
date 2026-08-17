@@ -22,6 +22,8 @@ on:
 
 permissions:
   contents: read
+  actions: read          # guard: query the validate workflow's runs
+  pull-requests: read    # guard: resolve the PR merged by the pushed commit
 
 # Serialize deploys: two concurrent `terraform apply`s would contend on the
 # S3 state lock. Never cancel a running apply (that orphans the lock).
@@ -38,7 +40,59 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.SSEGNING_AWS_SECRET_ACCESS_KEY }}
 
 jobs:
+  # Gate: never start a deploy unless the validate workflow passed for the code
+  # being deployed. On merge to main the pushed SHA is the merge/squash commit,
+  # so we resolve the PR it merged and check that PR's validate run. Manual
+  # dispatch is the explicit human override (no PR to check).
+  guard:
+    name: Require validate to have passed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve merged PR for this commit
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — no PR to check; guard skipped."
+            echo "head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          pr_json="$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" --jq '.[0] // empty')"
+          if [ -z "$pr_json" ]; then
+            echo "::error::No merged PR found for ${{ github.sha }} — cannot verify the validate workflow passed. Use workflow_dispatch to deploy manually."
+            exit 1
+          fi
+
+          head_sha="$(printf '%s' "$pr_json" | jq -r '.head.sha')"
+          echo "Merged PR #$(printf '%s' "$pr_json" | jq -r '.number') — head SHA $head_sha"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check validate workflow run for the PR head
+        if: steps.pr.outputs.head_sha != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          head_sha="${{ steps.pr.outputs.head_sha }}"
+          run_json="$(gh api "repos/${{ github.repository }}/actions/workflows/validate-coder-templates.yml/runs?head_sha=$head_sha&per_page=1" --jq '.workflow_runs[0] // empty')"
+
+          if [ -z "$run_json" ]; then
+            echo "::error::No 'Validate Coder Templates' run found for $head_sha — refusing to deploy."
+            exit 1
+          fi
+
+          status="$(printf '%s' "$run_json" | jq -r '.status')"
+          conclusion="$(printf '%s' "$run_json" | jq -r '.conclusion')"
+          echo "Validate run #$(printf '%s' "$run_json" | jq -r '.run_number'): status=$status conclusion=$conclusion"
+
+          if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+            echo "::error::'Validate Coder Templates' did not pass (status=$status conclusion=$conclusion) — refusing to deploy."
+            exit 1
+          fi
+
   deploy:
+    needs: guard
     runs-on: ubuntu-latest   # ai-helm is public; GH-hosted runners are free here
     steps:
       - name: Checkout
