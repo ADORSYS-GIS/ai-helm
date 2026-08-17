@@ -589,18 +589,24 @@ alerting:
         - uid: cost-monthly-burn
           title: AI Gateway — monthly burn high
           datasourceUid: mimir
-          expr: sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[30d]))/1e6
+          expr: sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_period=~".+"}[30d]))/1e6
           fromSeconds: 2592000
           op: gt
           threshold: 6000
           for: 1h
           severity: warning
           noDataState: NoData
-          summary: "AI Gateway trailing 30-day spend exceeded $6000 (budget knob — set to your actual monthly budget; run-rate ~$5k)."
-        # Per-actor: fires when a SINGLE person's own rolling 30d spend crosses
-        # their OWN plan's monthly cap. Free-tier budget is $15, alerted in TWO
-        # TIERS — a $15 WARNING (reached budget) and a $30 CRITICAL (2x over);
-        # pro is $30. service/internal are uncapped by design and excluded.
+          summary: "AI Gateway calendar month-to-date spend exceeded $6000 (budget knob — set to your actual monthly budget; run-rate ~$5k)."
+        # Per-actor: fires when a SINGLE person's spend crosses their OWN plan's
+        # monthly cap. Free-tier budget is $15, alerted in TWO TIERS — a $15 WARNING
+        # (reached budget) and a $30 CRITICAL (2x over); pro is $30. service/internal
+        # are uncapped by design and excluded.
+        #
+        # These queries now use the `billing_period` label (ADR-0130) to align with
+        # calendar month-to-date consumption, matching the rate limiter's enforcement
+        # window (ADR-0111/0112). The billing_period label is stamped by the
+        # EnvoyExtensionPolicy Lua script and promoted by Alloy's loki.process stage.
+        #
         # Split into ONE RULE PER (plan, tier) so the query VALUE is the dollar
         # spend and the threshold is a real dollar figure — this lets the message
         # state the actual "$X spent of $Y budget" instead of an opaque bare
@@ -613,7 +619,7 @@ alerting:
           datasourceUid: mimir
           expr: >-
             sum by (email, display_name)
-              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free"}[30d])) / 1e6
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free", billing_period=~".+"}[30d])) / 1e6
           fromSeconds: 600
           op: gt
           threshold: 15
@@ -622,25 +628,22 @@ alerting:
           severity: warning
           summary: >-
             ⚠️ {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
+            ${{ printf "%.2f" $values.B.Value }} this month —
             reached their $15.00/month free-tier budget.
           description: >-
-            Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
-            reached the free-tier monthlyBudgetUsd cap of $15 (warning tier; the
-            $30 rule below escalates to critical). Value = dollars spent (trailing
-            30d). increase() handles counter resets (series are pruned after 2h
-            idle, per max_idle_duration). ⚠️ This is trailing-30d spend, NOT the
-            same window the rate limiter enforces against (ADR-0070's fixed 30-day
-            epoch bucket in redis, which resets on a schedule, not rolling) —
-            someone can be over budget here while their LIVE enforcement budget is
-            well under cap. Check the AI Gateway — rate-limit quota dashboard for
-            the live state.
+            Per-actor calendar month-to-date spend (ADR-0058 precomputed Mimir metric
+            with billing_period label from ADR-0130) reached the free-tier
+            monthlyBudgetUsd cap of $15 (warning tier; the $30 rule below escalates
+            to critical). Value = dollars spent this billing period. increase() handles
+            counter resets (series are pruned after 2h idle, per max_idle_duration).
+            This aligns with the rate limiter's calendar-aligned enforcement window
+            (ADR-0111/0112).
         - uid: cost-actor-budget-free
           title: AI Gateway — free-tier actor well over budget ($30)
           datasourceUid: mimir
           expr: >-
             sum by (email, display_name)
-              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free"}[30d])) / 1e6
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="free", billing_period=~".+"}[30d])) / 1e6
           fromSeconds: 600
           op: gt
           threshold: 30
@@ -649,26 +652,22 @@ alerting:
           severity: critical
           summary: >-
             🚨 {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
+            ${{ printf "%.2f" $values.B.Value }} this month —
             at least 2x over their $15.00/month free-tier budget.
           description: >-
-            Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
-            passed $30 — at least 2x over the free-tier monthlyBudgetUsd cap of $15
-            (critical escalation of the $15 warning above). Value = dollars spent
-            (trailing 30d). increase() handles counter resets. See the AI Gateway
-            — actor consumption / chats-by-user dashboards for the breakdown.
-            ⚠️ This is trailing-30d spend, NOT the same window the rate limiter
-            enforces against (ADR-0070's fixed 30-day epoch bucket in redis, which
-            resets on a schedule, not rolling) — someone can be over here while
-            their LIVE enforcement budget is well under cap. Check the AI Gateway
-            — rate-limit quota dashboard for their actual current enforcement state
-            before assuming they're blocked.
+            Per-actor calendar month-to-date spend (ADR-0058 precomputed Mimir metric
+            with billing_period label from ADR-0130) passed $30 — at least 2x over the
+            free-tier monthlyBudgetUsd cap of $15 (critical escalation of the $15
+            warning above). Value = dollars spent this billing period. increase()
+            handles counter resets. See the AI Gateway — actor consumption / chats-by-user
+            dashboards for the breakdown. This aligns with the rate limiter's
+            calendar-aligned enforcement window (ADR-0111/0112).
         - uid: cost-actor-budget-pro
           title: AI Gateway — pro actor over budget
           datasourceUid: mimir
           expr: >-
             sum by (email, display_name)
-              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="pro"}[30d])) / 1e6
+              (increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_plan="pro", billing_period=~".+"}[30d])) / 1e6
           fromSeconds: 600
           op: gt
           threshold: 30
@@ -677,23 +676,22 @@ alerting:
           severity: critical
           summary: >-
             🚨 {{ $labels.display_name }} ({{ $labels.email }}) has spent
-            ${{ printf "%.2f" $values.B.Value }} in the last 30 days —
+            ${{ printf "%.2f" $values.B.Value }} this month —
             over their $30.00/month pro budget.
           description: >-
-            Per-actor ROLLING 30-day spend (ADR-0058 precomputed Mimir metric)
-            exceeded the pro monthlyBudgetUsd cap of $30. Value = dollars spent
-            (trailing 30d). increase() handles counter resets. Same
-            trailing-30d-vs-enforcement caveat as the free-tier rule above —
-            check the AI Gateway — rate-limit quota dashboard for the live
-            enforcement state.
+            Per-actor calendar month-to-date spend (ADR-0058 precomputed Mimir metric
+            with billing_period label from ADR-0130) exceeded the pro monthlyBudgetUsd
+            cap of $30. Value = dollars spent this billing period. increase() handles
+            counter resets. This aligns with the rate limiter's calendar-aligned
+            enforcement window (ADR-0111/0112).
 
     # ── Provider billing reconciliation (provider-billing-exporter) ─────────
     # Fires when PROVIDER-BILLED cost (invoice truth, polled from DeepInfra by
     # the provider-billing-exporter) exceeds the gateway's ESTIMATED cost by a
     # configurable ratio. The ratio (threshold) is the knob — tune live. The
     # provider total is a cumulative gauge for the current billing period; the
-    # gateway estimate is the ADR-0058 counter over the trailing 30d. clamp_min
-    # avoids a divide-by-zero when the gateway estimate is 0.
+    # gateway estimate is the ADR-0058 counter with billing_period label (ADR-0130).
+    # clamp_min avoids a divide-by-zero when the gateway estimate is 0.
     - name: ai-gateway-billing-reconcile
       folderRef: ai-gateway
       interval: 1h
@@ -702,8 +700,8 @@ alerting:
           title: AI Gateway — provider bill exceeds gateway estimate
           datasourceUid: mimir
           expr: >-
-            (sum(provider_billing_total_cost_micro_usd) / 1e6)
-            / clamp_min(sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd[30d])) / 1e6 or vector(1), 1)
+            (sum(provider_billing_total_cost_micro_usd{billing_period=~".+"}) / 1e6)
+            / clamp_min(sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{billing_period=~".+"}[30d])) / 1e6 or vector(1), 1)
           fromSeconds: 2592000
           op: gt
           threshold: 1.5
@@ -712,7 +710,7 @@ alerting:
           severity: warning
           summary: >-
             Provider-billed cost is more than 1.5x the gateway's estimated cost
-            over the last 30 days — a pricing/estimate mismatch (e.g. an
+            this billing period — a pricing/estimate mismatch (e.g. an
             unverified cache pricing like the 2026-08-04 claude-sonnet-5 case).
           description: >-
             Reconciliation alert: provider-billed total (invoice source of truth)
