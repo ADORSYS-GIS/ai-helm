@@ -3,6 +3,10 @@ name: Validate Coder Templates
 # PR-gate for the declarative Coder template delivery (ADR-0124 — see
 # terraform/coder/README.md): validate the `coder/coderd` Terraform config AND
 # each template source without touching Coder. Secrets not needed.
+#
+# The deploy workflow's guard job requires this workflow to have passed for the
+# merged PR, so this must trigger on ANY change that can trigger a deploy —
+# including changes to the deploy workflow itself.
 
 on:
   pull_request:
@@ -10,6 +14,7 @@ on:
       - '.coder/templates/**'
       - 'terraform/coder/**'
       - '.github/workflows/validate-coder-templates.yml'
+      - '.github/workflows/deploy-coder-templates.yml'
 
 permissions:
   contents: read
