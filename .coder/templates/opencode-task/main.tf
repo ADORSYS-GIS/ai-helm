@@ -50,6 +50,48 @@ variable "workdir" {
   default     = "/home/coder/project"
 }
 
+# --- MODEL SELECTION ---
+variable "model" {
+  type        = string
+  description = "The default model OpenCode uses for the agent session (and the small/interstitial model unless overridden). MUST be a camer-digital model id (e.g. camer-digital/glm-4.7-flash). Pinning this (instead of leaving it unset) stops OpenCode from falling back to a built-in models.dev model that the camer-digital sidecar can't serve — which is what surfaces as 'invalid api key' / model-not-found errors."
+  default     = "camer-digital/glm-4.7-flash"
+}
+
+variable "small_model" {
+  type        = string
+  description = "The SMALL model OpenCode uses for interstitial/lightweight tasks (titles, summaries, etc). If empty, defaults to the main `model`. Must be a camer-digital model id."
+  default     = ""
+}
+
+variable "camer_models" {
+  type        = list(string)
+  description = "The camer-digital model ids (bare, no provider prefix) to whitelist. Everything OpenCode bundles from models.dev for OTHER providers is hidden, so only camer-digital models are selectable — no invalid-api surprises. Default = the catalog currently served by the opencode wellknown. Update this list when the catalog changes."
+  default = [
+    "adorsys-coder",
+    "adorsys-coder-pro-internal",
+    "adorsys-frontend",
+    "adorsys-planner-internal",
+    "adorsys-planner-pro-internal",
+    "adorsys-researcher",
+    "adorsys-reviewer",
+    "adorsys-reviewer-pro-internal",
+    "deepseek-v4-flash-0731",
+    "gemini-3p1-flash-lite",
+    "gemma-4",
+    "glm-4.7-flash",
+    "glm-5p2-internal",
+    "kimi-k2.5",
+    "mimo-v2p5",
+    "mimo-v2p5-pro",
+    "minimax-m2.7",
+    "minimax-m2p5",
+    "minimax-m3",
+    "ornith-1p0-35b",
+    "qwen3p7-plus",
+    "reviewer-internal",
+  ]
+}
+
 # --- KEYCLOAK OAUTH2 VARIABLES ---
 variable "namespace" {
   type        = string
@@ -71,6 +113,10 @@ locals {
   # remote config from <opencode_url>/.well-known/opencode, which serves the
   # camer-digital provider, agents, MCP servers and models.
   opencode_url = trimsuffix(var.opencode_url, "/")
+
+  # small_model falls back to the main model when not explicitly set. Keeps the
+  # interstitial/lightweight calls (title gen, summaries) on camer-digital too.
+  effective_small_model = var.small_model != "" ? var.small_model : var.model
 
   # Decode the workspace owner's Keycloak OIDC access token to get the `sub`
   # (identity) and the `billing_plan`. The `coder` client carries a
@@ -137,6 +183,11 @@ locals {
   opencode_config = jsonencode({
     "$schema" = "https://opencode.ai/config.json"
     logLevel  = "DEBUG"
+    # Pin the default (and small/interstitial) model to camer-digital. Without
+    # this, OpenCode falls back to a built-in models.dev model (e.g.
+    # anthropic/...) that the sidecar can't serve — the "invalid api" error.
+    model       = var.model
+    small_model = local.effective_small_model
     provider = {
       (var.provider_key) = {
         options = {
@@ -144,6 +195,11 @@ locals {
           apiKey  = "dummy-key"
           oauth2  = null
         }
+        # Hide every model except the camer-digital ones. opencode bundles 75+
+        # providers from models.dev; whitelist is per-provider and here restricts
+        # the camer-digital provider to ONLY var.camer_models so a user can't
+        # select something the gateway can't serve (invalid-api errors).
+        whitelist = var.camer_models
       }
     }
     permission = {

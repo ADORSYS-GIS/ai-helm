@@ -58,4 +58,7 @@ coder templates push opencode-task --directory=. --var namespace=coder
 | `opencode_url` | `http://models-opencode-wellknown.converse.svc/opencode` | OpenCode server URL; remote config is fetched from `<url>/.well-known/opencode`. **Internal** by default: the public URL (`https://ai.camer.digital/opencode`) does not hairpin through the Hetzner LB from inside the cluster, and opencode re-fetches this config on every session open — a fatal hang. See ADR-0130. |
 | `provider_key` | `camer-digital` | Provider key used in the local OpenCode provider override (must match the key in the remote config) |
 | `workdir` | `/home/coder/project` | Working directory |
+| `model` | `camer-digital/glm-4.7-flash` | Default model for the agent session. MUST be a camer-digital model id. Pinned (not left unset) so opencode can't fall back to a built-in models.dev model the sidecar can't serve (the "invalid api" error). |
+| `small_model` | *(empty → defaults to `model`)* | Small/interstitial model (titles, summaries). Must be camer-digital. |
+| `camer_models` | the full 22-model catalog | Whitelist of camer-digital model ids (bare). Everything else opencode bundles from models.dev is hidden — only camer-digital models are selectable. Update when the catalog changes. |
 | `coder_agent_url` | *(empty)* | In-cluster Coder server URL for the agent (empty = public access URL) |
