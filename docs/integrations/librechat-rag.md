@@ -124,14 +124,21 @@ LibreChat routes ingested files by MIME allowlists; processing precedence is
 
 **OCR route (images / PDF / Office):**
 `image/(jpeg|gif|png|webp|heic|heif)`, `application/pdf`, `.docx/.pptx/.xlsx`
-(OpenXML), legacy `.doc/.ppt/.xls`, `application/epub+zip`.
+(OpenXML), and (on the allowlist, but see the caveat below) legacy `.doc/.ppt/.xls`,
+`application/epub+zip`.
 
 **STT route (audio):**
 `mp3`, `wav`, `ogg`, `m4a`, `flac`, `webm`.
 
 **Commonly rejected / caveats:**
-- Legacy binary `.doc` (as opposed to `.docx`) and scripts like `.sh` are typically
-  **not accepted** out of the box by the default allowlists.
+- **Legacy binary Office formats (`.doc`, and by extension `.ppt`/`.xls`) are
+  unreliable despite appearing on the OCR allowlist.** Community reports show a
+  legacy `.doc` is frequently rejected in practice out of the box; the safe,
+  supported path is the OpenXML equivalents (`.docx`/`.pptx`/`.xlsx`). Treat
+  `.doc/.ppt/.xls` as **unsupported by default** — the `.docx/.pptx/.xlsx` forms
+  are the ones that work reliably.
+- Scripts like `.sh` are also typically **not accepted** out of the box by the
+  default allowlists.
 - Files must be in **"Host" storage**; "OpenAI" uploads are exclusive to
   Assistants and cannot be RAG-indexed.
 - RAG (File Search) is **sub-optimal for structured data** (CSV / Excel / JSON) —
