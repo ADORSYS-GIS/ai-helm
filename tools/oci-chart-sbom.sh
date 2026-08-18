@@ -48,22 +48,36 @@ rm -f "$rendered"
 
 number_of_images=$(jq 'length' <<< "$images_json")
 
-# Split `repo:tag` / `repo@sha256:…` into purl-able name+version.
+# Split `repo:tag` / `repo@sha256:…` into purl-able name+version. Split on the
+# LAST `:` so registry ports (`localhost:5000/foo:1.0` → name `localhost:5000/foo`,
+# version `1.0`) don't corrupt the name; digests (`repo@sha256:…`) are split on `@`.
 components_json="$(
   jq -c '
     [ .[] as $ref
-      | . as $tmp
-      | ( if ($ref | contains("@")) then ($ref | split("@")) else ($ref | split(":")) end ) as $parts
-      | { "name": $parts[0],
-          "version": (if ($parts|length) > 1 then $parts[1] else "latest" end),
-          "raw": $ref }
+      | if ($ref | contains("@")) then
+          ($ref | split("@")) as $p
+          | { "name": $p[0], "version": ($p[1] // "latest"), "raw": $ref }
+        else
+          ($ref | split(":")) as $p
+          | if ($p|length) == 1 then
+              { "name": $ref, "version": "latest", "raw": $ref }
+            else
+              { "name": ($p[0:-1] | join(":")), "version": $p[-1], "raw": $ref }
+            end
+        end
     ]
     | map( { type: "container", name: .name, version: .version,
              purl: ("pkg:oci/" + .name + "@" + .version) } )
   ' <<< "$images_json"
 )"
 
-serial="$(uuidgen 2>/dev/null || echo "$RANDOM-$RANDOM-$RANDOM-$RANDOM")"
+# CycloneDX requires serialNumber to be a valid `urn:uuid:`. Prefer uuidgen;
+# fall back to the kernel's v4 UUID source, then a /dev/urandom-derived v4 UUID
+# so the value is always a well-formed UUID even on hosts without uuidgen.
+serial="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || {
+  hex="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  printf '%s-%s-4%s-8%s-%s' "${hex:0:8}" "${hex:8:4}" "${hex:13:3}" "${hex:17:3}" "${hex:20:12}"
+})"
 timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 jq -n \

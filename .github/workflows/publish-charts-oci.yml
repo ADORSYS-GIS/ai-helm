@@ -202,7 +202,8 @@ jobs:
             mm="${base%.*}"
             patch=$(git rev-list --count HEAD -- "charts/$c")
             ver="${mm}.${patch}"
-            # only sign charts we actually published this run
+            # sign charts that exist at this version (idempotent re-sign — a
+            # publish_all resync will sign charts already published in a prior run)
             if ! helm show chart "$OCI_REPO/$c" --version "$ver" >/dev/null 2>&1; then
               continue
             fi
@@ -216,7 +217,14 @@ jobs:
             else
               echo "  (skip) no renderable SBOM for $c — signing artifact only"
             fi
-            # ── keyless sign ──
+            # ── keyless sign (DELIBERATE hard-fail) ──
+            # Unlike SBOM generation (best-effort, non-blocking), a sign failure
+            # fails the job on purpose: an unsigned chart silently regresses the
+            # whole provenance guarantee of ADR-0132. Signing runs only after the
+            # chart is already pushed, so a failure cannot strand a release — it
+            # only marks the run red so the operator knows the chart was not
+            # signed and can re-run (idempotent). If this ever starts blocking
+            # merges in practice, revisit and downgrade to a warn like the SBOM.
             cosign sign --yes "$OCI_REPO/$c:$ver"
             echo "  signed $c → $ver"
           done
