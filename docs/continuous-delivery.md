@@ -38,7 +38,7 @@ Workload **config** moved to the values repo too ([ADR-0056](./adr/0056-workload
   on `ai-helm-values` `main` → ArgoCD syncs.
 - **Chart-logic changes ship on merge**: merge to `ai-helm` `main` → the
   [`publish-charts-oci`](../.github/workflows/publish-charts-oci.yml) workflow publishes
-  the changed charts (each **cosign-signed** with an attached **SBOM**, ADR-0130 — see
+  the changed charts (each **cosign-signed** with an attached **SBOM**, ADR-0132 — see
   [`docs/patterns/supply-chain.md`](patterns/supply-chain.md) for consumer verification)
   → child Applications floating on `argocd.chartVersionRange` pick
   up the newest version on the next reconcile.

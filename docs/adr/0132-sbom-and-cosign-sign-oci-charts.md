@@ -1,4 +1,4 @@
-# ADR-0130: SBOM + cosign signing for OCI-published Helm charts
+# ADR-0132: SBOM + cosign signing for OCI-published Helm charts
 
 **Status:** Proposed
 **Date:** 2026-08-17

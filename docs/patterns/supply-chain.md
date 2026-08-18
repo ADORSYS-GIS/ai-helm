@@ -1,4 +1,4 @@
-# Supply-chain: SBOM + cosign verification for published charts (ADR-0130)
+# Supply-chain: SBOM + cosign verification for published charts (ADR-0132)
 
 Every changed Helm chart published to `oci://ghcr.io/adorsys-gis/charts` by
 [`publish-charts-oci.yml`](../../.github/workflows/publish-charts-oci.yml) is now:
@@ -8,7 +8,7 @@ Every changed Helm chart published to `oci://ghcr.io/adorsys-gis/charts` by
 2. Given a **CycloneDX 1.5 SBOM** (best-effort) listing the container images its
    rendered manifests deploy, attached via `cosign attach sbom`.
 
-The **why** is [ADR-0130](../adr/0130-sbom-and-cosign-sign-oci-charts.md). This
+The **why** is [ADR-0132](../adr/0132-sbom-and-cosign-sign-oci-charts.md). This
 page is the **how** — what a consumer needs to verify a chart and its SBOM.
 
 > ⚠️ **Honest scope.** Helm and ArgoCD do **not** enforce chart cosign signatures
@@ -78,7 +78,7 @@ jq . /tmp/<C>.sbom.json
 
 ## Related
 
-- ADR: [ADR-0130](../adr/0130-sbom-and-cosign-sign-oci-charts.md)
+- ADR: [ADR-0132](../adr/0132-sbom-and-cosign-sign-oci-charts.md)
 - Delivery model: [continuous-delivery.md](../continuous-delivery.md) (ADR-0055)
 - Story/tickets: #136 (story), #161 (this work), #160 (Trivy/Gitleaks gates)
 - Org precedent: `lightbridge-code-intelligence/.github/workflows/image-pipeline.yml`
