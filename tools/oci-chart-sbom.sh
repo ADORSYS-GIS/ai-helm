@@ -40,7 +40,7 @@ images_json="[]"
 if helm template "$release_name" "$chart_dir" --kube-version 1.31.0 --skip-tests >"$rendered" 2>/dev/null; then
   images_json="$(
     yq -o=json '.' "$rendered" 2>/dev/null \
-          | jq -sc '[ .[] | .. | objects | select(has("containers")) | .containers[]? | .image // empty ] | unique' 2>/dev/null \
+          | jq -sc '[ .[] | .. | objects | select(has("containers") or has("initContainers")) | (.containers[]?, .initContainers[]?) | .image // empty ] | unique' 2>/dev/null \
     || echo '[]'
   )"
 fi
