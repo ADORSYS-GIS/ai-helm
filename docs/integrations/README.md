@@ -10,6 +10,7 @@ other categories.
 | [librechat-oidc-integration.md](librechat-oidc-integration.md) | LibreChat ↔ Keycloak OIDC wiring, claim mapping, role propagation |
 | [librechat-oidc-experiments.md](librechat-oidc-experiments.md) | Notes from earlier OIDC iterations — historical record |
 | [librechat-chain-of-agents.md](librechat-chain-of-agents.md) | Chain-of-Agent use-case catalogue (#414/#409) |
+| [librechat-rag.md](librechat-rag.md) | Native RAG limits — file-size caps, file-type support, failure modes (#413/#409) |
 | [librechat-headers-tracing.md](librechat-headers-tracing.md) | How LibreChat templated headers flow into downstream MCP/Converse calls |
 | [opencode-well-known.md](opencode-well-known.md) | opencode `.well-known/opencode` flow at `ai.camer.digital` |
 | [opencode-plugins-research.md](opencode-plugins-research.md) | OpenCode plugins/extensions research (toolbelt, skills, MCP surfaces) |
