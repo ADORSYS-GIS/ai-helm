@@ -55,7 +55,7 @@ RAG FastAPI: Integration with Langchain and PostgreSQL/pgvector"),
 |---|---|---|
 | `rag-api` (native RAG) | **Not enabled** | Chart default `controllers.rag-api.enabled: false` and `service.rag-api.enabled: false` (`charts/librechat-app/values.yaml`); the LibreChat `RAG_API_URL` env is commented out. No `rag` override exists in `ai-helm-values/environments/prod/values/librechat-app.yaml`. |
 | Meilisearch (`librechat-search`) | Enabled | Conversation/message search only (not RAG). |
-| LibreChat app | Enabled | `charts/librechat-app` (leaf under the `librechart` orchestrator, ADR-0014). |
+| LibreChat app | Enabled | `charts/librechat-app` (leaf under the `librechart` orchestrator, ADR-0132). |
 
 **Implication for this ticket:** because RAG is off in prod, the #409 dependency
 ("access to a LibreChat instance to test against") is **not satisfied by the live
@@ -184,7 +184,7 @@ ticket: each row logs `file type → size → result → notes`.
   [#414](https://github.com/ADORSYS-GIS/ai-helm/issues/414) (sibling — Chain-of-Agent)
 - Sibling doc: [`librechat-chain-of-agents.md`](librechat-chain-of-agents.md)
 - User doc: [`librechat-platform.md`](librechat-platform.md)
-- Chart: `charts/librechat-app/` (leaf under `librechart`, ADR-0014)
+- Chart: `charts/librechat-app/` (leaf under `librechart`, ADR-0132)
 - Upstream: [`danny-avila/rag_api`](https://github.com/danny-avila/rag_api),
   [`danny-avila/LibreChat`](https://github.com/danny-avila/LibreChat),
   [docs.librechat.ai](https://www.librechat.ai)
