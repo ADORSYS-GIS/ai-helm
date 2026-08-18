@@ -16,13 +16,21 @@ training:
         effect: NoSchedule
   datasetBuild:
     image: ghcr.io/adorsys-gis/webank-dataset-gpu@sha256:c4ddb832deda7854bb617d422acca099001a6ec2aea1d585b8e460a53e4f6edf
+  midvDatasetBuild:
+    enabled: true
+    labelsVocabulary:
+      repository: PaddlePaddle/PP-OCRv6_small_rec_safetensors
+      revision: fe049fb103f57443fe8840c54ed06b702f3c1de5
 models:
   - id: document-detector
     trainer: document-detector
     datasetBuild:
-      # Only model kept `enabled: true` in this CI fixture so `helm
-      # template`/`helm lint` still render-cover the dataset-build
-      # WorkflowTemplate branch itself, not just its default-off state.
+      # All three hermetic-synthetic models are kept `enabled: true` in this
+      # CI fixture (matching production, ai-helm-values
+      # environments/prod/values/webank-training.yaml) so `helm
+      # template`/`helm lint` render-cover every dataset-build
+      # WorkflowTemplate branch, including each one's readiness-gate step,
+      # not just document-detector's.
       enabled: true
       target:
         repository: ds-document-detector
@@ -38,6 +46,12 @@ models:
   - id: document-recognizer
     trainer: document-recognizer
     datasetBuild:
+      enabled: true
+      # Exercises the per-model publishToLakefsDefault override branch
+      # (charts/webank-training/values.yaml training.datasetBuild
+      # .publishToLakefsDefault) so CI render-covers a value that differs
+      # from the chart-wide default, not just the default itself.
+      publishToLakefsDefault: false
       target:
         repository: ds-document-recognizer
         branch: main
@@ -49,6 +63,7 @@ models:
   - id: face-detector
     trainer: face-detector
     datasetBuild:
+      enabled: true
       target:
         repository: ds-face-detector
         branch: main

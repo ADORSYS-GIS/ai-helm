@@ -91,6 +91,11 @@ _METRIC_PREFIX = "loki_process_custom_"
 METRIC_COST_MICRO_USD = _METRIC_PREFIX + "gen_ai_usage_cost_micro_usd"
 METRIC_TOKENS = _METRIC_PREFIX + "gen_ai_usage_tokens"
 METRIC_REQUESTS = _METRIC_PREFIX + "gen_ai_requests"
+# Latency histogram (ms) — emitted by the same Alloy stage.metrics (ADR-0058)
+# from the `duration` access-log field. Enables the per-user / chat-overview
+# p50/p95 latency panels to read Mimir instead of Loki log-scans. Use
+# `histogram_quantile(0.95, sum by (le) (rate(<metric>_bucket{...}[$__range])))`.
+METRIC_DURATION = _METRIC_PREFIX + "gen_ai_usage_duration"
 
 
 # ---------------------------------------------------------------------------

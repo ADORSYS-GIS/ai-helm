@@ -11,10 +11,17 @@ Regenerate with::
     uv run dashboards build
 
 Isolation: uses the Grafana built-in ``${__user.email}`` variable,
-which maps to the authenticated user's OIDC email claim. The Loki
-``email`` label (promoted by Alloy from the JWT ``email`` field) is 1:1
-with ``user_id`` for human users. Unlike a URL variable, this cannot
-be tampered with by the viewer. See ADR-0077.
+which maps to the authenticated user's OIDC email claim. The Mimir
+``email`` label (inherited from the ADR-0058 precomputed metrics, which
+carry the ADR-0046 attribution labels) is 1:1 with ``user_id`` for human
+users. Unlike a URL variable, this cannot be tampered with by the viewer.
+See ADR-0077.
+
+Repointed to Mimir (ADR-0058): reads the precomputed
+``loki_process_custom_gen_ai_*`` counters via PromQL ``increase()`` instead
+of scanning Loki logs — instant at any range on the rate-limited object
+store. The ``email``/``azp``/``model``/``display_name``/``billing_plan``
+axes are all Mimir labels, so every panel maps cleanly.
 """
 
 from __future__ import annotations
@@ -23,11 +30,10 @@ import json
 
 from grafana_foundation_sdk.builders import common as cb
 from grafana_foundation_sdk.builders import dashboard as db
-from grafana_foundation_sdk.builders import gauge, loki, piechart, stat
+from grafana_foundation_sdk.builders import gauge, stat
 from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import common as cm
 from grafana_foundation_sdk.models import dashboard as dm
-from grafana_foundation_sdk.models import piechart as pm
 
 from dashboards._common import (
     GATEWAY_SERVICE_NAME,
@@ -36,8 +42,12 @@ from dashboards._common import (
     LABEL_DISPLAY_NAME,
     LABEL_EMAIL,
     LABEL_MODEL,
-    LOKI_UID,
+    METRIC_COST_MICRO_USD,
+    METRIC_REQUESTS,
+    METRIC_TOKENS,
+    MIMIR_UID,
 )
+from dashboards.envoy_ai_gateway import _shared as sh
 
 # ---------------------------------------------------------------------------
 # Module contract for the orchestrator (tools/dashboards/main.py)
@@ -49,187 +59,16 @@ OUTPUT_PATH: str = "charts/observability-dashboards/files/envoy-ai-gateway/my-us
 # Constants
 # ---------------------------------------------------------------------------
 
-_LOKI_DS = dm.DataSourceRef(type_val="loki", uid=LOKI_UID)
+_MIMIR_DS = dm.DataSourceRef(type_val="prometheus", uid=MIMIR_UID)
 
-# Stream selector — MUST include email="${__user.email}" to enforce isolation.
+# Metric selector — MUST include email="${__user.email}" to enforce isolation.
 # ${__user.email} is a Grafana built-in user variable (server-controlled).
-_SELECTOR = (
-    f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_EMAIL}="${{__user.email}}",'
-    f' {LABEL_AZP}=~"$azp", {LABEL_MODEL}=~"$model"}}'
+_SEL = sh.selector(
+    f'{LABEL_EMAIL}="${{__user.email}}"', f'{LABEL_AZP}=~"$azp"', f'{LABEL_MODEL}=~"$model"'
 )
 
-_JSON_PATHS = {
-    "gen_ai_usage_total_tokens": "gen_ai.usage.total_tokens",
-    "gen_ai_usage_custom_total_cost": "gen_ai.usage.custom_total_cost",
-}
-
-
-def _unwrap(field: str) -> str:
-    """`| json <field> | unwrap <field>` with the error guard ADR-0046 requires.
-    Numeric access-log fields arrive as strings and absent ones as "-";
-    `__error__=""` drops samples that fail conversion instead of failing
-    the whole query.
-
-    Extracts ONLY `field` -- a bare `| json` (no field list) pulls every
-    field on the line (trace_id, jti, ...) into the per-line label set, and
-    sum_over_time/quantile_over_time default-group by that whole set when no
-    explicit grouping is given, blowing past Loki's 500-series cap under real
-    traffic. Restricting extraction to the one field we unwrap keeps the
-    per-line label set down to just the genuine stream labels.
-
-    Envoy's access-log format.json (charts/core-gateway/templates/envoy-proxy.yaml)
-    declares the GenAI usage fields with LITERAL DOTS in the key name
-    (`gen_ai.usage.total_tokens`, not a nested object) -- a bare `| json` auto-
-    flattens that into the underscored label we use here, but the explicit
-    `| json <name>` form treats `<name>` as a path lookup, which does NOT
-    match a literal dotted key by bare name. Loki's json-field grammar isn't
-    full JMESPath -- a literal/quoted key isn't a valid expression on its
-    own, it must be wrapped in brackets: `["dotted.key"]` (confirmed via the
-    parser's own error: "unexpected STRING, expecting LSB or FIELD"). Flat
-    keys like `duration` have no dot and extract by bare name as before.
-    """
-    path = _JSON_PATHS.get(field)
-    extract = f'{field}=`["{path}"]`' if path else field
-    return f'| json {extract} | unwrap {field} | __error__=""'
-
-
-def _usd(expr: str) -> str:
-    """Convert raw micro-USD LogQL aggregation to USD for display."""
-    return f"(({expr}) / 1e6)"
-
-
-# ---------------------------------------------------------------------------
-# Builder helpers
-# ---------------------------------------------------------------------------
-
-
-def _loki_target(
-    expr: str,
-    *,
-    legend: str = "",
-    ref_id: str = "A",
-    instant: bool = False,
-) -> loki.Dataquery:
-    q = (
-        loki.Dataquery()
-        .expr(expr)
-        .ref_id(ref_id)
-        .query_type("instant" if instant else "range")
-        .datasource(_LOKI_DS)
-    )
-    if legend:
-        q = q.legend_format(legend)
-    return q
-
-
-def _single_color_thresholds(color: str) -> db.ThresholdsConfig:
-
-    return db.ThresholdsConfig().mode(dm.ThresholdsMode.ABSOLUTE).steps([dm.Threshold(color=color)])
-
-
-def _stat_panel(
-    *,
-    title: str,
-    expr: str,
-    unit: str,
-    color: str,
-    grid: tuple[int, int, int, int],
-    calcs: list[str] | None = None,
-) -> stat.Panel:
-    """Single-value stat panel. ``grid`` is (h, w, x, y)."""
-    h, w, x, y = grid
-    return (
-        stat.Panel()
-        .title(title)
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
-        .unit(unit)
-        .thresholds(_single_color_thresholds(color))
-        .reduce_options(
-            cb.ReduceDataOptions()
-            .calcs(calcs if calcs is not None else ["lastNotNull"])
-            .fields("")
-            .values(False)
-        )
-        .orientation(cm.VizOrientation.HORIZONTAL)
-        .text_mode(cm.BigValueTextMode.AUTO)
-        .color_mode(cm.BigValueColorMode.VALUE)
-        .graph_mode(cm.BigValueGraphMode.AREA)
-        .justify_mode(cm.BigValueJustifyMode.AUTO)
-        .with_target(_loki_target(expr))
-    )
-
-
-def _pie_panel(
-    *,
-    title: str,
-    expr: str,
-    legend_label: str,
-    grid: tuple[int, int, int, int],
-) -> piechart.Panel:
-    h, w, x, y = grid
-    return (
-        piechart.Panel()
-        .title(title)
-        .datasource(_LOKI_DS)
-        .grid_pos(dm.GridPos(h=h, w=w, x=x, y=y))
-        .pie_type(pm.PieChartType.DONUT)
-        .legend(
-            piechart.PieChartLegendOptions()
-            .display_mode(cm.LegendDisplayMode.TABLE)
-            .placement(cm.LegendPlacement.RIGHT)
-            .values([pm.PieChartLegendValues.VALUE, pm.PieChartLegendValues.PERCENT])
-        )
-        .tooltip(cb.VizTooltipOptions().mode(cm.TooltipDisplayMode.SINGLE))
-        .with_target(_loki_target(expr, legend=legend_label, instant=False))
-    )
-
-
-# ---------------------------------------------------------------------------
-# Panels
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Overview stats  (y=5)
-# ---------------------------------------------------------------------------
-
-
-def _panel_total_cost() -> stat.Panel:
-    return _stat_panel(
-        title="Total cost",
-        expr=_usd(
-            f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
-        ),
-        unit="currencyUSD",
-        color="orange",
-        grid=(8, 8, 0, 0),
-    )
-
-
-def _panel_total_requests() -> stat.Panel:
-    return _stat_panel(
-        title="Total requests",
-        expr=f"sum(count_over_time({_SELECTOR} [$__range]))",
-        unit="short",
-        color="blue",
-        grid=(8, 8, 8, 0),
-    )
-
-
-def _panel_total_tokens() -> stat.Panel:
-    return _stat_panel(
-        title="Total tokens",
-        expr=f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
-        unit="short",
-        color="green",
-        grid=(8, 8, 16, 0),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Budget gauge  (y=8)
-# ---------------------------------------------------------------------------
+# Scoped selector for the azp/model filter variables (only this user's values).
+_USER_SEL = f'{{service_name="{GATEWAY_SERVICE_NAME}", {LABEL_EMAIL}="${{__user.email}}"}}'
 
 
 def _budget_thresholds() -> db.ThresholdsConfig:
@@ -247,15 +86,51 @@ def _budget_thresholds() -> db.ThresholdsConfig:
     )
 
 
+# ---------------------------------------------------------------------------
+# Overview stats  (y=0)
+# ---------------------------------------------------------------------------
+
+
+def _panel_total_cost() -> object:
+    return sh.stat_panel(
+        title="Total cost",
+        expr=sh.usd(f"sum(increase({METRIC_COST_MICRO_USD}{_SEL}[$__range]))"),
+        unit="currencyUSD",
+        color="orange",
+        grid=(8, 8, 0, 0),
+    )
+
+
+def _panel_total_requests() -> object:
+    return sh.stat_panel(
+        title="Total requests",
+        expr=f"sum(increase({METRIC_REQUESTS}{_SEL}[$__range]))",
+        unit="short",
+        color="blue",
+        grid=(8, 8, 8, 0),
+    )
+
+
+def _panel_total_tokens() -> object:
+    return sh.stat_panel(
+        title="Total tokens",
+        expr=f"sum(increase({METRIC_TOKENS}{_SEL}[$__range]))",
+        unit="short",
+        color="green",
+        grid=(8, 8, 16, 0),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Budget gauge  (y=8)
+# ---------------------------------------------------------------------------
+
+
 def _panel_budget_gauge() -> gauge.Panel:
     # Percent of the editable monthly budget spent in the selected range.
-    # Same Loki cost query as _panel_total_cost, divided by the $budget
+    # Same Mimir cost query as _panel_total_cost, divided by the $budget
     # textbox variable (default $15 — the free-plan monthly budget).
-    expr = (
-        "100 * ("
-        f"sum(sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
-        " / 1e6) / $budget"
-    )
+    expr = f"100 * (sum(increase({METRIC_COST_MICRO_USD}{_SEL}[$__range])) / 1e6) / $budget"
     return (
         gauge.Panel()
         .title("Budget burn (selected range)")
@@ -263,7 +138,7 @@ def _panel_budget_gauge() -> gauge.Panel:
             "Total cost over the selected range as a % of the $budget variable "
             "(default $15/mo — edit in the dashboard toolbar)."
         )
-        .datasource(_LOKI_DS)
+        .datasource(_MIMIR_DS)
         .grid_pos(dm.GridPos(h=8, w=12, x=12, y=8))
         .unit("percent")
         .min(0.0)
@@ -271,7 +146,7 @@ def _panel_budget_gauge() -> gauge.Panel:
         .thresholds(_budget_thresholds())
         .show_threshold_markers(True)
         .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
-        .with_target(_loki_target(expr))
+        .with_target(sh.prom_target(expr))
     )
 
 
@@ -280,52 +155,50 @@ def _panel_budget_gauge() -> gauge.Panel:
 # ---------------------------------------------------------------------------
 
 
-def _panel_cost_by_model() -> piechart.Panel:
-    return _pie_panel(
+def _panel_cost_by_model() -> object:
+    return sh.pie_panel(
         title="Cost by model",
-        expr=_usd(
-            f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_custom_total_cost')} [$__range]))"
-        ),
+        expr=sh.usd(f"sum by ({LABEL_MODEL}) (increase({METRIC_COST_MICRO_USD}{_SEL}[$__range]))"),
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 0, 16),
     )
 
 
-def _panel_tokens_by_model() -> piechart.Panel:
-    return _pie_panel(
+def _panel_tokens_by_model() -> object:
+    return sh.pie_panel(
         title="Tokens by model",
-        expr=f"sum by ({LABEL_MODEL}) (sum_over_time({_SELECTOR} {_unwrap('gen_ai_usage_total_tokens')} [$__range]))",
+        expr=f"sum by ({LABEL_MODEL}) (increase({METRIC_TOKENS}{_SEL}[$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 6, 16),
     )
 
 
-def _panel_requests_by_model() -> piechart.Panel:
-    return _pie_panel(
+def _panel_requests_by_model() -> object:
+    return sh.pie_panel(
         title="Requests by model",
-        expr=f"sum by ({LABEL_MODEL}) (count_over_time({_SELECTOR} [$__range]))",
+        expr=f"sum by ({LABEL_MODEL}) (increase({METRIC_REQUESTS}{_SEL}[$__range]))",
         legend_label=f"{{{{{LABEL_MODEL}}}}}",
         grid=(8, 6, 12, 16),
     )
 
 
-def _panel_azp() -> piechart.Panel:
-    return _pie_panel(
+def _panel_azp() -> object:
+    return sh.pie_panel(
         title="Usage by channel (azp)",
-        expr=f"sum by ({LABEL_AZP}) (count_over_time({_SELECTOR} [$__range]))",
+        expr=f"sum by ({LABEL_AZP}) (increase({METRIC_REQUESTS}{_SEL}[$__range]))",
         legend_label=f"{{{{{LABEL_AZP}}}}}",
         grid=(8, 6, 18, 16),
     )
 
 
 def _panel_user_info() -> stat.Panel:
-    """Show the authenticated user display name and billing plan from Loki label."""
+    """Show the authenticated user display name and billing plan from Mimir labels."""
     return (
         stat.Panel()
         .title("User Info")
-        .datasource(_LOKI_DS)
+        .datasource(_MIMIR_DS)
         .grid_pos(dm.GridPos(h=8, w=12, x=0, y=8))
-        .thresholds(_single_color_thresholds("blue"))
+        .thresholds(sh.single_color_thresholds("blue"))
         .reduce_options(cb.ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
         .orientation(cm.VizOrientation.HORIZONTAL)
         .text_mode(cm.BigValueTextMode.NAME)
@@ -333,15 +206,15 @@ def _panel_user_info() -> stat.Panel:
         .graph_mode(cm.BigValueGraphMode.NONE)
         .justify_mode(cm.BigValueJustifyMode.AUTO)
         .with_target(
-            _loki_target(
-                f"sum by ({LABEL_DISPLAY_NAME}) (count_over_time({_SELECTOR} [$__range]))",
+            sh.prom_target(
+                f"sum by ({LABEL_DISPLAY_NAME}) (increase({METRIC_REQUESTS}{_SEL}[$__range]))",
                 legend=f"{{{{{LABEL_DISPLAY_NAME}}}}}",
                 ref_id="A",
             )
         )
         .with_target(
-            _loki_target(
-                f"sum by ({LABEL_BILLING_PLAN}) (count_over_time({_SELECTOR} [$__range]))",
+            sh.prom_target(
+                f"sum by ({LABEL_BILLING_PLAN}) (increase({METRIC_REQUESTS}{_SEL}[$__range]))",
                 legend=f"{{{{{LABEL_BILLING_PLAN}}}}}",
                 ref_id="B",
             )
@@ -359,30 +232,12 @@ _DESCRIPTION = (
     "Default range starts at the 1st of the current month. "
     "Budget gauge measures total cost against the editable $budget variable "
     "(default $15/mo — the free-plan monthly budget). "
-    "Data path: JWT -> Authorino -> Envoy access log -> Alloy -> Loki. "
+    "Reads the precomputed Mimir metrics (ADR-0058) via PromQL increase() — "
+    "instant at any range, no Loki log-scan. "
+    "Data path: JWT -> Authorino -> Envoy access log -> Alloy -> Mimir. "
     "See docs/patterns/per-user-observability.md. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/my_usage.py."
 )
-
-
-def _query_var(
-    *,
-    name: str,
-    label: str,
-    definition: str,
-) -> db.QueryVariable:
-    return (
-        db.QueryVariable(name)
-        .label(label)
-        .datasource(_LOKI_DS)
-        .query(definition)
-        .refresh(dm.VariableRefresh.ON_TIME_RANGE_CHANGED)
-        .sort(dm.VariableSort.ALPHABETICAL_ASC)
-        .multi(True)
-        .include_all(True)
-        .all_value(".+")
-        .current(dm.VariableOption(selected=True, text=["All"], value=["$__all"]))
-    )
 
 
 def _budget_var() -> db.TextBoxVariable:
@@ -400,7 +255,7 @@ def _dashboard() -> db.Dashboard:
     return (
         db.Dashboard("AI Gateway — my usage")
         .uid("my-usage")
-        .tags(["ai-gateway", "my-usage", "loki"])
+        .tags(["ai-gateway", "my-usage", "mimir"])
         .description(_DESCRIPTION)
         .timezone("browser")
         .editable()
@@ -408,17 +263,17 @@ def _dashboard() -> db.Dashboard:
         .refresh("30s")
         .time("now/M", "now")
         .with_variable(
-            _query_var(
+            sh.multi_var(
                 name="azp",
                 label="Channel (azp)",
-                definition=f'label_values({{service_name="{GATEWAY_SERVICE_NAME}", email="${{__user.email}}"}}, azp)',
+                definition=sh.label_values(_USER_SEL, LABEL_AZP),
             )
         )
         .with_variable(
-            _query_var(
+            sh.multi_var(
                 name="model",
                 label="Model",
-                definition=f'label_values({{service_name="{GATEWAY_SERVICE_NAME}", email="${{__user.email}}"}}, model)',
+                definition=sh.label_values(_USER_SEL, LABEL_MODEL),
             )
         )
         .with_variable(_budget_var())

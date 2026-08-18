@@ -4,7 +4,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-chat-overview",
   "title": "AI Gateway — chat overview",
-  "description": "Global chat-completion overview (embeddings excluded). The point is the live Tempo trace feed — click any trace to read the full prompt/response content the AI Gateway ext-proc already sends to Tempo (ADR-0077). The headline stats + latency are thin context; per-model request/cost breakdowns deliberately live in the cost-by-model / actor-consumption dashboards, not here. No input variables by design; see chats-by-user for a per-user cut. GENERATED — source: tools/dashboards/envoy_ai_gateway/chat_overview.py.",
+  "description": "Global chat-completion overview (embeddings excluded). The point is the live Tempo trace feed — click any trace to read the full prompt/response content the AI Gateway ext-proc already sends to Tempo (ADR-0077). The headline stats + latency read the precomputed Mimir metrics (ADR-0058) — instant at any range; only the 5xx error-rate stays on Loki. Per-model request/cost breakdowns deliberately live in the cost-by-model / actor-consumption dashboards, not here. No input variables by design; see chats-by-user for a per-user cut. GENERATED — source: tools/dashboards/envoy_ai_gateway/chat_overview.py.",
   "tags": [
     "ai-gateway",
     "chats",
@@ -38,20 +38,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(count_over_time({service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"}[$__range]))",
+          "expr": "sum(increase(loki_process_custom_gen_ai_requests{service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"}[$__range]))",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Chats (range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -75,7 +77,7 @@
           "fields": ""
         },
         "percentChangeColorMode": "standard",
-        "orientation": "auto"
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
@@ -97,20 +99,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(sum_over_time({service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"} | json tokens=`[\"gen_ai.usage.total_tokens\"]` | unwrap tokens | __error__=\"\" [$__range]))",
+          "expr": "sum(increase(loki_process_custom_gen_ai_usage_tokens{service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"}[$__range]))",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Tokens (range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -134,7 +138,7 @@
           "fields": ""
         },
         "percentChangeColorMode": "standard",
-        "orientation": "auto"
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
@@ -156,20 +160,22 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "((sum(sum_over_time({service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"} | json cost=`[\"gen_ai.usage.custom_total_cost\"]` | unwrap cost | __error__=\"\" [$__range]))) / 1e6)",
+          "expr": "((sum(increase(loki_process_custom_gen_ai_usage_cost_micro_usd{service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"}[$__range]))) / 1e6)",
           "refId": "A",
-          "queryType": "range",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Cost (range)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 4,
@@ -193,7 +199,7 @@
           "fields": ""
         },
         "percentChangeColorMode": "standard",
-        "orientation": "auto"
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
@@ -295,31 +301,35 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "quantile_over_time(0.50, {service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"} | json | unwrap duration | __error__=\"\" [$__auto]) by ()",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(loki_process_custom_gen_ai_usage_duration_bucket{service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"}[5m])))",
           "refId": "A",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
           "legendFormat": "p50",
-          "queryType": "range",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         },
         {
-          "expr": "quantile_over_time(0.95, {service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"} | json | unwrap duration | __error__=\"\" [$__auto]) by ()",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(loki_process_custom_gen_ai_usage_duration_bucket{service_name=\"envoy-ai-gateway\", model!~\"qwen3-embedding-8b\"}[5m])))",
           "refId": "B",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
           "legendFormat": "p95",
-          "queryType": "range",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "mimir"
           }
         }
       ],
       "title": "Chat latency (p50 / p95)",
       "transparent": false,
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 8,

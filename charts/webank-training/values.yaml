@@ -115,6 +115,85 @@ training:
     # governed-lakefs model (sface, pad-liveness) with a differently sized
     # source checkout stays covered by the same generous margin.
     workspaceSizeLimit: 24Gi
+    # Default for the `publish_to_lakefs` Argo parameter on every
+    # hermetic-synthetic `<id>-dataset-build` template (document-detector,
+    # document-recognizer, face-detector; sface/pad-liveness are untouched
+    # governed-lakefs templates and never render this parameter). `true`
+    # preserves this chart's existing behavior -- every one of those three
+    # templates has always published unconditionally -- because none of
+    # their sources carries an unresolved redistribution-scope determination
+    # today (all three are CC0 hermetic-synthetic output, see each model's
+    # bootstrap-policy.json `generated_output_licence_reference`). A future
+    # model whose dataset-build must stop short of LakeFS by default (for
+    # example, an unresolved-licence real-photo source) sets its own
+    # `models[].datasetBuild.publishToLakefsDefault: false` in
+    # ai-helm-values; that per-model field overrides this one when present.
+    publishToLakefsDefault: true
+  # document-recognizer-only dataset-build knobs. Both back a real,
+  # already-existing CLI surface on the webank-models side (see this PR's
+  # description for the exact commands/flags/env vars matched); neither is
+  # invented, and neither applies to document-detector or face-detector,
+  # whose row counts come from a reviewed, signed bootstrap-policy.json
+  # instead of a CLI flag.
+  documentRecognizer:
+    # `materialize-synthetic-source --shard-rows` / env
+    # `WEBANK_RECOGNIZER_SHARD_ROWS` (webank-models#507, open at the time of
+    # writing -- see that PR for status before relying on this taking
+    # effect). Rows per `ds-<index>.safetensors` shard; the last shard is
+    # short. 2000 is the accountable
+    # owner's chosen default: a desktop and a dedicated training server want
+    # different chunk sizes, and networking is not the constraint (this
+    # tensor never leaves the pod that writes it), so there is no single
+    # "right" size to hardcode. At U8 [2000, 3, 48, 640] one shard is
+    # ~184 MB.
+    shardRows: 2000
+    # webank_document_recognizer_dataset --samples (1..10000), already live
+    # on `main` today. Not passed by this template before this change, so
+    # the tool's own argparse default (256) applied silently; this makes
+    # that default an explicit, reviewable Helm value instead, and lets an
+    # operator drop it for a fast local iteration run.
+    samples: 256
+  # MIDV-2020 real-crop dataset build for document-recognizer only
+  # (webank-models RFC-0009, story #328, epic #326, ticket #408). Distinct
+  # from `datasetBuild` above: a six-step DAG across separate pods (one
+  # shared PVC plus a second, pre-existing durable-output PVC, not the
+  # single-container/emptyDir pattern the per-model loop below renders), and
+  # it deliberately never calls LakeFS — MIDV-2020's `third_party_licensed`
+  # source_class cannot clear `readiness-gate` today (webank-models#401,
+  # open RFC-0006 IP-counsel questions). `enabled: false` here follows the
+  # same interim-governance-gate convention `models[].datasetBuild.enabled`
+  # already uses in this chart: a real capability whose environment-specific
+  # activation is an explicit, documented per-environment decision, not a
+  # dormant flag. Flipping this to `true` in an environment values file
+  # alone does not reconcile the pre-existing, unmanaged live object this
+  # template adopts — that is a separate, human-owned follow-up.
+  midvDatasetBuild:
+    enabled: false
+    workspaceSizeLimit: 24Gi
+    # Optional cap on crops materialized, wired straight through to
+    # `xtask midv-raw-source --limit`. Empty (the live default) means the
+    # full MIDV-2020 subset; both real production runs so far used the
+    # default. Set per environment, or override per-run with
+    # `argo submit -p crop_limit=<n>`.
+    cropLimit: ""
+    # Name of the pre-existing, separately provisioned PersistentVolumeClaim
+    # (Longhorn, ReadWriteOnce) the validate-round-trip step's durable output
+    # copy lands on. This chart does not create or manage that PVC — it
+    # already exists in hetzner-prod (`webank-document-recognizer-midv-
+    # dataset-build-output`, 20Gi, Bound), itself provisioned outside GitOps
+    # the same way the WorkflowTemplate this file adopts was. Reconciling
+    # that PVC's own ownership is a separate, human decision; leaving this
+    # unset reproduces the live claimName unchanged
+    # (`<WorkflowTemplate name>-output`).
+    durableOutputPvcClaimName: ""
+    labelsVocabulary:
+      # Pinned HuggingFace revision webank-models' own
+      # scripts/fetch-document-recognizer-model.sh derives the governed CTC
+      # vocabulary from (preprocessor_config.json's character_list — 18710
+      # entries, index 0 "blank"). Fetched in-pod at run time so this
+      # template never needs a placeholder labels_vocabulary_url.
+      repository: ""
+      revision: ""
   documentDetector:
     stemChannels: 32
     epochs: 10
@@ -138,4 +217,10 @@ training:
 # `<id>-dataset-build` WorkflowTemplate does not exist in the cluster at all
 # and cannot be `argo submit`-able. Flip to `true` per model only once that
 # gate can be satisfied.
+#
+# `datasetBuild.publishToLakefsDefault` (bool, optional, hermetic-synthetic
+# ids only): per-model override for `training.datasetBuild
+# .publishToLakefsDefault` above. Leave unset to inherit that chart-wide
+# default; set explicitly only when one model's dataset-build must default
+# to stopping short of LakeFS while the others still publish.
 models: []
