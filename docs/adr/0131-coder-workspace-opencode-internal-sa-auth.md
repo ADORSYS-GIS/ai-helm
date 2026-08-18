@@ -1,4 +1,4 @@
-# ADR-0130: Authenticate Coder workspace OpenCode to the internal gateway via a per-workspace ServiceAccount
+# ADR-0131: Authenticate Coder workspace OpenCode to the internal gateway via a per-workspace ServiceAccount
 
 **Status:** Proposed
 **Date:** 2026-08-10

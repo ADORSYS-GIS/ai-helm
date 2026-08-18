@@ -3,7 +3,7 @@
 A Coder template that runs OpenCode in a Coder workspace and authenticates it to
 the **internal** Camer Digital AI gateway with **per-user attribution** and no
 interactive login and no real credential in the pod. See
-**ADR-0130** (`docs/adr/0130-coder-workspace-opencode-internal-sa-auth.md`).
+**ADR-0131** (`docs/adr/0131-coder-workspace-opencode-internal-sa-auth.md`).
 
 ## What it does
 
@@ -55,7 +55,7 @@ coder templates push opencode-task --directory=. --var namespace=coder
 | Variable | Default | Description |
 |---|---|---|
 | `namespace` | `coder` | Kubernetes namespace for the workspace pod |
-| `opencode_url` | `http://models-opencode-wellknown.converse.svc/opencode` | OpenCode server URL; remote config is fetched from `<url>/.well-known/opencode`. **Internal** by default: the public URL (`https://ai.camer.digital/opencode`) does not hairpin through the Hetzner LB from inside the cluster, and opencode re-fetches this config on every session open — a fatal hang. See ADR-0130. |
+| `opencode_url` | `http://models-opencode-wellknown.converse.svc/opencode` | OpenCode server URL; remote config is fetched from `<url>/.well-known/opencode`. **Internal** by default: the public URL (`https://ai.camer.digital/opencode`) does not hairpin through the Hetzner LB from inside the cluster, and opencode re-fetches this config on every session open — a fatal hang. See ADR-0131. |
 | `provider_key` | `camer-digital` | Provider key used in the local OpenCode provider override (must match the key in the remote config) |
 | `workdir` | `/home/coder/project` | Working directory |
 | `model` | `camer-digital/glm-4.7-flash` | Default model for the agent session. MUST be a camer-digital model id. Pinned (not left unset) so opencode can't fall back to a built-in models.dev model the sidecar can't serve (the "invalid api" error). |

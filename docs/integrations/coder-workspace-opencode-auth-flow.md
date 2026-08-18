@@ -11,7 +11,7 @@ This file gives the **step-by-step request flow** and the **component
 explanation** for each option and for the LibreChat pattern we are copying —
 written out, not on the diagram.
 
-> **✅ Final decided flow (as built — [ADR-0130](../adr/0130-coder-workspace-opencode-internal-sa-auth.md)).**
+> **✅ Final decided flow (as built — [ADR-0131](../adr/0131-coder-workspace-opencode-internal-sa-auth.md)).**
 > Options A/B below are **superseded** by this converged flow, validated live
 > against a real Authorino:
 >

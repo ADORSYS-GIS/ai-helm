@@ -16,7 +16,7 @@ client-credentials approach in
 "keep the external plane, just pin the audience". Both are recorded as
 considered-and-rejected in §7.
 
-> **✅ Final decided design (as built — see [ADR-0130](../adr/0130-coder-workspace-opencode-internal-sa-auth.md)).**
+> **✅ Final decided design (as built — see [ADR-0131](../adr/0131-coder-workspace-opencode-internal-sa-auth.md)).**
 > The earlier Options A/B (Rust proxy / Caddy proxy) below are **superseded** by
 > the converged architecture, refined by live testing against a real Authorino:
 >
