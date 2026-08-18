@@ -15,6 +15,7 @@ other categories.
 | [opencode-plugins-research.md](opencode-plugins-research.md) | OpenCode plugins/extensions research (toolbelt, skills, MCP surfaces) |
 | [coder-platform-integration.md](coder-platform-integration.md) | Coder re-integration evaluation (ADR-0027 removal + re-intro reqs; issue #651) |
 | [coder-workspace-urls.md](coder-workspace-urls.md) | Public workspace URLs via wildcard subdomains — and why the wildcard can't live under `ai.camer.digital` (Route53 delegation vs the Cloudflare DNS-01 solver) |
+| [coder-workspace-opencode-web-link.md](coder-workspace-opencode-web-link.md) | Options for the "start a workspace → get a link → watch opencode web" flow (exposure, link return, task start, auth, watch-vs-interact) |
 | [keycloak-identity-datasource.md](keycloak-identity-datasource.md) | Resolving `user_id` → person, sessions & grants (ADR-0063/0064) |
 | [homepage.md](homepage.md) | Homepage central hub — the `gethomepage.dev/*` discovery-annotation convention for adding new apps (ADR-0089) |
 | [mlops-platform-consumer-guide.md](mlops-platform-consumer-guide.md) | **Using the MLOps platform from another repo/team** — endpoints, how a script or training job authenticates to LakeFS/MLflow/Argo, and the end-to-end training recipe |
