@@ -196,6 +196,10 @@ jobs:
         if: steps.select.outputs.charts != ''
         run: |
           set -euo pipefail
+          # cosign does NOT support the `oci://` scheme (it would treat `oci` as a
+          # registry hostname → "Get https://oci/v2/" DNS failure), unlike helm which
+          # requires it. Derive the scheme-less repo from OCI_REPO so the two can't drift.
+          COSIGN_REPO="${OCI_REPO#oci://}"
           mkdir -p /tmp/sbom
           for c in ${{ steps.select.outputs.charts }}; do
             base=$(yq e '.version' "charts/$c/Chart.yaml")
@@ -212,7 +216,7 @@ jobs:
             if tools/oci-chart-sbom.sh "charts/$c" "sbom-$c" "$sbom" >/dev/null 2>&1 \
                && [[ -s "$sbom" ]] && jq -e . "$sbom" >/dev/null 2>&1; then
               echo "  attaching SBOM: $(jq -c '{components:(.components|length)}' "$sbom")"
-              cosign attach sbom --sbom "$sbom" "$OCI_REPO/$c:$ver" || \
+              cosign attach sbom --sbom "$sbom" "$COSIGN_REPO/$c:$ver" || \
                 echo "  (warn) sbom attach failed for $c"
             else
               echo "  (skip) no renderable SBOM for $c — signing artifact only"
@@ -225,7 +229,7 @@ jobs:
             # only marks the run red so the operator knows the chart was not
             # signed and can re-run (idempotent). If this ever starts blocking
             # merges in practice, revisit and downgrade to a warn like the SBOM.
-            cosign sign --yes "$OCI_REPO/$c:$ver"
+            cosign sign --yes "$COSIGN_REPO/$c:$ver"
             echo "  signed $c → $ver"
           done
 
