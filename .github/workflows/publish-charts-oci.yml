@@ -212,24 +212,24 @@ jobs:
             if ! helm show chart "$OCI_REPO/$c" --version "$ver" >/dev/null 2>&1; then
               continue
             fi
-            # ── SBOM attestation (keyless, best-effort predicate) ──
+            # ── keyless sign (UNCONDITIONAL — every chart gets a `.sig`) ──
+            # Keeping `cosign sign` on every chart keeps the `.sig` verify surface
+            # (cosign verify) uniform regardless of whether an SBOM renders. This is
+            # the ADR-0132 provenance baseline; it runs before the attest so a
+            # transient attest failure never leaves a chart unsigned.
+            cosign sign --yes "$COSIGN_REPO/$c:$ver"
+            # ── SBOM attestation (best-effort predicate; adds `.att`) ──
             # `cosign attest` produces a SIGNED in-toto attestation carrying the
             # CycloneDX SBOM as its predicate, so the SBOM is tamper-evident — unlike
-            # the deprecated `cosign attach sbom` (unsigned) / `cosign sign` (separate)
-            # pair. It both signs the artifact AND binds the SBOM to it in one step.
+            # the deprecated `cosign attach sbom` (unsigned). It binds the SBOM to the
+            # chart in addition to the `.sig` above, addressed by `cosign verify-attestation`.
             sbom="/tmp/sbom/${c}-${ver}.sbom.json"
             if tools/oci-chart-sbom.sh "charts/$c" "sbom-$c" "$sbom" >/dev/null 2>&1 \
                && [[ -s "$sbom" ]] && jq -e . "$sbom" >/dev/null 2>&1; then
               echo "  attesting SBOM: $(jq -c '{components:(.components|length)}' "$sbom")"
-              # DELIBERATE hard-fail: a failed attestation means the chart was not
-              # signed at all, silently regressing the ADR-0132 provenance guarantee.
-              # Runs after the chart is already pushed, so it cannot strand a release —
-              # it only marks the run red for an idempotent re-run.
               cosign attest --yes --predicate "$sbom" --type cyclonedx "$COSIGN_REPO/$c:$ver"
             else
-              echo "  (skip) no renderable SBOM for $c — signing artifact only"
-              # Fall back to a plain keyless signature when no SBOM could be rendered.
-              cosign sign --yes "$COSIGN_REPO/$c:$ver"
+              echo "  (skip) no renderable SBOM for $c — signature only"
             fi
             echo "  signed $c → $ver"
           done

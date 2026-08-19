@@ -25,9 +25,12 @@ page is the **how** — what a consumer needs to verify a chart and its SBOM.
 For each changed chart `C` at version `V`, on a merge to `main`:
 
 - the OCI artifact `oci://ghcr.io/adorsys-gis/charts/C:V` (as before, ADR-0055);
+- a **keyless `.sig` signature** on every chart (the uniform provenance baseline);
 - a **signed in-toto attestation** (`.att` accessor) whose `predicate` holds the
-  CycloneDX SBOM `C-V.sbom.json`, when the chart could be rendered (see below);
-  charts that render no SBOM fall back to a plain keyless `.sig` signature.
+  CycloneDX SBOM `C-V.sbom.json`, when the chart could be rendered (see below).
+
+So every chart carries a `.sig`; charts with a renderable SBOM additionally carry
+an `.att`.
 
 ## Verifying a published chart
 
@@ -39,8 +42,22 @@ exact bytes, so the tag adds no tamper surface. The compliance angle of the
 platform roadmap (SOC 2 Type II / AIBOM) is about *content provenance* — which
 the signed SBOM attestation provides — not digest-addressing of the chart.
 
+Every chart carries a `.sig`, so the baseline check is `cosign verify` (works for
+**all** charts):
+
 ```bash
-# signature / attestation (keyless) — identity is pinned to the publishing workflow
+# signature (keyless) — identity is pinned to the publishing workflow
+cosign verify \
+  --certificate-identity-regexp '^https://github\.com/ADORSYS-GIS/ai-helm/\.github/workflows/publish-charts-oci\.yml@refs/heads/main$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/adorsys-gis/charts/<C>:<V>
+```
+
+For charts with a renderable SBOM (which also carry an `.att`), verify the SBOM
+attestation too:
+
+```bash
+# SBOM attestation (keyless) — only for charts that rendered an SBOM (.att present)
 cosign verify-attestation \
   --certificate-identity-regexp '^https://github\.com/ADORSYS-GIS/ai-helm/\.github/workflows/publish-charts-oci\.yml@refs/heads/main$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
