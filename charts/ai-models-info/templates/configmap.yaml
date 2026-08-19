@@ -39,6 +39,16 @@ data:
 
       # Exact-match catalog endpoint. File lives at
       # /usr/share/nginx/html/v1/models/info (mounted via subPath).
+      # Claude Code gateway model discovery. Exact-match, same as the
+      # OpenRouter catalog below: the protocol treats ANY redirect on this
+      # request as failure (even http->https) and gives it a 3s timeout, so
+      # it must be served directly here with no rewrite hop.
+      location = /anthropic/v1/models {
+        add_header Cache-Control "public, max-age=300" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        try_files /anthropic/v1/models =404;
+      }
+
       location = /v1/models/info {
         # opencode's models-info plugin sends the cached ETag as
         # If-None-Match; nginx replies 304 automatically when the
@@ -72,3 +82,30 @@ data:
   # `/v1/models/info` (matching the location block above).
   info: |
     {{- include "ai-models-info.catalog" . | nindent 4 }}
+---
+{{- /*
+Anthropic-shape catalog for Claude Code's gateway model discovery.
+
+A SEPARATE ConfigMap from `-content`, not another key in it, because bjw-s
+projects each data key as a file inside the mount directory -- so the mount
+path fixes the URL path. `-content` is mounted at
+`/usr/share/nginx/html/v1/models` (key `info` -> `/v1/models/info`); this one
+mounts at `/usr/share/nginx/html/anthropic/v1` (key `models` ->
+`/anthropic/v1/models`). Two different directories, therefore two ConfigMaps.
+
+The path is `/anthropic/v1/models` and NOT `/v1/models` because Claude Code
+appends `/v1/models` to ANTHROPIC_BASE_URL, which this platform sets to
+`https://api.ai.camer.digital/anthropic` (written into settings.json by
+`governance-auth configure`). The existing root-level `/v1/models` is a
+different endpoint in a different (OpenAI-ish) shape and is left alone.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-anthropic-content
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels.standard" . | nindent 4 }}
+data:
+  models: |
+    {{- include "ai-models-info.anthropicCatalog" . | nindent 4 }}

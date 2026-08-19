@@ -138,3 +138,56 @@ Output: full JSON string `{"data":[...]}`.
 {{- end -}}
 {{- dict "data" $entries | toJson -}}
 {{- end -}}
+
+{{/*
+Anthropic-shape model catalog for Claude Code's gateway model discovery.
+
+Claude Code (with CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1) issues
+`GET <ANTHROPIC_BASE_URL>/v1/models?limit=1000` at startup and adds the results
+to its `/model` picker. It reads only two fields per entry -- `id` and the
+optional `display_name` -- from a top-level `data` array. Everything else in
+the OpenRouter-shape catalog (pricing, architecture, context_length) is
+ignored here, which is why this is a separate renderer rather than a reshaping
+of `ai-models-info.catalog`.
+
+⚠️ THE `id` PREFIX IS LOAD-BEARING, NOT DECORATION. Claude Code keeps an entry
+only when its `id` contains "claude" or "anthropic", matched case-insensitively
+ANYWHERE in the string, and silently drops the rest -- the filter exists so a
+gateway backed by a shared key doesn't surface every model to every user.
+NONE of this platform's model ids contain either substring, so without a prefix
+this endpoint renders an empty picker and the whole feature is inert.
+Provider-prefixed ids are explicitly supported by the protocol (its own
+examples are `vertex_ai/claude-sonnet-4-6` and
+`bedrock/anthropic.claude-sonnet-4-5`), which is what `anthropicCatalog.idPrefix`
+uses.
+
+⚠️ CONSEQUENCE: the id advertised here is the id Claude Code sends back as the
+`model` on `/anthropic/v1/messages`. The gateway MUST accept the prefixed form
+(or strip the prefix on the way in), or a developer picks a model from the
+picker and every request fails. See the chart README before changing the
+prefix. `display_name` carries the human-readable name, so the prefix is not
+what anyone reads in the picker.
+
+Applies the SAME exclusions as the OpenRouter catalog -- `enabled: false`,
+`kind` in `excludeKinds`, and `disableExternal: true` -- because this is served
+on the same public host, and an internal-only model must not become externally
+discoverable just because it is reached through a different path.
+*/}}
+{{- define "ai-models-info.anthropicCatalog" -}}
+{{- $excluded := default (list) .Values.excludeKinds -}}
+{{- $cfgRoot := default (dict) .Values.anthropicCatalog -}}
+{{- $prefix := default "" $cfgRoot.idPrefix -}}
+{{- $entries := list -}}
+{{- range $name, $cfg := .Values.models -}}
+  {{- $kind := default "text" $cfg.kind -}}
+  {{- if and (not (eq $cfg.enabled false)) (not (has $kind $excluded)) (not (eq (default false $cfg.disableExternal) true)) -}}
+    {{- $info := default (dict) $cfg.info -}}
+    {{- $entry := dict
+        "id"           (printf "%s%s" $prefix $name)
+        "display_name" (default $name (index $info "displayName"))
+    -}}
+    {{- $entries = append $entries $entry -}}
+  {{- end -}}
+{{- end -}}
+{{- dict "data" $entries | toJson -}}
+{{- end -}}
