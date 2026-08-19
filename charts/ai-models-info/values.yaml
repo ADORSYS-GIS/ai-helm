@@ -58,6 +58,22 @@ excludeKinds:
 # Defaults for the `context_length` + `top_provider.{context_length,
 # max_completion_tokens}` fields emitted on EVERY catalog entry. Override
 # per-model via that model's `info.contextLength` / `info.maxOutputTokens`.
+# Claude Code gateway model discovery (`/anthropic/v1/models`).
+#
+# ⚠️ `idPrefix` is what makes this endpoint do anything at all. Claude Code
+# keeps a discovered model only when its `id` contains "claude" or "anthropic"
+# anywhere in the string; none of this platform's ids do, so with an empty
+# prefix the picker gains nothing and the endpoint is inert. Provider-prefixed
+# ids are explicitly supported by the protocol (`vertex_ai/claude-sonnet-4-6`).
+#
+# ⚠️ The advertised id is the id Claude Code sends back as `model` on
+# /anthropic/v1/messages, so the gateway must accept this prefixed form (or
+# strip it inbound). Verify before relying on it — a picker offering models
+# that 400 on use is worse than an empty picker. `display_name` carries the
+# readable name, so nobody reads the prefix.
+anthropicCatalog:
+  idPrefix: "anthropic/"
+
 catalogDefaults:
   contextLength: 128000
   maxCompletionTokens: 8192
@@ -180,6 +196,16 @@ models-info:
           backendRefs:
             - identifier: main
               port: 80
+        # Claude Code gateway model discovery. A separate rule rather than a
+        # second match on the rule above, so either catalog can be withdrawn
+        # without touching the other.
+        - matches:
+            - path:
+                type: Exact
+                value: /anthropic/v1/models
+          backendRefs:
+            - identifier: main
+              port: 80
 
   # Mount the two externally-rendered ConfigMaps + nginx-unprivileged's
   # required writable scratch dirs.
@@ -208,6 +234,20 @@ models-info:
         main:
           nginx:
             - path: /usr/share/nginx/html/v1/models
+              readOnly: true
+    anthropic-content:
+      enabled: true
+      type: configMap
+      name: '{{ .Release.Name }}-anthropic-content'
+      # Mount path fixes the URL path: key `models` projects to file
+      # `/usr/share/nginx/html/anthropic/v1/models` — matching the nginx
+      # `location = /anthropic/v1/models` block, which is where Claude Code
+      # looks (ANTHROPIC_BASE_URL is `…/anthropic`, and it appends
+      # `/v1/models`). Separate ConfigMap because the directory differs.
+      advancedMounts:
+        main:
+          nginx:
+            - path: /usr/share/nginx/html/anthropic/v1
               readOnly: true
     # nginx-unprivileged needs writable scratch space (root FS is RO).
     tmp:
