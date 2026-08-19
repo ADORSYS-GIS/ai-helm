@@ -30,7 +30,7 @@ must be reconciled to the ADR-0055 OCI path, which is where this work lands.
 
 ## Decision
 
-**Adopt keyless Sigstore cosign signing + SBOM attachment for every changed
+**Adopt keyless Sigstore cosign SBOM attestation for every changed
 Helm chart published by `publish-charts-oci.yml`, with the SBOM scoped to the
 container images the chart's rendered manifests deploy.**
 
@@ -41,9 +41,11 @@ container images the chart's rendered manifests deploy.**
 - **SBOM:** a per-chart CycloneDX 1.5 inventory of the container image references
   that `helm template` (deterministic, `--kube-version 1.31`, the same render the
   Trivy scan uses) emits from the chart's manifests — `tools/oci-chart-sbom.sh`.
-  Attached to the chart artifact with `cosign attach sbom`. SBOM generation is
-  **best-effort**: a chart that cannot render standalone (an orchetsrator, or a
-  leaf that needs injected values) yields an empty inventory but is still signed.
+  Carried as the **predicate of a signed in-toto attestation** via
+  `cosign attest --type cyclonedx` (this replaces the deprecated, unsigned
+  `cosign attach sbom`). SBOM generation is **best-effort**: a chart that cannot
+  render standalone (an orchestrator, or a leaf that needs injected values)
+  yields an empty inventory but is still attested/signed.
 - **Scope of the SBOM** is deliberately the *inventory* of what the chart ships
   (the image refs), not the transitive virtual-package SBOM of each image — the
   org already scans images with Trivy and cosign-verifies first-party images at
@@ -54,8 +56,9 @@ container images the chart's rendered manifests deploy.**
 **Positive**
 
 - Release artifacts become **inventoriable and verifiable**: a consumer can
-  `cosign verify` a chart and pull its attached SBOM to see exactly which images
-  it deploys — the #161 acceptance criteria, delivered on the live CD path.
+  `cosign verify-attestation` a chart (or `cosign download attestation`) to pull
+  its signed SBOM predicate and see exactly which images it deploys — the #161
+  acceptance criteria, delivered on the live CD path.
 - Keyless signing means **no key-management burden** and a verifiable identity
   bound to the publishing workflow (`certificate-identity` =
   `publish-charts-oci.yml`), consistent with how the org already signs images.
@@ -71,11 +74,12 @@ container images the chart's rendered manifests deploy.**
   enforcement (the ticket lists it as out of scope; container-level enforcement
   already exists via image-updater). Overstating this as a security boundary would
   be wrong.
-- Charts that render no images (orchestrators like `coder`, `homepage`) attach an
-  essentially-empty SBOM — low signal for those, though the signature still proves
-  provenance.
+- Charts that render no images (orchestrators like `coder`, `homepage`) carry an
+  essentially-empty SBOM predicate — low signal for those, though the attestation
+  still proves provenance.
 - Adds a couple of steps and OIDC-permission surface to the publish workflow;
-  cosign/OCI-attach behavior must be watched on the first few merges after cutover.
+  cosign attestation behavior must be watched on the first few merges after
+  cutover.
 
 **Neutral / follow-ups**
 

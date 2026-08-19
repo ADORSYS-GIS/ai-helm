@@ -161,7 +161,7 @@ jobs:
         uses: sigstore/cosign-installer@v3
 
       # Helm's `registry login` does not authenticate cosign; cosign needs its own
-      # GHCR token to push the `.sig`/`.sbom` accessors (same split as the
+      # GHCR token to push the `.sig`/`.att` accessors (same split as the
       # lightbridge image pipeline).
       - name: Cosign login to GHCR
         if: steps.select.outputs.charts != ''
@@ -191,8 +191,9 @@ jobs:
 
       # SBOM + cosign sign each chart published above (ADR-0132). SBOM is
       # best-effort — a chart that can't render standalone (orchestrators, leaves
-      # needing injected values) produces an empty inventory but is still signed.
-      - name: Sign charts (cosign) + attach SBOM
+      # needing injected values) produces an empty inventory but is still signed
+      # (via a signed in-toto SBOM attestation, not the deprecated attach).
+      - name: Sign charts (cosign) + attest SBOM
         if: steps.select.outputs.charts != ''
         run: |
           set -euo pipefail
@@ -211,25 +212,25 @@ jobs:
             if ! helm show chart "$OCI_REPO/$c" --version "$ver" >/dev/null 2>&1; then
               continue
             fi
-            # ── SBOM (best-effort; never blocks) ──
+            # ── SBOM attestation (keyless, best-effort predicate) ──
+            # `cosign attest` produces a SIGNED in-toto attestation carrying the
+            # CycloneDX SBOM as its predicate, so the SBOM is tamper-evident — unlike
+            # the deprecated `cosign attach sbom` (unsigned) / `cosign sign` (separate)
+            # pair. It both signs the artifact AND binds the SBOM to it in one step.
             sbom="/tmp/sbom/${c}-${ver}.sbom.json"
             if tools/oci-chart-sbom.sh "charts/$c" "sbom-$c" "$sbom" >/dev/null 2>&1 \
                && [[ -s "$sbom" ]] && jq -e . "$sbom" >/dev/null 2>&1; then
-              echo "  attaching SBOM: $(jq -c '{components:(.components|length)}' "$sbom")"
-              cosign attach sbom --sbom "$sbom" "$COSIGN_REPO/$c:$ver" || \
-                echo "  (warn) sbom attach failed for $c"
+              echo "  attesting SBOM: $(jq -c '{components:(.components|length)}' "$sbom")"
+              # DELIBERATE hard-fail: a failed attestation means the chart was not
+              # signed at all, silently regressing the ADR-0132 provenance guarantee.
+              # Runs after the chart is already pushed, so it cannot strand a release —
+              # it only marks the run red for an idempotent re-run.
+              cosign attest --yes --predicate "$sbom" --type cyclonedx "$COSIGN_REPO/$c:$ver"
             else
               echo "  (skip) no renderable SBOM for $c — signing artifact only"
+              # Fall back to a plain keyless signature when no SBOM could be rendered.
+              cosign sign --yes "$COSIGN_REPO/$c:$ver"
             fi
-            # ── keyless sign (DELIBERATE hard-fail) ──
-            # Unlike SBOM generation (best-effort, non-blocking), a sign failure
-            # fails the job on purpose: an unsigned chart silently regresses the
-            # whole provenance guarantee of ADR-0132. Signing runs only after the
-            # chart is already pushed, so a failure cannot strand a release — it
-            # only marks the run red so the operator knows the chart was not
-            # signed and can re-run (idempotent). If this ever starts blocking
-            # merges in practice, revisit and downgrade to a warn like the SBOM.
-            cosign sign --yes "$COSIGN_REPO/$c:$ver"
             echo "  signed $c → $ver"
           done
 
