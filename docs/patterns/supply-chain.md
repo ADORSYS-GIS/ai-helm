@@ -6,7 +6,8 @@ Every changed Helm chart published to `oci://ghcr.io/adorsys-gis/charts` by
 1. **Signed** with keyless Sigstore cosign (OIDC), identity bound to the
    publishing workflow.
 2. Given a **CycloneDX 1.5 SBOM** (best-effort) listing the container images its
-   rendered manifests deploy, attached via `cosign attach sbom`.
+   rendered manifests deploy, carried as the predicate of a **signed in-toto
+   attestation** via `cosign attest --type cyclonedx`.
 
 The **why** is [ADR-0132](../adr/0132-sbom-and-cosign-sign-oci-charts.md). This
 page is the **how** — what a consumer needs to verify a chart and its SBOM.
@@ -24,37 +25,62 @@ page is the **how** — what a consumer needs to verify a chart and its SBOM.
 For each changed chart `C` at version `V`, on a merge to `main`:
 
 - the OCI artifact `oci://ghcr.io/adorsys-gis/charts/C:V` (as before, ADR-0055);
-- a **cosign signature** over that artifact (`.sig` accessor);
-- an **SBOM accessor** (`.sbom`) holding `C-V.sbom.json`, when the chart could be
-  rendered (see below).
+- a **keyless `.sig` signature** on every chart (the uniform provenance baseline);
+- a **signed in-toto attestation** (`.att` accessor) whose `predicate` holds the
+  CycloneDX SBOM `C-V.sbom.json`, when the chart could be rendered (see below).
+
+So every chart carries a `.sig`; charts with a renderable SBOM additionally carry
+an `.att`.
 
 ## Verifying a published chart
 
+Charts are addressed by **version tag** (`ghcr.io/adorsys-gis/charts/<C>:<V>`),
+not digest. This matches the delivery model (ADR-0055/0082 — child Applications
+float on a semver range) and is the appropriate scheme here: cosign resolves the
+tag to its digest at verify time and binds the signature/attestation to those
+exact bytes, so the tag adds no tamper surface. The compliance angle of the
+platform roadmap (SOC 2 Type II / AIBOM) is about *content provenance* — which
+the signed SBOM attestation provides — not digest-addressing of the chart.
+
+Every chart carries a `.sig`, so the baseline check is `cosign verify` (works for
+**all** charts):
+
 ```bash
-# signature (keyless) — the identity is pinned to the publishing workflow
+# signature (keyless) — identity is pinned to the publishing workflow
 cosign verify \
   --certificate-identity-regexp '^https://github\.com/ADORSYS-GIS/ai-helm/\.github/workflows/publish-charts-oci\.yml@refs/heads/main$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  oci://ghcr.io/adorsys-gis/charts/<C>:<V>
+  ghcr.io/adorsys-gis/charts/<C>:<V>
+```
+
+For charts with a renderable SBOM (which also carry an `.att`), verify the SBOM
+attestation too:
+
+```bash
+# SBOM attestation (keyless) — only for charts that rendered an SBOM (.att present)
+cosign verify-attestation \
+  --certificate-identity-regexp '^https://github\.com/ADORSYS-GIS/ai-helm/\.github/workflows/publish-charts-oci\.yml@refs/heads/main$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --type cyclonedx \
+  ghcr.io/adorsys-gis/charts/<C>:<V>
 ```
 
 A successful run prints the certificate subjects + the verified digest.
 
-## Pulling the SBOM
+## Pulling the SBOM (attestation)
+
+The SBOM is carried as the **predicate of a signed in-toto attestation** (via
+`cosign attest --type cyclonedx`), so pulling it is done with the attestation
+commands:
 
 ```bash
-# stdout
-cosign download sbom oci://ghcr.io/adorsys-gis/charts/<C>:<V>
-
-# or fetch the raw accessor by name (image-mirror style)
-cosign download sbom \
-  --platform linux/amd64 \
-  oci://ghcr.io/adorsys-gis/charts/<C>:<V>
+# download the signed attestation (SBOM is the predicate)
+cosign download attestation ghcr.io/adorsys-gis/charts/<C>:<V>
 ```
 
-The SBOM lists one `container` component per unique image the chart's
-deterministically-rendered manifests reference (default tag `latest` when the
-manifest omits one).
+The attestation's `predicate` holds the CycloneDX SBOM listing one `container`
+component per unique image the chart's deterministically-rendered manifests
+reference (default tag `latest` when the manifest omits one).
 
 ## What "best-effort" SBOM means
 
