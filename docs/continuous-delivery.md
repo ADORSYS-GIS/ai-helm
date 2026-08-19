@@ -38,7 +38,9 @@ Workload **config** moved to the values repo too ([ADR-0056](./adr/0056-workload
   on `ai-helm-values` `main` → ArgoCD syncs.
 - **Chart-logic changes ship on merge**: merge to `ai-helm` `main` → the
   [`publish-charts-oci`](../.github/workflows/publish-charts-oci.yml) workflow publishes
-  the changed charts → child Applications floating on `argocd.chartVersionRange` pick
+  the changed charts (each **cosign-signed** with an attached **SBOM**, ADR-0132 — see
+  [`docs/patterns/supply-chain.md`](patterns/supply-chain.md) for consumer verification)
+  → child Applications floating on `argocd.chartVersionRange` pick
   up the newest version on the next reconcile.
 - **No more `release.sh`, no manual root repoint per release.** Rollback is `git revert`
   in `ai-helm-values` (+ optionally pin a chart version to roll a chart back).

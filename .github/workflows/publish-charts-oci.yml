@@ -28,6 +28,9 @@ on:
 permissions:
   contents: read
   packages: write
+  # Keyless cosign signing (Sigstore OIDC) — required for `cosign sign` to mint an
+  # ephemeral certificate via the Actions OIDC token (ADR-0132 supply-chain).
+  id-token: write
 
 concurrency:
   # Serialise publishes on main so two merges can't race the registry / counts.
@@ -151,6 +154,19 @@ jobs:
         if: steps.select.outputs.charts != ''
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
 
+      # Keyless cosign (Sigstore) — binaries only; no key management. Signing needs
+      # the `id-token: write` permission set on the job (see `permissions:` above).
+      - name: Install cosign
+        if: steps.select.outputs.charts != ''
+        uses: sigstore/cosign-installer@v3
+
+      # Helm's `registry login` does not authenticate cosign; cosign needs its own
+      # GHCR token to push the `.sig`/`.sbom` accessors (same split as the
+      # lightbridge image pipeline).
+      - name: Cosign login to GHCR
+        if: steps.select.outputs.charts != ''
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | cosign login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
       - name: Package & push changed charts
         if: steps.select.outputs.charts != ''
         run: |
@@ -171,6 +187,46 @@ jobs:
             helm dependency build "charts/$c"
             helm package "charts/$c" --version "$ver" --app-version "$ver" -d /tmp/pkg
             helm push "/tmp/pkg/${c}-${ver}.tgz" "$OCI_REPO"
+          done
+
+      # SBOM + cosign sign each chart published above (ADR-0132). SBOM is
+      # best-effort — a chart that can't render standalone (orchestrators, leaves
+      # needing injected values) produces an empty inventory but is still signed.
+      - name: Sign charts (cosign) + attach SBOM
+        if: steps.select.outputs.charts != ''
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sbom
+          for c in ${{ steps.select.outputs.charts }}; do
+            base=$(yq e '.version' "charts/$c/Chart.yaml")
+            mm="${base%.*}"
+            patch=$(git rev-list --count HEAD -- "charts/$c")
+            ver="${mm}.${patch}"
+            # sign charts that exist at this version (idempotent re-sign — a
+            # publish_all resync will sign charts already published in a prior run)
+            if ! helm show chart "$OCI_REPO/$c" --version "$ver" >/dev/null 2>&1; then
+              continue
+            fi
+            # ── SBOM (best-effort; never blocks) ──
+            sbom="/tmp/sbom/${c}-${ver}.sbom.json"
+            if tools/oci-chart-sbom.sh "charts/$c" "sbom-$c" "$sbom" >/dev/null 2>&1 \
+               && [[ -s "$sbom" ]] && jq -e . "$sbom" >/dev/null 2>&1; then
+              echo "  attaching SBOM: $(jq -c '{components:(.components|length)}' "$sbom")"
+              cosign attach sbom --sbom "$sbom" "$OCI_REPO/$c:$ver" || \
+                echo "  (warn) sbom attach failed for $c"
+            else
+              echo "  (skip) no renderable SBOM for $c — signing artifact only"
+            fi
+            # ── keyless sign (DELIBERATE hard-fail) ──
+            # Unlike SBOM generation (best-effort, non-blocking), a sign failure
+            # fails the job on purpose: an unsigned chart silently regresses the
+            # whole provenance guarantee of ADR-0132. Signing runs only after the
+            # chart is already pushed, so a failure cannot strand a release — it
+            # only marks the run red so the operator knows the chart was not
+            # signed and can re-run (idempotent). If this ever starts blocking
+            # merges in practice, revisit and downgrade to a warn like the SBOM.
+            cosign sign --yes "$OCI_REPO/$c:$ver"
+            echo "  signed $c → $ver"
           done
 
       - name: No charts to publish
