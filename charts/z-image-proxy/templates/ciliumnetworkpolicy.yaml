@@ -14,12 +14,26 @@ spec:
     # Allow the image-gen caller (LibreChat in the converse namespace)
     - fromEndpoints:
         - matchLabels:
-            io.kubernetes.pod.namespace: {{ .Values.allowFromNamespace | quote }}
+            k8s:io.kubernetes.pod.namespace: {{ .Values.allowFromNamespace | quote }}
   egress:
+    # DNS so ngx.fetch / variable proxy_pass can resolve the upstream hostname
+    # at request time (the proxy is in a default-deny egress namespace).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
     # Allow outbound to z-image-turbo (same namespace, any pod)
     - toEndpoints:
         - matchLabels:
-            io.kubernetes.pod.namespace: {{ .Release.Namespace }}
+            k8s:io.kubernetes.pod.namespace: {{ .Release.Namespace }}
       toPorts:
         - ports:
             - port: "8080"
