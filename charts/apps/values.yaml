@@ -1194,6 +1194,27 @@ applications:
     destination:
       namespace: converse
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # z-image-proxy — nginx/njs sidecar-free proxy in front of z-image-turbo.
+  # Injects `response_format: b64_json` into /v1/images/generations requests so
+  # LibreChat's image_gen_oai tool (which only reads data[0].b64_json) gets the
+  # base64 payload it expects. LocalAI defaults to returning a URL; this proxy
+  # is the adapter. Real upstream URL comes from ai-helm-values (ticket #843).
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: z-image-proxy
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: z-image-proxy
+    destination:
+      namespace: inference
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Self-hosted model on the home GPU (ADR-0022) ---
   # ⚠️ LEGACY GENERATION (superseded by charts/inference above, ADR-0094).
   # These per-model charts each serve one model from the OTHER cluster

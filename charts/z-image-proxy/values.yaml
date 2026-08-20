@@ -1,0 +1,43 @@
+# z-image-proxy — injects response_format: b64_json into LocalAI image requests.
+#
+# ⚠️ DEPLOYMENT-SPECIFIC: `upstream` is left empty here; real values come from
+# ai-helm-values (environments/prod/values/z-image-proxy.yaml). With empty
+# defaults the chart renders a no-op ConfigMap — see ci/lint-values.yaml.
+
+# The LocalAI service to proxy to.
+# e.g. http://z-image-turbo.inference.svc.cluster.local:8080
+upstream: ""
+
+# Port the proxy listens on (Service + container).
+port: 8080
+
+image:
+  repository: docker.io/nginxinc/nginx-unprivileged
+  tag: "1.27-alpine"
+  pullPolicy: IfNotPresent
+
+replicas: 1
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 48Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 101   # nginx user in nginxinc/nginx-unprivileged
+  fsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Namespace allowed to call this proxy (for the CiliumNetworkPolicy ingress rule).
+allowFromNamespace: "converse"

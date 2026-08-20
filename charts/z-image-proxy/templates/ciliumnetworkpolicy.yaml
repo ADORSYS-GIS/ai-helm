@@ -1,0 +1,27 @@
+{{- if .Values.upstream }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "z-image-proxy.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "z-image-proxy.selectorLabels" . | nindent 6 }}
+  ingress:
+    # Allow the image-gen caller (LibreChat in the converse namespace)
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: {{ .Values.allowFromNamespace | quote }}
+  egress:
+    # Allow outbound to z-image-turbo (same namespace, any pod)
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: {{ .Release.Namespace }}
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+{{- end }}
