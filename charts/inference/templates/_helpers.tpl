@@ -499,8 +499,16 @@ modelConfig: |
 {{- . | nindent 2 }}
 {{- end }}
 
+{{- /* Fleet ingress policy (ADR-0095), with a per-model override so one model
+       can admit an extra caller — in practice LibreChat's IMAGE_GEN talking
+       DIRECTLY to z-image-turbo, bypassing the gateway to avoid the extproc
+       b64 issue (ticket #843) — without weakening the fleet for every other
+       model. Per-model wins key-by-key, so an override that only sets
+       `allowFromNamespaces` REPLACES the fleet list: include the full list
+       (envoy-gateway-system, observability, …) plus the extra caller. */ -}}
+{{- $np := merge (deepCopy ($cfg.networkPolicy | default dict)) (deepCopy $d.networkPolicy) -}}
 networkPolicy:
-{{- toYaml $d.networkPolicy | nindent 2 }}
+{{- toYaml $np | nindent 2 }}
 
 {{/* An engine profile may declare `metrics: false` when the server exposes no
      Prometheus endpoint at all (zimage). Scraping it anyway would poll a 404
