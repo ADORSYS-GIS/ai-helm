@@ -11,9 +11,12 @@ upstream: ""
 # Port the proxy listens on (Service + container).
 port: 8080
 
-# Resolver used by ngx.fetch to resolve the upstream hostname at runtime.
-# Defaults to the Kubernetes cluster DNS service (CoreDNS/kube-dns).
-resolver: "kube-dns.kube-system.svc.cluster.local valid=30s ipv6=off"
+# Resolver used by ngx.fetch / variable proxy_pass to resolve the upstream
+# hostname at REQUEST time. Must be the cluster DNS IP (kube-dns ClusterIP),
+# NOT a hostname: nginx resolves a hostname here at startup, which races with
+# DNS readiness in Kubernetes and crash-loops the pod ("host not found in
+# resolver"). Set to your cluster's kube-dns ClusterIP (here: 10.43.0.10).
+resolver: "10.43.0.10 valid=30s ipv6=off"
 
 # Max size of the upstream b64_json image response. The two values MUST agree:
 #   - maxResponseBodySize      → nginx `js_fetch_max_response_buffer_size` (size string)
