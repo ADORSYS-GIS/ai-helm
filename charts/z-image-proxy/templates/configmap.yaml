@@ -7,25 +7,57 @@ metadata:
     {{- include "z-image-proxy.labels" . | nindent 4 }}
 data:
   # njs script: inject response_format:b64_json into image generation requests.
-  # Runs entirely in nginx worker memory — no subprocess, no Python, no extra
-  # latency beyond a JSON parse + stringify of a small request body (<1 KB).
+  #
+  # Why a full js_content + ngx.fetch handler (not js_body_filter / r.requestText):
+  #   - njs has NO directive that rewrites the REQUEST body before proxy_pass.
+  #     js_body_filter is a RESPONSE body filter; r.requestText is a read-only
+  #     getter (assignment throws in strict mode). So the only reliable way to
+  #     change what the upstream receives is to read the body, modify it, and
+  #     re-POST it ourselves with ngx.fetch().
+  #   - The upstream response (a b64_json image, up to a few MB) is buffered in
+  #     worker memory and passed through unchanged. Buffer caps are raised via
+  #     js_fetch_max_response_buffer_size (nginx) + max_response_body_size (fetch).
   inject.js: |
-    function injectResponseFormat(r) {
-      var body = r.requestText;
+    async function injectResponseFormat(r) {
+      // Read the client request body (r.requestText is available in js_content).
+      var raw = r.requestText || '{}';
       var obj;
       try {
-        obj = JSON.parse(body);
+        obj = JSON.parse(raw);
       } catch (e) {
-        // Not JSON — pass through unchanged
-        r.internalRedirect('@upstream');
+        r.return(400, JSON.stringify({
+          error: { message: 'invalid JSON request body', type: 'invalid_request_error' }
+        }));
         return;
       }
-      // Only inject if the client didn't already set it
+
+      // Inject response_format: b64_json only if the client didn't already set it.
       if (!obj.response_format) {
         obj.response_format = 'b64_json';
       }
-      r.requestText = JSON.stringify(obj);
-      r.internalRedirect('@upstream');
+
+      // Forward the modified body to the upstream, preserving auth + content type.
+      var reply;
+      try {
+        reply = await ngx.fetch('{{ .Values.upstream }}/v1/images/generations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': r.headersIn.Authorization || ''
+          },
+          body: JSON.stringify(obj),
+          max_response_body_size: {{ .Values.maxResponseBodySizeBytes | int }}
+        });
+      } catch (e) {
+        r.return(502, JSON.stringify({
+          error: { message: 'upstream error: ' + e, type: 'upstream_error' }
+        }));
+        return;
+      }
+
+      // Pass the upstream response through unchanged (status + body).
+      var text = await reply.text();
+      r.return(reply.status, text);
     }
     export default { injectResponseFormat };
 
@@ -34,7 +66,7 @@ data:
     error_log /dev/stderr warn;
     pid /tmp/nginx.pid;
 
-    load_module modules/ngx_http_js_module.so;
+    load_module /usr/lib/nginx/modules/ngx_http_js_module.so;
 
     events { worker_connections 64; }
 
@@ -47,28 +79,36 @@ data:
       js_path /etc/nginx/njs/;
       js_import inject from inject.js;
 
+      # ngx.fetch resolves the upstream hostname via this resolver (cluster DNS).
+      resolver {{ .Values.resolver }};
+
+      # b64_json image responses can be several MB — raise the fetch buffer cap.
+      js_fetch_max_response_buffer_size {{ .Values.maxResponseBodySize }};
+
       server {
         listen {{ .Values.port }};
 
-        # ── Image generation: inject response_format: b64_json ──────────────
+        # ── Liveness/readiness ────────────────────────────────────────────────
+        location = /healthz {
+          return 200 'ok';
+        }
+
+        # ── Image generation: inject response_format: b64_json ───────────────
         location = /v1/images/generations {
           js_content inject.injectResponseFormat;
         }
 
         # ── Everything else: pass through unchanged ─────────────────────────
-        location @upstream {
-          proxy_pass {{ .Values.upstream }};
+        # Use a variable in proxy_pass so the upstream hostname is resolved at
+        # request time via the `resolver` above. A static hostname here is
+        # resolved at nginx startup and fails with "host not found in upstream"
+        # in Kubernetes (ndots/search-domain handling).
+        location / {
+          set $upstream {{ .Values.upstream }};
+          proxy_pass $upstream;
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
           proxy_read_timeout 120s;  # generation takes up to ~35 s
-          proxy_send_timeout 120s;
-        }
-
-        location / {
-          proxy_pass {{ .Values.upstream }};
-          proxy_set_header Host $host;
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_read_timeout 120s;
           proxy_send_timeout 120s;
         }
       }

@@ -6,7 +6,8 @@ description: >-
   forwarding to LocalAI. Required because LibreChat's image_gen_oai tool
   (OpenAI SDK v5) only reads data[0].b64_json from the response, but LocalAI
   defaults to returning a URL. The proxy adds exactly one JSON key to the
-  request body — no buffering of the response, no base64 work on the proxy side.
+  request body via a js_content + ngx.fetch handler (njs has no request-body
+  rewrite hook), buffering the upstream b64_json response in worker memory.
   See ticket #843.
 type: application
 version: 0.1.0
