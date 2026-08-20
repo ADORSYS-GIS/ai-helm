@@ -73,8 +73,12 @@ data:
     http {
       access_log /dev/stdout combined;
       client_max_body_size 4m;      # image request bodies are tiny
+      # All temp paths under /tmp (writable emptyDir) — root FS is read-only.
       client_body_temp_path /tmp/nginx-client-body;
       proxy_temp_path       /tmp/nginx-proxy;
+      fastcgi_temp_path     /tmp/nginx-fastcgi;
+      uwsgi_temp_path       /tmp/nginx-uwsgi;
+      scgi_temp_path        /tmp/nginx-scgi;
 
       js_path /etc/nginx/njs/;
       js_import inject from inject.js;
