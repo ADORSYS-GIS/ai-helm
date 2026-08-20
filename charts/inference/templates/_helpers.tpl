@@ -506,7 +506,7 @@ modelConfig: |
        model. Per-model wins key-by-key, so an override that only sets
        `allowFromNamespaces` REPLACES the fleet list: include the full list
        (envoy-gateway-system, observability, …) plus the extra caller. */ -}}
-{{- $np := merge (deepCopy ($cfg.networkPolicy | default dict)) (deepCopy $d.networkPolicy) -}}
+{{- $np := merge (deepCopy ($cfg.networkPolicy | default dict)) (deepCopy $d.networkPolicy) }}
 networkPolicy:
 {{- toYaml $np | nindent 2 }}
 
