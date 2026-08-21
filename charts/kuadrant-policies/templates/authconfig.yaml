@@ -14,6 +14,20 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 
+  {{- /*
+  Top-level gate: overall conditions for whether Authorino enforces this
+  AuthConfig at all for a given request (evaluated in addition to `hosts`).
+  If omitted, the AuthConfig applies to every request on its host(s). If
+  present, ALL conditions must match, or Authorino skips the whole AuthConfig
+  and returns status OK — distinct from the per-step `when:` blocks emitted
+  by the `kuadrant-policies.authStep` helper below, which gate individual
+  metadata/authorization steps rather than the AuthConfig as a whole.
+  */}}
+  {{- with $config.when }}
+  when:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
   {{- with $config.authentication }}
   authentication:
     {{- toYaml . | nindent 4 }}
