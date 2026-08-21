@@ -1,7 +1,7 @@
 # Handover — z-turbo → LibreChat image generation (ticket #843)
 
 > **Purpose:** handover so this work can continue in a fresh chat. Written
-> 2026-08-20, last updated 2026-08-20 (session 2 — **COMPLETE**).
+> 2026-08-20, last updated 2026-08-21 (session 3 — **COMPLETE**).
 
 ---
 
@@ -15,6 +15,7 @@ LibreChat can generate images via z-image-turbo. The full chain is verified:
 | URL shape in response | ✅ service hostname (not `localhost`) |
 | Image fetchable from `converse` | ✅ 200 OK, 93 KB PNG |
 | LibreChat `IMAGE_GEN` env deployed | ✅ pointing at z-turbo |
+| **z-image-proxy** (b64 injection) | ✅ deployed, end-to-end verified (see §9) |
 
 The only remaining work is the **S3 proxy** (ticket #843 original scope) — see §8.
 
@@ -168,3 +169,45 @@ kubectl get deploy librechat-app -n converse -o jsonpath='{.spec.template.spec.c
 # Catalog check (from ai-helm-values)
 AI_HELM_PATH=/home/koufan/oc/ai-helm ./tools/check-model-catalogs.sh
 ```
+
+---
+
+## 9. z-image-proxy — b64_json injection (session 3, DONE)
+
+**Problem:** LibreChat's `image_gen_oai` tool (OpenAI SDK v5) reads
+`data[0].b64_json` exclusively, but LocalAI defaults to returning a **URL**.
+LocalAI env vars couldn't force b64, and LibreChat can't be made to send
+`response_format`. So a thin proxy injects `response_format: b64_json` into the
+request body before it reaches z-turbo.
+
+**Chart:** `charts/z-image-proxy` (nginx/njs), deployed in `inference` ns.
+LibreChat `IMAGE_GEN_OAI_BASEURL` → `http://z-image-proxy.inference.svc.cluster.local:8080/v1`.
+
+**How it works (and the njs gotchas):**
+- njs has **no directive that rewrites the request body** before `proxy_pass`.
+  `js_body_filter` is a *response* filter; `r.requestText` is a read-only getter
+  (assignment throws in strict mode). So the handler is a full `js_content` +
+  `ngx.fetch()`: read `r.requestText`, inject `response_format:b64_json` if
+  absent, re-POST to z-turbo, pass the response through.
+- `ngx.fetch` needs a `resolver` and buffers the response in worker memory
+  (raise `js_fetch_max_response_buffer_size` + `max_response_body_size`).
+
+**Fixes required to get it running (all pushed to `main`):**
+1. `js_content`+`ngx.fetch` rewrite (the committed version used the broken
+   `r.requestText = ...` / `js_body_filter` approach).
+2. Resolver must be the **cluster DNS IP** (`10.43.0.10`), NOT a hostname —
+   nginx resolves a resolver hostname at startup, racing DNS readiness and
+   crash-looping the pod (`host not found in resolver`).
+3. All nginx temp paths under `/tmp` (root FS is read-only; fastcgi/uwsgi/scgi
+   defaulted to `/var/cache/nginx` → `mkdir ... Read-only file system`).
+4. Proxy CNP needs **DNS egress** (kube-system:53) so `ngx.fetch` can resolve
+   the upstream at request time (default-deny egress ns).
+5. **z-image-turbo's own CNP** (`z-image-turbo-allow`) only admitted
+   envoy-gateway-system/observability/converse — added `inference` so the proxy
+   (same ns) isn't dropped (`nc` showed `punt!`; z-turbo logged nothing).
+
+**Verified end-to-end** (POST through the proxy, client sends no
+`response_format`): HTTP 200, `data[0].b64_json` present (base64 PNG). ✅
+
+**Commits:** ai-helm `da2ebc68`, `22209c2a`, `a480dc56`, `3239d982`;
+ai-helm-values `1020843`, `a4a30ae`, `8354e6f`.
