@@ -1,0 +1,58 @@
+name: Validate Coder Templates
+
+# PR-gate for the declarative Coder template delivery (ADR-0124 — see
+# terraform/coder/README.md): validate the `coder/coderd` Terraform config AND
+# each template source without touching Coder. Secrets not needed.
+#
+# The deploy workflow's guard job requires this workflow to have passed for the
+# merged PR, so this must trigger on ANY change that can trigger a deploy —
+# including changes to the deploy workflow itself.
+
+on:
+  pull_request:
+    paths:
+      - '.coder/templates/**'
+      - 'terraform/coder/**'
+      - '.github/workflows/validate-coder-templates.yml'
+      - '.github/workflows/deploy-coder-templates.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-coder-templates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest   # ai-helm is public; GH-hosted runners are free here
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: "1.15"   # >= 1.10 for backend use_lockfile (S3-native locking); current line
+
+      - name: Terraform Format
+        run: terraform fmt -check -recursive terraform/coder
+
+      - name: Terraform Init (no backend)
+        run: |
+          cd terraform/coder
+          terraform init -backend=false
+
+      - name: Terraform Validate (terraform/coder)
+        run: |
+          cd terraform/coder
+          terraform validate
+
+      - name: Validate template sources
+        run: |
+          terraform fmt -check -recursive .coder/templates
+          for d in .coder/templates/*/; do
+            echo "validating $d"
+            terraform -chdir="$d" init -backend=false
+            terraform -chdir="$d" validate
+          done
