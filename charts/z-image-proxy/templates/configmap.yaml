@@ -56,6 +56,10 @@ data:
       }
 
       // Pass the upstream response through unchanged (status + body).
+      // The OpenAI SDK only parses the body as JSON when Content-Type is
+      // application/json; r.return() defaults to text/plain, which made the
+      // SDK return the raw string and resp.data undefined. Set it explicitly.
+      r.headersOut['Content-Type'] = 'application/json';
       var text = await reply.text();
       r.return(reply.status, text);
     }
