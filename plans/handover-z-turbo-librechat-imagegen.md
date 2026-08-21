@@ -209,5 +209,15 @@ LibreChat `IMAGE_GEN_OAI_BASEURL` → `http://z-image-proxy.inference.svc.cluste
 **Verified end-to-end** (POST through the proxy, client sends no
 `response_format`): HTTP 200, `data[0].b64_json` present (base64 PNG). ✅
 
-**Commits:** ai-helm `da2ebc68`, `22209c2a`, `a480dc56`, `3239d982`;
+**LibreChat-side fix (session 4):** the image was generated but never rendered
+because the proxy returned `Content-Type: text/plain`. The OpenAI SDK
+(`images.generate`) only parses the body as JSON when the Content-Type is
+`application/json`, so it returned the raw string and `resp.data` was
+undefined → `image_gen_oai` failed with "Cannot read properties of undefined
+(reading '0')". Fixed by setting `r.headersOut['Content-Type'] =
+'application/json'` in the njs handler (and restarting the pod so njs reloads
+the script — a live ConfigMap mount does NOT reload njs, which loads scripts
+at startup).
+
+**Commits:** ai-helm `da2ebc68`, `22209c2a`, `a480dc56`, `3239d982`, `70f9bc49`;
 ai-helm-values `1020843`, `a4a30ae`, `8354e6f`.
