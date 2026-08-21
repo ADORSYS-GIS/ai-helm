@@ -588,6 +588,21 @@ codeapi:
       # version. Fixed at the Application level instead.
       pod:
         restartPolicy: Never
+        # Co-locate with sandbox-runner (the only other consumer of the shared
+        # `packages` PVC). That PVC is ReadWriteOnce on hcloud-volumes, so it
+        # can attach to a single node only — the node that holds it is where
+        # sandbox-runner lives (it mounts the same volume read-only at
+        # /host-packages). Without this affinity the Job pod can be scheduled
+        # onto any node and then sits in ContainerCreating forever, unable to
+        # attach the RWO volume from a second node. (Live-incident fix, Story
+        # #995 / ticket #1032 — see issue for the evidence.)
+        affinity:
+          podAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/controller: sandbox-runner
+                topologyKey: kubernetes.io/hostname
       containers:
         package-init:
           image:
