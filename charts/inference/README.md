@@ -50,22 +50,36 @@ the whole reason this chart exists rather than a values file per model.
 | `defaults.storageClassName` | `longhorn` — GPU-nodes-only and *not* the cluster default, so it must be named (ADR-0092). |
 | `defaults.hfToken` | ESO-backed HuggingFace token for the seed Job. |
 | `defaults.networkPolicy` | Who may reach a model: the gateway and the metrics scraper. |
-| `defaults.lmcacheEnv` | LMCache tuning applied when a vLLM model opts in. |
-| `defaults.engines.<engine>` | Image, health path and security contexts per engine. |
-| `models.<name>` | The per-model entry: `engine`, `weights`, `serving`, `resources`. |
+| `defaults.lmcacheEnv` | LMCache tuning applied when a vLLM model uses the in-process `LMCacheConnectorV1`. |
+| `defaults.engines.<engine>` | Image, health path and security contexts per engine. `defaults.engines.vllm.lmcacheMp.image` supplies the default `lmcache/standalone` image for `LMCacheMPConnector`. |
+| `models.<name>` | The per-model entry: `engine`, `weights`, `serving`, `resources`, optional `lmcache`. |
 
 ## Engines
 
 | | `llamacpp` | `vllm` |
-|---|---|---|
+|---|---|---|---|
 | Weights | GGUF (one file, fetched by `include` glob) | safetensors (AWQ / GPTQ / FP8) |
 | Best for | GGUF-only releases, brand-new architectures | throughput, prefix reuse via LMCache |
-| Extras | — | opt-in `lmcache.enabled`, `/dev/shm` volume |
+| Extras | — | opt-in `lmcache.enabled`, `/dev/shm` volume; optional `LMCacheMPConnector` sidecar for GDN hybrids |
 
 Which to pick is an inference decision, recorded in `inference-ops`
 `docs/adr/0002-engine-selection-matrix.md`. One rule that is not negotiable:
 **do not serve GGUF on vLLM** — its GGUF loader is roughly an 8× throughput
 regression versus a Marlin/AWQ kernel.
+
+### LMCache connectors
+
+The chart supports two LMCache connectors for vLLM:
+
+| Connector | When to use | Sidecar | Required flags |
+|---|---|---|---|
+| `LMCacheConnectorV1` (default) | Dense / full-attention models | none | `lmcache.enabled: true` |
+| `LMCacheMPConnector` | Gated DeltaNet / Mamba hybrids (e.g. Qwen3.5-2B) | `lmcache/standalone` MP server | `serving.mambaCacheMode`, `serving.maxNumBatchedTokens`, `lmcache.mp.chunkSize/image` |
+
+The legacy `LMCacheConnectorV1` disables vLLM's hybrid KV cache manager and crashes
+GDN hybrids (ticket #973). Those models MUST use `LMCacheMPConnector`, which
+keeps the hybrid manager enabled and runs LMCache as a same-pod multiprocess
+server. See `inference-ops` `docs/how-to/validate-qwen3.5-2b-hybrid-cache.md`.
 
 ## Verification
 

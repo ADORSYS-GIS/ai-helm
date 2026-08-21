@@ -213,6 +213,34 @@ models:
       cpuLimit: '8'
       memoryRequest: 8Gi
       memoryLimit: 16Gi
+  ci-vllm-mp:
+    enabled: true
+    engine: vllm
+    weights: *id001
+    serving: &id005
+      contextSize: 32768
+      parallel: 4
+      quantization: awq
+      dtype: float16
+      toolCallParser: hermes
+      kvCacheDtype: auto
+      mambaCacheMode: align
+      maxNumBatchedTokens: 1087
+    lmcache: &id006
+      enabled: true
+      connector: LMCacheMPConnector
+      mp:
+        image:
+          repository: lmcache/standalone
+          tag: nightly-2026-08-18
+        chunkSize: 544
+        l1SizeGb: 8
+        separateObjectGroups: true
+        evictionPolicy: LRU
+        resources:
+          requests: {cpu: "1", memory: 1Gi}
+          limits: {cpu: "2", memory: 12Gi}
+    resources: *id004
   ci-localai:
     enabled: true
     engine: localai

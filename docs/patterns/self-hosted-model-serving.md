@@ -77,12 +77,25 @@ helm template x charts/inference-server -f /tmp/child.yaml -n inference
 | API key | file (`--api-key-file`) | env `VLLM_API_KEY` | env `API_KEY` |
 | `/metrics` | yes (`llamacpp:*`) | yes (`vllm:*`) | yes (behind its admin key) |
 | Configured by | flags | flags | **environment** |
-| Containers | **1** | **1** | **1** |
+| Containers | **1** | **1** (2 with `LMCacheMPConnector`) | **1** |
 
 **The weight format selects the engine, not preference** — `inference-ops`
 ADR-0002 for text, ADR-0004 for images. Do not serve GGUF on vLLM (~8× throughput
 regression), and do not look for a diffusion path in either text engine — there
 isn't one.
+
+#### LMCache connectors (vLLM)
+
+The chart supports two LMCache connectors:
+
+| Connector | Model type | Sidecar | Catalog keys |
+|---|---|---|---|
+| `LMCacheConnectorV1` (default) | Dense / full-attention | none | `lmcache.enabled: true` |
+| `LMCacheMPConnector` | Gated DeltaNet / Mamba hybrids (e.g. Qwen3.5-2B) | `lmcache/standalone` | `lmcache.connector: LMCacheMPConnector`, `lmcache.mp.chunkSize/image`, `serving.mambaCacheMode`, `serving.maxNumBatchedTokens` |
+
+`LMCacheConnectorV1` disables vLLM's hybrid KV cache manager and crashes GDN
+hybrids (ticket #973). Those models MUST use `LMCacheMPConnector`. See
+`inference-ops` `docs/how-to/validate-qwen3.5-2b-hybrid-cache.md`.
 
 ### KV-cache precision (ADR-0118)
 

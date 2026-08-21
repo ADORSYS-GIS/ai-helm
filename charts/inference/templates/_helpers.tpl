@@ -182,6 +182,10 @@ Output: a YAML list of strings.
 {{- $apiKey := .apiKey -}}
 {{- $sec := .security | default dict -}}
 {{- $args := list -}}
+{{- $lmcache := .lmcache | default dict -}}
+{{- $lmcacheEnabled := default false $lmcache.enabled -}}
+{{- $lmcacheConnector := default "LMCacheConnectorV1" $lmcache.connector -}}
+{{- $isMp := and $lmcacheEnabled (eq $lmcacheConnector "LMCacheMPConnector") -}}
 {{- if eq .engine "llamacpp" -}}
   {{- $args = concat $args (list
       "--model" (printf "%s/model.gguf" $dir)
@@ -241,11 +245,12 @@ Output: a YAML list of strings.
   {{- /* Prefix caching. vLLM's Automatic Prefix Caching (APC) has been default-ON
          since v0.6, but we pin it EXPLICITLY so a nightly image bump cannot
          silently flip it off. This is the engine-internal prefix cache (GPU KV
-         reuse) — NO host-RAM offload. LMCache (`--kv-transfer-config`, opt-in
-         per model via the `lmcache:` block) is a separate, offload-based path
-         that is OFF for qwen3-5-2b: it disables vLLM's hybrid KV cache manager,
-         which the hybrid Gated DeltaNet + Mamba architecture requires (verified
-         crash, ticket #973). */ -}}
+         reuse). LMCache (`--kv-transfer-config`, opt-in per model via the
+         `lmcache:` block) is a separate, offload-based path. The legacy in-process
+         connector (`LMCacheConnectorV1`) disables vLLM's hybrid KV cache manager
+         and crashes Gated DeltaNet / Mamba hybrids (verified crash, ticket #973);
+         those models MUST use `lmcache.connector: LMCacheMPConnector` with a
+         standalone LMCache server sidecar and `--mamba-cache-mode align`. */ -}}
   {{- $args = concat $args (list "--enable-prefix-caching") -}}
   {{- with $s.quantization -}}
     {{- $args = concat $args (list "--quantization" .) -}}
@@ -285,8 +290,18 @@ Output: a YAML list of strings.
   {{- with $s.limitMmPerPrompt -}}
     {{- $args = concat $args (list "--limit-mm-per-prompt" (toJson .)) -}}
   {{- end -}}
-  {{- if .lmcache -}}
-    {{- $args = concat $args (list "--kv-transfer-config" "{\"kv_connector\":\"LMCacheConnectorV1\",\"kv_role\":\"kv_both\"}") -}}
+  {{- with $s.mambaCacheMode -}}
+    {{- $args = concat $args (list "--mamba-cache-mode" .) -}}
+  {{- end -}}
+  {{- with $s.maxNumBatchedTokens -}}
+    {{- $args = concat $args (list "--max-num-batched-tokens" (toString .)) -}}
+  {{- end -}}
+  {{- if $lmcacheEnabled -}}
+    {{- if $isMp -}}
+      {{- $args = concat $args (list "--kv-transfer-config" "{\"kv_connector\":\"LMCacheMPConnector\",\"kv_role\":\"kv_both\",\"kv_connector_module_path\":\"lmcache.integration.vllm.lmcache_mp_connector\",\"kv_connector_extra_config\":{\"lmcache.mp.host\":\"tcp://localhost\",\"lmcache.mp.port\":5555}}") -}}
+    {{- else -}}
+      {{- $args = concat $args (list "--kv-transfer-config" "{\"kv_connector\":\"LMCacheConnectorV1\",\"kv_role\":\"kv_both\"}") -}}
+    {{- end -}}
   {{- end -}}
   {{- /* Hardening (ADR-0097). vLLM ships NO browser UI, so disableWebUI is a
          no-op here — the policy is satisfied by the engine's own shape rather
@@ -330,6 +345,67 @@ Output: a YAML list of strings.
 {{- range $args }}
 - {{ . | quote }}
 {{- end }}
+{{- end -}}
+
+
+{{/*
+inference.lmcacheMpContainer — LMCache multiprocess server sidecar values.
+
+Input: dict "name" <modelName> "lmcache" <lmcacheConfig> "eng" <engineProfile> "sec" <security>
+Output: YAML container block for bjw-template.
+*/}}
+{{- define "inference.lmcacheMpContainer" -}}
+{{- $name := .name -}}
+{{- $lmcache := .lmcache | default dict -}}
+{{- $mp := $lmcache.mp | default dict -}}
+{{- $defaultImage := ((.eng).lmcacheMp | default dict).image | default dict -}}
+{{- $image := merge (deepCopy ($mp.image | default dict)) (deepCopy $defaultImage) -}}
+{{- $chunkSize := required "lmcache.mp.chunkSize is required for LMCacheMPConnector" $mp.chunkSize -}}
+{{- $l1SizeGb := default 8 $mp.l1SizeGb -}}
+{{- $evictionPolicy := default "LRU" $mp.evictionPolicy -}}
+{{- $separateObjectGroups := default true $mp.separateObjectGroups -}}
+{{- $resources := $mp.resources | default (dict "requests" (dict "cpu" "1" "memory" "1Gi") "limits" (dict "cpu" "2" "memory" "12Gi")) -}}
+lmcache:
+  image:
+    repository: {{ required "lmcache.mp.image.repository is required for LMCacheMPConnector" $image.repository | quote }}
+    tag: {{ required "lmcache.mp.image.tag is required for LMCacheMPConnector" $image.tag | quote }}
+    pullPolicy: {{ default "IfNotPresent" $image.pullPolicy | quote }}
+  command: ["lmcache", "server"]
+  args:
+    - "--host"
+    - "0.0.0.0"
+    - "--port"
+    - "5555"
+    - "--http-port"
+    - "8081"
+    - "--chunk-size"
+    - {{ $chunkSize | quote }}
+    {{- if $separateObjectGroups }}
+    - "--separate-object-groups"
+    {{- end }}
+    - "--l1-size-gb"
+    - {{ $l1SizeGb | quote }}
+    - "--eviction-policy"
+    - {{ $evictionPolicy | quote }}
+  ports:
+    - name: zmq
+      containerPort: 5555
+    - name: lmcache-http
+      containerPort: 8081
+    - name: metrics
+      containerPort: 9090
+  probes:
+    readiness:
+      enabled: true
+      custom: true
+      spec:
+        httpGet: { path: /healthcheck, port: 8081 }
+        initialDelaySeconds: 5
+        periodSeconds: 5
+  securityContext:
+    {{- toYaml (.eng.containerSecurityContext | default dict) | nindent 4 }}
+  resources:
+    {{- toYaml $resources | nindent 4 }}
 {{- end -}}
 
 
@@ -406,8 +482,8 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
        on this hardware: LMCache serializes KV tensors as stored on the GPU,
        and its fp8 path has never been exercised here. Fail the render rather
        than letting a silent misconfiguration through. */ -}}
-{{- $lmcache := $cfg.lmcache | default dict -}}
-{{- if and (eq $engine "vllm") $kvCacheDtype (ne $kvCacheDtype "auto") ($lmcache.enabled | default false) -}}
+{{- $lmcacheCfg := $cfg.lmcache | default dict -}}
+{{- if and (eq $engine "vllm") $kvCacheDtype (ne $kvCacheDtype "auto") ($lmcacheCfg.enabled | default false) -}}
 {{- fail (printf "model %s: fp8 KV cache (kvCacheDtype: %s) + LMCache is UNVERIFIED on this fleet — set kvCacheDtype: auto to use LMCache, or disable LMCache" $name $kvCacheDtype) -}}
 {{- end -}}
 {{- $res := $cfg.resources | default dict -}}
@@ -424,7 +500,24 @@ Output: YAML (unindented; the caller indents it into the ApplicationSet element)
 {{- $storagePath = $w.storagePath | default $name -}}
 {{- end -}}
 {{- $dir := printf "/models/%s" $storagePath -}}
-{{- $lmcache := and (eq $engine "vllm") (default false ($cfg.lmcache | default dict).enabled) -}}
+{{- $lmcacheCfg := $cfg.lmcache | default dict -}}
+{{- $lmcacheEnabled := and (eq $engine "vllm") (default false $lmcacheCfg.enabled) -}}
+{{- $lmcacheConnector := default "LMCacheConnectorV1" $lmcacheCfg.connector -}}
+{{- $isMp := and $lmcacheEnabled (eq $lmcacheConnector "LMCacheMPConnector") -}}
+{{- if and $lmcacheEnabled (not (has $lmcacheConnector (list "LMCacheConnectorV1" "LMCacheMPConnector"))) -}}
+{{- fail (printf "model %s: lmcache.connector must be LMCacheConnectorV1 or LMCacheMPConnector, got %q" $name $lmcacheConnector) -}}
+{{- end -}}
+{{- if $isMp -}}
+{{- $mp := $lmcacheCfg.mp | default dict -}}
+{{- $_ := required (printf "model %s: lmcache.mp.chunkSize is required for LMCacheMPConnector" $name) $mp.chunkSize -}}
+{{- $_ := required (printf "model %s: serving.mambaCacheMode is required for LMCacheMPConnector (set to 'align' for GDN hybrids)" $name) $s.mambaCacheMode -}}
+{{- $_ := required (printf "model %s: serving.maxNumBatchedTokens is required for LMCacheMPConnector" $name) $s.maxNumBatchedTokens -}}
+{{- if and $mp.chunkSize $s.maxNumBatchedTokens -}}
+{{- if lt (int $s.maxNumBatchedTokens) (int $mp.chunkSize) -}}
+{{- fail (printf "model %s: serving.maxNumBatchedTokens (%v) must be >= lmcache.mp.chunkSize (%v) for LMCacheMPConnector" $name $s.maxNumBatchedTokens $mp.chunkSize) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- $pvcName := printf "%s-weights" $name -}}
 {{- /*
 Optional engine-enforced API key. OFF unless a catalog entry opts in — under
@@ -636,6 +729,11 @@ modelServing:
       {{- end }}
       containers:
         model:
+          {{- if $isMp }}
+          # LMCache MP server must start before vLLM tries to connect to it.
+          dependsOn:
+            - lmcache
+          {{- end }}
           image:
             repository: {{ $image.repository | quote }}
             tag: {{ $image.tag | quote }}
@@ -643,12 +741,12 @@ modelServing:
           {{- /* Omit the key entirely when an engine contributes no args (LocalAI
                  is env-configured). An empty `args:` is YAML null, which bjw
                  still renders — blanking the image's own command. */ -}}
-          {{- $serverArgs := include "inference.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcache "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath "kvCacheDtype" $kvCacheDtype) | trim }}
+          {{- $serverArgs := include "inference.serverArgs" (dict "name" $name "engine" $engine "serving" $s "dir" $dir "lmcache" $lmcacheCfg "apiKey" $apiKey "security" $sec "apiKeyPath" $akPath "kvCacheDtype" $kvCacheDtype) | trim }}
           {{- with $serverArgs }}
           args:
             {{- . | nindent 12 }}
           {{- end }}
-          {{- if or $lmcache (and $apiKey (eq $akMode "env")) (eq $engine "localai") }}
+          {{- if or $lmcacheEnabled (and $apiKey (eq $akMode "env")) (eq $engine "localai") }}
           env:
             {{- if eq $engine "localai" }}
             # LocalAI is configured entirely by environment (ADR-0102).
@@ -731,9 +829,9 @@ modelServing:
             {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- end }}
-            {{- if $lmcache }}
+            {{- if and $lmcacheEnabled (eq $lmcacheConnector "LMCacheConnectorV1") }}
             {{- toYaml $d.lmcacheEnv | nindent 12 }}
-            {{- with ($cfg.lmcache | default dict).env }}
+            {{- with $lmcacheCfg.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- end }}
@@ -838,6 +936,9 @@ modelServing:
               memory: {{ $res.memoryLimit | default "12Gi" | quote }}
               # The GPU itself. Extended resources are requested via limits.
               nvidia.com/gpu: {{ $gpu.count | default 1 }}
+        {{- if $isMp }}
+{{- include "inference.lmcacheMpContainer" (dict "name" $name "lmcache" $lmcacheCfg "eng" $eng "sec" $sec) | nindent 8 }}
+        {{- end }}
 
 {{- if $seed }}
     # ── The weight seed Job ──────────────────────────────────────────────────
