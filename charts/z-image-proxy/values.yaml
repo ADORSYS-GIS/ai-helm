@@ -25,6 +25,11 @@ resolver: "10.43.0.10 valid=30s ipv6=off"
 maxResponseBodySize: "16m"
 maxResponseBodySizeBytes: 16777216
 
+# Image size the proxy forces on every generation request. LibreChat's
+# image_gen_oai tool sends size:'auto' (or the agent's 256x256), which LocalAI
+# rejects and falls back to 512x512. Pinning this gives consistent resolution.
+targetSize: "1024x1024"
+
 image:
   repository: docker.io/nginxinc/nginx-unprivileged
   tag: "1.27-alpine"

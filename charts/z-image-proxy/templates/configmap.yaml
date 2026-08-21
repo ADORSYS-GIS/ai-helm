@@ -36,6 +36,12 @@ data:
         obj.response_format = 'b64_json';
       }
 
+      // Force the image size. LibreChat's image_gen_oai tool sends size:'auto'
+      // (or the agent's 256x256), which LocalAI rejects with "Invalid size,
+      // using default 512x512". Pin it to the target so we get the resolution
+      // we want (1024x1024) instead of the 512x512 fallback.
+      obj.size = '{{ .Values.targetSize }}';
+
       // Forward the modified body to the upstream, preserving auth + content type.
       var reply;
       try {
