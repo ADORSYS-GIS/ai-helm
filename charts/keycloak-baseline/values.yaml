@@ -669,10 +669,9 @@ keycloak-config:
     # makes keycloak-config-cli reject the import ("client must be
     # confidential", verified locally against KC 26.6.4 + config-cli 6.5.1).
     # Project-scoped exchange ({account_id, project_id} sealed via request_id)
-    # therefore belongs on a dedicated confidential client once the
-    # lightbridge-keycloak-spi provider is deployed onto the Keycloak server
-    # image (ghcr.io/adorsys-gis/lightbridge-keycloak-spi) — server-side
-    # wiring lives outside this chart.
+    # lives on the dedicated confidential client `opencode-exchange` below —
+    # STE V2 rejects public exchangers, and its audience mapper (this client)
+    # satisfies the "exchanger within subject-token audience" policy.
     opencodeCli:
       enabled: true
       clientId: "opencode-cli"
@@ -729,9 +728,14 @@ keycloak-config:
     # config-cli 6.5.1). The `lightbridge-context-mapper` copies the SPI's
     # session notes into access/id/userinfo claims (pattern mirrors the
     # SPI repo's demo realm).
-    # ⚠️ SECRET: the placeholder below is for local/dev only. Production
-    # must inject the real secret via External Secrets Operator — never
-    # commit it here (ticket AC: secrets via ESO).
+    # 🔐 SECRET: never committed. The realm import resolves the
+    # `${OPENCODE_EXCHANGE_CLIENT_SECRET}` placeholder from the config-cli
+    # CronJob's environment (IMPORT_VARIABLE_ENABLED=true); that env var is
+    # bound to the `opencode-exchange-client` Secret, which is synced from
+    # the secret store by the ExternalSecret template in this chart
+    # (templates/externalsecret-opencode-exchange.yaml).
+    # Local-dev escape hatch: disable externalSecret below and override both
+    # `secret` and a literal env value — acceptable ONLY outside prod.
     opencodeExchange:
       enabled: true
       clientId: "opencode-exchange"
@@ -742,7 +746,19 @@ keycloak-config:
       implicitFlowEnabled: false
       directAccessGrantsEnabled: false
       serviceAccountsEnabled: false
-      secret: "opencode-exchange-local-dev-secret"
+      secret: "${OPENCODE_EXCHANGE_CLIENT_SECRET}"
+      # Syncs the real client secret into a Kubernetes Secret consumed by the
+      # config-cli CronJob env (see containers.main.env in the controller
+      # block). Fails closed: if the store entry is missing, the
+      # ExternalSecret reports SecretSyncedError and the next import runs with
+      # an unresolved placeholder rather than a guessed credential.
+      externalSecret:
+        enabled: true
+        secretName: "opencode-exchange-client"
+        refreshInterval: "1h"
+        secretStore: "ssegning-aws"            # ClusterSecretStore kind
+        remoteKey: "camer-digital/keycloak/opencode-exchange"
+        remoteProperty: "client-secret"
       attributes:
         standard.token.exchange.enabled: "true"
       protocolMappers:
@@ -818,6 +834,11 @@ config-sync:
                   key: password
             IMPORT_VARIABLE_ENABLED:
               value: "true"
+            OPENCODE_EXCHANGE_CLIENT_SECRET:
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-exchange-client
+                  key: client-secret
             IMPORT_ENABLED:
               value: "true"
             IMPORT_REALM_FILE:
