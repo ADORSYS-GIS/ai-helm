@@ -60,19 +60,40 @@ excludeKinds:
 # per-model via that model's `info.contextLength` / `info.maxOutputTokens`.
 # Claude Code gateway model discovery (`/anthropic/v1/models`).
 #
-# ⚠️ `idPrefix` is what makes this endpoint do anything at all. Claude Code
-# keeps a discovered model only when its `id` contains "claude" or "anthropic"
-# anywhere in the string; none of this platform's ids do, so with an empty
-# prefix the picker gains nothing and the endpoint is inert. Provider-prefixed
-# ids are explicitly supported by the protocol (`vertex_ai/claude-sonnet-4-6`).
+# ⚠️ `idPrefix` is EMPTY ON PURPOSE, and turning it back on without a gateway
+# change re-breaks the picker. Measured against production:
 #
-# ⚠️ The advertised id is the id Claude Code sends back as `model` on
-# /anthropic/v1/messages, so the gateway must accept this prefixed form (or
-# strip it inbound). Verify before relying on it — a picker offering models
-# that 400 on use is worse than an empty picker. `display_name` carries the
-# readable name, so nobody reads the prefix.
+#     POST /anthropic/v1/messages  model=anthropic/adorsys-coder
+#       -> 404 "No matching route found. It is likely because the model
+#               specified in your request is not configured in the Gateway."
+#     POST /anthropic/v1/messages  model=adorsys-coder
+#       -> reaches routing (the plain name is what the gateway knows)
+#
+# Claude Code sends a discovered `id` back VERBATIM as the `model`. It has no
+# client-side aliasing that could strip a prefix: `modelOverrides` keys must be
+# real Anthropic model IDs and "unknown keys are ignored", and
+# ANTHROPIC_CUSTOM_MODEL_OPTION passes its value through unchanged. So a
+# prefixed id is an id that 404s on selection.
+#
+# The bind: Claude Code KEEPS a discovered model only when its id contains
+# "claude" or "anthropic", and this platform's ids contain neither. Prefixed
+# ids survive the filter but don't route; bare ids route but are filtered out.
+# Empty prefix is the fail-safe end of that: the catalog serves, every entry is
+# filtered, the picker is unchanged. An empty picker beats a picker full of
+# models that fail on use.
+#
+# ⚠️ If you ever DO add claude-ish aliases, do NOT embed "claude-" in them.
+# Claude Code resolves any id CONTAINING a Claude model name (e.g.
+# `anthropic/claude-opus-4-8`) to that model and applies ITS context window and
+# capabilities -- silently wrong for a non-Claude backend, and
+# CLAUDE_CODE_MAX_CONTEXT_TOKENS cannot correct it in that case. An
+# "anthropic/"-style prefix stays unrecognized, which is the correctable case.
+#
+# Note discovery conveys ONLY `id` and `display_name`; context length and
+# capabilities cannot be advertised here at all
+# (CLAUDE_CODE_MAX_CONTEXT_TOKENS is per-session and global, not per-model).
 anthropicCatalog:
-  idPrefix: "anthropic/"
+  idPrefix: ""
 
 catalogDefaults:
   contextLength: 128000
