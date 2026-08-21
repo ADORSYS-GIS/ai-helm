@@ -172,9 +172,22 @@ data:
           - {{ . | quote }}
           {{- end }}
         protocol: openid-connect
+        {{- /* Client attributes: the `pkce` shorthand plus any extra raw
+            attributes (e.g. device-grant / token-exchange toggles) merged
+            into one map. Values are always quoted — Keycloak client
+            attributes are strings. */ -}}
+        {{- $clientAttrs := dict }}
         {{- if $client.pkce }}
+        {{- $clientAttrs = merge $clientAttrs (dict "pkce.code.challenge.method" $client.pkce) }}
+        {{- end }}
+        {{- if $client.attributes }}
+        {{- $clientAttrs = merge $clientAttrs $client.attributes }}
+        {{- end }}
+        {{- if gt (len $clientAttrs) 0 }}
         attributes:
-          pkce.code.challenge.method: {{ $client.pkce }}
+          {{- range $key, $value := $clientAttrs }}
+          {{ $key }}: {{ $value | quote }}
+          {{- end }}
         {{- end }}
         {{- if $client.defaultClientScopes }}
         defaultClientScopes:
@@ -186,6 +199,19 @@ data:
         optionalClientScopes:
           {{- range $client.optionalClientScopes }}
           - {{ . }}
+          {{- end }}
+        {{- end }}
+        {{- if $client.protocolMappers }}
+        protocolMappers:
+          {{- range $mapper := $client.protocolMappers }}
+          - name: {{ $mapper.name }}
+            protocol: {{ $mapper.protocol }}
+            protocolMapper: {{ $mapper.protocolMapper }}
+            consentRequired: {{ $mapper.consentRequired | default false }}
+            config:
+            {{- range $key, $value := $mapper.config }}
+              {{ $key }}: {{ $value | quote }}
+            {{- end }}
           {{- end }}
         {{- end }}
       {{- end }}

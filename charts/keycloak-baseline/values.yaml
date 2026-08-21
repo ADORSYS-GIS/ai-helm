@@ -657,6 +657,113 @@ keycloak-config:
         - offline_access
         - microprofile-jwt
 
+    # ── opencode-cli (ai-helm#586) ────────────────────────────────────────
+    # Human OpenCode CLI client: device-code + auth-code with offline_access.
+    # Consumed by charts/librechat-opencode-wellknown (remote-MCP OAuth block,
+    # clientId: opencode-cli, scope "openid profile offline_access") and by
+    # the opencode-oauth2 plugin's device-code flow.
+    # Public client — no secret; PKCE S256 enforced on auth-code; device grant
+    # enabled via client attributes below.
+    # NOTE (token exchange): Keycloak Standard Token Exchange (V2) requires a
+    # CONFIDENTIAL client — enabling `standard.token.exchange.enabled` here
+    # makes keycloak-config-cli reject the import ("client must be
+    # confidential", verified locally against KC 26.6.4 + config-cli 6.5.1).
+    # Project-scoped exchange ({account_id, project_id} sealed via request_id)
+    # therefore belongs on a dedicated confidential client once the
+    # lightbridge-keycloak-spi provider is deployed onto the Keycloak server
+    # image (ghcr.io/adorsys-gis/lightbridge-keycloak-spi) — server-side
+    # wiring lives outside this chart.
+    opencodeCli:
+      enabled: true
+      clientId: "opencode-cli"
+      name: "OpenCode CLI"
+      description: "Human OpenCode CLI client (device-code + auth-code, offline_access)"
+      publicClient: true
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      pkce: "S256"
+      attributes:
+        oauth2.device.authorization.grant.enabled: "true"
+      # Put opencode-exchange in the aud of cli-issued tokens — STE V2
+      # requires the exchanging client to be within the subject token's
+      # audience ("Client is not within the token audience", verified
+      # locally against KC 26.6.4).
+      protocolMappers:
+        - name: "opencode-exchange-audience"
+          protocol: "openid-connect"
+          protocolMapper: "oidc-audience-mapper"
+          consentRequired: false
+          config:
+            included.client.audience: "opencode-exchange"
+            access.token.claim: "true"
+      redirectUris:
+        - "http://localhost:*"
+        - "http://127.0.0.1:*"
+      webOrigins:
+        - "http://localhost:*"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - librechat
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+
+    # ── opencode-exchange (ai-helm#586) ───────────────────────────────────
+    # Confidential machine client that performs Lightbridge project-scoped
+    # token exchange on behalf of OpenCode: swaps a human's opencode-cli
+    # token (+ `project_id` form param) for a JWT sealed with
+    # {account_id, project_id} via the lightbridge-keycloak-spi provider
+    # (deployed server-side; see charts comment on opencode-cli).
+    # STE requires a CONFIDENTIAL client (verified against KC 26.6.4 +
+    # config-cli 6.5.1). The `lightbridge-context-mapper` copies the SPI's
+    # session notes into access/id/userinfo claims (pattern mirrors the
+    # SPI repo's demo realm).
+    # ⚠️ SECRET: the placeholder below is for local/dev only. Production
+    # must inject the real secret via External Secrets Operator — never
+    # commit it here (ticket AC: secrets via ESO).
+    opencodeExchange:
+      enabled: true
+      clientId: "opencode-exchange"
+      name: "OpenCode Exchange"
+      description: "Confidential client for Lightbridge project-scoped token exchange"
+      publicClient: false
+      standardFlowEnabled: false
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      secret: "opencode-exchange-local-dev-secret"
+      attributes:
+        standard.token.exchange.enabled: "true"
+      protocolMappers:
+        - name: "lightbridge-context"
+          protocol: "openid-connect"
+          protocolMapper: "lightbridge-context-mapper"
+          consentRequired: false
+          config:
+            access.token.claim: "true"
+            id.token.claim: "true"
+            userinfo.token.claim: "true"
+      redirectUris: []
+      webOrigins: []
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+
   # Groups with client role mappings
   groups:
     cdAdmins:
