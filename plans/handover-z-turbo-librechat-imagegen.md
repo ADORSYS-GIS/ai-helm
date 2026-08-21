@@ -219,5 +219,11 @@ undefined → `image_gen_oai` failed with "Cannot read properties of undefined
 the script — a live ConfigMap mount does NOT reload njs, which loads scripts
 at startup).
 
-**Commits:** ai-helm `da2ebc68`, `22209c2a`, `a480dc56`, `3239d982`, `70f9bc49`;
-ai-helm-values `1020843`, `a4a30ae`, `8354e6f`.
+**Image size (session 4):** LibreChat's `image_gen_oai` tool sends
+`size:'auto'` (or the agent's 256x256), which LocalAI rejects with "Invalid
+size, using default 512x512". The proxy now forces `size: 1024x1024`
+(configurable via `targetSize`), verified: PNG header shows 1024×1024, no
+"Invalid size" warning.
+
+**Commits:** ai-helm `da2ebc68`, `22209c2a`, `a480dc56`, `3239d982`, `70f9bc49`,
+`8d185fc5`; ai-helm-values `1020843`, `a4a30ae`, `8354e6f`.
