@@ -362,13 +362,16 @@ codeapi:
           probes:
             liveness:
               enabled: true
-              custom: true
-              spec:
-                exec:
-                  command: ["/usr/local/bin/sandbox-runner-healthcheck.sh"]
-                initialDelaySeconds: 60
-                periodSeconds: 30
-                timeoutSeconds: 5
+              # HTTP probe, not the exec of /usr/local/bin/sandbox-runner-healthcheck.sh:
+              # that script is not present in the sandbox-runner image (the fork's
+              # Dockerfile.worker-sandbox never COPYs it), so the exec probe fails
+              # forever with "no such file or directory". Hit the same /api/v2/health
+              # endpoint the script checks, on the same port as the readiness probe.
+              # (Live-incident fix, Story #995 / ticket #1033 — see issue for evidence.)
+              type: HTTP
+              path: /api/v2/health
+              port: sandbox
+              spec: { initialDelaySeconds: 60, periodSeconds: 30, timeoutSeconds: 5 }
             readiness:
               enabled: true
               type: HTTP
