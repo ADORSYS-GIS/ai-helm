@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.2.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-app-v1.1.0...librechat-app-v1.2.0) (2026-08-22)
+
+
+### Features
+
+* **coder:** add LibreChat Coder agent system prompt, Coder MCP integration and fleet seeding ([#832](https://github.com/ADORSYS-GIS/ai-helm/issues/832)) ([8f4230d](https://github.com/ADORSYS-GIS/ai-helm/commit/8f4230d20f0e938b56b03fd30f4c982e8477f797))
+* **coder:** LibreChat Coder agent — converse-delegated subagent + authenticated port-share (P1/P2 applied) ([bb7e867](https://github.com/ADORSYS-GIS/ai-helm/commit/bb7e86755095867bfa46bb2670d33aec5afb9b2d))
+* **librechat-code-interpreter:** self-host LibreChat Code Interpreter (ADR-0122) ([#941](https://github.com/ADORSYS-GIS/ai-helm/issues/941)) ([9e14d02](https://github.com/ADORSYS-GIS/ai-helm/commit/9e14d02aa2da38c6213580c60312c6dbabee674c))
+
+
+### Bug Fixes
+
+* **coder:** close P1 public-port-share + apply reviewer P2s for the Coder agent ([d03d171](https://github.com/ADORSYS-GIS/ai-helm/commit/d03d171fee4db6f52cc40cf64a1582a6b8aab298))
+* **coder:** reconcile Coder agent to resolvable model + coder_mcp; restore ADRs/doc ([acaf8c6](https://github.com/ADORSYS-GIS/ai-helm/commit/acaf8c6ad78c0fb8d748602cb8bc393f7a767637))
+* **coder:** reconcile values.yaml system prompt instructions with documentation guardrails ([#832](https://github.com/ADORSYS-GIS/ai-helm/issues/832)) ([aaedc2d](https://github.com/ADORSYS-GIS/ai-helm/commit/aaedc2d5489009c2690ce8fbf0763f7a2a805e07))
+* **coder:** update agentSeed comment schema and harmonize ADR-0086 roster ([#832](https://github.com/ADORSYS-GIS/ai-helm/issues/832)) ([565c1dd](https://github.com/ADORSYS-GIS/ai-helm/commit/565c1ddfe4aadb2fdaea4447e1c5450e3c849cde))
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
+
+### Refactoring
+
+* **coder:** configure Coder agent as subagent delegated by Converse ([#832](https://github.com/ADORSYS-GIS/ai-helm/issues/832)) ([6ac69cf](https://github.com/ADORSYS-GIS/ai-helm/commit/6ac69cf31247e7257085a7a4357288b76ecb75ed))
+* **coder:** move agent fleet out of the chart default; live fleet lives in ai-helm-values ([3e18d30](https://github.com/ADORSYS-GIS/ai-helm/commit/3e18d3026a32634c64d5b9dffc393b7b562c4f9c))
+
 ## [1.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-app-v1.0.0...librechat-app-v1.1.0) (2026-08-02)
 
 
