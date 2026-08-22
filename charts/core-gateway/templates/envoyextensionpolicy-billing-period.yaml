@@ -46,6 +46,31 @@ spec:
           request_handle:headers():replace("x-billing-period", os.date("!%Y-%m"))
           request_handle:headers():replace("x-billing-week", os.date("!%G-W%V"))
         end
+    # ADR-0133: per-project model-allowlist enforcement — the DOWNSTREAM half of the
+    # split ai-helm-values#288 made, tracked as ai-helm-values#292. Authorino resolves
+    # `model_policy` and publishes `x-model-policy` / `x-allowed-models` on every
+    # request but applies neither; this filter is the consumer that tests list
+    # membership against the model the AI Gateway's ext_proc extracted into
+    # `x-ai-eg-model`. Until it shipped, `allowlist` mode was published-but-unenforced.
+    #
+    # A SECOND LIST ENTRY — not a second EnvoyExtensionPolicy (the file header explains
+    # why that is rejected), and deliberately not merged into the function above. EG
+    # renders each `lua` entry as its own envoy.filters.http.lua filter, ordered
+    # `12 + index` (internal/xds/translator/httpfilters.go, newOrderedHTTPFilter,
+    # v1.8.2). So this is filter order 13 and billing-period is 12; both land after
+    # ext_authz (order 5 — Authorino, which is what stamps the two policy headers) and
+    # after the AI Gateway's own ext_proc, which is injected ahead of that table
+    # entirely. The header constraint is one POLICY per targetRef, not one script, so
+    # two unrelated concerns stay in two files.
+    #
+    # The script is `.Files.Get`-ed from charts/core-gateway/files/model-policy.lua
+    # rather than inlined, so the exact bytes that deploy are the exact bytes that can
+    # be replayed against a real Envoy (the PR's verification harness does exactly
+    # that). Read that file for the full decision table, the fail-closed rules and the
+    # anti-spoofing mechanism.
+    - type: Inline
+      inline: |-
+        {{- .Files.Get "files/model-policy.lua" | nindent 8 }}
   # ADR-0116: PII/credential redaction ext_proc filter. Merged into THIS
   # resource for the reason in the header comment above — it cannot be its
   # own EnvoyExtensionPolicy targeting the same Gateway. Gated on
