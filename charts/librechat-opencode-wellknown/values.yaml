@@ -47,17 +47,57 @@ wellKnown:
     # subagents, so no primary carries the 27 browser_* schemas every turn.
     default_agent: assistant
     plugin:
-      - "@vymalo/opencode-oauth2@0.12.0"
+      - "@vymalo/opencode-oauth2@0.14.0"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.12.0"
+      - "@vymalo/opencode-models-info@0.14.0"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.12.0"
+      - "@vymalo/opencode-ratelimit@0.14.0"
+      # OpenTelemetry export for OpenCode — the same maintainer's counterpart
+      # to Claude Code's native OTLP monitoring and Codex's `[otel]` block
+      # ([[ai-usage-telemetry-vendors]]). Ships cost (real USD, from
+      # `AssistantMessage.cost` — no price table to maintain), all five
+      # token types (input/output/reasoning/cache_read/cache_write), tool
+      # results, permission decisions, API errors and lines-of-code as OTLP
+      # traces/metrics/logs. NO CONTENT is captured — prompts/responses/tool
+      # args/API bodies are never read, only shape (lengths, counts,
+      # durations, outcomes). Resource attributes identify machine + project,
+      # never the developer, by design (no git-author-email collection).
+      # OTLP/HTTP+protobuf only (no gRPC — Bun compatibility).
+      #
+      # HELD OUT deliberately (not shipped, not just disabled-by-default —
+      # plugins have no per-user opt-out, so pushing this would be a standing
+      # `otel_export_failed` warning in EVERY opencode user's logs). The
+      # target, `otel.ai.camer.digital`
+      # (`OpenTelemetryCollector/lightbridge-governance-ai-cli-otel` in
+      # `governance` on the Hetzner cluster — lightbridge-opencode-toolbeit#89
+      # verified it live), hard-requires OIDC bearer auth (issuer
+      # `https://auth.ai.camer.digital`, audience `lightbridge-api-key`), and
+      # since toolbeit#89 a rejected export is loud rather than silent
+      # (`otel_export_failed` at `warn`, up to 3× per batch interval). We have
+      # no credential to give it yet: the `tokenCommand` option this plugin
+      # exposes for exactly this case (an async credential-helper hook, docs:
+      # lightbridge-opencode-toolbeit `docs/otel.md#short-lived-credentials`)
+      # expects `governance-auth token` — a CLI specified in lightbridge-
+      # governance ADR-0010 that is still Proposed, not built. Its
+      # prerequisite (a real OAuth2 client registry + derived id_token
+      # issuance) landed in lightbridge-authz ADR-0011 (#286/#288), so the
+      # groundwork exists; `governance-auth` itself doesn't yet, and
+      # separately still needs a distribution story onto each user's PATH
+      # before `tokenCommand` can even reference it.
+      #
+      # Wire it back in the same day governance-auth ships AND is
+      # distributable, pinned to whatever @vymalo/opencode-otel is current
+      # then (last confirmed live: 0.14.0):
+      #
+      # - - "@vymalo/opencode-otel@0.14.0"
+      #   - endpoint: "https://otel.ai.camer.digital"
+      #     tokenCommand: "governance-auth token"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
@@ -72,7 +112,7 @@ wellKnown:
       # in the plugin TUPLE's second arg — this plugin reads its options from
       # there (NOT from provider.options.meta like the others), i.e.
       # opencode's `[name, {opts}]` install form, which toJson renders as a
-      # JSON 2-tuple. Part of the 0.12.0 vymalo line — pin matches the three
+      # JSON 2-tuple. Part of the 0.14.0 vymalo line — pin matches the four
       # above.
       #
       # TWO independent token levers, at different scopes:
@@ -114,7 +154,7 @@ wellKnown:
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
       # adapter saves screenshots to disk for the model to read. One source only.
-      - - "@vymalo/opencode-browser@0.12.0"
+      - - "@vymalo/opencode-browser@0.14.0"
         - port: 4517
           groups:
             - page
