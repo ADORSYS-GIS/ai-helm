@@ -1,5 +1,40 @@
 # Changelog
 
+## [4.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/ai-models-v3.0.0...ai-models-v4.0.0) (2026-08-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ai-models:** charts/ai-models no longer renders on its own values. The catalog must be supplied with -f (in production, by the aii-models Application's $values source). This is deliberate. The $values source is mounted with ignoreMissingValueFiles, so a missing file falls back to chart defaults — and an EMPTY catalog renders perfectly validly as an ApplicationSet with a backends child and no model children, which the controller then reconciles by pruning every ai-model child, every AIGatewayRoute and every BackendTrafficPolicy, on a green sync. The existing destination guard does not catch it: argocd.destination falls back to home-remote and renders happily. So the new requireCatalog guard hard-fails instead, leaving aii-models in ComparisonError with every running child untouched — the only safe direction for this particular failure.
+
+### Features
+
+* add qwen3-coder-30b-a3b-local to the picker and raise its context to 12288 ([#919](https://github.com/ADORSYS-GIS/ai-helm/issues/919)) ([36c29c8](https://github.com/ADORSYS-GIS/ai-helm/commit/36c29c89836edf81dbdebfa61e0f9696c886a2f6))
+* **ai-gateway:** align limits and budget observability ([cdb9099](https://github.com/ADORSYS-GIS/ai-helm/commit/cdb9099c76b0ef25af1d9e496603386df456e61c))
+* **ai-models:** federate qwen3-4b-local into the gateway ([#938](https://github.com/ADORSYS-GIS/ai-helm/issues/938)) ([1e9eef4](https://github.com/ADORSYS-GIS/ai-helm/commit/1e9eef45799fd9d60e2fe406bf1f65a53cee81a7))
+* **ai-models:** force DeepInfra service_tier=priority; retire deepseek-v4-flash/-pro for -0731 (ADR-0117) ([#894](https://github.com/ADORSYS-GIS/ai-helm/issues/894)) ([59a7ab4](https://github.com/ADORSYS-GIS/ai-helm/commit/59a7ab46f7f37d2da357ca01e8333e51c2446ca8))
+* **ai-models:** make z-image-turbo internal-only, rename to z-image-turbo-internal ([#830](https://github.com/ADORSYS-GIS/ai-helm/issues/830)) ([0830f92](https://github.com/ADORSYS-GIS/ai-helm/commit/0830f9239dca53e2b673c100c7170cbf3cb583a0))
+* **ai-models:** move the model catalog to ai-helm-values (ADR-0126, ADR-0127) ([#982](https://github.com/ADORSYS-GIS/ai-helm/issues/982)) ([f72f972](https://github.com/ADORSYS-GIS/ai-helm/commit/f72f9725314b160f735c19bdd38c33d1a8075531))
+* **core-gateway:** add additive weekly sub-budget to stop front-loading ([#909](https://github.com/ADORSYS-GIS/ai-helm/issues/909)) ([bc1c5dc](https://github.com/ADORSYS-GIS/ai-helm/commit/bc1c5dc7c5ca9f0aa92c0ccfa9fccc5458e5b40e))
+* **inference:** deploy Qwen3-4B (Q6_K, llama.cpp) as the fleet coding model ([26f23e3](https://github.com/ADORSYS-GIS/ai-helm/commit/26f23e3f117930fdfbb61cc53824fc4aa6059e7b))
+* **inference:** deploy Qwen3-4B (Q6_K, llama.cpp) as the fleet coding model ([c19ee2a](https://github.com/ADORSYS-GIS/ai-helm/commit/c19ee2a5c2ffcd26a37f61c756d19e925e329002))
+* **inference:** serve qwen3-5-2b at full 256k native context ([b74e9c3](https://github.com/ADORSYS-GIS/ai-helm/commit/b74e9c30c175fcbaccab0fada63b2f3f2b6dd8ca))
+* **inference:** serve qwen3-5-2b at full 256k native context ([d6b2cb7](https://github.com/ADORSYS-GIS/ai-helm/commit/d6b2cb7dcbb5d952038258cedb238bc8eb23530c))
+* **model-serving:** Deploy coding model to GPUs, replacing Qwen-VL ([9010145](https://github.com/ADORSYS-GIS/ai-helm/commit/901014539bf52462290dbff139e6f46d73a6a358))
+* **model-serving:** serve qwen3-coder-30b-a3b on the fleet and federate it into the gateway ([#914](https://github.com/ADORSYS-GIS/ai-helm/issues/914)) ([0bc996a](https://github.com/ADORSYS-GIS/ai-helm/commit/0bc996acacbbb790961c505c5bed4662f5c8e133))
+* serve Qwen3.5-2B on the GPU fleet, replacing qwen25-3b-awq ([#970](https://github.com/ADORSYS-GIS/ai-helm/issues/970)) ([756127a](https://github.com/ADORSYS-GIS/ai-helm/commit/756127ab394bd339032fb6a66b880932fd9eb975))
+
+
+### Bug Fixes
+
+* **ai-models:** advertise qwen3-coder-30b-a3b input window as 12288 ([4738725](https://github.com/ADORSYS-GIS/ai-helm/commit/47387251233ecc327e0ab5acc94ba104e4b00f34))
+* **ai-models:** correct Claude DeepInfra pricing ([cf65269](https://github.com/ADORSYS-GIS/ai-helm/commit/cf6526940cbb315dce914c284d7d0589f04b2e76))
+* **ai-models:** derive opencode's reasoning caps from the catalog (ADR-0125) ([#971](https://github.com/ADORSYS-GIS/ai-helm/issues/971)) ([52a8355](https://github.com/ADORSYS-GIS/ai-helm/commit/52a8355abf96625a343add1704ad1a5bba2dd792))
+* **inference:** raise qwen3-coder-30b-a3b context window to 16384 ([ffb10bb](https://github.com/ADORSYS-GIS/ai-helm/commit/ffb10bb2d3c2601264f088ef80b678d02a3c8c99))
+* **inference:** raise qwen3-coder-30b-a3b context window to 16384 ([2ace27b](https://github.com/ADORSYS-GIS/ai-helm/commit/2ace27b415b32042aeda59c5ab1534ac125a697a))
+* **model-serving:** remove qwen3-vl-4b-thinking entirely + fix fp8 KV-cache dtype ([cb95a48](https://github.com/ADORSYS-GIS/ai-helm/commit/cb95a484c4aee29163efdd17114843dcd8aa97df))
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [3.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/ai-models-v2.0.0...ai-models-v3.0.0) (2026-08-02)
 
 
