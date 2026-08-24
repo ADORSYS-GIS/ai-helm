@@ -181,8 +181,12 @@ Expected: new `access_token` + rotated `refresh_token`, no interaction.
 ```bash
 AT=<access_token from step 3>
 
+# Basic auth: client_id as username, vault secret as password
+export OPENCODE_EXCHANGE_CLIENT_ID=opencode-exchange
+export OPENCODE_EXCHANGE_CLIENT_SECRET=$(op read op://vault/opencode-exchange/client-secret)  # or your secret manager CLI
+
 curl -s -X POST $ISSUER/protocol/openid-connect/token \
-  -u "opencode-exchange:<CLIENT_SECRET_FROM_VAULT>" \
+  -u "${OPENCODE_EXCHANGE_CLIENT_ID}:${OPENCODE_EXCHANGE_CLIENT_SECRET}" \
   -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
   -d "subject_token=$AT" \
   -d "subject_token_type=urn:ietf:params:oauth:token-type:access_token" \
