@@ -563,6 +563,17 @@ librechat:
             # bucket (see s3ExternalSecret below). Path-style for Ceph-RGW.
             AWS_ENDPOINT_URL: "https://nbg1.your-objectstorage.com"
             AWS_FORCE_PATH_STYLE: "true"
+            # Presigned URL TTL for S3 file storage. LibreChat's default is 2
+            # minutes (packages/api/src/storage/s3/s3Config.ts
+            # DEFAULT_EXPIRY_SECONDS = 2*60), which makes uploaded/generated
+            # images and avatars break in the UI shortly after upload until the
+            # page is refreshed. We max it out to the AWS ceiling of 7 days
+            # (604800s) as a stopgap — see the ticket + docs/integrations/
+            # librechat-s3-presigned-url-expiry.md for the full analysis and the
+            # proper long-term fixes (CDN / fileStrategies / proxy).
+            # NOTE: 7-day max only holds with STATIC IAM keys (which we use);
+            # STS/IRSA temporary credentials cap presigned URLs at a few hours.
+            S3_URL_EXPIRY_SECONDS: "604800"
 
           resources:
             limits:
