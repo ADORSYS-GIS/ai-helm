@@ -1,9 +1,16 @@
 # ADR-0041: firecrawl request protocol-version pin via an openresty proxy engine
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0134](0134-retire-firecrawl-openresty-proxy-engine.md) (the openresty engine was removed)
 **Date:** 2026-06-11
 **Deciders:** @stephane-segning
 **Relates to:** [ADR-0040](0040-external-mcps-via-caddy-normalizing-proxy.md) (the Caddy normalizing-proxy pattern this extends)
+
+> **Superseded (2026-08-25):** the upstream AIEG bug this workaround existed for
+> ([#2219](https://github.com/envoyproxy/ai-gateway/issues/2219)) was fixed in
+> AIEG **v1.1.0**, and we bumped to it. firecrawl's `openresty` proxy engine and the
+> `proxy.pinRequestProtocolVersion` request-body rewrite were therefore removed and
+> firecrawl now proxies through the default Caddy engine (ADR-0041 retired). The
+> body below remains the historical record of the decision and its rationale.
 
 ## Context
 

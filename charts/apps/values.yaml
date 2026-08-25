@@ -506,18 +506,18 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: oci://docker.io/envoyproxy/ai-gateway-crds-helm
-      # v1.0.0 — keep in lockstep with ai-gateway-helm below (ADR-0069). v1.0 is
-      # the stability milestone: NO breaking changes, v1beta1 declared stable
-      # (byte-identical to v0.7's). EG floor moves v1.7.0+ → v1.8.1+ (we now run
-      # v1.8.1 ✓; see eg below). ⚠️ v1alpha1 is now served-but-DEPRECATED (the CRD
-      # warns "use aigateway.envoyproxy.io/v1beta1 instead"); our AIEG manifests
-      # migrated to v1beta1 in this same change (it was already the v0.7 storage
-      # version, so no conversion/ordering hazard — this app still syncs first).
-      # The external-MCP proxy mitigations stay: AIEG #2218 (refero content-type)
-      # is still OPEN and #2219 (firecrawl SSE) has no v1.0 fix. v1.0 also makes
+      # v1.1.0 — keep in lockstep with ai-gateway-helm below (ADR-0069). First
+      # minor release on the stable 1.x API: no CRD migrations from v1.0, new
+      # fields optional/backward compatible. ⚠️ v1alpha1 is served-but-DEPRECATED
+      # (warns "use aigateway.envoyproxy.io/v1beta1 instead"); our AIEG manifests
+      # are v1beta1 (the v1.0 storage version, so no conversion/ordering hazard —
+      # this app still syncs first). The external-MCP proxy mitigations: AIEG
+      # #2219 (firecrawl SSE) is FIXED in v1.1.0, so firecrawl's openresty
+      # workaround was removed (ADR-0041 retired); AIEG #2218 (refero content-type)
+      # is STILL OPEN, so refero's rewriteResponseContentType stays. v1.0/v1.1 make
       # the MCP authz surface first-class (toolSelector / CEL authz / forwardHeaders,
       # v1beta1-only) — wired as opt-in capability in charts/mcp.
-      targetRevision: v1.0.0
+      targetRevision: v1.1.0
       path: .
       helm:
         releaseName: aieg-crd
@@ -559,13 +559,17 @@ applications:
     valuesFromRepo: true
     source:
       repoURL: oci://docker.io/envoyproxy/ai-gateway-helm
-      # v1.0.0 — keep in lockstep with ai-gateway-crds-helm above (see its note
-      # for the v1.0 stability/deprecation summary, ADR-0069). Floor EG v1.8.1+
-      # (we run v1.8.1 ✓). Drop-in from v0.7: no breaking changes, controller
-      # values below all still valid (maxRecvMsgSize, mutatingWebhook.certManager,
-      # extProc.logLevel). The mcpproxy lives in this controller — the external-MCP
-      # Caddy/openresty proxies still front #2218/#2219, which v1.0 does not fix.
-      targetRevision: v1.0.0
+      # v1.1.0 — keep in lockstep with ai-gateway-crds-helm above (see its note
+      # for the v1.1 summary, ADR-0069). Floor EG v1.8.1+ (we run v1.8.2 ✓).
+      # Drop-in from v1.0: no CRD migrations, controller values below all still
+      # valid (maxRecvMsgSize, mutatingWebhook.certManager, extProc.logLevel).
+      # ⚠️ v1.1.0's only operator-facing breaking change is a restricted
+      # controller security context (non-root UID 65532, caps dropped) — we use
+      # the stock image, so no override is needed. The mcpproxy lives in this
+      # controller: #2219 (firecrawl SSE) is FIXED in v1.1.0, so firecrawl now
+      # proxies through Caddy (openresty workaround removed); #2218 (refero
+      # content-type) is STILL OPEN, so refero's rewriteResponseContentType stays.
+      targetRevision: v1.1.0
       path: .
       helm:
         releaseName: aieg

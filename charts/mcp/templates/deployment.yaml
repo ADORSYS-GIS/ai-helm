@@ -69,104 +69,11 @@ spec:
 {{- $port := .Values.mcp.port | int }}
 {{- $host := required "mcp.externalHost is required in proxiedExternal mode" .Values.mcp.externalHost }}
 {{- $hdr := $p.authHeader | default "Authorization" }}
-{{- /* engine: caddy (default) or openresty. Caddy is the normal normalizing proxy
-       (TLS + credential injection + optional response Content-Type rewrite).
-       openresty (nginx + Lua) is for the ONE case Caddy core can't do: rewriting
-       the REQUEST BODY. Today only firecrawl needs it — see proxy.pinRequestProtocolVersion. */ -}}
-{{- $engine := $p.engine | default "caddy" }}
-{{- if eq $engine "openresty" }}
-{{- /* openresty engine — rewrites the REQUEST BODY, which neither Caddy nor stock
-       nginx can. firecrawl frames its `initialize` RESPONSE differently per
-       requested protocol version: for the version modern clients send (2025-11-25)
-       it prepends an EMPTY leading SSE event, and the AIEG v0.7.0 mcpproxy reads
-       that first (empty) event and fails: `MCP message is not a response: <nil>` →
-       500 "failed to create MCP session to any backend". For 2025-06-18 firecrawl
-       emits clean framing the mcpproxy parses fine. So we pin the request's
-       protocolVersion down to a value the upstream frames cleanly, via a Lua
-       `gsub` on the request body. Token is injected in Lua from MCP_TOKEN (openresty
-       has no envsubst entrypoint); `env MCP_TOKEN;` exposes it to os.getenv.
-       INTERIM workaround for AIEG #2219 / ADR-0041 — drop once AIEG's SSE parser
-       skips non-response events. Validated end-to-end against the live gateway with
-       the MCP SDK (init 200, 19 tools). */ -}}
-{{- $pin := required "proxy.pinRequestProtocolVersion is required for the openresty engine" $p.pinRequestProtocolVersion }}
-{{- $prefix := ternary "Bearer " "" (ne $p.bearer false) }}
-{{- $or := list "events {}" "http {" "  client_body_buffer_size 256k;" "  server {" (printf "    listen %d;" $port) "    location / {" "      rewrite_by_lua_block {" "        ngx.req.read_body()" "        local b = ngx.req.get_body_data()" }}
-{{- $or = append $or (printf "        if b then ngx.req.set_body_data((b:gsub([[\"protocolVersion\":\"[^\"]*\"]], [[\"protocolVersion\":\"%s\"]]))) end" $pin) }}
-{{- if .Values.externalSecret.enabled }}
-{{- $or = append $or (printf "        ngx.req.set_header(\"%s\", \"%s\" .. (os.getenv(\"MCP_TOKEN\") or \"\"))" $hdr $prefix) }}
-{{- end }}
-{{- $or = append $or "      }" }}
-{{- $or = append $or (printf "      proxy_pass https://%s;" $host) }}
-{{- $or = append $or (printf "      proxy_set_header Host %s;" $host) }}
-{{- $or = concat $or (list "      proxy_ssl_server_name on;" "      proxy_http_version 1.1;" "      proxy_set_header Accept-Encoding \"\";" "      proxy_buffering off;") }}
-{{- $or = concat $or (list "    }" "  }" "}") }}
-{{- if .Values.externalSecret.enabled }}{{- $or = prepend $or "env MCP_TOKEN;" }}{{- end }}
-{{- $orconf := join "\n" $or }}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .Values.mcp.name }}-proxy
-  namespace: {{ include "common.names.namespace" $ }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-data:
-  nginx.conf: |-
-{{ $orconf | indent 4 }}
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ .Values.mcp.name }}
-  namespace: {{ include "common.names.namespace" $ }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: {{ .Values.mcp.name }}
-  template:
-    metadata:
-      labels:
-        app: {{ .Values.mcp.name }}
-        {{- include "common.labels.standard" . | nindent 8 }}
-      annotations:
-        # Roll the pod when the openresty config changes (read only at start).
-        checksum/config: {{ $orconf | sha256sum }}
-    spec:
-      containers:
-        - name: openresty
-          image: {{ .Values.mcp.image | default "docker.io/openresty/openresty:alpine" | quote }}
-          ports:
-            - containerPort: {{ $port }}
-          {{- if .Values.externalSecret.enabled }}
-          env:
-            # Token is NEVER optional (see the caddy branch for the why) — wait for ESO.
-            - name: MCP_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.externalSecret.secretName }}
-                  key: apiKey
-                  optional: false
-          {{- end }}
-          volumeMounts:
-            - name: orconf
-              mountPath: /usr/local/openresty/nginx/conf/nginx.conf
-              subPath: nginx.conf
-          readinessProbe:
-            tcpSocket:
-              port: {{ $port }}
-            initialDelaySeconds: 2
-            periodSeconds: 10
-          {{- with .Values.mcp.resources }}
-          resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-      volumes:
-        - name: orconf
-          configMap:
-            name: {{ .Values.mcp.name }}-proxy
-{{- else }}
+{{- /* proxiedExternal renders a Caddy "normalizing proxy" (the only engine):
+       TLS reverse-proxy to the upstream, optional credential injection, and
+       optional response Content-Type rewrite. The openresty engine — which
+       rewrote the REQUEST BODY to pin firecrawl's protocolVersion — was removed
+       once AIEG #2219 was fixed in v1.1.0 (ADR-0041 retired). */ -}}
 {{- /* Build the Caddyfile: TLS reverse-proxy to the upstream, inject the
        credential, optional response Content-Type rewrite. */ -}}
 {{- $caddy := list "{" "  admin off" "  auto_https off" "}" (printf ":%d {" $port) }}
@@ -255,7 +162,6 @@ spec:
         - name: caddyfile
           configMap:
             name: {{ .Values.mcp.name }}-caddy
-{{- end }}
 ---
 apiVersion: v1
 kind: Service

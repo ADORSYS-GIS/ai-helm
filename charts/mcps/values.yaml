@@ -125,9 +125,10 @@ mcps:
         - name: HOST
           value: "0.0.0.0"
 
-  # Firecrawl MCP (mcp.firecrawl.dev) via an OPENRESTY normalizing proxy (ADR-0040
-  # + ADR-0041). openresty (nginx + Lua), not Caddy, because it must rewrite the
-  # REQUEST body — see the proxy block.
+  # Firecrawl MCP (mcp.firecrawl.dev) via the default Caddy normalizing proxy
+  # (ADR-0040). The openresty request-body protocol-version pin (ADR-0041) that
+  # worked around AIEG #2219 was REMOVED once that mcpproxy bug was fixed in
+  # AIEG v1.1.0 — firecrawl now proxies through Caddy like context7/refero.
   firecrawl:
     enabled: true
     oauth:
@@ -139,17 +140,9 @@ mcps:
       backendPath: /v2/mcp
       externalHost: mcp.firecrawl.dev
       proxy:
-        # firecrawl frames its `initialize` RESPONSE with an empty leading SSE
-        # event for the protocolVersion modern clients send (opencode/the MCP SDK
-        # request 2025-11-25); the AIEG v0.7.0 mcpproxy reads that empty event and
-        # fails: `MCP message is not a response: <nil>` → 500 "failed to create MCP
-        # session to any backend" (upstream bug #2219, ADR-0041). For 2025-06-18
-        # firecrawl frames cleanly, so openresty's Lua pins the REQUEST body's
-        # protocolVersion down to it. Validated end-to-end (init 200, 19 tools).
-        # INTERIM — drop the openresty engine + this block once AIEG's SSE parser
-        # skips non-response events.
-        engine: openresty
-        pinRequestProtocolVersion: "2025-06-18"
+        # Caddy is the only proxy engine now (openresty removed, ADR-0041 retired).
+        # No pinRequestProtocolVersion: AIEG v1.1.0's mcpproxy skips the empty
+        # leading SSE event firecrawl emits for 2025-11-25 (upstream #2219 fixed).
     externalSecret:
       enabled: true
       secretName: firecrawl-token
