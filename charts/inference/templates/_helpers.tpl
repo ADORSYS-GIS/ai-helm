@@ -1109,9 +1109,14 @@ modelServing:
             - path: /config
               readOnly: true
     {{- end }}
-    {{- if $eng.devShm }}
+    {{- if and $eng.devShm (not $isMp) }}
     # vLLM's worker processes talk over shared memory; the 64 MB default /dev/shm
     # is not enough and the failure mode is an opaque hang during engine start.
+    #
+    # ⚠️ SKIPPED in LMCache MP mode: an emptyDir at /dev/shm SHADOWS the host's
+    # /dev/shm and breaks CUDA IPC with the lmcache sidecar
+    # (cudaErrorMapBufferObjectFailed). In MP mode the pod sets hostIPC: true, so
+    # both containers use the host's /dev/shm (large enough for vLLM's workers).
     dshm:
       enabled: true
       type: emptyDir
