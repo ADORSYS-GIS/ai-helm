@@ -402,6 +402,22 @@ lmcache:
         httpGet: { path: /healthcheck, port: 8081 }
         initialDelaySeconds: 5
         periodSeconds: 5
+  # ⚠️ GPU visibility WITHOUT a resource request. The LMCache MP server must
+  # resolve vLLM's CUDA IPC handles (the GPU device UUID), which requires GPU
+  # visibility. Requesting `nvidia.com/gpu: 1` here would make the pod request
+  # 2 GPUs on a 1-GPU-per-node fleet → Pending. Instead we do NOT request a GPU
+  # resource and let the NVIDIA container runtime inject the device via
+  # NVIDIA_VISIBLE_DEVICES=all (the pod already uses runtimeClassName: nvidia,
+  # so the runtime is active). Verified 2026-08-24 on hetzner-k8s-gpu-2: a
+  # container with these env vars and no GPU request sees the RTX 4000 SFF Ada
+  # and resolves the exact UUID that previously failed. Safe on single-GPU nodes
+  # (the vLLM container's request schedules the pod; the sidecar shares the one
+  # card). See docs/patterns/lmcache-mp-serving.md.
+  env:
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: "all"
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: "all"
   securityContext:
     {{- toYaml (.eng.containerSecurityContext | default dict) | nindent 4 }}
   resources:

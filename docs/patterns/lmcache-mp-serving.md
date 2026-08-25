@@ -1,8 +1,10 @@
 # Serving vLLM with a separate LMCache MP server
 
-*Status: **PARKED** — design + findings recorded 2026-08-24. The fleet currently
-serves `qwen3-5-2b` in **default mode (no external LMCache)** while this path is
-completed.*
+*Status: **SOLUTION FOUND & VERIFIED** (2026-08-24) — the GPU-visibility blocker
+is solved with `NVIDIA_VISIBLE_DEVICES=all` on the sidecar (no GPU resource
+request). The chart change is implemented; catalog activation for `qwen3-5-2b`
+is pending the probe/spike (inference-ops PR #20). The fleet currently serves
+`qwen3-5-2b` in **default mode (no external LMCache)** until then.*
 
 ---
 
@@ -55,8 +57,50 @@ visibility** (`/dev/nvidia*` + NVML).
   model). The pod goes `Pending` with `Insufficient nvidia.com/gpu`.
 
 So the same-pod sidecar approach (as in inference-ops PR #20) **cannot work** on
-this fleet. The MP server must either run **inside the vLLM container** (sharing
-its GPU allocation) or on a **separate GPU**.
+this fleet with a GPU resource request. The MP server must either run **inside
+the vLLM container** (sharing its GPU allocation), on a **separate GPU**, or —
+the solution we found — **see the GPU without requesting it** (§3).
+
+### 2.2 The solution: GPU visibility without a resource request
+
+The NVIDIA container runtime injects GPU devices based on `NVIDIA_VISIBLE_DEVICES`
+**regardless of the Kubernetes resources block**. So the sidecar can see the GPU
+without requesting `nvidia.com/gpu`:
+
+```yaml
+# LMCache MP sidecar container
+env:
+  - name: NVIDIA_VISIBLE_DEVICES
+    value: "all"
+  - name: NVIDIA_DRIVER_CAPABILITIES
+    value: "all"
+# NO nvidia.com/gpu resource request
+```
+
+The pod already uses `runtimeClassName: nvidia` (set at the pod level for the
+vLLM container), so the NVIDIA runtime is active for the whole pod — the sidecar
+inherits it.
+
+**Verified 2026-08-24 on `hetzner-k8s-gpu-2`:** a probe pod with these env vars
+and no GPU request ran `nvidia-smi` and saw:
+```
+GPU 0: NVIDIA RTX 4000 SFF Ada Generation (UUID: GPU-a9bd16dd-c97d-3cc0-30a3-e3ad75af2424)
+```
+That UUID is **exactly** the one the MP server previously failed to resolve
+(`a9bd16dd-... not found in the discovered devices`), confirming the sidecar can
+now resolve it.
+
+**Why this is safe on our fleet:** each node has exactly **1 GPU**. The vLLM
+container's `nvidia.com/gpu: 1` request schedules the pod onto a GPU node; the
+sidecar shares that single card via `NVIDIA_VISIBLE_DEVICES=all`. The pod still
+requests only **1 GPU total**.
+
+**Caveats (acceptable here):**
+- The sidecar is not GPU-aware-scheduled (moot — the vLLM request schedules the pod).
+- It sees all GPUs on the node (moot — there is only one).
+- NVIDIA officially sanctions this pattern only for "GPU management containers";
+  for app workloads it is a documented-but-restricted approach. Safe on a
+  single-GPU node, but not a general multi-GPU sharing mechanism.
 
 ### 2.2 Secondary findings
 
@@ -73,14 +117,23 @@ its GPU allocation) or on a **separate GPU**.
 
 ---
 
-## 3. The path forward: DRA (Dynamic Resource Allocation)
+## 3. The solution (implemented): GPU visibility without a resource request
 
-### 3.1 Why DRA solves the problem
+The primary fix is **already implemented** in the chart
+(`charts/inference/templates/_helpers.tpl`, `inference.lmcacheMpContainer`): the
+LMCache MP sidecar sets `NVIDIA_VISIBLE_DEVICES=all` and
+`NVIDIA_DRIVER_CAPABILITIES=all` and does **not** request `nvidia.com/gpu`. This
+lets it see the single GPU without inflating the pod's GPU request.
 
-The legacy device-plugin model allocates GPUs **per container**. DRA
-(KEP-4381) lets a **pod** declare one shared `ResourceClaim` that **multiple
-containers reference** — so vLLM and the LMCache MP server can share the **same
-single GPU** without over-requesting:
+This is far simpler than the DRA path (below) and requires **no cluster-level
+changes** — it relies on the existing `runtimeClassName: nvidia` and the
+single-GPU-per-node topology.
+
+## 4. Alternative: DRA (Dynamic Resource Allocation)
+
+If we ever need a *supported*, general multi-GPU sharing mechanism (or run on
+multi-GPU nodes), DRA is the "proper" Kubernetes-native alternative. It lets a
+pod declare one shared `ResourceClaim` that multiple containers reference:
 
 ```yaml
 spec:
@@ -99,7 +152,7 @@ spec:
           - name: gpu        # LMCache sidecar sees the SAME GPU
 ```
 
-### 3.2 Cluster state (verified 2026-08-24)
+### 4.1 Cluster state (verified 2026-08-24)
 
 | Check | Result |
 | :--- | :--- |
@@ -110,59 +163,46 @@ spec:
 | NVIDIA device plugin | `nvcr.io/nvidia/k8s-device-plugin:v0.20.0` — running in **legacy mode**, not DRA mode |
 
 **Conclusion:** DRA is enabled at the API level but **not wired up for GPUs**.
-The NVIDIA plugin is still doing per-container allocation.
+The NVIDIA plugin is still doing per-container allocation. Not needed for the
+current single-GPU fix.
 
 ---
 
-## 4. Steps to complete serving vLLM with a separate LMCache MP server
+## 5. Steps to complete serving vLLM with a separate LMCache MP server
 
-### Phase A — Cluster: enable DRA for GPUs
+### Phase A — Chart (DONE)
 
-1. **Deploy the NVIDIA DRA driver** (`nvidia-dra-driver-gpu`) on both GPU nodes.
-   This is a separate component from the legacy device plugin; it registers the
-   `resource.k8s.io` driver and fulfills claims.
-2. **Run the device plugin in DRA mode.** `v0.20.0` supports both modes; it must
-   be configured for DRA (the legacy DaemonSet is not enough).
-3. **Create a `DeviceClass`** (e.g. `nvidia.com/gpu`) that the chart's claims
-   reference.
-4. **Verify:** a test pod with a shared claim sees the GPU from two containers.
+1. ✅ `charts/inference/templates/_helpers.tpl` — the `lmcache` sidecar sets
+   `NVIDIA_VISIBLE_DEVICES=all` + `NVIDIA_DRIVER_CAPABILITIES=all` and does not
+   request a GPU resource. Backward-compatible: default mode (no LMCache) is
+   unchanged; only `LMCacheMPConnector` renders the sidecar.
 
-### Phase B — Chart: emit a shared ResourceClaim
+### Phase B — Values: activate MP mode
 
-5. In `charts/inference/templates/_helpers.tpl`, for `LMCacheMPConnector` mode,
-   render a pod-level `resources.claims` entry plus a `ResourceClaim` (or
-   `ResourceClaimTemplate`) instead of per-container `nvidia.com/gpu` requests.
-6. Both the `model` container and the `lmcache` sidecar reference the **same**
-   claim name.
-7. Keep the change **backward-compatible**: default mode (no LMCache) keeps the
-   legacy per-container GPU request; only `LMCacheMPConnector` switches to DRA.
-
-### Phase C — Values: activate MP mode
-
-8. In `ai-helm-values` `environments/prod/values/inference.yaml`, set
+2. In `ai-helm-values` `environments/prod/values/inference.yaml`, set
    `qwen3-5-2b` to `lmcache.connector: LMCacheMPConnector` with:
    - `lmcache.mp.image`: `lmcache/standalone:nightly-2026-08-18`
    - `lmcache.mp.chunkSize`: `N` (probed on the exact image — expected 544, **unverified**)
    - `serving.mambaCacheMode: align`
    - `serving.maxNumBatchedTokens`: `>= N`
    - `serving.kvCacheDtype: auto` (mandatory, ADR-0118)
-9. Bump the vLLM image to `lmcache/vllm-openai:nightly-2026-08-18-cu129` (the
+3. Bump the vLLM image to `lmcache/vllm-openai:nightly-2026-08-18-cu129` (the
    plain tag is CUDA 13).
 
-### Phase D — Validate (inference-ops PR #20 gates)
+### Phase C — Validate (inference-ops PR #20 gates)
 
-10. **Boot** — MP server + connector start without crash with config aligned on `N`.
-11. **Real store/retrieve** — external LMCache KV storage/retrieval, including
-    persistence across a vLLM restart (not just "2nd request faster", which can
-    come from vLLM's local L0/APC cache).
-12. **Score-equivalent generations** — comparison at the score level (GDN is not
-    bit-exact).
-13. Re-run **P6** (prefix cache) and confirm the SLO (p50 < 800 ms, p95 < 1200 ms,
-    p99 < 1500 ms) is now met vs the LMCache-off baseline.
+4. **Boot** — MP server + connector start without crash with config aligned on `N`.
+5. **Real store/retrieve** — external LMCache KV storage/retrieval, including
+   persistence across a vLLM restart (not just "2nd request faster", which can
+   come from vLLM's local L0/APC cache).
+6. **Score-equivalent generations** — comparison at the score level (GDN is not
+   bit-exact).
+7. Re-run **P6** (prefix cache) and confirm the SLO (p50 < 800 ms, p95 < 1200 ms,
+   p99 < 1500 ms) is now met vs the LMCache-off baseline.
 
 ---
 
-## 5. Current fleet state (2026-08-24)
+## 6. Current fleet state (2026-08-24)
 
 - **gpu-1:** `z-image-turbo` (LocalAI, image gen, LibreChat-internal, not federated)
 - **gpu-2:** `qwen3-5-2b` — **default mode, no external LMCache** (replaced
@@ -172,7 +212,7 @@ The NVIDIA plugin is still doing per-container allocation.
 
 ---
 
-## 6. References
+## 7. References
 
 - inference-ops PR #22 — how-to: hybrid cache + streaming validation (reviewed;
   findings left on the PR)
@@ -181,3 +221,10 @@ The NVIDIA plugin is still doing per-container allocation.
 - Kubernetes pod-level resource specification:
   https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#pod-level-resource-specification
 - DRA (KEP-4381): https://kubernetes.io/docs/concepts/workloads/pods/dynamic-resource-allocation/
+- NVIDIA container toolkit — `NVIDIA_VISIBLE_DEVICES`:
+  https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html
+- NVIDIA k8s-device-plugin README (envvar strategy + "exposes all GPUs" warning):
+  https://github.com/NVIDIA/k8s-device-plugin
+- NVIDIA GPU Operator — GPU Management Containers (the sanctioned use of
+  `NVIDIA_VISIBLE_DEVICES` without a resource request):
+  https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/cdi.html
