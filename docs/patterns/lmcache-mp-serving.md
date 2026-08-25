@@ -102,6 +102,29 @@ requests only **1 GPU total**.
   for app workloads it is a documented-but-restricted approach. Safe on a
   single-GPU node, but not a general multi-GPU sharing mechanism.
 
+### 2.3 Second blocker: CUDA IPC needs shared `/dev/shm` (solved with `hostIPC`)
+
+GPU visibility alone is not enough. LMCache MP shares vLLM's KV caches via
+**CUDA IPC device memory** (`torch._new_shared_cuda`), which stores a ref-counter
+file in `/dev/shm`. Kubernetes gives each container its **own private `/dev/shm`**
+by default, so the LMCache server cannot resolve vLLM's file →
+`cudaErrorMapBufferObjectFailed`:
+
+```
+torch.AcceleratorError: CUDA error: mapping of buffer object failed
+cudaErrorMapBufferObjectFailed
+```
+
+**Fix:** share the host IPC namespace (`hostIPC: true`) on the pod for MP mode,
+so both containers see the same `/dev/shm`. This is the documented LMCache
+pattern (the LMCache Kubernetes Operator mounts the host's `/dev/shm` for exactly
+this reason). Verified: both containers load the **same** `libcuda.so` (compat
+build 575.51.03), ruling out a driver mismatch; the missing shared `/dev/shm` was
+the cause.
+
+⚠️ Do **not** use an `emptyDir` at `/dev/shm` — it shadows the host's and breaks
+`cuIpcOpenMemHandle`.
+
 ### 2.2 Secondary findings
 
 - **Image tag (vLLM):** `lmcache/vllm-openai:nightly-2026-08-18` (plain) is a
