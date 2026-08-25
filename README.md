@@ -65,6 +65,21 @@ every workload that runs in the cluster, plus the ArgoCD `Application` /
 └── .gitlab-ci.yml              Mirror of the opencode review for GitLab.
 ```
 
+## Parked: image-gen-mcp-rs
+
+[`ADORSYS-GIS/image-gen-mcp-rs`](https://github.com/ADORSYS-GIS/image-gen-mcp-rs) (a
+multi-provider image-generation MCP server) was evaluated for a sixth `charts/mcps`
+route and deliberately **not** wired ([Story #991](https://github.com/ADORSYS-GIS/ai-helm/issues/991)):
+
+- Image generation is already delivered by the self-hosted **Z-Image-Turbo** on the
+  GPU fleet (LocalAI, ADR-0100/0102) via LibreChat's `IMAGE_GEN`.
+- The server is a full major + 7 minors behind its core deps (`rust-mcp-sdk` 0.9→1.0.1,
+  `async-openai` 0.34→0.41.3) — see [image-gen-mcp-rs#41](https://github.com/ADORSYS-GIS/image-gen-mcp-rs/issues/41).
+- Its default providers are external SaaS (OpenAI / Gemini), not the platform's
+  self-hosted path.
+
+Revisit only if a consumer needs **agent-side** image generation **and** #41 lands.
+
 ## Where to start
 
 | You want to… | Read this |

@@ -40,6 +40,13 @@ flowchart TB
 | `refero` | proxiedExternal | caddy | `api.refero.design` |
 | `firecrawl` | proxiedExternal | openresty | `mcp.firecrawl.dev` (`/v2/mcp`) |
 
+> ⚠️ **`image-gen-mcp-rs` is deliberately NOT a route here** — evaluated and parked
+> ([Story #991](https://github.com/ADORSYS-GIS/ai-helm/issues/991)): image generation
+> is already served self-hosted by Z-Image-Turbo (LocalAI, ADR-0100/0102) via LibreChat's
+> `IMAGE_GEN`, the server is a major + 7 minors behind its deps
+> ([image-gen-mcp-rs#41](https://github.com/ADORSYS-GIS/image-gen-mcp-rs/issues/41)),
+> and its default providers are external SaaS.
+
 ## The OAuth carve-out (ADR-0038)
 
 `/mcp/*` is the one place Authorino is bypassed. Each `MCPRoute` carries
