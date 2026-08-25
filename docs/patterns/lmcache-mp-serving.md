@@ -1,10 +1,11 @@
 # Serving vLLM with a separate LMCache MP server
 
-*Status: **SOLUTION FOUND & VERIFIED** (2026-08-24) — the GPU-visibility blocker
-is solved with `NVIDIA_VISIBLE_DEVICES=all` on the sidecar (no GPU resource
-request). The chart change is implemented; catalog activation for `qwen3-5-2b`
-is pending the probe/spike (inference-ops PR #20). The fleet currently serves
-`qwen3-5-2b` in **default mode (no external LMCache)** until then.*
+*Status: **ACTIVATED & WORKING** (2026-08-25) — `qwen3-5-2b` serves with
+`LMCacheMPConnector` and a same-pod `lmcache/standalone` sidecar. The pod is
+`2/2` Ready, the MP server is GPU-aware, and CUDA IPC works. Three fixes were
+required: (1) `NVIDIA_VISIBLE_DEVICES=all` on the sidecar (GPU visibility without
+a resource request), (2) `-cu129` images (CUDA 12.9, not CUDA 13), and (3)
+`hostIPC: true` + skip the `/dev/shm` emptyDir (shared `/dev/shm` for CUDA IPC).*
 
 ---
 
@@ -123,7 +124,9 @@ build 575.51.03), ruling out a driver mismatch; the missing shared `/dev/shm` wa
 the cause.
 
 ⚠️ Do **not** use an `emptyDir` at `/dev/shm` — it shadows the host's and breaks
-`cuIpcOpenMemHandle`.
+`cuIpcOpenMemHandle`. The chart therefore **skips the `dshm` emptyDir in MP mode**
+and relies on `hostIPC: true` (the host's `/dev/shm` is large enough for vLLM's
+worker processes).
 
 ### 2.2 Secondary findings
 
