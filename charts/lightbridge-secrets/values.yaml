@@ -57,6 +57,16 @@ externalSecrets:
       - secretKey: token-encryption-key
         key: ai/camer/digital/prod/env
         property: token-encryption-key
+      # Keycloak confidential-client credential for the RP leg (client auth flipped
+      # from public, 2026-08-25). The RP presents these at authorization-code
+      # redemption (client_secret_post). Store properties created by the owner with
+      # the lightbridge-idp- prefix, unlike the two key entries above.
+      - secretKey: client-id
+        key: ai/camer/digital/prod/env
+        property: lightbridge-idp-client-id
+      - secretKey: client-secret
+        key: ai/camer/digital/prod/env
+        property: lightbridge-idp-client-secret
   # CNPG barman backup credentials (Hetzner Object Storage). Same creds the
   # Keycloak CNPG backup uses — platform secret under prod/meta/test-app.
   #
