@@ -32,6 +32,31 @@ externalSecrets:
       - secretKey: OPA_PASSWORD
         key: ai/camer/digital/prod/env
         property: lightbridge_opa_password
+  # authz-idp RP-leg keys (lightbridge-authz ADR-0021/0024). Two independent 32-byte
+  # base64url-no-pad keys with different lifecycles: state-encryption-key seals the
+  # short-lived RP state cookie (cheap to rotate — costs in-flight logins only);
+  # token-encryption-key seals the stored Keycloak token set at rest in
+  # federated_identities.token_envelope (rotation = each user's stored tokens are
+  # re-sealed on their next login; never invalidates lightbridge-issued tokens).
+  #
+  # CUTOVER NOTE (2026-08-25): a hand-created, unmanaged Secret of the same name
+  # predates this entry (the overnight ADR-0023/0024 rollout). ESO will NOT adopt a
+  # secret it doesn't own — after this chart lands, delete the manual Secret once
+  # (`kubectl -n converse delete secret lightbridge-idp-rp`) so ESO recreates it from
+  # the store. Running pods keep their injected env until restart; the value change
+  # is safe by design for both keys (see above).
+  #
+  # Property names are as created in the store on 2026-08-25 (dash-form, unlike the
+  # older snake_case entries). If the ExternalSecret reports SecretSyncError naming a
+  # missing property, the store-side names differ — fix HERE, not in the store.
+  lightbridge-idp-rp:
+    data:
+      - secretKey: state-encryption-key
+        key: ai/camer/digital/prod/env
+        property: state-encryption-key
+      - secretKey: token-encryption-key
+        key: ai/camer/digital/prod/env
+        property: token-encryption-key
   # CNPG barman backup credentials (Hetzner Object Storage). Same creds the
   # Keycloak CNPG backup uses — platform secret under prod/meta/test-app.
   #
