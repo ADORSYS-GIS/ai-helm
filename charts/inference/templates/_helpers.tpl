@@ -649,6 +649,15 @@ modelServing:
     # Job too — not for the GPU, but because Longhorn only runs on the GPU nodes
     # (ADR-0092), so a pod elsewhere could not mount the weights volume at all.
     runtimeClassName: {{ $gpu.runtimeClassName | quote }}
+    {{- if $isMp }}
+    # ⚠️ hostIPC: true — LMCache MP requires CUDA IPC device-memory sharing
+    # between the vLLM container and the lmcache sidecar. PyTorch's
+    # `_new_shared_cuda` stores a ref-counter file in /dev/shm; separate
+    # per-container /dev/shm causes `cudaErrorMapBufferObjectFailed`. Sharing the
+    # host IPC namespace gives both containers the same /dev/shm. Only for MP
+    # mode (default mode has no sidecar and needs no CUDA IPC).
+    hostIPC: true
+    {{- end }}
     nodeSelector:
       {{- toYaml $gpu.nodeSelector | nindent 6 }}
     tolerations:
