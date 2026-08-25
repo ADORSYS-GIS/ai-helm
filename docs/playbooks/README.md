@@ -15,6 +15,7 @@ to **do** something. See the [docs index](../README.md) for the other categories
 | [python-dashboard-generation.md](python-dashboard-generation.md) | Generating dashboards from Python (grafana-foundation-sdk); the drift check |
 | [gateway-capacity.md](gateway-capacity.md) | Envoy AI Gateway readiness/capacity; HPA right-size; load-test next steps |
 | [keycloak-audience-operations.md](keycloak-audience-operations.md) | OIDC audience claim management |
+| [keycloak-opencode-clients-prod.md](keycloak-opencode-clients-prod.md) | Production record for #586: manual client configuration on `auth.verif.fyi` (field-by-field), secret/vault handling, and the six-step prod test with result triage |
 | [keycloak-billing-provisioning-guide.md](keycloak-billing-provisioning-guide.md) | Exporting the billing-plan claim Keycloak → Envoy Gateway |
 | [mongodb-restoration-guide.md](mongodb-restoration-guide.md) | Restore a MongoDB backup into the `librechat-db` StatefulSet |
 | [service-endpoint-decommission.md](service-endpoint-decommission.md) | Decommission checklist for cluster-internal service endpoints |
