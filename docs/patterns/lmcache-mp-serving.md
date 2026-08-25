@@ -104,12 +104,18 @@ requests only **1 GPU total**.
 
 ### 2.2 Secondary findings
 
-- **Image tag:** `lmcache/vllm-openai:nightly-2026-08-18` (plain) is a **CUDA 13**
-  build and fails on the fleet driver (550 / CUDA 12.4):
+- **Image tag (vLLM):** `lmcache/vllm-openai:nightly-2026-08-18` (plain) is a
+  **CUDA 13** build and fails on the fleet driver (550 / CUDA 12.4):
   `RuntimeError: The NVIDIA driver on your system is too old (found version 12040)`.
   The working tag is **`nightly-2026-08-18-cu129`** (CUDA 12.9) — verified with a
   real `import vllm` + `torch.cuda.init()` on the RTX 4000 SFF Ada. Same class of
   trap as llama.cpp `server-cuda13`.
+- **Image tag (LMCache MP server):** the SAME trap applies to
+  `lmcache/standalone`. The plain `nightly-2026-08-18` is CUDA 13 (torch
+  `2.13.0+cu130`) and fails on the fleet driver — the MP server falls back to
+  CPU (`torch_dev=StubCPUDevice`) and cannot resolve vLLM's GPU UUID. Use
+  **`nightly-2026-08-18-cu129`** (torch `2.13.0+cu129`), verified on
+  `hetzner-k8s-gpu-2`. Both images must be the `-cu129` variant.
 - **`kvCacheDtype: auto` is mandatory.** Independently, on Qwen2.5-VL-7B we found
   `fp8_e4m3` KV cache produces **garbage vision** (vLLM warns the checkpoint
   provides no q/k scaling factors and falls back to scaling factor 1.0). This
