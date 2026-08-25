@@ -143,6 +143,14 @@ mcps:
         # Caddy is the only proxy engine now (openresty removed, ADR-0041 retired).
         # No pinRequestProtocolVersion: AIEG v1.1.0's mcpproxy skips the empty
         # leading SSE event firecrawl emits for 2025-11-25 (upstream #2219 fixed).
+        # ⚠️ POST-DEPLOY SMOKE (required, not optional — the removal rides on the
+        # upstream fix and render tests can't catch a regression): after ArgoCD
+        # syncs, run an MCP-SDK `initialize` against /mcp/firecrawl through the
+        # live gateway and assert HTTP 200 + a non-empty tools/list (the exact
+        # contract ADR-0041 used to validate the workaround). If it 500s with
+        # "MCP message is not a response", roll back by re-adding
+        # `engine: openresty` + `pinRequestProtocolVersion: "2025-06-18"` here
+        # (or pin AIEG back to v1.0.0). See ADR-0134 Verification & Rollback.
     externalSecret:
       enabled: true
       secretName: firecrawl-token

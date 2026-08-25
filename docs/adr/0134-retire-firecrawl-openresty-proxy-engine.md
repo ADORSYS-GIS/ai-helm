@@ -74,6 +74,31 @@ does not resolve in `header_up`).
   retire: nothing else uses `engine: openresty`, so the dormant engine + CI
   fixture are dead code.
 
+## Verification & rollback (post-deploy)
+
+The pin removal rides entirely on the upstream mcpproxy fix (PR #2267) shipping in
+AIEG v1.1.0; chart-render tests cannot prove it — this is behavioural and
+upstream-side. **After** ArgoCD syncs, run the migration's smoke test:
+
+```bash
+# 1. Confirm the AI Gateway controller is actually v1.1.0
+kubectl -n envoy-ai-gateway-system get deploy ai-gateway-controller \
+  -o jsonpath='{.spec.template.spec.containers[0].image}'
+# expect docker.io/envoyproxy/ai-gateway-controller:v1.1.0
+
+# 2. MCP-SDK `initialize` against firecrawl through the live gateway — NOT curl
+#    (curl doesn't reproduce the empty-SSE-event framing; the MCP SDK does).
+#    Use the firecrawl_token + an @modelcontextprotocol/sdk client at
+#    https://api.ai.camer.digital/mcp/firecrawl
+#    assert HTTP 200 + a non-empty tools/list (the exact contract ADR-0041 used).
+```
+
+**Rollback** if `initialize` 500s with `MCP message is not a response: <nil>` (the
+2026-06-11 failure mode returning): re-add the pin in `charts/mcps/values.yaml`
+(`proxy.engine: openresty` + `proxy.pinRequestProtocolVersion: "2025-06-18"`), or
+pin `aieg-crd`/`aieg` back to `v1.0.0`. Both are values/config changes; no code
+change required.
+
 ## Related
 
 - Supersedes: [ADR-0041](0041-firecrawl-protocol-version-rewrite-nginx-engine.md).
