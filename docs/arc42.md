@@ -437,7 +437,7 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0037 | opencode-k8s-agent → internal plane via its own projected SA token |
 | 0038 | MCP OAuth discovery (RFC 9728) via native AIEG `MCPRoute.securityPolicy.oauth` |
 | 0040 | External MCPs via per-MCP in-cluster Caddy normalizing proxies |
-| 0041 | openresty request-body protocol-version rewrite for firecrawl |
+| 0041 | openresty request-body protocol-version rewrite for firecrawl — **retired** by [0134](../adr/0134-retire-firecrawl-openresty-proxy-engine.md) |
 | 0045 | Scrape-first dashboard sourcing |
 | 0046 | Per-user attribution repair (flatten OTLP access-log attributes at Alloy) |
 | 0047/0049 | GitHub-OIDC CI binding (`lightbridge-repo-auth`) + operator-only onboarding |
@@ -530,7 +530,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Cut-over-values-repo-first ordering** | An ai-helm chart change merged before its values file exists silently falls back to chart defaults | `render-check.yml` in `ai-helm-values`; sequence discipline |
 | **Single env (`prod`) only** | No staging to validate before deploy | Second env is a drop-in `ai-helm-values` `environments/<env>/` |
 | **Mimir ring wedges if memberlist blocked at startup** | Metrics silently dropped | Guarded: wave -3 `allow-same-namespace` + `rejoin_interval: 1m` |
-| **External MCP proxy engines are interim** | openresty/Content-Type rewrites carried until AIEG #2218/#2219 land | Tracked in ADR-0040/0041 |
+| **External MCP proxy engines are interim** | firecrawl openresty rewrite retired (AIEG #2219 fixed in v1.1.0); refero Content-Type rewrite remains until AIEG #2218 lands | Tracked in ADR-0040/0041/0134 |
 | **MCP `MCP_TOKEN` token-bind race** | Empty-token proxy rejects all requests | Guarded: `optional: false` (waits for ESO) |
 | **Grafana has read access to the Keycloak auth DB** (ADR-0063/0064) | A leaked `grafana_ro` credential reads usernames/emails/sessions | Bounded: least-privilege role, column-level `client` grant, `-ro` replica; blast radius = identity data only |
 | **KC 26 persistent-sessions: online sessions live in the `offline_*` tables** | Session/grant queries miscount online logins as offline grants | Filter `offline_flag='1'`; documented in `keycloak-identity-datasource.md` + ADR-0064 |

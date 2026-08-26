@@ -3,7 +3,8 @@
 How Model Context Protocol tool servers are exposed through the gateway — the
 OAuth discovery carve-out, and the in-cluster proxy modes that make flaky
 external MCPs behave. Source ADRs: **0038** (OAuth discovery), **0040**
-(proxiedExternal Caddy), **0041** (openresty request rewrite). Namespace
+(proxiedExternal Caddy). (0041 — the firecrawl openresty request rewrite — was
+retired by [0134](../adr/0134-retire-firecrawl-openresty-proxy-engine.md).) Namespace
 `converse-mcp`, orchestrator `charts/mcps`, leaf `charts/mcp`.
 
 ## The MCP catalog
@@ -19,7 +20,7 @@ flowchart TB
     subgraph proxied["proxiedExternal (in-cluster proxy → external TLS)"]
         CTX["context7 → mcp.context7.com<br/><i>engine: caddy</i>"]
         REF["refero → api.refero.design<br/><i>caddy + Content-Type rewrite</i>"]
-        FC["firecrawl → mcp.firecrawl.dev<br/><i>engine: openresty + protocol pin</i>"]
+        FC["firecrawl → mcp.firecrawl.dev<br/><i>engine: caddy</i>"]
     end
 
     EXT["external MCP services"]
@@ -38,7 +39,7 @@ flowchart TB
 | `terraform` | selfHosted | — | in-cluster image |
 | `context7` | proxiedExternal | caddy | `mcp.context7.com` |
 | `refero` | proxiedExternal | caddy | `api.refero.design` |
-| `firecrawl` | proxiedExternal | openresty | `mcp.firecrawl.dev` (`/v2/mcp`) |
+| `firecrawl` | proxiedExternal | caddy | `mcp.firecrawl.dev` (`/v2/mcp`) |
 
 ## The OAuth carve-out (ADR-0038)
 
@@ -88,20 +89,19 @@ flowchart TB
     end
 
     subgraph fix["Fix: per-MCP in-cluster normalizing proxy"]
-        CADDY["Caddy (caddy:2-alpine)<br/>Go TLS handles ECDSA ✅<br/>injects Bearer (header_up)<br/>refero: rewrite Content-Type (header_down)"]
-        ORS["openresty (nginx+Lua)<br/>rewrite_by_lua_block:<br/>pin request protocolVersion → 2025-06-18<br/>inject Bearer via os.getenv"]
+        CADDY["Caddy (caddy:2-alpine)<br/>Go TLS handles ECDSA ✅<br/>injects Bearer (header_up)<br/>refero: rewrite Content-Type (header_down)<br/>firecrawl: #2219 fixed in AIEG v1.1.0 → no rewrite needed"]
     end
 
     P1 --> CADDY
     P2 --> CADDY
     P3 --> CADDY
-    P4 --> ORS
+    P4 --> CADDY
 
 ```
 
 ```mermaid
 flowchart LR
-    MCPR["MCPRoute"] -->|plain HTTP| PROXY["in-cluster proxy<br/>(Caddy or openresty)"]
+    MCPR["MCPRoute"] -->|plain HTTP| PROXY["in-cluster proxy<br/>(Caddy)"]
     PROXY -->|"TLS + credential + rewrites"| UP["external MCP"]
 ```
 
@@ -116,9 +116,10 @@ ADR-0039 `EnvoyPatchPolicy` was removed.
 > false`, so a keyed proxy **waits** in `ContainerCreating` for ESO. A keyless
 > MCP disables `externalSecret` and proxies anonymously.
 >
-> ⚠️ **The openresty/Caddy engine choices are INTERIM.** Drop the firecrawl
-> openresty engine once AIEG's SSE parser skips non-response events (#2219); drop
-> refero's `rewriteResponseContentType` once #2218 lands. Full diagnosis:
+> ⚠️ **Caddy is now the only proxy engine.** The firecrawl openresty workaround
+> was retired once AIEG's mcpproxy learned to skip non-response SSE events (#2219,
+> fixed in v1.1.0 — ADR-0134). refero's `rewriteResponseContentType` remains —
+> drop it once #2218 lands. Full diagnosis:
 > [`../2026-06-10-mcp-external-server-proxy-debug.md`](../migrations/2026-06-10-mcp-external-server-proxy-debug.md).
 
 → Related: [05 Auth (carve-out)](05-auth-identity.md) · [06 Networking & TLS](06-networking-tls.md)

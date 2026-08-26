@@ -52,13 +52,9 @@ mcp:
   # MCP_TOKEN. Caddy reverse-proxies to https://externalHost (path preserved =
   # backendPath).
   proxy:
-    # Proxy engine: "caddy" (default) or "openresty". Caddy is the normalizing
-    # proxy for the common case (TLS + credential injection + optional Content-Type
-    # rewrite). Use "openresty" (nginx + Lua) ONLY when the REQUEST BODY must be
-    # rewritten — neither Caddy nor stock nginx can — i.e. with
-    # pinRequestProtocolVersion below. Today only firecrawl needs openresty.
-    engine: caddy
-    # Header the proxy injects toward the upstream with the token.
+    # Proxy engine: Caddy is the ONLY engine (the openresty engine was removed once
+    # AIEG #2219 was fixed in v1.1.0 — ADR-0041 retired). Caddy does the TLS
+    # reverse-proxy, credential injection, and optional response Content-Type rewrite.
     authHeader: Authorization
     # Prefix the token with "Bearer " (set false for raw-value headers).
     bearer: true
@@ -75,16 +71,6 @@ mcp:
     # text/event-stream (e.g. refero) → set "application/json". Leave empty to
     # pass the upstream Content-Type through (e.g. context7/firecrawl real SSE).
     rewriteResponseContentType: ""
-    # Required for the OPENRESTY engine: pin the protocolVersion in the REQUEST
-    # body to this value (a Lua gsub rewrites `"protocolVersion":"…"`). INTERIM
-    # workaround for an AIEG v0.7.0 mcpproxy bug (#2219): firecrawl frames its
-    # `initialize` RESPONSE with an empty leading SSE event for the version modern
-    # clients send (2025-11-25), and the mcpproxy reads that empty event and fails
-    # (`MCP message is not a response: <nil>` → 500). For 2025-06-18 firecrawl
-    # frames cleanly, so we pin the upstream request down to it. ⚠️ Drop this (and
-    # the openresty engine) once AIEG's SSE parser skips non-response events. Unset
-    # for the caddy engine. See ADR-0041.
-    pinRequestProtocolVersion: ""  # e.g. "2025-06-18"
 
   # ── auth: inject an API key into the MCPRoute (securityPolicy.apiKey) ────
   # The referenced Secret's key MUST be `apiKey` (AIEG MCPRoute contract). When
