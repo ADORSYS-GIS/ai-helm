@@ -81,6 +81,36 @@ GDN hybrids (ticket #973). Those models MUST use `LMCacheMPConnector`, which
 keeps the hybrid manager enabled and runs LMCache as a same-pod multiprocess
 server. See `inference-ops` `docs/how-to/validate-qwen3.5-2b-hybrid-cache.md`.
 
+#### LMCache MP operational requirements
+
+`LMCacheMPConnector` runs a same-pod `lmcache/standalone` sidecar that shares the
+GPU with vLLM. Getting that to work reliably requires three things the chart
+renders **automatically** for MP mode — do not "fix" them, and do not undo them:
+
+1. **GPU visibility without a resource request.** The sidecar sets
+   `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=all` and does
+   **not** request `nvidia.com/gpu`. Requesting a GPU there would make the pod
+   request 2 GPUs on a 1-GPU-per-node fleet (→ `Pending`).
+2. **`hostIPC: true`** (pod level). LMCache MP shares vLLM's KV caches via CUDA
+   IPC, which needs both containers to share the host's `/dev/shm`. Without it,
+   the sidecar fails with `cudaErrorMapBufferObjectFailed`.
+3. **No `/dev/shm` emptyDir in MP mode.** The `dshm` emptyDir (used in default
+   mode for vLLM's worker processes) is **skipped** in MP mode — it would shadow
+   the host's `/dev/shm` and break CUDA IPC. The host's `/dev/shm` (via
+   `hostIPC`) is large enough for vLLM's workers.
+
+**Image tags must be CUDA-12 (`-cu129`).** Both `lmcache/vllm-openai` and
+`lmcache/standalone` must use a `-cu129` tag. The plain `nightly-2026-08-18` tag
+is a CUDA-13 build that fails on the fleet driver (550 / CUDA 12.4) with
+"driver too old" / "CUDA initialization: The NVIDIA driver on your system is too
+old". Same trap as llama.cpp's `server-cuda13`.
+
+**`serving.kvCacheDtype` must stay `auto` with LMCache.** fp8 KV cache +
+LMCache is unverified (ADR-0118); the chart fails the render if a model combines
+them.
+
+Full account: `docs/patterns/lmcache-mp-serving.md`.
+
 ## Verification
 
 ```bash

@@ -83,7 +83,24 @@ jobs:
               for vf in "${fixtures[@]}"; do
                 echo "  🧪 fixture $(basename "$vf") (render-only leaf)"
                 helm lint "$chart_dir" $strict_flag -f "$vf"
-                helm template "$chart_name" "$chart_dir" -f "$vf" --dry-run > /dev/null
+                rendered=$(helm template "$chart_name" "$chart_dir" -f "$vf" --dry-run 2>/dev/null || true)
+                # ⚠️ LMCache MP regression guard (charts/inference only). The
+                # ci-vllm-mp model must render with hostIPC: true (CUDA IPC
+                # between vLLM and the lmcache sidecar) and NVIDIA_VISIBLE_DEVICES
+                # on the sidecar. Removing either silently breaks MP mode — this
+                # would otherwise pass CI. (The "no dshm emptyDir" half is NOT
+                # asserted here because the ci-vllm non-MP model legitimately uses
+                # dshm, so a whole-render grep would false-fail; hostIPC + GPU
+                # visibility are the critical, unambiguous signals.)
+                if [[ "$chart_name" == "inference" && "$(basename "$vf")" == "lint-values.yaml" ]]; then
+                  if grep -q "hostIPC: true" <<<"$rendered" && grep -q "NVIDIA_VISIBLE_DEVICES" <<<"$rendered"; then
+                    echo "  ✅ inference MP: hostIPC + NVIDIA_VISIBLE_DEVICES present"
+                  else
+                    echo "  ❌ inference MP regression: hostIPC:true and/or NVIDIA_VISIBLE_DEVICES missing"
+                    echo "$rendered" | grep -E "hostIPC|NVIDIA_VISIBLE" || true
+                    exit 1
+                  fi
+                fi
               done
               echo "✅ $chart_name OK"
               continue

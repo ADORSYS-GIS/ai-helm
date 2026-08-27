@@ -97,6 +97,27 @@ The chart supports two LMCache connectors:
 hybrids (ticket #973). Those models MUST use `LMCacheMPConnector`. See
 `inference-ops` `docs/how-to/validate-qwen3.5-2b-hybrid-cache.md`.
 
+#### LMCache MP operational requirements
+
+`LMCacheMPConnector` renders a same-pod `lmcache/standalone` sidecar that shares
+the GPU with vLLM. Three requirements are **automatic** in the chart for MP mode
+— do not "fix" or undo them:
+
+1. **GPU visibility without a resource request** — the sidecar sets
+   `NVIDIA_VISIBLE_DEVICES=all` + `NVIDIA_DRIVER_CAPABILITIES=all` and does
+   **not** request `nvidia.com/gpu` (requesting one would make the pod ask for 2
+   GPUs on a 1-GPU-per-node fleet → `Pending`).
+2. **`hostIPC: true`** (pod level) — CUDA IPC between vLLM and the sidecar
+   requires a shared host `/dev/shm`; without it the sidecar fails with
+   `cudaErrorMapBufferObjectFailed`.
+3. **No `/dev/shm` emptyDir in MP mode** — the `dshm` emptyDir is skipped; it
+   would shadow the host's `/dev/shm` and break CUDA IPC.
+
+**Image tags must be `-cu129`** for both `lmcache/vllm-openai` and
+`lmcache/standalone`. The plain `nightly-2026-08-18` tag is CUDA 13 and fails on
+the fleet driver (550 / CUDA 12.4). `kvCacheDtype` must stay `auto` with LMCache
+(ADR-0118). Full account: `docs/patterns/lmcache-mp-serving.md`.
+
 ### KV-cache precision (ADR-0118)
 
 The KV cache (what the attention reads) is the biggest per-token VRAM cost
