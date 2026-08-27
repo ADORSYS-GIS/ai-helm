@@ -362,22 +362,34 @@ codeapi:
           probes:
             liveness:
               enabled: true
-              # HTTP probe, not the exec of /usr/local/bin/sandbox-runner-healthcheck.sh:
-              # that script is not present in the sandbox-runner image (the fork's
-              # Dockerfile.worker-sandbox never COPYs it), so the exec probe fails
-              # forever with "no such file or directory". Hit the same /api/v2/health
-              # endpoint the script checks, on the same port as the readiness probe.
-              # (Live-incident fix, Story #995 / ticket #1033 — see issue for evidence.)
-              type: HTTP
-              path: /api/v2/health
-              port: sandbox
-              spec: { initialDelaySeconds: 60, periodSeconds: 30, timeoutSeconds: 5 }
+              custom: true
+              # exec of /usr/local/bin/sandbox-runner-healthcheck.sh. The script IS
+              # shipped in the fork's api/Dockerfile sandbox-runner target (verified
+              # present in sha-d3b0f05); the previous HTTP-probe workaround (#1033)
+              # was based on Dockerfile.worker-sandbox, which is NOT the published
+              # image. The exec probe restores the FD-limit guard + the /api/v2/health
+              # reachability check. initialDelaySeconds=60 is ~2x the measured ~32s
+              # cold start.
+              type: exec
+              spec:
+                exec:
+                  command:
+                    - /usr/local/bin/sandbox-runner-healthcheck.sh
+                initialDelaySeconds: 60
+                periodSeconds: 30
+                timeoutSeconds: 7
             readiness:
               enabled: true
-              type: HTTP
-              path: /api/v2/health
-              port: sandbox
-              spec: { initialDelaySeconds: 30, periodSeconds: 10, timeoutSeconds: 5 }
+              custom: true
+              type: exec
+              spec:
+                exec:
+                  command:
+                    - /usr/local/bin/sandbox-runner-healthcheck.sh
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                timeoutSeconds: 7
+                failureThreshold: 1
           resources:
             requests: { cpu: 500m, memory: 1Gi }
             limits: { cpu: 2000m, memory: 3Gi }
@@ -440,7 +452,13 @@ codeapi:
               type: HTTP
               path: /ready
               port: http
-              spec: { initialDelaySeconds: 5, periodSeconds: 15, failureThreshold: 2, timeoutSeconds: 5 }
+              # /ready awaits redis ping + an external Hetzner Object Storage
+              # bucketExists (service/src/file-server.ts), so it is subject to
+              # transient external-S3 latency that can exceed the old 5s timeout
+              # (recurring "context deadline exceeded" readiness failures). 15s
+              # timeout + failureThreshold 3 tolerates that without masking a
+              # genuinely dead file-server.
+              spec: { initialDelaySeconds: 5, periodSeconds: 15, failureThreshold: 3, timeoutSeconds: 15 }
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { cpu: 200m, memory: 256Mi }
