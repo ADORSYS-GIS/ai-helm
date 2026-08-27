@@ -114,7 +114,10 @@ defaults:
     vllm:
       image:
         repository: lmcache/vllm-openai
-        tag: nightly-2026-05-01
+        # ⚠️ -cu129, NOT the plain tag or nightly-2026-05-01: the plain
+        # nightly-2026-08-18 is CUDA 13 and fails on the fleet driver
+        # (12040/CUDA 12.4); the May-01 build predates the LMCache MP connector.
+        tag: nightly-2026-08-18-cu129
         pullPolicy: IfNotPresent
       healthPath: /health
       apiKey:
@@ -232,7 +235,9 @@ models:
       mp:
         image:
           repository: lmcache/standalone
-          tag: nightly-2026-08-18
+          # ⚠️ -cu129, NOT the plain tag: plain nightly-2026-08-18 is CUDA 13 and
+          # fails on the fleet driver (torch 2.13.0+cu130 "driver too old").
+          tag: nightly-2026-08-18-cu129
         chunkSize: 544
         l1SizeGb: 8
         separateObjectGroups: true
