@@ -389,7 +389,10 @@ codeapi:
                 initialDelaySeconds: 30
                 periodSeconds: 10
                 timeoutSeconds: 7
-                failureThreshold: 1
+                # failureThreshold 3: tolerate a transient FD blip or a slow
+                # /api/v2/health under load so a single failed sample does not
+                # pull the single-replica pod out of the Service.
+                failureThreshold: 3
           resources:
             requests: { cpu: 500m, memory: 1Gi }
             limits: { cpu: 2000m, memory: 3Gi }
