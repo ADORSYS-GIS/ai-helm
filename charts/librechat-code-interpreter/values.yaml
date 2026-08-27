@@ -362,37 +362,23 @@ codeapi:
           probes:
             liveness:
               enabled: true
-              custom: true
-              # exec of /usr/local/bin/sandbox-runner-healthcheck.sh. The script IS
-              # shipped in the fork's api/Dockerfile sandbox-runner target (verified
-              # present in sha-d3b0f05); the previous HTTP-probe workaround (#1033)
-              # was based on Dockerfile.worker-sandbox, which is NOT the published
-              # image. The exec probe restores the FD-limit guard + the /api/v2/health
-              # reachability check. initialDelaySeconds=60 is ~2x the measured ~32s
-              # cold start.
-              type: exec
-              spec:
-                exec:
-                  command:
-                    - /usr/local/bin/sandbox-runner-healthcheck.sh
-                initialDelaySeconds: 60
-                periodSeconds: 30
-                timeoutSeconds: 7
+              # HTTP probe, NOT an exec of /usr/local/bin/sandbox-runner-healthcheck.sh.
+              # In the no-KVM (NsJail) direct path the runner's start-direct-sandbox.sh
+              # creates a private mount namespace and bind-mounts the Debian guest
+              # rootfs over /usr/local, which HIDES the Fedora-host script the exec
+              # would run -> exec probe fails forever with ENOENT (live-verified after
+              # #1052). Hit the same /api/v2/health endpoint the script checks, on the
+              # same port as the readiness probe. See dev ticket ADORSYS-GIS/code-interpreter#6.
+              type: HTTP
+              path: /api/v2/health
+              port: sandbox
+              spec: { initialDelaySeconds: 60, periodSeconds: 30, timeoutSeconds: 5 }
             readiness:
               enabled: true
-              custom: true
-              type: exec
-              spec:
-                exec:
-                  command:
-                    - /usr/local/bin/sandbox-runner-healthcheck.sh
-                initialDelaySeconds: 30
-                periodSeconds: 10
-                timeoutSeconds: 7
-                # failureThreshold 3: tolerate a transient FD blip or a slow
-                # /api/v2/health under load so a single failed sample does not
-                # pull the single-replica pod out of the Service.
-                failureThreshold: 3
+              type: HTTP
+              path: /api/v2/health
+              port: sandbox
+              spec: { initialDelaySeconds: 30, periodSeconds: 10, timeoutSeconds: 5 }
           resources:
             requests: { cpu: 500m, memory: 1Gi }
             limits: { cpu: 2000m, memory: 3Gi }
