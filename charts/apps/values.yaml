@@ -1074,6 +1074,83 @@ applications:
     destination:
       namespace: converse
 
+  # --- Lightbridge Console (self-service-nextjs-redesign) ---
+  # Next.js server-rendered console (apps/console), deployed ALONGSIDE
+  # converse-ui above — not replacing it. Deliberately a SEPARATE Application
+  # against a SEPARATE chart (`charts/converse-console` in converse-frontends,
+  # published as `oci://ghcr.io/adorsys-gis/charts/converse-console`), for the
+  # same reason that chart is its own package rather than a converse-frontend
+  # bump: converse-ui's own consumer floats `targetRevision: ">=0.0.0"` against
+  # converse-frontend, so anything landing in that chart's shape ships to
+  # self-service on the very next reconcile. A new chart + new Application is
+  # the only thing that removes that collision risk entirely (see that chart's
+  # README, "Why a separate chart, not a version bump of converse-frontend").
+  #
+  # targetRevision `~0.1.1` (NOT converse-ui's `>=0.0.0`): converse-console is
+  # a brand-new 0.x chart with no stability contract yet — under semver, a 0.x
+  # MINOR bump is allowed to break compatibility, unlike converse-frontend
+  # (mature enough that `>=0.0.0` has been safe in practice). A tilde range
+  # takes patch releases (the chart's own version scheme is
+  # commit-count-derived patches per ADR-0055) but fences off any 0.2.0 that
+  # changes the app's shape, until this app has enough of a track record to
+  # widen it deliberately.
+  #
+  # Image write-back mirrors converse-ui exactly (Source B `$values` +
+  # image-updater git write-back), pointed at the `console` image (a distinct
+  # GHCR package from self-service's own image — see
+  # converse-frontends:.github/workflows/docker-image.yml) and the chart's
+  # `console` subchart alias (Chart.yaml `dependencies[].alias: console`), NOT
+  # `conversefrontend` — this chart's app-template dependency is aliased
+  # differently from converse-frontend's, so the helm image-name/image-tag
+  # paths below are NOT copy-paste of converse-ui's.
+  #
+  # depsOverlay wires in the console pod's own ExternalSecret (SESSION_SECRET +
+  # KEYCLOAK_CLIENT_SECRET, see environments/prod/deps/console-ui in
+  # ai-helm-values) — same mechanism as lightbridge-repo-auth/security-policies
+  # above, not a new pattern.
+  - name: console-ui
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd-image-updater.argoproj.io/image-list: frontend=ghcr.io/adorsys-gis/converse-frontends/console
+      argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/frontend.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/frontend.force-update: "true"
+      # Same shared GHCR read cred as converse-ui, kept for the day this package
+      # goes private too (currently public — see PR description). No-op public.
+      argocd-image-updater.argoproj.io/frontend.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/frontend.helm.image-name: console.controllers.main.containers.frontend.image.repository
+      argocd-image-updater.argoproj.io/frontend.helm.image-tag: console.controllers.main.containers.frontend.image.tag
+      argocd-image-updater.argoproj.io/write-back-method: git
+      argocd-image-updater.argoproj.io/git-repository: https://github.com/adorsys-gis/ai-helm-values.git
+      argocd-image-updater.argoproj.io/git-branch: main
+      argocd-image-updater.argoproj.io/write-back-target: helmvalues:/environments/prod/values/console-ui.yaml
+      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys-gis
+    depsOverlay: environments/prod/deps/console-ui
+    sources:
+      # Source A — the converse-console chart from OCI. Mirrors converse-ui's
+      # Source A shape exactly, different repoURL/range (see comment above).
+      - repoURL: oci://ghcr.io/adorsys-gis/charts/converse-console
+        chart: "."
+        targetRevision: "~0.1.1"
+        helm:
+          releaseName: console-ui
+          # image.{repository,tag,pullPolicy} come from Source B's $values file
+          # (image-updater owns them). Static config (config.yaml, ingress, env
+          # secret refs) lives in that same file — see ai-helm-values.
+          valueFiles:
+            - $values/environments/prod/values/console-ui.yaml
+          ignoreMissingValueFiles: true
+      # Source B — image tag from ai-helm-values; image-updater commits here.
+      - repoURL: https://github.com/adorsys-gis/ai-helm-values
+        targetRevision: main
+        ref: values
+    destination:
+      # Same namespace as converse-ui/lightbridge-app — the chart sets no
+      # namespace opinion of its own (README/values.yaml carry none), so this
+      # follows the rest of the Converse/Lightbridge workloads.
+      namespace: converse
+
   # --- LibreChat ---
   # NOTE: Phoenix (Arize) was removed; tracing is now served by Grafana Tempo
   # via the core-gateway `-traces` OpenTelemetryCollector -> Alloy -> Tempo path.
