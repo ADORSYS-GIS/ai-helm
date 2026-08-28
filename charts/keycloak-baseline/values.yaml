@@ -664,8 +664,14 @@ keycloak-config:
         secretName: "lightbridge-console-client"
         refreshInterval: "1h"
         secretStore: "ssegning-aws"            # ClusterSecretStore kind
-        remoteKey: "camer-digital/keycloak/lightbridge-console"
-        remoteProperty: "client-secret"
+        # The CONSOLIDATED app-secret key, not a per-client one: CLAUDE.md
+        # ("Secrets + ESO") is explicit that **app** secrets resolve against
+        # `ai/camer/digital/prod/env` with one property each, and only
+        # **platform** secrets use a separate key. `opencodeExchange` below
+        # still carries its own `camer-digital/keycloak/...` key; that predates
+        # the consolidation and is left alone rather than migrated blind.
+        remoteKey: "ai/camer/digital/prod/env"
+        remoteProperty: "lightbridge_console_client_secret"
       protocolMappers:
         - name: "converse-frontend-audience"
           protocol: "openid-connect"
