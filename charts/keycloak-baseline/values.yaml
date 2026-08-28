@@ -595,6 +595,115 @@ keycloak-config:
         - offline_access
         - microprofile-jwt
 
+    # ── lightbridge-console (self-service-nextjs-redesign) ─────────────────
+    # Confidential client for the Next.js console (apps/console, server-rendered —
+    # NOT the Expo `converseFrontend` client above, which stays untouched and keeps
+    # serving apps/self-service). Confidential because the console holds its OIDC
+    # session server-side (sealed JWE cookie, openid-client on Node) and can keep a
+    # secret, unlike the Expo app's public/PKCE-only client.
+    #
+    # AUDIENCE — two mappers below, not one, because two independent things check
+    # `aud` on the same token and expect different values:
+    #   1. The console's OWN check (`keycloak.expectedAudiences: ['converse-frontend']`,
+    #      `audienceRequired: true` — apps/console/config.yaml, dev realm precedent:
+    #      the `self-service` dev client already carries this exact
+    #      `converse-frontend-audience` mapper to satisfy it, added earlier in this
+    #      project to fix a `/auth/error?reason=audience` failure). `included.client.
+    #      audience: "converse-frontend"` reuses the LITERAL string the existing
+    #      `converseFrontend` client is registered under above — no new client needed,
+    #      this just stamps that clientId into `aud`.
+    #   2. authz-api's bearer-token gate, which the console's proxy hits directly
+    #      (forwards the session's raw access token as `Authorization: Bearer`, see
+    #      apps/console/src/server/proxy.ts `forward()`). ai-helm-values
+    #      `environments/prod/values/lightbridge-app.yaml`'s `oauth2.audience:
+    #      ["lightbridge-api-key"]` (~line 197) is enforced by
+    #      `BearerTokenService::validate_bearer_token`
+    #      (lightbridge-authz `crates/lightbridge-authz-bearer/src/lib.rs:270-327`)
+    #      for EVERY bearer token reaching authz-api's RPC surface — not just
+    #      self-signed API keys; `rpc_authorize.rs` gates the whole cratestack RPC
+    #      router through the same `BearerTokenServiceTrait`. A token missing
+    #      `lightbridge-api-key` in `aud` 401s `invalid_token`. The SAME
+    #      `lightbridge-app.yaml` file documents this exact two-audience shape
+    #      already, for a different client (`governance-auth-cli`, ~line 291-298):
+    #      "(a) subject_token.aud must contain lightbridge-api-key ... or bearer
+    #      validation 401s invalid_token; (b) subject_token.aud must ALSO contain
+    #      the literal [own-client-id] or the exchange 400s invalid_grant" — same
+    #      two-check pattern, so both mappers are required, not optional hardening.
+    #      `lightbridge-api-key` is NOT a registered Keycloak client in this realm
+    #      (grep confirms), so it needs `included.custom.audience` (a literal
+    #      string), not `included.client.audience`.
+    #   `converseFrontend` itself has neither mapper today and is EXPO_PUBLIC_
+    #   KEYCLOAK_AUDIENCE_REQUIRED: 'true' in prod (converse-ui.yaml) — whether its
+    #   own calls currently pass authz-api's audience gate is a pre-existing question
+    #   this PR does not resolve; out of scope (converseFrontend is explicitly not
+    #   touched here). Flagging only so a reviewer doesn't assume self-service is
+    #   proof this client needs no mapper.
+    lightbridgeConsole:
+      enabled: true
+      clientId: "lightbridge-console"
+      name: "Lightbridge Console"
+      description: "Next.js server-rendered console (apps/console) — confidential, separate from converse-frontend"
+      publicClient: false
+      standardFlowEnabled: true
+      implicitFlowEnabled: false
+      directAccessGrantsEnabled: false
+      serviceAccountsEnabled: false
+      # Belt-and-braces: apps/console/src/server/oidc.ts always sends PKCE S256
+      # itself regardless of this setting, so enforcing it here rejects any
+      # request that somehow skips the app's own PKCE step instead of silently
+      # accepting it.
+      pkce: "S256"
+      secret: "${LIGHTBRIDGE_CONSOLE_CLIENT_SECRET}"
+      # Same fail-closed pattern as opencodeExchange above: if the store entry is
+      # missing, this ExternalSecret sits in SecretSyncedError and the import runs
+      # with an unresolved placeholder rather than a guessed credential. Create the
+      # entry in the ClusterSecretStore BEFORE rollout — this is a human
+      # prerequisite this PR cannot satisfy.
+      externalSecret:
+        enabled: true
+        secretName: "lightbridge-console-client"
+        refreshInterval: "1h"
+        secretStore: "ssegning-aws"            # ClusterSecretStore kind
+        remoteKey: "camer-digital/keycloak/lightbridge-console"
+        remoteProperty: "client-secret"
+      protocolMappers:
+        - name: "converse-frontend-audience"
+          protocol: "openid-connect"
+          protocolMapper: "oidc-audience-mapper"
+          consentRequired: false
+          config:
+            included.client.audience: "converse-frontend"
+            access.token.claim: "true"
+        - name: "lightbridge-api-key-audience"
+          protocol: "openid-connect"
+          protocolMapper: "oidc-audience-mapper"
+          consentRequired: false
+          config:
+            included.custom.audience: "lightbridge-api-key"
+            access.token.claim: "true"
+      redirectUris:
+        # apps/console/src/app/auth/callback/route.ts — the ONLY OIDC redirect this
+        # client ever uses (server-side code exchange). One origin, not a wildcard:
+        # this is a confidential client for exactly one deployment.
+        - "https://console.ai.camer.digital/auth/callback"
+      webOrigins:
+        - "https://console.ai.camer.digital"
+      frontchannelLogout: true
+      defaultClientScopes:
+        - web-origins
+        - acr
+        - profile
+        - roles
+        - basic
+        - email
+      optionalClientScopes:
+        - address
+        - librechat
+        - phone
+        - organization
+        - offline_access
+        - microprofile-jwt
+
     testingClient:
       enabled: true
       clientId: "testing-client"
@@ -838,6 +947,11 @@ config-sync:
               valueFrom:
                 secretKeyRef:
                   name: opencode-exchange-client
+                  key: client-secret
+            LIGHTBRIDGE_CONSOLE_CLIENT_SECRET:
+              valueFrom:
+                secretKeyRef:
+                  name: lightbridge-console-client
                   key: client-secret
             IMPORT_ENABLED:
               value: "true"
