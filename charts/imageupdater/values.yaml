@@ -27,6 +27,16 @@ imageUpdaters:
     applicationRefs:
       - namePattern: aii-converse-ui
         useAnnotations: true
+  # Lightbridge console image write-back to ai-helm-values (newest-build,
+  # unsigned — same converse-frontends CI as converse-ui above, deployed
+  # ALONGSIDE it as a separate Application/chart, not a replacement).
+  # Annotations live on the aii-console-ui Application (charts/apps/values.yaml).
+  # Entry required, annotations alone do nothing: see the lightbridge-governance
+  # entry below for the 6-hour incident this exact omission caused.
+  - name: console-ui
+    applicationRefs:
+      - namePattern: aii-console-ui
+        useAnnotations: true
   # ADR-0055 continuous-delivery — lightbridge backend api/mcp image write-back
   # to ai-helm-values (newest-build, COSIGN-signed; lightbridge-authz signs in
   # its CI). The write-back annotations live on the `lightbridge-app` child
