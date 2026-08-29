@@ -565,35 +565,29 @@ keycloak-config:
         - offline_access
         - microprofile-jwt
 
-    converseFrontend:
-      enabled: true
-      clientId: "converse-frontend"
-      name: "Converse Frontend"
-      description: ""
-      publicClient: true
-      standardFlowEnabled: true
-      implicitFlowEnabled: false
-      directAccessGrantsEnabled: true
-      serviceAccountsEnabled: false
-      redirectUris:
-        - "https://self-service.ai.camer.digital/*"
-      webOrigins:
-        - "https://self-service.ai.camer.digital"
-      frontchannelLogout: true
-      defaultClientScopes:
-        - web-origins
-        - acr
-        - profile
-        - roles
-        - basic
-        - email
-      optionalClientScopes:
-        - address
-        - librechat
-        - phone
-        - organization
-        - offline_access
-        - microprofile-jwt
+    # converseFrontend: REMOVED 2026-08-29 along with the app it existed for.
+    #
+    # This was the Expo self-service app's public/PKCE client. That app (converse-ui) is retired
+    # -- Application deleted, workload pruned, and self-service.ai.camer.digital now 301s to
+    # console.ai.camer.digital (ai-helm#1057, ai-helm-values#322/#323/#325).
+    #
+    # Removed rather than left with `enabled: false`, and worth removing on its own merits even
+    # so: its `redirectUris` were `https://self-service.ai.camer.digital/*` -- a WILDCARD redirect
+    # on a host that now redirects elsewhere, for a client nothing uses. That is the classic
+    # token-exfiltration shape, and the fact that no app used it any more made it pure downside.
+    #
+    # ⚠️ THIS DOES NOT DELETE THE LIVE CLIENT. Keycloak's `--import-realm` skips a realm that
+    # already exists; it does not reconcile. So this document is a bootstrap artefact, and removing
+    # a client here only takes effect on a fresh realm import. If `converse-frontend` still exists
+    # in the running realm, it has to be deleted in the Keycloak admin console -- that is a manual
+    # step this change cannot perform and does not claim to have performed.
+    #
+    # The `lightbridgeConsole` client below still stamps the literal string `converse-frontend`
+    # into `aud` via its `converse-frontend-audience` mapper. That mapper is now vestigial in
+    # production -- the console authenticates against authz-idp and expects
+    # `aud: lightbridge-console` (ai-helm-values console-ui.yaml) -- but it is left alone here
+    # because it is a separate question from this client's existence, and a string in `aud` that
+    # nothing checks is inert.
 
     # ── lightbridge-console (self-service-nextjs-redesign) ─────────────────
     # Confidential client for the Next.js console (apps/console, server-rendered —
