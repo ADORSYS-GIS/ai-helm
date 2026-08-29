@@ -58,7 +58,24 @@ resources:
         # growth takes the DATA volume down with it. A bigger volume simply moves the
         # next outage further out. Fixing the archive path -- and giving WAL its own
         # volume so it can never again exhaust data storage -- is the actual remedy.
-        size: "20Gi"
+        # 20Gi -> 40Gi, raised again the same day and deliberately, not as a second
+        # panic. 20Gi restored service but bought only ~6 weeks at the measured burn:
+        #
+        #   codeintel.webhook_deliveries   947k rows / 71d / 5061 MB  ~150 MB/day
+        #   usage.usage_events             645k rows / 15d / 1499 MB  ~100 MB/day
+        #   -> ~250 MB/day combined, against 10.5 GB free = ~42 days
+        #
+        # And `webhook_deliveries` is ACCELERATING: 28,111 rows/day over the last week
+        # against a 13,338/day average since June -- 2.1x. So ~42 days is the optimistic
+        # read. 40Gi gives ~122 days at the same rate.
+        #
+        # Done NOW, while the cluster is healthy, because that is a different operation
+        # from the one this file's previous bump had to survive. With live instances CNPG
+        # expands the PVCs online by itself; with dead ones it cannot read pod status, so
+        # it refuses to act and the PVCs must be patched by hand and the pods deleted to
+        # trigger the filesystem resize. Growing early is free; growing during an outage
+        # is manual surgery.
+        size: "40Gi"
       plugins:
         # `enabled: true` is set explicitly: the CNPG operator defaults it on,
         # and ArgoCD compares `plugins` as an atomic LIST — so without it here
