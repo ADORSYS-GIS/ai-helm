@@ -35,7 +35,30 @@ resources:
       instances: 2
       imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
       storage:
-        size: "5Gi"
+        # 5Gi -> 20Gi. PRODUCTION OUTAGE 2026-08-29 ~10:05 UTC: the volume filled,
+        # Postgres died with `PANIC: could not write to file`, and every service on this
+        # cluster (authz-api/-idp/-opa/-mcp/-budget/-usage, lightbridge-repo-auth) went
+        # unready at once. `resizeInUseVolumes: true` is already set, and the
+        # `hcloud-volumes` StorageClass has `allowVolumeExpansion: true`, so CNPG expands
+        # the existing PVCs in place -- no recreate, no data migration.
+        #
+        # ⚠️ THIS VALUE WAS ALREADY LYING. The live PVCs were 10Gi while this said 5Gi --
+        # someone expanded them by hand and never updated the chart. CNPG/Kubernetes
+        # cannot SHRINK a volume, so the drift just sat there permanently rather than
+        # being corrected by `selfHeal`, and anyone reading this file would have sized
+        # their thinking against a number that had not been true for a while. 20Gi is a
+        # real increase over the actual 10Gi, not over the 5Gi written here.
+        #
+        # ⚠️ THIS BUYS TIME; IT IS NOT THE FIX. The volume filled because WAL ARCHIVING
+        # IS FAILING, not because the data grew: the instance logs carry
+        # `archive command was terminated by signal 3: Quit` and repeated
+        # `GatewayTimeout` from the barman S3 endpoint (nbg1.your-objectstorage.com).
+        # Postgres cannot recycle a WAL segment it has not successfully archived, so WAL
+        # accumulates until the disk is gone. There is no separate `walStorage`, so WAL
+        # growth takes the DATA volume down with it. A bigger volume simply moves the
+        # next outage further out. Fixing the archive path -- and giving WAL its own
+        # volume so it can never again exhaust data storage -- is the actual remedy.
+        size: "20Gi"
       plugins:
         # `enabled: true` is set explicitly: the CNPG operator defaults it on,
         # and ArgoCD compares `plugins` as an atomic LIST — so without it here
