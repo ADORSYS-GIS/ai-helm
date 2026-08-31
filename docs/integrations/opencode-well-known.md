@@ -10,8 +10,8 @@ our stack, and what's required end-to-end to make it land.
 ## End-to-end flow
 
 ```
-User on laptop                       Cluster                            Keycloak
-─────────────                       ────────                            ────────
+User on laptop                       Cluster                          authz-idp
+─────────────                       ────────                          ─────────
 $ opencode auth login \
   https://ai.camer.digital/opencode
     │
@@ -116,8 +116,14 @@ overridable locally.
 > needs nothing, so the core behaviour works for everyone.
 
 - **Remotes** target the `/mcp/<name>` routes (ADR-0038) and all authenticate
-  with the **same** `opencode-cli` Keycloak client
-  (`scope: openid profile offline_access`). In `values.yaml` that `oauth` block
+  with an `opencode-cli` client. ⚠️ **This is still the KEYCLOAK client, not the
+  `authz-idp` one ADR-0135 introduced for the provider.** The `oauth` block here
+  carries only `clientId` + `scope` and no issuer — MCP routes advertise their
+  own issuer via RFC 9728 discovery, and that is Keycloak (ADR-0038, Envoy's
+  native `jwt_authn`). So the LLM plane and the MCP plane now authenticate
+  against different IdPs that happen to share a client id; enabling a remote MCP
+  means a second device-code login. Every remote ships `enabled: false`
+  (ADR-0074), so this is latent until a user opts in. In `values.yaml` that `oauth` block
   is a YAML anchor (`&mcpOAuth` / `*mcpOAuth`) — declared once, reused; the
   serialized JSON expands it per server. Add a remote by copying three lines,
   never the credential.
@@ -329,9 +335,9 @@ Expected:
         "options": {
           "baseURL": "https://api.ai.camer.digital/v1",
           "oauth2": {
-            "issuer": "https://auth.verif.fyi/realms/camer-digital",
+            "issuer": "https://auth.ai.camer.digital",
             "clientId": "opencode-cli",
-            "scopes": ["openid", "profile", "offline_access"],
+            "scopes": ["openid", "profile", "email", "offline_access"],
             "authFlow": "device_code",
             "syncIntervalMinutes": 60,
             "responseApi": true
@@ -415,42 +421,44 @@ intersection point, the opencode picker now shows exactly `/v1/models` ∩
 
 ## Prerequisites the cluster must satisfy
 
-The chart deploys the endpoint, but two things must exist in Keycloak
-for the end-to-end flow to land. These are **out of scope** for this PR
-and are tracked separately:
+The chart deploys the endpoint; one thing must exist for the end-to-end flow to
+land.
 
-### 1. The `opencode-cli` Keycloak client
+> ⚠️ **Changed by [ADR-0135](../adr/0135-opencode-authenticates-against-authz-idp.md).**
+> This section used to list two **Keycloak** prerequisites — an `opencode-cli`
+> realm client with the device grant, and a client-scope audience mapper putting
+> `lightbridge-api-key` into `aud`. Both are obsolete. opencode now authenticates
+> against `lightbridge-authz`'s own `authz-idp`, whose device grant is verified
+> through its own RP leg, and the gateway's `lightbridge-apikey` identity enforces
+> no audience. No Keycloak realm work is required at all.
 
-In realm `camer-digital`, create a **public** client (no client_secret)
-with:
+### 1. The `opencode-cli` client on `authz-idp`
 
-- `clientId: opencode-cli`
-- `clientAuthenticatorType: client-secret` (but with `publicClient: true`)
-- Device authorization grant **enabled** (the `oauth2.deviceAuthorizationGrantEnabled` setting in Keycloak ≥ 24)
-- Default scopes: `openid`, `profile`, `offline_access`
-- Redirect URIs: any user-machine-localhost pattern is OK; device-code
-  flow doesn't use them, but Keycloak requires the field to be non-empty.
-  Suggested: `http://localhost/*`
+Registered in the private `ai-helm-values` repo, in
+`environments/prod/values/lightbridge-app.yaml`, under **both** the
+`api.…oauth2.clients` and `idp.…oauth2.clients` registries — that file requires
+the two be kept byte-identical:
 
-Add to `charts/keycloak-baseline/values.yaml` once this lands.
+```yaml
+- client_id: opencode-cli
+  type: public                 # ships to laptops; ADR-0011 Decision 6 bans secrets
+  scopes: [openid, profile, email, offline_access]
+  grant_types:
+    - "urn:ietf:params:oauth:grant-type:device_code"
+    - refresh_token
+  require_pkce: true
+```
 
-### 2. Audience mapper for `lightbridge-api-key`
+No `redirect_uris` and no `authorization_code`: opencode uses the device flow,
+and authz matches redirect URIs by string equality with no RFC 8252 §7.3 loopback
+exemption. No `token-exchange` grant either — the device-code token is *already*
+project-scoped and gateway-valid, so there is nothing to trade it for (and the
+exchange could not validate a self-issued subject token anyway). See ADR-0135.
 
-The `@vymalo/opencode-oauth2` plugin has no `audience` config knob for
-non-federated flows. To get `lightbridge-api-key` into the JWT `aud`
-claim (so Authorino accepts it on `api.ai.camer.digital`), add a
-**client-scope audience mapper**:
-
-- Realm-level client scope: `lightbridge-api-key`
-- Mapper: `oidc-audience-mapper`
-  - Included audience: `lightbridge-api-key`
-  - Add to access token: `ON`
-- Attach the scope as a default scope on the `opencode-cli` client
-
-Alternative: enable `token_exchange` flow in the well-known config and
-have the plugin exchange the user's identity token for an
-audience-correct token. Heavier; only justified if the audience-mapper
-approach proves insufficient.
+⚠️ **Values-repo-first.** `oauth2.clients` fails **closed** — an empty or
+unmatched registry rejects every request. The client must be on `ai-helm-values`
+`main` *before* the chart change ships, or every `opencode auth login` fails
+`invalid_client`.
 
 ## End-user workflow
 
@@ -466,7 +474,8 @@ That's it. opencode:
    `~/.cache/opencode/node_modules/` so this only happens once per
    plugin per machine.
 3. Loads the OAuth2 plugin, which kicks off the OAuth 2.0
-   device-authorization flow against Keycloak. User code + verification
+   device-authorization flow against `authz-idp` (ADR-0135).
+   User code + verification
    URL print to the terminal; user opens the URL in any browser (laptop,
    phone), enters the code, approves.
 4. Loads the models-info plugin, which fetches the OpenRouter-shape
@@ -518,10 +527,11 @@ to the terminal. The user opens that URL in any browser (including on
 their phone), enters the code, and the CLI's poll picks up the token.
 Works everywhere.
 
-Trade-off: `device_code` requires Keycloak's device authorization
-endpoint enabled (it is, in recent Keycloak releases). And `offline_access`
-scope is required so the plugin can refresh the token (see Keycloak
-client config above).
+Trade-off: `device_code` requires the issuer to expose a device-authorization
+endpoint — `authz-idp` mounts it unconditionally (lightbridge-authz ADR-0023),
+and advertises it in its discovery document. `offline_access` is required so
+the plugin can refresh the token, and the registered client grants it together
+with the `refresh_token` grant (see the client config above).
 
 ## Troubleshooting
 
@@ -529,9 +539,10 @@ client config above).
 |---|---|---|
 | `opencode auth login` errors "fetch failed" | Endpoint not reachable | `curl -v https://ai.camer.digital/opencode/.well-known/opencode` from the user's machine. Check DNS / cert / Traefik route. |
 | `bun install` fails (no network, registry unreachable) | Auto-install of `@vymalo/opencode-oauth2` blocked | Confirm npm registry reachable. Worst case, pre-seed `~/.cache/opencode/node_modules/@vymalo/opencode-oauth2/` from a known-good machine. |
-| `opencode auth login` succeeds but `opencode chat` 401s | Token has wrong audience | Keycloak audience mapper missing (see prereq 2). Decode the JWT (`jwt-cli` or `jwt.io`), check `aud` claim. |
-| Plugin says "discovery failed" | Keycloak issuer URL wrong or realm down | Try `curl https://auth.verif.fyi/realms/camer-digital/.well-known/openid-configuration`. |
-| "device authorization not enabled" | Keycloak client misconfigured | Enable device-grant on the `opencode-cli` client (see prereq 1). |
+| `opencode auth login` fails `invalid_client` | The `opencode-cli` client is not registered on `authz-idp` | Values-repo-first violation: the client must be on `ai-helm-values` `main` before the chart ships. See prereq 1. |
+| `opencode auth login` succeeds but `opencode chat` 403s | The gateway's revocation gate denied | The token carries `api_key_id` (= session id), so Authorino's `lightbridgeintrospect` step runs. It should resolve via `introspect_exchange_token`; a 403 means it did not. Check the Authorino + `lightbridge-opa` logs. |
+| Plugin says "discovery failed" | Issuer URL wrong or `authz-idp` down | Try `curl https://auth.ai.camer.digital/.well-known/openid-configuration`. |
+| "device authorization not enabled" | Client misconfigured on `authz-idp` | The registered client needs the `urn:ietf:params:oauth:grant-type:device_code` grant (see prereq 1). |
 | Plugin loop on token refresh | `offline_access` scope not granted | Add to default scopes on the `opencode-cli` client. |
 | User-Code URL prints to terminal but never authenticates | User didn't open the URL / approved the wrong device | Re-run `opencode auth login`. |
 | 502/504 at `/opencode/.well-known/opencode` | Endpoint pod down | `kubectl get pods -n converse -l app.kubernetes.io/name=librechat-opencode-wellknown` |
@@ -550,9 +561,12 @@ client config above).
 - ADR-0038 — the gateway `/mcp/*` routes + OAuth the remote MCPs target
 - ADR-0009 — humans use Lightbridge self-service for API keys; the
   opencode CLI flow is the desktop complement
+- [ADR-0135](../adr/0135-opencode-authenticates-against-authz-idp.md) — opencode
+  authenticates against `authz-idp`, not Keycloak; why this is a config change
+  and not a plugin swap
 - ADR-0003 — SA-skip-OPA via `azp` (historical: OPA was removed 2026-06-04,
-  ADR-0021; a valid Keycloak JWT now suffices, so opencode tokens with
-  `azp=opencode-cli` are accepted without a policy hop)
+  ADR-0021; a valid JWT from a trusted issuer now suffices, so opencode tokens
+  with `azp=opencode-cli` are accepted without a policy hop)
 - `charts/librechat-opencode-wellknown/values.yaml` — the JSON content
   source
 - `charts/keycloak-baseline/values.yaml` — where the `opencode-cli`

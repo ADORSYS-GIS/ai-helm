@@ -70,7 +70,7 @@ app-template's standard schema).
 | `wellKnown.auth.{command, env}` | The stub argv + env name |
 | `wellKnown.config.plugin` | Array of npm packages opencode auto-installs |
 | `wellKnown.config.provider.<id>.options.baseURL` | OpenAI-compatible endpoint |
-| `wellKnown.config.provider.<id>.options.oauth2.{issuer, clientId, scopes, authFlow}` | Keycloak OAuth config for the plugin. **Set `authFlow: device_code`** (plugin default is `authorization_code` which binds a localhost callback port and breaks headless use). |
+| `wellKnown.config.provider.<id>.options.oauth2.{issuer, clientId, scopes, authFlow}` | OAuth config for the plugin — the issuer is **`lightbridge-authz`'s own `authz-idp`**, not Keycloak (ADR-0135). **Set `authFlow: device_code`** (plugin default is `authorization_code` which binds a localhost callback port and breaks headless use). |
 | `opencode-wellknown.controllers.main.containers.nginx.image.{repository, tag, pullPolicy}` | nginx image pin |
 | `opencode-wellknown.controllers.main.replicas` | Defaults to 2 |
 | `opencode-wellknown.controllers.main.containers.nginx.resources` | requests/limits |
@@ -78,10 +78,19 @@ app-template's standard schema).
 
 ## Cluster prerequisites (out of scope; see `docs/integrations/opencode-well-known.md`)
 
-1. Keycloak `opencode-cli` public client with device-grant enabled +
-   `offline_access` default scope.
-2. Keycloak realm client-scope audience mapper to put
-   `lightbridge-api-key` in the `aud` claim.
+1. An `opencode-cli` **public** client registered on `authz-idp`, with the
+   `device_code` + `refresh_token` grants and the `openid profile email
+   offline_access` scopes. It lives in the private `ai-helm-values` repo at
+   `environments/prod/values/lightbridge-app.yaml`, in **both** the
+   `api.…oauth2.clients` and `idp.…oauth2.clients` registries (that file
+   requires the two be kept byte-identical). ⚠️ **Values-repo-first**: it must
+   be on `ai-helm-values` `main` before this chart ships, or every
+   `opencode auth login` fails `invalid_client`.
+
+No Keycloak realm work is needed. The device grant is verified through
+`authz-idp`'s own RP leg, and the token it mints is already project-scoped for
+the gateway — so neither a Keycloak client nor an audience mapper is involved
+any more (both were prerequisites of the pre-ADR-0135 Keycloak issuer).
 
 ## Verifying
 

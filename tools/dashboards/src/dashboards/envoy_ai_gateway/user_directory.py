@@ -11,10 +11,30 @@ every UUID resolves to a real name/email at query time — no JWT claim required
 Two panels:
   1. "Spend by user — resolved to identity" — a MIXED-datasource table: Mimir
      `sum by (user_id)` cost/requests OUTER-joined to the Keycloak directory on
-     `user_id`. Rows with no Keycloak match keep their cost with an empty Name —
-     those are the non-human subjects (CI repo subs, internal-key-* services).
+     `user_id`. Rows with no Keycloak match keep their cost with an empty Name.
   2. "Keycloak user directory (camer-digital)" — the raw user_id → identity
      lookup table, straight from `user_entity`.
+
+⚠️ An empty Name means UNRESOLVED, not "non-human". This module used to state
+the stronger claim — that a blank row was necessarily a CI repo subject or an
+`internal-key-*` service — and that inference is only safe while every human
+`user_id` is a Keycloak `sub`. Since ADR-0135 opencode authenticates against
+lightbridge-authz's own `authz-idp`, so `x-account-id` is the ACTING lightbridge
+account id rather than a raw Keycloak `sub`. Today those are byte-identical for
+every account that exists (lightbridge-authz ADR-0025 grandfathers them, with a
+regression test pinning it), so this dashboard still resolves everyone. But
+ADR-0025 Stage 5 introduces accounts that were never grandfathered, and the first
+one of those would land here as a blank row — i.e. a REAL PERSON silently
+labelled non-human. ADR-0025's own line 166 asks every consumer making this
+assumption to be audited; this is that audit.
+
+Resolving those rows needs the lightbridge `accounts` table as a second lookup
+source. That is deliberately NOT wired up yet: the existing `grafana_ro` role on
+`lightbridge-main-db` is a member of `pg_read_all_data`, so pointing Grafana at
+the `authz` database would hand it SELECT on `signing_keys` and
+`federated_identities.token_envelope` — the same over-privilege ADR-0063
+explicitly refused for the Keycloak datasource. It needs its own least-privilege
+role (SELECT on `accounts` only) first. See ADR-0135.
 
 The Keycloak role (`grafana_ro`) is scoped to user+token tables only and is NOT
 granted the `realm` table, so the realm is filtered by its literal internal id
@@ -97,14 +117,32 @@ class _SqlTarget:
         return self._d
 
 
+_UNRESOLVED_NOTE = (
+    "An empty **Name** means this `user_id` did not resolve against the Keycloak "
+    "directory — it does **not** by itself mean the subject is non-human. Usually "
+    "it is a CI repo subject or an `internal-key-*` service. But since ADR-0135 "
+    "opencode authenticates against lightbridge-authz's own `authz-idp`, so "
+    "`user_id` is the acting **lightbridge account id**. That is byte-identical to "
+    "the Keycloak `sub` for every account grandfathered by lightbridge-authz "
+    "ADR-0025 (i.e. all of them today), but an ADR-0025 Stage 5 account would not "
+    "be — and would appear here as a blank row despite being a real person. "
+    "Resolving those needs the lightbridge `accounts` table as a second lookup "
+    "source, which is pending its own least-privilege DB role (the existing "
+    "`grafana_ro` is `pg_read_all_data` and would over-expose the auth DB). "
+    "Treat a blank Name as *unresolved*, and check before assuming it is a robot."
+)
+
+
 def _panel_spend_resolved() -> table.Panel:
     # Mixed-datasource OUTER join on `user_id`: Mimir A=cost, C=requests (one row
     # per user_id) ⋈ Keycloak B=identity. organize renames/reorders and drops the
     # join's leftover Time/realm noise; sortBy ranks by cost. An empty Name marks
-    # a non-human subject (CI repo sub / internal-key-* service).
+    # an UNRESOLVED subject — see _UNRESOLVED_NOTE (surfaced as the panel tooltip
+    # so the caveat reaches the operator reading the table, not just this source).
     panel = (
         table.Panel()
         .title("Spend by user — resolved to identity (selected range)")
+        .description(_UNRESOLVED_NOTE)
         .datasource(_MIXED_DS)
         .grid_pos(dm.GridPos(h=14, w=24, x=0, y=1))
         .filterable(True)
@@ -191,13 +229,16 @@ def _panel_directory() -> table.Panel:
 
 
 _DESCRIPTION = (
-    "Resolves the Envoy AI Gateway per-user `user_id` (a Keycloak `sub` UUID) to "
-    "a real person by joining the Mimir per-user spend (ADR-0058) against a "
-    "read-only Postgres datasource onto the Keycloak DB (ADR-0063). Use this when "
-    "the per-user/cost dashboards show opaque UUIDs because the access token "
-    "lacked the email/name claims. Rows with an empty Name are non-human subjects "
-    "(CI repo subjects, internal-key-* services). Realm filtered by literal id "
-    "(the role can't read the `realm` table). Filters: azp, model. "
+    "Resolves the Envoy AI Gateway per-user `user_id` to a real person by joining "
+    "the Mimir per-user spend (ADR-0058) against a read-only Postgres datasource "
+    "onto the Keycloak DB (ADR-0063). Use this when the per-user/cost dashboards "
+    "show opaque UUIDs because the access token lacked the email/name claims. "
+    "Since ADR-0135 `user_id` is the acting lightbridge account id (byte-identical "
+    "to the Keycloak `sub` for every account grandfathered by lightbridge-authz "
+    "ADR-0025). Rows with an empty Name are UNRESOLVED — usually a non-human "
+    "subject (CI repo subject, internal-key-* service), but see the panel tooltip: "
+    "do not read blank as robot. Realm filtered by literal id (the role can't read "
+    "the `realm` table). Filters: azp, model. "
     "GENERATED — source: tools/dashboards/envoy_ai_gateway/user_directory.py."
 )
 

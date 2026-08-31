@@ -157,15 +157,55 @@ wellKnown:
           headerTimeout: 90000
           chunkTimeout: 90000
           oauth2:
-            issuer: "https://auth.verif.fyi/realms/camer-digital"
+            # ⚠️ OUR OWN IdP, not Keycloak (ADR-0135). This was
+            # `https://auth.verif.fyi/realms/camer-digital` until the
+            # authz-idp cutover; opencode now authenticates against
+            # lightbridge-authz directly.
+            #
+            # Why this is the whole change — no new plugin, no token
+            # exchange: authz-idp's device-code grant already mints a
+            # FULLY PROJECT-SCOPED access token (`project_id`,
+            # `account_id`, `budget_tier`, `quota_tier`, `model_policy`,
+            # `allowed_models` — lightbridge-authz `oauth2_op/store.rs`)
+            # signed by its own key, and `iss` is exactly what the
+            # gateway's `lightbridge-apikey` Authorino identity is pinned
+            # to (`security-policies.yaml`, no `aud` enforcement). The
+            # token opencode receives at login IS the credential the
+            # gateway wants. Nothing is left to trade it for.
+            #
+            # ⚠️ Do NOT "upgrade" this to @vymalo/opencode-lightbridge
+            # expecting a drop-in swap. That plugin ALWAYS performs an
+            # RFC 8693 exchange when its `gateway` block is set, and
+            # lightbridge validates `subject_token` against a SINGLE
+            # `oauth2.jwks_url` which is Keycloak's — so a token this IdP
+            # signed can never be its own subject token. It is also not a
+            # replacement for this plugin: @vymalo/opencode-oauth2 is
+            # what REGISTERS this provider and DISCOVERS its models;
+            # models-info only enriches entries that already exist, so
+            # swapping would empty the model picker. See ADR-0135.
+            #
+            # The client is registered in ai-helm-values
+            # `environments/prod/values/lightbridge-app.yaml` under BOTH
+            # `api.…oauth2.clients` and `idp.…oauth2.clients`
+            # (values-repo-first: it must be on that repo's `main` before
+            # this file ships, or every login fails `invalid_client`).
+            issuer: "https://auth.ai.camer.digital"
             clientId: "opencode-cli"
             scopes:
               - openid
               - profile
+              # `email` so the minted token carries the claim the gateway
+              # stamps as `x-oidc-email` — the label the `jwt-tokens`
+              # dashboard keys on (ADR-0067). The registered client
+              # grants it; a scope the client lacks is simply not issued.
+              - email
               - offline_access
             # Explicit device_code; the plugin defaults to
             # authorization_code which binds a local callback port and
-            # breaks headless / remote-dev use.
+            # breaks headless / remote-dev use. The registered client
+            # deliberately carries no `redirect_uris` for the same reason
+            # (RFC 8252 §7.3 ephemeral ports are not matched by authz's
+            # string-equality redirect check).
             authFlow: device_code
             syncIntervalMinutes: 60
             # DISABLED 2026-06-13 — back to Chat Completions
@@ -319,6 +359,20 @@ wellKnown:
       # remotes share one OAuth client, so the block is defined once
       # (&mcpOAuth) and reused (*mcpOAuth) — add a remote by copying three
       # lines, not the credential.
+      #
+      # ⚠️ STILL KEYCLOAK — deliberately not moved by ADR-0135. That cutover
+      # repointed the `camer-digital` PROVIDER's `oauth2` block at authz-idp;
+      # this block is a different plane. Note it carries NO `issuer`: an MCP
+      # route advertises its own issuer via RFC 9728 discovery, and per
+      # ADR-0038 that is Envoy's native `jwt_authn` against the Keycloak realm.
+      # Changing the IdP here is a GATEWAY-side change (the MCPRoute security
+      # policy's issuer, charts/mcp + charts/mcps), not a well-known one —
+      # editing this block alone would just break MCP auth.
+      #
+      # Consequence while the two planes differ: the same `opencode-cli` id
+      # names two different clients on two different IdPs, and enabling a
+      # remote MCP costs a SECOND device-code login. Latent today — every
+      # remote below ships `enabled: false` (ADR-0074, opt-in).
       brave:
         type: remote
         url: "https://api.ai.camer.digital/mcp/brave"

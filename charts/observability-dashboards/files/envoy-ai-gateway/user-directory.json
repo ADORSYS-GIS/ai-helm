@@ -65,7 +65,7 @@
   "annotations": {},
   "uid": "envoy-ai-gateway-user-directory",
   "title": "AI Gateway — user directory (identity attribution)",
-  "description": "Resolves the Envoy AI Gateway per-user `user_id` (a Keycloak `sub` UUID) to a real person by joining the Mimir per-user spend (ADR-0058) against a read-only Postgres datasource onto the Keycloak DB (ADR-0063). Use this when the per-user/cost dashboards show opaque UUIDs because the access token lacked the email/name claims. Rows with an empty Name are non-human subjects (CI repo subjects, internal-key-* services). Realm filtered by literal id (the role can't read the `realm` table). Filters: azp, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/user_directory.py.",
+  "description": "Resolves the Envoy AI Gateway per-user `user_id` to a real person by joining the Mimir per-user spend (ADR-0058) against a read-only Postgres datasource onto the Keycloak DB (ADR-0063). Use this when the per-user/cost dashboards show opaque UUIDs because the access token lacked the email/name claims. Since ADR-0135 `user_id` is the acting lightbridge account id (byte-identical to the Keycloak `sub` for every account grandfathered by lightbridge-authz ADR-0025). Rows with an empty Name are UNRESOLVED — usually a non-human subject (CI repo subject, internal-key-* service), but see the panel tooltip: do not read blank as robot. Realm filtered by literal id (the role can't read the `realm` table). Filters: azp, model. GENERATED — source: tools/dashboards/envoy_ai_gateway/user_directory.py.",
   "tags": [
     "ai-gateway",
     "per-user",
@@ -132,6 +132,7 @@
         }
       ],
       "title": "Spend by user — resolved to identity (selected range)",
+      "description": "An empty **Name** means this `user_id` did not resolve against the Keycloak directory — it does **not** by itself mean the subject is non-human. Usually it is a CI repo subject or an `internal-key-*` service. But since ADR-0135 opencode authenticates against lightbridge-authz's own `authz-idp`, so `user_id` is the acting **lightbridge account id**. That is byte-identical to the Keycloak `sub` for every account grandfathered by lightbridge-authz ADR-0025 (i.e. all of them today), but an ADR-0025 Stage 5 account would not be — and would appear here as a blank row despite being a real person. Resolving those needs the lightbridge `accounts` table as a second lookup source, which is pending its own least-privilege DB role (the existing `grafana_ro` is `pg_read_all_data` and would over-expose the auth DB). Treat a blank Name as *unresolved*, and check before assuming it is a robot.",
       "transparent": false,
       "datasource": {
         "type": "datasource",
