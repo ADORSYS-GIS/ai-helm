@@ -546,7 +546,7 @@ with the `refresh_token` grant (see the client config above).
 | Plugin loop on token refresh | `offline_access` scope not granted | Add to default scopes on the `opencode-cli` client. |
 | User-Code URL prints to terminal but never authenticates | User didn't open the URL / approved the wrong device | Re-run `opencode auth login`. |
 | 502/504 at `/opencode/.well-known/opencode` | Endpoint pod down | `kubectl get pods -n converse -l app.kubernetes.io/name=librechat-opencode-wellknown` |
-| Stale JSON served | Pod cache (shouldn't happen — `Cache-Control: no-store`) | `kubectl rollout restart deployment/librechat-opencode-wellknown -n converse` |
+| Stale JSON served | Almost never the pod — the content ConfigMap is a plain directory mount, so the kubelet syncs it in place and nginx re-reads the file per request (ADR-0135 cutover: content changed live, pods stayed 19 days old). Check ArgoCD actually applied the change first. | If the ConfigMap itself is current but the endpoint is stale, delete the pods: `kubectl delete pod -n converse -l app.kubernetes.io/name=opencode-wellknown`. ⚠️ NOT `kubectl rollout restart` — the annotation it writes is git-drift and ArgoCD selfHeal reverts it. |
 
 ## Related
 

@@ -321,7 +321,16 @@ mounted file → 404. Added `root /usr/share/nginx/html;` to both server blocks.
   JSON. ⚠️ Rollout note: a ConfigMap-only change doesn't reload nginx, and
   `kubectl rollout restart` is reverted by ArgoCD selfHeal (the annotation is
   git-drift) — so after the CM syncs, the pods must be **deleted** (RS recreates
-  them with the new subPath-mounted config).
+  them with the new config).
+  > **Correction (2026-09-01):** the mechanism stated here was wrong and it
+  > propagated into `CLAUDE.md`. These mounts are **not** `subPath` — verified by
+  > rendering both nginx charts, every mount is a plain directory mount. So a
+  > **content**-only change needs no pod delete: the kubelet syncs a
+  > directory-mounted ConfigMap in place and nginx re-reads static files per
+  > request (measured during the ADR-0135 cutover — content changed live while
+  > the pods stayed 19 days old). The delete-the-pods step above was necessary
+  > because that fix changed **`default.conf`**, which nginx only reads at
+  > start-up. Correct rule: `default.conf` → delete pods; content → nothing.
 
 ### LibreChat S3 + secrets
 - `librechat-app` uses `fileStrategy: s3` and referenced a missing
