@@ -160,8 +160,8 @@ body and is queried with `| json | <field>=~"..."`.
 
 | Field | Source attribute | Bound | Why labeled |
 |---|---|---|---|
-| `user_id` | `user_id` ← `x-oidc-user-id` (JWT `sub`) | One value per registered user | Primary attribution dimension; required for per-user dashboards |
-| `azp` | `azp` ← `x-oidc-azp` (JWT `azp`) | One value per Keycloak client (~10–20) | Lets dashboards split human vs SA traffic and pivot by app |
+| `user_id` | `user_id` ← `x-oidc-user-id` (JWT `sub`) | One value per registered user | Primary attribution dimension; required for per-user dashboards. ⚠️ **Provenance changed by [ADR-0135](../adr/0135-opencode-authenticates-against-authz-idp.md):** for an opencode token the `sub` is now the ACTING lightbridge account id (issuer `auth.ai.camer.digital`), not a raw Keycloak `sub`. Byte-identical today — lightbridge-authz ADR-0025 grandfathers every existing account, with a regression test pinning it — so no series moved and no bucket changed. It stops holding at ADR-0025 Stage 5; the `user-directory` dashboard's Keycloak join is the consumer that notices first, and its "blank Name" no longer implies non-human. |
+| `azp` | `azp` ← `x-oidc-azp` (JWT `azp`) | One value per registered OAuth client (~10–20), across Keycloak *and* `authz-idp` since ADR-0135 | Lets dashboards split human vs SA traffic and pivot by app |
 | `model` | `gen_ai.request.model` ← `x-ai-eg-model` | One value per catalog model (~10–20) | Backs the dashboard's model variable + per-model splits without a body parse (ADR-0046) |
 | `email` | `oidc_email` ← `x-oidc-email` (JWT `email`) | ≤ user_id granularity — adds no stream cardinality | Unique human-readable user identity; PII (stored in label index). Humans: 1:1 with user_id. Synthetic service emails (ADR-0068, e.g. `<repo>@gh-runners`) are **coarser** than user_id (one email per repo, while user_id = the GitHub `sub` carries repo+ref) — functionally determined by it, so no new streams. |
 | `display_name` | `oidc_name` ← `x-oidc-name` (JWT `name`, e.g. "Kunga Derick") | 1:1 with user_id | Human-readable label for bar charts; first name extracted at query time via `label_replace` |
