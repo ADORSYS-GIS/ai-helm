@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/ADORSYS-GIS/ai-helm/compare/keycloak-baseline-v0.6.0...keycloak-baseline-v0.7.0) (2026-09-02)
+
+
+### Features
+
+* **keycloak-baseline:** add code-intelligence scope for the Lightbridge MCP ([#986](https://github.com/ADORSYS-GIS/ai-helm/issues/986)) ([08fdf34](https://github.com/ADORSYS-GIS/ai-helm/commit/08fdf34008a99943121ec78d244b458e90ad440a))
+
 ## [0.6.0](https://github.com/ADORSYS-GIS/ai-helm/compare/keycloak-baseline-v0.5.0...keycloak-baseline-v0.6.0) (2026-09-02)
 
 

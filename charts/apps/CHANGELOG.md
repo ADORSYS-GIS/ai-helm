@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v3.0.0...apps-v3.0.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **charts:** regenerate Chart.lock for the 41 charts pinned to common 2.31.4 ([#1088](https://github.com/ADORSYS-GIS/ai-helm/issues/1088)) ([398b9cd](https://github.com/ADORSYS-GIS/ai-helm/commit/398b9cdc526fb4d0725dfccdbcbdf89007d289a9))
+
 ## [3.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v2.0.0...apps-v3.0.0) (2026-09-02)
 
 

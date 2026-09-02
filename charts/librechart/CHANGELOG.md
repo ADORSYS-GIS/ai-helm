@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2](https://github.com/ADORSYS-GIS/ai-helm/compare/librechart-v2.1.1...librechart-v2.1.2) (2026-09-02)
+
+
+### Bug Fixes
+
+* **charts:** regenerate Chart.lock for the 41 charts pinned to common 2.31.4 ([#1088](https://github.com/ADORSYS-GIS/ai-helm/issues/1088)) ([398b9cd](https://github.com/ADORSYS-GIS/ai-helm/commit/398b9cdc526fb4d0725dfccdbcbdf89007d289a9))
+
 ## [2.1.1](https://github.com/ADORSYS-GIS/ai-helm/compare/librechart-v2.1.0...librechart-v2.1.1) (2026-09-02)
 
 
