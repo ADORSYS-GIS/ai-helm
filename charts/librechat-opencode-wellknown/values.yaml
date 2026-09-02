@@ -121,6 +121,55 @@ wellKnown:
             - control
             - debug
             - interactive
+      # OpenTelemetry export of the session's own activity — model calls,
+      # token counts, real USD cost, tool durations, permission decisions,
+      # errors — to the estate's usage store. NO prompt or response content is
+      # captured: the plugin emits shape only (lengths, counts, durations,
+      # outcomes, error classes).
+      #
+      # ⚠️ A SECOND collector host, NOT the `otel.` one Claude Code uses. The
+      # OTel Collector's `oidc` extension validates exactly ONE audience, and
+      # authz-idp always stamps `aud` = the requesting client_id (lightbridge-
+      # authz ADR-0011 Decision 5 — it never reads the RFC 8693 `audience`
+      # parameter), so an `opencode-cli` token can never satisfy a collector
+      # pinned to `governance-auth-cli`. Verified against prod, not assumed:
+      # POST /v1/traces with a real opencode token returned 401 `failed to
+      # verify token: oidc: expected audience "governance-auth-cli" got
+      # ["opencode-cli"]`. Hence `otel-opencode.` with its own oidc extension
+      # — see lightbridge-governance's `opencodeOtel` values block.
+      #
+      # `tokenCommand` READS the access token @vymalo/opencode-oauth2 already
+      # holds for this provider (its own per-provider cache file) and MUST NOT
+      # refresh. A refresh token is single-use, and a second process presenting
+      # one is exactly what trips authz-idp's RFC 6819 reuse cascade — it
+      # revokes the whole chain and logs the user out
+      # (lightbridge-opencode-toolbeit#104, four such cascades in prod on
+      # 2026-09-02 before the 0.16.0 fix). Refreshing stays the oauth2
+      # plugin's job; this only reads what that plugin persisted, and exits
+      # non-zero with empty stdout rather than printing an expired token, per
+      # the helper contract in the plugin's own docs/otel.md.
+      #
+      # Needs `jq` on the user's machine — the one new local dependency; the
+      # helper exits with a clear message when it is missing. Consequence of
+      # being read-only: while opencode sits idle the cached token goes stale
+      # and exports fail auth until the next chat refreshes it. That is
+      # accepted; the alternative is the logout bug above.
+      - - "@vymalo/opencode-otel@0.16.0"
+        - endpoint: "https://otel-opencode.ai.camer.digital"
+          tokenCommand:
+            - sh
+            - -c
+            - >-
+              s=${OPENCODE_OAUTH2_SERVER_ID:-camer-digital};
+              if [ -n "${LOCALAPPDATA:-}" ]; then r=$LOCALAPPDATA;
+              elif [ -d "$HOME/Library/Caches" ]; then r=$HOME/Library/Caches;
+              else r=${XDG_CACHE_HOME:-$HOME/.cache}; fi;
+              f=$r/opencode-oauth2/opencode-oauth2-model-sync/$s.json;
+              jq -er --argjson n "$(date +%s)000"
+              '(.token // {}) as $t | ($t.accessToken // "") as $a |
+              if $a == "" then error("no cached access token")
+              elif (($t.expiresAt // 0) - 30000) <= $n then error("cached access token expired")
+              else $a end' "$f"
       # Dynamic Context Pruning — auto-compresses/dedups stale tool
       # outputs and prunes failed-tool inputs from the running context.
       # Zero-config (sensible defaults); provider-agnostic. Pushed
