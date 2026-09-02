@@ -1,8 +1,22 @@
 # DNS-01 wildcard certs cannot be issued under `ai.camer.digital`
 
-**Date:** 2026-07-31 · **Status:** Open — needs a `home-os` change
+**Date:** 2026-07-31 · **Status:** Resolved (2026-08-23) — see [Resolution](#resolution-2026-08-23) below
 **For:** @stephane-segning (owns `home-os` `charts/cert` and the DNS zones)
 **Found by:** the Coder workspace-wildcard work (ADR-0083 follow-up)
+
+## Resolution (2026-08-23)
+
+**Option A was shipped**, not B or C: `home-os` [#138](https://github.com/whythatfunction/home-os/pull/138)/[#139](https://github.com/whythatfunction/home-os/pull/139) added a dedicated `cert-route53` ClusterIssuer (kept on its OWN issuer rather than a second solver bolted onto `cert-cloudflare`, after a related incident showed cert-manager validates every solver's `secretRef` when reconciling the *issuer* — a momentarily-missing Route53 credential would otherwise take the Cloudflare issuer's other ~20 certs down with it). It's enabled + ESO-credentialed (`route53-secret`) only for `cert-remote`/`home-remote`, covers `dnsZones: [ai.camer.digital, ai.kivoyo.com]`, and is verified `Ready=True` live.
+
+But `traefik/ai-certificate` — the Certificate this whole audit is about — was **not** repointed at it. Investigating the reissue (home-os [#140](https://github.com/whythatfunction/home-os/pull/140)/[#141](https://github.com/whythatfunction/home-os/pull/141)) found it was dead config: none of its 5 SANs were ever actually requested by anything hitting `traefik/traefik-gateway`. Its only real consumer, knative-serving, serves hostnames under `mlops.camer.digital` — no `.ai`, not delegated, a zone the certificate never even listed. It was **deleted**, not reissued, and replaced by a correctly-scoped `serverless-gateway-certificate` (`*.mlops.camer.digital`, `cert-cloudflare`, no Route53 needed).
+
+Separately, this document's own "nothing is broken *yet* — no workload consumes the secret" (below) held all the way through: the real per-app hostnames under the delegated zone (`mlflow.mlops.ai.camer.digital`, `lakefs.mlops.ai.camer.digital`, `argo-workflows.mlops.ai.camer.digital`, `coder.ai.camer.digital`) were never blocked by any of this — they're single-hostname HTTP-01 certs (`cert-home-cert-http`), unaffected by NS delegation, confirmed `Ready=True` live throughout.
+
+Tracked via [ADORSYS-GIS/ai-helm#993](https://github.com/ADORSYS-GIS/ai-helm/issues/993) (closed 2026-08-27). Two follow-ups remain open:
+- [#1050](https://github.com/ADORSYS-GIS/ai-helm/issues/1050) — the "Evidence this has recurred" cleanup below was a one-time pass on 2026-07-31; `ai-certificate` kept retrying for another 23 days after that (until its 2026-08-23 deletion), almost certainly regenerating the same orphaned TXT records. Not yet reconfirmed clean.
+- [#1051](https://github.com/ADORSYS-GIS/ai-helm/issues/1051) — keeping `ai-helm/CLAUDE.md`'s cert-manager entry in sync with this resolution (done alongside this update).
+
+The rest of this document is kept as-is: it's the accurate root-cause analysis and was the actual basis for the fix.
 
 ## TL;DR
 

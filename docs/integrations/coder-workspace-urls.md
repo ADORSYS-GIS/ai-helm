@@ -1,6 +1,6 @@
 # Public workspace URLs in Coder (wildcard subdomain apps)
 
-**Status:** Implemented · **ADR:** [ADR-0121](../adr/0121-coder-workspace-url-exposure-strategy.md) · **Last updated:** 2026-08-05
+**Status:** Implemented · **ADR:** [ADR-0121](../adr/0121-coder-workspace-url-exposure-strategy.md) · **Last updated:** 2026-08-28
 
 Coder workspaces are reachable from the public internet on wildcard subdomains,
 so an app a developer runs inside a workspace (a Vite dev server, a notebook, an
@@ -438,9 +438,10 @@ The dashboard hostname `coder.ai.camer.digital` is unaffected because it uses
 does not care who serves DNS.
 
 **Diagnostic tell:** orphaned `_acme-challenge.*` TXT records accumulating in the
-Cloudflare `camer.digital` zone for delegated names. As of this writing the zone
-still holds abandoned ones for `ai`, `coder-ai`, `coder-ai.ai`, `mlops`, and
-`serverless.mlops` — every past attempt to DNS-01 a delegated name.
+Cloudflare `camer.digital` zone for delegated names — the zone accumulated nine of
+these (`ai`, `coder-ai`, `coder-ai.ai`, `mlops`, `serverless.mlops`) from repeated
+attempts to DNS-01 a delegated name via `cert-cloudflare`; cleanup tracked in
+[ADORSYS-GIS/ai-helm#1050](https://github.com/ADORSYS-GIS/ai-helm/issues/1050).
 
 Confirm a name's zone before pointing a DNS-01 `Certificate` at it:
 
@@ -457,18 +458,18 @@ Putting workspace apps on a sibling domain rather than a subdomain of the
 dashboard is also Coder's own recommendation: a compromised or hostile workspace
 app cannot set or read cookies scoped to `coder.ai.camer.digital`.
 
-### If we ever do need the wildcard under `ai.camer.digital`
+### The Route53 DNS-01 ClusterIssuer now exists — but workspaces still don't use it
 
-Two options, both requiring a `home-os` change (that repo owns the issuers):
-
-- **Route53 DNS-01 ClusterIssuer** — add a `route53` solver to `charts/cert` plus
-  an AWS IAM credential with `route53:ChangeResourceRecordSets` on the zone. Note
-  the existing in-cluster AWS user (`k8s-cluster-secret-manager`, the ESO
-  credential) is **denied** Route53 — it is not reusable for this.
-- **CNAME delegation** — add a CNAME in Route53 for
-  `_acme-challenge.<name>.ai.camer.digital` pointing at a name inside the
-  Cloudflare `camer.digital` zone, and set `cnameStrategy: Follow` on the
-  `cert-cloudflare` solver. This would fix `mlops` the same way.
+`home-os` shipped a dedicated `cert-route53` ClusterIssuer
+([#138](https://github.com/whythatfunction/home-os/pull/138)/[#139](https://github.com/whythatfunction/home-os/pull/139),
+2026-08-23; full writeup in
+[`docs/migrations/2026-07-31-dns01-route53-delegation-audit.md`](../migrations/2026-07-31-dns01-route53-delegation-audit.md)),
+so a wildcard under `ai.camer.digital` is technically possible now via DNS-01. Workspace
+URLs stay on `*.coder-ws.camer.digital` anyway — the DNS-delegation trap was never
+the only reason. The **secondary benefit** above (a compromised workspace app
+cannot read cookies scoped to the dashboard domain) holds regardless of which
+issuer can reach the zone, so don't "fix" this back under `coder.ai.camer.digital`
+just because the DNS-01 blocker is gone.
 
 ---
 
