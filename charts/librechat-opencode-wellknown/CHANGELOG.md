@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.2.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-opencode-wellknown-v2.1.0...librechat-opencode-wellknown-v2.2.0) (2026-09-02)
+
+
+### Features
+
+* add qwen3-coder-30b-a3b-local to the picker and raise its context to 12288 ([#919](https://github.com/ADORSYS-GIS/ai-helm/issues/919)) ([36c29c8](https://github.com/ADORSYS-GIS/ai-helm/commit/36c29c89836edf81dbdebfa61e0f9696c886a2f6))
+* **ai-models:** force DeepInfra service_tier=priority; retire deepseek-v4-flash/-pro for -0731 (ADR-0117) ([#894](https://github.com/ADORSYS-GIS/ai-helm/issues/894)) ([59a7ab4](https://github.com/ADORSYS-GIS/ai-helm/commit/59a7ab46f7f37d2da357ca01e8333e51c2446ca8))
+* **inference:** deploy Qwen3-4B (Q6_K, llama.cpp) as the fleet coding model ([26f23e3](https://github.com/ADORSYS-GIS/ai-helm/commit/26f23e3f117930fdfbb61cc53824fc4aa6059e7b))
+* **inference:** deploy Qwen3-4B (Q6_K, llama.cpp) as the fleet coding model ([c19ee2a](https://github.com/ADORSYS-GIS/ai-helm/commit/c19ee2a5c2ffcd26a37f61c756d19e925e329002))
+* **librechat-opencode-wellknown:** authenticate opencode against authz-idp ([#1070](https://github.com/ADORSYS-GIS/ai-helm/issues/1070)) ([111e86a](https://github.com/ADORSYS-GIS/ai-helm/commit/111e86ac6688d5747022c4acc6330b562dff3506))
+* **librechat-opencode-wellknown:** export opencode telemetry via @vymalo/opencode-otel ([#1085](https://github.com/ADORSYS-GIS/ai-helm/issues/1085)) ([85479ef](https://github.com/ADORSYS-GIS/ai-helm/commit/85479effe7b6de37fcb605f85c8c399a399b0b10))
+
+
+### Bug Fixes
+
+* **ai-models:** advertise qwen3-coder-30b-a3b input window as 12288 ([4738725](https://github.com/ADORSYS-GIS/ai-helm/commit/47387251233ecc327e0ab5acc94ba104e4b00f34))
+* **ai-models:** derive opencode's reasoning caps from the catalog (ADR-0125) ([#971](https://github.com/ADORSYS-GIS/ai-helm/issues/971)) ([52a8355](https://github.com/ADORSYS-GIS/ai-helm/commit/52a8355abf96625a343add1704ad1a5bba2dd792))
+* **inference:** raise qwen3-coder-30b-a3b context window to 16384 ([ffb10bb](https://github.com/ADORSYS-GIS/ai-helm/commit/ffb10bb2d3c2601264f088ef80b678d02a3c8c99))
+* **inference:** raise qwen3-coder-30b-a3b context window to 16384 ([2ace27b](https://github.com/ADORSYS-GIS/ai-helm/commit/2ace27b415b32042aeda59c5ab1534ac125a697a))
+* **librechat-opencode-wellknown:** bump @vymalo/opencode-oauth2 to 0.16.0 ([#1083](https://github.com/ADORSYS-GIS/ai-helm/issues/1083)) ([3b874e7](https://github.com/ADORSYS-GIS/ai-helm/commit/3b874e7d8fee26f2fe430dbce98c06ee67e526df))
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [2.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-opencode-wellknown-v2.0.0...librechat-opencode-wellknown-v2.1.0) (2026-08-02)
 
 

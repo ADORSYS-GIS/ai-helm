@@ -1,5 +1,36 @@
 # Changelog
 
+## [3.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v2.0.0...apps-v3.0.0) (2026-09-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **apps:** retire converse-ui, keep console-ui ([#1057](https://github.com/ADORSYS-GIS/ai-helm/issues/1057))
+
+### Features
+
+* **apps:** float lightbridge-governance's images via argocd-image-updater ([#939](https://github.com/ADORSYS-GIS/ai-helm/issues/939)) ([13dd0ed](https://github.com/ADORSYS-GIS/ai-helm/commit/13dd0edb47996b925f174a4b6893f197ce045f4d))
+* **apps:** retire converse-ui, keep console-ui ([#1057](https://github.com/ADORSYS-GIS/ai-helm/issues/1057)) ([87a1ea8](https://github.com/ADORSYS-GIS/ai-helm/commit/87a1ea82cd1e2436893edfef664fb73200ad7f71))
+* deploy lightbridge-governance (AI governance platform) ([#933](https://github.com/ADORSYS-GIS/ai-helm/issues/933)) ([24bf612](https://github.com/ADORSYS-GIS/ai-helm/commit/24bf612ee74a1c4f48df36633c92035432a3f8ad))
+* **governance:** deploy censgate/redact-gateway as an internal canary (ADR-0113) ([#889](https://github.com/ADORSYS-GIS/ai-helm/issues/889)) ([623be27](https://github.com/ADORSYS-GIS/ai-helm/commit/623be275b8398319cca54c92f0678c1625fe6f01))
+* **lci-ui:** add the lci-ui Application entry ([#1079](https://github.com/ADORSYS-GIS/ai-helm/issues/1079)) ([fd601af](https://github.com/ADORSYS-GIS/ai-helm/commit/fd601aff2fb26fabc236e2b413b36aaefc28ef8d))
+* **librechat-code-interpreter:** self-host LibreChat Code Interpreter (ADR-0122) ([#941](https://github.com/ADORSYS-GIS/ai-helm/issues/941)) ([9e14d02](https://github.com/ADORSYS-GIS/ai-helm/commit/9e14d02aa2da38c6213580c60312c6dbabee674c))
+* **lightbridge-ci:** add mcp controller baseline ([#922](https://github.com/ADORSYS-GIS/ai-helm/issues/922)) ([1b58948](https://github.com/ADORSYS-GIS/ai-helm/commit/1b58948591d79b6a6a2a6cbbc7a8f79cc7a0057f))
+* **mcp:** bump AI Gateway to v1.1.0 and retire the firecrawl openresty proxy engine (Story [#997](https://github.com/ADORSYS-GIS/ai-helm/issues/997)) ([1dd1aec](https://github.com/ADORSYS-GIS/ai-helm/commit/1dd1aeccef69db9944a0b17d36da2a880c73a030))
+* **mcp:** bump AI Gateway to v1.1.0 and retire the firecrawl openresty proxy engine (Story [#997](https://github.com/ADORSYS-GIS/ai-helm/issues/997)) ([4f656e7](https://github.com/ADORSYS-GIS/ai-helm/commit/4f656e73049e8bec5a0e180fbc5225c7cd62886f))
+* **redact-gateway:** replace the censgate canary with a first-party proxy (ADR-0115) ([#892](https://github.com/ADORSYS-GIS/ai-helm/issues/892)) ([3ecec8a](https://github.com/ADORSYS-GIS/ai-helm/commit/3ecec8a171b632412b0bf02e480534bf634bebe9))
+* stand up the lightbridge-console client, Application, and image-updater CR ([#1055](https://github.com/ADORSYS-GIS/ai-helm/issues/1055)) ([2a0f2d7](https://github.com/ADORSYS-GIS/ai-helm/commit/2a0f2d73d51437ccc2d8c8462557918f8db910fd))
+* **z-image-proxy:** nginx/njs proxy injects b64_json for LibreChat image gen (ticket [#843](https://github.com/ADORSYS-GIS/ai-helm/issues/843)) ([dbfd3eb](https://github.com/ADORSYS-GIS/ai-helm/commit/dbfd3eb5fa2a6c109ddca8842ffa1f0c6e29a833))
+
+
+### Bug Fixes
+
+* **core-gateway:** pin chart to 0.3.146, rolling back ADR-0116 sidecar ([#907](https://github.com/ADORSYS-GIS/ai-helm/issues/907)) ([edd200b](https://github.com/ADORSYS-GIS/ai-helm/commit/edd200b9ad2fa762c35c64f0ac9453d56ff132dd))
+* **imageupdater:** activate the CRD controller for lightbridge-governance ([#940](https://github.com/ADORSYS-GIS/ai-helm/issues/940)) ([b7fa107](https://github.com/ADORSYS-GIS/ai-helm/commit/b7fa10702975f9c307210405f794766adfc9b89f))
+* **librechat-code-interpreter:** move Replace=false override to app-level syncPolicy ([#952](https://github.com/ADORSYS-GIS/ai-helm/issues/952)) ([7f0e468](https://github.com/ADORSYS-GIS/ai-helm/commit/7f0e46836493e282d778d3546bee6614cff89f9a))
+* **webank-training:** correct GPU placement contract; implement ADR-0114 priority preemption ([#891](https://github.com/ADORSYS-GIS/ai-helm/issues/891)) ([b045b69](https://github.com/ADORSYS-GIS/ai-helm/commit/b045b69a4163e86aa7c4e45edae4e4f7a93c08f6))
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [2.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v1.2.0...apps-v2.0.0) (2026-08-02)
 
 
