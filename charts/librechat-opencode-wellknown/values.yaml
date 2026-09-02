@@ -154,8 +154,25 @@ wellKnown:
       # being read-only: while opencode sits idle the cached token goes stale
       # and exports fail auth until the next chat refreshes it. That is
       # accepted; the alternative is the logout bug above.
+      # ⚠️ PER-SIGNAL `endpoints`, deliberately NOT the base `endpoint`. The plugin
+      # resolves `endpoint` as `env.OTEL_EXPORTER_OTLP_ENDPOINT || opts.endpoint`
+      # (environment wins, OTel convention), and `governance-auth` writes exactly
+      # that generic variable into every developer's shell rc, pointing at the
+      # Claude Code collector `otel.ai.camer.digital` — whose oidc extension is
+      # pinned to `aud: governance-auth-cli`. On any machine that has run
+      # governance-auth, a base `endpoint` here silently loses and every opencode
+      # export 401s (seen live 2026-09-02: `otel_export_failed status=401`,
+      # `endpoint=https://otel.ai.camer.digital` in the plugin's own startup line).
+      # `signalUrl` checks `config.endpoints[signal]` BEFORE the base endpoint, and
+      # governance-auth never sets the per-signal OTEL_EXPORTER_OTLP_{TRACES,
+      # METRICS,LOGS}_ENDPOINT variables (its own otel.rs comment says why), so the
+      # org default wins again without touching anyone's machine. Proven against
+      # the real @vymalo/opencode-core-otel resolver before this shipped.
       - - "@vymalo/opencode-otel@0.16.0"
-        - endpoint: "https://otel-opencode.ai.camer.digital"
+        - endpoints:
+            traces: "https://otel-opencode.ai.camer.digital/v1/traces"
+            metrics: "https://otel-opencode.ai.camer.digital/v1/metrics"
+            logs: "https://otel-opencode.ai.camer.digital/v1/logs"
           tokenCommand:
             - sh
             - -c
