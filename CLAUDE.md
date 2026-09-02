@@ -460,6 +460,25 @@ what users are charged; that question lives in inference-ops.
 - `helm template <touched chart>` is the fastest pre-commit smoke test.
 - For PR work: tasks are tracked in the harness; mark them as you go.
 
+## Backlog: at most 5 open `Story` issues per repo
+
+A standing WIP limit (maintainer's call, 2026-09-01), org-wide via
+[ai-governance](https://adorsys-gis.github.io/ai-governance/) — see
+`docs/02-user-story-template.md` §12a there. **Only `Story` is capped**; `Task`, `Bug` and
+`Feature` are not, and the dev-ticket form (`type: Task`) is the default shape for
+implementation work, so most filing is unaffected.
+
+At the limit, either don't file the Story or say which open one it displaces. **Parking a Story
+means folding it into its Epic as a checklist item, never deleting it** — a cap that loses scope
+is worse than no cap. A Story under an active Epic still counts; epics do not exempt their children.
+
+> ⚠️ `gh issue create` and raw API calls **bypass the issue forms**, so they stamp no issue type
+> — a `Story` filed that way arrives untyped and is invisible to the count. Stamp it afterwards
+> with `updateIssueIssueType` (org-level type ids; `Task` is `IT_kwDOCFHHUc4BMIZb`). This is the
+> same mechanism by which the type taxonomy decayed before the forms carried `type:`, and it bit
+> twice on 2026-09-01.
+
+
 <!-- ai-governance:stanza -->
 <!-- BEGIN: AI Governance stanza (managed by ADORSYS-GIS/ai-governance) -->
 ## AI Governance
