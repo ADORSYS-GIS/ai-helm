@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-secrets-v1.0.1...lightbridge-secrets-v1.1.0) (2026-09-02)
+
+
+### Features
+
+* **lightbridge-secrets:** add the RP confidential-client credential keys ([#1045](https://github.com/ADORSYS-GIS/ai-helm/issues/1045)) ([d8dca73](https://github.com/ADORSYS-GIS/ai-helm/commit/d8dca73a6eb3e307a58d8783d656575ed02f0ec3))
+* **lightbridge-secrets:** ESO-manage the lightbridge-idp-rp RP keys ([#1044](https://github.com/ADORSYS-GIS/ai-helm/issues/1044)) ([16064f9](https://github.com/ADORSYS-GIS/ai-helm/commit/16064f9012a197c36b33e30fae082c1072c59928))
+
+
+### Bug Fixes
+
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [1.0.1](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-secrets-v1.0.0...lightbridge-secrets-v1.0.1) (2026-08-02)
 
 

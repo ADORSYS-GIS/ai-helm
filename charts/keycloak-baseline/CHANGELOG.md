@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/ADORSYS-GIS/ai-helm/compare/keycloak-baseline-v0.5.0...keycloak-baseline-v0.6.0) (2026-09-02)
+
+
+### Features
+
+* **keycloak-baseline:** add opencode-cli + opencode-exchange clients for device login and context-scoped token exchange ([#586](https://github.com/ADORSYS-GIS/ai-helm/issues/586)) ([#1037](https://github.com/ADORSYS-GIS/ai-helm/issues/1037)) ([48532de](https://github.com/ADORSYS-GIS/ai-helm/commit/48532de7425881ec693c332e63e02dae7ccc27e5))
+* stand up the lightbridge-console client, Application, and image-updater CR ([#1055](https://github.com/ADORSYS-GIS/ai-helm/issues/1055)) ([2a0f2d7](https://github.com/ADORSYS-GIS/ai-helm/commit/2a0f2d73d51437ccc2d8c8462557918f8db910fd))
+
+
+### Bug Fixes
+
+* **keycloak:** resolve the console client secret from the consolidated app key ([#1056](https://github.com/ADORSYS-GIS/ai-helm/issues/1056)) ([129ce1a](https://github.com/ADORSYS-GIS/ai-helm/commit/129ce1aacb5bcafef253aeeccff4b40860754359))
+* **webank-training:** require NVIDIA runtime ([#911](https://github.com/ADORSYS-GIS/ai-helm/issues/911)) ([f2861a9](https://github.com/ADORSYS-GIS/ai-helm/commit/f2861a9713f796157a29bd62324a40ce8145bfb9))
+
 ## [0.5.0](https://github.com/ADORSYS-GIS/ai-helm/compare/keycloak-baseline-0.4.0...keycloak-baseline-v0.5.0) (2026-08-02)
 
 
