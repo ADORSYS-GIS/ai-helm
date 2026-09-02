@@ -884,6 +884,73 @@ applications:
     destination:
       namespace: converse
 
+  # --- Lightbridge Code Intelligence UI (apps/lci) ---
+  # Next.js server-rendered UI for LCI, deployed as a SEPARATE Application/chart from
+  # `lightbridge-code-intelligence` above — that chart already runs an older Next.js frontend as
+  # its own `web` controller (image ghcr.io/adorsys-gis/lightbridge-web, serving
+  # code-intelligence.ai.camer.digital). This app replaces it, ported onto packages/ui-web in
+  # converse-frontends (epic #328). Deliberately a SEPARATE Application against a SEPARATE chart
+  # (`charts/converse-lci` in converse-frontends, published as
+  # oci://ghcr.io/adorsys-gis/charts/converse-lci) rather than editing the `web` controller in
+  # place, for the exact reason console-ui shipped alongside converse-ui instead of replacing it
+  # in place: this ships, gets proven, and only THEN has the old `web` controller retired in its
+  # own follow-up PR (mirroring the converse-ui retirement checklist above) — never both changed
+  # in the same reconcile.
+  #
+  # ⚠️ NOT YET LIVE-READY — two things outside this repo's control still need doing before this
+  # Application will actually authenticate, see the PR description for the full checklist:
+  #   1. DNS + ingress confirmation for the hostname below (a PROPOSAL, chosen to sit alongside
+  #      the existing code-intelligence.ai.camer.digital rather than replace it yet).
+  #   2. The Keycloak client this app reuses (`code-intelligence`, realm
+  #      https://auth.verif.fyi/realms/camer-digital — the SAME realm/client/audience
+  #      lightbridge-code-intelligence's own control-plane and existing `web` controller already
+  #      use, verified against that chart's own environments/prod/values file) needs this app's
+  #      redirect URI added to its allow-list. No new client, no new secret: it is already a
+  #      public + PKCE client, the same shape console-ui's own `lightbridge-console` client uses.
+  #
+  # Image write-back mirrors console-ui exactly (Source B $values + image-updater git write-back,
+  # newest-build, unsigned — converse-frontends' own CI, not signed the way
+  # lightbridge-code-intelligence's upstream build is).
+  - name: lci-ui
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    additionalAnnotations:
+      argocd-image-updater.argoproj.io/image-list: frontend=ghcr.io/adorsys-gis/converse-frontends/lci
+      argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
+      argocd-image-updater.argoproj.io/frontend.allow-tags: regexp:^sha-[0-9a-f]+$
+      argocd-image-updater.argoproj.io/frontend.force-update: "true"
+      # Same shared GHCR read cred as console-ui/lightbridge-code-intelligence.
+      argocd-image-updater.argoproj.io/frontend.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
+      argocd-image-updater.argoproj.io/frontend.helm.image-name: lci.controllers.main.containers.frontend.image.repository
+      argocd-image-updater.argoproj.io/frontend.helm.image-tag: lci.controllers.main.containers.frontend.image.tag
+      argocd-image-updater.argoproj.io/write-back-method: git
+      argocd-image-updater.argoproj.io/git-repository: https://github.com/adorsys-gis/ai-helm-values.git
+      argocd-image-updater.argoproj.io/git-branch: main
+      argocd-image-updater.argoproj.io/write-back-target: helmvalues:/environments/prod/values/lci-ui.yaml
+      argocd-image-updater.argoproj.io/git-credentials: secret:argocd/github-app-creds--adorsys-gis
+    sources:
+      # Source A — the converse-lci chart from OCI. Mirrors console-ui's Source A shape exactly.
+      - repoURL: oci://ghcr.io/adorsys-gis/charts/converse-lci
+        chart: "."
+        targetRevision: "~0.1.0"
+        helm:
+          releaseName: lci-ui
+          # image.{repository,tag,pullPolicy} come from Source B's $values file (image-updater
+          # owns them). Runtime env (OIDC_ISSUER/CLIENT_ID/REDIRECT_URI/CONTROL_PLANE_URL) and
+          # ingress live in that same file — see ai-helm-values.
+          valueFiles:
+            - $values/environments/prod/values/lci-ui.yaml
+          ignoreMissingValueFiles: true
+      # Source B — image tag from ai-helm-values; image-updater commits here.
+      - repoURL: https://github.com/adorsys-gis/ai-helm-values
+        targetRevision: main
+        ref: values
+    destination:
+      # Same namespace as lightbridge-code-intelligence/console-ui — this app's own control-plane
+      # backend (lightbridge-ci-control-plane) lives here, and the chart sets no namespace
+      # opinion of its own.
+      namespace: converse
+
   # --- lightbridge-governance ---
   # The AI governance platform (repo: ADORSYS-GIS/lightbridge-governance): a
   # tenant/application/integration registry plus two connectors — GitHub
