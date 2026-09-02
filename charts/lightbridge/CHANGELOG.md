@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-v1.0.1...lightbridge-v1.1.0) (2026-09-02)
+
+
+### Features
+
+* **lightbridge:** pin lightbridge-authz-stack chart 3.7.0 -&gt; 5.0.0 ([#1046](https://github.com/ADORSYS-GIS/ai-helm/issues/1046)) ([5fe16c7](https://github.com/ADORSYS-GIS/ai-helm/commit/5fe16c7a94802daa6ef7d8c98523f77b5a9aa107))
+
+
+### Bug Fixes
+
+* **charts:** regenerate Chart.lock for the 41 charts pinned to common 2.31.4 ([#1088](https://github.com/ADORSYS-GIS/ai-helm/issues/1088)) ([398b9cd](https://github.com/ADORSYS-GIS/ai-helm/commit/398b9cdc526fb4d0725dfccdbcbdf89007d289a9))
+
 ## [1.0.1](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-v1.0.0...lightbridge-v1.0.1) (2026-09-02)
 
 
