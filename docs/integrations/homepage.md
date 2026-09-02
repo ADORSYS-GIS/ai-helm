@@ -34,20 +34,31 @@ shows up without a restart. A `services.yaml`/`bookmarks.yaml` content edit
 automatically too — bjw-template v4's native `configMaps:` block computes a
 `checksum/configMaps` pod annotation for you.
 
-Current starter set (annotated as of ADR-0089): Grafana, MLflow, Argo
-Workflows, Coder. Everything else (LibreChat, inference endpoints, MCPs,
-LakeFS) is not yet annotated — add the same four lines to each as they come
-up; this was a deliberate starter set, not a full sweep.
+Current annotated set (as of 2026-09, via `gethomepage.dev/*` in ai-helm-values
+`environments/**`): Grafana (Observability), MLflow & Argo Workflows & LakeFS
+(MLOps), Coder (Dev Environments), LibreChat + "LibreChat (kivoyo redirect)"
+(Chat), opencode well-known (Dev Tools), the Lightbridge Platform-API /
+Code-Intelligence tiles, and Repo Auth (Platform APIs). Self-hosted inference
+models are **not** auto-discovered — they are cluster-local (ADR-0095, no
+Ingress/HTTPRoute to annotate) and instead surface as a curated "Models → AI
+Gateway" tile (see below).
+
+⚠️ **Icon tip:** a `gethomepage.dev/icon` value must name an existing file in
+[walkxcode/dashboard-icons](https://github.com/walkxcode/dashboard-icons)
+(e.g. `argo-cd.png`, **not** `argo.png`). A missing icon 404s on the CDN and the
+tile renders blank/broken — verify the filename exists before annotating.
 
 ## When to use a curated tile instead
 
 Reach for a curated tile (`homepage.configMaps.content.data."services.yaml"`/
 `"bookmarks.yaml"` in ai-helm-values) instead of an annotation when the
 target has **no in-cluster Ingress/HTTPRoute** to
-annotate — an external link, a doc site, or (as with the "Platform" group's
-"Cluster Health" tile) a status widget that isn't really "about" any single
-app's Ingress. Don't add BOTH an annotation and a curated tile for the same
-app — that double-lists it.
+annotate — an external link, a doc site, a status widget that isn't really
+"about" any single app's Ingress (the "Platform" group's "Cluster Health"
+tile), or (as with self-hosted models) a cluster-local service that is only
+reachable through the gateway (the "Models" group's "AI Gateway" tile,
+`https://api.ai.camer.digital`). Don't add BOTH an annotation and a curated
+tile for the same app — that double-lists it.
 
 ## Status/uptime widgets
 
