@@ -248,6 +248,69 @@ keycloak-config:
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "mlflow"
 
+    # ── Lightbridge Code Intelligence MCP (lightbridge-code-intelligence#508) ──
+    # Unlike the gateway-fronted MCPs in charts/mcps — where Envoy verifies the JWT
+    # and the backend trusts it (ADR-0038/0040) — this one is served by the code
+    # intelligence control plane itself, on its own domain, and validates tokens
+    # independently: it checks `aud` against OIDC_AUDIENCE and authorizes each tool
+    # off a FLAT `permissions` claim (PERMISSIONS_CLAIM, ADR-0023). Neither is emitted
+    # by Keycloak's stock scopes — `roles` puts roles under `realm_access.roles` — so
+    # without this scope a caller authenticates and is then denied on every tool call.
+    # Mirrors the server's own reference realm (deploy/keycloak/realm-lightbridge.json
+    # in that repo): two mappers, no dedicated resource client.
+    #
+    # Verified against a real token (azp=self-service-mcp-api): the permission roles
+    # ALREADY exist and are already granted, as CLIENT roles on the `code-intelligence`
+    # client — `resource_access["code-intelligence"].roles` carries repo:read,
+    # review:read, task:read, repo:approve, … The token was missing only the flat
+    # `permissions` claim, which is why this scope maps FROM that client and declares
+    # no roles of its own.
+    codeIntelligence:
+      name: "code-intelligence"
+      description: "Audience + permissions claim for the Code Intelligence MCP server"
+      protocol: "openid-connect"
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "true"
+      protocolMappers:
+        # The server validates `aud == code-intelligence`. Today that audience already
+        # arrives INCIDENTALLY, via Keycloak's built-in audience-resolve mapper in the
+        # stock `roles` scope: it adds every client whose roles appear in the token, and
+        # holders of code-intelligence roles therefore get it for free. This mapper makes
+        # it explicit and deterministic rather than a side effect of role membership.
+        # A free-string audience — the resource server is not a login client.
+        - name: code_intelligence_audience
+          protocol: "openid-connect"
+          protocolMapper: "oidc-audience-mapper"
+          consentRequired: false
+          config:
+            included.custom.audience: "code-intelligence"
+            introspection.token.claim: "true"
+            id.token.claim: "false"
+            access.token.claim: "true"
+        # MUST be multivalued: the control plane reads this claim as a JSON array of
+        # permission strings (`Claims::permissions`); a bare string yields an empty
+        # permission set and every `Caller::require` fails closed.
+        #
+        # Sourced from the `code-intelligence` client's roles, NOT this client's — that
+        # is where the permission model actually lives (repo:*, review:*, task:*), and a
+        # real token confirms users already hold them there. A client-role mapper reads
+        # the named client's roles regardless of which client issued the token, so this
+        # correctly projects them into a token minted by self-service-mcp-api.
+        - name: code_intelligence_permissions
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            introspection.token.claim: "true"
+            multivalued: "true"
+            userinfo.token.claim: "false"
+            id.token.claim: "false"
+            access.token.claim: "true"
+            claim.name: "permissions"
+            jsonType.label: "String"
+            usermodel.clientRoleMapping.clientId: "code-intelligence"
+
   # OIDC Clients
   clients:
     converse:
@@ -557,6 +620,13 @@ keycloak-config:
         - roles
         - basic
         - email
+        # DEFAULT, not optional: LibreChat's per-MCP `oauth.scope` is a fixed string
+        # ("email openid offline_access") shared by every entry in its mcpServers
+        # registry, so an optional scope would never be requested and the Code
+        # Intelligence MCP would 401. Harmless for callers of the other MCPs on this
+        # client — the permissions claim is omitted for users holding none of the roles
+        # below, and an extra audience entry is additive.
+        - code-intelligence
       optionalClientScopes:
         - address
         - librechat
@@ -564,6 +634,13 @@ keycloak-config:
         - organization
         - offline_access
         - microprofile-jwt
+      # NOTE: no Code Intelligence roles are declared here. The permission model lives on
+      # the `code-intelligence` client (repo:*, review:*, task:*, verified present and
+      # already granted in a live token), and the scope above maps FROM that client.
+      # Declaring copies here would create a second, silently-unused set of role names.
+      # `review:trigger` (#591) is the one permission not yet present there — it needs
+      # creating and granting on that client, which this chart cannot express because
+      # that client is not chart-managed. See the PR description.
 
     # converseFrontend: REMOVED 2026-08-29 along with the app it existed for.
     #
