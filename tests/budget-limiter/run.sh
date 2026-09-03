@@ -7,9 +7,15 @@
 # plane runs. 200 means the request reached the upstream; 402 means the account is out of budget;
 # 503 means the balance could not be determined, which is emphatically NOT the same answer.
 #
-#   ./tests/budget-limiter/run.sh          (needs docker, curl, python3)
+#   ./tests/budget-limiter/run.sh          (needs docker, curl, python3, helm)
 #
 # Ports 10100-10104 must be free. The container is removed on exit.
+#
+# STEP 0 IS NOT OPTIONAL. Everything below this line is a DATA-plane test: it proves what the
+# script does once Envoy is running it. On 2026-09-03 all 18 of them passed and the filter still
+# took the gateway down, because Envoy Gateway's CONTROLLER refused the script before any Envoy
+# ever saw it and rewrote every route to `directResponse: 500`
+# (ai-helm-values#367 / #368). tests/envoy-gateway-lua/ is the half this file could not see.
 set -u
 
 HERE="${0:a:h}"
@@ -18,6 +24,9 @@ CONTAINER="budget-limiter-envoy-test"
 
 cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true }
 trap cleanup EXIT
+
+"$HERE/../envoy-gateway-lua/run.sh" || exit 1
+echo
 
 python3 "$HERE/render-envoy-config.py" || exit 1
 cleanup

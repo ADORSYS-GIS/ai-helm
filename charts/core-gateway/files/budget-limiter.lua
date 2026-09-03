@@ -64,7 +64,26 @@ local MODEL_HEADER = "x-ai-eg-model"
 
 -- Absent config = shadow ON, no refill URL. The unsafe direction (enforcing) must require an
 -- explicit, deliberate value; a templating mistake must not start refusing paid traffic.
-local CONFIG = rawget(_G, "BUDGET_LIMITER_CONFIG") or {}
+--
+-- A PLAIN GLOBAL READ, and it must stay one. This line used to be
+-- `rawget(_G, "BUDGET_LIMITER_CONFIG")`, which took the whole gateway down on 2026-09-03
+-- (ai-helm-values#367/#368). Envoy Gateway does not just ship a Lua script to the data plane:
+-- its CONTROL PLANE runs it first, in gopher-lua, against mock handles, under
+-- internal/gatewayapi/luavalidator (strict is the default and this chart does not set
+-- EnvoyProxy.spec.luaValidation). That validator's security.lua NILS `rawget`, `rawset`,
+-- `setmetatable`, `getmetatable`, `load`, `loadstring`, `require`, `dofile`, `loadfile`,
+-- `package`, `debug` -- and `_G` itself. So `rawget(_G, …)` raised "attempt to call a
+-- non-function object" at the top of the chunk, `buildLuas` failed, and EG rewrote EVERY route
+-- on this Gateway to `directResponse: 500` (internal/gatewayapi/envoyextensionpolicy.go: "Lua
+-- extension doesn't have a fail open option, so fail the route if there is a lua error").
+-- Envoy never loaded the filter at all, which is why the access log showed
+-- `response_code_details: direct_response` with `budget_decision: -` and the proxy logged
+-- nothing about Lua.
+--
+-- A plain read is equivalent here (the Envoy Lua filter's global table carries no `__index`),
+-- and it survives both runtimes. `tests/envoy-gateway-lua/run.sh` is the gate: it runs EG's own
+-- translator over the rendered chart and fails on exactly this class of defect.
+local CONFIG = BUDGET_LIMITER_CONFIG or {}
 local SHADOW = CONFIG.shadow ~= false
 local REFILL_URL = CONFIG.refill_url or ""
 
