@@ -27,6 +27,23 @@ spec:
       sectionName: {{ $sectionName }}
   {{- end }}
   extAuth:
+    {{- /*
+    lightbridge-authz ADR-0034 §1.1: `failOpen` decides what Envoy does when Authorino is
+    unreachable or too slow — `false` (the CRD default) denies with a 5xx, `true` waves the
+    request through unauthenticated. It has always been false here by omission; this makes it
+    settable so the values repo can ASSERT it rather than inherit it, which matters now that a
+    budget lookup rides the same ext_authz step: the entire value of that enforcement evaporates
+    if a slow Authorino means "allow".
+
+    Rendered ONLY when explicitly set, so a chart with no value in the values repo produces
+    byte-identical output to before this landed. Set it to `false` in ai-helm-values, in the same
+    change that enables the budget limiter; do not default it here, because a default that
+    silently matches the CRD's is exactly the kind of "assertion" that stops being one the day
+    upstream changes its mind.
+    */}}
+    {{- if hasKey $config "failOpen" }}
+    failOpen: {{ $config.failOpen }}
+    {{- end }}
     grpc:
       backendRefs:
         - name: {{ $config.authorinoService }}

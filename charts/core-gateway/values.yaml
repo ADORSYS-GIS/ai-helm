@@ -417,6 +417,41 @@ extProc:
 # here rather than the floating `main` tag — an unrelated later push to
 # that repo's main must not silently change what THIS chart deploys.
 # ────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────
+# The Dynamic Budget Limiter (lightbridge-authz ADR-0034, lightbridge-authz#658)
+#
+# Authorino asks authz-budget for the account's live ledger balance and
+# publishes it as ext_authz dynamic metadata; a Lua filter on this Gateway
+# reads it and answers 402 `budget_exhausted` when nothing is left. This block
+# controls the LUA half only — the AuthConfig `metadata` + `dynamicMetadata`
+# blocks that produce the metadata live in ai-helm-values' security-policies
+# values, and the two halves are turned on together (see
+# `docs/runbooks/budget-limiter-rollout.md` there).
+#
+# OFF by default, and prod does not set it: with `enabled: false` the whole
+# block renders nothing and the filter chain is byte-identical to before this
+# landed. Turning it on with `shadowMode: true` is the intended first step.
+# ────────────────────────────────────────────────────────────────────────
+budgetLimiter:
+  # Renders the Lua filter at all. `false` = the feature does not exist in the
+  # rendered EnvoyExtensionPolicy.
+  enabled: false
+  # Compute and RECORD the decision on every request, refuse nothing. The only
+  # honest way to learn the false-positive rate of a rule that can 402 real
+  # paying traffic. Decisions land in the `lightbridge.budget_limiter` dynamic
+  # metadata namespace (`decision`, `reason`, `remaining_micros`, `shadow`).
+  #
+  # Deliberately defaulted TRUE, unlike `redactExtproc.enabled` above: the safe
+  # direction here is "measure", and flipping to enforcement must be an
+  # explicit, deliberate value in the values repo — never something a chart
+  # default can do on a promotion. The shipped .lua makes the same choice for
+  # the same reason when the config table is missing entirely.
+  shadowMode: true
+  # Where the 402 body tells the user to go. Empty renders an empty string in
+  # the JSON body rather than omitting the key, so the shape is stable for
+  # clients regardless of configuration.
+  refillUrl: ""
+
 redactExtproc:
   # Kill switch for the whole feature (sidecar, Backend, ExternalSecret,
   # ext_proc filter, PodMonitor) — a values-repo toggle, not an ai-helm chart

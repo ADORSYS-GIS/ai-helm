@@ -71,6 +71,45 @@ spec:
     - type: Inline
       inline: |-
         {{- .Files.Get "files/model-policy.lua" | nindent 8 }}
+    {{- /*
+    lightbridge-authz ADR-0034 (lightbridge-authz#658): the Dynamic Budget Limiter's enforcement
+    half. Authorino publishes the account's live ledger balance as ext_authz dynamic metadata (an
+    AuthConfig `metadata` step against authz-budget's mTLS-only `GET /budget/v1/remaining`); this
+    filter reads it and answers 402 `budget_exhausted` when nothing is left. Read
+    charts/core-gateway/files/budget-limiter.lua for the full decision table, the fail-closed
+    rules, and why dynamic metadata rather than a header.
+
+    A THIRD list entry, for the same reason model-policy is the second: EG rejects a second
+    EnvoyExtensionPolicy on this Gateway (see the file header note). Each `lua` entry renders as
+    its own filter at order `12 + index`, so this is filter 14 — after ext_authz (5, Authorino,
+    which is what publishes the metadata) and after the two existing scripts.
+
+    GATED, and the gate defaults OFF. A Helm comment, not a YAML one, deliberately: with
+    `budgetLimiter.enabled: false` (the chart default, and prod today) this whole block must
+    render NOTHING — a rendered comment is still a rendered diff, and the claim this change makes
+    is that prod's manifests are unchanged until someone sets the value.
+
+    Turning it on WITHOUT also adding the AuthConfig `metadata` + `dynamicMetadata` blocks in
+    ai-helm-values would make every model request 503 — the two halves are enabled together, and
+    `docs/runbooks/budget-limiter-rollout.md` (in ai-helm-values) sequences them.
+    */}}
+    {{- if .Values.budgetLimiter.enabled }}
+    # lightbridge-authz ADR-0034: the Dynamic Budget Limiter's enforcement half. Reads the
+    # account's live ledger balance out of Authorino's ext_authz dynamic metadata and answers 402
+    # `budget_exhausted` when nothing is left. Script: charts/core-gateway/files/budget-limiter.lua.
+    - type: Inline
+      # The config table is prepended rather than templated INTO the script so the shipped .lua
+      # stays byte-identical to what the test harness (tests/budget-limiter/) replays against a
+      # real Envoy. Same idea as EG's own `filterContext`, which is only available for `ValueRef`
+      # entries. The script defaults every field to its SAFEST value when the table is absent
+      # (shadow ON), so a templating mistake cannot start refusing paid traffic.
+      inline: |-
+        BUDGET_LIMITER_CONFIG = {
+          shadow = {{ .Values.budgetLimiter.shadowMode | ternary "true" "false" }},
+          refill_url = {{ .Values.budgetLimiter.refillUrl | quote }},
+        }
+        {{- .Files.Get "files/budget-limiter.lua" | nindent 8 }}
+    {{- end }}
   # ADR-0116: PII/credential redaction ext_proc filter. Merged into THIS
   # resource for the reason in the header comment above — it cannot be its
   # own EnvoyExtensionPolicy targeting the same Gateway. Gated on
