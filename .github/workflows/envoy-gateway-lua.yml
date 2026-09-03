@@ -33,6 +33,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # run.sh is `#!/usr/bin/env zsh` (parameter expansions like `${0:a:h}` are zsh-only, not
+      # bash-compatible) and ubuntu-latest does not ship zsh.
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
       - name: Setup Helm
         uses: azure/setup-helm@v5
         with:
