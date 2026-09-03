@@ -205,6 +205,36 @@ spec:
               gen_ai.usage.input_tokens: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_input_token)%"
               gen_ai.usage.output_tokens: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_output_token)%"
               gen_ai.usage.custom_total_cost: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_custom_total_cost)%"
+              {{- if .Values.budgetLimiter.enabled }}
+              # ── The Dynamic Budget Limiter's decision (lightbridge-authz ADR-0034 §10
+              # Stage 2, ai-helm ADR-0137) ─────────────────────────────────────────────
+              #
+              # Without these three fields SHADOW MODE MEASURES NOTHING. The filter records
+              # its decision in the `lightbridge.budget_limiter` dynamic-metadata namespace
+              # and, on the allow path, logs NOTHING at all — only a would-refuse writes an
+              # Envoy log line. So the two questions the shadow window exists to answer —
+              # "how many requests would have been refused, split by reason" and "is the
+              # would-refuse set exactly the set the console shows as exhausted" — are
+              # answerable only from here. ADR-0034 §10 lists both as exit criteria, and
+              # lightbridge-authz's budget-limiter-rollout runbook says in as many words
+              # that the decision has to be surfaced in the access log.
+              #
+              # Rendered ONLY when the limiter is on, so a Gateway without it produces a
+              # byte-identical access-log format to before this landed. That matters here
+              # more than usual: this exact log stream is the BILLING path
+              # (templates/otel.yaml's `-usage` collector re-exports it to
+              # lightbridge-authz-usage's OTLP ingest → `usage_events`), so the format is
+              # not a free surface to add to.
+              #
+              # `budget.reason` is the field to group by. `budget.decision` is allow/deny;
+              # in shadow, `deny` means WOULD have denied. `budget.shadow` distinguishes
+              # the two modes in one stream, so the enforce cutover is visible in the data
+              # rather than inferred from a deploy timestamp.
+              budget.decision: "%DYNAMIC_METADATA(lightbridge.budget_limiter:decision)%"
+              budget.reason: "%DYNAMIC_METADATA(lightbridge.budget_limiter:reason)%"
+              budget.remaining_micros: "%DYNAMIC_METADATA(lightbridge.budget_limiter:remaining_micros)%"
+              budget.shadow: "%DYNAMIC_METADATA(lightbridge.budget_limiter:shadow)%"
+              {{- end }}
               # Some Common fields
               start_time: "%START_TIME%"
               method: "%REQ(:METHOD)%"
