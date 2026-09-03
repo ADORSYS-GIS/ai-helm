@@ -37,6 +37,19 @@ esac
 BIN_DIR="$HERE/.bin"
 EGCTL="$BIN_DIR/egctl-$EG_VERSION"
 
+# sha256 of each platform tarball, pinned alongside EG_VERSION above — this is the ONE place both
+# this script and ai-helm-values' render-check read the pin from (ai-helm-values clones this repo
+# rather than keeping its own copy of EG_VERSION or these hashes, so the two can never drift).
+CHECKSUMS="$HERE/checksums.txt"
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
 if [[ ! -x "$EGCTL" ]]; then
   mkdir -p "$BIN_DIR"
   TARBALL="egctl_${EG_VERSION}_${EG_OS}_${EG_ARCH}.tar.gz"
@@ -44,6 +57,19 @@ if [[ ! -x "$EGCTL" ]]; then
   echo "fetching $TARBALL …"
   TMP=$(mktemp -d) || exit 1
   curl -sSfL -o "$TMP/$TARBALL" "$URL" || { echo "could not download $URL" >&2; exit 1 }
+
+  EXPECTED_SHA=$(awk -v f="$TARBALL" '$2==f{print $1}' "$CHECKSUMS")
+  if [[ -z "$EXPECTED_SHA" ]]; then
+    echo "no pinned checksum for $TARBALL in $CHECKSUMS — refusing to run an unverified binary" >&2
+    exit 1
+  fi
+  ACTUAL_SHA=$(sha256_of "$TMP/$TARBALL")
+  if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+    echo "checksum mismatch for $TARBALL: expected $EXPECTED_SHA, got $ACTUAL_SHA" >&2
+    rm -rf "$TMP"
+    exit 1
+  fi
+
   tar xzf "$TMP/$TARBALL" -C "$TMP" || exit 1
   cp "$TMP/bin/$EG_OS/$EG_ARCH/egctl" "$EGCTL" || exit 1
   chmod +x "$EGCTL"
