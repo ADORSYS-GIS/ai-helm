@@ -116,6 +116,15 @@ app:
     # workflow), so nothing had been published. 10.0.0 was published by a manual
     # `workflow_dispatch` of helm-oci.yml on the v10.0.0 tag; the underlying PAT expiry is
     # tracked separately.
+    # HARD PIN, not a range — deliberately, because the sharedConfig coupling above means this
+    # chart must land and SYNC before the values that use it. The cost is that a hard pin ROTS
+    # invisibly: this one sat at 5.0.0 for weeks. The full range-vs-hard rule, both incidents and
+    # the ArgoCD-shaped render command are documented once, above `applications:` in
+    # charts/apps/values.yaml, and at length in
+    # https://github.com/ADORSYS-GIS/ai-helm-values/blob/main/docs/runbooks/rollout-and-verification.md
+    # ai-helm-values reads this line via `tools/resolve-chart-pin.sh lightbridge-app`; its
+    # render-check renders lightbridge-app.yaml against whatever it says, and then asserts the
+    # rendered config is theirs and not the chart's dev placeholders.
     targetRevision: "10.0.0"
   # App-scoped deps (ingress Certificates) — kustomize overlay in this repo,
   # added as a second source (issuer patched per env). ADR-0018 pattern.
