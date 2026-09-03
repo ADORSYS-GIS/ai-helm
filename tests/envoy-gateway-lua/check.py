@@ -26,11 +26,18 @@ Asserts, for every case:
   1. every EnvoyExtensionPolicy is `Accepted: True`
   2. no route in the IR carries `directResponse.statusCode: 500`
 
-Invoked by run.sh, which supplies the egctl binary.
+Invoked by run.sh, which supplies the egctl binary and renders THIS repo's own chart source.
+
+ai-helm-values' render-check (tools: resolve-chart-pin.sh + the envoy-gateway-lua job) instead
+clones this repo and calls this same script with `--chart oci://ghcr.io/adorsys-gis/charts/
+core-gateway --version <resolved pin> --values environments/prod/values/core-gateway.yaml` — the
+PUBLISHED chart at the version prod actually runs, merged with prod's own values, so the two repos
+run byte-identical translator logic instead of a copy that can drift.
 """
 
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import pathlib
@@ -41,7 +48,7 @@ import tempfile
 import yaml
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-CHART = REPO / "charts" / "core-gateway"
+DEFAULT_CHART = REPO / "charts" / "core-gateway"
 
 # Cluster-scoped or Gateway-scoped inputs egctl needs; everything else the chart renders
 # (Certificates, PodMonitors, collectors…) is noise the translator does not read.
@@ -82,8 +89,12 @@ PROBE = yaml.safe_load(
 )
 
 
-def render(sets: list[str]) -> list[dict]:
-    cmd = ["helm", "template", "core-gateway", str(CHART), "-n", "envoy-gateway-system"]
+def render(sets: list[str], chart: str, version: str | None, values: list[str]) -> list[dict]:
+    cmd = ["helm", "template", "core-gateway", chart, "-n", "envoy-gateway-system"]
+    if version:
+        cmd += ["--version", version]
+    for vf in values:
+        cmd += ["-f", vf]
     for s in sets:
         cmd += ["--set", s]
     out = subprocess.run(cmd, capture_output=True, text=True)
@@ -142,10 +153,35 @@ def failures(result: dict) -> list[str]:
     return problems
 
 
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Run Envoy Gateway's own translator over the rendered core-gateway chart."
+    )
+    p.add_argument("egctl", help="path to the egctl binary")
+    p.add_argument(
+        "--chart",
+        default=str(DEFAULT_CHART),
+        help="chart to render: a local path (default: this repo's charts/core-gateway) or an "
+        "oci:// reference",
+    )
+    p.add_argument(
+        "--version",
+        default=None,
+        help="chart version, only meaningful when --chart is an oci:// reference",
+    )
+    p.add_argument(
+        "--values",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="extra -f values file, applied under every case's --set overrides; repeatable",
+    )
+    return p.parse_args()
+
+
 def main() -> int:
-    if len(sys.argv) != 2:
-        sys.exit("usage: check.py <path-to-egctl>")
-    egctl = sys.argv[1]
+    args = parse_args()
+    egctl = args.egctl
 
     cases = [
         # (label, helm --set overrides)
@@ -158,7 +194,7 @@ def main() -> int:
 
     failed = 0
     for label, sets in cases:
-        docs = render(sets)
+        docs = render(sets, args.chart, args.version, args.values)
         problems = failures(translate(egctl, docs))
         entries = lua_entry_count(docs)
         if problems:

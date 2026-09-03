@@ -1,0 +1,66 @@
+name: Envoy Gateway Lua translation gate
+
+# Guards every `lua` entry charts/core-gateway renders against Envoy Gateway's OWN
+# control-plane translator (`egctl x translate`, pinned to the version the `eg` app
+# actually runs — see tests/envoy-gateway-lua/run.sh). A script that loads fine in
+# Envoy's own LuaJIT can still be REJECTED by EG's controller before any Envoy data
+# plane exists, and that rejection rewrites EVERY route on the targeted Gateway to
+# `directResponse: 500` — not a skipped filter, the whole gateway down. That is the
+# 2026-09-03 outage (ai-helm-values#367 / #368); the fix is #1098 and this workflow
+# is what makes sure the incident class cannot merge again.
+#
+# No cluster, no Docker, no credentials — tests/envoy-gateway-lua/run.sh only needs
+# helm, curl and python3+pyyaml, all present on ubuntu-latest.
+
+on:
+  pull_request:
+    paths:
+      - "charts/core-gateway/**"
+      - "tests/envoy-gateway-lua/**"
+      - ".github/workflows/envoy-gateway-lua.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/core-gateway/**"
+      - "tests/envoy-gateway-lua/**"
+
+permissions:
+  contents: read
+
+jobs:
+  egctl-translate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.15.4 # aligned with helm-lint.yaml / release-helm-charts.yml
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install "pyyaml>=6,<7"
+
+      # EG_VERSION lives in ONE place (run.sh); read it back here rather than pinning a second
+      # copy in this workflow, so the cache key can never silently point at the wrong version.
+      - name: Read the pinned egctl version
+        id: egctl-version
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 '^EG_VERSION=' tests/envoy-gateway-lua/run.sh | sed -E 's/^EG_VERSION="([^"]+)"/\1/')
+          [ -n "$version" ]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache egctl
+        uses: actions/cache@v6
+        with:
+          path: tests/envoy-gateway-lua/.bin
+          key: egctl-${{ runner.os }}-${{ runner.arch }}-${{ steps.egctl-version.outputs.version }}-${{ hashFiles('tests/envoy-gateway-lua/checksums.txt') }}
+
+      - name: Run the gate
+        run: ./tests/envoy-gateway-lua/run.sh
