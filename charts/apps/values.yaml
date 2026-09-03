@@ -111,6 +111,60 @@ argocd:
     # Escape hatch — only set true if you genuinely want in-cluster.
     allowInCluster: false
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# EVERY `targetRevision` BELOW IS A CHART PIN, AND THE VALUES IT MERGES LIVE IN ANOTHER REPO.
+#
+# `ai-helm-values` holds `environments/<env>/values/<app>.yaml`. It CANNOT see this file. A bare
+# override there (`someKey: {enabled: true}`, deliberately inheriting the chart's own shape) is
+# valid only if the chart version THIS line resolves to actually defines that key. Nothing warns
+# you; app-template's values.schema.json simply rejects the stub, `helm template` fails, and
+# ArgoCD cannot even GENERATE manifests — `sync.status: Unknown` while `health.status` stays
+# `Healthy` on the stale pods, which does not look like an outage.
+#
+# ── RANGE vs HARD VERSION — neither is safer; they fail differently ───────────────────────────
+#
+#   RANGE  ("~0.2.4", ">=0.0.0", "1.*")
+#     + a chart patch/minor ships on the next reconcile, no PR here
+#     - it silently resolves to something OLDER than whatever you rendered by hand
+#     ⇒ THIS caused the 2026-09-02 console outage: `~0.1.1` resolved to converse-console 0.1.3,
+#       cut before the typst-render sidecar existed, while ai-helm-values#348 had already added
+#       the sidecar keys. aii-console-ui sat in ComparisonError for ~7 h (fixed by #1091).
+#
+#   HARD   ("10.0.0", "1.8.0")
+#     + cannot resolve anything you did not choose; required when a values contract is a hard
+#       coupling (the chart must land and sync BEFORE the values that use it)
+#     - it ROTS, invisibly
+#     ⇒ THIS was the lightbridge case: charts/lightbridge/values.yaml pinned
+#       lightbridge-authz-stack at 5.0.0 while 10.0.0 was current, because that repo's chart
+#       publishing had been silently broken since 2026-08-25 (v6..v9 were tagged by
+#       release-please with GITHUB_TOKEN, which does not fire `push: tags`). On 5.0.0 the new
+#       `global.lightbridge.sharedConfig` keys are UNKNOWN VALUES: the render succeeds and every
+#       component falls back to the chart's local-dev config (keycloak:9100). Fixed by #1093,
+#       which merged and synced BEFORE ai-helm-values#354.
+#
+# ── The rule, either way ─────────────────────────────────────────────────────────────────────
+#
+#   Before adding a key to a values file in ai-helm-values, confirm the version THIS line
+#   resolves to defines it, and render THAT version the way ArgoCD does. A `helm template`
+#   against a chart pulled by hand at some newer version proves nothing.
+#
+#   In ai-helm-values:  PIN=$(tools/resolve-chart-pin.sh <app>)      # reads this file
+#                       helm pull <chart> --version "$PIN" --untar -d /tmp/c
+#                       helm template /tmp/c/<chart> --name-template <release> --namespace <ns> \
+#                         --kube-version 1.35.3 --include-crds --values <the values file>
+#   (ArgoCD v3.5.1's repo-server ships helm 4.2.1.)
+#
+#   Ordering, both directions: publish the chart -> raise the pin HERE -> wait for that
+#   Application to SYNC -> only then merge the values change there.
+#
+# Full runbook (incident timelines, live probes, how to observe on home-remote):
+#   ADORSYS-GIS/ai-helm-values  docs/runbooks/rollout-and-verification.md   (private repo)
+#   https://github.com/ADORSYS-GIS/ai-helm-values/blob/main/docs/runbooks/rollout-and-verification.md
+#
+# This block is stated ONCE rather than copied next to all ~30 `targetRevision` lines below: a
+# paragraph duplicated thirty times is a list that drifts, which is the failure mode the runbook
+# itself warns about. The entries whose pins have actually bitten carry a one-line back-reference.
+# ══════════════════════════════════════════════════════════════════════════════════════════════
 applications:
 
   # NOTE: Traefik (ingress controller + the `traefik` IngressClass) is
@@ -920,6 +974,10 @@ applications:
       # Source A — the converse-lci chart from OCI.
       - repoURL: oci://ghcr.io/adorsys-gis/charts/converse-lci
         chart: "."
+        # RANGE. See the "EVERY targetRevision BELOW IS A CHART PIN" block above `applications:`
+        # — a range can resolve OLDER than what you rendered by hand. ai-helm-values reads this
+        # line via `tools/resolve-chart-pin.sh lci-ui`, and its render-check renders against
+        # whatever it resolves to rather than against "newest".
         targetRevision: "~0.1.0"
         helm:
           releaseName: lci-ui
@@ -1168,6 +1226,10 @@ applications:
       # Source A shape exactly, different repoURL/range (see comment above).
       - repoURL: oci://ghcr.io/adorsys-gis/charts/converse-console
         chart: "."
+        # RANGE — and the one that caused the 2026-09-02 outage; see the block above
+        # `applications:` and the paragraph above this entry. ai-helm-values reads this line via
+        # `tools/resolve-chart-pin.sh console-ui`, and its render-check renders against whatever
+        # it resolves to rather than against "newest".
         targetRevision: "~0.2.4"
         helm:
           releaseName: console-ui
