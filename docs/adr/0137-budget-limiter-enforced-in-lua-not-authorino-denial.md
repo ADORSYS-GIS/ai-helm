@@ -134,3 +134,77 @@ lightbridge-authz ADR-0034 §14 so that change is a copy-paste, not a redesign.
 (enforce, shadow, no-config, fault-injected, fault-injected-with-the-guard-removed), with a fake
 metadata source standing in for Authorino. 18/18 pass. See that script's header for what each
 listener proves.
+
+## Amendment, 2026-09-03: a Lua filter has to satisfy TWO runtimes, and only one of them is Envoy
+
+Shadow mode was enabled (ai-helm-values#366) and the gateway answered `500` at ~20/min within a
+minute, twice. Rolled back in ai-helm-values#367; recorded in ai-helm-values#368.
+
+The access-log row said everything and named nothing:
+
+```text
+response_code                      500
+response_code_details              direct_response      ← a ROUTE answered, not a filter
+response_flags                     -
+upstream_transport_failure_reason  -
+budget_decision                    -                    ← record() never ran
+```
+
+`direct_response` is `StreamInfo::ResponseCodeDetails::DirectResponse` — the router serving a route
+whose action is a direct response. No Lua filter produced it. `kubectl logs … -c envoy | grep -i
+lua` was empty for the same reason: **Envoy never loaded the script at all.**
+
+**Envoy Gateway executes an inline `lua` entry in its own controller before it ever reaches the data
+plane.** `internal/gatewayapi/luavalidator` runs the script in gopher-lua against mock stream
+handles, with `envoy_on_request(StreamHandle)` appended; `LuaValidation: Strict` is the default and
+this chart does not set `EnvoyProxy.spec.luaValidation`. Its `security.lua` sandbox **nils**
+`rawget`, `rawset`, `setmetatable`, `getmetatable`, `load`, `loadstring`, `require`, `dofile`,
+`loadfile`, `package`, `debug` — and `_G`.
+
+`budget-limiter.lua` opened with `local CONFIG = rawget(_G, "BUDGET_LIMITER_CONFIG") or {}`, a
+defensive read against a metatable that Envoy's Lua filter does not put on the global table. Under
+the sandbox it is `nil(nil, "…")`:
+
+```text
+Lua: validation failed for lua body in policy with name
+  envoyextensionpolicy/envoy-gateway-system/core-gateway-billing-period/lua/2:
+  failed to validate with envoy_on_request: <string>:71: attempt to call a non-function object
+```
+
+And the blast radius is the whole Gateway, not the one filter —
+`internal/gatewayapi/envoyextensionpolicy.go`:
+
+> *Lua extension doesn't have a fail open option, so fail the route if there is a lua error*
+
+every route on the targeted Gateway gets `DirectResponse{StatusCode: 500}`. Public plane and
+internal plane alike; the internal plane was simply the chattiest caller in the sample.
+
+**The bisect that settled it** (`egctl x translate v1.8.2` over the chart rendered at the incident's
+own prod values, one axis per landed PR):
+
+| | access-log fields absent | access-log fields present (#1097) |
+|---|---|---|
+| **third `lua` entry absent** | `Accepted: True`, no 500 | `Accepted: True`, no 500 |
+| **third `lua` entry present (#1095)** | `Accepted: False`, route → 500 | `Accepted: False`, route → 500 |
+
+#1097's four `%DYNAMIC_METADATA(lightbridge.budget_limiter:…)%` operators are **not** implicated in
+either direction. The two PRs shared one values gate (`budgetLimiter.enabled`), which is the only
+reason they were ever confounded.
+
+### What changed
+
+- The line is a plain global read. Envoy's Lua filter puts no `__index` on the global table, so it
+  is equivalent there, and it survives the controller too. It stays a plain read.
+- **`tests/envoy-gateway-lua/run.sh`** runs EG's real translator over the rendered chart and fails on
+  a non-`Accepted` policy or any route rewritten to a 500 — for every `lua` entry, in shadow *and*
+  enforcing renders, so Stage 3's flip is proven today rather than on the night it ships.
+  `tests/budget-limiter/run.sh` calls it first.
+
+### The lesson worth keeping
+
+Eighteen real-Envoy behaviour tests passed against a script that could not be admitted to a cluster.
+`helm template` renders a Lua body as an opaque string; `helm lint` does not read it; a data-plane
+harness starts *after* the only component that rejects it. **A test that exercises the data plane
+cannot validate control-plane admission** — the same shape as the CEL defect six minutes earlier
+(ai-helm-values#365), where only Authorino could type-check the expression. Both now have a gate
+that runs the real validator.
