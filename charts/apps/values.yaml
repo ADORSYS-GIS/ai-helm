@@ -1107,14 +1107,29 @@ applications:
   # the only thing that removes that collision risk entirely (see that chart's
   # README, "Why a separate chart, not a version bump of converse-frontend").
   #
-  # targetRevision `~0.1.1` (NOT converse-ui's `>=0.0.0`): converse-console is
+  # targetRevision `~0.2.4` (NOT converse-ui's `>=0.0.0`): converse-console is
   # a brand-new 0.x chart with no stability contract yet — under semver, a 0.x
   # MINOR bump is allowed to break compatibility, unlike converse-frontend
   # (mature enough that `>=0.0.0` has been safe in practice). A tilde range
   # takes patch releases (the chart's own version scheme is
-  # commit-count-derived patches per ADR-0055) but fences off any 0.2.0 that
+  # commit-count-derived patches per ADR-0055) but fences off any 0.3.0 that
   # changes the app's shape, until this app has enough of a track record to
   # widen it deliberately.
+  #
+  # IT IS THIS LINE, NOT THE VALUES FILE, THAT PINS THE CHART. Raised from
+  # `~0.1.1` (which resolved to 0.1.3) to `~0.2.4` because that fence is exactly
+  # what broke the app on 2026-09-03: ai-helm-values#348 added the typst-render
+  # sidecar keys (`console.persistence.typst-tmp`,
+  # `console.networkpolicies.typst-render-isolation`) to
+  # environments/prod/values/console-ui.yaml as bare `enabled: true` overrides,
+  # relying on the chart's own values.yaml to supply their shape. Chart 0.1.3
+  # has no such defaults, so nothing merged in, and app-template 4.6.2's
+  # values.schema.json rejected the bare stubs — `missing property 'rules'` on
+  # the NetworkPolicy and an ambiguous `oneOf` on the type-less persistence
+  # entry — failing `helm template` outright and freezing the Application in
+  # ComparisonError. Anyone adding a key to that values file MUST first confirm
+  # the chart version resolved by this range actually defines it; a local
+  # `helm template` against a newer, unpinned chart proves nothing.
   #
   # Image write-back mirrors converse-ui exactly (Source B `$values` +
   # image-updater git write-back), pointed at the `console` image (a distinct
@@ -1153,7 +1168,7 @@ applications:
       # Source A shape exactly, different repoURL/range (see comment above).
       - repoURL: oci://ghcr.io/adorsys-gis/charts/converse-console
         chart: "."
-        targetRevision: "~0.1.1"
+        targetRevision: "~0.2.4"
         helm:
           releaseName: console-ui
           # image.{repository,tag,pullPolicy} come from Source B's $values file
