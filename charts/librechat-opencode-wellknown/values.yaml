@@ -47,17 +47,17 @@ wellKnown:
     # subagents, so no primary carries the 27 browser_* schemas every turn.
     default_agent: assistant
     plugin:
-      - "@vymalo/opencode-oauth2@0.16.0"
+      - "@vymalo/opencode-oauth2@0.16.1"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.16.0"
+      - "@vymalo/opencode-models-info@0.16.1"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.16.0"
+      - "@vymalo/opencode-ratelimit@0.16.1"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
@@ -114,7 +114,7 @@ wellKnown:
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
       # adapter saves screenshots to disk for the model to read. One source only.
-      - - "@vymalo/opencode-browser@0.16.0"
+      - - "@vymalo/opencode-browser@0.16.1"
         - port: 4517
           groups:
             - page
@@ -154,6 +154,19 @@ wellKnown:
       # being read-only: while opencode sits idle the cached token goes stale
       # and exports fail auth until the next chat refreshes it. That is
       # accepted; the alternative is the logout bug above.
+      #
+      # ⚠️ 0.16.1 IS THE FLOOR for that trade-off to be tolerable. Up to 0.16.0
+      # each of those idle-token failures printed `otel_token_command_failed` to
+      # the developer's TERMINAL: the plugin logged it at `warn`, and
+      # `createOpenCodeLogger` mirrored every `warn`/`error` to the console
+      # unconditionally — not gated by `VYMALO_PLUGIN_CONSOLE_LOG`. So the
+      # accepted staleness above was being shouted at every user mid-session,
+      # over telemetry they cannot act on. lightbridge-opencode-toolbeit#107
+      # (ADR-0013 there) drops that console mirror for this plugin only: the
+      # record still reaches opencode's own log at its true `warn` level —
+      # nothing is lost — it just no longer reaches the screen. Set
+      # `VYMALO_PLUGIN_CONSOLE_LOG=1` to watch exports live. Do NOT pin this
+      # entry back below 0.16.1 without re-reading that ADR.
       # ⚠️ PER-SIGNAL `endpoints`, deliberately NOT the base `endpoint`. The plugin
       # resolves `endpoint` as `env.OTEL_EXPORTER_OTLP_ENDPOINT || opts.endpoint`
       # (environment wins, OTel convention), and `governance-auth` writes exactly
@@ -168,7 +181,7 @@ wellKnown:
       # METRICS,LOGS}_ENDPOINT variables (its own otel.rs comment says why), so the
       # org default wins again without touching anyone's machine. Proven against
       # the real @vymalo/opencode-core-otel resolver before this shipped.
-      - - "@vymalo/opencode-otel@0.16.0"
+      - - "@vymalo/opencode-otel@0.16.1"
         - endpoints:
             traces: "https://otel-opencode.ai.camer.digital/v1/traces"
             metrics: "https://otel-opencode.ai.camer.digital/v1/metrics"
