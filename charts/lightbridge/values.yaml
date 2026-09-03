@@ -95,7 +95,28 @@ app:
   # still floats via argocd-image-updater (annotations below).
   chart:
     chartName: lightbridge-authz-stack
-    targetRevision: "5.0.0"
+    # 10.0.0 — ADORSYS-GIS/lightbridge-authz#661 replaced the five per-component `config.yaml`
+    # strings in ai-helm-values' `lightbridge-app.yaml` with ONE
+    # `global.lightbridge.sharedConfig` object. Only a chart carrying that PR's
+    # `lightbridge.config.render` helper knows how to read it; on an older chart those keys are
+    # unknown values, the render SUCCEEDS, and every component silently falls back to the chart's
+    # own local-dev config (keycloak:9100). So this bump MUST land, and sync, BEFORE the
+    # ai-helm-values migration is merged.
+    #
+    # Verified byte-safe on its own, before that migration: `helm template` of the published
+    # 5.0.0 and 10.0.0 charts against the CURRENT `lightbridge-app.yaml`, with ArgoCD's own
+    # invocation (`-n converse --kube-version 1.35.3 --include-crds`), produces deep-equal
+    # `config.yaml` for all six components, and differs only in the `helm.sh/chart` /
+    # `app.kubernetes.io/version` labels plus one new `lightbridge-usage-migrate-*` Job name
+    # (unrelated 5.0.0→9.x drift in `charts/lightbridge-authz-usage`, #593/#603 — the migrate
+    # subcommand is idempotent).
+    #
+    # 5.0.0 was four majors stale: chart publishing had been broken since 2026-08-25 (v6..v9
+    # were tagged by release-please with GITHUB_TOKEN, which does not fire the `push: tags`
+    # workflow), so nothing had been published. 10.0.0 was published by a manual
+    # `workflow_dispatch` of helm-oci.yml on the v10.0.0 tag; the underlying PAT expiry is
+    # tracked separately.
+    targetRevision: "10.0.0"
   # App-scoped deps (ingress Certificates) — kustomize overlay in this repo,
   # added as a second source (issuer patched per env). ADR-0018 pattern.
   depsOverlay: environments/prod/deps/lightbridge-backend
