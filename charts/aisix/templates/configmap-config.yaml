@@ -1,0 +1,47 @@
+{{- /*
+AISIX bootstrap config (`/etc/aisix/config.yaml`).
+
+Standalone, declarative mode:
+  - `resources_file` selects the file source; the `etcd` block is therefore
+    ABSENT (config.rs::validate fails the boot if both are configured).
+  - `admin.enabled: false` — resources are managed declaratively, so the admin
+    listener would only add an unauthenticated-by-default surface. With it off,
+    AISIX also stops requiring `admin_keys`.
+  - the Prometheus listener is the only scrape surface and also serves
+    /status/config, /status/ready and /status/models.
+
+Everything dynamic (provider keys, models, api keys, exporters) lives in
+resources.yaml, NOT here — see configmap-resources.yaml.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aisix.fullname" . }}-config
+  labels:
+    {{- include "aisix.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    resources_file: "/etc/aisix/resources/resources.yaml"
+
+    proxy:
+      addr: "0.0.0.0:{{ .Values.ports.proxy }}"
+
+    admin:
+      enabled: false
+
+    observability:
+      service_name: {{ .Values.observability.serviceName | quote }}
+      log_level: {{ .Values.observability.logLevel | quote }}
+      access_log: {{ .Values.observability.accessLog }}
+      metrics:
+        prometheus:
+          enabled: true
+          path: "/metrics"
+          addr: "0.0.0.0:{{ .Values.ports.metrics }}"
+
+    shutdown:
+      # Keep accepting new connections for this long after SIGTERM while
+      # /readyz already answers 503, so kubelet has time to pull the pod out of
+      # the EndpointSlice before the listener closes. Must exceed the readiness
+      # probe's periodSeconds x failureThreshold (10s x 3 below).
+      min_drain_secs: 30

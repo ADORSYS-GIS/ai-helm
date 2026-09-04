@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aisix.fullname" . }}
+  labels:
+    {{- include "aisix.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "aisix.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # AISIX re-reads resources.yaml only on SIGHUP and never re-reads
+        # config.yaml, so a ConfigMap edit alone changes nothing in a running
+        # pod. Roll it.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-config.yaml") . | sha256sum }}
+        checksum/resources: {{ include (print $.Template.BasePath "/configmap-resources.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "aisix.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      # AISIX talks to no Kubernetes API.
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: aisix
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: proxy
+              containerPort: {{ .Values.ports.proxy }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.ports.metrics }}
+              protocol: TCP
+          env:
+            {{- range .Values.env }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secretName }}
+                  key: {{ .secretKey }}
+            {{- end }}
+          {{- /*
+            /livez and /readyz are served on the PROXY listener (see the comment
+            in crates/aisix-server/src/main.rs around the accept loop). They
+            answer different questions and are wired to different probes on
+            purpose:
+              livez  — "should this instance be RESTARTED?" Stays 200 through a
+                       drain, so it must NOT be what withdraws traffic.
+              readyz — "may traffic be routed here?" Flips to 503 the moment
+                       SIGTERM lands, which is what empties the EndpointSlice
+                       before the listener closes.
+            The metrics listener's /status/ready is the third signal — it is
+            503 until a resource snapshot has been applied — and is the right
+            startup gate, because a pod that has not yet loaded resources.yaml
+            would otherwise pass readyz and 404 every model.
+          */}}
+          startupProbe:
+            httpGet:
+              path: /status/ready
+              port: metrics
+            periodSeconds: 3
+            failureThreshold: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: proxy
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: proxy
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.podResources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/aisix/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: resources
+              mountPath: /etc/aisix/resources
+              readOnly: true
+            # readOnlyRootFilesystem: the image's own /etc/aisix and
+            # /var/lib/aisix are writable dirs it may touch; give it emptyDirs
+            # rather than a writable root.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "aisix.fullname" . }}-config
+        - name: resources
+          configMap:
+            name: {{ include "aisix.fullname" . }}-resources
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

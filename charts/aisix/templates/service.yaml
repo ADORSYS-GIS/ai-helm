@@ -1,0 +1,48 @@
+{{- /*
+The name matters: EAIG's Backend for this spike is
+`fqdn.hostname: aisix.converse.svc.cluster.local`, `port: 3000`. With
+`releaseName: aisix` (charts/apps) `aisix.fullname` collapses to `aisix`, so the
+Service is exactly that host. Renaming the release renames the host.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aisix.fullname" . }}
+  labels:
+    {{- include "aisix.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "aisix.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: proxy
+      port: {{ .Values.ports.proxy }}
+      targetPort: proxy
+      protocol: TCP
+    # Exposed for ad-hoc curling of /metrics and /status/*; the scrape itself
+    # goes pod-direct through the PodMonitor.
+    - name: metrics
+      port: {{ .Values.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+{{- if .Values.observability.otlp.alias.enabled }}
+{{- /*
+ExternalName alias so the OTLP exporter URL satisfies AISIX 1.0.0's endpoint
+regex (`^http://(mock-otlp|otel-collector|127.0.0.1|localhost)…`) while still
+resolving to Alloy in the observability namespace. See values.yaml.
+*/}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.observability.otlp.alias.name }}
+  labels:
+    {{- include "aisix.labels" . | nindent 4 }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.observability.otlp.alias.externalName }}
+{{- end }}

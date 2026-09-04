@@ -1,0 +1,26 @@
+{{- if .Values.observability.podMonitor.enabled }}
+{{- /*
+Grafana Alloy discovers PodMonitors cluster-wide (prometheus.operator.podmonitors)
+and ships to Mimir — same mechanism charts/core-gateway uses for the Envoy
+proxies. AISIX's metrics listener is unauthenticated by design, so the scrape
+needs no credential; it is reachable only on the pod network.
+*/ -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "aisix.fullname" . }}
+  labels:
+    {{- include "aisix.labels" . | nindent 4 }}
+    app.kubernetes.io/part-of: aisix
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "aisix.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.observability.podMonitor.interval }}
+{{- end }}
