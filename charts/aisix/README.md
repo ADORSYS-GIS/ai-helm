@@ -607,13 +607,7 @@ mechanism `charts/core-gateway` uses for the Envoy proxies. The dashboard and
 the alert rules that read them live in `charts/observability-dashboards`
 (`files/aisix/aisix.json`, rule group `aisix-health`).
 
-> **Token bill:** the AISIX bridge is stateless, so a Responses-API conversation
-> bills exactly the same tokens as the equivalent chat-completions conversation
-> (measured on the public plane: 32 vs 32 and 18 vs 18 input tokens for the same
-> history, 10/3 vs 10/3 single turn). There is no server-side context and no
-> prompt-cache discount from DeepInfra (`cached_tokens: 0` on every call).
-> Moving to `/v1/responses` buys API compatibility for codex-style clients, not
-> a cheaper bill.
+> **Token bill:** see **High availability** above for the token-bill note — the bridge is stateless, so it does not change what a Responses-API conversation costs.
 
 ## `enableServiceLinks: false` is not optional
 
