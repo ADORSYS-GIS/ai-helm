@@ -417,7 +417,7 @@ is not what a rolling update goes through — that is `maxUnavailable: 0`. The
 anti-affinity is a scheduling preference, so on a cluster under pressure both
 replicas may still share a host. Neither is a substitute for the other, and the
 capacity numbers in
-[ai-helm-values `docs/runbooks/aisix-spike.md` § "Capacity and HA"](https://github.com/ADORSYS-GIS/ai-helm-values/blob/main/docs/runbooks/aisix-spike.md)
+[ai-helm-values `docs/runbooks/aisix.md` § "Capacity and HA"](https://github.com/ADORSYS-GIS/ai-helm-values/blob/main/docs/runbooks/aisix.md)
 are what say whether a single surviving replica can carry the traffic at all.
 
 > **Token bill:** the AISIX bridge is stateless, so a Responses-API conversation
