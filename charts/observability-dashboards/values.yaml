@@ -161,6 +161,19 @@ dashboards:
     folderRef: ai-gateway
     file: files/envoy-ai-gateway/chats-by-user.json
     resyncPeriod: 5m
+  # AISIX — the /v1/responses → /v1/chat/completions bridge that sits BEHIND the
+  # AI Gateway (charts/aisix; ai-helm-values#398). Requests by operation
+  # (Responses vs chat), 5xx, p50/p95 from the two real histograms, tokens by
+  # model, replicas up.
+  # ⚠️ Its "by operation" panels slice on `endpoint`, which is the request PATH
+  # and only reaches Mimir because charts/aisix's PodMonitor renames the scrape's
+  # own port-derived label to `scrape_endpoint` (ai-helm-values#389). If those
+  # panels ever collapse to a single `metrics` series, that chart change is what
+  # regressed — not this dashboard.
+  - name: aisix
+    folderRef: ai-gateway
+    file: files/aisix/aisix.json
+    resyncPeriod: 5m
   # Alloy collector health (metrics/logs/traces pipelines, OTLP receiver,
   # clustering). Targets confirmed alloy_*/prometheus_remote_storage_*/
   # loki_write_*/otelcol_receiver_* series; datasource UID hardcoded to `mimir`.
@@ -571,6 +584,70 @@ alerting:
           for: 10m
           severity: warning
           summary: "AI Gateway p95 latency > 120s for 10m (LLM streaming is slow; ~40s is normal here — this catches genuinely stuck/timeout requests)."
+
+    # ── AISIX, the Responses→Chat bridge (ai-helm-values#398 / #395) ───────
+    # AISIX sits BEHIND the AI Gateway on the request path, so none of the
+    # `ai-gateway-*` rules above can see it: they read the gateway's Loki access
+    # log and the Alloy-derived usage metrics, both of which are recorded at the
+    # gateway. A dead AISIX shows up there as gateway 5xx at best, and as
+    # nothing at all if no client happens to ask for a bridged model.
+    #
+    # Every expression below was run against live Mimir on 2026-09-04 before it
+    # was written here (an alert on a metric that does not exist is worse than
+    # no alert — `noDataState: OK` makes it permanently, invisibly green).
+    - name: aisix-health
+      folderRef: ai-gateway
+      interval: 1m
+      rules:
+        # `up` is the scrape's own report sample, so it is NOT subject to the
+        # PodMonitor's metricRelabelings — this selector keeps working whatever
+        # happens to the `endpoint` label. `or vector(0)` because a vanished
+        # target produces NO series, and bare min() would then return no data
+        # and stay green through exactly the outage this rule exists for.
+        - uid: aisix-down
+          title: AISIX — no pod is being scraped
+          datasourceUid: mimir
+          expr: 'min(up{job="converse/aisix"}) or vector(0)'
+          fromSeconds: 600
+          op: lt
+          threshold: 1
+          for: 2m
+          severity: critical
+          summary: "AISIX is not being scraped — the bridge is down, crash-looping, or its metrics listener is unreachable."
+          description: "Every model routed through the aisix-01 Backend answers /v1/responses through this pod. Check `kubectl -n converse get pods -l app.kubernetes.io/name=aisix`, then the chart README's `enableServiceLinks` note — an AISIX_* env collision is how this pod has failed before."
+        # Numerator gets `or vector(0)` so a window with traffic and no 5xx
+        # evaluates to a real 0 instead of no-data; the denominator is left bare
+        # on purpose, so NO traffic evaluates to no data (→ OK) rather than to a
+        # fabricated 0 %. `status` is the numeric code on the counter families —
+        # the latency histograms spell the same idea `status_class` instead.
+        - uid: aisix-5xx-ratio
+          title: AISIX — 5xx ratio above 1%
+          datasourceUid: mimir
+          expr: '100 * (sum(rate(aisix_llm_requests_total{job="converse/aisix", status=~"5.."}[5m])) or vector(0)) / sum(rate(aisix_llm_requests_total{job="converse/aisix"}[5m]))'
+          fromSeconds: 600
+          op: gt
+          threshold: 1
+          for: 5m
+          severity: critical
+          summary: "More than 1% of AISIX responses were 5xx over 5m."
+          description: "Split it by path on the `aisix` dashboard: 5xx on /v1/responses only points at the bridge, 5xx on both points at the upstream provider. Cross-check the gateway's own view in Loki: {job=\"envoy-ai-gateway\"} | json | response_code >= 500."
+        # Deliberately tighter than the estate-wide `pod-crashlooping` rule in
+        # the `cluster-health` group (>3 restarts in 15m): AISIX is a
+        # single-purpose pod on the request path of every bridged model, and its
+        # known failure mode (a config-loader refusal at boot) restarts cleanly
+        # and repeatedly without ever tripping a crashloop threshold. One
+        # restart here is worth a look.
+        - uid: aisix-restarts
+          title: AISIX — container restarted
+          datasourceUid: mimir
+          expr: 'sum(increase(kube_pod_container_status_restarts_total{namespace="converse", container="aisix"}[10m])) or vector(0)'
+          fromSeconds: 600
+          op: gt
+          threshold: 0
+          for: 1m
+          severity: warning
+          summary: "An AISIX container restarted in the last 10m."
+          description: "`for: 1m` rather than 0 only to keep a single evaluation blip from paging; the 10m increase window is what actually bounds the signal. Check `kubectl -n converse describe pod -l app.kubernetes.io/name=aisix` for the last termination reason."
 
     - name: ai-gateway-cost
       folderRef: ai-gateway

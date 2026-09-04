@@ -265,9 +265,95 @@ resolves. Delete the alias (`observability.otlp.alias.enabled: false`) and set
 `observability.otlp.endpoint` directly once upstream relaxes the pattern or an
 `https://` collector exists.
 
-Metrics go the normal route: a `PodMonitor` on the `metrics` port, discovered
-cluster-wide by Alloy's `prometheus.operator.podmonitors` — the same mechanism
-`charts/core-gateway` uses for the Envoy proxies.
+### ⚠️ `svc/otel-collector` is LOAD-BEARING — do not tidy it away
+
+It has no selector, no endpoints of its own, and a name that belongs to no
+workload in `converse`. It looks exactly like leftovers. **Deleting it silently
+stops AISIX's traces** — the proxy keeps answering 200 and only the sink logs
+complain, so nothing pages. It exists solely to satisfy the regular expression
+above.
+
+Every alternative was probed against the pinned tag on 2026-09-04, and the
+alias is the only one that both validates and works
+([ai-helm-values#383](https://github.com/ADORSYS-GIS/ai-helm-values/issues/383)):
+
+| Endpoint | `aisix validate` | Actually delivers? |
+|---|---|---|
+| `http://alloy.observability.svc.cluster.local:4318/v1/traces` | ❌ rejected at load — and a load error fails the WHOLE resources file, so AISIX would not boot | — |
+| `http://alloy:4318/v1/traces` (short name) | ❌ rejected — the allow-list is four literal hosts, not "any short name" | — |
+| `https://alloy.observability.svc.cluster.local:4318/v1/traces` | ✅ passes (the regex only looks at the scheme) | ❌ **no** — Alloy's OTLP receiver is plaintext, so every export dies in the TLS handshake |
+| `http://localhost:4318/v1/traces` | ✅ passes | ❌ not without adding an OTLP sidecar to this pod — nothing listens on the AISIX pod's own loopback |
+| `http://otel-collector:4318/v1/traces` (**this chart**) | ✅ passes | ✅ yes |
+
+The `https://` row is the trap worth spelling out, because `aisix validate` is
+green on it: pointed at the plaintext receiver, the sink retries four times and
+drops the batch, while the request path is untouched.
+
+```console
+WARN aisix_obs::sink::pipeline: sink delivery failed; retrying sink=probe-otlp attempt=1
+  delay_ms=200 error=transient sink error: POST https://localhost:4318/v1/traces:
+  client error (Connect): received corrupt message of type InvalidContentType
+…
+WARN aisix_obs::sink::pipeline: sink delivery dropped after retries sink=probe-otlp dropped=1
+```
+
+Making that row honest is route 2 of #383 — TLS on Alloy's OTLP receiver — which
+`converse-console`, `converse-lci`, the gateway's usage collector and
+`authz-budget` all point at in plaintext today. The upstream ask (allow any
+in-cluster `http://` endpoint, or gate the check on an "insecure exporters
+permitted" flag) is tracked on
+[ai-helm-values#399](https://github.com/ADORSYS-GIS/ai-helm-values/issues/399).
+
+## What the telemetry is called
+
+Both names disagree with the rest of the platform, and in both cases the wrong
+query returns an empty result and no error — which reads as "tracing never
+worked" ([ai-helm-values#389](https://github.com/ADORSYS-GIS/ai-helm-values/issues/389)).
+
+**Traces: `service.name` is `aisix-dp`, and 1.0.0 gives you no way to change it.**
+Not a misconfiguration, and not fixable from this chart:
+
+- The `otlp_http` variant of `observability_exporter.schema.json` is
+  `additionalProperties: false` and its property set is exactly
+  `content_max_bytes`, `content_mode`, `enabled`, `endpoint`, `headers`, `kind`,
+  `name`, `sample_rate`. **There is no per-exporter `service_name`.**
+- `observability.service_name` in `config.yaml` (which this chart sets to
+  `aisix`) names the *tracing/log subsystem*, not the exported resource
+  attribute. Proved by running 1.0.0 against a local OTLP receiver with
+  `service_name: "probe-svc-name"`: the boot log reads
+  `INFO aisix_obs: tracing initialised service=probe-svc-name`, and the very
+  next span body carries
+  `"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"aisix-dp"}}]}`.
+
+So query Tempo as `{resource.service.name="aisix-dp"}`, and use the span
+attribute `aisix.operation` (`responses` | `chat`) to tell bridged traffic from
+direct — also verified on that capture. Do **not** "fix" the name by renaming
+the Service or `observability.serviceName`: `aisix.converse.svc.cluster.local`
+is what the `aisix-01` Backend in `models.yaml` dials.
+
+**Metrics: the PodMonitor renames the port-derived label.** AISIX puts the
+request path on almost every series as `endpoint="/v1/responses"` /
+`endpoint="/v1/chat/completions"`, and the Prometheus operator sets a target
+label of the same name whose value is the port name. The target label wins, so
+before this chart's `metricRelabelings` every series in Mimir read
+`endpoint="metrics"`. The scrape now keeps the port name as `scrape_endpoint`
+and gives `endpoint` back to AISIX — see the long comment in
+`templates/podmonitor.yaml` for why it is `metricRelabelings` and not
+`relabelings` or `honorLabels`.
+
+Metrics otherwise go the normal route: a `PodMonitor` on the `metrics` port,
+discovered cluster-wide by Alloy's `prometheus.operator.podmonitors` — the same
+mechanism `charts/core-gateway` uses for the Envoy proxies. The dashboard and
+the alert rules that read them live in `charts/observability-dashboards`
+(`files/aisix/aisix.json`, rule group `aisix-health`).
+
+> **Token bill:** the AISIX bridge is stateless, so a Responses-API conversation
+> bills exactly the same tokens as the equivalent chat-completions conversation
+> (measured on the public plane: 32 vs 32 and 18 vs 18 input tokens for the same
+> history, 10/3 vs 10/3 single turn). There is no server-side context and no
+> prompt-cache discount from DeepInfra (`cached_tokens: 0` on every call).
+> Moving to `/v1/responses` buys API compatibility for codex-style clients, not
+> a cheaper bill.
 
 ## `enableServiceLinks: false` is not optional
 
