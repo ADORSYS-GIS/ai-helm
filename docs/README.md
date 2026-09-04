@@ -41,7 +41,7 @@ Every diagram is mermaid (uncolored, client-rendered); start at the hub and zoom
 | [`architecture/06-networking-tls.md`](./architecture/06-networking-tls.md) | infra | Ingress, Hetzner LB, Cilium deny-egress, TLS issuance |
 | [`architecture/07-data-secrets.md`](./architecture/07-data-secrets.md) | infra | Mongo/CNPG/Redis/S3, the ESO secret flow, ownership split |
 | [`architecture/08-observability.md`](./architecture/08-observability.md) | platform | LGTM pipeline, per-user attribution, dashboards-as-code |
-| [`architecture/09-inference.md`](./architecture/09-inference.md) | platform | Provider fan-out + the self-hosted GPU model; budget tiers |
+| [`architecture/09-model-serving.md`](./architecture/09-model-serving.md) | platform | Provider fan-out + the self-hosted GPU model; budget tiers |
 | [`architecture/10-mcp.md`](./architecture/10-mcp.md) | platform | MCP routing, the OAuth carve-out, external-proxy modes |
 
 ---
@@ -155,6 +155,19 @@ Operational subsystems with several files keep their own directory + local index
 | [`mlops-access-model.md`](patterns/mlops-access-model.md) | **MLOps access model** (ADR-0085/0090/0091): who can reach LakeFS / Argo Workflows / MLflow and as what — humans vs in-cluster workloads vs external scripts, the credential inventory, the end-to-end training-job path, and the known limitations |
 | [`mlops-platform-consumer-guide.md`](integrations/mlops-platform-consumer-guide.md) | **Consuming the MLOps platform from another team/repo** (ADR-0085/0090/0091): endpoints, machine auth per app, the training-job recipe, and what to request from the maintainer |
 | [`webank-training-deployment.md`](integrations/webank-training-deployment.md) | **Webank governed dataset and training deployment** — ten explicit Argo templates, model-specific input contracts, GPU placement, and credential boundaries |
+
+---
+
+## Chart-level references — `charts/<chart>/README.md`
+
+A few charts carry enough operational surface that their README is a primary
+document, not an afterthought. Listed here because that is not discoverable from
+`docs/` on its own.
+
+| File | What it covers |
+|---|---|
+| [`../charts/core-gateway/README.md`](../charts/core-gateway/README.md) | **The gateway control objects, and the Dynamic Budget Limiter as deployed** (ADR-0137): the one-`EnvoyExtensionPolicy` constraint and its three Lua entries; the limiter **enforcing since 2026-09-04T19:41Z** (shadow 16:21Z, [ai-helm-values#414](https://github.com/ADORSYS-GIS/ai-helm-values/pull/414) → enforce [#417](https://github.com/ADORSYS-GIS/ai-helm-values/pull/417) `991268b`, 0 5xx in both windows); what a **402** means vs a **503** and why blurring them is the failure mode; the `remaining_micros: 0` body and the `next_reset_at` source; **rollback = one value** (`shadowMode: true`); the access-log `budget.*` fields to group by; and the shared monthly/weekly cost buckets, which stay until **2026-10-01** (effective cap = `min(plan bucket, ledger)`) with the exact contents of that commit |
+| [`../charts/aisix/README.md`](../charts/aisix/README.md) | **The Responses→Chat bridge behind Envoy AI Gateway**: what routes through it today (**23/25 chat models, all DeepInfra kinds** — epic [ai-helm-values#392](https://github.com/ADORSYS-GIS/ai-helm-values/issues/392)), the HA shape, the two pieces of config that look like leftovers and are load-bearing (`enableServiceLinks: false`, `svc/otel-collector`), the `appVersion`-vs-chart-version rule ([#1116](https://github.com/ADORSYS-GIS/ai-helm/pull/1116)), and pointers to the `ai-helm-values` capacity runbook |
 
 ---
 
