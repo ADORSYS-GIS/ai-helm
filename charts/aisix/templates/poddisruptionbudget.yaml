@@ -1,0 +1,29 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- /*
+A PodDisruptionBudget bounds VOLUNTARY disruption only — `kubectl drain` during
+a k3s node upgrade, the descheduler, an autoscaler scale-in. It cannot save a
+pod from an OOM-kill, a failing node or a deleted Deployment, and it is NOT what
+makes a rollout safe (that is `strategy.rollingUpdate.maxUnavailable: 0` on the
+Deployment, which the eviction API does not go through).
+
+⚠️ `minAvailable >= replicaCount` is refused rather than rendered. Such a budget
+can never be satisfied, so it does not protect the workload — it silently wedges
+every drain of every node this pod lands on until somebody goes looking. For a
+deliberately single-replica install the supported answer is
+`podDisruptionBudget.enabled: false`, not a smaller number.
+*/}}
+{{- if ge (int .Values.podDisruptionBudget.minAvailable) (int .Values.replicaCount) }}
+{{- fail (printf "aisix: podDisruptionBudget.minAvailable (%v) must be less than replicaCount (%v) — an unsatisfiable budget blocks every node drain instead of protecting anything. Set podDisruptionBudget.enabled: false for a single-replica install." .Values.podDisruptionBudget.minAvailable .Values.replicaCount) }}
+{{- end }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aisix.fullname" . }}
+  labels:
+    {{- include "aisix.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "aisix.selectorLabels" . | nindent 6 }}
+{{- end }}

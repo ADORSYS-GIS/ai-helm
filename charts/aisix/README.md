@@ -155,12 +155,45 @@ documented in `crates/aisix-core/src/filesource/desugar.rs`. `${VAR}` references
 are interpolated from the pod environment at load time, so the rendered
 ConfigMap holds no credential.
 
-Credentials arrive as env vars from Secrets that already exist in the namespace:
+### Credentials: `envFromSecrets`, and the one that is not in it
 
-| env | Secret | data key | owner |
-|---|---|---|---|
-| `DEEPINFRA_API_KEY` | `deepinfra-api-key-01` | `apiKey` | `charts/ai-models-backends` ExternalSecret (ns `converse`) |
-| `CALLER_API_KEY`    | `aisix-caller-key`     | `apiKey` | **this chart** (ESO `Password` generator) |
+Every credential arrives as an environment variable sourced from a Secret that
+**already exists** in the namespace. The chart creates no copy of anything, and
+the rendered `resources.yaml` ConfigMap holds only `${VAR}` references.
+
+```yaml
+envFromSecrets:                       # Secret → env. One entry per UPSTREAM provider.
+  - env: DEEPINFRA_API_KEY            #   the variable resources.yaml interpolates
+    name: deepinfra-api-key-01        #   the Secret (ns converse, ai-models-backends' ESO)
+    key: apiKey                       #   its data key — every backend key uses `apiKey`
+env: []                               # literal name/value pairs. NOT for credentials.
+```
+
+| env | Secret | data key | owner | where it is configured |
+|---|---|---|---|---|
+| `DEEPINFRA_API_KEY` | `deepinfra-api-key-01` | `apiKey` | `charts/ai-models-backends` ExternalSecret (ns `converse`) | `envFromSecrets[]` |
+| `CALLER_API_KEY`    | `aisix-caller-key`     | `apiKey` | **this chart** (ESO `Password` generator) | `callerKey` — **not** `envFromSecrets` |
+
+**Why the caller key is deliberately outside the list.** `envFromSecrets` is the
+list `ai-helm-values` overrides, and it grows to one entry per chat backend once
+[ai-helm-values#393](https://github.com/ADORSYS-GIS/ai-helm-values/issues/393)
+generates `provider_keys` from `models.yaml` — `<BACKEND>_API_KEY` from
+`<backend>-api-key-NN`, ~14 of them. **Helm replaces lists, it never merges
+them**, so any values file that sets `envFromSecrets` drops every default entry.
+If the caller key lived there, one such file would deploy an AISIX that cannot
+authenticate a single request — and it would render, lint and sync perfectly
+green on the way. It is therefore wired from `callerKey.{secretName,secretKey,
+envName}`, which this chart also owns because it mints that Secret: one owner,
+one spelling, one list to override safely.
+
+The Deployment **fails the render**, rather than producing something subtly
+wrong, on each of:
+
+| refused | why |
+|---|---|
+| an `envFromSecrets`/`env` entry named `CALLER_API_KEY` (i.e. `callerKey.envName`) | Kubernetes accepts duplicate env names and silently keeps the last — the failure would be a 401 at request time, not at deploy time |
+| any name starting with `AISIX_` | AISIX layers **every** `AISIX_*` variable onto `config.yaml` as a deserialisation override; that is the same mechanism as the service-link trap below, so this would change (or refuse) the gateway's boot config rather than feed `resources.yaml` |
+| an `envFromSecrets` entry missing `env`, `name` or `key` | a half-written entry renders a `secretKeyRef` to an empty name, which the API server accepts and the kubelet then fails to mount |
 
 ## The caller key, and how it is shared with the EAIG BackendSecurityPolicy
 
@@ -230,10 +263,170 @@ The probes are deliberately split across both:
   instance be restarted?* — and deliberately stays 200 through a drain, so it
   must not be the probe that withdraws traffic.
 
-`terminationGracePeriodSeconds: 120` follows AISIX's own sizing note: the tail is
-the stream still running at SIGTERM **plus** the one request its connection gets
-reused for, because a streamed response commits its head at the first token and
-can never carry `Connection: close`.
+`terminationGracePeriodSeconds` and `shutdown.minDrainSecs` are two halves of one
+decision and are both set explicitly — see **High availability** below for the
+sizing and the render guard that keeps them in the right order.
+
+## High availability
+
+Source of truth: **[ai-helm-values#395](https://github.com/ADORSYS-GIS/ai-helm-values/issues/395)**
+(HA + capacity), under epic
+[#392](https://github.com/ADORSYS-GIS/ai-helm-values/issues/392).
+
+AISIX is not a cache in front of a working route — for every model that goes
+through it, **it is the route**. A Responses-API client has no fallback path to
+the upstream. One replica therefore makes a node reboot, an eviction or an
+OOM-kill a total outage for that whole surface, which is acceptable for a
+one-model spike and not acceptable once ~30 models depend on it.
+
+| knob | default | what it buys |
+|---|---|---|
+| `replicaCount` | **2** (`values.yaml:35`) | a second copy, so a single pod loss is a capacity event and not an outage |
+| `affinity` (unset ⇒ chart default) | preferred `podAntiAffinity` on `kubernetes.io/hostname` (`templates/deployment.yaml:195-206`) | the two replicas land on different workers, so one node reboot cannot take both |
+| `podDisruptionBudget` | `enabled: true`, `minAvailable: 1` (`values.yaml:63`) | a node drain / descheduler / autoscaler may evict **one** replica at a time |
+| `strategy.rollingUpdate` | `maxUnavailable: 0`, `maxSurge: 1` (`values.yaml:46`) | a deploy surges a new pod to Ready **before** signalling an old one — served capacity never dips below `replicaCount` |
+| `shutdown.minDrainSecs` | `30` → `config.yaml` (`templates/configmap-config.yaml:51`) | the retiring pod keeps accepting for 30 s while `/readyz` already 503s, so kubelet can empty the EndpointSlice first |
+| `terminationGracePeriodSeconds` | `120` (`values.yaml:273`) | the hard bound: 30 s drain + the in-flight tail |
+
+**Two replicas are a plain horizontal copy, not a consistency problem.** AISIX's
+rate limiter, response cache and budget counters are per-process, and none of
+them is enabled here — EAIG keeps Authorino authz, the distributed budget
+limiter and the metering, deliberately, so there is no second enforcement point
+whose counters could disagree with the invoice. The one shared thing is the
+ESO-generated `aisix-caller-key` Secret, which both pods read at boot. If AISIX-
+side rate limiting is ever switched on it needs `ratelimit.backend: redis`
+first, or N replicas enforce N× the configured window (api7/AISIX-Cloud#798,
+quoted verbatim in the image's own `/etc/aisix/config.managed.yaml`).
+
+### Preferred, not required, anti-affinity
+
+`requiredDuringSchedulingIgnoredDuringExecution` would look stricter and would
+be worse. It makes the second replica permanently `Pending` as soon as the
+cluster has fewer schedulable workers than replicas, and — the failure that
+actually bites — it **deadlocks the surge step** of a `maxUnavailable: 0`
+rollout on a small cluster: the new pod cannot be placed while both old pods
+still hold their nodes, and no old pod may be retired until the new one is
+Ready. Preferred spreads whenever it can and degrades to co-location rather than
+to a stuck deploy.
+
+### Sizing the two shutdown numbers
+
+Both are set explicitly, next to each other in `values.yaml`, because reading
+either alone tells you nothing. From api7/aisix's own `config.example.yaml`
+(§ Shutdown), whose default for `min_drain_secs` is 30 and which we keep:
+
+- **Floor.** `min_drain_secs` must sit above the detection latency of whatever
+  load-balances the instance. Here that is the readiness probe:
+  `periodSeconds × failureThreshold = 10 s × 3 = 30 s`. Below it the listener can
+  close while kubelet still lists the pod in the EndpointSlice.
+- **Bound.** `min_drain_secs` is a *minimum, not a deadline* — after it elapses
+  AISIX still waits for the in-flight count to reach zero, with no deadline of
+  its own. `terminationGracePeriodSeconds` is the only hard bound, and upstream
+  sizes it for **two requests back to back**: the gateway retires a client
+  connection with `Connection: close`, which rides on the response *head*, and a
+  streamed response commits its head at the first token — so a stream already
+  running at SIGTERM can never carry it. That connection returns to the caller's
+  pool unmarked and is used once more; only *that* request's head carries the
+  header and ends the chain. The tail is the running stream **plus** the one
+  reuse.
+
+`120 = 30 + ~90`. The Deployment **fails the render** if
+`terminationGracePeriodSeconds <= shutdown.minDrainSecs`
+(`templates/deployment.yaml:12-16`): inverted, SIGKILL lands while AISIX is
+still deliberately accepting new connections.
+
+### What a rollout actually does
+
+A values change in `ai-helm-values` (a new model, a bumped image tag) or a chart
+publish is what triggers this. `kubectl rollout restart` is **not** the intended
+mechanism in prod — the GitOps sync is.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AV as ai-helm-values<br/>main
+    participant Argo as ArgoCD<br/>Application aii-aisix
+    participant Dep as Deployment/aisix<br/>maxUnavailable 0 · maxSurge 1
+    participant New as Pod B (new)
+    participant Old as Pod A (old)
+    participant EPS as EndpointSlice<br/>aisix.converse.svc:3000
+    participant EAIG as Envoy AI Gateway
+
+    AV->>Argo: commit merged to main
+    Argo->>Dep: sync — new pod template hash
+    Note over Dep: maxUnavailable: 0 ⇒ SURGE FIRST.<br/>No old pod is touched yet.
+    Dep->>New: create (anti-affinity: prefer another host)
+    New->>New: load config.yaml + resources.yaml
+    New-->>Dep: startupProbe :9090/status/ready 200<br/>(a resource snapshot IS applied)
+    New-->>Dep: readinessProbe :3000/readyz 200
+    Dep->>EPS: add Pod B
+    Note over EPS,EAIG: 3 endpoints for one instant — capacity<br/>is replicaCount+1, never replicaCount-1
+    Dep->>Old: SIGTERM
+    Old->>Old: /readyz flips to 503 immediately
+    Old-->>EPS: readiness fails → removed from EndpointSlice
+    Note over Old: keeps ACCEPTING for shutdown.min_drain_secs = 30 s<br/>so EAIG's in-flight connections are not cut
+    EAIG->>Old: in-flight stream continues to completion
+    Old->>Old: in-flight count → 0 → exit
+    Note over Dep: hard bound: terminationGracePeriodSeconds = 120 s
+    Dep->>Dep: repeat for the second replica
+```
+
+```mermaid
+stateDiagram-v2
+    direction TB
+    [*] --> Pending: scheduled — preferred podAntiAffinity<br/>picks a host without a sibling
+
+    Pending --> Starting: container running
+    Starting --> Starting: startupProbe :9090/status/ready 503<br/>(resources.yaml not applied yet)
+    Starting --> Ready: /status/ready 200 → readinessProbe takes over<br/>:3000/readyz 200 → in EndpointSlice
+
+    Ready --> Draining: SIGTERM (rollout, eviction, node drain)
+    Ready --> Restarting: livenessProbe :3000/livez fails 3×
+    Restarting --> Starting: kubelet restarts the container
+
+    state Draining {
+        direction TB
+        [*] --> NotReady
+        NotReady: /readyz 503 AT ONCE — but /livez stays 200,<br/>so the drain is never mistaken for a crash
+        NotReady --> Accepting
+        Accepting: still ACCEPTING new connections for<br/>shutdown.min_drain_secs = 30 s
+        Accepting --> Quiescing
+        Quiescing: listener closed · waiting for in-flight → 0<br/>(no deadline of AISIX's own)
+        Quiescing --> [*]
+    }
+
+    Draining --> Gone: exits cleanly
+    Draining --> Killed: terminationGracePeriodSeconds = 120 s elapses<br/>SIGKILL — the ONLY hard bound
+
+    Gone --> [*]
+    Killed --> [*]
+
+    note right of Ready
+        UNREACHABLE by design:
+        · "both replicas Draining at once" — the PDB
+          (minAvailable: 1) refuses the second eviction,
+          and maxUnavailable: 0 refuses the second retire.
+        · "Ready with no resources loaded" — the startup
+          gate is /status/ready, not /readyz.
+    end note
+```
+
+**What each guard does NOT cover.** The PDB bounds *voluntary* disruption only;
+it cannot save a pod from an OOM-kill or a node that dies, and the eviction API
+is not what a rolling update goes through — that is `maxUnavailable: 0`. The
+anti-affinity is a scheduling preference, so on a cluster under pressure both
+replicas may still share a host. Neither is a substitute for the other, and the
+capacity numbers in
+[ai-helm-values `docs/runbooks/aisix-spike.md` § "Capacity and HA"](https://github.com/ADORSYS-GIS/ai-helm-values/blob/main/docs/runbooks/aisix-spike.md)
+are what say whether a single surviving replica can carry the traffic at all.
+
+> **Token bill:** the AISIX bridge is stateless, so a Responses-API conversation
+> bills exactly the same tokens as the equivalent chat-completions conversation
+> (measured on the public plane: 32 vs 32 and 18 vs 18 input tokens for the same
+> history, 10/3 vs 10/3 single turn). There is no server-side context and no
+> prompt-cache discount from DeepInfra (`cached_tokens: 0` on every call).
+> Moving to `/v1/responses` buys API compatibility for codex-style clients, not
+> a cheaper bill.
 
 ## Tracing: the `otel-collector` ExternalName alias
 

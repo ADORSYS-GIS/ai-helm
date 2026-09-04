@@ -42,6 +42,10 @@ data:
     shutdown:
       # Keep accepting new connections for this long after SIGTERM while
       # /readyz already answers 503, so kubelet has time to pull the pod out of
-      # the EndpointSlice before the listener closes. Must exceed the readiness
-      # probe's periodSeconds x failureThreshold (10s x 3 below).
-      min_drain_secs: 30
+      # the EndpointSlice before the listener closes. Must be >= the readiness
+      # probe's periodSeconds x failureThreshold (10s x 3 = 30s), and the
+      # PodSpec's terminationGracePeriodSeconds must exceed it — the Deployment
+      # template fails the render if it does not. Both numbers are set together
+      # in values.yaml § "Termination and draining"; upstream's own default in
+      # api7/aisix `config.example.yaml` is 30.
+      min_drain_secs: {{ .Values.shutdown.minDrainSecs }}
