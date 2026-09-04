@@ -47,17 +47,17 @@ wellKnown:
     # subagents, so no primary carries the 27 browser_* schemas every turn.
     default_agent: assistant
     plugin:
-      - "@vymalo/opencode-oauth2@0.16.1"
+      - "@vymalo/opencode-oauth2@0.17.0"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.16.1"
+      - "@vymalo/opencode-models-info@0.17.0"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.16.1"
+      - "@vymalo/opencode-ratelimit@0.17.0"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
@@ -114,7 +114,7 @@ wellKnown:
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
       # adapter saves screenshots to disk for the model to read. One source only.
-      - - "@vymalo/opencode-browser@0.16.1"
+      - - "@vymalo/opencode-browser@0.17.0"
         - port: 4517
           groups:
             - page
@@ -167,6 +167,18 @@ wellKnown:
       # nothing is lost — it just no longer reaches the screen. Set
       # `VYMALO_PLUGIN_CONSOLE_LOG=1` to watch exports live. Do NOT pin this
       # entry back below 0.16.1 without re-reading that ADR.
+      #
+      # 0.17.0 goes further on both halves of that. ADR-0014 extends the silence
+      # to ALL NINE plugins (0.16.1 fixed only this one), so oauth2's expired
+      # token, ratelimit's throttling and the browser bridge are quiet too — the
+      # one deliberate exception is the device-code login prompt, which stays on
+      # stderr because a user cannot log in without seeing the URL and code.
+      # ADR-0015 makes the export genuinely fail closed: until 0.16.1 a
+      # logged-out session still fired a real, unauthenticated OTLP request on
+      # every batch flush (the empty header stripped the credential but could
+      # not cancel the send) — now no network call is made at all while the
+      # credential is unusable, and it resumes on the next flush after a login.
+      # Neither changes anything to configure here.
       # ⚠️ PER-SIGNAL `endpoints`, deliberately NOT the base `endpoint`. The plugin
       # resolves `endpoint` as `env.OTEL_EXPORTER_OTLP_ENDPOINT || opts.endpoint`
       # (environment wins, OTel convention), and `governance-auth` writes exactly
@@ -181,7 +193,7 @@ wellKnown:
       # METRICS,LOGS}_ENDPOINT variables (its own otel.rs comment says why), so the
       # org default wins again without touching anyone's machine. Proven against
       # the real @vymalo/opencode-core-otel resolver before this shipped.
-      - - "@vymalo/opencode-otel@0.16.1"
+      - - "@vymalo/opencode-otel@0.17.0"
         - endpoints:
             traces: "https://otel-opencode.ai.camer.digital/v1/traces"
             metrics: "https://otel-opencode.ai.camer.digital/v1/metrics"
