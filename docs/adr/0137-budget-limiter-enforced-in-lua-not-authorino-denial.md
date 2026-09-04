@@ -1,7 +1,9 @@
 # ADR-0137: The budget limiter refuses in Lua, because Authorino's denial status is one constant per AuthConfig
 
 - Status: Proposed
-- Date: 2026-09-03
+- Date: 2026-09-03 (amended 2026-09-03 — the gopher-lua control-plane runtime; amended again
+  2026-09-04 — the balance moved onto the existing introspection, one metadata call per request,
+  and this filter did not have to change)
 - Deciders: @stephane-segning
 - Source of truth: [lightbridge-authz#658](https://github.com/ADORSYS-GIS/lightbridge-authz/issues/658)
   (the decision memo) and **lightbridge-authz ADR-0034** (`docs/adr/0034-dynamic-budget-limiter.md`
@@ -208,3 +210,104 @@ harness starts *after* the only component that rejects it. **A test that exercis
 cannot validate control-plane admission** — the same shape as the CEL defect six minutes earlier
 (ai-helm-values#365), where only Authorino could type-check the expression. Both now have a gate
 that runs the real validator.
+
+---
+
+## Amendment, 2026-09-04: the balance moved, and this filter did not have to
+
+**What changed upstream.** lightbridge-authz ADR-0034 gained a §15 on the owner's directive
+(*"ensure the call on the budget side is the fastest possible… over-consumption is fine, forgive
+it… guarantee performance per request"*). The `budgetremaining` AuthConfig `metadata` step is
+**deleted**. The account's balance now rides on the `lightbridgeintrospect` step that already runs,
+as three new introspection fields — `budget_remaining_micros`, `budget_next_reset_at`,
+`budget_snapshot_age_seconds` — which `authz-opa` reads from one precomputed row
+(`budget_remaining_snapshots`, kept warm by a 15-second refresher in `authz-budget`).
+
+Before, on the API-key plane, a metered request cost two metadata calls *in series* (ADR-0034
+§3.1's `priority: 1` forced the serialisation), the second of which fanned out to a third service:
+
+```
+introspect(authz-opa)  →  remaining(authz-budget)  →  spend/query(authz-usage)
+```
+
+After, one call, whose added work is a single index probe:
+
+```
+introspect(authz-opa)  →  Index Scan on budget_remaining_snapshots_pkey   (3 buffer hits, ~20 µs)
+```
+
+**What changed in this chart: nothing structural, and that is the point.** The filter still reads
+namespace `envoy.filters.http.ext_authz`, key `budget`, the same five fields, with the same decision
+table. Only the AuthConfig's `response.success.dynamicMetadata.budget` expressions in ai-helm-values
+source those values from `auth.metadata.lightbridgeintrospect` instead of
+`auth.metadata.budgetremaining`.
+
+That is the dividend of ADR-0137's original decision to publish a **shaped table** rather than pipe
+an upstream response body through: the producer moved services and the consumer did not change a
+line of logic. Had the Lua indexed the `budgetremaining` response directly, this would have been a
+data-plane change on the enforcement path — and, per the two incidents this ADR records, a
+data-plane change on the enforcement path is exactly the kind that takes a gateway down.
+
+### One field added, and it is deliberately inert
+
+`snapshot_age_seconds` is read, recorded into the `lightbridge.budget_limiter` namespace, surfaced
+in the access log as `budget.snapshot_age_seconds` — and **never consulted by the decision**. A
+balance is either known or it is not; a stale-but-known figure is still the ledger's answer, and
+letting an age threshold refuse traffic would invent a second, undocumented refusal reason inside a
+filter whose whole design principle is that every branch is explicit.
+
+It exists so the shadow window can see the window each decision was made inside, and so an operator
+can tell *"the refresher stopped"* apart from *"this account really is spent"* — two conditions that
+look identical from a 402 count alone.
+
+It is **absent, not zero**, when the AuthConfig does not publish it (an older render, or the two
+repos mid-rollout). Writing a `0` would claim a freshness nobody measured — the same
+unknown-is-never-zero rule the balance itself obeys, applied to its metadata.
+
+### Verification
+
+`tests/budget-limiter/run.sh` grew five cases proving exactly that inertness, and still runs the
+`egctl` control-plane gate first:
+
+```console
+$ ./tests/budget-limiter/run.sh
+── egctl control-plane gate ──
+cases: 4   failed: 0
+── the snapshot age is observability, never a decision input (ADR-0034 §15) ──
+PASS  200 (want 200)  age present + remaining > 0 -> still allowed
+PASS  200 (want 200)  a HUGE age does not turn a positive balance into a refusal
+PASS  402 (want 402)  age present + remaining == 0 -> still 402, unchanged
+PASS  402 (want 402)  a malformed age cannot break the decision path
+PASS  200 (want 200)  age absent (older AuthConfig render) -> unchanged
+…
+passed: 23   failed: 0
+```
+
+And prod, where `budgetLimiter.enabled: false`, renders byte-for-byte as before:
+
+```console
+$ diff <(helm template cg charts/core-gateway -f …/prod/values/core-gateway.yaml @origin/main) \
+       <(helm template cg charts/core-gateway -f …/prod/values/core-gateway.yaml @HEAD)
+(no output)
+```
+
+### Sequencing, which is not optional
+
+The backend ships first (lightbridge-authz#685). Until that image rolls, the introspection carries
+no `budget_*` fields, so an AuthConfig sourcing from `lightbridgeintrospect` would publish
+`known: false` — harmless today only because `budgetLimiter.enabled: false` means no filter is in
+the chain to act on it. The ai-helm-values order is therefore: **backend rolled → AuthConfig
+rewired → `budgetLimiter.enabled: true` with `shadowMode: true`**, and
+`docs/runbooks/budget-limiter-rollout.md` is the step-by-step.
+
+### The one thing this narrows, recorded here rather than only upstream
+
+`lightbridgeintrospect` runs only for non-Keycloak credentials carrying `api_key_id` — self-signed
+API keys and RFC 8693 exchange sessions. The GitHub-Actions plane (`repobinding`) and the legacy
+Keycloak plane have no introspection step and therefore no budget fields. The AuthConfig must
+publish `enforced: false` for them, which this filter already handles as
+`not_enforced_on_this_plane` → allow.
+
+That is a **fail-open narrowing on two minority planes**, taken deliberately for the one-call
+guarantee. It cannot bite while the limiter is disabled, and it is a **blocker for Stage 3
+(enforce), not for Stage 2 (shadow)** — see ADR-0034 §15.3.

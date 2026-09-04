@@ -1,10 +1,23 @@
 -- The Dynamic Budget Limiter's enforcement half.
 -- lightbridge-authz ADR-0034, lightbridge-authz#658.
 --
--- Authorino calls authz-budget's mTLS-only `GET /budget/v1/remaining` as an AuthConfig `metadata`
--- step and publishes the answer as ext_authz DYNAMIC METADATA. This filter is the consumer: it
--- reads that metadata and refuses the request with 402 when the account's ledger balance is spent.
--- Nothing here computes a balance; it compares one number to zero.
+-- Authorino publishes the account's live ledger balance as ext_authz DYNAMIC METADATA. This filter
+-- is the consumer: it reads that metadata and refuses the request with 402 when the balance is
+-- spent. Nothing here computes a balance; it compares one number to zero.
+--
+-- WHERE THE BALANCE COMES FROM (CHANGED — lightbridge-authz ADR-0034 §15, owner directive
+-- 2026-09-04). It used to be a SECOND AuthConfig `metadata` step (`budgetremaining`) calling
+-- authz-budget's `GET /budget/v1/remaining`, which itself called authz-usage for the spend SUM —
+-- three services deep, serialised behind the introspection by `priority: 1`, measured at p50 10 ms
+-- with a 614 ms tail. That step is DELETED. The balance now rides on the `lightbridgeintrospect`
+-- step that already runs, as three new introspection fields (`budget_remaining_micros`,
+-- `budget_next_reset_at`, `budget_snapshot_age_seconds`) that authz-opa reads from one precomputed
+-- row (~20 us, 3 buffer hits). One metadata call per request instead of two.
+--
+-- NOTHING IN THIS FILE CHANGED AS A RESULT. Same namespace, same key, same fields, same decision
+-- table — the AuthConfig's `response.success.dynamicMetadata.budget` block sources the same five
+-- values from a different place. That is the point of publishing a shaped table rather than piping
+-- an upstream response through: the producer moved and the consumer did not have to.
 --
 -- WHY DYNAMIC METADATA AND NOT A HEADER. A success header is a REQUEST header, visible to the
 -- upstream and — on any path where Authorino fails to stamp it — supplied by the client. That is
@@ -19,6 +32,14 @@
 --   remaining_micros  number  ceiling - spend, in micro-USD; SIGNED, may be negative
 --   next_reset_at     string  RFC3339, when the balance next changes on its own
 --   account_id        string  the BUDGET account id (the `account_id` claim, not `sub`)
+--   snapshot_age_seconds  number  OPTIONAL. How stale `remaining_micros` is, in seconds
+--                                 (`budget_snapshot_age_seconds` from the introspection). Recorded
+--                                 for observability and NEVER read by the decision: the balance is
+--                                 either known or it is not, and a stale-but-known figure is still
+--                                 the ledger's answer. It is here so the shadow window can see the
+--                                 window each decision was made inside, and so an operator can tell
+--                                 "the refresher stopped" apart from "this account really is
+--                                 spent". Absent on an older AuthConfig, which is fine.
 --
 -- INPUT: header x-ai-eg-model — the model the AI Gateway's ext_proc parsed out of the body. Used
 -- for exactly one thing: telling "this request never went through the budget AuthConfig because it
@@ -103,24 +124,30 @@ local function setMeta(handle, key, value)
   end)
 end
 
-local function record(handle, decision, reason, remaining)
+local function record(handle, decision, reason, remaining, snapshotAge)
   setMeta(handle, "decision", decision)
   setMeta(handle, "reason", reason)
   if remaining ~= nil then
     setMeta(handle, "remaining_micros", remaining)
   end
+  -- Observability only, and only when the AuthConfig actually published it. Deliberately NOT
+  -- defaulted to 0: an absent age means "not reported", and writing a 0 would claim the figure was
+  -- current -- the same unknown-is-never-zero rule the balance itself obeys.
+  if snapshotAge ~= nil then
+    setMeta(handle, "snapshot_age_seconds", snapshotAge)
+  end
   setMeta(handle, "shadow", SHADOW)
 end
 
-local function allow(handle, reason, remaining)
-  record(handle, "allow", reason, remaining)
+local function allow(handle, reason, remaining, snapshotAge)
+  record(handle, "allow", reason, remaining, snapshotAge)
 end
 
 -- The single refusal path. In shadow mode it records the decision and CONTINUES: the whole point
 -- of shadow is to measure the false-positive rate of a rule that can 402 real paying traffic,
 -- which needs the rule live on every request and acting on none of them.
-local function deny(handle, status, body, reason, remaining)
-  record(handle, "deny", reason, remaining)
+local function deny(handle, status, body, reason, remaining, snapshotAge)
+  record(handle, "deny", reason, remaining, snapshotAge)
   if SHADOW then
     handle:logInfo("budget limiter (shadow) would refuse " .. status .. ": " .. reason)
     return
@@ -192,8 +219,11 @@ local function enforce(handle)
     return deny(handle, "503", unavailableBody("budget_malformed"), "budget_malformed")
   end
 
+  -- Read once, after the decision inputs, so a malformed age can never influence anything above.
+  local snapshotAge = tonumber(budget.snapshot_age_seconds)
+
   if remaining > 0 then
-    return allow(handle, "within_budget", remaining)
+    return allow(handle, "within_budget", remaining, snapshotAge)
   end
 
   return deny(
@@ -201,7 +231,8 @@ local function enforce(handle)
     "402",
     exhaustedBody(budget.account_id or "", budget.next_reset_at or ""),
     "budget_exhausted",
-    remaining
+    remaining,
+    snapshotAge
   )
 end
 

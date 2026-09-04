@@ -73,8 +73,7 @@ spec:
         {{- .Files.Get "files/model-policy.lua" | nindent 8 }}
     {{- /*
     lightbridge-authz ADR-0034 (lightbridge-authz#658): the Dynamic Budget Limiter's enforcement
-    half. Authorino publishes the account's live ledger balance as ext_authz dynamic metadata (an
-    AuthConfig `metadata` step against authz-budget's mTLS-only `GET /budget/v1/remaining`); this
+    half. Authorino publishes the account's live ledger balance as ext_authz dynamic metadata; this
     filter reads it and answers 402 `budget_exhausted` when nothing is left. Read
     charts/core-gateway/files/budget-limiter.lua for the full decision table, the fail-closed
     rules, and why dynamic metadata rather than a header.
@@ -89,13 +88,21 @@ spec:
     render NOTHING — a rendered comment is still a rendered diff, and the claim this change makes
     is that prod's manifests are unchanged until someone sets the value.
 
-    Turning it on WITHOUT also adding the AuthConfig `metadata` + `dynamicMetadata` blocks in
-    ai-helm-values would make every model request 503 — the two halves are enabled together, and
+    WHERE THE BALANCE COMES FROM CHANGED (lightbridge-authz ADR-0034 §15, owner directive
+    2026-09-04): it used to be its own `budgetremaining` metadata step calling authz-budget; it now
+    rides on the `lightbridgeintrospect` step that already runs, as three introspection fields.
+    One metadata call per request instead of two. Nothing in THIS chart changed as a result — the
+    filter's input contract (namespace, key, fields) is identical; only the AuthConfig's
+    `dynamicMetadata.budget` expressions in ai-helm-values source them from somewhere else.
+
+    Turning it on WITHOUT the AuthConfig's `dynamicMetadata.budget` block in ai-helm-values would
+    make every model request 503 — the two halves are enabled together, and
     `docs/runbooks/budget-limiter-rollout.md` (in ai-helm-values) sequences them.
     */}}
     {{- if .Values.budgetLimiter.enabled }}
-    # lightbridge-authz ADR-0034: the Dynamic Budget Limiter's enforcement half. Reads the
-    # account's live ledger balance out of Authorino's ext_authz dynamic metadata and answers 402
+    # lightbridge-authz ADR-0034 (+ §15): the Dynamic Budget Limiter's enforcement half. Reads the
+    # account's live ledger balance out of Authorino's ext_authz dynamic metadata — published from
+    # the `lightbridgeintrospect` result since §15, not a second metadata call — and answers 402
     # `budget_exhausted` when nothing is left. Script: charts/core-gateway/files/budget-limiter.lua.
     - type: Inline
       # The config table is prepended rather than templated INTO the script so the shipped .lua

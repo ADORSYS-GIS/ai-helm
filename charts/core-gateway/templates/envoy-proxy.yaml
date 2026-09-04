@@ -234,6 +234,11 @@ spec:
               budget.reason: "%DYNAMIC_METADATA(lightbridge.budget_limiter:reason)%"
               budget.remaining_micros: "%DYNAMIC_METADATA(lightbridge.budget_limiter:remaining_micros)%"
               budget.shadow: "%DYNAMIC_METADATA(lightbridge.budget_limiter:shadow)%"
+              # lightbridge-authz ADR-0034 §15: how stale the balance the decision was made on
+              # actually was. Empty when the AuthConfig did not publish it (an older render) —
+              # never 0, which would claim a freshness that was not measured. This is what turns
+              # "the refresher stopped" into a visible signal instead of an inference.
+              budget.snapshot_age_seconds: "%DYNAMIC_METADATA(lightbridge.budget_limiter:snapshot_age_seconds)%"
               {{- end }}
               # Some Common fields
               start_time: "%START_TIME%"
