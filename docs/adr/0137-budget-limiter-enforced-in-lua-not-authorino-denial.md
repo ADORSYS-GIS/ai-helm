@@ -199,6 +199,16 @@ reason they were ever confounded.
   a non-`Accepted` policy or any route rewritten to a 500 — for every `lua` entry, in shadow *and*
   enforcing renders, so Stage 3's flip is proven today rather than on the night it ships.
   `tests/budget-limiter/run.sh` calls it first.
+- **(2026-09-04 follow-up) The gate carries a permanent negative control, and the data-plane
+  harness now asserts the access log.** `tests/envoy-gateway-lua/check.py` re-injects the exact
+  `rawget(_G, …)` line into the rendered policy on every run and requires the translator to reject
+  it with the full incident signature (`Accepted: False` *and* the probe route rewritten to 500) —
+  a gate that cannot fail is not a gate. `tests/budget-limiter/` replays the chart's *own* rendered
+  access-log `format.json` + `matches` predicate (the four `budget.*` fields of #1097 included) and
+  the metadata shapes both prod AuthConfigs publish, and proves over every row it logs that a
+  refusal made inside this filter is `response_code_details: lua_response`, an allowed request is
+  `via_upstream`, and `direct_response` + 500 — the incident's signature — is unreachable from any
+  path through the script, including a raise inside or outside the `pcall` guard.
 
 ### The lesson worth keeping
 
