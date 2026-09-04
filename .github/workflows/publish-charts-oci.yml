@@ -13,6 +13,10 @@ name: Publish Charts to OCI
 #                  (auto-increments on every merge that touches it; monotonic;
 #                  a MINOR bump always outranks any patch in the prior minor).
 # Pre-release suffixes are never emitted, so `>=0.0.0`-style ranges always match.
+#
+# `appVersion` is NEVER touched by this workflow — it stays exactly as authored in
+# each chart's Chart.yaml (e.g. the version of the upstream app/image the chart
+# deploys). Only `version` (the chart's own semver) is derived at publish time.
 
 on:
   push:
@@ -185,7 +189,12 @@ jobs:
               continue
             fi
             helm dependency build "charts/$c"
-            helm package "charts/$c" --version "$ver" --app-version "$ver" -d /tmp/pkg
+            # appVersion is NOT derived: leave whatever the chart author wrote in
+            # Chart.yaml (e.g. aisix's appVersion tracks the real upstream api7/aisix
+            # release, not this chart's own patch counter) so
+            # `app.kubernetes.io/version` on deployed pods reflects the actual
+            # upstream/app version, not this repo's publish-patch count.
+            helm package "charts/$c" --version "$ver" -d /tmp/pkg
             helm push "/tmp/pkg/${c}-${ver}.tgz" "$OCI_REPO"
           done
 
