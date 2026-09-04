@@ -1,0 +1,59 @@
+# Render fixture for the MULTI-BACKEND shape of `envFromSecrets` — the branch the
+# default values.yaml (one provider credential) never reaches.
+#
+# This is what ai-helm-values will send once `tools/generate-aisix-resources.py`
+# emits one provider key per chat-capable backend
+# (ADORSYS-GIS/ai-helm-values#393): a values file that REPLACES the chart's
+# one-entry default list wholesale, with one `<backend>-api-key-NN` Secret per
+# entry — all of them already existing in ns `converse`, owned by
+# `charts/ai-models-backends`' ExternalSecrets, all keyed `apiKey`.
+#
+# The point of keeping it in CI is the invariant that makes that replacement
+# safe: `CALLER_API_KEY` is NOT in this list and must still appear in the
+# rendered PodSpec, because the Deployment wires it from `.Values.callerKey`.
+# If someone ever moves it back into the overridable list, this fixture renders
+# an AISIX with no caller credential and the guard in the Deployment template
+# fires instead.
+envFromSecrets:
+  - env: DEEPINFRA_01_API_KEY
+    name: deepinfra-api-key-01
+    key: apiKey
+  - env: DEEPINFRA_02_API_KEY
+    name: deepinfra-api-key-02
+    key: apiKey
+  - env: FIREWORKS_01_API_KEY
+    name: fireworks-api-key-01
+    key: apiKey
+  - env: GOOGLE_AI_STUDIO_01_API_KEY
+    name: google-ai-studio-api-key-01
+    key: apiKey
+
+resources:
+  providerKeys:
+    - display_name: deepinfra-01
+      provider: openai
+      adapter: openai
+      api_base: https://api.deepinfra.com/v1/openai
+      api_key: ${DEEPINFRA_01_API_KEY}
+      apis: {}
+    - display_name: fireworks-01
+      provider: openai
+      adapter: openai
+      # ⚠️ Per-backend prefix, never hard-coded: fireworks is /inference/v1,
+      # deepinfra /v1/openai, google v1beta/openai, vLLM /openai/v1. A wrong
+      # prefix 404s silently at the upstream (ai-helm-values#393 § Risks).
+      api_base: https://api.fireworks.ai/inference/v1
+      api_key: ${FIREWORKS_01_API_KEY}
+      apis: {}
+
+  models:
+    - display_name: deepseek-v4-flash-aisix
+      provider: openai
+      provider_key: deepinfra-01
+      model_name: deepseek-ai/DeepSeek-V4-Flash-0731
+
+  apiKeys:
+    - display_name: eaig
+      key_env: CALLER_API_KEY
+      allowed_models:
+        - deepseek-v4-flash-aisix

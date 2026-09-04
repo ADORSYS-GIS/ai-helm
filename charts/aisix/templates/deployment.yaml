@@ -4,8 +4,36 @@ metadata:
   name: {{ include "aisix.fullname" . }}
   labels:
     {{- include "aisix.labels" . | nindent 4 }}
+{{- /*
+  Render-time guards. Each of these is a mistake that renders as perfectly valid
+  YAML and only shows up as a wedged drain, a pod that will not boot, or a
+  duplicate env var Kubernetes silently resolves last-one-wins.
+*/}}
+{{- if le (int .Values.terminationGracePeriodSeconds) (int .Values.shutdown.minDrainSecs) }}
+{{- fail (printf "aisix: terminationGracePeriodSeconds (%v) must exceed shutdown.minDrainSecs (%v) — otherwise SIGKILL lands while AISIX is still deliberately accepting new connections. See values.yaml § Termination and draining." .Values.terminationGracePeriodSeconds .Values.shutdown.minDrainSecs) }}
+{{- end }}
+{{- $callerEnv := .Values.callerKey.envName }}
+{{- range .Values.envFromSecrets }}
+{{- if not (and .env .name .key) }}{{ fail (printf "aisix: envFromSecrets entry %v needs all three of env/name/key" .) }}{{ end }}
+{{- if eq .env $callerEnv }}{{ fail (printf "aisix: envFromSecrets must not define %s — the chart wires it from .Values.callerKey, which also owns the Secret" $callerEnv) }}{{ end }}
+{{- if hasPrefix "AISIX_" .env }}{{ fail (printf "aisix: %s is a RESERVED name — AISIX layers every AISIX_* variable onto config.yaml as a deserialisation override, so this would change (or refuse) the gateway's boot config, not feed resources.yaml" .env) }}{{ end }}
+{{- end }}
+{{- range .Values.env }}
+{{- if eq .name $callerEnv }}{{ fail (printf "aisix: env must not define %s — the chart wires it from .Values.callerKey" $callerEnv) }}{{ end }}
+{{- if hasPrefix "AISIX_" .name }}{{ fail (printf "aisix: %s is a RESERVED name (AISIX_* overrides config.yaml)" .name) }}{{ end }}
+{{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- /*
+    maxUnavailable: 0 + maxSurge: 1 — surge-then-retire. A replacement pod must
+    clear the startup gate (:9090/status/ready) and readiness (:3000/readyz)
+    before its predecessor is signalled, so the served capacity during a roll is
+    replicaCount..replicaCount+1 and never dips. This is the half of "zero
+    failed requests during a deploy" that the chart controls; the drain window
+    below is the other half.
+  */}}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
   selector:
     matchLabels:
       {{- include "aisix.selectorLabels" . | nindent 6 }}
@@ -66,12 +94,29 @@ spec:
               containerPort: {{ .Values.ports.metrics }}
               protocol: TCP
           env:
-            {{- range .Values.env }}
-            - name: {{ .name }}
+            {{- /*
+              The caller key is wired from `callerKey`, not from the overridable
+              `envFromSecrets` list: this chart MINTS that Secret (see the
+              ExternalSecret), so it also owns the env var. A values file that
+              replaces `envFromSecrets` wholesale — which is what ai-helm-values
+              does once every backend has an entry — therefore cannot drop the
+              one credential without which no caller can authenticate at all.
+            */}}
+            - name: {{ .Values.callerKey.envName }}
               valueFrom:
                 secretKeyRef:
-                  name: {{ .secretName }}
-                  key: {{ .secretKey }}
+                  name: {{ .Values.callerKey.secretName }}
+                  key: {{ .Values.callerKey.secretKey }}
+            {{- range .Values.envFromSecrets }}
+            - name: {{ .env }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .name }}
+                  key: {{ .key }}
+            {{- end }}
+            {{- range .Values.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
             {{- end }}
           {{- /*
             /livez and /readyz are served on the PROXY listener (see the comment
@@ -138,7 +183,25 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- /*
+        Spread the replicas across hosts. PREFERRED, not required: a required
+        rule makes replica 2 unschedulable as soon as the cluster has fewer
+        schedulable workers than replicas, and it also deadlocks the surge step
+        of a `maxUnavailable: 0` roll on a small cluster — the new pod has
+        nowhere to go while both old pods still hold their nodes. Preferred
+        spreads whenever it can and degrades to co-location rather than to a
+        stuck rollout. `.Values.affinity` REPLACES this outright when set.
+      */}}
       affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- if .Values.affinity }}
+        {{- toYaml .Values.affinity | nindent 8 }}
+        {{- else }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "aisix.selectorLabels" . | nindent 20 }}
+        {{- end }}
