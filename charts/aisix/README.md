@@ -269,6 +269,30 @@ Metrics go the normal route: a `PodMonitor` on the `metrics` port, discovered
 cluster-wide by Alloy's `prometheus.operator.podmonitors` — the same mechanism
 `charts/core-gateway` uses for the Envoy proxies.
 
+## `enableServiceLinks: false` is not optional
+
+AISIX's config loader layers **every** `AISIX_*` environment variable on top of
+`config.yaml` as a deserialisation override — that is the documented mechanism,
+and it is why the image's own entrypoint has to `unset AISIX_CONFIG_PATH` before
+exec'ing the binary. Kubernetes' legacy docker-link service variables inject
+exactly that shape for every Service in the namespace, and this chart's Service
+is named `aisix`, so the pod would get `AISIX_PORT=tcp://10.x.x.x:3000`,
+`AISIX_SERVICE_HOST`, `AISIX_PORT_3000_TCP`, … The loader reads `AISIX_PORT` as a
+top-level field `port`, which does not exist, and the process refuses to boot:
+
+```
+Error: config load failed: failed to load configuration: deserialize:
+unknown field `port`, expected one of `etcd`, `resources_file`, `proxy`, `admin`,
+`observability`, `cache`, `ratelimit`, `upstream`, `downstream`, `shutdown`,
+`managed`, `bedrock_endpoint_url`
+```
+
+(Observed live on the first ArgoCD sync — it does not reproduce under
+`docker run`, which injects no service links.) The Deployment therefore sets
+`enableServiceLinks: false`. Nothing here consumes those variables; every
+upstream is addressed by DNS. Renaming the Service is not an alternative — the
+EAIG Backend depends on `aisix.converse.svc.cluster.local`.
+
 ## Verification performed against the real binary
 
 ```bash
