@@ -31,6 +31,7 @@ from dashboards._report import inject_report_link
 # Registry of every generated dashboard. Import-by-string so Python's
 # import-time errors don't blow up unrelated `--help`.
 _DASHBOARD_MODULES: tuple[str, ...] = (
+    "dashboards.aisix.aisix",
     "dashboards.envoy_ai_gateway.per_user",
     "dashboards.envoy_ai_gateway.cost_by_model",
     "dashboards.envoy_ai_gateway.actor_consumption",

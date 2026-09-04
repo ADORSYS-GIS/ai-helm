@@ -23,4 +23,63 @@ spec:
     - port: metrics
       path: /metrics
       interval: {{ .Values.observability.podMonitor.interval }}
+      {{- /*
+      ⚠️ THE `endpoint` LABEL COLLISION (ai-helm-values#389).
+
+      AISIX puts the request PATH on almost every series it exports:
+
+          aisix_llm_requests_total{endpoint="/v1/responses", model=…, status="200"}
+          aisix_llm_requests_total{endpoint="/v1/chat/completions", …}
+
+      The Prometheus operator ALSO sets a target label called `endpoint`, whose
+      value is the scraped port's NAME (`metrics` here). With the default
+      `honorLabels: false` the target label wins and the exporter's own value is
+      moved aside to `exported_endpoint` — so the one dimension that separates
+      BRIDGED Responses traffic from ordinary chat traffic (the entire point of
+      this deployment) reads `endpoint="metrics"` on every series in Mimir, and
+      the obvious query returns one meaningless bucket instead of two paths.
+
+      Captured against live Mimir on 2026-09-04, BEFORE this block existed:
+
+          sum by (endpoint,status,stream) (aisix_llm_requests_total)
+            {endpoint="metrics", status="200", stream="false"} = 39
+            {endpoint="metrics", status="200", stream="true"}  = 16
+            {endpoint="metrics", status="404", stream="false"} = 1
+
+      These three rules put the names back the right way round:
+
+        1. copy the port-derived value to `scrape_endpoint` — it is still useful
+           (which listener produced this series) and it must not simply vanish;
+        2. restore AISIX's own value onto `endpoint`, but ONLY where the scrape
+           actually renamed one (`regex: (.+)` guards it), so series that never
+           carried an `endpoint` of their own — aisix_requests_total,
+           aisix_config_* — keep reading `endpoint="metrics"` instead of losing
+           the label to an empty replacement;
+        3. drop the now-duplicated `exported_endpoint`.
+
+      `metricRelabelings` (metric_relabel_configs), NOT `relabelings`, is
+      deliberate: metric relabeling is defined to run AFTER the scrape and
+      AFTER honor-labels conflict resolution, so `exported_endpoint` is
+      guaranteed to exist by the time rule 2 reads it. Target relabeling would
+      depend on whether the operator appends user rules before or after its own
+      `endpoint` rule — an ordering this chart should not have to know.
+
+      `honorLabels: true` was the other candidate and is REJECTED: it would let
+      an exporter overwrite `namespace`/`pod`/`job` too, which is how a scrape
+      starts lying about where a series came from.
+
+      `up{job="converse/aisix"}` is unaffected — Prometheus synthesises the
+      report samples after metric relabeling, so they never pass through here.
+      That is what the HA alert in charts/observability-dashboards selects on.
+      */}}
+      metricRelabelings:
+        - sourceLabels: [endpoint]
+          targetLabel: scrape_endpoint
+          action: replace
+        - sourceLabels: [exported_endpoint]
+          regex: (.+)
+          targetLabel: endpoint
+          action: replace
+        - regex: exported_endpoint
+          action: labeldrop
 {{- end }}
