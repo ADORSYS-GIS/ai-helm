@@ -1,0 +1,193 @@
+# charts/aisix — api7/aisix as a Responses→Chat bridge behind Envoy AI Gateway.
+#
+# ⚠️ DEPLOYMENT-SPECIFIC (ADR-0056/0057): the whole `resources` block below is
+# EMPTY here on purpose. The real provider keys / models / caller keys live in
+# ai-helm-values at `environments/prod/values/aisix.yaml`, injected by the
+# `$values` ref the charts/apps template builds for OCI-mode apps. With empty
+# defaults the chart still renders a bootable gateway (AISIX loads an empty
+# resources file happily) — it just serves no models until the values land.
+# `ci/lint-values.yaml` carries a representative prod-shaped render.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/api7/aisix
+  # Pinned — never `latest` (v1.0.0 is one day old; a floating tag on a
+  # brand-new gateway is how a spike turns into an outage).
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+# ── Listeners ────────────────────────────────────────────────────────────────
+# proxy  : the client-facing listener EAIG's Backend points at. Also serves
+#          /livez and /readyz (crates/aisix-server/src/main.rs — the drain
+#          coordinator flips /readyz to 503 on SIGTERM while the listener stays
+#          open, which is exactly what a readiness probe must observe).
+# metrics: the ONLY Prometheus scrape surface, plus /status/config,
+#          /status/ready and /status/models (aisix-admin::metrics_router).
+ports:
+  proxy: 3000
+  metrics: 9090
+
+service:
+  type: ClusterIP
+  annotations: {}
+
+# ── Credentials ──────────────────────────────────────────────────────────────
+# Both are read from existing in-namespace Secrets and exposed as env vars that
+# `resources.yaml` interpolates via `${VAR}` (AISIX interpolates string scalars
+# in the parsed YAML tree — crates/aisix-core/src/filesource/yaml.rs), so the
+# rendered ConfigMap never contains a credential.
+env:
+  # Upstream provider credential. `deepinfra-api-key-01` already exists in ns
+  # `converse` (owned by charts/ai-models-backends' ExternalSecret) with the key
+  # under data key `apiKey` — the same Secret the EAIG BackendSecurityPolicy for
+  # the direct deepinfra backend uses. No copy, no second AWS entry.
+  - name: DEEPINFRA_API_KEY
+    secretName: deepinfra-api-key-01
+    secretKey: apiKey
+  # The caller key EAIG presents to AISIX. Generated in-cluster by this chart
+  # (see `callerKey` below) — the very same Secret is the `secretRef` of the
+  # `aisix-01` APIKey BackendSecurityPolicy in ai-helm-values' models.yaml.
+  - name: CALLER_API_KEY
+    secretName: aisix-caller-key
+    secretKey: apiKey
+
+# ── Caller key: ESO Password generator → Secret ──────────────────────────────
+# There is no upstream secret to fetch: this credential only ever exists between
+# EAIG and AISIX, so it is MINTED in-cluster rather than stored in AWS Secrets
+# Manager. `generators.external-secrets.io/v1alpha1 Password` + an ExternalSecret
+# whose `dataFrom.sourceRef.generatorRef` points at it.
+#
+# `refreshInterval: "0"` — the ExternalSecret CRD field doc (ESO v2.10.0 on this
+# cluster) reads verbatim: "May be set to 0s to fetch and create it once." A
+# generator-backed ExternalSecret on a non-zero interval would mint a NEW
+# password every interval and silently break the EAIG side until its policy
+# reloaded, so the once-only semantic is load-bearing, not an optimisation.
+# Rotation is therefore explicit: delete the target Secret (or touch the
+# ExternalSecret spec) and ESO regenerates — see the README.
+callerKey:
+  # Target Secret name + data key. Kept in sync with `env[].secretName` above
+  # and with the BackendSecurityPolicy `secretRef.name` in ai-helm-values.
+  secretName: aisix-caller-key
+  secretKey: apiKey
+  refreshInterval: "0"
+  password:
+    length: 48
+    digits: 8
+    # No symbols: this value travels as a bearer token in an Authorization
+    # header and through the BackendSecurityPolicy — keep it URL/header-safe.
+    symbols: 0
+    noUpper: false
+    allowRepeat: true
+
+# ── Observability ────────────────────────────────────────────────────────────
+observability:
+  serviceName: aisix
+  logLevel: info
+  accessLog: true
+  podMonitor:
+    enabled: true
+    interval: 30s
+  # OTLP traces → Grafana Alloy in ns `observability`.
+  #
+  # ⚠️ AISIX 1.0.0's canonical `observability_exporter` schema constrains the
+  # OTLP endpoint to `^https://.+` OR http:// on one of
+  # `mock-otlp | otel-collector | 127.0.0.1 | localhost`
+  # (schemas/resources/observability_exporter.schema.json, from the
+  # `#[schemars(regex(...))]` on OtlpHttpConfig::endpoint). A plaintext
+  # in-cluster FQDN like `http://alloy.observability.svc.cluster.local:4318`
+  # is REJECTED by `aisix validate`, and Alloy's OTLP receiver here is plain
+  # HTTP. So the chart renders an ExternalName Service literally named
+  # `otel-collector` in this namespace, aliasing Alloy, and the exporter uses
+  # `http://otel-collector:4318/v1/traces` — which both matches the upstream
+  # regex and resolves. Remove the alias once upstream relaxes the pattern.
+  otlp:
+    # Exporter name in `observability_exporters`.
+    name: alloy-otlp
+    # Explicit endpoint. Empty → derived as `http://<alias.name>:4318/v1/traces`.
+    # Set it directly (to an `https://…` collector) and turn the alias off if you
+    # ever have one that satisfies the regex on its own.
+    endpoint: ""
+    # Fraction of requests exported as traces.
+    sampleRate: 1.0
+    # ExternalName alias rendered into this namespace so the derived URL matches
+    # AISIX's endpoint regex.
+    alias:
+      enabled: true
+      name: otel-collector
+      externalName: alloy.observability.svc.cluster.local
+
+# ── AISIX resources (resources.yaml) ─────────────────────────────────────────
+# Passed through to `resources.yaml` as YAML, verbatim. ai-helm-values owns the
+# content; the chart owns only the file's frame (`_format_version: "1"` and the
+# collection keys) so a values change never has to know the file format.
+#
+# The exact keys AISIX accepts are its own — see
+# https://github.com/api7/aisix `schemas/resources/*.schema.json` plus the
+# file-only sugar in `crates/aisix-core/src/filesource/desugar.rs`
+# (`models[].provider_key` by name, `api_keys[].key_env`).
+#
+# ⚠️ THE ONE FIELD THE WHOLE SPIKE TURNS ON: a provider key's `apis` map is
+# AUTHORITATIVE for `/v1/responses` (crates/aisix-proxy/src/dispatch.rs
+# ::serves_natively). Present-but-without-`responses` → AISIX BRIDGES the
+# request to `/v1/chat/completions`. ABSENT → it falls back to the vendor id and
+# a `provider: openai` key is assumed to serve Responses natively, so the
+# request is forwarded and DeepInfra 404s. `apis: {}` is therefore mandatory,
+# not decorative.
+resources:
+  providerKeys: []
+  models: []
+  apiKeys: []
+  # Extra `observability_exporters` entries, merged after the OTLP exporter the
+  # chart derives from `observability.otlp`.
+  observabilityExporters: []
+
+# ── Pod shape ────────────────────────────────────────────────────────────────
+# Named `podResources`, not `resources`: the top-level `resources` key above is
+# AISIX's own resource catalogue, and one chart cannot spell both the same way.
+podResources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# Long enough for the drain: shutdown.min_drain_secs (30s, while /readyz already
+# 503s) plus the in-flight tail. AISIX's own config comment sizes this from "the
+# stream still running at SIGTERM plus the one request its connection is reused
+# for".
+terminationGracePeriodSeconds: 120
+
+podSecurityContext:
+  runAsNonRoot: true
+  # The image creates uid 10001 (`useradd --system --uid 10001 aisix`) and runs
+  # `USER aisix`; pinned here so a PodSecurity check has something to read.
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+    # The image sets `cap_net_bind_service=+ep` as a FILE capability on
+    # /usr/local/bin/aisix. With the effective bit set the kernel refuses the
+    # exec outright when the cap is missing from the bounding set — the same
+    # trap charts/same-origin-proxy documents for caddy. We bind :3000/:9090
+    # (unprivileged), so it is never used at runtime; it just has to be present.
+    add:
+      - NET_BIND_SERVICE
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}

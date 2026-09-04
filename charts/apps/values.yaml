@@ -1349,6 +1349,49 @@ applications:
     destination:
       namespace: converse
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # AISIX — the /v1/responses → /v1/chat/completions bridge, BEHIND Envoy AI
+  # Gateway (spike: ADORSYS-GIS/ai-helm-values#380). EAIG keeps Authorino authz,
+  # the budget limiter, routing and metering; AISIX only translates the wire for
+  # ONE model whose upstream (DeepInfra) has no Responses endpoint. Purely
+  # additive — `deepseek-v4-flash-0731` keeps its direct route as the control.
+  #
+  # Namespace `converse` deliberately: that is where the AIServiceBackends, the
+  # BackendSecurityPolicies and the `deepinfra-api-key-01` Secret already live,
+  # so AISIX reads the existing provider Secret and OWNS the shared
+  # `aisix-caller-key` Secret (ESO Password generator) that the `aisix-01`
+  # BackendSecurityPolicy references — no cross-namespace copies. No
+  # CreateNamespace: `converse` has existed for a long time (created by the
+  # lightbridge-repo-auth entry's default syncOptions) and holds the whole
+  # gateway backend estate.
+  #
+  # syncOptions deliberately WITHOUT `Replace=true` (the template's default
+  # set): same reason apprise-api / same-origin-proxy / opencode-k8s-agent opt
+  # out — `kubectl replace` fails forever on resources that grow
+  # server-populated immutable fields.
+  #
+  # OCI mode (`chart:`): the template builds the OCI chart source AND injects the
+  # $values ref reading environments/prod/values/aisix.yaml, where the provider
+  # keys / models / api keys live (ADR-0056/0057). No `valuesFromRepo` flag —
+  # that one is only for `source:`-mode entries; OCI mode injects the ref
+  # unconditionally. No depsOverlay: the chart renders its own ExternalSecret.
+  # ⚠️ The chart must be published to OCI and this entry synced BEFORE the
+  # ai-helm-values side merges (see the RANGE-vs-HARD note at the top).
+  # Chart README: charts/aisix/README.md.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: aisix
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    chart: aisix
+    destination:
+      namespace: converse
+    syncPolicy:
+      syncOptions:
+        - ServerSideApply=true
+      automated:
+        prune: true
+        selfHeal: true
+
   # --- Self-hosted model serving on the Hetzner GPU fleet (ADR-0094/0095) ---
   # The orchestrator for every model that runs on hetzner-k8s-gpu-1/2. It emits
   # ONE ApplicationSet with a child per entry in charts/inference/values.yaml,

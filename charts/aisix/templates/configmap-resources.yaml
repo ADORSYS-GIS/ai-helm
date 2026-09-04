@@ -1,0 +1,57 @@
+{{- /*
+AISIX resource catalogue (`resources.yaml`, the `resources_file` source).
+
+A ConfigMap, not a Secret, ON PURPOSE: every credential in this file is written
+as a `${VAR}` reference that AISIX interpolates from the process environment at
+load time (crates/aisix-core/src/filesource/yaml.rs), and those env vars come
+from real Secrets via the Deployment's `secretKeyRef`. Nothing secret is
+rendered here — putting the catalogue in a Secret would only hide the model
+routing from `kubectl get`.
+
+The chart owns the FRAME (`_format_version` + the collection keys, which AISIX
+rejects unknown top-level keys against); ai-helm-values owns the CONTENT and
+passes it through verbatim as YAML, so adding a model never needs a chart change.
+*/ -}}
+{{- $o := .Values.observability.otlp -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aisix.fullname" . }}-resources
+  labels:
+    {{- include "aisix.labels" . | nindent 4 }}
+data:
+  resources.yaml: |
+    # Managed by the `aisix` Helm chart — do not edit in-cluster.
+    # Content source: ai-helm-values environments/<env>/values/aisix.yaml
+    _format_version: "1"
+
+    provider_keys:
+      {{- with .Values.resources.providerKeys }}
+      {{- toYaml . | nindent 6 }}
+      {{- else }} []
+      {{- end }}
+
+    models:
+      {{- with .Values.resources.models }}
+      {{- toYaml . | nindent 6 }}
+      {{- else }} []
+      {{- end }}
+
+    api_keys:
+      {{- with .Values.resources.apiKeys }}
+      {{- toYaml . | nindent 6 }}
+      {{- else }} []
+      {{- end }}
+
+    observability_exporters:
+      - name: {{ $o.name | quote }}
+        enabled: true
+        kind: otlp_http
+        endpoint: {{ include "aisix.otlpEndpoint" . | quote }}
+        sample_rate: {{ $o.sampleRate }}
+        # metadata_only: prompts and completions must not leave the gateway into
+        # Tempo. EAIG already meters the request; traces are for latency only.
+        content_mode: metadata_only
+      {{- with .Values.resources.observabilityExporters }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
