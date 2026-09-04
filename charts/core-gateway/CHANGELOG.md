@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/ADORSYS-GIS/ai-helm/compare/core-gateway-v0.4.1...core-gateway-v0.5.0) (2026-09-04)
+
+
+### Features
+
+* **core-gateway:** source the budget from the introspection, not a second metadata call ([#1109](https://github.com/ADORSYS-GIS/ai-helm/issues/1109)) ([edfe978](https://github.com/ADORSYS-GIS/ai-helm/commit/edfe978d2541499ce05e8fcb09d6bbeacbf2f3a7))
+* **core-gateway:** surface the budget limiter's decision in the access log ([#1097](https://github.com/ADORSYS-GIS/ai-helm/issues/1097)) ([ce6bc75](https://github.com/ADORSYS-GIS/ai-helm/commit/ce6bc75b856f5546ab50618c9e33dec820948a1a))
+* **core-gateway:** the Dynamic Budget Limiter's Lua filter, off by default ([#1095](https://github.com/ADORSYS-GIS/ai-helm/issues/1095)) ([9b327fb](https://github.com/ADORSYS-GIS/ai-helm/commit/9b327fbbaa823ede4caafe80e23df3371109d2ad))
+
+
+### Bug Fixes
+
+* **core-gateway:** the budget limiter's rawget(_G) is rejected by Envoy Gateway's Lua validator ([#1098](https://github.com/ADORSYS-GIS/ai-helm/issues/1098)) ([3f63b98](https://github.com/ADORSYS-GIS/ai-helm/commit/3f63b988ade09ba6c20883ae8d40beb752086a0d))
+
+
+### Documentation
+
+* **core-gateway:** record the budget limiter as enforcing, and AISIX as fleet-wide ([#1117](https://github.com/ADORSYS-GIS/ai-helm/issues/1117)) ([ed4ffa8](https://github.com/ADORSYS-GIS/ai-helm/commit/ed4ffa82fe3caf0af2a7dd1974f4fb84f687ada9))
+
 ## [0.4.1](https://github.com/ADORSYS-GIS/ai-helm/compare/core-gateway-v0.4.0...core-gateway-v0.4.1) (2026-09-02)
 
 

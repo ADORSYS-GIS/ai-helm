@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v3.0.1...apps-v3.1.0) (2026-09-04)
+
+
+### Features
+
+* **aisix:** add the aisix chart — /v1/responses → chat-completions bridge ([#1108](https://github.com/ADORSYS-GIS/ai-helm/issues/1108)) ([fd1b577](https://github.com/ADORSYS-GIS/ai-helm/commit/fd1b577cfc4923ceafb54b125a17e932e76c10a3))
+
+
+### Bug Fixes
+
+* **apps:** pin console-ui to converse-console ~0.2.4 ([#1091](https://github.com/ADORSYS-GIS/ai-helm/issues/1091)) ([e5f0bf2](https://github.com/ADORSYS-GIS/ai-helm/commit/e5f0bf2322257f7764ab11b81def83a583fe4722))
+
+
+### Documentation
+
+* **apps:** record the range-vs-hard chart-pin rule next to the pins ([#1094](https://github.com/ADORSYS-GIS/ai-helm/issues/1094)) ([42aa487](https://github.com/ADORSYS-GIS/ai-helm/commit/42aa487d9f9199064aeda3f95fb425b5a211b57f))
+
 ## [3.0.1](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v3.0.0...apps-v3.0.1) (2026-09-02)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-opencode-wellknown-v2.2.1...librechat-opencode-wellknown-v3.0.0) (2026-09-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **librechat-opencode-wellknown:** swap oauth2 + otel for lightbridge ([#1115](https://github.com/ADORSYS-GIS/ai-helm/issues/1115))
+
+### Features
+
+* **librechat-opencode-wellknown:** swap oauth2 + otel for lightbridge ([#1115](https://github.com/ADORSYS-GIS/ai-helm/issues/1115)) ([fc59776](https://github.com/ADORSYS-GIS/ai-helm/commit/fc59776c922637957991b2334fdcb22b7efe1f30))
+
 ## [2.2.1](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-opencode-wellknown-v2.2.0...librechat-opencode-wellknown-v2.2.1) (2026-09-02)
 
 
