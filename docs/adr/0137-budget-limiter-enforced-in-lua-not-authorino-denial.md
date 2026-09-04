@@ -1,9 +1,10 @@
 # ADR-0137: The budget limiter refuses in Lua, because Authorino's denial status is one constant per AuthConfig
 
-- Status: Proposed
-- Date: 2026-09-03 (amended 2026-09-03 — the gopher-lua control-plane runtime; amended again
+- Status: **Accepted — enforcing in prod since 2026-09-04T19:41Z**
+- Date: 2026-09-03 (amended 2026-09-03 — the gopher-lua control-plane runtime; amended
   2026-09-04 — the balance moved onto the existing introspection, one metadata call per request,
-  and this filter did not have to change)
+  and this filter did not have to change; amended again 2026-09-04 — **shadow 16:21Z, enforcing
+  19:41Z; the decision this ADR proposed is now the deployed one**, see the last section)
 - Deciders: @stephane-segning
 - Source of truth: [lightbridge-authz#658](https://github.com/ADORSYS-GIS/lightbridge-authz/issues/658)
   (the decision memo) and **lightbridge-authz ADR-0034** (`docs/adr/0034-dynamic-budget-limiter.md`
@@ -311,3 +312,125 @@ publish `enforced: false` for them, which this filter already handles as
 That is a **fail-open narrowing on two minority planes**, taken deliberately for the one-call
 guarantee. It cannot bite while the limiter is disabled, and it is a **blocker for Stage 3
 (enforce), not for Stage 2 (shadow)** — see ADR-0034 §15.3.
+
+---
+
+## Amendment, 2026-09-04: Status — enforcing since 2026-09-04T19:41Z
+
+This ADR stops being a proposal here. The filter it argued for is **live on the public API-key
+plane in prod**, refusing spent accounts with a real `402`.
+
+| | when (UTC) | what changed in `ai-helm-values` | result |
+|---|---|---|---|
+| Shadow | **2026-09-04 16:21Z** | [ai-helm-values#414](https://github.com/ADORSYS-GIS/ai-helm-values/pull/414) — `budgetLimiter.enabled: true`, `shadowMode: true` | every request carries a recorded decision; nothing refused. **0 5xx** across the window |
+| Enforce | **2026-09-04 19:41Z** | [ai-helm-values#417](https://github.com/ADORSYS-GIS/ai-helm-values/pull/417), commit `991268b` — `shadowMode: false` | `402 budget_exhausted` is live. **0 5xx** across the window |
+
+Both windows are clean, and that is the whole claim being made: the 2026-09-03 attempt
+(ai-helm-values#366) took the Gateway to `directResponse: 500` on *every* route within a minute,
+so "no 5xx" is the exact metric that incident taught us to read. The gate that now makes that
+class of failure impossible to ship — `tests/envoy-gateway-lua/run.sh`, EG's own translator run
+over the rendered chart — ran in CI on both promotions.
+
+### The decision, as deployed
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as API client
+    participant EA as ext_authz filter 5<br/>Authorino
+    participant AO as authz-opa<br/>lightbridgeintrospect
+    participant BL as budget-limiter.lua<br/>Lua filter 14
+    participant UP as model backend
+
+    C->>EA: POST /v1/chat/completions with an API key
+    EA->>AO: ONE metadata call — the introspection that already ran
+    AO-->>EA: budget_remaining_micros · budget_next_reset_at<br/>budget_snapshot_age_seconds
+    EA-->>EA: response.success.dynamicMetadata.budget =<br/>enforced · known · remaining_micros ·<br/>next_reset_at · account_id · snapshot_age_seconds
+    Note over EA,BL: EG's filter order is fixed and not configurable:<br/>ext_authz is 5, Lua is 12 plus index —<br/>billing-period 12 · model-policy 13 · budget-limiter 14
+
+    BL->>BL: read namespace envoy.filters.http.ext_authz, key budget
+
+    alt no budget metadata AND no x-ai-eg-model header
+        BL->>UP: ALLOW — no_budget_context<br/>model-catalog path or an MCP route with its own SecurityPolicy
+    else no budget metadata BUT x-ai-eg-model is present
+        BL-->>C: 503 budget_unavailable · reason budget_metadata_absent<br/>a metered model request that never met the AuthConfig
+    else enforced is not true
+        BL->>UP: ALLOW — not_enforced_on_this_plane<br/>internal plane. The catch-all AuthConfig is deny-all,<br/>so the Lua never even runs there
+    else known is not true
+        BL-->>C: 503 budget_unavailable · reason budget_unknown<br/>OUR outage, deliberately not the user's spent budget
+    else remaining_micros is not a number
+        BL-->>C: 503 budget_unavailable · reason budget_malformed
+    else remaining_micros greater than 0
+        BL->>UP: ALLOW — within_budget
+    else remaining_micros at or below 0
+        BL-->>C: 402 budget_exhausted<br/>account_id · remaining_micros 0 · next_reset_at · refill_url
+    end
+
+    BL-)BL: record decision · reason · remaining_micros · shadow ·<br/>snapshot_age_seconds into lightbridge.budget_limiter<br/>→ the access log's budget.* fields
+```
+
+Two details in that diagram are deliberate and easy to misread as bugs:
+
+- **`remaining_micros` in the 402 body is a hard-coded `0`**, not the computed (possibly negative)
+  balance — `exhaustedBody()` in `charts/core-gateway/files/budget-limiter.lua`. The recorded
+  decision and the access log carry the real signed figure; the *body* answers "how much is left",
+  and the answer to that is zero. Overdraft is our accounting, not the caller's.
+- **`next_reset_at` comes from the account's effective schedule**, published by the AuthConfig from
+  the introspection (`budget_next_reset_at`). The filter does not compute it and does not fall back
+  to the calendar markers `x-billing-period` / `x-billing-week` — those key the cost buckets below,
+  which are a different mechanism with a different reset.
+
+### The three states, with dates
+
+```mermaid
+stateDiagram-v2
+    direction TB
+    [*] --> Off
+
+    Off: OFF — budgetLimiter.enabled false.<br/>The block renders NOTHING; there is no filter in the chain.
+
+    Off --> ShadowAborted: 2026-09-03 — ai-helm-values PR 366
+    ShadowAborted: ABORTED SHADOW — rawget of the global table is nilled by<br/>Envoy Gateway's gopher-lua validator, buildLuas fails, and EG<br/>rewrites EVERY route on the Gateway to directResponse 500.
+    ShadowAborted --> Off: rolled back same day — ai-helm-values PR 367, recorded in 368
+
+    Off --> Shadow: 2026-09-04 16:21Z — ai-helm-values PR 414<br/>enabled true · shadowMode true
+    Shadow: SHADOW — the decision is computed and recorded on every<br/>request and NOTHING is refused. 0 5xx across the window.
+
+    Shadow --> Enforcing: 2026-09-04 19:41Z — ai-helm-values PR 417, 991268b<br/>shadowMode false
+    Enforcing: ENFORCING — 402 budget_exhausted is live on the API-key plane.<br/>0 5xx across the window. The monthly and weekly cost buckets<br/>still compose with it: effective cap = min of plan bucket and ledger.
+
+    Enforcing --> Shadow: ROLLBACK is ONE value — shadowMode true.<br/>No chart release, no filter removal, no restart.
+
+    Enforcing --> LedgerOnly: 2026-10-01 — owner ruling
+    LedgerOnly: LEDGER ONLY — the BackendTrafficPolicy monthly/weekly rules<br/>are deleted and the ledger becomes the only cap.
+    LedgerOnly --> [*]
+
+    note right of Off
+        States nothing can enter, by construction:
+        · "enforcing on the internal plane" — its AuthConfig
+          publishes enforced:false, so the filter allows.
+        · "enforcing on the catch-all plane" — that AuthConfig
+          is deny-all, so no request ever reaches the Lua.
+        · "refusing while the script is broken" — the pcall
+          guard answers 503, and in shadow it only logs.
+    end note
+```
+
+### What is deliberately NOT finished
+
+The **cost buckets stay until 2026-10-01** — the shared cross-model monthly and weekly
+`BackendTrafficPolicy` rules of [ADR-0111](./0111-calendar-aligned-billing-period.md) /
+[ADR-0119](./0119-weekly-sub-budget-anti-front-loading.md) (`charts/core-gateway/templates/backendtrafficpolicy.yaml`).
+They are not superseded by this filter and were not deleted with it, per the owner's ruling. Until
+that date the two mechanisms **compose**: a request is refused if *either* says stop, so the
+effective cap on an account is `min(plan bucket, ledger)` — and a `429` from the bucket and a `402`
+from this filter mean genuinely different things to a client. Deleting them is a one-commit change
+against `backendtrafficpolicy.yaml` plus the `monthlyBudget` / `weeklyBudget` values in
+`ai-helm-values`; `charts/core-gateway/README.md` § "The 2026-10-01 commit" lists exactly what it
+touches.
+
+### Where to look when it misbehaves
+
+`charts/core-gateway/README.md` § "The budget limiter" is the operator-facing version of this
+section — the flags, what each status means, the rollback, and the access-log fields to group by.
+The rollout sequence itself lives in `ai-helm-values` `docs/runbooks/budget-limiter-rollout.md`.

@@ -8,7 +8,10 @@ EAIG and does exactly one thing: it translates `POST /v1/responses` into
 `POST /v1/chat/completions` for an upstream that has no Responses endpoint, and
 re-encodes the answer (JSON and SSE) back into Responses shape.
 
-Source of truth for the spike: **[ai-helm-values#380](https://github.com/ADORSYS-GIS/ai-helm-values/issues/380)**.
+Source of truth: **[ai-helm-values#380](https://github.com/ADORSYS-GIS/ai-helm-values/issues/380)**
+(the original spike) under epic
+**[ai-helm-values#392](https://github.com/ADORSYS-GIS/ai-helm-values/issues/392)**
+(the fleet-wide rollout this became).
 
 ## Why this exists
 
@@ -23,16 +26,80 @@ we have. Neither gateway in front of them translates:
   `anthropic-messages → openai-chat` and embeddings→vertex.
 - **AISIX** does, per provider key, in `crates/aisix-proxy/src/responses_bridge.rs`.
 
-## Spike scope
+## Status — what actually routes through AISIX
 
-One model (`deepseek-v4-flash-aisix` → DeepInfra
-`deepseek-ai/DeepSeek-V4-Flash-0731`), one provider key, one caller key. The
-existing `deepseek-v4-flash-0731` model keeps its direct route and is the
-**control** for the parity checks. Nothing is cut over; this chart is purely
-additive, and rollback is deleting the app entry plus the two values entries.
+**It is no longer a one-model spike.** As of 2026-09-04 AISIX is the route for
+the bulk of the chat fleet, so the HA shape below is load-bearing rather than
+precautionary — for every model in the table, there is no fallback path to the
+upstream.
 
-Out of scope: migrating other backends, replacing EAIG, AISIX Cloud, budgets in
-AISIX (our DBL stays), the Anthropic-Messages bridge (it exists; unused here).
+| | routes through AISIX | notes |
+|---|---|---|
+| Chat models | **23 of 25** | the two exceptions keep their direct EAIG route |
+| DeepInfra model kinds | **all of them** | chat, and every other kind DeepInfra serves |
+| Chart | `charts/aisix` v0.2.x, `appVersion` **1.0.0** (upstream api7/aisix) | OCI-mode; values from `ai-helm-values` `environments/prod/values/aisix.yaml` |
+| Replicas | **2**, PDB `minAvailable: 1`, preferred anti-affinity, surge-only rollout | [#1111](https://github.com/ADORSYS-GIS/ai-helm/pull/1111) |
+| Boot guard | `enableServiceLinks: false` | [#1110](https://github.com/ADORSYS-GIS/ai-helm/pull/1110) — **load-bearing**, see below |
+| Tracing | `otel-collector` `ExternalName` alias → Alloy | **load-bearing**, see below |
+| Telemetry names | `service.name` = `aisix-dp`; `endpoint` label given back to AISIX | [#1112](https://github.com/ADORSYS-GIS/ai-helm/pull/1112) |
+
+Rollout tracker: epic
+[ai-helm-values#392](https://github.com/ADORSYS-GIS/ai-helm-values/issues/392).
+
+**Two things in this chart look like leftovers and will break traffic if tidied
+away.** Both have their own section further down; they are listed here so a
+reader who never scrolls that far still sees them:
+
+- `enableServiceLinks: false` — without it Kubernetes injects `AISIX_PORT`,
+  which AISIX's config loader reads as a top-level field `port`, and the process
+  **refuses to boot**. It does not reproduce under `docker run`.
+- `svc/otel-collector` — a selector-less `ExternalName` aliasing Alloy, named
+  after no workload in `converse`. It exists only to satisfy a regex in AISIX's
+  resource schema. Delete it and traces stop while the proxy keeps answering
+  `200`, so nothing pages.
+
+Still out of scope, deliberately: replacing EAIG, AISIX Cloud, budgets or rate
+limiting **inside** AISIX (EAIG keeps Authorino authz, the Dynamic Budget
+Limiter and the metering — one enforcement point, one set of counters that can
+agree with the invoice), and the Anthropic-Messages bridge (it exists upstream;
+unused here).
+
+### `appVersion` is the upstream release, and it finally survives publishing
+
+`Chart.yaml` carries `version: 0.2.x` (this chart's own semver, whose PATCH the
+publish workflow derives from commit count) and `appVersion: "1.0.0"` (the real
+api7/aisix release, matching `values.yaml` `image.tag`). Until
+[#1116](https://github.com/ADORSYS-GIS/ai-helm/pull/1116) the OCI publish passed
+the *derived chart version* to `helm package --app-version` as well, clobbering
+the authored value — so every chart published through that workflow shipped
+`appVersion == version`, and `app.kubernetes.io/version` on every deployed pod
+was this repo's patch counter rather than the upstream app version.
+
+The fix drops `--app-version` from the packaging call. It is **not yet visible
+in the registry**: as of 2026-09-04 20:00Z `oci://ghcr.io/adorsys-gis/charts/aisix`
+still shows `0.2.5` / `0.2.5`, because that artifact was published before the
+fix. It proves itself on the **next** chart publish, where a `helm show chart`
+should report `0.2.6` (or later) against `appVersion: 1.0.0`:
+
+```bash
+helm show chart oci://ghcr.io/adorsys-gis/charts/aisix --version <next> | grep -E '^(app)?[Vv]ersion'
+```
+
+Nothing consumes `appVersion` beyond that label — image tags come from
+`.Values.image.tag`, never `.Chart.AppVersion`.
+
+### Operating it — the runbooks live in `ai-helm-values`
+
+This README is the *chart's* contract. Everything about the running deployment
+is on the values side:
+
+| document | what it answers |
+|---|---|
+| [`docs/runbooks/aisix.md`](https://github.com/ADORSYS-GIS/ai-helm-values/blob/main/docs/runbooks/aisix.md) | capacity + HA numbers (can one surviving replica carry the traffic?), the operational runbook. Renamed from `aisix-spike.md` in [#1113](https://github.com/ADORSYS-GIS/ai-helm/pull/1113) |
+| [ai-helm-values#392](https://github.com/ADORSYS-GIS/ai-helm-values/issues/392) | the rollout epic — which models have moved and which have not |
+| [ai-helm-values#393](https://github.com/ADORSYS-GIS/ai-helm-values/issues/393) | generating `provider_keys` from `models.yaml` (the `envFromSecrets` list that grows to ~14 entries) |
+| [ai-helm-values#383](https://github.com/ADORSYS-GIS/ai-helm-values/issues/383) / [#399](https://github.com/ADORSYS-GIS/ai-helm-values/issues/399) | the `otel-collector` alias: why it exists and what would let it go |
+| `environments/prod/values/aisix.yaml` | the actual provider keys, models and caller keys in prod |
 
 ## The request path
 
