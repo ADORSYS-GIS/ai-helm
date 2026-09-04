@@ -28,6 +28,27 @@ spec:
     spec:
       # AISIX talks to no Kubernetes API.
       automountServiceAccountToken: false
+      {{- /*
+        ⚠️ LOAD-BEARING, found by a live CrashLoopBackOff on the first sync:
+            Error: config load failed: failed to load configuration: deserialize:
+            unknown field `port`, expected one of `etcd`, `resources_file`, `proxy`, …
+
+        AISIX's `Config::load_from_path` layers EVERY `AISIX_*` environment
+        variable on top of the YAML as a deserialisation override (that is the
+        documented mechanism, and it is why the image's own entrypoint has to
+        `unset AISIX_CONFIG_PATH` before exec'ing the binary). Kubernetes' legacy
+        docker-link service variables inject exactly that shape for every Service
+        in the namespace — and this chart's Service is named `aisix`, so the pod
+        gets `AISIX_PORT=tcp://10.x.x.x:3000`, `AISIX_SERVICE_HOST`,
+        `AISIX_PORT_3000_TCP`, … The loader reads `AISIX_PORT` as a top-level
+        field `port`, which does not exist, and the process refuses to boot.
+
+        Turning the links off is the fix: nothing here consumes them (every
+        upstream is addressed by DNS), and no amount of chart config can make the
+        collision safe while the Service keeps the name the EAIG Backend
+        (`aisix.converse.svc.cluster.local`) depends on.
+      */}}
+      enableServiceLinks: false
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
