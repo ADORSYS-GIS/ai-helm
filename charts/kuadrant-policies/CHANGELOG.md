@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/ADORSYS-GIS/ai-helm/compare/kuadrant-policies-v1.2.1...kuadrant-policies-v1.3.0) (2026-09-04)
+
+
+### Features
+
+* **core-gateway:** the Dynamic Budget Limiter's Lua filter, off by default ([#1095](https://github.com/ADORSYS-GIS/ai-helm/issues/1095)) ([9b327fb](https://github.com/ADORSYS-GIS/ai-helm/commit/9b327fbbaa823ede4caafe80e23df3371109d2ad))
+
 ## [1.2.1](https://github.com/ADORSYS-GIS/ai-helm/compare/kuadrant-policies-v1.2.0...kuadrant-policies-v1.2.1) (2026-09-02)
 
 

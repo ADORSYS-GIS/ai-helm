@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-v1.1.0...lightbridge-v1.1.1) (2026-09-04)
+
+
+### Documentation
+
+* **apps:** record the range-vs-hard chart-pin rule next to the pins ([#1094](https://github.com/ADORSYS-GIS/ai-helm/issues/1094)) ([42aa487](https://github.com/ADORSYS-GIS/ai-helm/commit/42aa487d9f9199064aeda3f95fb425b5a211b57f))
+
 ## [1.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-v1.0.1...lightbridge-v1.1.0) (2026-09-02)
 
 
