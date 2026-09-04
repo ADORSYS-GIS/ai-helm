@@ -85,6 +85,24 @@ check 'known=true but no number -> 503 (the two sides drifted)' 503 10100 \
   -H 'x-ai-eg-model: gemma-4'
 
 echo
+echo "── the snapshot age is observability, never a decision input (ADR-0034 §15) ──"
+check 'age present + remaining > 0 -> still allowed'         200 10100 \
+  -H 'x-test-budget: enforced=true,known=true,remaining_micros=20790000,snapshot_age_seconds=9,account_id=acct_1' \
+  -H 'x-ai-eg-model: gemma-4'
+check 'a HUGE age does not turn a positive balance into a refusal' 200 10100 \
+  -H 'x-test-budget: enforced=true,known=true,remaining_micros=20790000,snapshot_age_seconds=86400,account_id=acct_1' \
+  -H 'x-ai-eg-model: gemma-4'
+check 'age present + remaining == 0 -> still 402, unchanged'  402 10100 \
+  -H 'x-test-budget: enforced=true,known=true,remaining_micros=0,snapshot_age_seconds=9,account_id=acct_1' \
+  -H 'x-ai-eg-model: gemma-4'
+check 'a malformed age cannot break the decision path'        402 10100 \
+  -H 'x-test-budget: enforced=true,known=true,remaining_micros=0,snapshot_age_seconds=nonsense,account_id=acct_1' \
+  -H 'x-ai-eg-model: gemma-4'
+check 'age absent (older AuthConfig render) -> unchanged'     200 10100 \
+  -H 'x-test-budget: enforced=true,known=true,remaining_micros=1,account_id=acct_1' \
+  -H 'x-ai-eg-model: gemma-4'
+
+echo
 echo "── requests this filter must not touch ───────────────────────────────────────"
 check 'metadata absent + no model -> allowed (non-AI route)' 200 10100
 check 'enforced=false (internal plane) -> allowed'           200 10100 \
