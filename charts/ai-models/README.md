@@ -41,12 +41,17 @@ per-model YAML.
 | `backendDefaults` (YAML anchors) | Provider-level shape: schema, prefix, fqdn, security type |
 | `backends` | Map of provider accounts (fw-01, deepinfra-01, …). Flows into `ai-models-backends` and to each model's `backendsInventory`. |
 | `models` | The model fleet. Each entry → one child Application. Set `enabled: false` to omit. |
-| `rateLimitBudgeting.plans` | **Ordered, append-only list** (ADR-0084/0110) of `{id, monthlyBudgetUsd?, burst?}` — never reorder, insert or remove. Budgets here are **dormant** under `sharedBudget.enabled` (the live cap is core-gateway `backendTrafficPolicy.monthlyBudget.plans`; keep the two in sync). The per-minute `burst:` blocks are **commented out** (2026-08-01) — no per-minute limiting today. |
+| `rateLimitBudgeting.plans` | **Ordered, append-only list** (ADR-0084/0110) of `{id, monthlyBudgetUsd?, burst?}` — never reorder, insert or remove. The cost fields are **gone** (ai-helm-values#427, 2026-09-05) and every per-minute `burst:` block is **commented out** (2026-08-01), so this list renders no rule at all today. |
+| `requestRate.defaultRpmPerKey` | Requests/min applied to any model whose catalog entry omits `rpmPerKey`. Not a list ⇒ no ADR-0084 ordering hazard. |
+| `models.<id>.rpmPerKey` | Per-model override of the above. **An explicit `0` means "no request-rate cap for this model" and is honoured** — the template resolves it with `hasKey`, not Helm's `default`, because `default 60 0` would return 60. |
 
 ## Adding a model
 
 1. Add an entry under `models:` in `values.yaml` with `kind`, `pricing`,
-   `backends`, optional `rateLimitBudgeting`.
+   `backends`, optional `rateLimitBudgeting`, optional `rpmPerKey` (omit it and
+   the model inherits `requestRate.defaultRpmPerKey`; pick the number from the
+   model's weight class and its backend — a self-hosted vLLM absorbs far less
+   than a SaaS provider).
 2. (If new backend) Add to `backends:`.
 3. Push — the `ApplicationSet` controller picks up the new element and
    creates a child Application within a reconcile cycle.

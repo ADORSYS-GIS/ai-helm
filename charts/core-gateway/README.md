@@ -26,53 +26,6 @@ ext_authz at 5):
 
 ---
 
-## Rate limiting — what this chart's `BackendTrafficPolicy` actually caps
-
-Two independent rule families can render into `spec.rateLimit` on the gateway-wide
-`BackendTrafficPolicy`. Neither is on by chart default; both are set from `ai-helm-values`
-`environments/prod/values/core-gateway.yaml`. When neither renders the `rateLimit:` block is
-omitted entirely — the CRD's `global.rules` is `minItems: 1`, so an empty block would get the
-whole policy rejected and take this gateway's timeout/retry/loadBalancer down with it.
-
-| family | values key | keyed on | unit | cost |
-|---|---|---|---|---|
-| cost buckets (monthly + weekly) | `backendTrafficPolicy.monthlyBudget` | `x-account-id` × `x-billing-plan` × `x-billing-period`/`x-billing-week` | `Year` (a TTL only — [ADR-0112](../../docs/adr/0112-year-unit-so-the-billing-period-is-the-only-rotation.md)) | micro-USD, from `llm_custom_total_cost` |
-| **request rate** | `backendTrafficPolicy.rateLimit.perKeyModelRpm` | `x-api-key-id` × `x-ai-eg-model`, **and** `x-account-id` × `x-ai-eg-model` | `Minute` | **none** — +1 per request |
-
-**The cost buckets render for nobody today.** `ai-helm-values#427` deleted `monthlyBudget` from
-prod on 2026-09-05: a plan bucket that knew nothing about the ledger made the effective cap
-`min(plan bucket, ledger)`, so a refill could not clear a spent bucket and an in-credit account was
-answered `429 request_rate_limited`. Spend is now capped by the Dynamic Budget Limiter's ledger
-alone, at `402`. The template logic is kept and unchanged.
-
-**`perKeyModelRpm` is what stops spam.** Deleting the cost buckets removed the last rule from this
-policy — every per-model `burst:` family had already been commented out fleet-wide on 2026-08-01 —
-so from 2026-09-05 the gateway had no request-rate ceiling at all. Owner ruling 2026-09-06: *"a
-rate limit per api-key id and per model would be enough, so that spamming is avoided — no cost hit,
-no tier."* `perKeyModelRpm: N` renders exactly that: two `shared: true` rules, `unit: Minute`, no
-`cost:` block, no plan or tier descriptor.
-
-Three things about the shape, all deliberate — the template's § "Request-rate rules" comment is the
-long version:
-
-- **Two rules, not one.** `x-api-key-id` is `""` on the internal AuthConfig (LibreChat / LCI /
-  k8s SAs) and on GitHub-Actions repobinding tokens. An empty header generates no Envoy
-  descriptor, so a single key-scoped rule would leave those planes unlimited. `x-account-id` is
-  stamped on every plane and is the floor under all of them.
-- **Gateway-scoped, not per-model.** Envoy AI Gateway stamps `x-ai-eg-model` on every model
-  request, so `type: Distinct` on it already means "per model" — with one number in one place
-  instead of 28 copies in `charts/ai-model`'s ordered, append-only `plans` list.
-- **`unit: Minute`, and no period marker.** [ADR-0111](../../docs/adr/0111-calendar-aligned-billing-period.md)/[ADR-0112](../../docs/adr/0112-year-unit-so-the-billing-period-is-the-only-rotation.md)'s
-  `x-billing-period` + `unit: Year` trick exists only because a *calendar* month cannot be
-  expressed by Lyft's window epoch. A per-minute window is exactly what `Minute` means. Do not
-  copy that pattern here.
-
-Rendered **after** the cost rules, so re-enabling `monthlyBudget` renumbers the per-minute rules
-rather than the per-month ones — [ADR-0084](../../docs/adr/0084-ratelimit-plan-order-is-append-only.md)'s
-hazard costs 60 seconds of allowance in that direction and a whole month's accounting in the other.
-
----
-
 ## The budget limiter
 
 **Status: ENFORCING in prod since 2026-09-04T19:41Z.** This is not a description of an intended

@@ -1,8 +1,15 @@
 {{- /*
 BackendTrafficPolicy — per-model rate limiting (ADR-0021).
 
-Up to THREE rule families per plan, all composed (Envoy denies if ANY matched
-bucket is exhausted). ⚠️ Families 1 and 2 render for NO plan as of 2026-08-01 —
+SIX rule families in total, all composed (Envoy denies if ANY matched bucket is
+exhausted). Family 6 — `rpmPerKey`, requests/min per (identity × THIS model) —
+is the ONLY one that renders on the live fleet today; it is described in full at
+its own § 6 note further down and is rendered LAST in the rules list. Everything
+below this paragraph describes families 1–5, all of which currently render
+nothing.
+
+Up to THREE rule families per plan, all composed. ⚠️ Families 1 and 2 render for
+NO plan as of 2026-08-01 —
 every `burst:` block is commented out in charts/ai-models/values.yaml, so
 per-minute limiting is off fleet-wide and the gateway-wide shared monthly budget
 is the only cap left. The logic here is intact and deliberately untouched:
@@ -16,6 +23,10 @@ which drops the whole rateLimit block when no family renders at all.
   2. burst tokens/min   — keyed on x-account-id + x-billing-plan, cost = the llm_total_token
                           response metadata (TotalToken) the AIGatewayRoute emits.
                           DISABLED (no plan sets burst.tokensPerMin).
+  6. request rate       — requests/min per (x-api-key-id × x-ai-eg-model) and per
+                          (x-account-id × x-ai-eg-model), from the per-model
+                          `rpmPerKey`. NO cost, NO plan/tier descriptor,
+                          `unit: Minute`. THE ONLY FAMILY LIVE TODAY. See § 6.
   3. monthly budget     — micro-USD, cost = llm_custom_total_cost. Emitted ONLY
                           for plans that carry a budget → service/internal stay
                           uncapped. ⚠️ CAVEAT: because this BTP targets the
@@ -134,6 +145,61 @@ makes the rendered manifest match what the API server actually stores.
   {{- if $tier.monthlyBudgetUsd }}{{ $hasRules = true }}{{ end }}
 {{- end }}
 {{- if $projectEnvelope.monthlyBudgetUsd }}{{ $hasRules = true }}{{ end }}
+{{- /* ── 6. request rate: requests/min per (identity x THIS model) ────────────
+       Owner ruling 2026-09-06: "a rate limit per api-key id and per model would
+       be enough, so that spamming is avoided - no cost hit, no tier." Amended the
+       same day: the number belongs to the MODEL, because 120/min against a small
+       DeepSeek on DeepInfra and 120/min against a self-hosted vLLM on our own two
+       GPUs are not the same event. So `rpmPerKey` is a per-model value, set next
+       to that model's prices in ai-helm-values `models.yaml`, and it renders HERE
+       rather than as one gateway-scoped rule with a model descriptor.
+
+       WHY HERE AND NOT ON THE GATEWAY-WIDE BTP - the ADR-0084 argument, which is
+       the deciding one. A gateway-scoped shape would put every model's rule into
+       ONE ordered `global.rules` list on ONE policy, and the rule's INDEX is part
+       of the Lyft counter key. Changing one model's number is fine, but ADDING or
+       REMOVING a model - which happens routinely in `models.yaml`, several times a
+       month - would renumber every rule after it and silently orphan those models'
+       counters. That is precisely the 2026-07-16 incident ADR-0084 was written
+       about. Here, each model owns its OWN BackendTrafficPolicy object: the rule
+       list has exactly these two entries, indices 0 and 1, for every model
+       independently. Editing, adding or deleting model X cannot renumber model Y,
+       because Y's counters live under Y's own policy and route. The per-model
+       shape is the one where the hazard cannot occur, so it wins.
+
+       (The residual, and it is deliberate: if a plan `burst:` block is ever
+       uncommented, families 1-5 above take indices 0..N and these two shift. A
+       shifted per-MINUTE counter costs at most 60 seconds of allowance - which is
+       exactly why they render LAST.)
+
+       `x-ai-eg-model` is matched `Exact` against THIS model's name, the same way
+       families 1, 2 and 4 do it. Envoy Gateway already namespaces this policy's
+       counters per route, so the descriptor is belt-and-braces - but it makes the
+       Redis key self-describing and matches the shape every other per-model rule
+       here uses.
+
+       NO `cost:` block: the default request cost is 1, so the counter counts
+       REQUESTS, not micro-USD. This is a rate cap, never a second cap on money -
+       `min(plan bucket, ledger)` is the bug ai-helm-values#427 deleted and it must
+       not return through this door. NO plan/tier descriptor either, per the ruling.
+       And `unit: Minute` is the plain, correct unit: ADR-0111/0112's
+       x-billing-period + `unit: Year` trick exists ONLY because a CALENDAR month
+       cannot be expressed by Lyft's window epoch. Do not copy it here.
+
+       TWO rules, not one. `x-api-key-id` is stamped from the `api_key_id` claim by
+       the public AuthConfig, but is a constant "" on the internal AuthConfig
+       (LibreChat / LCI / k8s SAs) and empty for GitHub-Actions repobinding and
+       Keycloak-human tokens. An Envoy header descriptor is not generated for an
+       absent-or-empty header, so a key-only rule would leave those planes
+       completely unlimited. `x-account-id` is stamped on every plane, so the
+       second rule is the floor nothing falls through. On the API-key plane both
+       match and compose (AND) at the same number.
+
+       `rpmPerKey: 0` (the chart default) renders neither rule - that is how a
+       model opts out, and it is the rollback. */ -}}
+{{- $rpmPerKey := int64 (.Values.rpmPerKey | default 0) -}}
+{{- if lt $rpmPerKey 0 }}{{ fail (printf "ai-model %s: rpmPerKey must be >= 0, got %d" $modelName $rpmPerKey) }}{{ end }}
+{{- if gt $rpmPerKey 0 }}{{ $hasRules = true }}{{ end }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -396,5 +462,43 @@ spec:
               metadata:
                 namespace: io.envoy.ai_gateway
                 key: {{ $costKey }}
+        {{- end }}
+        {{- /* ── 6. request rate: requests/min per (identity x THIS model) ──
+               Rendered LAST on purpose — see the long § 6 note near the top of
+               this file for the ADR-0084 reasoning and for why there are two
+               rules rather than one. No `cost:` block, no plan/tier descriptor,
+               `unit: Minute`. ── */}}
+        {{- if gt $rpmPerKey 0 }}
+        - clientSelectors:
+            - headers:
+                - invert: false
+                  # The API key's own id (`api_key_id` claim -> x-api-key-id in
+                  # the AuthConfig's success headers). Absent/"" on the internal,
+                  # repobinding and Keycloak-human planes ⇒ no descriptor ⇒ this
+                  # rule does not fire there; the x-account-id rule below is what
+                  # covers them.
+                  name: x-api-key-id
+                  type: Distinct
+                - invert: false
+                  name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $modelName | quote }}
+          limit:
+            requests: {{ $rpmPerKey }} # rpm-rule/0 · {{ $modelName }} — {{ $rpmPerKey }} req/min per API-key id. NO cost block ⇒ +1 per request.
+            unit: Minute
+        - clientSelectors:
+            - headers:
+                - invert: false
+                  # Stamped on EVERY plane, so this rule is the floor nothing
+                  # falls through.
+                  name: x-account-id
+                  type: Distinct
+                - invert: false
+                  name: x-ai-eg-model
+                  type: Exact
+                  value: {{ $modelName | quote }}
+          limit:
+            requests: {{ $rpmPerKey }} # rpm-rule/1 · {{ $modelName }} — {{ $rpmPerKey }} req/min per account id. NO cost block ⇒ +1 per request.
+            unit: Minute
         {{- end }}
   {{- end }}
