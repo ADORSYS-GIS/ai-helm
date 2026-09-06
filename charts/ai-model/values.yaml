@@ -67,6 +67,26 @@ timeout:
   requestTimeout: 600s
   connectionIdleTimeout: 1h
 
+# ── Request-rate ceiling for THIS model (owner ruling 2026-09-06) ──────────
+# Requests per minute per (API-key id x this model), plus the same per
+# (account id x this model) so no plane is unlimited. Renders two rules on this
+# model's own BackendTrafficPolicy: `unit: Minute`, NO `cost:` block (the
+# counter counts REQUESTS, +1 each, never micro-USD) and NO plan/tier
+# descriptor.
+#
+# It is PER MODEL because the impact is per model: 120 req/min against a small
+# DeepSeek on DeepInfra and 120 req/min against a self-hosted vLLM on our own
+# two GPUs are not the same event. The orchestrator (charts/ai-models) reads
+# `rpmPerKey` off each model's own catalog entry and falls back to
+# `requestRate.defaultRpmPerKey` when the entry omits it.
+#
+# ⚠️ ai-helm / ai-helm-values split (ADR-0055/0056): the real per-model numbers
+# live in `ai-helm-values` `environments/prod/values/models.yaml`, next to each
+# model's prices. `0` here is only the structural default that keeps a
+# standalone render valid; it is also, deliberately, how a model OPTS OUT and
+# how the whole feature rolls back (`rpmPerKey: 0` ⇒ neither rule renders).
+rpmPerKey: 0
+
 # Optional: per-model rate-limit overrides (a DIFFERENT, currently-unconsumed
 # key from the `plans`/`tiers` lists below — reserved for a future per-model
 # `{ free: 10, pro: 50 }`-style override; do not confuse the two). When absent,

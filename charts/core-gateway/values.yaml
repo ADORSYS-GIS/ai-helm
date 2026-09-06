@@ -250,33 +250,6 @@ backendTrafficPolicy:
     enabled: false
     plans: []
 
-  # ── Request-rate ceiling: requests/min per (identity × model) ─────────────
-  # Owner ruling 2026-09-06: "a rate limit per api-key id and per model would be
-  # enough, so that spamming is avoided — no cost hit, no tier."
-  #
-  # `perKeyModelRpm: N` renders TWO `shared: true` rules on the gateway-wide BTP,
-  # both `unit: Minute`, both with NO `cost:` block (so the counter counts
-  # REQUESTS, +1 each, never micro-USD):
-  #   rpm-rule/0 — (x-api-key-id × x-ai-eg-model)
-  #   rpm-rule/1 — (x-account-id × x-ai-eg-model)
-  # The second is not a duplicate: x-api-key-id is "" on the internal plane and
-  # on GitHub-Actions repobinding tokens, and an empty header generates no
-  # descriptor, so without it those planes would be unlimited. See the long
-  # § "Request-rate rules" comment in templates/backendtrafficpolicy.yaml for the
-  # full rationale — why gateway-scoped rather than per-model, why `shared: true`,
-  # and why ADR-0111/0112's period-marker + `unit: Year` trick must NOT be copied
-  # to a per-minute rule.
-  #
-  # ⚠️ ai-helm / ai-helm-values split (ADR-0055/0056), same as monthlyBudget
-  # above: the real production figure lives in `ai-helm-values`
-  # `environments/prod/values/core-gateway.yaml` under
-  # `backendTrafficPolicy.rateLimit.perKeyModelRpm`. `0` here is only the
-  # structural default that keeps a standalone `helm template`/`helm lint`
-  # valid — it is NOT a dormant feature flag waiting to be switched on, the
-  # feature is live in the values repo. Raise or lower the limit THERE.
-  rateLimit:
-    perKeyModelRpm: 0
-
   # Whole-request ceiling for routes this gateway-wide policy governs (the
   # non-model routes — model routes are governed by their own per-model BTP in
   # charts/ai-model, which replaces this one). ADR-0034.

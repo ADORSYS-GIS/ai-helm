@@ -1,20 +1,4 @@
 {{- $btp := .Values.backendTrafficPolicy | default dict -}}
-{{- $mb := $btp.monthlyBudget | default dict -}}
-{{- $rl := $btp.rateLimit | default dict -}}
-{{- /* Requests/minute per (API-key id × model) and per (account id × model) — see
-       the § "Request-rate rules" block further down for the whole rationale. `0`
-       (the chart default) renders no rule. */ -}}
-{{- $rpm := int64 ($rl.perKeyModelRpm | default 0) -}}
-{{- if lt $rpm 0 }}{{ fail (printf "core-gateway rateLimit.perKeyModelRpm: must be >= 0, got %d" $rpm) }}{{ end }}
-{{- /* `rateLimit.global.rules` is a REQUIRED, minItems-1 list in the
-       BackendTrafficPolicy CRD, so emitting the block with an empty list gets the
-       WHOLE policy rejected by the API server — which would take this gateway's
-       timeout / retry / loadBalancer / circuitBreaker down with it, a far bigger
-       blast radius than the rate limits themselves. Both rule families are
-       independently optional (the cost buckets have rendered nothing since
-       ai-helm-values#427), so decide up front whether ANY rule renders and omit
-       the block entirely when none does. Same guard as charts/ai-model. */ -}}
-{{- $hasRules := or (and $mb.enabled (gt (len ($mb.plans | default list)) 0)) (gt $rpm 0) -}}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -57,20 +41,7 @@ spec:
     http:
       requestTimeout: {{ . | quote }}
   {{- end }}
-  {{- /* ── THIS POLICY'S `rateLimit` BLOCK HAS TWO INDEPENDENT RULE FAMILIES ──
-     1. the shared cross-model COST buckets (`monthlyBudget`, immediately below).
-        ⚠️ They render for NOBODY on the live fleet: ai-helm-values#427 deleted
-        `backendTrafficPolicy.monthlyBudget` from `environments/prod/values/
-        core-gateway.yaml` on 2026-09-05, because a plan bucket that knew nothing
-        about the ledger made the effective cap `min(plan bucket, ledger)` and a
-        refill could not clear a spent bucket. The logic is kept, unchanged.
-     2. the REQUEST-RATE rules (`rateLimit.perKeyModelRpm`), rendered strictly
-        after them — see the § "Request-rate rules" comment further down. Those
-        ARE live, and they are what stops spam now that (1) is gone.
-     Both are optional; `$hasRules` at the top of this file drops the whole
-     `rateLimit:` block when neither renders (the CRD's list is minItems-1).
-
-     ── Shared cross-model monthly budget (#532) ──────────────────────────
+  {{- /* ── Shared cross-model monthly budget (#532) ──────────────────────────
      ONE gateway-scoped, `shared: true` counter per (x-account-id, x-billing-plan)
      that spans EVERY model route — the fix for budgets being enforced per-model
      (a heavy user held ~29 separate per-model counters, so the real cap was
@@ -113,13 +84,12 @@ spec:
      within a week. See that rule's own comment below for the render-order
      reasoning (append-only, ADR-0084).
   */ -}}
-  {{- if $hasRules }}
+  {{- with $btp.monthlyBudget }}
+  {{- if .enabled }}
   rateLimit:
     type: Global
     global:
       rules:
-        {{- with $mb }}
-        {{- if and .enabled (gt (len (.plans | default list)) 0) }}
         {{- /* ⚠️ `plans` is an ORDERED LIST, not a map — the index below becomes the
                `rule/N` in the Lyft ratelimit Redis key, and the plan name is masked
                (Exact match ⇒ constant), so the index is the only carrier of plan
@@ -212,113 +182,7 @@ spec:
                 key: llm_custom_total_cost
         {{- end }}
         {{- end }}
-        {{- end }}
-        {{- end }}
-        {{- /* ── § Request-rate rules — requests/min per (identity × model) ──────
-           Owner ruling 2026-09-06: *"a rate limit per api-key id and per model
-           would be enough, so that spamming is avoided — no cost hit, no tier."*
-
-           WHY THIS EXISTS. ai-helm-values#427 (2026-09-05) deleted the monthly
-           and weekly cost buckets, which were the last rules on this policy —
-           every per-model `burst:` family had already been commented out
-           fleet-wide on 2026-08-01, and `tiers`/`projectEnvelope` are still
-           empty. From that commit this gateway had NO rate limit of any kind:
-           spend is bounded by the Dynamic Budget Limiter's ledger, *after the
-           fact*, at 402 — request rate was bounded by nothing. These two rules
-           put a request-count ceiling back, and nothing else.
-
-           WHAT IT IS DELIBERATELY NOT.
-           • No `cost:` block. The default request cost is 1, so the counter
-             counts REQUESTS, not micro-USD. `min(plan bucket, ledger)` — the
-             bug #427 existed to remove — cannot come back through this door: a
-             refusal here is about request RATE and a refill neither clears it
-             nor is blocked by it.
-           • No plan / tier descriptor. `x-billing-plan` is not in either key, so
-             this is one flat ceiling for everybody. Introducing a per-plan rule
-             would re-arm the ADR-0084 ordered-list hazard for no product reason.
-           • No period marker, and `unit: Minute` is the plain, correct unit.
-             ADR-0111/0112's `x-billing-period` + `unit: Year` trick exists ONLY
-             because a CALENDAR-month budget cannot be expressed by Lyft's window
-             epoch (`Month` = 2 592 000 s = 30 drifting days). A per-minute window
-             is exactly what `Minute` means, so the epoch rotating every 60 s is
-             the feature, not the defect. Do NOT copy the Year/marker pattern here.
-
-           ONE GATEWAY-SCOPED RULE PAIR, NOT PER-MODEL BTP RULES. The model is
-           already a first-class descriptor: Envoy AI Gateway stamps
-           `x-ai-eg-model` on every model request (it is what the per-model BTPs'
-           own burst families match on), so `type: Distinct` on that header gives
-           "per model" without touching the 28 per-model policies. Putting it
-           there instead would mean 28 copies of the same number, 28 chances to
-           drift, and — because `charts/ai-model` renders its plan rules from an
-           ordered `plans` list — a new rule family competing for indices with
-           ADR-0084's append-only contract. Here there is exactly one place to
-           read the number and one place to change it. The rules reach model
-           routes because `sharedBudget.enabled` makes each per-model BTP
-           `mergeType: StrategicMerge` against this policy rather than override
-           it — the same path the deleted cost buckets used to produce their 429s.
-
-           `shared: true`, so the Lyft/Redis counter is keyed by POLICY name and
-           collapses to ONE bucket across every route. Without it Envoy Gateway
-           namespaces the counter per route, which would silently add a second,
-           invisible dimension to a key whose model dimension is already
-           explicit. The EG ≥ v1.8.2 requirement noted for the cost buckets
-           (envoyproxy/gateway#9244: `shared` + `cost` drops the per-request
-           cost) cannot bite a rule that carries no `cost` at all.
-
-           TWO RULES, SO NO PLANE IS UNLIMITED. `x-api-key-id` is stamped by the
-           public AuthConfig from the `api_key_id` claim, and is a constant `""`
-           on the internal AuthConfig (LibreChat / LCI / k8s SAs) and empty for
-           GitHub-Actions repobinding tokens, which carry no API key. An Envoy
-           header descriptor does not generate for an absent-or-empty header, so
-           a rule keyed only on `x-api-key-id` would leave those planes
-           completely unlimited. `x-account-id` IS stamped on every plane, so
-           the second rule — same limit, same unit — is the floor under all of
-           them. On the public plane both rules match and compose (AND) at the
-           same number, which is a no-op in practice: one API key belongs to one
-           account, so the account bucket cannot be exhausted before the key one
-           unless the account holds several keys — exactly when it should be.
-
-           RENDER ORDER: strictly AFTER the cost rules above, deliberately. If
-           `monthlyBudget` is ever re-enabled it takes indices 0..N as it always
-           did and these two shift — and a shifted per-MINUTE counter costs at
-           most 60 seconds of allowance, whereas a shifted per-MONTH cost counter
-           is the ADR-0084 incident. Ordering the risk this way round is the
-           whole point.
-        */ -}}
-        {{- if gt $rpm 0 }}
-        - clientSelectors:
-            - headers:
-                - invert: false
-                  # The API key's own id (`api_key_id` claim → x-api-key-id in
-                  # the AuthConfig's success headers). Absent/"" ⇒ no descriptor
-                  # ⇒ this rule does not fire; the x-account-id rule below is
-                  # what covers those planes.
-                  name: x-api-key-id
-                  type: Distinct
-                - invert: false
-                  # Stamped by Envoy AI Gateway on every model request. Distinct,
-                  # so each model gets its own bucket for the same key.
-                  name: x-ai-eg-model
-                  type: Distinct
-          limit:
-            requests: {{ $rpm }} # rpm-rule/0 · {{ $rpm }} req/min per (API-key id × model). NO cost block ⇒ +1 per request.
-            unit: Minute
-          shared: true
-        - clientSelectors:
-            - headers:
-                - invert: false
-                  # Stamped on EVERY plane (public, internal, repobinding), so
-                  # this rule is the floor nothing falls through.
-                  name: x-account-id
-                  type: Distinct
-                - invert: false
-                  name: x-ai-eg-model
-                  type: Distinct
-          limit:
-            requests: {{ $rpm }} # rpm-rule/1 · {{ $rpm }} req/min per (account id × model). NO cost block ⇒ +1 per request.
-            unit: Minute
-          shared: true
-        {{- end }}
+  {{- end }}
   {{- end }}
   connection:
     bufferLimit: {{ $btp.bufferLimit | default "100Mi" | quote }}

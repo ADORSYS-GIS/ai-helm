@@ -71,6 +71,15 @@ gatewayRef: {}
 sharedBudget: {}
 rateLimitBudgeting: {}
 
+# ── Request-rate ceiling per (identity x model) — owner ruling 2026-09-06 ──
+# `requestRate.defaultRpmPerKey` is the requests/min applied to any model whose
+# catalog entry omits `rpmPerKey`. Both live in the values repo
+# (`environments/prod/values/models.yaml`); this is the empty container.
+# It is NOT a list, so it carries none of the ADR-0084 ordering hazard — and
+# neither do the rules it produces, because each model's rules live on that
+# model's OWN BackendTrafficPolicy (see charts/ai-model's § 6 note).
+requestRate: {}
+
 # ── /v1/models/info catalog endpoint ──────────────────────────────────────
 modelsInfo: {}
 
