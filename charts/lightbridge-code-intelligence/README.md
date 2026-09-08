@@ -9,7 +9,6 @@ deployment pattern.
 | Component | Workload | Image | Notes |
 |---|---|---|---|
 | Control plane | Deployment (`*-control-plane`) | `ghcr.io/adorsys-gis/lightbridge-control-plane` | Rust/Axum trust boundary + GitHub webhook + OAuth2 resource server (validates Keycloak JWTs) |
-| Web console | Deployment (`*-web`) | `ghcr.io/adorsys-gis/lightbridge-web` | Next.js Keycloak OIDC client (Authorization-Code + PKCE) |
 | Knowledge graph | StatefulSet (`*-neo4j`) | `neo4j:5.26-community` | Single instance, emptyDir (non-persistent for now; see values comment) |
 | Postgres / pgvector | **reused** | — | Uses the existing CNPG cluster `lightbridge-main-db` via a dedicated `codeintel` role + database |
 
@@ -37,7 +36,6 @@ App credentials live in the dedicated SM secret `prod/codeintel/env`; the rest u
 | `lightbridge-ci-github` | `prod/codeintel/env` | `github_webhook_secret` | `GITHUB_WEBHOOK_SECRET` |
 | `lightbridge-ci-github` | `prod/codeintel/env` | `github_app_id` | `GITHUB_APP_ID` |
 | `lightbridge-ci-github` | `prod/codeintel/env` | `github_app_private_key` | `GITHUB_APP_PRIVATE_KEY` |
-| `lightbridge-ci-auth` | `ai/camer/digital/prod/env` | `lightbridge_ci_better_auth_secret` | `BETTER_AUTH_SECRET` — _transitional_, outgoing better-auth image; OIDC uses no secret |
 | `lightbridge-ci-neo4j-auth` | `ai/camer/digital/prod/env` | `lightbridge_ci_neo4j_password` | Neo4j password |
 | `lightbridge-codeintel-db-role` | — | `codeintel_db_password` | DB password (provisioned by `charts/lightbridge-db`) |
 
@@ -45,12 +43,10 @@ App credentials live in the dedicated SM secret `prod/codeintel/env`; the rest u
 
 Traefik + cert-manager (`cert-home-cert-http`), librechat-style:
 
-- Web console: `code-intelligence.ai.camer.digital`
 - Control plane (webhook + authN): `code-intelligence-api.ai.camer.digital`
 
 ## Known follow-ups
 
-- Publish `lightbridge-control-plane` / `lightbridge-web` images (CI in the app repo); the tags
-  here are placeholders.
+- Publish `lightbridge-control-plane` images (CI in the app repo); the tags here are placeholders.
 - Enable pgvector on the CNPG cluster.
 - Migrate workload templates to `bjw-common` to match the app-chart convention if desired.
