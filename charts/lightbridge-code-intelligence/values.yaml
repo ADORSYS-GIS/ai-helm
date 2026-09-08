@@ -1,8 +1,8 @@
 # lightbridge-code-intelligence — Lightbridge Code Intelligence stack.
 #
-# Components: Rust control plane (OAuth2 resource server + GitHub webhook trust boundary),
-# Next.js web console (Keycloak OIDC client), and a Neo4j knowledge graph. Postgres/pgvector is
-# REUSED from the CloudNativePG cluster `lightbridge-main-db` (charts/lightbridge-db)
+# Components: Rust control plane (OAuth2 resource server + GitHub webhook trust boundary) and a
+# Neo4j knowledge graph. Postgres/pgvector is REUSED from the CloudNativePG cluster
+# `lightbridge-main-db` (charts/lightbridge-db)
 # through a dedicated `codeintel` role + database (added there in this same change).
 #
 # Workloads are expressed via the bjw-s app-template (bjw-template v4.6.2, aliased
@@ -29,9 +29,6 @@ secrets:
   githubAppIdProperty: ""
   githubAppPrivateKeyProperty: ""
   githubWebhookProperty: ""
-  # TRANSITIONAL — consumed only by the outgoing better-auth image (the OIDC web image is a PUBLIC
-  # client + PKCE, ADR-0014, and needs no client secret). Remove once the OIDC image is confirmed live.
-  betterAuthProperty: ""
   # Agent runner wiring (epic #5): the embeddings/LLM gateway API key (remoteKey, reused from the
   # shared eaig key). The review chat model is NOT a secret — it's agents.llm.model (also env-owned).
   # Per-task runner-token signing key (lightbridge-code-intelligence#243, ADR-0092) — control-plane's
@@ -114,7 +111,7 @@ config:
   # The @mention trigger handle (webhook.rs): an issue comment must start with `@<handle>` to launch a
   # re-review. The first review per PR is still automatic (on `opened`). DEPLOYMENT-SPECIFIC — this is
   # the registered GitHub App's handle (a different deployment registers its own app). → ai-helm-values.
-  # Keep in sync with the env literals GITHUB_APP_HANDLE (control-plane) + GITHUB_APP_INSTALL_URL (web).
+  # Keep in sync with the env literal GITHUB_APP_HANDLE (control-plane).
   appHandle: ""
 
   # Reviewer guidance — the mounted system-prompt template (env-substituted): the agent's persona and
@@ -332,7 +329,7 @@ metrics:
 # ── bjw-s app-template (v4) instance ─────────────────────────────────────────
 lci:
   # Force the fullname so resource/service names are deterministic `lightbridge-ci-*`
-  # (the web→control-plane and Neo4j DNS names depend on this).
+  # (the control-plane and Neo4j DNS names depend on this).
   fullnameOverride: lightbridge-ci
 
   # Cluster-baseline pod security applied to every controller below.
@@ -385,8 +382,7 @@ lci:
             CONTROL_PLANE_CONFIG: "/etc/lightbridge/control-plane.json"
             # The @mention trigger handle (webhook.rs). Comments must start with `@<handle>`. A literal
             # (bjw renders env against the sub-chart scope where top-level `.Values` isn't visible).
-            # DEPLOYMENT-SPECIFIC → ai-helm-values; keep in sync with `config.appHandle` + the web
-            # GITHUB_APP_INSTALL_URL. Empty here.
+            # DEPLOYMENT-SPECIFIC → ai-helm-values; keep in sync with `config.appHandle`. Empty here.
             GITHUB_APP_HANDLE: ""
             # Authorization (ADR-0023): the dotted token claim carrying the caller's permissions list.
             # The IdP/gateway must emit this; endpoints fail closed without it. Default `permissions`.
@@ -470,92 +466,6 @@ lci:
                 httpGet:
                   path: /readyz
                   port: 8080
-                initialDelaySeconds: 5
-                periodSeconds: 10
-            startup:
-              enabled: false
-          resources:
-            requests: { cpu: 100m, memory: 128Mi }
-            limits: { cpu: "1", memory: 512Mi }
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsUser: 1000
-            capabilities:
-              drop: [ALL]
-
-    # Next.js web console: Keycloak OIDC client (Authorization-Code + PKCE; ADR-0014).
-    web:
-      type: deployment
-      # RollingUpdate (not the bjw-template default of Recreate) — stateless Next.js console, no
-      # reason to drop to zero pods on a rollout.
-      strategy: RollingUpdate
-      replicas: 2
-      annotations:
-        argocd.argoproj.io/sync-wave: "2"
-      # Run as the dedicated web SA (templates/agents-rbac.yaml) that holds read-only pods/log access
-      # in the agents namespace, so the console can stream a run's Job logs (Epic #75, Milestone C).
-      serviceAccount:
-        name: lightbridge-ci-web
-      containers:
-        main:
-          image:
-            repository: ghcr.io/adorsys-gis/lightbridge-web
-            # Default/fallback only. The deployed tag is OVERRIDDEN at sync time by the
-            # app repo's deploy/envs/production/values.yaml ($values source), which
-            # argocd-image-updater owns — see charts/apps/values.yaml + the app repo.
-            tag: "0.1.0"
-            pullPolicy: IfNotPresent
-          env:
-            NODE_ENV: "production"
-            PORT: "3000"
-            HOSTNAME: "0.0.0.0"
-            # Agents namespace the console reads Job logs from (Epic #75, Milestone C). Literal; keep
-            # in sync with `agents.namespace`.
-            AGENT_NAMESPACE: "lightbridge-agents"
-            # Public install page for the GitHub App, used by the console's empty-state CTAs and
-            # Settings link. DEPLOYMENT-SPECIFIC (https://github.com/apps/<handle>) → ai-helm-values;
-            # keep in sync with `config.appHandle` + the control-plane GITHUB_APP_HANDLE. Empty here.
-            GITHUB_APP_INSTALL_URL: ""
-            # Authorization (ADR-0023): the dotted token claim carrying the caller's permissions. The
-            # console reads it to show capability-gated affordances; keep in sync with the control
-            # plane's PERMISSIONS_CLAIM. Default `permissions`.
-            PERMISSIONS_CLAIM: "permissions"
-            # Keycloak OIDC client (ADR-0014). Public client + PKCE → NO client secret. All four values
-            # below are DEPLOYMENT-SPECIFIC (IdP realm + public web URL) → ai-helm-values. Empty here.
-            OIDC_ISSUER: ""
-            OIDC_CLIENT_ID: ""
-            OIDC_REDIRECT_URI: ""
-            OIDC_POST_LOGOUT_REDIRECT_URI: ""
-            # AUTH_BACKEND_URL is templated from the release name (NOT env-specific) → stays here.
-            # BETTER_AUTH_URL is the public web URL → ai-helm-values. Both are TRANSITIONAL (remove once
-            # the OIDC web image is live — see chart bump notes): the chart config (Source A, ai-helm
-            # release) and the image tag (Source B, image-updater) sync independently, so this chart must
-            # work with BOTH the old better-auth image AND the new OIDC image. The new image ignores these.
-            AUTH_BACKEND_URL: "http://{{ .Release.Name }}-control-plane:8080/api/v2"
-            BETTER_AUTH_URL: ""
-            BETTER_AUTH_SECRET:
-              valueFrom:
-                secretKeyRef:
-                  name: '{{ .Release.Name }}-auth'
-                  key: better-auth-secret
-          probes:
-            liveness:
-              enabled: true
-              custom: true
-              spec:
-                httpGet:
-                  path: /
-                  port: 3000
-                initialDelaySeconds: 10
-                periodSeconds: 20
-            readiness:
-              enabled: true
-              custom: true
-              spec:
-                httpGet:
-                  path: /
-                  port: 3000
                 initialDelaySeconds: 5
                 periodSeconds: 10
             startup:
@@ -1132,11 +1042,6 @@ lci:
       ports:
         http:
           port: 8080
-    web:
-      controller: web
-      ports:
-        http:
-          port: 3000
     neo4j:
       controller: neo4j
       ports:
@@ -1182,8 +1087,6 @@ lci:
   # className + annotations + hosts + tls) lives in ai-helm-values per environment. A defaults-only
   # render therefore emits NO Ingress (rather than a broken empty-host one). The override turns it on.
   ingress:
-    web:
-      enabled: false
     control-plane:
       enabled: false
     # Public A2A surface (RFC-0006). OFF by default (host + issuer + TLS secret are env-specific); the
@@ -1268,7 +1171,7 @@ lci:
               - protocol: TCP
                 port: 443
 
-  # emptyDir scratch dirs for the read-only-rootfs containers (control-plane, web).
+  # emptyDir scratch dirs for the read-only-rootfs containers (control-plane).
   # Neo4j /data is NOT here — it's a StatefulSet volumeClaimTemplate on the neo4j controller
   # (see `statefulset.volumeClaimTemplates` above); neo4j runs with a writable rootfs so it
   # needs no scratch emptyDirs. advancedMounts scope each volume to one container.
@@ -1326,15 +1229,3 @@ lci:
         control-plane:
           main:
             - path: /tmp
-    web-tmp:
-      type: emptyDir
-      advancedMounts:
-        web:
-          main:
-            - path: /tmp
-    web-next-cache:
-      type: emptyDir
-      advancedMounts:
-        web:
-          main:
-            - path: /app/.next/cache
