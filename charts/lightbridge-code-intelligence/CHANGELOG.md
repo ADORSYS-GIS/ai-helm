@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-code-intelligence-v0.9.0...lightbridge-code-intelligence-v0.10.0) (2026-09-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **lightbridge-code-intelligence:** any values file still setting lci.controllers.web.*, lci.service.web.*, lci.ingress.web.*, lci.persistence.web-*, or secrets.betterAuthProperty now has nothing to attach to. The paired ai-helm-values change drops those overrides in the same cutover.
+
+### Features
+
+* **lightbridge-code-intelligence:** remove the web controller ([#1122](https://github.com/ADORSYS-GIS/ai-helm/issues/1122)) ([9369a0d](https://github.com/ADORSYS-GIS/ai-helm/commit/9369a0d4c74d2f0db8d594a4a934fa5aa1dd787a))
+
 ## [0.9.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-code-intelligence-v0.8.0...lightbridge-code-intelligence-v0.9.0) (2026-09-02)
 
 

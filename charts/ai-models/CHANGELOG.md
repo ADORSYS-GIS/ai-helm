@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.0](https://github.com/ADORSYS-GIS/ai-helm/compare/ai-models-v4.0.1...ai-models-v4.1.0) (2026-09-08)
+
+
+### Features
+
+* **ai-model:** per-model requests/min ceiling (rpmPerKey), keyed on API-key id ([#1120](https://github.com/ADORSYS-GIS/ai-helm/issues/1120)) ([c5c8ddf](https://github.com/ADORSYS-GIS/ai-helm/commit/c5c8ddf5d3640f012d40f7a86c876b22bfb991c6))
+
 ## [4.0.1](https://github.com/ADORSYS-GIS/ai-helm/compare/ai-models-v4.0.0...ai-models-v4.0.1) (2026-09-02)
 
 
