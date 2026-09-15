@@ -268,9 +268,11 @@ tolerations:      [{ key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
 resources.limits: { nvidia.com/gpu: 1 }
 ```
 
-Two cards ⇒ two concurrent models. A third enabled model sits `Pending` with
-`Insufficient nvidia.com/gpu` — a legible queue that replaces the old "disable that
-model to enable this one" dance across four files.
+**One card ⇒ one concurrently-served model** (down from two cards/two models —
+`hetzner-k8s-gpu-2` was decommissioned 2026-09-15, ADR-0138). A second enabled
+model now sits `Pending` with `Insufficient nvidia.com/gpu` — a legible queue
+that replaces the old "disable that model to enable this one" dance across four
+files.
 
 ⚠️ The **seed Job carries the same nodeSelector and toleration** despite needing no
 GPU: Longhorn runs only on the GPU nodes (ADR-0092), so a pod elsewhere could not

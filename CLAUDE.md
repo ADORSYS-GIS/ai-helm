@@ -366,9 +366,14 @@ If you're touching `charts/librechat-opencode-wellknown/`, read ADR-0014 first. 
 **Self-hosted models — the GPU fleet (ADR-0094/0095).** ⚠️ **Two generations exist;
 do not mix them up.**
 
-*Current.* Two Hetzner Robot GPU nodes (`hetzner-k8s-gpu-1/2`, RTX 4000 SFF Ada,
-**20475 MiB**, driver 550/**CUDA 12.4**, Ada ⇒ **FP8 IS supported here**) are on
-**`home-remote`** — the same cluster as the gateway. So a model is an ORDINARY
+*Current.* ⚠️ **ONE** Hetzner Robot GPU node (`hetzner-k8s-gpu-1`, RTX 4000 SFF Ada,
+**20475 MiB**, driver 550/**CUDA 12.4**, Ada ⇒ **FP8 IS supported here**) is on
+**`home-remote`** — the same cluster as the gateway. `hetzner-k8s-gpu-2` was
+**removed 2026-09-15** (ADR-0138), so **one card ⇒ ONE served model**: the fleet
+runs `qwen3-5-2b` and `z-image-turbo` is disabled. Enabling a second model now
+leaves it `Pending` on `Insufficient nvidia.com/gpu` — say which one you are
+disabling first. Much of the prose below (and ADR-0092/0094/0114) was written
+for the two-card fleet; where it says "two cards", read one. So a model is an ORDINARY
 workload: **NOT `homeCluster`**, no Ingress, no cert, no DNS, no static API key, no
 Caddy sidecar. `charts/inference` (orchestrator) + `charts/inference-server`
 (generic leaf) serve them in ns `inference`; the gateway `Backend` points at
@@ -409,11 +414,17 @@ entry to make it user-reachable). Do NOT create a new chart per model.
   model is federated only once MEASURED on the hardware it runs on — "it worked
   on the old hardware" is not evidence.
 - GPU placement is a `nvidia.com/gpu: 1` REQUEST (+ toleration/nodeSelector/
-  runtimeClass). 2 cards ⇒ 2 models; a 3rd queues `Pending`. ⚠️ The **seed Job**
+  runtimeClass). ⚠️ **1 card ⇒ 1 model** since gpu-2 was removed (ADR-0138); a
+  2nd enabled model queues `Pending`. ⚠️ The **seed Job**
   needs the same nodeSelector/toleration despite needing no GPU — Longhorn runs
   only on the GPU nodes (ADR-0092), and `storageClassName: longhorn` is mandatory
   (not the cluster default; omitting it silently targets `hcloud-volumes` and never
-  binds). ⚠️ The CNP MUST allow `fromEntities: [host, remote-node, health]` or
+  binds). ⚠️ With gpu-2 gone Longhorn is a **ONE-node pool**, so its StorageClass
+  dropped to `defaultClassReplicaCount: 1` (ADR-0138) — a 2-replica volume is
+  unsatisfiable on one node and would sit permanently `degraded`. That means **no
+  redundancy**: the node's disk is the only copy. Tolerable only because these
+  volumes hold re-fetchable weights. A StorageClass change does NOT reach existing
+  volumes — those need a per-volume `spec.numberOfReplicas` patch. ⚠️ The CNP MUST allow `fromEntities: [host, remote-node, health]` or
   KUBELET PROBES fail and the pod never goes Ready (looks like a crash-loop).
 - `check-model-catalogs.sh` fails if a cluster-local gateway backend has no server
   behind it. Serving *without* federating is allowed on purpose — that's how a

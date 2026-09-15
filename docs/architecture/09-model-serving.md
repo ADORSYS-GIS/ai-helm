@@ -62,11 +62,12 @@ Cost is metered natively (`llmRequestCosts` token extraction) — no Python/Lua 
 
 ## Self-hosted models — the GPU fleet (ADR-0094/0095)
 
-Two Hetzner Robot GPU nodes (RTX 4000 SFF Ada, 20 GiB each) joined **`home-remote`**
-— the same cluster as the gateway. So a self-hosted model is now an ordinary
-workload reached over the pod network: **no Ingress, no DNS record, no TLS
-certificate, no static API key, no auth-proxy sidecar**. A `CiliumNetworkPolicy` is
-the access control.
+One Hetzner Robot GPU node (`hetzner-k8s-gpu-1`, RTX 4000 SFF Ada, 20 GiB) is
+joined to **`home-remote`** — the same cluster as the gateway. (A second node,
+`hetzner-k8s-gpu-2`, was decommissioned 2026-09-15 — ADR-0138.) So a self-hosted
+model is now an ordinary workload reached over the pod network: **no Ingress, no
+DNS record, no TLS certificate, no static API key, no auth-proxy sidecar**. A
+`CiliumNetworkPolicy` is the access control.
 
 ```mermaid
 flowchart TB
@@ -88,9 +89,10 @@ flowchart TB
     GW -->|"ClusterIP :8080 · plain HTTP"| ENG
 ```
 
-**Two GPUs ⇒ two concurrent models.** Placement is an `nvidia.com/gpu: 1` request,
-so a third enabled model queues as `Pending` rather than requiring a human to
-disable another. Adding a model is a ~15-line catalog entry — no new chart.
+**One GPU ⇒ one concurrently-served model** (down from two GPUs/two models —
+ADR-0138, 2026-09-15). Placement is an `nvidia.com/gpu: 1` request, so a second
+enabled model queues as `Pending` rather than requiring a human to disable
+another. Adding a model is a ~15-line catalog entry — no new chart.
 
 ### Three engines, one container each
 
