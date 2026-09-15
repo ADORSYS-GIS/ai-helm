@@ -249,6 +249,15 @@ spec:
         logs_endpoint: "https://lightbridge-usage.converse.svc.cluster.local:3000/v1/otel/logs"
         tls:
           ca_file: /etc/otel/tls/ca.crt
+        # REQUIRED since lightbridge-authz#584: resolve_source() rejects any
+        # request missing this header with 400 (crates/lightbridge-authz-usage/
+        # src/normalizer/mod.rs), so ingest was silently dropping every batch
+        # from this exporter until this header was added. `eaig` is this
+        # sink's fixed identity in the canonical source vocabulary (ADR-0028)
+        # — the AI gateway's own Envoy access-log stream, not a per-caller
+        # value, so it is hardcoded rather than exposed via values.yaml.
+        headers:
+          X-Source: eaig
 
       # Fan the same access-log stream out to Grafana Alloy, which forwards
       # to Loki (ADR-0005 per-user observability). Identical endpoint/TLS
