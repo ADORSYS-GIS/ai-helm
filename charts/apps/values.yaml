@@ -1412,8 +1412,18 @@ applications:
   # LibreChat's image_gen_oai tool (which only reads data[0].b64_json) gets the
   # base64 payload it expects. LocalAI defaults to returning a URL; this proxy
   # is the adapter. Real upstream URL comes from ai-helm-values (ticket #843).
+  #
+  # ⚠️ DISABLED 2026-09-15 — its only upstream is gone. `hetzner-k8s-gpu-2` was
+  # removed from the cluster, so the fleet is one card and one model, and the
+  # federated text tier (qwen3-5-2b) took it; z-image-turbo is `enabled: false`
+  # in ai-helm-values environments/prod/values/inference.yaml. An adapter in
+  # front of a Service with no endpoints is not a degraded feature, it is a
+  # 502 generator, so it goes with the model rather than lingering.
+  # Re-enable both — and the three commented LibreChat blocks
+  # (modelSpec, agent-seed entry, IMAGE_GEN_OAI_* env) — to roll back.
   # ─────────────────────────────────────────────────────────────────────────────
   - name: z-image-proxy
+    enabled: false                 # DISABLED 2026-09-15 — z-image-turbo unserved after hetzner-k8s-gpu-2 was removed. Re-enable to roll back.
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     chart: z-image-proxy

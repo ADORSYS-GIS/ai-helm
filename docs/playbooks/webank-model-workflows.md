@@ -62,8 +62,9 @@ pass and needs no GPU compute (webank-models#415), but the pinned
 `webank-train-gpu` image links `libcuda.so.1` as a hard dependency, so every
 subcommand fails to start without the driver library the GPU claim injects
 (ai-helm#948); dataset-build therefore competes with candidate training for
-one of the fleet's two GPU cards even though it runs no kernel. Its CPU and
-memory come from the reviewed `training.datasetBuild.resources` profile, not
+the fleet's one GPU card (down from two, ADR-0138, 2026-09-15) even though it
+runs no kernel. Its CPU and memory come from the reviewed
+`training.datasetBuild.resources` profile, not
 `training.gpu.resources` — the two footprints are measured separately.
 
 If an SFace or PAD governed-source repository is empty, the operation fails

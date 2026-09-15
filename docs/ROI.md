@@ -6,6 +6,15 @@
 **Analysis horizon:** 3 years (36 months)
 **Status:** Final document — ready for approval
 
+> ⚠️ **Addendum — 2026-09-15:** the Hetzner GPU fleet this business case was
+> built on has since been reduced to **one** RTX 4000 Ada card — `hetzner-k8s-gpu-2`
+> was decommissioned (ADR-0138). This document is preserved as originally
+> approved and has **not** been recalculated: every hardware, capacity, and cost
+> figure below (Executive Summary, Steps 1 and 6, and the consolidated dashboard)
+> describes the two-card configuration it was written against, not the fleet as
+> currently deployed. Treat the numbers here as the historical basis for the
+> approved investment, not a live capacity statement.
+
 ---
 
 ## Table of Contents
@@ -554,6 +563,8 @@ The gains quantified in Step 3 are only realized if the 500 employees actually u
 ### 9.1. Objective
 
 Verify that the two-GPU cluster (2× RTX 4000 Ada) is physically capable of absorbing the load of 500 employees, in order to avoid any unplanned hardware investment that would erode the calculated ROI.
+
+> ⚠️ **2026-09-15 addendum:** the fleet has since dropped to one card (ADR-0138) — see the addendum at the top of this document. The two-card math in §9.2–9.8 is preserved as originally calculated and has not been recomputed for one card.
 
 ### 9.2. Model distribution across the cluster
 

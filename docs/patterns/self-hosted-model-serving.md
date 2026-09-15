@@ -188,13 +188,17 @@ entry and lets LocalAI decide everything else:
       sizeGi: 40                              # weights AND the downloaded backend
 ```
 
-**The live entry does not use that form** — it defines the model itself
+**The real entry does not use that form** — it defines the model itself
 (ADR-0103/0105), because the gallery's defaults are tuned for other hardware and a
-gallery name is not a pin:
+gallery name is not a pin. ⚠️ It is shown here as the worked example of the
+`localai` profile, but it is **no longer served**: `z-image-turbo` was disabled
+on 2026-09-15 when the fleet dropped to one card (ADR-0138). The entry is kept
+in the catalog verbatim so a re-enable is a one-line rollback — which is exactly
+why it is still the best illustration of the shape:
 
 ```yaml
   z-image-turbo:
-    enabled: true
+    enabled: false                            # ⚠️ was `true` until 2026-09-15 (ADR-0138)
     engine: localai
     serving:
       backends: [cuda12-stablediffusion-ggml] # REQUIRED once you name no gallery model
@@ -268,9 +272,11 @@ tolerations:      [{ key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
 resources.limits: { nvidia.com/gpu: 1 }
 ```
 
-Two cards ⇒ two concurrent models. A third enabled model sits `Pending` with
-`Insufficient nvidia.com/gpu` — a legible queue that replaces the old "disable that
-model to enable this one" dance across four files.
+**One card ⇒ one concurrently-served model** (down from two cards/two models —
+`hetzner-k8s-gpu-2` was decommissioned 2026-09-15, ADR-0138). A second enabled
+model now sits `Pending` with `Insufficient nvidia.com/gpu` — a legible queue
+that replaces the old "disable that model to enable this one" dance across four
+files.
 
 ⚠️ The **seed Job carries the same nodeSelector and toleration** despite needing no
 GPU: Longhorn runs only on the GPU nodes (ADR-0092), so a pod elsewhere could not

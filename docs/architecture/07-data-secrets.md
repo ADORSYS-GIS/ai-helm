@@ -44,14 +44,19 @@ flowchart TB
 | `lightbridge-repo-auth` DB | CNPG Postgres | **repo-owned** Cluster (`charts/lightbridge-db`); reconciled by the external CNPG operator | the `lightbridge-db` `Cluster` CR + a `repoauth` `Database` CR + managed role (not a new pod) |
 | Metrics / logs / traces | Mimir / Loki / Tempo | in-chart (`observability`) | the charts (data → S3) |
 | Object storage | Hetzner S3 (Ceph-RGW) | Hetzner | bucket prefixes + creds reference |
-| Model-cache PVCs on the Hetzner GPU nodes | Longhorn (`aii-longhorn`) | in-chart (`charts/apps`, ADR-0092) | the Application entry, pinned to `hetzner-k8s-gpu-1/2` only |
+| Model-cache PVCs on the Hetzner GPU node | Longhorn (`aii-longhorn`) | in-chart (`charts/apps`, ADR-0092) | the Application entry, pinned to `hetzner-k8s-gpu-1` only (`-gpu-2` decommissioned 2026-09-15, ADR-0138) |
 
 ⚠️ **Two separate Longhorn instances exist, same product name, different clusters
 — do not conflate them:**
 - **This repo's `aii-longhorn`** (ADR-0092) — `home-remote`, pinned via
-  `nodeSelector`/tolerations to the two hand-joined Hetzner Robot GPU nodes only
-  (which have no hcloud-csi at all). Backs model-cache PVCs for workloads on
-  those nodes.
+  `nodeSelector`/tolerations to the hand-joined Hetzner Robot GPU node only
+  (which has no hcloud-csi at all). Backs model-cache PVCs for workloads on
+  that node. ⚠️ **Down to one node since 2026-09-15** (`hetzner-k8s-gpu-2`
+  decommissioned, ADR-0138): `persistence.defaultClassReplicaCount` dropped
+  2→1 in `ai-helm-values` (a 2-replica volume is unsatisfiable on one node).
+  The GPU node's disk is now the only copy of cached model weights —
+  tolerable only because they're re-fetchable from source (HF pulls), not
+  primary data.
 - **The `admin@homeos`-cluster Longhorn** — backed the legacy per-model RWX PVCs,
   `model-serving-qwen3-4b` among them (`docs/patterns/self-hosted-model-serving.md`,
   `docs/models/qwen3-4b.md`). Provisioned outside `ai-helm` entirely, on the home
