@@ -188,13 +188,17 @@ entry and lets LocalAI decide everything else:
       sizeGi: 40                              # weights AND the downloaded backend
 ```
 
-**The live entry does not use that form** — it defines the model itself
+**The real entry does not use that form** — it defines the model itself
 (ADR-0103/0105), because the gallery's defaults are tuned for other hardware and a
-gallery name is not a pin:
+gallery name is not a pin. ⚠️ It is shown here as the worked example of the
+`localai` profile, but it is **no longer served**: `z-image-turbo` was disabled
+on 2026-09-15 when the fleet dropped to one card (ADR-0138). The entry is kept
+in the catalog verbatim so a re-enable is a one-line rollback — which is exactly
+why it is still the best illustration of the shape:
 
 ```yaml
   z-image-turbo:
-    enabled: true
+    enabled: false                            # ⚠️ was `true` until 2026-09-15 (ADR-0138)
     engine: localai
     serving:
       backends: [cuda12-stablediffusion-ggml] # REQUIRED once you name no gallery model

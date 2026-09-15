@@ -21,12 +21,30 @@ curl -s $AI_BASE/v1/models -H "Authorization: Bearer $AI_TOKEN" | jq -r '.data[]
 curl -s $AI_BASE/v1/models/info -H "Authorization: Bearer $AI_TOKEN" | jq       # OpenRouter-shape catalog
 ```
 
-Self-hosted on our own GPUs: **`z-image-turbo-local`** (images). Everything
+Self-hosted on our own GPUs: **`qwen3-5-2b-local`** (chat/vision). Everything
 else is a SaaS backend behind a branded alias. Ids ending `-internal` are
 routed on the internal listener only — picking one externally returns
 `404 No matching route found`.
 
-## Image generation — `z-image-turbo-internal` (internal plane only)
+⚠️ **There is no self-hosted image model any more.** `z-image-turbo-local` /
+`z-image-turbo-internal` was withdrawn on 2026-09-15 — see the next section.
+
+## Image generation — ⚠️ WITHDRAWN 2026-09-15, no longer callable
+
+> ⚠️ **This endpoint is gone. `z-image-turbo-internal` returns
+> `404 No matching route found`.** `hetzner-k8s-gpu-2` was removed from the
+> cluster on 2026-09-15, and on a one-card fleet the federated chat/vision tier
+> (`qwen3-5-2b-local`) took the GPU — so the image model is no longer served
+> (ai-helm ADR-0138). Its gateway model entry had already been disabled on
+> 2026-08-19 and its backend removed, so this section had been stale for weeks
+> before the card was reclaimed; it is kept, below, as the record of how the
+> tier worked and what to restore if a second card ever joins.
+>
+> **There is no replacement.** If you need image generation, use a SaaS model.
+
+<details>
+<summary>Historical — how the withdrawn image tier worked</summary>
+
 
 > ⚠️ **KNOWN LIMITATION (2026-07-29): only ≤512×512 works through the gateway.**
 > Anything larger fails with `HTTP 500` / `Internal Server Error`. It is not your
@@ -71,6 +89,8 @@ curl -s $AI_BASE/v1/images/generations \
 | Billing | flat **$0.0100/image**, tokens always 0 (ADR-0104) |
 
 Image-only: `z-image-turbo-internal` does **not** answer `/v1/chat/completions`.
+
+</details>
 
 ## Chat completions
 
