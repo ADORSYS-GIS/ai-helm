@@ -539,6 +539,25 @@ librechat:
 
             # OpenAI-compatible Converse LLM API base URL
             # Internal plane (ADR-0021): in-cluster, via the api-internal listener.
+            #
+            # ⚠️ THIS DEFAULT CURRENTLY POINTS AT A MODEL THE GATEWAY DOES NOT
+            # SERVE. `gemini-2.5-flash-image` is absent from the gateway catalog
+            # (`ai-helm-values environments/prod/values/models.yaml`) and NO
+            # `kind: image` model is enabled there at all, so an
+            # `image_gen_oai` call resolves to `404 No matching route found`.
+            # This was masked until 2026-09-15 by the values-repo override that
+            # pointed IMAGE_GEN at the self-hosted `z-image-turbo`; when that
+            # model lost the fleet's last card (ADR-0138) the override was
+            # withdrawn and this default became the effective config again.
+            #
+            # It is left in place rather than removed because it is inert: the
+            # `image_gen_oai` toolkit is an agent tool, and no seeded agent
+            # carries it since `image-creator` was withdrawn. ⚠️ But the agent
+            # builder is enabled (`endpoints.agents.disableBuilder: false`), so
+            # a USER-BUILT agent can still select the tool and will hit the 404.
+            # Fixing it properly means deciding on an image tier — federate a
+            # SaaS image model into the catalog and name it here, or drop these
+            # three vars — which is a product call, not a chart default.
             IMAGE_GEN_OAI_BASEURL: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1
             IMAGE_GEN_OAI_MODEL: gemini-2.5-flash-image
 
