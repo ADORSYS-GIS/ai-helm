@@ -530,17 +530,31 @@ librechat:
                 name: librechat-websearch-config
                 key: jina_api_key
 
-            # Image Generation Configuration - Reference environment variables from secrets
-            #  Image Generation
-            IMAGE_GEN_OAI_API_KEY:
-              secretKeyRef:
-                name: librechat-main-config
-                key: converse_openai_api_key
-
-            # OpenAI-compatible Converse LLM API base URL
-            # Internal plane (ADR-0021): in-cluster, via the api-internal listener.
-            IMAGE_GEN_OAI_BASEURL: https://core-gateway-internal.envoy-gateway-system.svc.cluster.local/v1
-            IMAGE_GEN_OAI_MODEL: gemini-2.5-flash-image
+            # ⚠️ NO IMAGE GENERATION — IMAGE_GEN_OAI_* REMOVED 2026-09-15 (ADR-0138).
+            # There is no image tier: the self-hosted `z-image-turbo` lost the
+            # fleet's last card when `hetzner-k8s-gpu-2` was removed, and no
+            # `kind: image` model is enabled in the gateway catalog. These three
+            # vars are deleted rather than re-pointed, because every partial
+            # state is worse than none — verified against the running image
+            # (`api/app/clients/tools/structured/OpenAIImageTools.js:74-91`):
+            #
+            #   • API_KEY is the GATE. Unset, the tool throws "Missing
+            #     IMAGE_GEN_OAI_API_KEY environment variable." — an honest
+            #     failure naming the real cause. That is the state we want.
+            #   • MODEL falls back to `gpt-image-1`, so removing ONLY the model
+            #     changes nothing: it still 404s, just against a different
+            #     phantom model.
+            #   • ⚠️ BASEURL falls back to a hardcoded
+            #     `https://api.openai.com/v1/`. So keeping API_KEY while
+            #     dropping BASEURL would send our INTERNAL GATEWAY credential
+            #     (`converse_openai_api_key`) to OpenAI. Never leave the key set
+            #     without the base URL — that is a credential-egress bug, not a
+            #     broken feature.
+            #
+            # To restore an image tier: federate a `kind: image` model into the
+            # gateway catalog, then set all three together (API_KEY + BASEURL +
+            # MODEL). `charts/z-image-proxy` and the `image-creator` modelSpec /
+            # agent-seed blocks in ai-helm-values are the self-hosted rollback.
 
 
             AWS_REGION:

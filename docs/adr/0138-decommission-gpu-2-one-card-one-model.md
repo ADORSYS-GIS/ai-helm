@@ -4,6 +4,23 @@
 **Date:** 2026-09-15
 **Deciders:** @stephane-segning
 
+> ⚠️ **Erratum — 2026-09-15, after the live rollout.** The body below claims
+> twice (Decision §2, and the first "Negative" consequence) that removing an
+> agent from `agentSeed` does **not** delete the DB agent, leaving
+> `image-creator` as an orphaned Mongo document. **That is wrong.** The seed
+> script has an explicit prune phase — `charts/librechat-app/files/seed-agents.js:132-147`
+> deletes every agent authored by the platform user that is no longer in the
+> fleet, deliberately scoped to `author == platform user` so it never touches
+> agents real users created. The fleet is declarative, not an append-only
+> upsert. The live run confirmed it: `[agent-seed] pruned image-creator
+> (agent_Oo2rOizVp7loelF7HMz9i)` → `done: 5 agents`. So there is **no orphaned
+> document and no follow-up cleanup** — the outcome was cleaner than this ADR
+> predicted, not dirtier. ⚠️ The practical consequence runs the other way:
+> because a rename creates a new agent and prunes the old, the `agent_id` in a
+> withdrawn `modelSpec` comment is only valid while the agent's *name* is
+> unchanged. The body is left intact per the immutability rule; this note is
+> the correction.
+
 ## Context
 
 The GPU fleet has run on two Hetzner Robot dedicated nodes since
