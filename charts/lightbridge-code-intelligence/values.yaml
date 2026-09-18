@@ -533,6 +533,11 @@ lci:
             NEO4J_AUTH:
               dependsOn: LB_NEO4J_PASSWORD
               value: "neo4j/$(LB_NEO4J_PASSWORD)"
+            # JVM heap, sized explicitly so it does not fall back to the JVM default
+            # (a fraction of the container limit). Heap + page cache stay below the
+            # memory limit to leave room for native/off-heap memory.
+            NEO4J_server_memory_heap_initial__size: "1G"
+            NEO4J_server_memory_heap_max__size: "1G"
             NEO4J_server_memory_pagecache_size: "512M"
           probes:
             liveness:
@@ -554,8 +559,8 @@ lci:
             startup:
               enabled: false
           resources:
-            requests: { cpu: 250m, memory: 512Mi }
-            limits: { cpu: "1", memory: 2Gi }
+            requests: { cpu: 250m, memory: 2Gi }
+            limits: { cpu: "1", memory: 3Gi }
           securityContext:
             allowPrivilegeEscalation: false
             # Neo4j writes its rendered config to /var/lib/neo4j/conf at startup, so it needs a
