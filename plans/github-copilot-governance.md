@@ -17,6 +17,21 @@
 > our own org, no public endpoint, no LGTM changes) — it just lands on the registry
 > rather than inventing its own identity model. Everything else below stands.
 
+> ⚠️ **Cutover note (ADR-0014, lightbridge-authz#588) — the dashboards read the usage
+> store, not the governance Postgres.** The governance telemetry tables
+> (`executions`, `model_calls`, `tool_calls`) are being **dropped** as part of the #588
+> cutover (lightbridge-governance#350); usage telemetry consolidates into the authz
+> **usage store** (lightbridge-authz#751: `usage_day_facts`, `usage_seat_snapshots`,
+> `usage_executions`, `usage_model_calls`, `usage_tool_calls`, `usage_identities`).
+> This is the ai-helm half of the cutover (AC5): the four Copilot governance dashboards —
+> the **successors to [ai-helm#880]** — and the read-only Postgres datasource — the
+> **successor to [ai-helm#879]** — must be **repointed at the usage store**, not at the
+> governance Postgres (`uid: copilotgov`/`governance`). No dashboard or reader may
+> reference a dropped governance telemetry table; anything that did is repointed or
+> retired in the same window, never silently broken. The `copilotgov`/`governance`
+> datasource and the `executions`/`model_calls`/`tool_calls` table references in §0 #3,
+> §4 and §2.2 below are superseded by this note.
+
 ---
 
 ## 0. What I'd change from the source doc, and why
@@ -27,7 +42,7 @@ Five deviations. Everything else in the doc survives intact.
 |---|---|---|---|
 | 1 | Query layer = **Parquet on S3**, "no new database" | Query layer = **Postgres on the existing `lightbridge-main-db` CNPG cluster** (new `copilotgov` role + database). S3 keeps raw-archive/replay only. | It isn't a *new* database — it's a 30-line addition to `charts/lightbridge-db/values.yaml`, alongside the six roles already there (`repoauth`, `codeintel`, `coder`, `lakefs`, `mlflow`, `grafana_ro`). Barman backups to S3 already configured. Deletes an entire subsystem: no Parquet writer, no Arrow/DataFusion in Rust, no S3 query engine, no `normalize`+`publish-metrics` commands. Idempotent reprocessing becomes `ON CONFLICT DO UPDATE`. **And** Grafana reads it directly — see #3. |
 | 2 | **Memcached** for query caching | **No cache service.** In-process `moka` in the API. | There is no memcached in this cluster and adding one is a whole chart + NetworkPolicy + ADR. The only alternative already deployed is redis-ha, which is TLS-only with an internal CA and a password — real wiring cost for a single-replica API serving 6-hourly-refreshed data. Installation tokens (1 h TTL) are per-process anyway. If the API ever needs >1 replica, revisit → redis-ha (LibreChat/ratelimit already prove the wiring). |
-| 3 | Dashboards read **Mimir**; keep usernames out of labels | Dashboards 1–3 read the **Postgres datasource** (`uid: copilotgov`); only dashboard 4 reads Mimir. | Precedent exists: ADR-0063 already runs a read-only Postgres `GrafanaDatasource` (`uid: keycloak`) for exactly this reason. Usernames/repos/teams are *columns*, not Prometheus labels — the entire "keep cardinality low / avoid `username` labels" constraint evaporates for the business dashboards, and Mimir keeps only the ~10 low-cardinality *operational* metrics from Phase 8. |
+| 3 | Dashboards read **Mimir**; keep usernames out of labels | Dashboards 1–3 read the **Postgres datasource** over the **authz usage store** (ADR-0014 cutover — the successor to `uid: copilotgov`); only dashboard 4 reads Mimir. | Precedent exists: ADR-0063 already runs a read-only Postgres `GrafanaDatasource` (`uid: keycloak`) for exactly this reason. Usernames/repos/teams are *columns*, not Prometheus labels — the entire "keep cardinality low / avoid `username` labels" constraint evaporates for the business dashboards, and Mimir keeps only the ~10 low-cardinality *operational* metrics from Phase 8. ⚠️ The governance telemetry tables are dropped by the #588 cutover, so the datasource must target the usage store, not the governance Postgres (see the cutover note above). |
 | 4 | Separate **`Job/copilot-initial-backfill`** | No backfill Job. The CronJob's normal run reads the DB high-water mark and backfills up to 28 days when it's behind. | A one-shot `Job` is a bad GitOps citizen (immutable spec; re-running means deleting the object out-of-band, and selfHeal fights you). Self-healing backfill also makes the "recover when a report is published late" requirement fall out for free. |
 | 5 | Team attribution needs a **manual mapping table**; native team report is enterprise-only | GitHub ships **`/orgs/{org}/copilot/metrics/reports/user-teams-1-day` at org scope**. Ingest it. Keep a mapping table only for *cost-center* / internal-user identity. | The doc is out of date on this. Caveat that survives: GitHub omits teams with <5 seated Copilot users. |
 
@@ -187,7 +202,7 @@ class, so one chart renders both the Deployment and the CronJob.
 ```text
 environments/prod/values/copilot-governance-app.yaml    # image tag, org list, schedule, knobs
 environments/prod/values/copilot-governance-auth.yaml   # oauth2-proxy config
-environments/prod/values/grafana.yaml                   # + GrafanaDatasource uid: copilotgov
+environments/prod/values/grafana.yaml                   # + GrafanaDatasource over the usage store (successor to uid: copilotgov)
 environments/prod/deps/copilot-governance/
   ├── kustomization.yaml
   ├── certificate.yaml                                  # ingress TLS
@@ -330,7 +345,8 @@ tools/dashboards/src/dashboards/copilot/
 
 Each module exports `OUTPUT_PATH: str` and `build() -> dict`; register the four dotted
 paths in `_DASHBOARD_MODULES` in `tools/dashboards/src/dashboards/main.py`; add
-`COPILOT_UID = "copilotgov"` to `_common.py`; then `uv run dashboards build` **and commit
+`COPILOT_UID = "<usage-store datasource uid>"` (the successor to `"copilotgov"` — see the
+cutover note above) to `_common.py`; then `uv run dashboards build` **and commit
 the JSON**.
 
 Then in `charts/observability-dashboards/values.yaml`:
@@ -353,14 +369,18 @@ dashboards:
 the operator's cached `ApplySuccessful` status means it is never re-created, and every
 `folderRef` dashboard sticks on `[400] folder not found`.
 
-Dashboards 1–3 (`overview`, `licenses`, `adoption`) target `uid: copilotgov`, the new
-read-only Postgres datasource. Dashboard 4 (`connector-health`) targets `mimir`.
+Dashboards 1–3 (`overview`, `licenses`, `adoption`) target the read-only Postgres
+datasource over the **authz usage store** (the successor to `uid: copilotgov` — see the
+cutover note above). Dashboard 4 (`connector-health`) targets `mimir`.
 
 Datasource, in `ai-helm-values` `environments/prod/values/grafana.yaml`, modelled on the
 ADR-0063 `keycloak` one: `GrafanaDatasource`, `type: postgres`, pointing at the CNPG
 `-ro` replica, credentials from ESO. Grant the Grafana role **SELECT only**, on the
-reporting tables only. Grafana → CNPG egress needs a Cilium allow (the `observability`
-namespace is default-deny-egress) — same overlay edit ADR-0063 already made for Keycloak.
+usage-store tables the dashboards need (`usage_day_facts`, `usage_seat_snapshots`,
+`usage_executions`, `usage_model_calls`, `usage_tool_calls`, `usage_identities`) — never
+the dropped governance telemetry tables. Grafana → CNPG egress needs a Cilium allow (the
+`observability` namespace is default-deny-egress) — same overlay edit ADR-0063 already
+made for Keycloak.
 
 ### Alerts (Phase 10) — 5, in `charts/observability-dashboards/values.yaml`
 
