@@ -1,5 +1,29 @@
 # Changelog
 
+## [4.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v3.0.1...apps-v4.0.0) (2026-09-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **apps:** one card, one model — disable z-image-proxy, record ADR-0138 ([#1127](https://github.com/ADORSYS-GIS/ai-helm/issues/1127))
+* **lightbridge-code-intelligence:** any values file still setting lci.controllers.web.*, lci.service.web.*, lci.ingress.web.*, lci.persistence.web-*, or secrets.betterAuthProperty now has nothing to attach to. The paired ai-helm-values change drops those overrides in the same cutover.
+
+### Features
+
+* **aisix:** add the aisix chart — /v1/responses → chat-completions bridge ([#1108](https://github.com/ADORSYS-GIS/ai-helm/issues/1108)) ([fd1b577](https://github.com/ADORSYS-GIS/ai-helm/commit/fd1b577cfc4923ceafb54b125a17e932e76c10a3))
+* **apps:** one card, one model — disable z-image-proxy, record ADR-0138 ([#1127](https://github.com/ADORSYS-GIS/ai-helm/issues/1127)) ([b4a37b2](https://github.com/ADORSYS-GIS/ai-helm/commit/b4a37b28e0e8e3b9a36302def3f22d0bbb350978))
+* **lightbridge-code-intelligence:** remove the web controller ([#1122](https://github.com/ADORSYS-GIS/ai-helm/issues/1122)) ([9369a0d](https://github.com/ADORSYS-GIS/ai-helm/commit/9369a0d4c74d2f0db8d594a4a934fa5aa1dd787a))
+
+
+### Bug Fixes
+
+* **apps:** pin console-ui to converse-console ~0.2.4 ([#1091](https://github.com/ADORSYS-GIS/ai-helm/issues/1091)) ([e5f0bf2](https://github.com/ADORSYS-GIS/ai-helm/commit/e5f0bf2322257f7764ab11b81def83a583fe4722))
+
+
+### Documentation
+
+* **apps:** record the range-vs-hard chart-pin rule next to the pins ([#1094](https://github.com/ADORSYS-GIS/ai-helm/issues/1094)) ([42aa487](https://github.com/ADORSYS-GIS/ai-helm/commit/42aa487d9f9199064aeda3f95fb425b5a211b57f))
+
 ## [3.0.1](https://github.com/ADORSYS-GIS/ai-helm/compare/apps-v3.0.0...apps-v3.0.1) (2026-09-02)
 
 
