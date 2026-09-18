@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-app-v1.2.1...librechat-app-v2.0.0) (2026-09-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **librechat-app:** remove IMAGE_GEN_OAI_*, and erratum on ADR-0138 ([#1128](https://github.com/ADORSYS-GIS/ai-helm/issues/1128))
+
+### Bug Fixes
+
+* **librechat-app:** remove IMAGE_GEN_OAI_*, and erratum on ADR-0138 ([#1128](https://github.com/ADORSYS-GIS/ai-helm/issues/1128)) ([07ff34b](https://github.com/ADORSYS-GIS/ai-helm/commit/07ff34b98a4db2c5a0a319017e17a080a91b5391))
+
 ## [1.2.1](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-app-v1.2.0...librechat-app-v1.2.1) (2026-09-02)
 
 
