@@ -531,9 +531,24 @@ resources:
       template:
         spec:
           restartPolicy: Never
+          # The cloudnative-pg postgres image already runs as the non-root
+          # `postgres` user (uid 26 / gid 102) — pin it explicitly so the
+          # Trivy KSV-0118 default-security-context check passes.
+          securityContext:
+            runAsUser: 26
+            runAsGroup: 102
+            fsGroup: 102
           containers:
             - name: grant
               image: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+              # Least-privilege container: no privilege escalation, read-only
+              # root fs (psql needs no writes for a -c query), drop all caps.
+              # Satisfies Trivy KSV-0014 (readOnlyRootFilesystem) + KSV-0118.
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
               env:
                 - name: PGPASSWORD
                   valueFrom:
