@@ -166,6 +166,19 @@ resources:
             login: true
             passwordSecret:
               name: lightbridge-governance-db-role
+          # Read-only login role for Grafana (the governance registry dashboards
+          # query Postgres directly — tenant/application/team as COLUMNS, not
+          # metric labels, the ADR-0063 pattern). Deliberately NOT a member of
+          # `pg_read_all_data`: this is the governance registry DB, and
+          # least-privilege is the point (the keycloak `grafana_ro` precedent
+          # never got pg_read_all_data either). SELECT-only grants are applied
+          # by the idempotent GRANT Job below; password from the basic-auth
+          # Secret `lightbridge-governance-ro-db-role` (ESO-provisioned, below).
+          - name: governance_ro
+            ensure: present
+            login: true
+            passwordSecret:
+              name: lightbridge-governance-ro-db-role
           # Dedicated login role for lightbridge-authz-usage
           # (ADORSYS-GIS/lightbridge-authz, crates/lightbridge-authz-usage),
           # isolated from `app`/repoauth/codeintel/etc. Owns the `usage`
@@ -443,6 +456,124 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: governance_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # governance_ro role password (read-only DB user for the Grafana governance
+  # registry datasource, ADR-0063 pattern). basic-auth Secret consumed by CNPG
+  # (passwordSecret on the managed role above) to SET the role's password. The
+  # SAME password is also surfaced into the `observability` namespace for the
+  # GrafanaDatasource (see ai-helm-values environments/prod/deps/observability-
+  # secrets) — both read this one SM property.
+  # ⚠️ Requires a new `governance_grafana_ro_db_password` property in the
+  # ai/camer/digital/prod/env Secrets Manager bucket.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: lightbridge-governance-ro-db-role
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ssegning-aws
+      target:
+        name: lightbridge-governance-ro-db-role
+        creationPolicy: Owner
+        template:
+          type: kubernetes.io/basic-auth
+          data:
+            username: "governance_ro"
+            password: "{{ "{{ .password }}" }}"
+      data:
+        - secretKey: password
+          remoteRef:
+            key: ai/camer/digital/prod/env
+            property: governance_grafana_ro_db_password
+  # ────────────────────────────────────────────────────────────────────
+  # Idempotent GRANT Job for the read-only `governance_ro` role (ADR-0063
+  # pattern). CNPG managed roles can't express per-table grants, so the scoping
+  # runs as SQL by the `governance` table owner (the connector's migrations run
+  # as `governance`, so it owns the registry tables). ArgoCD Sync hook with
+  # BeforeHookCreation delete so it re-runs on every sync; bounded wait loop +
+  # activeDeadlineSeconds backstop so a never-created role (e.g. the password
+  # ExternalSecret never synced) fails the hook fast instead of hanging Sync.
+  #
+  # GRANTED (SELECT only) — the registry tables the governance dashboards read
+  # as columns: tenants, applications, identity_maps (team_id / cost_center_id).
+  #
+  # DELIBERATELY NOT GRANTED:
+  #   - integrations        — carries credential_hash; not needed by the
+  #                           dashboards, and granting it would widen the blast
+  #                           radius if the datasource credential leaked.
+  #   - ingest_manifests    — internal ingestion metadata, never queried.
+  #   - environments        — not read by the dashboards.
+  #   - executions/model_calls/tool_calls/model_pricing — telemetry, DROPPED by
+  #                           the #588 cutover (lightbridge-governance#350);
+  #                           usage telemetry lives in the authz usage store.
+  #   - copilot_*           — usage, consolidated into the authz usage store.
+  # ────────────────────────────────────────────────────────────────────
+  - |
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: governance-ro-grant
+      namespace: converse
+      annotations:
+        argocd.argoproj.io/sync-wave: "4"
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          restartPolicy: Never
+          # The cloudnative-pg postgres image already runs as the non-root
+          # `postgres` user (uid 26 / gid 102) — pin it explicitly so the
+          # Trivy KSV-0118 default-security-context check passes.
+          securityContext:
+            runAsUser: 26
+            runAsGroup: 102
+            fsGroup: 102
+          containers:
+            - name: grant
+              image: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+              # Least-privilege container: no privilege escalation, read-only
+              # root fs (psql needs no writes for a -c query), drop all caps.
+              # Satisfies Trivy KSV-0014 (readOnlyRootFilesystem) + KSV-0118.
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: lightbridge-governance-db-role
+                      key: password
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  set -e
+                  # Password comes from PGPASSWORD (secretKeyRef above); host/user/db
+                  # passed as flags so no connection-string literal sits in the chart
+                  # (the secret-scan hook flags postgresql:// URIs).
+                  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+                    if psql -h lightbridge-main-db-rw.converse.svc.cluster.local -p 5432 -U governance -d governance -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'governance_ro'" | grep -q 1; then
+                      break
+                    fi
+                    sleep 2
+                  done
+                  if ! psql -h lightbridge-main-db-rw.converse.svc.cluster.local -p 5432 -U governance -d governance -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'governance_ro'" | grep -q 1; then
+                    echo "governance_ro role was never created (password ExternalSecret not synced?)" >&2
+                    exit 1
+                  fi
+                  psql -h lightbridge-main-db-rw.converse.svc.cluster.local -p 5432 -U governance -d governance -c "GRANT SELECT ON TABLE tenants, applications, identity_maps TO governance_ro"
   # ────────────────────────────────────────────────────────────────────
   # grafana_ro role password (read-only DB user for the Grafana dashboards).
   # basic-auth Secret consumed by CNPG (passwordSecret on the managed role above)
