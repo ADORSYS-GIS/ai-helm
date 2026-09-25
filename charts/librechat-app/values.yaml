@@ -209,6 +209,13 @@ librechat:
         gethomepage.dev/name: "LibreChat (kivoyo redirect)"
         gethomepage.dev/group: "Chat"
         gethomepage.dev/icon: "librechat.png"
+        # Homepage's status badge lists pods labelled app.kubernetes.io/name
+        # <ingress-name> by default (gethomepage resource-helpers.js); this
+        # ingress is named librechat-kivoyo-redirect but its backend (and the
+        # pods serving the redirect's upstream) are the LibreChat pods, labelled
+        # `librechat-app`. Without the pod-selector the hub tile shows NOT FOUND
+        # while the service is healthy.
+        gethomepage.dev/pod-selector: app.kubernetes.io/name=librechat-app
       spec:
         spec:
           ingressClassName: traefik
