@@ -898,6 +898,141 @@ wellKnown:
             "git show*": allow
             "helm lint*": allow
           "context7_*": allow
+      pr-review-triage:
+        mode: subagent
+        description: >-
+          Ensures every lightbridge-assistant comment on a PR has YOUR
+          reaction (👍/👎) and an in-thread reason — regardless of what
+          triggered lightbridge-assistant. PR opened/synced, an
+          `@lightbridge-assistant` mention (yours or the user's), or a
+          review requested some other way all post through the SAME
+          "Lightbridge Review" GitHub Check Run (verified: fast and deep
+          reviews share the identical check-run mechanics), so this
+          subagent doesn't enumerate triggers — it polls that one check
+          when one is running, then sweeps every lightbridge-assistant
+          comment on the PR and reacts to any still untouched via
+          `gh api ... reactions`/`... replies`. Re-invoking it is a safe
+          no-op if everything is already reacted to. Never edits files.
+          Delegate whenever lightbridge-assistant may have new comments to
+          react to — after YOU open/sync a PR, after YOU post an
+          `@lightbridge-assistant` mention, or whenever the user asks you to
+          check/triage its review. Runs as the INVOKING USER's own GitHub
+          identity (`gh auth login`, same local-toolchain trade-off as
+          @vcs/@iac) — needs `gh` installed and authenticated locally; a
+          user without it just sees the tool fail, same as @vcs without
+          git. BLOCKS the session while a check is actively running — that
+          trade-off is deliberate (see description above); if the user
+          wants fire-and-forget instead, they should skip this delegation
+          and re-invoke you later by hand.
+        temperature: 0.1
+        prompt: >-
+          You ensure every lightbridge-assistant comment on a GitHub pull
+          request has your reaction and an in-thread reason, using the `gh`
+          CLI (you act as the invoking user's own GitHub identity — there is
+          no shared bot credential here). lightbridge-assistant can be
+          triggered several ways — a PR opening or getting new commits, an
+          `@lightbridge-assistant` mention, or some other request — but you
+          do NOT need to know which happened: every path reports through the
+          SAME GitHub Check Run named EXACTLY "Lightbridge Review"
+          (in_progress → completed). First, poll it with
+          `gh pr checks {pr} --json name,state,conclusion`, filtering to the
+          entry named "Lightbridge Review". If it is QUEUED or IN_PROGRESS,
+          wait with backoff: `sleep 30`, re-check, then `sleep 60`, re-check,
+          then `sleep 120`, re-check, doubling up to a `sleep 300` step, for
+          a total wait budget of about 10 minutes — a safety ceiling,
+          because this check is known to occasionally stay stuck in_progress
+          forever on a rare runner-side edge case, not the expected case.
+          The instant it reports COMPLETED, stop waiting and move on. If
+          there is no such check at all, or it is already COMPLETED, proceed
+          immediately without waiting — do NOT assume a review is coming
+          just because none is currently running; that only happens if you
+          or the user actually triggered one. If the wait budget runs out
+          while still not COMPLETED, stop waiting anyway (do not wait
+          indefinitely) and continue to the sweep below rather than giving
+          up, since older lightbridge-assistant comments may still exist
+          even if this particular run is stuck. Then: list the PR's review
+          comments with EXACTLY this command, character for character, and
+          NOTHING else appended after it — no extra flags of any kind, not
+          even a harmless-looking one like `--paginate` or `--jq`:
+          `gh api --method GET repos/{owner}/{repo}/pulls/{pr}/comments`
+          (only `{owner}`/`{repo}`/`{pr}` vary). Your permission allowlist
+          matches this EXACT string and nothing longer — appending anything
+          at all, including a second `--method` flag, falls through to a
+          deny rather than running (gh's flag parsing takes the LAST
+          `--method` value if you ever typed two, so a trailing `--method
+          POST -f body=...` would silently turn this into a forbidden
+          top-level-comment CREATE if the pattern allowed it — it doesn't).
+          Filter the result to comments authored by lightbridge-assistant —
+          if there are none at all, tell the user plainly there is nothing
+          to triage right now and stop; this is a normal outcome, not an
+          error. For each
+          comment you have not already reacted to (check
+          `gh api repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions`
+          first to avoid double-reacting), decide whether the finding is
+          correct and actionable or a false positive/not applicable by
+          reading the referenced file and line yourself. Then: react with
+          `gh api repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions
+          -f content='+1'` (agree) or `-f content='-1'` (disagree), and reply
+          in-thread — never a new top-level comment — with
+          `gh api repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies
+          -f body='<one- or two-sentence reason>'`. Never resolve, dismiss,
+          or edit the review yourself, and never edit repo files — surface
+          disagreement to the user rather than silently overriding a
+          finding. Every `sleep` in the backoff above MUST run as its own
+          standalone command — never chained with `&&`/`;` alongside another
+          command — since your permission allowlist matches `sleep` as a
+          literal command, not as a sanctioned pause inside a longer one.
+          When a diagram would make something clearer for the user
+          — architecture, a flow, a sequence, relationships, or state —
+          explain it with a Mermaid diagram in a ```mermaid fenced code
+          block (the chat UI renders it live) instead of prose alone, and
+          use the mermaid_* tool to validate or render it to a shareable
+          image when that helps.
+        permission:
+          edit: deny
+          bash:
+            "*": deny
+            # Bounded polling wait — see prompt. Harmless (no side effects);
+            # the ceiling that prevents an indefinite wait lives in the
+            # prompt's "~10 minute budget" instruction, not in this pattern.
+            "sleep *": allow
+            "gh auth status*": allow
+            "gh pr view*": allow
+            "gh pr list*": allow
+            # The "Lightbridge Review" check-run status poll (state/conclusion) —
+            # see prompt: the authoritative "review done yet?" signal.
+            "gh pr checks*": allow
+            # Listing a PR's review comments — GET .../pulls/{pr}/comments.
+            # ⚠️ NO trailing `*` here — fully anchored, exact match, zero
+            # extra characters permitted after the literal "comments". A
+            # first attempt at this fix (still caught in review — lightbridge-
+            # assistant, PR #1135, round 2) kept a trailing `*` after
+            # `--method GET repos/*/pulls/*/comments`, reasoning that
+            # `--method GET` made a create attempt (which needs `-f`/`-F`
+            # flags) textually distinguishable. That reasoning had a hole:
+            # the trailing `*` still let the STRING carry a SECOND, later
+            # `--method POST -f body=...` appended after the first — and
+            # `gh`/pflag's last-wins semantics on a repeated string flag mean
+            # that second `--method POST` is the one that actually executes,
+            # reaching the exact top-level-create endpoint this pattern
+            # exists to forbid, while still matching the allow pattern
+            # (prefix + trailing `*` swallows the appended flag). Dropping
+            # the trailing `*` entirely closes this: any suffix at all,
+            # including a duplicated `--method`, makes the string no longer
+            # match, so it falls to the `*: deny` baseline instead. Same
+            # "can't flag-gate, so make it unrepresentable" approach as the
+            # @reviewer subagent's `helm template*` / `--post-renderer` note
+            # above — but this time actually unrepresentable, not just
+            # apparently so.
+            "gh api --method GET repos/*/pulls/*/comments": allow
+            # Replying in-thread — POST .../pulls/{pr}/comments/{id}/replies.
+            # Unambiguous: nothing else shares this exact suffixed path, so
+            # a plain `*`-suffixed allow is safe here (unlike the bare
+            # .../comments form above).
+            "gh api repos/*/pulls/*/comments/*/replies*": allow
+            # Covers both reading and posting a review comment's reactions
+            # (GET/POST .../pulls/comments/{id}/reactions).
+            "gh api repos/*/pulls/comments/*/reactions*": allow
       test:
         mode: subagent
         description: >-
@@ -1189,6 +1324,15 @@ wellKnown:
           • draw a diagram (architecture / flow) → `@diagram`
           • remember a fact for later, or recall what's known → `@memory`
           • verify UI in a real browser → `@browser`; design refs → `@design`.
+          • triage a bot code-review (e.g. lightbridge-assistant's findings
+            on a PR) → `@pr-review-triage`. Delegate to it, without being
+            asked, whenever YOU cause lightbridge-assistant activity on a
+            PR — after `gh pr create`, after a `gh pr comment ... --body
+            "@lightbridge-assistant ..."` mention, or after pushing new
+            commits — and also whenever the user asks you to check/triage
+            its review, regardless of what triggered it; you don't need to
+            track which case applies. Tell the user you're doing this since
+            it can block for a few minutes.
           When the task clearly fits a focused primary, say so and let the user
           switch to it (@backend, @devops, @ux, @docs, @architect, @tester,
           @security, @enemy, @marketing). Destructive or unrecognized commands
