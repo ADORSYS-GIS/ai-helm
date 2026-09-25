@@ -951,19 +951,21 @@ wellKnown:
           indefinitely) and continue to the sweep below rather than giving
           up, since older lightbridge-assistant comments may still exist
           even if this particular run is stuck. Then: list the PR's review
-          comments with EXACTLY
+          comments with EXACTLY this command, character for character, and
+          NOTHING else appended after it — no extra flags of any kind, not
+          even a harmless-looking one like `--paginate` or `--jq`:
           `gh api --method GET repos/{owner}/{repo}/pulls/{pr}/comments`
-          (the `--method GET` is required verbatim — it is what your
-          permission allowlist matches; the same URL without it is a
-          DIFFERENT, forbidden operation — see the next sentence) and filter
-          to ones authored by lightbridge-assistant — if there are none at
-          all, tell the user plainly there is nothing to triage right now
-          and stop; this is a normal outcome, not an error. NEVER call
-          `gh api repos/{owner}/{repo}/pulls/{pr}/comments` with `-f`/`-F`
-          flags instead of `--method GET` — that is GitHub's "create a new
-          top-level review comment" endpoint, sharing the exact same URL as
-          the list you just ran, and you are never permitted to post a new
-          top-level comment (only in-thread replies, below). For each
+          (only `{owner}`/`{repo}`/`{pr}` vary). Your permission allowlist
+          matches this EXACT string and nothing longer — appending anything
+          at all, including a second `--method` flag, falls through to a
+          deny rather than running (gh's flag parsing takes the LAST
+          `--method` value if you ever typed two, so a trailing `--method
+          POST -f body=...` would silently turn this into a forbidden
+          top-level-comment CREATE if the pattern allowed it — it doesn't).
+          Filter the result to comments authored by lightbridge-assistant —
+          if there are none at all, tell the user plainly there is nothing
+          to triage right now and stop; this is a normal outcome, not an
+          error. For each
           comment you have not already reacted to (check
           `gh api repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions`
           first to avoid double-reacting), decide whether the finding is
@@ -1001,20 +1003,28 @@ wellKnown:
             # see prompt: the authoritative "review done yet?" signal.
             "gh pr checks*": allow
             # Listing a PR's review comments — GET .../pulls/{pr}/comments.
-            # ⚠️ Anchored on `--method GET`, NOT a bare `.../comments*`
-            # pattern: the bare form's URL is IDENTICAL to GitHub's "create a
-            # new top-level review comment" endpoint (POST, no /replies
-            # suffix) — opencode's `*` matches any character including `/`,
-            # so a bare pattern would ALSO allow that unintended write
-            # (caught in review — lightbridge-assistant, PR #1135). Forcing
-            # `--method GET` into both the prompt's command and this pattern
-            # makes the two operations textually distinguishable, so a
-            # create attempt (which needs `-f`/`-F` flags instead) simply
-            # doesn't match and falls to the `*: deny` baseline. Same
+            # ⚠️ NO trailing `*` here — fully anchored, exact match, zero
+            # extra characters permitted after the literal "comments". A
+            # first attempt at this fix (still caught in review — lightbridge-
+            # assistant, PR #1135, round 2) kept a trailing `*` after
+            # `--method GET repos/*/pulls/*/comments`, reasoning that
+            # `--method GET` made a create attempt (which needs `-f`/`-F`
+            # flags) textually distinguishable. That reasoning had a hole:
+            # the trailing `*` still let the STRING carry a SECOND, later
+            # `--method POST -f body=...` appended after the first — and
+            # `gh`/pflag's last-wins semantics on a repeated string flag mean
+            # that second `--method POST` is the one that actually executes,
+            # reaching the exact top-level-create endpoint this pattern
+            # exists to forbid, while still matching the allow pattern
+            # (prefix + trailing `*` swallows the appended flag). Dropping
+            # the trailing `*` entirely closes this: any suffix at all,
+            # including a duplicated `--method`, makes the string no longer
+            # match, so it falls to the `*: deny` baseline instead. Same
             # "can't flag-gate, so make it unrepresentable" approach as the
             # @reviewer subagent's `helm template*` / `--post-renderer` note
-            # above.
-            "gh api --method GET repos/*/pulls/*/comments*": allow
+            # above — but this time actually unrepresentable, not just
+            # apparently so.
+            "gh api --method GET repos/*/pulls/*/comments": allow
             # Replying in-thread — POST .../pulls/{pr}/comments/{id}/replies.
             # Unambiguous: nothing else shares this exact suffixed path, so
             # a plain `*`-suffixed allow is safe here (unlike the bare
