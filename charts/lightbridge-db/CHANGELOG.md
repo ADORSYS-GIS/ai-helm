@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-db-v0.4.0...lightbridge-db-v0.5.0) (2026-09-25)
+
+
+### Features
+
+* **lightbridge-db:** read-only governance_ro role + GRANT for the Grafana governance datasource ([#1133](https://github.com/ADORSYS-GIS/ai-helm/issues/1133)) ([decda84](https://github.com/ADORSYS-GIS/ai-helm/commit/decda8419a8bb9b2d5b0d7cf39e347e065365c64))
+
 ## [0.4.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-db-v0.3.0...lightbridge-db-v0.4.0) (2026-09-02)
 
 
