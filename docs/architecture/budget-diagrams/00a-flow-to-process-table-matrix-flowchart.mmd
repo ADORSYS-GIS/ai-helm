@@ -1,0 +1,88 @@
+flowchart LR
+    subgraph API["converse/lightbridge-api-main\nlightbridge-authz"]
+      CA[createAccount]
+      MA[provisionAccount]
+      SG[StartingGrantService]
+    end
+    subgraph IDP["converse/lightbridge-idp-main\nlightbridge-authz"]
+      AP[federated callback auto-provision]
+    end
+    subgraph BUD["converse/lightbridge-budget-main\nlightbridge-authz"]
+      RF[requestBudgetRefill]
+      RV[approve or reject refill]
+      PE[RuleDataEngine]
+      PO[policy revision RPCs]
+      SC[schedule CRUD plus scheduler tick]
+      BR[Snapshot refresher]
+    end
+    subgraph OPA["converse/lightbridge-opa-main\nlightbridge-authz"]
+      BI[Authorino introspection handler]
+    end
+    subgraph GW["envoy-gateway-system/envoy-converse-gateway-*\nEnvoy v1.38.3"]
+      LUA[ExtensionPolicy Lua filters]
+    end
+    subgraph AUTH["converse-gateway/kuadrant-policies-main\nAuthorino v0.24.0"]
+      AU[AuthConfig metadata pipeline]
+    end
+    subgraph USAGE["converse/lightbridge-usage-main\nlightbridge-authz-usage"]
+      SP[spend query listener]
+      ING[usage ingest listener]
+    end
+    subgraph DB["main Postgres"]
+      ACC[(users/accounts)]
+      PROJ[(projects/project_members/api_keys)]
+      FED[(federated_identities)]
+      GR[(budget_grants)]
+      BAL[(budget_balances)]
+      REQ[(budget_augmentation_requests)]
+      POL[(budget_policy_sets/revisions)]
+      SCH[(budget_reset_schedules)]
+      SNAP[(budget_remaining_snapshots)]
+    end
+    subgraph UDB["usage Postgres"]
+      UE[(usage_events)]
+      UED[(usage_events_daily)]
+    end
+
+    CA --> ACC
+    CA --> SG
+    MA --> ACC
+    MA --> PROJ
+    MA --> SG
+    AP --> ACC
+    AP --> PROJ
+    AP --> FED
+    AP --> SG
+    SG --> SCH
+    SG --> POL
+    SG --> GR
+    SG --> BAL
+    SG --> SNAP
+    RF --> REQ
+    RF --> PE
+    RF --> GR
+    RF --> BAL
+    RF --> SNAP
+    RF --> SP
+    RV --> REQ
+    RV --> GR
+    RV --> BAL
+    RV --> SNAP
+    PO --> POL
+    SC --> SCH
+    SC --> ACC
+    SC --> PROJ
+    SC --> GR
+    SC --> BAL
+    SC --> SNAP
+    BR --> SNAP
+    BR --> GR
+    BR --> SCH
+    BR --> SP
+    BI --> PROJ
+    BI --> SNAP
+    AU --> BI
+    LUA --> AU
+    ING --> UE
+    SP --> UE
+    SP --> UED
