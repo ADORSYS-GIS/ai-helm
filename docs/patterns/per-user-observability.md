@@ -36,8 +36,12 @@ break down requests, latency, tokens, and cost by authenticated user.
                             ┌────────────────────────────────┐
                             │  Envoy access log — OTel sink  │
                             │  format.json fields become     │
-                            │  OTLP log ATTRIBUTES; straight │
-                            │  to alloy.observability:4317   │
+                            │  OTLP log ATTRIBUTES → the     │
+                            │  core-gateway `-usage` OTel    │
+                            │  collector (:4317), which fans │
+                            │  out to Alloy AND to           │
+                            │  lightbridge-authz-usage       │
+                            │  (billing ingest)              │
                             │  (resource service.name =      │
                             │   envoy-ai-gateway)            │
                             └──────────────┬─────────────────┘
@@ -230,9 +234,13 @@ sum by (user_id) (count_over_time({service_name="envoy-ai-gateway"} [5m]))
 If you see the JSON fields but no labels, Alloy's
 `loki.process "ai_gateway_user_attribution"` stage didn't fire — typical
 causes: the `stage.match` marker (`otel_envoy_accesslog`) missing from the
-line, or the access log isn't reaching Alloy's OTLP receiver at all (Envoy
-pushes access logs straight to `alloy.observability:4317` — the old
-`-usage` OTel collector was removed; check the Alloy pod logs).
+line, or the access log isn't reaching Alloy's OTLP receiver at all. Envoy
+pushes access logs to the **`core-gateway-usage-collector`** Service
+(ns `converse-gateway`, `:4317`) — the `-usage` OTel collector
+(`charts/core-gateway/templates/otel.yaml`) was removed once and has since been
+**restored** as a fan-out: it re-exports the same stream unchanged to
+`otlp/alloy` (`alloy.observability:4317`) and to lightbridge-authz-usage's
+OTLP/HTTP ingest. So check that collector's pod logs as well as Alloy's.
 
 ## LogQL queries for common dashboards
 
@@ -326,7 +334,7 @@ not replace, fixing thin tokens to carry the email/name claims.
 | Streams land as `service_name="unknown_service"` with a `{"attributes":...}` body | The `ai_gateway_user_attribution` stage isn't matching (the exact pre-ADR-0046 failure mode) | Check the Alloy config actually deployed (`stage.match` selector `{exporter="OTLP"} \|= "otel_envoy_accesslog"`); diff against `charts/observability/values.yaml` |
 | `user_id` label missing on some requests, `azp` present | Request authenticated via a path that doesn't stamp `sub` | Was the request authenticated? Envoy logs `-` for absent headers and Alloy maps `-` → no label by design (unauthenticated traffic is intentionally unlabeled) |
 | `user_id` label absent entirely on AI Gateway logs | Alloy stage isn't seeing the field | `kubectl logs -n observability daemonset/alloy` and look for parse errors; verify the flattened line contains `"user_id":` (not the header name `"x-oidc-user-id":`) |
-| No gateway streams in Loki at all | Access log not reaching Alloy's OTLP receiver | Envoy exports straight to `alloy.observability.svc:4317`; check the deps overlay's OTLP ingress allow (`environments/*/deps/alloy/`) and the Alloy receiver logs. Remember only requests with `x-ai-eg-model` set are logged (`matches` condition) |
+| No gateway streams in Loki at all | Access log not reaching Alloy's OTLP receiver | Envoy exports to the `core-gateway-usage-collector` (`:4317`), which re-exports to `alloy.observability.svc:4317` — check that collector is up and its `otlp/alloy` exporter isn't erroring, then the deps overlay's OTLP ingress allow (`environments/*/deps/alloy/`) and the Alloy receiver logs. Remember only requests with `x-ai-eg-model` set are logged (`matches` condition) |
 | Token/latency panels empty but request panels work | Unwrap failing on string/`-` values | Every unwrap needs the `\| __error__=""` guard (ADR-0046); fields are strings and absent values are `-` |
 | SA tokens missing labels too | `auth.identity.sub` selector returns empty for some tokens | Some Keycloak realm configs hide `sub` on SA tokens. Switch the selector to `auth.identity.<claim-actually-present>` and update this doc |
 | All requests label as same user | Authorino is using the wrong identity source | Confirm the AuthConfig `authentication.keycloak.jwt.issuerUrl` matches the realm issuing the tokens you're sending |

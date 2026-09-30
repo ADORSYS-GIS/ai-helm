@@ -1,6 +1,6 @@
 # Shared cross-model monthly budget (#532)
 
-**Status:** live since 2026-07-08 (EG v1.8.2, cutover PR #616).
+**Status:** ⚠️ **historical — deleted 2026-09-05.** Live from 2026-07-08 (EG v1.8.2, cutover PR #616) until `ai-helm-values` #427 removed the monthly/weekly cost rules (`environments/prod/values/core-gateway.yaml`, "THE COST BUCKETS ARE GONE"). With both live, the effective cap was `min(plan bucket, ledger)`, so a ledger refill could not clear a spent bucket. Spend is now capped only by the lightbridge-authz ledger via `budget-limiter.lua` (402, [ADR-0137](../adr/0137-budget-limiter-enforced-in-lua-not-authorino-denial.md)). The only per-model rate-limit rules left are the `rpmPerKey` requests/min pair. The chart can still render these rules (`core-gateway` `backendTrafficPolicy.monthlyBudget`, default `enabled: false`). Do not re-enable them as a rollback: the rollback for the limiter is `budgetLimiter.shadowMode: true`. The analysis below (route-scoped counters, `shared: true`) remains accurate Envoy Gateway behaviour.
 **TL;DR:** the per-user monthly budget used to be silently enforced **per model**; it is now **one shared counter per (user, plan) across all models**, via a `shared: true` rate-limit rule on the gateway-wide BackendTrafficPolicy that per-model policies merge with.
 
 ## The bug

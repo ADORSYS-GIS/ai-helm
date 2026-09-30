@@ -7,6 +7,35 @@
 > index → plan name), [ADR-0111](../adr/0111-calendar-aligned-billing-period.md)
 > (the `billing_period` label below).
 > Dashboard: **AI Gateway → "AI Gateway — rate-limit quota"**.
+
+> 🛑 **RETIRED IN PRACTICE — the counters this subsystem reads were deleted on
+> 2026-09-05.** Everything below describes the µ$ **cost** counters of the
+> gateway-wide monthly/weekly `shared: true` budget rules. Those rules — and the
+> dormant per-model `monthlyBudgetUsd` figures — were removed in
+> `ai-helm-values` #427 (`environments/prod/values/core-gateway.yaml`, see its
+> "THE COST BUCKETS ARE GONE" banner; `models.yaml` header), because with them live
+> the effective cap was `min(plan bucket, ledger)` and a ledger refill could not
+> clear a spent bucket. **Spend is now capped only by the lightbridge-authz
+> Postgres ledger**, enforced by the `budget-limiter.lua` filter
+> (`charts/core-gateway`, [ADR-0137](../adr/0137-budget-limiter-enforced-in-lua-not-authorino-denial.md))
+> as **402 `budget_exhausted`**, and observed from the access log's `budget.*`
+> fields — not from Redis. The only per-account counters left in Redis are the
+> per-model **request-rate** rules (`rpmPerKey`, requests/min, no `cost:`).
+>
+> What is actually deployed on `main` today:
+>
+> - `prometheus-redis-exporter` still runs, but its values
+>   (`ai-helm-values environments/prod/values/prometheus-redis-exporter.yaml`)
+>   **unset `REDIS_EXPORTER_CHECK_KEYS` and deleted every key-parsing relabel**.
+>   It keeps only `redis_up`; `gateway_ratelimit_spend_micro_usd` is no longer
+>   produced.
+> - The `redis-ratelimit` Redis datasource and this dashboard are still deployed
+>   and **render empty**. Retiring or repointing them is open ai-helm work,
+>   tracked in `ai-helm-values` `docs/runbooks/budget-limiter-rollout.md`
+>   §"What is NOT done, and must not be inferred from the above".
+>
+> Treat the rest of this page as a **historical record**. The plugin gotchas
+> (TLS, install, `extractFields`) still hold for any future Redis datasource.
 >
 > ⚠️ This doc predates the **#532 shared cross-model budget cutover**
 > ([`docs/patterns/shared-cross-model-budget.md`](shared-cross-model-budget.md) —
@@ -34,7 +63,7 @@ tokens/min); the monthly micro-USD budget moved to a single **gateway-wide**
 shared rule, one counter per (account, plan) spanning every model
 ([shared-cross-model-budget.md](shared-cross-model-budget.md)), and the burst
 rules were switched off entirely on 2026-08-01 — so that shared monthly budget
-is now the only cap enforced. The Lyft ratelimit service keeps these counters in
+was, until its deletion on 2026-09-05 (banner above), the only cap enforced. The Lyft ratelimit service keeps these counters in
 **redis-ha** (home-os `charts/home-apps/redis-ha`).
 
 That current-window counter exists **nowhere else**. The cost dashboards
@@ -225,7 +254,7 @@ The password is the existing `ssegning-aws prod/meta/test-app#redis_password`
 | `charts/observability/values.yaml` | the `prometheus-redis-exporter` child |
 | `charts/observability-dashboards/values.yaml` + `files/envoy-ai-gateway/ratelimit-quota.json` | the GrafanaDashboard CR + generated JSON |
 | `tools/dashboards/src/dashboards/envoy_ai_gateway/ratelimit_quota.py` | the dashboard generator source |
-| `ai-helm-values environments/prod/values/prometheus-redis-exporter.yaml` | exporter chart values (redis addr, TLS CA, check-keys, metricRelabelings) |
+| `ai-helm-values environments/prod/values/prometheus-redis-exporter.yaml` | exporter chart values (redis addr, TLS CA; since 2026-09-05 no check-keys, relabelings keep only `redis_up`) |
 | `ai-helm-values environments/prod/values/grafana.yaml` | the `redis-datasource` plugin + `Redis` datasource |
 | `ai-helm-values environments/{base,prod}/deps/prometheus-redis-exporter/` | exporter secret + CA cert + Cilium policy |
 | `ai-helm-values environments/base/deps/observability-secrets/external-secrets.yaml` | `grafana-redis-ratelimit` ExternalSecret |

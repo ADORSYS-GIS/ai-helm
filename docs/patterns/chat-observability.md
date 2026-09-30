@@ -2,8 +2,11 @@
 
 **Status:** live. **ADRs:** [0077](../adr/0077-phoenix-style-chat-dashboards.md)
 (the dashboards) + [0079](../adr/0079-per-user-span-attribution-not-viable.md)
-(per-user content is *not* achievable — the AIEG ext-proc runs before Authorino;
-supersedes [0078](../adr/0078-per-user-span-attribution-for-chat-content.md)).
+(per-user content is *not* achievable **on the external listener** — there the
+AIEG ext-proc runs before Authorino; supersedes
+[0078](../adr/0078-per-user-span-attribution-for-chat-content.md)). ⚠️ ADR-0079's
+finding is per-listener: on the **internal** listener the order is reversed and
+spans *do* carry `user.id`/`user.email` — see below.
 **Dashboards:** `AI Gateway — chat overview` (uid `envoy-ai-gateway-chat-overview`),
 `AI Gateway — chats by user` (uid `envoy-ai-gateway-chats-by-user`).
 
@@ -41,9 +44,39 @@ Phoenix's era: both backends received the exact same OpenInference spans in
 parallel (ADR-0002), so nothing about content access changed when Tempo
 replaced Phoenix.
 
-## Per-user identity on spans — not achievable (ADR-0079)
+## Per-user identity on spans — external listener: no; internal listener: yes
 
-Spans carry **no `user.id`/`user.email`**, and the Envoy access-log JSON
+> ⚠️ **Corrected 2026-09-30.** This section used to say per-user span
+> attribution was impossible everywhere and that `spanRequestHeaderAttributes`
+> had been reverted. Neither holds on `main` today:
+>
+> - The mapping is **still set** — `ai-helm-values`
+>   `environments/prod/values/aieg.yaml`:
+>   `controller.spanRequestHeaderAttributes: "x-oidc-user-id:user.id,x-oidc-email:user.email"`.
+> - Envoy's HTTP filter order is **per listener chain**. The ADR-0079 evidence
+>   below is from the **external** `api-https` chain (`api.ai.camer.digital`),
+>   where `ext_proc/aigateway` is filter #1 and Authorino's `ext_authz` is #7.
+>   On the **internal** chain
+>   (`core-gateway-internal.envoy-gateway-system.svc.cluster.local`), `ext_authz`
+>   runs **first** and `ext_proc` second (live `config_dump`, 2026-07-27,
+>   recorded in `ai-helm-values` `environments/prod/values/security-policies.yaml`).
+>   So by the time the ext-proc builds the span on that listener, Authorino has
+>   already stamped `x-oidc-*`, and the mapping fills `user.id`/`user.email`.
+>
+> What the internal plane's `user.email` holds is whatever its AuthConfig stamps
+> as `x-oidc-email`: the email LibreChat forwards (`X-LibreChat-Email`), or a
+> sentinel — `missing:librechat:email` (LibreChat user, no email forwarded),
+> `<owner/repo>@lightbridge-code-intelligence` (LCI), `missing:service:email`
+> (raw SA/cron caller). **LibreChat chat content can therefore be filtered per
+> person in Tempo** (`span.user.email = "…"`). External traffic (opencode, API
+> keys, remote SAs) still cannot. That makes the privacy note in `aieg.yaml`
+> accurate: full chat content is attributable to a named person for
+> internal-plane traffic.
+
+The rest of this section is the ADR-0079 analysis, and it holds **for the
+external listener only**:
+
+On the external listener spans carry **no `user.id`/`user.email`**, and the Envoy access-log JSON
 (Loki's identity source, [ADR-0046](../adr/0046-per-user-attribution-otlp-envelope-repair.md))
 carries no `trace_id` — and a live span carries no `x-request-id` either. So
 there is **no way to attribute a span to a person and no shared key to join it
@@ -53,7 +86,7 @@ to the user-bearing Loki logs**; the two datasets are disjoint.
 close this with the AI Gateway controller's `spanRequestHeaderAttributes`
 mapping (`x-oidc-user-id:user.id,x-oidc-email:user.email`), tagging spans with
 the Keycloak identity Authorino stamps. **It was deployed end-to-end and
-produced nothing.** [ADR-0079](../adr/0079-per-user-span-attribution-not-viable.md)
+produced nothing on the external listener.** [ADR-0079](../adr/0079-per-user-span-attribution-not-viable.md)
 found and confirmed why, by pulling the live Envoy filter chain
 (`config_dump`, external `api-https` listener):
 
@@ -71,11 +104,12 @@ for the span *before* `x-oidc-*` exist. The access log sees them only because
 gateway affecting LLM *and* MCP routes, with a suffixed filter name and
 routing/transform risk, isn't worth a per-user convenience.
 
-**Bottom line:** per-user chat *content* is a confirmed structural limit. The
-`spanRequestHeaderAttributes` config was reverted (it was a no-op). To read a
-specific person's content, browse the global `chat-overview` trace feed and
-recognise them from the content. **No privacy change** — nothing was ever
-attributed.
+**Bottom line:** on the **external** listener, per-user chat *content* is a
+confirmed structural limit — to read a specific external caller's content,
+browse the global `chat-overview` trace feed and recognise them from the
+content. On the **internal** listener (LibreChat, LCI, in-cluster SAs) spans
+are attributed, via the same `spanRequestHeaderAttributes` mapping — which was
+**not** reverted and is still live.
 
 ## The two dashboards
 
@@ -104,8 +138,10 @@ attributed.
   `__value`; both object forms errored). This is the **opposite** of a panel
   target — don't "fix" it into an object. The hero is a **per-request Loki log**
   (one row per chat: model/status/tokens/cost/latency, `email="$user"`) —
-  distinct from the `per_user`/`actor-consumption` rollup charts. Metadata only;
-  per-user content isn't filterable (ADR-0079, above).
+  distinct from the `per_user`/`actor-consumption` rollup charts. The board shows
+  metadata only. Internal-plane (LibreChat) spans *are* filterable by
+  `span.user.email` in Tempo Explore. External-plane content still isn't
+  (ADR-0079, above).
 
 ⚠️ **No raw user input is ever interpolated into SQL.** The `$user` variable's
 *available options* come from a static-realm-id query; the *selected* value
@@ -129,9 +165,10 @@ kubectl port-forward -n observability svc/tempo 3200:3200 &
 curl -s "http://localhost:3200/api/search/tag/openinference.span.kind/values"
 # {"tagValues":["EMBEDDING","LLM"]}
 curl -s "http://localhost:3200/api/search/tag/user.email/values"
-# empty — and stays empty (ADR-0079): the AIEG ext-proc runs before Authorino,
-# so its spans never get the x-oidc-* identity. Confirmed by pulling the live
-# filter chain (config_dump on the api-https listener: ext_proc/aigateway is
+# NOT empty: values come from INTERNAL-listener traffic only (LibreChat emails +
+# the missing:*/…@lightbridge-code-intelligence sentinels), because there
+# ext_authz runs before ext_proc. External-listener spans (api.ai.camer.digital)
+# never carry user.email (ADR-0079: on the api-https chain ext_proc/aigateway is
 # filter #1, ext_authz is #7).
 
 # Read content on any trace (works regardless of attribution):
