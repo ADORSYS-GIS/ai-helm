@@ -30,9 +30,9 @@ overlays) lives in the private `ai-helm-values` repo (ADR-0055/0056).
 |---|---|---|
 | 1 | **Scalability** | Serve ~2000 concurrent clients sustained, ~5000 at peak, on the OpenAI-compatible endpoint without latency collapse |
 | 2 | **Observability / attribution** | Every request attributable to a user, plan, and model; usage/cost queryable in Grafana in near-real-time |
-| 3 | **Security / multi-tenancy** | Keycloak JWT is the authorization boundary; per-plan burst + monthly budget enforced at the gateway; tenant isolation by claim |
+| 3 | **Security / multi-tenancy** | Keycloak JWT is the authorization boundary; per-account spend capped by the ledger-backed budget limiter (402, ADR-0137) + per-model request-rate limits at the gateway; tenant isolation by claim |
 | 4 | **Operability (GitOps)** | Every change is a reviewed Git diff; reproducible, declarative, env-overlayable; merge to `main` is the deploy |
-| 5 | **Cost control** | Per-person monthly USD budget enforced; self-hosted object storage; self-hosted GPU inference priced nominally so it is always the cheapest route (ADR-0128); no per-request Python hop |
+| 5 | **Cost control** | Per-account USD balance enforced against the lightbridge-authz ledger (402, ADR-0137); self-hosted object storage; self-hosted GPU inference priced nominally so it is always the cheapest route (ADR-0128); no per-request Python hop |
 
 ### Stakeholders
 
@@ -121,16 +121,16 @@ all the GitOps glue.
 | Goal | Strategy | Realised by |
 |---|---|---|
 | Scale to 2000/5000 clients | HTTP/2 multiplexing + data-plane HPA + circuit breaking | `core-gateway` ClientTrafficPolicy / EnvoyProxy HPA / BackendTrafficPolicy (ADR-0021) |
-| Attribution | JWT → Authorino `x-oidc-*` headers → Envoy access log → Alloy → Loki labels + Mimir counters | ADR-0005/0011/0046/0058, `per-user-observability.md` |
+| Attribution | JWT → Authorino `x-oidc-*` headers → Envoy access log → `core-gateway` `-usage` OTel collector → Alloy → Loki labels + Mimir counters (and, in parallel, → lightbridge-authz-usage billing ingest) | ADR-0005/0011/0046/0058, `per-user-observability.md` |
 | Identity resolution | Read-only Keycloak Postgres datasource resolves `user_id` (sub UUID) → person + offline grants × spend | ADR-0063/0064, `keycloak-identity-datasource.md` |
 | Per-JWT / synthetic identity | Loki-backed `jwt-tokens` on `oidc_jti`; Authorino synthesizes named identities for known service callers | ADR-0067/0068 |
-| Chat-content visibility | Reuse the gateway ext-proc's OpenInference spans (full request/response) in Tempo; per-request Loki metadata | ADR-0077 (per-user span attribution not viable — ADR-0079) |
-| Rate-limit quota | Live per-account budget counters read from redis-ha: `prometheus-redis-exporter` → Mimir leaderboard + a `redis-datasource` census | ADR-0070, `ratelimit-quota-observability.md` |
+| Chat-content visibility | Reuse the gateway ext-proc's OpenInference spans (full request/response) in Tempo; per-request Loki metadata | ADR-0077 (per-user span attribution not viable on the **external** listener — ADR-0079; internal-listener spans carry `user.email`, see `chat-observability.md`) |
+| Rate-limit quota | ⚠️ **Retired in practice**: the redis-ha cost counters this read were deleted 2026-09-05; the exporter now keeps only `redis_up` and the dashboard renders empty. Budget state = access-log `budget.*` fields | ADR-0070, `ratelimit-quota-observability.md` |
 | Authorization | Keycloak JWT as the boundary; per-host AuthConfig differentiation | ADR-0021 |
 | CI without shared keys | GitHub Actions OIDC → `lightbridge-repo-auth` org→account binding (GitLab multi-forge in progress) | ADR-0047/0049 |
 | Automated code review | `lightbridge-code-intelligence` GitHub/GitLab App: Rust control plane + Next.js console + Neo4j + pgvector, calls through the gateway | chart `lightbridge-code-intelligence` |
 | Cluster autonomy | In-cluster opencode agent on the internal plane (own SA token) | ADR-0037 |
-| Quota & billing | Per-plan burst + per-person monthly budget in `BackendTrafficPolicy` | ADR-0021/0035 |
+| Quota & billing | Spend: lightbridge-authz Postgres ledger → Authorino dynamic metadata → `budget-limiter.lua` (402). Rate: per-model `rpmPerKey` requests/min rules in each model's `BackendTrafficPolicy` (no cost buckets since 2026-09-05) | ADR-0137 (supersedes the ADR-0021/0035 cost buckets in practice) |
 | Operability / delivery | Continuous delivery: OCI charts (semver float) + image-updater write-back to `ai-helm-values`; umbrella apps + App-of-Apps | ADR-0016–0020, 0055/0056/0082 |
 | Provider abstraction | Envoy AI Gateway `AIGatewayRoute` per model, fan-out via ApplicationSet | ADR-0012 |
 | Dashboards reproducibility | Python (grafana-foundation-sdk) → `GrafanaDashboard` CRs, drift-checked | ADR-0004/0008/0045 |
@@ -211,9 +211,9 @@ flowchart TB
     E["EnvoyProxy (HPA 3–5, LeastRequest LB)"]
     A["Authorino (replicas 2, JWKS ttl 3600)<br/>verify Keycloak JWT<br/>stamp x-oidc-* + x-account-id / x-org-id / x-billing-plan"]
     R["AIGatewayRoute (per model)"]
-    B["BackendTrafficPolicy<br/>burst (per user) + monthly budget (per person)<br/>circuit breaker + outlier detection"]
+    B["BackendTrafficPolicy<br/>per-model RPM (api-key-id / account-id × model)<br/>circuit breaker + outlier detection"]
     S["AIServiceBackend → provider<br/>(DeepInfra / Fireworks / Google) or self-hosted GPU"]
-    O["access log (JSON, x-oidc-*) → Alloy → Loki / Mimir<br/>OpenInference spans → Tempo"]
+    O["access log (JSON, x-oidc-*) → -usage collector → Alloy → Loki / Mimir<br/>+ lightbridge-authz-usage (billing)<br/>OpenInference spans → Tempo"]
 
     C --> E
     E -->|ext_authz gRPC| A
@@ -266,7 +266,7 @@ sequenceDiagram
     C->>G: request + JWT (api.ai.camer.digital)
     G->>A: ext_authz (gRPC)
     A-->>G: x-oidc-* + x-account-id(=sub) + x-billing-plan
-    G->>G: BackendTrafficPolicy — burst + monthly budget
+    G->>G: budget-limiter.lua (ledger ≤ 0 → 402) + per-model RPM
     G->>P: proxied request
     P-->>G: stream + token cost (llmRequestCosts)
     G-->>C: response
@@ -397,7 +397,7 @@ flowchart LR
 | **Identity** | Keycloak JWT (RS256); 3 surfaces: human/browser, human/API, service account (CI via GHA OIDC). `x-oidc-*` contract (ADR-0011); synthetic named identities for known service callers (ADR-0068). | [05](./architecture/05-auth-identity.md) |
 | **Authorization** | JWT validity = entry; per-host AuthConfig differentiates plane/plan; no OPA in path. | [05](./architecture/05-auth-identity.md) |
 | **Multi-tenancy** | `x-account-id` (user), `x-org-id`, `x-billing-plan` (Keycloak claim) → rate-limit tiers. | [05](./architecture/05-auth-identity.md) |
-| **Quota** | Burst + monthly USD budget (both per-person, ADR-0035) in `BackendTrafficPolicy`; Redis counters read live (ADR-0070). | [09](./architecture/09-inference.md) |
+| **Quota** | Spend capped by the lightbridge-authz ledger via `budget-limiter.lua` (402, ADR-0137); per-model request-rate (`rpmPerKey`) in `BackendTrafficPolicy`. The Envoy/Redis cost buckets (ADR-0021/0035) were deleted 2026-09-05. | [09](./architecture/09-inference.md) |
 | **Observability** | LGTM + Alloy; per-user Loki labels; Mimir usage counters (ADR-0058); dashboards-as-code; traces + chat content via Tempo/OpenInference (ADR-0077). | [08](./architecture/08-observability.md) |
 | **Alerting** | Grafana-native unified alerting → Discord as grafana-operator CRs (ADR-0059). | [08](./architecture/08-observability.md) |
 | **Secrets** | ESO + `ssegning-aws`; chart-owned ExternalSecrets; app vs platform split. | [07](./architecture/07-data-secrets.md) |
@@ -460,12 +460,12 @@ The complete set lives in [`docs/adr/`](./adr/). The load-bearing ones:
 | 0067 | JWT-token-level consumption dashboard (`jwt-tokens`) on `oidc_jti`, email from the JWT claim only |
 | 0068 | Structured synthetic identities for known non-human callers (Authorino `email=<resource>@<service>`, `jti=<kind>:<id>`) |
 | 0069 | Adopt Envoy AI Gateway v1.0; migrate AIEG kinds `v1alpha1`→`v1beta1`; wire v1.0 MCP authz opt-in |
-| 0070 | Rate-limit quota observability — read the limiter's LIVE per-account counters from redis-ha (exporter→Mimir + `redis-datasource` census) |
+| 0070 | Rate-limit quota observability — read the limiter's LIVE per-account counters from redis-ha (exporter→Mimir + `redis-datasource` census). ⚠️ Those counters were deleted 2026-09-05 with the cost buckets |
 | 0071/0072/0073 | Local `npx` MCP servers + role subagents; no-key batch; issue-tracker MCPs (Atlassian local, GitHub via gateway phase 2) |
 | 0074 | opencode well-known: every MCP server `enabled: false` (opt-in); `frontend` → a fleet of selectable primaries (default `assistant`) |
 | 0075 | GLM-5.2 price drop — consolidate GLM-5/5.1 onto GLM-5.2 |
 | 0077 | Personal `my-usage` dashboard (built-in `${__user.login}` var + folder RBAC) **and** Phoenix-style chat-content boards on the gateway's OpenInference traces |
-| 0078/0079 | Per-user span attribution adopted then found **not viable** — the AIEG ext-proc runs before Authorino, so spans never see `x-oidc-*` (don't re-attempt) |
+| 0078/0079 | Per-user span attribution adopted then found **not viable on the external listener** — there the AIEG ext-proc runs before Authorino, so spans never see `x-oidc-*` (don't re-attempt the reorder). The mapping stayed live; internal-listener spans are attributed |
 | 0080 | Mermaid MCP `enabled: true` + universal (every agent); global "explain via diagrams" directive appended to all agent prompts |
 | 0081 | **A2A agent-hosting platform (Proposed)** — Rust axum protocol plane + Postgres registry + `rig-core`-on-Restate runtime, EAIG-fronted, A2A→MCP bridge |
 | 0082 | release-please owns each chart's `MAJOR.MINOR` floor + `CHANGELOG.md` from Conventional Commits; publish (ADR-0055) still derives the deployed `PATCH` from commit-count |
@@ -512,7 +512,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **Resilience** | Proxy rollout under load | No stream cut (60 s drain) | Configured |
 | **Observability** | "What did user X spend on model Y this month?" | Answerable in Grafana from Mimir counters | Shipped (ADR-0058/0063) |
 | **Security** | Forged/expired JWT | Rejected at Authorino; no backend reached | Enforced |
-| **Cost** | User exceeds monthly budget | Budget bucket denies; alert at threshold | Enforced + alerted (ADR-0021/0059) |
+| **Cost** | User exhausts their ledger balance | `budget-limiter.lua` answers 402 `budget_exhausted` for metered accounts (lightbridge API-key credentials; the internal, GitHub-Actions and legacy-Keycloak planes publish `enforced: false`) | Enforced (ADR-0137) |
 | **Operability** | Add a model | Entry in `ai-helm-values` `values/models.yaml` → new Application; no chart change (ADR-0126) | Mechanical |
 | **Cost** | A provider changes its price | Synced from its API within 6h and committed to `main`, instead of drifting until someone re-reads a price page (ADR-0127) | Automated |
 | **Operability** | Add a *self-hosted* model | ~15-line entry in `inference` values → new Application; GPU assigned by the scheduler (ADR-0094) | Mechanical |
@@ -535,7 +535,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | **MCP `MCP_TOKEN` token-bind race** | Empty-token proxy rejects all requests | Guarded: `optional: false` (waits for ESO) |
 | **Grafana has read access to the Keycloak auth DB** (ADR-0063/0064) | A leaked `grafana_ro` credential reads usernames/emails/sessions | Bounded: least-privilege role, column-level `client` grant, `-ro` replica; blast radius = identity data only |
 | **KC 26 persistent-sessions: online sessions live in the `offline_*` tables** | Session/grant queries miscount online logins as offline grants | Filter `offline_flag='1'`; documented in `keycloak-identity-datasource.md` + ADR-0064 |
-| **Per-user chat-content trace attribution is structurally impossible** (ADR-0079) | No per-user Tempo content panel | Accepted; ext-proc precedes Authorino by design — don't re-attempt |
+| **Per-user chat-content trace attribution is structurally impossible on the external listener** (ADR-0079) | External-plane chat content can't be filtered per person in Tempo; internal-plane (LibreChat) spans DO carry `user.email` (there `ext_authz` precedes `ext_proc`) | Accepted for external; ext-proc precedes Authorino on that chain by design — don't re-attempt the filter reorder |
 | **A2A agent platform is Proposed, not built (ADR-0081)** | ~9–13+ wk of net-new Rust/Restate infra; several open questions | Restate runtime already deployed; crate-maturity + cost-model spikes pending |
 | **GitLab multi-forge repo-auth in progress** (Epics #588/#591) | CI auth + code review limited to GitHub until landed | Tickets #586–#590 scoped; values-repo-first |
 | **`charts/keycloak-baseline` is not reconciled by anything** | No ArgoCD app / keycloak-config-cli / `KeycloakRealmImport` — the `camer-digital` realm is manually managed, so the chart can drift silently from the live realm (live mlops clients are `argo_workflows` / `lakefs_proxy` / `mlflow`, underscores; the chart used hyphens) | Change Keycloak in the console, then mirror into the chart; documented in [`mlops-app-auth.md`](./playbooks/mlops-app-auth.md) |
@@ -558,7 +558,7 @@ ADRs are immutable once Accepted; supersede with a new ADR.
 | Term | Meaning |
 |---|---|
 | **AIGatewayRoute** | Envoy AI Gateway CR: a model route + provider mapping |
-| **BackendTrafficPolicy** | Envoy Gateway CR enforcing rate limits, budget, circuit breaking |
+| **BackendTrafficPolicy** | Envoy Gateway CR enforcing rate limits (per-model RPM), circuit breaking — no longer the budget (see ADR-0137) |
 | **AuthConfig** | Authorino CR: per-host auth/identity/response rules |
 | **Authorino** | Kuadrant ext_authz service verifying JWT and stamping headers |
 | **App-of-Apps** | Orchestrator chart rendering child `Application` CRs directly |

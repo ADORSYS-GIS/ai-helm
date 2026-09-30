@@ -134,8 +134,17 @@ flowchart LR
     SVC["in-cluster svc"] -->|SA token / apiKey| INT["INTERNAL plane<br/>core-gateway-internal.svc"]
     EXT --> A["Authorino<br/>x-oidc-* + x-account-id/x-billing-plan"]
     INT --> A
-    A --> RL["per-model burst + monthly budget"]
+    A --> BL["budget-limiter.lua<br/>ledger balance ≤ 0 → 402 (metered API-key accounts)"]
+    BL --> RL["per-model RPM<br/>(api-key-id × model, account-id × model)"]
 ```
+
+> ⚠️ Since **2026-09-05** there are no Envoy/Redis cost buckets: the money cap is
+> the lightbridge-authz Postgres ledger, enforced as **402** by
+> `charts/core-gateway` `files/budget-limiter.lua` (ADR-0137). The only
+> `BackendTrafficPolicy` rate-limit rules left are each model's two
+> requests/min rules from `rpmPerKey` (`ai-helm-values` `models.yaml`). The
+> internal, GitHub-Actions and legacy-Keycloak planes publish `budget.enforced: false`
+> (only lightbridge API-key credentials are metered).
 
 > ⚠️ `/mcp/*` is the one carve-out from Authorino — Envoy-native JWT verification
 > + RFC 9728 discovery (ADR-0038), with external MCPs fronted by in-cluster
