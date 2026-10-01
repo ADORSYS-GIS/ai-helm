@@ -1,0 +1,13 @@
+stateDiagram-v2
+    [*] --> Candidate
+    Candidate --> Invalid: validation fails; no revision write
+    Candidate --> StoredInactive: create revision
+    StoredInactive --> StoredInactive: simulation only
+    StoredInactive --> Active: activate pointer and engine
+    Active --> InactiveHistory: another revision activated
+    InactiveHistory --> Active: reactivate old revision
+    StoredInactive --> DBActiveEngineOld: DB commit succeeds; engine swap fails
+    note right of DBActiveEngineOld
+        Error requires reconciliation.
+        The database commit has already happened.
+    end note

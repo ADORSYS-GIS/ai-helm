@@ -1,0 +1,8 @@
+stateDiagram-v2
+    [*] --> PendingReview
+    PendingReview --> Approved: grant then guarded status write
+    PendingReview --> Denied: reason and guarded status write
+    PendingReview --> GrantCommittedReviewPending: crash between commits
+    GrantCommittedReviewPending --> Approved: approval retry reuses deterministic grant key
+    Approved --> RefusedFurtherReview: AlreadyReviewed
+    Denied --> RefusedFurtherReview: AlreadyReviewed
