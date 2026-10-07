@@ -207,7 +207,8 @@ of [`adorsys-gis/lakefs-proxy`](https://github.com/ADORSYS-GIS/lakefs-proxy).
   With `cargo-auditable` embedded metadata, Trivy reports a `rustbinary` target
   (110 packages for this image). This applies to *any* Rust image behind a Trivy
   gate.
-- ⚠️ **GitHub-hosted Actions runners are billing-blocked org-wide**
+- ⚠️ **GitHub-hosted Actions runners are billing-blocked for PRIVATE adorsys-gis repos**
   (`The job was not started because recent account payments have failed…`).
-  Every adorsys-gis repo works around this with `runs-on: adorsys-gis-runner`
-  (self-hosted ARC) — the shim's repo does the same.
+  Private repos use `runs-on: arc-runner-set` (the org ARC scale set); public repos can use
+  `ubuntu-latest`. Not `adorsys-gis-runner`: deleted 2026-09-15, so jobs on it queue forever
+  (see CLAUDE.md, "Hetzner cluster realities").

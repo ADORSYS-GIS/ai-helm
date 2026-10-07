@@ -156,8 +156,8 @@ a meaningless green — the platform rule from `lakefs-proxy`.
 
 Image: `ghcr.io/adorsys-gis/copilot-governance`, both bins in one layer.
 CI: copy `docker.yml` (buildx + `docker/metadata-action` → `sha-<short>` tags + gha cache)
-and `governance.yml`. Runners must be `runs-on: adorsys-gis-runner` — GitHub-hosted
-runners are billing-blocked org-wide.
+and `governance.yml`. Runners: `runs-on: arc-runner-set` if the repo is private (GitHub-hosted
+runners are billing-blocked for private repos), `ubuntu-latest` if public. Never `adorsys-gis-runner` (deleted 2026-09-15).
 
 ### 2.2 `ai-helm` (this repo) — charts live here, not in the code repo
 
