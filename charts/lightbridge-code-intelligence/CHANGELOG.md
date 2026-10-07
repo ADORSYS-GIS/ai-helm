@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-code-intelligence-v0.9.0...lightbridge-code-intelligence-v0.10.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **lightbridge-code-intelligence:** any values file still setting lci.controllers.web.*, lci.service.web.*, lci.ingress.web.*, lci.persistence.web-*, or secrets.betterAuthProperty now has nothing to attach to. The paired ai-helm-values change drops those overrides in the same cutover.
+
+### Features
+
+* **lightbridge-code-intelligence:** remove the web controller ([#1122](https://github.com/ADORSYS-GIS/ai-helm/issues/1122)) ([9369a0d](https://github.com/ADORSYS-GIS/ai-helm/commit/9369a0d4c74d2f0db8d594a4a934fa5aa1dd787a))
+* **lightbridge-code-intelligence:** support a second GitLab group (dpi) ([#1124](https://github.com/ADORSYS-GIS/ai-helm/issues/1124)) ([7fd729c](https://github.com/ADORSYS-GIS/ai-helm/commit/7fd729c654897e029c7c95a474957c342022b914))
+
+
+### Bug Fixes
+
+* **lightbridge-code-intelligence:** bound neo4j transaction memory and wal retention ([#1146](https://github.com/ADORSYS-GIS/ai-helm/issues/1146)) ([0495fa6](https://github.com/ADORSYS-GIS/ai-helm/commit/0495fa6e41acfd6d18353dfc59fe5bc29cb96816))
+* **lightbridge-code-intelligence:** give neo4j a 20Gi data volume ([#1138](https://github.com/ADORSYS-GIS/ai-helm/issues/1138)) ([e8bcd38](https://github.com/ADORSYS-GIS/ai-helm/commit/e8bcd387d1f0d304e143ed3d331c4b587fe2c22a))
+* **lightbridge-code-intelligence:** give neo4j a 40Gi data volume ([#1145](https://github.com/ADORSYS-GIS/ai-helm/issues/1145)) ([f6b516b](https://github.com/ADORSYS-GIS/ai-helm/commit/f6b516b43e3448498e5e2be9e92ae5ce60532e0b))
+* **lightbridge-code-intelligence:** raise neo4j memory and cpu ([#1143](https://github.com/ADORSYS-GIS/ai-helm/issues/1143)) ([9bc0c3f](https://github.com/ADORSYS-GIS/ai-helm/commit/9bc0c3ffc3fb07b6aad8ee983ff9d09f01eb512a))
+* **lightbridge-code-intelligence:** size the neo4j JVM heap explicitly ([#1130](https://github.com/ADORSYS-GIS/ai-helm/issues/1130)) ([0e74779](https://github.com/ADORSYS-GIS/ai-helm/commit/0e747792dcd9de966b43435268250f70f5d882de))
+
 ## [0.9.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-code-intelligence-v0.8.0...lightbridge-code-intelligence-v0.9.0) (2026-09-02)
 
 
