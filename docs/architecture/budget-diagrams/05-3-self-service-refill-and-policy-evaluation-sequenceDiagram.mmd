@@ -1,0 +1,31 @@
+sequenceDiagram
+    autonumber
+    participant C as Console via server proxy
+    participant B as authz-budget / RefillService
+    participant Q as budget_augmentation_requests
+    participant L as budget_grants and budget_balances
+    participant U as authz-usage spend API
+    participant P as In-memory RuleDataEngine
+    participant G as BudgetRepo
+    C->>B: requestBudgetRefill(amount, target, period, idempotency key)
+    B->>B: JWT permission gate; parse input
+    B->>Q: Find existing idempotency key
+    alt Existing request
+        Q-->>C: Return existing outcome through service
+    else New request
+        B->>P: Is amount in offered amounts?
+        B->>Q: INSERT created, including requested_by_user_id
+        B->>L: Read effective ceiling and refill counts
+        B->>U: Read current and previous period spend
+        B->>P: evaluate(facts, requested amount)
+        alt AutoApprove or AutoApproveCapped
+            B->>G: grant(source=self_service)
+            G-->>B: Committed grant ID
+            B->>Q: UPDATE auto_approved or partially_approved, grant_id
+        else ManualReview or engine invocation failure
+            B->>Q: UPDATE pending_review and decision reasons
+        else Deny or NoAction
+            B->>Q: UPDATE denied and decision reasons
+        end
+        B-->>C: Recorded request outcome
+    end

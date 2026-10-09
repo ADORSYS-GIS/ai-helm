@@ -1,0 +1,126 @@
+flowchart LR
+    subgraph API["converse/lightbridge-api-main\nlightbridge-authz"]
+      CA[createAccount]
+      MA[provisionAccount]
+      SG[StartingGrantService]
+    end
+    subgraph IDP["converse/lightbridge-idp-main\nlightbridge-authz"]
+      AP[federated callback auto-provision]
+    end
+    subgraph BUD["converse/lightbridge-budget-main\nlightbridge-authz"]
+      RF[requestBudgetRefill]
+      RV[approve or reject refill]
+      PE[RuleDataEngine]
+      PO[policy revision RPCs]
+      SC[schedule CRUD plus scheduler tick]
+      BR[Snapshot refresher]
+    end
+    subgraph OPA["converse/lightbridge-opa-main\nlightbridge-authz"]
+      BI[Authorino introspection handler]
+    end
+    subgraph GW["envoy-gateway-system/envoy-converse-gateway-*\nEnvoy v1.38.3"]
+      LUA[ExtensionPolicy Lua filters]
+    end
+    subgraph AUTH["converse-gateway/kuadrant-policies-main\nAuthorino v0.24.0"]
+      AU[AuthConfig metadata pipeline]
+    end
+    subgraph USAGE["converse/lightbridge-usage-main\nlightbridge-authz-usage"]
+      SP[spend query listener]
+      ING[usage ingest listener]
+    end
+    subgraph DB["main Postgres"]
+      ACC[(users/accounts)]
+      PROJ[(projects/project_members/api_keys)]
+      FED[(federated_identities)]
+      GR[(budget_grants)]
+      BAL[(budget_balances)]
+      REQ[(budget_augmentation_requests)]
+      POL[(budget_policy_sets/revisions)]
+      SCH[(budget_reset_schedules)]
+      SNAP[(budget_remaining_snapshots)]
+    end
+    subgraph UDB["usage Postgres"]
+      UE[(usage_events)]
+      UED[(usage_events_daily)]
+    end
+
+    CA --> ACC
+    CA --> SG
+    MA --> ACC
+    MA --> PROJ
+    MA --> SG
+    AP --> ACC
+    AP --> PROJ
+    AP --> FED
+    AP --> SG
+    SG --> SCH
+    SG --> POL
+    SG --> GR
+    SG --> BAL
+    SG --> SNAP
+    RF --> REQ
+    RF --> PE
+    RF --> GR
+    RF --> BAL
+    RF --> SNAP
+    RF --> SP
+    RV --> REQ
+    RV --> GR
+    RV --> BAL
+    RV --> SNAP
+    PO --> POL
+    SC --> SCH
+    SC --> ACC
+    SC --> PROJ
+    SC --> GR
+    SC --> BAL
+    SC --> SNAP
+    BR --> SNAP
+    BR --> GR
+    BR --> SCH
+    BR --> SP
+    BI --> PROJ
+    BI --> SNAP
+    AU --> BI
+    LUA --> AU
+    ING --> UE
+    SP --> UE
+    SP --> UED
+
+    classDef api fill:#fff7ed,stroke:#f97316,color:#7c2d12,stroke-width:1.5px
+    classDef idp fill:#f5f3ff,stroke:#8b5cf6,color:#4c1d95,stroke-width:1.5px
+    classDef budget fill:#ecfdf5,stroke:#10b981,color:#064e3b,stroke-width:1.5px
+    classDef opa fill:#eff6ff,stroke:#3b82f6,color:#1e3a8a,stroke-width:1.5px
+    classDef gateway fill:#fef2f2,stroke:#ef4444,color:#7f1d1d,stroke-width:1.5px
+    classDef authorino fill:#fdf2f8,stroke:#ec4899,color:#831843,stroke-width:1.5px
+    classDef usage fill:#ecfeff,stroke:#06b6d4,color:#164e63,stroke-width:1.5px
+    classDef mainDb fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-width:1.2px
+    classDef usageDb fill:#f0fdfa,stroke:#14b8a6,color:#134e4a,stroke-width:1.2px
+
+    class CA,MA,SG api
+    class AP idp
+    class RF,RV,PE,PO,SC,BR budget
+    class BI opa
+    class LUA gateway
+    class AU authorino
+    class SP,ING usage
+    class ACC,PROJ,FED,GR,BAL,REQ,POL,SCH,SNAP mainDb
+    class UE,UED usageDb
+
+    style API fill:#fffbeb,stroke:#fed7aa,color:#7c2d12
+    style IDP fill:#faf5ff,stroke:#ddd6fe,color:#4c1d95
+    style BUD fill:#f0fdf4,stroke:#bbf7d0,color:#064e3b
+    style OPA fill:#eff6ff,stroke:#bfdbfe,color:#1e3a8a
+    style GW fill:#fff1f2,stroke:#fecdd3,color:#7f1d1d
+    style AUTH fill:#fdf2f8,stroke:#fbcfe8,color:#831843
+    style USAGE fill:#ecfeff,stroke:#a5f3fc,color:#164e63
+    style DB fill:#f8fafc,stroke:#cbd5e1,color:#0f172a
+    style UDB fill:#f0fdfa,stroke:#99f6e4,color:#134e4a
+
+    linkStyle 0,1,2,3,4,9,10,11,12,13 stroke:#f97316,stroke-width:2px
+    linkStyle 5,6,7,8 stroke:#8b5cf6,stroke-width:2px
+    linkStyle 14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34 stroke:#10b981,stroke-width:2px
+    linkStyle 35,36 stroke:#3b82f6,stroke-width:2px
+    linkStyle 37 stroke:#ec4899,stroke-width:2px
+    linkStyle 38 stroke:#ef4444,stroke-width:2px
+    linkStyle 39,40,41 stroke:#06b6d4,stroke-width:2px
