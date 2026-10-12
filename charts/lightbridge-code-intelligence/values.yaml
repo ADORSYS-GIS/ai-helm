@@ -616,6 +616,14 @@ lci:
             DATABASE_URL:
               dependsOn: DB_PASSWORD
               value: ""
+            NEO4J_URI:
+              value: "bolt://{{ .Release.Name }}-neo4j:7687"
+            NEO4J_USER: "neo4j"
+            NEO4J_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: '{{ .Release.Name }}-neo4j-auth'
+                  key: password
             # Mints per-task runner tokens the dispatcher injects into each Job (ADR-0092) via
             # k8s.rs — never a static env value; the SAME key `serve` verifies with. Supersedes the
             # old shared AGENT_RUNNER_TOKEN bearer secret (purged from this chart: #410's hard
