@@ -22,6 +22,14 @@ GPU time or exfiltrate completions.
      model never goes Ready, which reads exactly like a crash-looping engine.
      `health` covers Cilium's own health checks.
 
+`allowFromEndpoints` admits ONE workload in a namespace (namespace + pod
+labels) where `allowFromNamespaces` would admit every pod in it. It exists for
+AISIX (ns `converse`, the /v1/responses bridge), whose connections to the model
+were silently dropped by this policy — the symptom was a TCP connect timeout,
+which read as "the GPU pod subnet is unreachable from converse" (ai-helm-values
+#412). Admitting all of `converse` instead would open the GPU to LibreChat,
+lightbridge and every other pod there, which is what this policy exists to stop.
+
 A plain k8s NetworkPolicy would NOT work here: node IPs carry `remote-node`/`host`
 identity in Cilium and an `ipBlock` never matches them (see CLAUDE.md).
 */ -}}
@@ -50,6 +58,17 @@ spec:
         {{- range . }}
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- with .Values.networkPolicy.allowFromEndpoints }}
+    # Single workloads in other namespaces (namespace AND pod labels must match).
+    - fromEndpoints:
+        {{- range . }}
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .namespace }}
+            {{- range $k, $v := .matchLabels }}
+            {{ $k }}: {{ $v | quote }}
+            {{- end }}
         {{- end }}
     {{- end }}
     {{- with .Values.networkPolicy.allowFromEntities }}

@@ -81,6 +81,11 @@ networkPolicy:
   allowFromNamespaces:
     - envoy-gateway-system
     - observability
+  # One workload in another namespace, without admitting the rest of it:
+  #   - namespace: converse
+  #     matchLabels: {app.kubernetes.io/name: aisix}
+  # Both keys are required (render fails otherwise — see _validate.tpl).
+  allowFromEndpoints: []
   allowFromEntities:
     - host
     - remote-node
