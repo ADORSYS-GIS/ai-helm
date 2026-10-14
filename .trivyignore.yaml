@@ -181,3 +181,20 @@ misconfigurations:
       for its namespace/mount/chroot setup — sandbox-runner only.
     paths:
       - "librechat-code-interpreter.yaml"
+
+  - id: KSV-0108
+    # KSV-0108 "Service should not set external IPs or external Name" (the
+    # CVE-2020-8554 class: a Service redirecting traffic to an arbitrary host).
+    # FALSE POSITIVE for aisix: its `otel-collector` ExternalName Service aliases
+    # IN-CLUSTER Alloy (`alloy.observability.svc.cluster.local`) — nothing
+    # external, and no externalIPs. It exists only because AISIX 1.0.0's OTLP
+    # endpoint regex accepts plain http:// solely for hosts like
+    # `otel-collector`, and Alloy's receiver is plain HTTP (see
+    # charts/aisix/values.yaml `observability.otlp`). Remove this entry with the
+    # alias once upstream relaxes the pattern. Failing main since the chart
+    # landed (#1108, 2026-09-04).
+    statement: >-
+      aisix's ExternalName alias points at in-cluster Alloy only, to satisfy
+      AISIX 1.0.0's OTLP endpoint regex; no external host, no externalIPs.
+    paths:
+      - "aisix.yaml"
