@@ -1,0 +1,42 @@
+sequenceDiagram
+    autonumber
+    participant C as Model client
+    participant E as Envoy data plane
+    participant A as Authorino via SecurityPolicy
+    participant O as authz-opa introspection
+    participant D as Credential context and budget snapshot
+    participant L as Envoy Lua filters from ExtensionPolicy
+    participant R as Rate-limit service and Redis
+    participant M as Model backend
+    C->>E: Model request with credential
+    E->>E: AI Gateway processing exposes model context
+    E->>A: ext_authz
+    A->>A: Verify identity; select credential-specific policy
+    opt Introspection-eligible credential and cache miss
+        A->>O: POST /v1/authorino/validate/introspect
+        O->>D: Validate credential/context; SELECT account snapshot
+        O-->>D: Throttled asynchronous last_seen_at touch
+        O-->>A: active, context, optional budget fields
+    end
+    A-->>E: Allow plus trusted descriptors and budget dynamic metadata
+    E->>L: Billing calendar Lua; model-policy Lua; budget Lua
+    alt Ledger in scope, known remaining positive
+        L-->>E: Continue
+    else Ledger in scope, known remaining zero or negative
+        L-->>C: 402 budget_exhausted
+    else Ledger in scope, budget unknown or malformed
+        L-->>C: 503 budget_unavailable
+    else Explicitly outside ledger scope
+        L-->>E: Continue without ledger threshold
+    end
+    Note over E,R: Independent RPM gate; positioned separately from the budget decision here
+    opt Budget stage permitted continuation
+        E->>R: Check per-key/model and per-account/model request buckets
+        alt Request-rate gate permits
+            R-->>E: Allow
+            E->>M: Forward when all applicable gates allow
+        else Request-rate gate refuses
+            R-->>E: Rate-limit denial
+            E-->>C: 429 request_rate_limited
+        end
+    end

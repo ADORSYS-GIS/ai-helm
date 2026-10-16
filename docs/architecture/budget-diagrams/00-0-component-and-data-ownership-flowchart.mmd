@@ -1,0 +1,21 @@
+flowchart TB
+    UI[Console browser] --> BFF[Console server proxy]
+    BFF --> B[authz-budget]
+    BFF --> API[authz-api]
+    CLI[Budget CLI or operator Job] --> LIB[BudgetRepo shared library]
+    API --> LIB
+    B --> LIB
+    LIB --> G[(budget_grants)]
+    LIB --> BAL[(budget_balances)]
+    LIB --> SNAP[(budget_remaining_snapshots)]
+    B --> REQ[(budget_augmentation_requests)]
+    B --> POL[(budget_policy_sets and revisions)]
+    B --> SCH[(budget_reset_schedules)]
+    B -->|background refresh| SNAP
+    B -->|spend query over mTLS| U[authz-usage]
+    U --> US[(usage_events and usage_events_daily)]
+    O[authz-opa] -->|read and touch| SNAP
+    A[Authorino] -->|introspection| O
+    E[Envoy] -->|ext_authz| A
+    E -->|completed request log| C[Usage collector]
+    C -->|OTLP usage logs| U

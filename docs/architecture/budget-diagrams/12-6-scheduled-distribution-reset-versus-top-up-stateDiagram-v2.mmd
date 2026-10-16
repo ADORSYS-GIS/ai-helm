@@ -1,0 +1,11 @@
+stateDiagram-v2
+    [*] --> Disabled: default configuration
+    Disabled --> Scheduled: enable
+    Scheduled --> Due: next_run_at reached
+    Due --> Claimed: scheduler acquires row lock
+    Claimed --> Scheduled: complete and advance
+    Claimed --> Due: reset spend unavailable within one-hour grace
+    Claimed --> Due: schedule execution error
+    Claimed --> Scheduled: grace expires; skip deferred accounts and advance
+    Scheduled --> Disabled: disable
+    Scheduled --> Scheduled: dry-run preview writes nothing

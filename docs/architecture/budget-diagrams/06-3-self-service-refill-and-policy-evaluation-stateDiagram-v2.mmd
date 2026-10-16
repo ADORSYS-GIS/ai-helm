@@ -1,0 +1,20 @@
+stateDiagram-v2
+    [*] --> RejectedBeforeCreation: amount not offered
+    [*] --> created: valid new request
+    created --> auto_approved: AutoApprove and grant recorded
+    created --> partially_approved: capped grant recorded
+    created --> pending_review: ManualReview or engine unavailable
+    created --> denied: Deny or NoAction
+    created --> created: later operation fails; row can remain here
+    pending_review --> approved: admin review
+    pending_review --> denied: admin rejection
+    state DeclaredButUnwritten {
+        evaluating
+        cancelled
+        expired
+        applied
+    }
+    note right of DeclaredButUnwritten
+        Schema values with no writer in the current orchestration.
+        No transition from created is implemented for these states.
+    end note

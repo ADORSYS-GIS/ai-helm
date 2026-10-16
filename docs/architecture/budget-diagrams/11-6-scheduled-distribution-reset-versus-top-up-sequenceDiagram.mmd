@@ -1,0 +1,26 @@
+sequenceDiagram
+    autonumber
+    participant C as Admin console
+    participant B as authz-budget scheduler
+    participant S as budget_reset_schedules
+    participant A as users, accounts, projects, api_keys
+    participant U as authz-usage
+    participant G as BudgetRepo
+    C->>B: Create or update schedule, or run now / preview
+    B->>S: Persist configuration when requested
+    loop Scheduled tick
+        B->>S: Claim due enabled schedules FOR UPDATE SKIP LOCKED
+        B->>A: Enumerate matching accounts and billing plans
+        B->>B: Choose account over plan over global scope
+        loop Each account won by this schedule
+            B->>G: Read expiry-aware effective ceiling
+            B->>U: Read period spend
+            B->>B: top_up delta=amount; reset delta=target-minus-remaining
+            alt Nonzero delta and write run
+                B->>G: automatic positive grant or negative correction
+            else Preview or zero delta
+                B->>B: No ledger write
+            end
+        end
+        B->>S: Update last_run_at and advance next_run_at when eligible
+    end
