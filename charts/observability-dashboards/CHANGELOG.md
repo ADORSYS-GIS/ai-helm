@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/ADORSYS-GIS/ai-helm/compare/observability-dashboards-v0.3.0...observability-dashboards-v0.4.0) (2026-10-18)
+
+
+### Features
+
+* **aisix:** give AISIX's telemetry its real names — endpoint label, dashboard, alerts ([#1112](https://github.com/ADORSYS-GIS/ai-helm/issues/1112)) ([e91cd57](https://github.com/ADORSYS-GIS/ai-helm/commit/e91cd57ec9dddce54fef4f30d414f07f9ff8861a))
+
+
+### Bug Fixes
+
+* **observability-dashboards:** bring alert rules in line with the current fleet ([#1151](https://github.com/ADORSYS-GIS/ai-helm/issues/1151)) ([9dd0dc2](https://github.com/ADORSYS-GIS/ai-helm/commit/9dd0dc2f791b4629a9488fffcf9b43ef3d223dfc))
+
 ## [0.3.0](https://github.com/ADORSYS-GIS/ai-helm/compare/observability-dashboards-v0.2.0...observability-dashboards-v0.3.0) (2026-09-02)
 
 
