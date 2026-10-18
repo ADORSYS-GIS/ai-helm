@@ -4,6 +4,8 @@
 **Date:** 2026-08-02
 **Deciders:** @stephane-segning
 
+> **Partially superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** the MLOps consumer (`charts/webank-training`, Argo Workflows) was removed. The `gpu-priority-classes` chart this ADR introduced stays (it serves `charts/inference`) and now deploys into the `inference` namespace. The body below is left as written.
+
 ## Context
 
 The fleet has **two** GPUs (`hetzner-k8s-gpu-1/2`, one RTX 4000 SFF Ada each) and

@@ -6,9 +6,7 @@ categories.
 
 | File | What it covers |
 |---|---|
-| [coder-declarative-templates.md](coder-declarative-templates.md) | Declarative Coder template management via the `coder/coderd` Terraform provider (GitOps, retire `coder templates push`) — decision + implementation pattern (ADR-0124) |
 | [self-hosted-model-serving.md](self-hosted-model-serving.md) | **The model-agnostic serving pattern** on the home GPU (VRAM budgeting, engine choice, "deploy the next model" checklist) |
-| [self-hosted-code-interpreter.md](self-hosted-code-interpreter.md) | Self-hosted LibreChat Code Interpreter (ADR-0122): secret generation checklist, install verification, known limitations |
 | [per-user-observability.md](per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki labels |
 | [cost-observability.md](cost-observability.md) | AI-gateway cost observability (ADR-0058/0059/0060): Mimir metrics, cost dashboards + scoreboard, Discord alerting |
 | [ratelimit-quota-observability.md](ratelimit-quota-observability.md) | ⚠️ Retired in practice (counters deleted 2026-09-05) — rate-limit quota from the limiter's LIVE Redis counters (ADR-0070) |
@@ -21,4 +19,3 @@ categories.
 | [bifrost-comprehensive-report.md](bifrost-comprehensive-report.md) | Bifrost vs Envoy AI Gateway — technical comparison |
 | [2026-06-08-gpu-platform-procurement-comparison.md](2026-06-08-gpu-platform-procurement-comparison.md) | 🔬 GPU make-vs-buy research: A2000 vs 5×V100 vs Hetzner; TCO + ADR-0028 pricing |
 | [authorino-service-account-bypass.md](authorino-service-account-bypass.md) | **Historical** (OPA removed, ADR-0021): how SA tokens used to skip OPA in Authorino |
-| [mlops-access-model.md](mlops-access-model.md) | **Who can reach LakeFS / Argo Workflows / MLflow, and as what** — humans vs workloads vs external scripts, credential inventory, the end-to-end training-job path |

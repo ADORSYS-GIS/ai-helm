@@ -4,7 +4,7 @@
 # ObjectStore, which is modernised to Hetzner Object Storage (the old MinIO
 # s3.ssegning.me / ai-ops-backups is decommissioned). lightbridge-usage-db was
 # dropped by ADR-0026 and is restored below as a `usage` Database CR on this
-# same shared cluster (repoauth/codeintel/governance/coder pattern) — NOT a
+# same shared cluster (repoauth/codeintel/governance pattern) — NOT a
 # dedicated Cluster. `lightbridge-authz-usage` does not need TimescaleDB: its
 # bucketed aggregation uses stock PostgreSQL 14+ `date_bin`
 # (crates/lightbridge-authz-usage/src/repo.rs), and every Timescale statement
@@ -92,13 +92,12 @@ resources:
         parameters:
           archive_timeout: "30min"
           # Incident (2026-08-08/09): max_connections was left UNSET, so CNPG
-          # applied its own default of 100 — too little for a cluster shared
-          # by 7 tenant roles (repoauth/codeintel/grafana_ro/coder/lakefs/
-          # mlflow/governance) each holding their own client-side pool, plus
-          # the reserved superuser/replication/monitoring-exporter slots.
-          # LakeFS alone defaults to a 25-connection pool (see charts/lakefs
-          # lakefs-app.yaml, now capped to 5) — a quarter of the old ceiling
-          # from one tenant. Doubled explicitly to 200 rather than left
+          # applied its own default of 100 — too little for a cluster that was
+          # then shared by 7 tenant roles (three of them since removed from
+          # the platform) each holding their own client-side pool, plus the
+          # reserved superuser/replication/monitoring-exporter slots.
+          # One of those tenants alone defaulted to a 25-connection pool — a
+          # quarter of the old ceiling. Doubled explicitly to 200 rather than left
           # implicit, paired with the memory bump below so it isn't a bare
           # number with no headroom behind it. Sized for max_connections ×
           # work_mem (Postgres default work_mem=4MiB, unset here): worst case
@@ -146,18 +145,10 @@ resources:
               - pg_read_all_data
             passwordSecret:
               name: lightbridge-grafana-ro-db-role
-          # Dedicated login role for the Coder platform (ADR-0083). Coder
-          # connects to this database via the connection URL assembled in
-          # charts/coder-secrets. Password from the basic-auth Secret
-          # `coder-db-role` (ESO-provisioned below).
-          - name: coder
-            ensure: present
-            login: true
-            passwordSecret:
-              name: coder-db-role
           # Dedicated login role for lightbridge-governance (ADORSYS-GIS/lightbridge-governance),
           # the AI governance platform's registry + Copilot/Foundry connectors.
-          # Reuses this shared CNPG cluster, same reasoning as coder (ADR-0083).
+          # Reuses this shared CNPG cluster (ADR-0083: new apps get a managed
+          # role + Database CR here rather than a dedicated cluster).
           # Owns the `governance` Database below; password from the
           # basic-auth Secret `lightbridge-governance-db-role` (ESO-provisioned,
           # below).
@@ -610,55 +601,6 @@ resources:
             key: ai/camer/digital/prod/env
             property: codeintel_grafana_ro_db_password
   # ────────────────────────────────────────────────────────────────────
-  # Coder (ADR-0083): a `coder` Database owned by the managed `coder` role
-  # above, plus the role's basic-auth Secret (username + password) consumed
-  # by BOTH CNPG (passwordSecret) and the Coder app (via coder-db-url
-  # assembled in charts/coder-secrets). Mirrors the repoauth pattern.
-  # NOTE: the ESO `password` template braces are double-escaped so Helm's
-  # `tpl` (this whole string is tpl'd) leaves `{{ .password }}` for ESO.
-  # ────────────────────────────────────────────────────────────────────
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Database
-    metadata:
-      name: coder
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
-        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    spec:
-      cluster:
-        name: lightbridge-main-db
-      name: coder
-      owner: coder
-      ensure: present
-  - |
-    apiVersion: external-secrets.io/v1
-    kind: ExternalSecret
-    metadata:
-      name: coder-db-role
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "1"
-    spec:
-      refreshInterval: 1h
-      secretStoreRef:
-        kind: ClusterSecretStore
-        name: ssegning-aws
-      target:
-        name: coder-db-role
-        creationPolicy: Owner
-        template:
-          type: kubernetes.io/basic-auth
-          data:
-            username: "coder"
-            password: "{{ "{{ .password }}" }}"
-      data:
-        - secretKey: password
-          remoteRef:
-            key: ai/camer/digital/prod/env
-            property: coder_db_password
-  # ────────────────────────────────────────────────────────────────────
   # lightbridge-authz-usage: a `usage` Database owned by the managed `usage`
   # role above, plus the role's basic-auth Secret (username + password)
   # consumed by BOTH CNPG (passwordSecret) and the app. Mirrors the codeintel
@@ -716,15 +658,3 @@ resources:
           remoteRef:
             key: ai/camer/digital/prod/env
             property: usage_db_password
-  # MLflow's `mlflow`/`mlflow_oidc` Database CRs + `mlflow-db-role`
-  # ExternalSecret used to live here (ADR-0085). Removed — hard cutover, no
-  # dormant parallel path — now that MLflow is cut over to mlops-main-db
-  # (ADR-0123: `mlflow` role + `mlflow`/`mlflow_oidc` Database CRs on
-  # charts/mlops-db, provisioned by ai-helm#957; connection repointed by the
-  # companion ai-helm-values PR once the owner confirmed via the
-  # authenticated MLflow UI that these databases held nothing worth
-  # migrating). Mirrors exactly how ai-helm#957 removed LakeFS's equivalent
-  # `lakefs` Database CR + `lakefs-db-role` ExternalSecret from this same
-  # file when LakeFS cut over first. The `mlflow_db_password` Secrets
-  # Manager property is unchanged and reused as-is by charts/mlops-db's own
-  # `mlflow-db-role` ExternalSecret — same credential, new cluster.

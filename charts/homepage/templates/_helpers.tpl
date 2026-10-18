@@ -7,7 +7,7 @@ in-cluster API server, unless `allowInCluster: true` is set.
 
 Enforces the repo invariant (ADR-0017): every workload Application this
 repo generates targets the home-remote cluster, never the cluster ArgoCD
-itself runs in. Mirror of lightbridge/coder/librechart/ai-models' helper.
+itself runs in. Mirror of lightbridge/librechart/ai-models' helper.
 
 Input  : the `argocd.destination` dict.
 Output : exactly one YAML line — `name: "…"` or `server: "…"`.

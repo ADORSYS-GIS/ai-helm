@@ -18,16 +18,8 @@ global:
   # privileged host access (/var/lib/longhorn, /dev, iSCSI) on the GPU nodes
   # it's scoped to; k3s/Hetzner's baseline-enforced default forbids that
   # without this elevation (ADR-0092).
-  #
-  # `librechat-sandbox: privileged` — the self-hosted Code Interpreter's
-  # sandbox-runner needs SYS_ADMIN/SYS_CHROOT/NET_ADMIN (NsJail namespace +
-  # mount + chroot setup) because no home-remote worker node has confirmed
-  # /dev/kvm for the chart's safer libkrun microVM mode (ADR-0122). Kept in
-  # its OWN namespace — not added to `converse` — so the elevation doesn't
-  # reach librechat-app/mongo/meilisearch, which don't need it.
   namespacePodSecurity:
     longhorn-system: privileged
-    librechat-sandbox: privileged
 
 # ────────────────────────────────────────────────────────────────────────
 # ArgoCD destination — the home-remote cluster every generated Application
@@ -708,7 +700,7 @@ applications:
       namespace: converse-gateway
 
   # --- Lightbridge Backend ---
-  # Lightbridge App-of-Apps orchestrator (ADR-0019, mirrors `coder`). Replaces
+  # Lightbridge App-of-Apps orchestrator (App-of-Apps pattern, ADR-0019). Replaces
   # the old flat single-Application app; emits three child Applications
   # (lightbridge-secrets wave 0, lightbridge-db wave 1, lightbridge-app wave 2)
   # from charts/lightbridge. Components are api (main) + mcp only — opa (removed
@@ -1000,8 +992,8 @@ applications:
   # CiliumNetworkPolicy (GitHub + the S3 raw archive, scoped to the
   # copilot-sync pods), so no depsOverlay is needed for that half. depsOverlay
   # below adds the piece the chart can't own itself: DB egress to the shared
-  # lightbridge-main-db CNPG cluster in `converse` (ADR-0083 reuse, same as
-  # coder/lakefs/mlflow — see charts/lightbridge-db) plus the DNS baseline
+  # lightbridge-main-db CNPG cluster in `converse` (ADR-0083 reuse — see
+  # charts/lightbridge-db) plus the DNS baseline
   # under this namespace's default-deny-egress.
   #
   # Postgres role/database (`governance`) provisioned in charts/lightbridge-db
@@ -1282,46 +1274,6 @@ applications:
     depsOverlay: environments/prod/deps/mongodb-backup
     destination:
       namespace: converse-chat
-
-  # --- Self-hosted LibreChat Code Interpreter (ADR-0122) ---
-  # Vendored clickhouse/code-interpreter (not published to any Helm/OCI
-  # registry upstream — floats from OUR OCI publish like every other chart
-  # here). Deployed as a FLAT app, not a librechart child: the librechart
-  # ApplicationSet's children all share ONE destination.namespace (see
-  # charts/librechart/templates/applicationset.yaml), and this needs its OWN
-  # dedicated `privileged`-PSS namespace (global.namespacePodSecurity above),
-  # isolated from `converse`'s librechat-app/mongo/meilisearch.
-  - name: librechat-code-interpreter
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    chart: librechat-code-interpreter
-    releaseName: librechat-code-interpreter
-    # Cilium egress for file-server → Hetzner Object Storage (the vendored
-    # chart's own NetworkPolicy templates cover everything else — see the
-    # overlay's ciliumnetworkpolicy.yaml for exactly what's missing and why).
-    depsOverlay: environments/prod/deps/librechat-code-interpreter
-    destination:
-      namespace: librechat-sandbox
-    # ⚠️ Override, NOT the repo-wide Replace=true default (live-incident
-    # correction, 2026-08-08): this chart's `packages` PVC and
-    # `package-init` Job both develop server-populated immutable fields
-    # once they exist in their normal running state (a Bound PVC's spec;
-    # a Job's spec.selector) — Replace=true (`kubectl replace`) then fails
-    # every subsequent sync forever with "spec is immutable"/"field is
-    # immutable", even once the workload itself is healthy. Confirmed live
-    # across 10+ retried sync attempts, including a per-resource
-    # `argocd.argoproj.io/sync-options: Replace=false` annotation attempt
-    # (charts/librechat-code-interpreter/values.yaml git history) that did
-    # NOT override the app-level default. Same pattern already used by
-    # other apps in this file (e.g. same-origin-proxy, apprise-api,
-    # opencode-k8s-agent) — just the two known-safe options, no Replace.
-    syncPolicy:
-      syncOptions:
-        - CreateNamespace=true
-        - ServerSideApply=true
-      automated:
-        prune: true
-        selfHeal: true
 
   # --- Models ---
   - name: models
@@ -1763,52 +1715,6 @@ applications:
     destination:
       namespace: converse-mcp
 
-  # --- Coder App-of-Apps orchestrator (ADR-0083, re-introduction) ---
-  # Renders two child Application CRs (coder-secrets wave 0, coder-app wave 2)
-  # from charts/coder. As a control object (it emits Application CRs) this entry
-  # is controlPlane: true — the children themselves target home-remote. OCI
-  # mode (ADR-0055): orchestrator chart floats from OCI. Children: secrets leaf
-  # chart from OCI, the app's upstream Coder chart (oci://ghcr.io/coder/chart/
-  # coder, pinned) + its cert overlay from ai-helm-values. Coder uses the
-  # existing lightbridge-main-db CNPG cluster — no separate CNPG. Supersedes
-  # ADR-0027 removal.
-  - name: coder
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    controlPlane: true
-    chart: coder
-    releaseName: coder
-    destination:
-      namespace: coder
-
-  # --- mlops platform: LakeFS + Argo Workflows + MLflow (ADR-0085) ---
-  # Three App-of-Apps orchestrators, all in the new `mlops` namespace, all
-  # controlPlane: true (control objects emitting child Application CRs — the
-  # children themselves target home-remote). OCI mode: each orchestrator
-  # chart floats from OCI. All three reuse the existing lightbridge-main-db
-  # CNPG cluster (no separate CNPG) and the platform's existing Hetzner
-  # Object Storage S3 credentials. Auth is mixed: Argo Workflows has native
-  # OIDC (server.sso); LakeFS is gated by a dedicated oauth2-proxy (OSS has
-  # no functional native OIDC); MLflow uses its bundled mlflow-oidc-auth
-  # plugin (native, no proxy needed).
-  - name: lakefs
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    controlPlane: true
-    chart: lakefs
-    releaseName: lakefs
-    destination:
-      namespace: mlops
-
-  - name: argo-workflows
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    controlPlane: true
-    chart: argo-workflows
-    releaseName: argo-workflows
-    destination:
-      namespace: mlops
-
   # --- Homepage central-hub App-of-Apps orchestrator (ADR-0089) ---
   # Renders three child Application CRs (homepage-secrets wave 0,
   # homepage-auth wave 1, homepage-app wave 2) from charts/homepage. As a
@@ -1818,8 +1724,8 @@ applications:
   # charts (homepage-secrets, homepage-app — both this repo's own charts).
   # homepage-auth is the one pinned classic-repo child (upstream
   # oauth2-proxy), gating Homepage via a dedicated reverse-proxy instance —
-  # Homepage ships no authentication of its own, unlike LakeFS/MLflow/Argo
-  # Workflows (ADR-0085), so this is NOT a redundant second login.
+  # Homepage ships no authentication of its own, so this is NOT a redundant
+  # second login.
   - name: homepage
     finalizers:
       - resources-finalizer.argocd.argoproj.io
@@ -1829,49 +1735,26 @@ applications:
     destination:
       namespace: homepage
 
-  - name: mlflow
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    controlPlane: true
-    chart: mlflow
-    releaseName: mlflow
-    destination:
-      namespace: mlops
-
-  # --- GPU arbitration between serving and MLOps (ADR-0114) ---
+  # --- GPU arbitration for the serving fleet (ADR-0114) ---
   # Two cluster-scoped PriorityClass objects only — no namespaced resources,
   # so `destination.namespace` below is a formality ArgoCD requires, not a
-  # placement decision (picked `mlops` since it already exists rather than
-  # creating a namespace for nothing). NOT controlPlane: PriorityClass must
-  # exist on home-remote, where the GPU nodes and the pods that reference it
-  # actually schedule — the opposite of the orchestrators above.
-  # `charts/inference` and `charts/webank-training` reference these classes by
-  # name; nothing here breaks if this Application syncs after them the first
-  # time — the pod that references a not-yet-existing class simply stays
-  # unschedulable until ArgoCD's next reconcile creates it (self-healing race,
-  # not a hard ordering dependency).
+  # placement decision (set to `inference`, the namespace charts/inference
+  # deploys its workloads into, rather than creating a namespace for
+  # nothing). NOT controlPlane: PriorityClass must exist on home-remote, where
+  # the GPU nodes and the pods that reference it actually schedule — the
+  # opposite of the orchestrators above.
+  # `charts/inference` references these classes by name; nothing here breaks
+  # if this Application syncs after it the first time — the pod that
+  # references a not-yet-existing class simply stays unschedulable until
+  # ArgoCD's next reconcile creates it (self-healing race, not a hard
+  # ordering dependency).
   - name: gpu-priority-classes
     finalizers:
       - resources-finalizer.argocd.argoproj.io
     chart: gpu-priority-classes
     releaseName: gpu-priority-classes
     destination:
-      namespace: mlops
-
-  # --- Webank governed GPU training (webank-models ADR-0034 / ADR-0035) ---
-  # A plain workload Application, not an orchestrator: it installs only the
-  # namespaced WorkflowTemplate. Human submission remains the sole trigger;
-  # the template gates its pinned LakeFS ref and readiness attestation before
-  # requesting one RTX 4000 Ada GPU. Deployment values, including the
-  # enforced GPU-pool selector, live in ai-helm-values.
-  - name: webank-training
-    finalizers:
-      - resources-finalizer.argocd.argoproj.io
-    chart: webank-training
-    releaseName: webank-training
-    depsOverlay: environments/prod/deps/webank-training
-    destination:
-      namespace: mlops
+      namespace: inference
 
   # ─────────────────────────────────────────────────────────────────────────────
   # redact-gateway — PII redaction front proxy (ADR-0115, governance epic #873).
@@ -2142,38 +2025,6 @@ extraObjects:
   #       limits.cpu: "6"
   #       limits.memory: "10Gi"
   #       count/pods: "15"
-
-  # # coder
-  # - apiVersion: v1
-  #   kind: LimitRange
-  #   metadata:
-  #     name: coder-defaults
-  #     namespace: coder
-  #   spec:
-  #     limits:
-  #       - type: Container
-  #         defaultRequest:
-  #           cpu: "100m"
-  #           memory: "128Mi"
-  #         default:
-  #           cpu: "500m"
-  #           memory: "512Mi"
-  #         max:
-  #           cpu: "4"
-  #           memory: "8Gi"
-  # - apiVersion: v1
-  #   kind: ResourceQuota
-  #   metadata:
-  #     name: coder-quota
-  #     namespace: coder
-  #   spec:
-  #     hard:
-  #       requests.cpu: "4"
-  #       requests.memory: "10Gi"
-  #       limits.cpu: "12"
-  #       limits.memory: "40Gi"
-  #       count/pods: "70"
-
 
   # # converse-proxy (limitrange only)
   # - apiVersion: v1

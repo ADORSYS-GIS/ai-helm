@@ -1,8 +1,10 @@
 # ADR-0124: Declarative Coder template management via the `coder/coderd` Terraform provider
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md)
 **Date:** 2026-08-03
 **Deciders:** @stephane-segning
+
+> **Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** this system was removed from the platform. The body below is left as written.
 
 ## Context
 

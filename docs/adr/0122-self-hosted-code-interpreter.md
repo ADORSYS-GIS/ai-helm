@@ -1,8 +1,10 @@
 # ADR-0122: Self-Hosted LibreChat Code Interpreter
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md)
 **Date:** 2026-08-07
 **Deciders:** @stephane-segning
+
+> **Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** this system was removed from the platform. The body below is left as written.
 
 > **Corrected 2026-08-08 (same PR, before merge — not a supersession):** the
 > first pass of this work got two things wrong, caught in review before

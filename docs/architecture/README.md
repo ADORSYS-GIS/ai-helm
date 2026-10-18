@@ -96,5 +96,4 @@ Diagrams are deliberately uncolored; node **labels** carry the category:
 - **home GPU** — runs on the home GPU cluster (the `homeCluster: true` exception).
 
 > **Accuracy note.** Diagrams reflect `main` under continuous delivery (ADR-0055;
-> no release tag). Coder (old ADR-0019) was **removed** (ADR-0027) and is
-> returning (issue #651); it does not appear in these diagrams yet.
+> no release tag).

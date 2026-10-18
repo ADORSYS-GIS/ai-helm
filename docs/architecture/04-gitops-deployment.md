@@ -89,7 +89,7 @@ flowchart TB
 |---|---|---|
 | **Direct** | `core-gateway`, `kuadrant-policies`, most | One chart, one lifecycle |
 | **Orchestrator + leaves** | `ai-models` → `ai-model`, `librechart` → `librechat-*` | Per-component sync waves / rollback; adding a component is a list edit |
-| **App-of-Apps** | `observability`, (formerly `coder`) | Fixed, heterogeneous children (local + upstream charts with big inline values) |
+| **App-of-Apps** | `observability`, `lightbridge`, `homepage` | Fixed, heterogeneous children (local + upstream charts with big inline values) |
 
 ## Umbrella apps + `environments/` overlays (ADR-0018)
 

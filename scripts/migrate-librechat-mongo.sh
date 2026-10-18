@@ -10,7 +10,7 @@
 # pod — so everything runs *inside* the pods; the laptop only pipes bytes and
 # keeps a copy.
 #
-#   PG note: this script is Mongo-only by design. Keycloak/Coder Postgres
+#   PG note: this script is Mongo-only by design. Keycloak Postgres
 #   migration is a separate concern (see docs/2026-linode-to-hetzner-cutover.md).
 #
 # ─────────────────────────────────────────────────────────────────────────────

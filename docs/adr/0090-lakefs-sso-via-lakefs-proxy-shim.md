@@ -1,8 +1,10 @@
 # ADR-0090: Keycloak SSO for LakeFS via the `lakefs-proxy` session shim
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md)
 **Date:** 2026-07-25
 **Deciders:** @stephane-segning
+
+> **Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** this system was removed from the platform. The body below is left as written.
 
 Amends [ADR-0085](0085-mlops-platform-lakefs-argo-workflows-mlflow.md)'s LakeFS
 auth decision (the ADR body stays as written — ADRs are immutable once

@@ -35,8 +35,7 @@ automatically too — bjw-template v4's native `configMaps:` block computes a
 `checksum/configMaps` pod annotation for you.
 
 Current annotated set (as of 2026-09, via `gethomepage.dev/*` in ai-helm-values
-`environments/**`): Grafana (Observability), MLflow & Argo Workflows & LakeFS
-(MLOps), Coder (Dev Environments), LibreChat + "LibreChat (kivoyo redirect)"
+`environments/**`): Grafana (Observability), LibreChat + "LibreChat (kivoyo redirect)"
 (Chat), opencode well-known (Dev Tools), the Lightbridge Platform-API /
 Code-Intelligence tiles, and Repo Auth (Platform APIs). Self-hosted inference
 models are **not** auto-discovered — they are cluster-local (ADR-0095, no
@@ -74,7 +73,5 @@ that policy too.
 ## Auth
 
 `homepage-auth` (an `oauth2-proxy` instance, reverse-proxy mode, own
-Keycloak client `homepage-proxy`) is the sole gate — see ADR-0089 for why
-this is *not* the redundant-second-login mistake ADR-0085 removed from
-LakeFS. Secrets (`homepage_proxy_client_id`/`_client_secret`/`_cookie_secret`)
+Keycloak client `homepage-proxy`) is the sole gate — see ADR-0089. Secrets (`homepage_proxy_client_id`/`_client_secret`/`_cookie_secret`)
 live in `ssegning-aws` `ai/camer/digital/prod/env`, provisioned out-of-band.
