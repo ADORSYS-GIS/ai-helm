@@ -6,7 +6,7 @@ directories by **intent**; cross-cutting subsystems keep their own subdirectory.
 | Directory | Intent — open it when you want to… |
 |---|---|
 | [`playbooks/`](./playbooks/) | **do** something — a step-by-step runbook, setup, or how-to |
-| [`integrations/`](./integrations/) | **integrate** a specific product/surface (LibreChat, opencode, Coder, Keycloak-as-IdP) |
+| [`integrations/`](./integrations/) | **integrate** a specific product/surface (LibreChat, opencode, Keycloak-as-IdP) |
 | [`patterns/`](./patterns/) | understand a **reusable pattern**, concept, or reference/research write-up |
 | [`migrations/`](./migrations/) | read the **permanent record** of a cutover, upgrade, or point-in-time audit |
 
@@ -67,9 +67,6 @@ Step-by-step runbooks, setup guides, and break-glass recipes.
 | [`opencode-sandboxing.md`](playbooks/opencode-sandboxing.md) | Why the opencode permission config is **not** a sandbox; the containment options + recommendation |
 | [`cnpg-reconcile-stall.md`](playbooks/cnpg-reconcile-stall.md) | CNPG `Managed` role password not reconciled after a secret change |
 | [`gateway-api-usage.md`](playbooks/gateway-api-usage.md) | **Command reference for calling the models from outside the cluster** — `/v1/models`, image generation, chat completions, streaming, vision, embeddings, and the failure table. ⚠️ Image responses default to an in-pod `127.0.0.1` URL; always pass `response_format: b64_json`. Verified live |
-| [`lakefs-sso.md`](playbooks/lakefs-sso.md) | **LakeFS Keycloak SSO** via the `lakefs-proxy` session shim (ADR-0090): why LakeFS OSS 1.83 has no OIDC and is single-user, the securecookie relay, the admin-credential runbook, symptom→fix table |
-| [`mlops-app-auth.md`](playbooks/mlops-app-auth.md) | **Argo Workflows SSO/RBAC + MLflow OIDC** (ADR-0085, ADR-0091): the three independent Argo identities (SSO delegate / workflow pod / API client), `code:7` vs `code:5`, the `<sa>.service-account-token` name, Argo Events CRD stubs, `--auth-mode=client` for CI, the `mlflow-oidc-auth` plugin's dedicated DB + the `OIDC_AUDIENCE` bearer gate, mounting the LakeFS key in a workflow step |
-| [`webank-model-workflows.md`](playbooks/webank-model-workflows.md) | **Webank dataset and training workflow submission** — choose each model's explicit Argo template, provide governed inputs, verify GPU placement, and handle the PAD fail-closed path |
 
 ---
 
@@ -86,8 +83,6 @@ How to integrate against, or consume, a specific product or surface.
 | [`librechat-headers-tracing.md`](integrations/librechat-headers-tracing.md) | How LibreChat templated headers flow into downstream MCP/Converse calls |
 | [`opencode-well-known.md`](integrations/opencode-well-known.md) | opencode `.well-known/opencode` flow at `ai.camer.digital`; prerequisites, plugin install, troubleshooting |
 | [`opencode-plugins-research.md`](integrations/opencode-plugins-research.md) | OpenCode plugins/extensions research (the vymalo toolbelt, skills, MCP surfaces) |
-| [`coder-platform-integration.md`](integrations/coder-platform-integration.md) | Coder re-integration evaluation: Keycloak OIDC, Grafana, LibreChat MCP, OpenCode auth (ADR-0027 removal + re-intro reqs; issue #651) |
-| [`coder-workspace-urls.md`](integrations/coder-workspace-urls.md) | Public workspace URLs via wildcard subdomains (`*.coder-ws.camer.digital`): the DNS-01 wildcard cert, why the wildcard cannot live under `ai.camer.digital` (Route53 delegation vs the Cloudflare solver), verification + rollback |
 | [`keycloak-identity-datasource.md`](integrations/keycloak-identity-datasource.md) | Resolving `user_id` → person, sessions & grants (ADR-0063/0064): read-only Keycloak Postgres datasource, the dashboards, the KC 26 `offline_flag` trap, cross-repo layout + runbook |
 | [`homepage.md`](integrations/homepage.md) | Homepage central hub — the `gethomepage.dev/*` discovery-annotation convention for adding new apps to the hub (ADR-0089) |
 
@@ -99,9 +94,7 @@ Reusable patterns, concept explainers, and reference/research write-ups.
 
 | File | What it covers |
 |---|---|
-| [`coder-declarative-templates.md`](patterns/coder-declarative-templates.md) | Declarative Coder template management via the `coder/coderd` Terraform provider (GitOps; retire `coder templates push`) — decision + implementation pattern (ADR-0124) |
 | [`self-hosted-model-serving.md`](patterns/self-hosted-model-serving.md) | **The GitOps pattern for serving models on the Hetzner GPU fleet** (ADR-0094/0095): the `inference` orchestrator + generic `inference-server` leaf, THREE engine profiles (llama.cpp / vLLM+LMCache / **LocalAI** for image generation — ADR-0102, which replaced the short-lived first-party Rust server of ADR-0100), GPU-as-a-resource-request scheduling, weight seeding, and cluster-local federation — no Ingress, cert, API key or proxy sidecar. Also documents the **legacy** per-model charts from `admin@homeos`, now all disabled (and `zimage-turbo`'s deleted outright, ADR-0106). ⚠️ The *inference* knowledge (VRAM budgeting, quantization, engine choice, benchmarks, runbooks) lives in the team's **`inference-ops`** repo, not here. Legacy per-model papers: [`models/`](./models/) |
-| [`self-hosted-code-interpreter.md`](patterns/self-hosted-code-interpreter.md) | **Self-hosted LibreChat Code Interpreter** (ADR-0122): vendored `clickhouse/code-interpreter`, the secret-generation checklist, install verification, and known limitations (NsJail sandbox mode, RWO-only storage, shared S3 bucket) |
 | [`per-user-observability.md`](patterns/per-user-observability.md) | Per-user attribution: JWT → Authorino headers → Envoy access log → Loki `user_id`/`azp` labels |
 | [`cost-observability.md`](patterns/cost-observability.md) | **AI-gateway cost observability** (ADR-0058/0059/0060): the Mimir metrics backbone (Alloy `stage.metrics`), the cost dashboards + gamified scoreboard, Discord alerting, the backfill, and the operator runbook |
 | [`ratelimit-quota-observability.md`](patterns/ratelimit-quota-observability.md) | ⚠️ **Retired in practice — the Redis cost counters it reads were deleted 2026-09-05** (money cap is now the ledger + 402 `budget-limiter.lua`, ADR-0137; exporter keeps only `redis_up`, dashboard renders empty). Historical record of: **Rate-limit quota from the limiter's LIVE Redis counters** (ADR-0070): the shared-budget key shape (rule index → plan, `<window>` epoch + calendar `billing_period` — ADR-0084/0111), the exporter→Mimir leaderboard + the `redis-datasource` tmscan census (`tlsAuth:true`, plugin-install, and `extractFields` format/delimiter gotchas) |
@@ -152,9 +145,6 @@ Operational subsystems with several files keep their own directory + local index
 | [`github-actions/`](./github-actions/) | The GitHub Actions / CI integration surface |
 | [`mcp/`](./mcp/) | Envoy MCP research + routing background |
 | [`solutions-team/`](./solutions-team/) | Solutions-team runbooks (e.g. graphify setup) |
-| [`mlops-access-model.md`](patterns/mlops-access-model.md) | **MLOps access model** (ADR-0085/0090/0091): who can reach LakeFS / Argo Workflows / MLflow and as what — humans vs in-cluster workloads vs external scripts, the credential inventory, the end-to-end training-job path, and the known limitations |
-| [`mlops-platform-consumer-guide.md`](integrations/mlops-platform-consumer-guide.md) | **Consuming the MLOps platform from another team/repo** (ADR-0085/0090/0091): endpoints, machine auth per app, the training-job recipe, and what to request from the maintainer |
-| [`webank-training-deployment.md`](integrations/webank-training-deployment.md) | **Webank governed dataset and training deployment** — ten explicit Argo templates, model-specific input contracts, GPU placement, and credential boundaries |
 
 ---
 

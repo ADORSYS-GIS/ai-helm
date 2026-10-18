@@ -1,7 +1,9 @@
 # ADR-0083: Re-introduce Coder as App-of-Apps Orchestrator
 
-**Status:** Accepted (updated 2026-07-20)
+**Status:** Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md)
 **Date:** 2026-07-13
+
+> **Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** this system was removed from the platform. The body below is left as written.
 
 > **Update 2026-07-20:** Namespace ResourceQuota + LimitRange now deployed via the base
 > depsOverlay (`environments/base/deps/coder/`) with `sync-wave: -2`, replacing the

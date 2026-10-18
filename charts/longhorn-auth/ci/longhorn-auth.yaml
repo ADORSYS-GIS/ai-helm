@@ -12,9 +12,8 @@
 #
 # A DEDICATED instance for Longhorn (own Keycloak client `longhorn-proxy`,
 # own cookie secret) — NOT shared with any other app (ADR-0093, mirrors the
-# ADR-0089 homepage-auth shape — see that ADR + charts/lakefs git history for
-# the "reverse-proxy mode" vs "ForwardAuth" lesson: reverse-proxy mode is
-# required so oauth2-proxy never touches the upstream's own responses).
+# ADR-0089 homepage-auth shape). Reverse-proxy mode (not "ForwardAuth") is
+# required so oauth2-proxy never touches the upstream's own responses.
 # Runs in full REVERSE-PROXY mode: the depsOverlay ingress routes ALL of the
 # Longhorn hostname (`/`) to this release's Service
 # `longhorn-auth-oauth2-proxy:80`, and oauth2-proxy proxies authenticated

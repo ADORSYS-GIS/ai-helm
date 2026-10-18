@@ -1,8 +1,10 @@
 # ADR-0131: Authenticate Coder workspace OpenCode to the internal gateway via a per-workspace ServiceAccount
 
-**Status:** Proposed
+**Status:** Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md)
 **Date:** 2026-08-10
 **Deciders:** @stephane-segning
+
+> **Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** this system was removed from the platform. The body below is left as written.
 
 ## Context
 

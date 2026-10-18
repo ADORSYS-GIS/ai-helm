@@ -1,8 +1,10 @@
 # ADR-0091: Gate MLflow bearer tokens on `aud`, and open a least-privileged programmatic path to Argo Workflows
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md)
 **Date:** 2026-07-25
 **Deciders:** @stephane-segning
+
+> **Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** this system was removed from the platform. The body below is left as written.
 
 Amends [ADR-0085](0085-mlops-platform-lakefs-argo-workflows-mlflow.md)'s auth
 decision for MLflow and Argo Workflows (the ADR-0085 body stays as written —

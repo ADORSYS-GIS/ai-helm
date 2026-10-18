@@ -5,7 +5,7 @@ Emits the ArgoCD destination cluster identity line — `name: <ctx>` or
 `server: <url>` — and HARD-FAILS the render if it resolves to the in-cluster
 API server, unless `allowInCluster: true`. Enforces ADR-0017: every workload
 Application this repo generates targets home-remote, never the cluster ArgoCD
-runs in. Mirror of coder/librechart/ai-models' helper.
+runs in. Mirror of librechart/ai-models' helper.
 */}}
 {{- define "observability.argocd.destinationClusterRef" -}}
 {{- $d := . | default dict -}}

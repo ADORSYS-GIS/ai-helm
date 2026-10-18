@@ -5,8 +5,8 @@
 secretStore: ssegning-aws
 refreshInterval: 1h
 
-# Values-driven ExternalSecrets — see charts/coder-secrets/templates/externalsecret.yaml
-# for the full schema (data / literals / templateData / type).
+# Values-driven ExternalSecrets — see templates/externalsecret.yaml in this
+# chart for the full schema (data / literals / templateData / type).
 externalSecrets:
   # oauth2-proxy (longhorn-auth) reverse-proxy instance — own Keycloak client
   # `longhorn-proxy`, own cookie-signing secret (NOT shared with any other
@@ -16,8 +16,8 @@ externalSecrets:
   #
   # cookie-secret MUST base64-decode to exactly 16, 24, or 32 raw bytes
   # (oauth2-proxy uses it as an AES cipher key) — generate with
-  # `openssl rand -base64 32` (no extra piping — see charts/lakefs-secrets'
-  # git history for the exact failure mode of a wrongly-sized value).
+  # `openssl rand -base64 32` (no extra piping — a wrongly-sized
+  # value makes oauth2-proxy fail at startup).
   #
   # Populate `longhorn_proxy_client_id` / `longhorn_proxy_client_secret` /
   # `longhorn_proxy_cookie_secret` under key `ai/camer/digital/prod/env`

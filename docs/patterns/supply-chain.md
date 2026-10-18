@@ -87,7 +87,7 @@ reference (default tag `latest` when the manifest omits one).
 `tools/oci-chart-sbom.sh` renders the chart with `helm template --kube-version
 1.31.0 --skip-tests` (the same deterministic-render contract the Trivy gate uses)
 and reads the emitted `image:` refs. Charts that render **no** images — the
-orchestrators (`coder`, `homepage`, …) that emit ArgoCD `Application` CRs, and
+orchestrators (`observability`, `homepage`, …) that emit ArgoCD `Application` CRs, and
 leaves that need injected values — produce an **empty `components: []` SBOM**. The
 chart is still signed; only the SBOM content is thin. This is by design: the SBOM
 inventories *what the chart ships*, and image-level scanning/verification already

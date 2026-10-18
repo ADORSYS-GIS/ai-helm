@@ -8,8 +8,7 @@ component, plus one page per subsystem) or the formal
 [ADR index](adr/README.md).
 
 > Reflects `main` under **continuous delivery** (ADR-0055; charts float from OCI,
-> no release tag). Coder was removed (ADR-0027) and is returning (issue #651);
-> the newer surfaces — code intelligence, the in-cluster agent, and Restate —
+> no release tag). The newer surfaces — code intelligence, the in-cluster agent, and Restate —
 > are shown below.
 
 ## Where to go for what
@@ -54,7 +53,6 @@ flowchart TB
         REPO["lightbridge-repo-auth"]
         LCI["lightbridge-code-intelligence<br/>(automated code review)"]
         AGENT["opencode-k8s-agent<br/>(in-cluster ops)"]
-        CI["librechat-code-interpreter<br/>(NsJail sandbox, ADR-0122)"]
     end
 
     subgraph infra["Platform plane"]
@@ -78,7 +76,6 @@ flowchart TB
     LC --> OBS
     MODELS --> OBS
     RST -.-> AGENT
-    LC -.execute_code, JWT.-> CI
 
 ```
 

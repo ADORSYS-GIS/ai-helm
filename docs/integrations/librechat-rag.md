@@ -142,7 +142,7 @@ LibreChat routes ingested files by MIME allowlists; processing precedence is
 - Files must be in **"Host" storage**; "OpenAI" uploads are exclusive to
   Assistants and cannot be RAG-indexed.
 - RAG (File Search) is **sub-optimal for structured data** (CSV / Excel / JSON) —
-  those are better handled by Code Interpreter.
+  those are better handled by a code-execution tool, which this platform does not currently provide.
 
 Sources:
 [docs.librechat.ai — file_config (MIME allowlists)](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/file_config),

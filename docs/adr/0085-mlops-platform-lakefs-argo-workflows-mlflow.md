@@ -1,8 +1,10 @@
 # ADR-0085: Self-hosted MLOps platform — LakeFS + Argo Workflows + MLflow
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md)
 **Date:** 2026-07-22
 **Deciders:** @stephane-segning
+
+> **Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** this system was removed from the platform. The body below is left as written.
 
 > **Partially superseded by [ADR-0123](./0123-mlops-dedicated-cnpg-cluster.md)
 > (2026-08-09):** decision #3 below (metadata DB — LakeFS and MLflow each get

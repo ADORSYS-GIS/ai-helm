@@ -75,15 +75,6 @@ librechatSecrets:
     librechat-mcp-github:
       client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_id }
       client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_github_client_secret }
-    librechat-mcp-coder-credentials:
-      # LibreChat OAuth client for the `coder` MCP server (Coder, scope `coder:all`).
-      # This is a SHARED deployment-level client, not per-user. Per-user isolation
-      # is enforced at the Coder side via the X-USER-* forwarded headers — do NOT
-      # rely on the OAuth client itself to be per-user. Keep it the narrowest Coder
-      # role that still works (non-admin, workspace-scoped); the coder agent must
-      # never use an admin/org-wide Coder token.
-      client_id: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_id }
-      client_secret: { key: ai/camer/digital/prod/env, property: librechat_mcp_coder_credentials_client_secret }
     librechat-websearch-config:
       serper_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_serper_api_key }
       firecrawl_api_key: { key: ai/camer/digital/prod/env, property: librechat_websearch_config_firecrawl_api_key }
@@ -93,22 +84,6 @@ librechatSecrets:
     # once ai-helm is private, #640). Injected as GITHUB_SKILLS_TOKEN below.
     librechat-skills-sync:
       github_token: { key: ai/camer/digital/prod/env, property: librechat_skills_sync_github_token }
-    # LibreChat Code Interpreter API key — dormant fallback for the MANAGED
-    # librechat.ai sandbox API (issue #734). Superseded by the self-hosted
-    # instance (ADR-0122); LIBRECHAT_CODE_API_KEY is unused by the JWT auth
-    # path below (danny-avila/LibreChat's OSS codebase never references that
-    # env var — it's a managed-cloud-client-only path) but left wired in case
-    # the managed API is ever wanted again.
-    librechat-code-config:
-      code_api_key: { key: ai/camer/digital/prod/env, property: librechat_code_api_key }
-    # Ed25519 keypair LibreChat signs per-request Code Interpreter auth JWTs
-    # with (danny-avila/LibreChat packages/api/src/auth/codeapi.ts) — the
-    # PRIVATE half. The public half is a separate property consumed by the
-    # librechat-code-interpreter chart's API component (ADR-0122); both must
-    # come from the SAME generated keypair. See docs/patterns/
-    # self-hosted-code-interpreter.md for the openssl generation commands.
-    librechat-codeapi-jwt:
-      private_key_base64: { key: ai/camer/digital/prod/env, property: librechat_codeapi_jwt_private_key_base64 }
 
 # ────────────────────────────────────────────────────────────────────────
 # Agent-seed Job (ADR-0088). Idempotently provisions the LibreChat agent fleet
@@ -130,7 +105,7 @@ agentSeed:
   librechatUrl: ""
   image: ""
   agents: []
-  # ⚠️ The agent fleet (DB Agents incl. `converse` + `coder`) is managed in
+  # ⚠️ The agent fleet (DB Agents incl. `converse`) is managed in
   # ai-helm-values (environments/<env>/values/librechat-app.yaml agentSeed.agents),
   # NOT here — see Stephane's note on PR #937. This chart holds structural
   # defaults only; the live fleet + enable live in ai-helm-values (ADR-0055/56).
@@ -388,48 +363,11 @@ librechat:
                 name: librechat-mcp-github
                 key: client_secret
 
-            CODERS_MCP_CLIENT_ID:
-              secretKeyRef:
-                name: librechat-mcp-coder-credentials
-                key: client_id
-            CODERS_MCP_SECRET:
-              secretKeyRef:
-                name: librechat-mcp-coder-credentials
-                key: client_secret
-
             # GitHub PAT for config.skillSync (ESO secret librechat-skills-sync).
             GITHUB_SKILLS_TOKEN:
               secretKeyRef:
                 name: librechat-skills-sync
                 key: github_token
-
-            # Code Interpreter — self-hosted (ADR-0122). LIBRECHAT_CODE_BASEURL
-            # points at the in-cluster librechat-code-interpreter API Service
-            # instead of the managed librechat.ai one; LIBRECHAT_CODE_API_KEY
-            # stays wired (dormant, see librechat-code-config above) but is
-            # unused once the JWT path below is active.
-            LIBRECHAT_CODE_BASEURL: "http://codeapi-api.librechat-sandbox.svc.cluster.local:3112/v1"
-            LIBRECHAT_CODE_API_KEY:
-              secretKeyRef:
-                name: librechat-code-config
-                key: code_api_key
-
-            # Mint a short-lived Ed25519-signed JWT per Code Interpreter
-            # request instead of a static key — the self-hosted service
-            # rejects a static API key outside its own local/dev mode.
-            # CODEAPI_JWT_KID/_ALGORITHM/issuer/audience must match the
-            # librechat-code-interpreter chart's api.extraEnv (CODEAPI_JWT_KID,
-            # CODEAPI_JWT_PUBLIC_KEY) — both sides derive from the SAME
-            # generated Ed25519 keypair. Issuer ("librechat") and audience
-            # ("codeapi") are each side's compiled-in default; left unset here
-            # to keep them in sync without repeating the values twice.
-            CODEAPI_JWT_ENABLED: "true"
-            CODEAPI_JWT_ALGORITHM: EdDSA
-            CODEAPI_JWT_KID: lc-codeapi-2026-05
-            CODEAPI_JWT_PRIVATE_KEY_BASE64:
-              secretKeyRef:
-                name: librechat-codeapi-jwt
-                key: private_key_base64
 
             OPENID_CLIENT_ID:
               secretKeyRef:

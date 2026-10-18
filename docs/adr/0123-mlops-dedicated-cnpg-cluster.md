@@ -1,8 +1,10 @@
 # ADR-0123: Give the mlops namespace its own dedicated CNPG cluster
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md)
 **Date:** 2026-08-09
 **Deciders:** @stephane-segning
+
+> **Superseded by [ADR-0139](./0139-remove-coder-mlops-and-code-interpreter.md) (2026-10-18):** this system was removed from the platform. The body below is left as written.
 
 > **Update (2026-08-09, same day):** the two items this ADR left as
 > "Follow-up required before MLflow's cutover" are both now resolved and

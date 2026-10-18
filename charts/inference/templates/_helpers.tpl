@@ -663,7 +663,7 @@ modelServing:
     tolerations:
       {{- toYaml $gpu.tolerations | nindent 6 }}
     {{- /* GPU arbitration (ADR-0114): serving is the designated preemption
-           victim so an on-demand charts/webank-training run can take a card.
+           victim so a higher-priority GPU workload can take a card on demand.
            A catalog entry may override per model; unset means "no priority
            class", not "0" — kube-scheduler treats an absent class as the
            default (0) priority, distinct from the class named "inference-serving".

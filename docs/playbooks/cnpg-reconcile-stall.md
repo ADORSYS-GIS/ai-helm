@@ -1,6 +1,6 @@
 # CNPG `Managed` role reconcile stall
 
-**Symptom:** A CNPG `Managed` role (e.g. `coder`) holds a stale password after the
+**Symptom:** A CNPG `Managed` role (e.g. `<role>`) holds a stale password after the
 backing `ExternalSecret` is refreshed. The Kubernetes Secret the `Managed` role
 references is updated, but CNPG never re-reconciles the role in Postgres — the
 old password stays active, and dependent workloads using the new credential are
@@ -33,7 +33,7 @@ when:
 
 2. **Check the referenced Secret timestamp:**
    ```bash
-   kubectl -n converse get secret coder-db-role -o jsonpath='{.metadata.annotations}'
+   kubectl -n converse get secret <role>-db-role -o jsonpath='{.metadata.annotations}'
    ```
    Confirm the `reconciled` / last-updated timestamp is newer than the
    operator's last restart.
@@ -49,7 +49,7 @@ when:
 Force the `Managed` resource to reconcile immediately:
 
 ```bash
-kubectl annotate managedrole coder -n converse --overwrite \
+kubectl annotate managedrole <role> -n converse --overwrite \
   force-reconciliation="true"
 ```
 
@@ -59,7 +59,7 @@ already correct, this pushes the password to Postgres within seconds.
 If the Secret itself is also stale, trigger an ESO refresh first:
 
 ```bash
-kubectl annotate externalsecret coder-db-role -n converse --overwrite \
+kubectl annotate externalsecret <role>-db-role -n converse --overwrite \
   force-sync="true"
 ```
 

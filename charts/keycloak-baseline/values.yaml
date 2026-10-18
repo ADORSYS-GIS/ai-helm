@@ -109,85 +109,11 @@ keycloak-config:
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "converse"
 
-    coder:
-      name: "coder"
-      description: "Coder OIDC roles scope"
-      protocol: "openid-connect"
-      attributes:
-        include.in.token.scope: "false"
-        display.on.consent.screen: "true"
-      protocolMappers:
-        - name: coder_roles
-          protocol: "openid-connect"
-          protocolMapper: "oidc-usermodel-client-role-mapper"
-          consentRequired: false
-          config:
-            introspection.token.claim: "true"
-            multivalued: "false"
-            userinfo.token.claim: "true"
-            id.token.claim: "true"
-            access.token.claim: "true"
-            claim.name: "coder_roles"
-            jsonType.label: "String"
-            usermodel.clientRoleMapping.clientId: "coder"
-
-    # mlops platform (ADR-0085). Three scopes mirroring the coder pattern —
-    # each app's client roles feed its own claim.
-    argoWorkflows:
-      name: "argo-workflows"
-      description: "Argo Workflows OIDC roles scope"
-      protocol: "openid-connect"
-      attributes:
-        include.in.token.scope: "false"
-        display.on.consent.screen: "true"
-      protocolMappers:
-        - name: argo_workflows_roles
-          protocol: "openid-connect"
-          protocolMapper: "oidc-usermodel-client-role-mapper"
-          consentRequired: false
-          config:
-            introspection.token.claim: "true"
-            multivalued: "true"
-            userinfo.token.claim: "true"
-            id.token.claim: "true"
-            access.token.claim: "true"
-            claim.name: "argo_workflows_roles"
-            jsonType.label: "String"
-            usermodel.clientRoleMapping.clientId: "argo-workflows"
-
-    # LakeFS: consumed by the DEDICATED lakefs-auth oauth2-proxy instance in
-    # front of the lakefs-proxy SSO shim (ADR-0090). ⚠️ The `lakefs_roles`
-    # claim is NOT authorization-bearing today: LakeFS OSS (`rbac: none`) is
-    # single-user, so every SSO user lands on the one shared `admin` identity
-    # and LakeFS itself never sees this claim. It is kept so a future
-    # LakeFS-side RBAC (or a policy check in the shim) has a claim to read.
-    lakefsProxy:
-      name: "lakefs-proxy"
-      description: "LakeFS oauth2-proxy roles scope"
-      protocol: "openid-connect"
-      attributes:
-        include.in.token.scope: "false"
-        display.on.consent.screen: "true"
-      protocolMappers:
-        - name: lakefs_roles
-          protocol: "openid-connect"
-          protocolMapper: "oidc-usermodel-client-role-mapper"
-          consentRequired: false
-          config:
-            introspection.token.claim: "true"
-            multivalued: "false"
-            userinfo.token.claim: "true"
-            id.token.claim: "true"
-            access.token.claim: "true"
-            claim.name: "lakefs_roles"
-            jsonType.label: "String"
-            usermodel.clientRoleMapping.clientId: "lakefs-proxy"
-
     # Longhorn (Hetzner GPU-node storage UI): consumed by the DEDICATED
     # longhorn-auth oauth2-proxy instance in front of the Longhorn UI
-    # (ADR-0093). Unlike lakefs_roles (currently inert), this claim IS
-    # authorization-bearing — oauth2-proxy's `--allowed-group=admin` +
-    # `--oidc-groups-claim=longhorn_roles` actually rejects login for a user
+    # (ADR-0093). This claim IS authorization-bearing — oauth2-proxy's
+    # `--allowed-group=admin` + `--oidc-groups-claim=longhorn_roles` actually
+    # rejects login for a user
     # without the `admin` client role, because the Longhorn UI grants full
     # volume/node management (including delete) and has no native auth of
     # its own.
@@ -206,10 +132,9 @@ keycloak-config:
           config:
             introspection.token.claim: "true"
             # MUST be multivalued — a bare string can't be matched by
-            # oauth2-proxy's --allowed-group against a JSON array claim (see
-            # the mlflow_roles comment above for the exact failure mode this
-            # avoids: ADR-0085 found multivalued:false silently rejects every
-            # login, even for a correctly-role-assigned user).
+            # oauth2-proxy's --allowed-group against a JSON array claim
+            # (multivalued:false silently rejects every login, even for a
+            # correctly-role-assigned user).
             multivalued: "true"
             userinfo.token.claim: "true"
             id.token.claim: "true"
@@ -217,36 +142,6 @@ keycloak-config:
             claim.name: "longhorn_roles"
             jsonType.label: "String"
             usermodel.clientRoleMapping.clientId: "longhorn-proxy"
-
-    mlflow:
-      name: "mlflow"
-      description: "MLflow OIDC roles scope"
-      protocol: "openid-connect"
-      attributes:
-        include.in.token.scope: "false"
-        display.on.consent.screen: "true"
-      protocolMappers:
-        - name: mlflow_roles
-          protocol: "openid-connect"
-          protocolMapper: "oidc-usermodel-client-role-mapper"
-          consentRequired: false
-          config:
-            introspection.token.claim: "true"
-            # MUST be multivalued: mlflow-oidc-auth's `oidcAuth.groupsAttribute`
-            # expects a JSON array to match against `groupName`/`adminGroupName`
-            # — `multivalued: false` emits a bare string, which the plugin
-            # can't match, so login is unconditionally rejected
-            # ("User is not allowed to login") even for a user with the
-            # `admin`/`viewer` client role assigned. Found live during
-            # ADR-0085 verification (compare argo_workflows_roles, which was
-            # multivalued: true from the start and worked).
-            multivalued: "true"
-            userinfo.token.claim: "true"
-            id.token.claim: "true"
-            access.token.claim: "true"
-            claim.name: "mlflow_roles"
-            jsonType.label: "String"
-            usermodel.clientRoleMapping.clientId: "mlflow"
 
     # ── Lightbridge Code Intelligence MCP (lightbridge-code-intelligence#508) ──
     # Unlike the gateway-fronted MCPs in charts/mcps — where Envoy verifies the JWT
@@ -348,136 +243,6 @@ keycloak-config:
         - name: "user"
           description: ""
 
-    coder:
-      enabled: true
-      clientId: "coder"
-      name: "Coder"
-      description: ""
-      publicClient: false
-      standardFlowEnabled: true
-      implicitFlowEnabled: false
-      directAccessGrantsEnabled: true
-      serviceAccountsEnabled: false
-      redirectUris:
-        - "/*"
-      webOrigins:
-        - "/*"
-      rootUrl: "https://coder.ai.camer.digital"
-      baseUrl: "/"
-      frontchannelLogout: true
-      defaultClientScopes:
-        - web-origins
-        - acr
-        - coder
-        - profile
-        - roles
-        - basic
-        - email
-      optionalClientScopes:
-        - address
-        - librechat
-        - phone
-        - organization
-        - offline_access
-        - microprofile-jwt
-      # Client roles — included in the coder_roles claim for potential future
-      # use with Coder IdP Sync (Premium feature). Without a Premium license,
-      # roles must be assigned manually in Coder after user login.
-      #   admin → owner, developer → member
-      roles:
-        - name: "admin"
-          description: "Coder owner role"
-        - name: "developer"
-          description: "Coder member role"
-
-    # ── mlops platform (ADR-0085) ─────────────────────────────────────────
-    # Argo Workflows: NATIVE OIDC (server.sso) — no fronting oauth2-proxy.
-    # The argo_workflows_roles claim (multivalued) is read as the SSO
-    # "groups" claim via customGroupClaimName, used for RBAC precedence.
-    argoWorkflows:
-      enabled: true
-      clientId: "argo-workflows"
-      name: "Argo Workflows"
-      description: ""
-      publicClient: false
-      standardFlowEnabled: true
-      implicitFlowEnabled: false
-      directAccessGrantsEnabled: false
-      serviceAccountsEnabled: false
-      redirectUris:
-        - "/*"
-      webOrigins:
-        - "/*"
-      rootUrl: "https://argo-workflows.mlops.ai.camer.digital"
-      baseUrl: "/"
-      frontchannelLogout: true
-      defaultClientScopes:
-        - web-origins
-        - acr
-        - argo-workflows
-        - profile
-        - roles
-        - basic
-        - email
-      optionalClientScopes:
-        - address
-        - phone
-        - organization
-        - offline_access
-        - microprofile-jwt
-      roles:
-        - name: "admin"
-          description: "Argo Workflows admin"
-        - name: "viewer"
-          description: "Argo Workflows read-only"
-
-    # LakeFS: OSS has no usable native OIDC (Enterprise/"Fluffy" only —
-    # `auth.oidc.*` is rejected at startup, ADR-0085/ADR-0090). This client is
-    # consumed by the DEDICATED lakefs-auth oauth2-proxy instance, which sits
-    # in front of the lakefs-proxy SSO shim (charts/lakefs-proxy). The shim
-    # then logs into LakeFS as the bootstrap admin — LakeFS's own IAM stays
-    # single-user, so this client authenticates people but does NOT give them
-    # distinct LakeFS identities (ADR-0090 consequences).
-    #
-    # ⚠️ This realm config is NOT currently reconciled by anything on-cluster
-    # (keycloak-config-cli isn't wired to it), so the LIVE `lakefs-proxy`
-    # client must be created/adjusted MANUALLY to match — in particular the
-    # redirect URI and web origin below.
-    lakefsProxy:
-      enabled: true
-      clientId: "lakefs-proxy"
-      name: "LakeFS (oauth2-proxy)"
-      description: ""
-      publicClient: false
-      standardFlowEnabled: true
-      implicitFlowEnabled: false
-      directAccessGrantsEnabled: false
-      serviceAccountsEnabled: false
-      redirectUris:
-        - "https://lakefs.mlops.ai.camer.digital/oauth2/callback"
-      webOrigins:
-        - "https://lakefs.mlops.ai.camer.digital"
-      rootUrl: "https://lakefs.mlops.ai.camer.digital"
-      baseUrl: "/"
-      frontchannelLogout: true
-      defaultClientScopes:
-        - web-origins
-        - acr
-        - lakefs-proxy
-        - profile
-        - roles
-        - basic
-        - email
-      optionalClientScopes:
-        - address
-        - phone
-        - organization
-        - offline_access
-        - microprofile-jwt
-      roles:
-        - name: "user"
-          description: "LakeFS gated access"
-
     # Longhorn (Hetzner GPU-node storage UI, ADR-0092/0093): the Longhorn UI
     # ships no authentication of its own AND grants full volume/node
     # management (including delete), so — unlike homepageProxy below — this
@@ -520,52 +285,11 @@ keycloak-config:
         - name: "admin"
           description: "Longhorn UI access (full volume/node management, including delete)"
 
-    # MLflow: this specific upstream chart bundles the mlflow-oidc-auth
-    # plugin natively — real per-user Keycloak identity + group RBAC inside
-    # MLflow itself, no fronting oauth2-proxy needed (ADR-0085).
-    mlflow:
-      enabled: true
-      clientId: "mlflow"
-      name: "MLflow"
-      description: ""
-      publicClient: false
-      standardFlowEnabled: true
-      implicitFlowEnabled: false
-      directAccessGrantsEnabled: false
-      serviceAccountsEnabled: false
-      redirectUris:
-        - "/*"
-      webOrigins:
-        - "/*"
-      rootUrl: "https://mlflow.mlops.ai.camer.digital"
-      baseUrl: "/"
-      frontchannelLogout: true
-      defaultClientScopes:
-        - web-origins
-        - acr
-        - mlflow
-        - profile
-        - roles
-        - basic
-        - email
-      optionalClientScopes:
-        - address
-        - phone
-        - organization
-        - offline_access
-        - microprofile-jwt
-      roles:
-        - name: "admin"
-          description: "MLflow MANAGE permission"
-        - name: "viewer"
-          description: "MLflow READ permission (default)"
-
     # Homepage central-hub dashboard (ADR-0089): Homepage itself ships no
     # authentication, so this client is consumed by a DEDICATED homepage-auth
-    # oauth2-proxy instance in reverse-proxy mode (mirrors the ADR-0085
-    # lakefs-auth shape) — a network gate only, no per-role behavior, so
-    # (unlike lakefsProxy before removal) this client gets no custom
-    # clientScope/role mapper.
+    # oauth2-proxy instance in reverse-proxy mode — a network gate only, no
+    # per-role behavior, so this client gets no custom clientScope/role
+    # mapper.
     homepageProxy:
       enabled: true
       clientId: "homepage-proxy"
