@@ -1,0 +1,18 @@
+sequenceDiagram
+    autonumber
+    participant C as Admin console
+    participant B as authz-budget / PolicyStore
+    participant R as budget_policy_revisions
+    participant S as budget_policy_sets
+    participant E as RuleDataEngine in this process
+    C->>B: createBudgetPolicyRevision(rule JSON)
+    B->>B: Validate JSON and rule constraints
+    B->>R: INSERT revision; active pointer unchanged
+    C->>B: simulateBudgetPolicy(candidate, facts)
+    B->>E: Evaluate isolated candidate; no grant write
+    E-->>C: Decision preview through service
+    C->>B: activateBudgetPolicy(revision ID or new rule JSON)
+    B->>R: Read existing revision, or insert a new one
+    B->>S: UPDATE active_revision_id; commit
+    B->>E: Hot-swap validated rules after DB commit
+    Note over B,E: Rollback selects an older existing revision through the same activation path

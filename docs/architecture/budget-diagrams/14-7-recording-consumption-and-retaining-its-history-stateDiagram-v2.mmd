@@ -1,0 +1,15 @@
+stateDiagram-v2
+    [*] --> CompletedRequest
+    CompletedRequest --> QueuedTelemetry: access log exported
+    QueuedTelemetry --> Dropped: historical nonretryable HTTP 400
+    QueuedTelemetry --> RawUsage: valid accepted batch
+    RawUsage --> DailyAggregate: retention enabled and raw age exceeded
+    DailyAggregate --> Purged: retention horizon exceeded
+    note right of Dropped
+        No usage_events INSERT for the rejected batch.
+        No automatic recovery of permanently dropped batches is shown.
+    end note
+    note right of RawUsage
+        Recording spend does not subtract from budget_grants
+        or budget_balances. The refresher computes the difference.
+    end note

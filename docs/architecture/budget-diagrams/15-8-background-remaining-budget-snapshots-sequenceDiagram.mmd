@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant B as authz-budget refresher
+    participant A as accounts, users, grants, api_keys
+    participant N as budget_remaining_snapshots
+    participant U as authz-usage spend API
+    participant G as budget_grants
+    participant S as budget_reset_schedules and plan context
+    B->>B: Tick; acquire replica coordination lock
+    B->>A: Find accounts with recent grants or used active keys
+    B->>N: Seed missing rows or re-arm aged eligible rows
+    B->>N: Select due fast-lane and slow-lane rows
+    loop Each selected account, bounded concurrency
+        B->>U: POST /usage/v1/spend/query over mTLS
+        alt Usage answered, including a genuinely empty result
+            B->>G: SUM effective grants for current month
+            B->>S: Resolve next reset, else next UTC month
+            B->>N: Store ceiling, spent, remaining, period and timestamps
+        else Usage unreachable
+            B->>N: Mark stale; keep previous reading
+        end
+    end
+    B->>N: Read coverage census
