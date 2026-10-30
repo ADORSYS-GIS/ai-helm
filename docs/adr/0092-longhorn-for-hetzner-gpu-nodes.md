@@ -1,6 +1,6 @@
 # ADR-0092: Longhorn scoped to the Hetzner Robot GPU nodes only, via foreign-provider node isolation
 
-**Status:** Accepted
+**Status:** Superseded by ADR-0140
 **Date:** 2026-07-25
 **Deciders:** @stephane-segning
 

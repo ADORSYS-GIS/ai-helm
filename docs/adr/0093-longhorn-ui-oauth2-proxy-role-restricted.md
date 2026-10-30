@@ -1,6 +1,6 @@
 # ADR-0093: Gate the Longhorn UI with a dedicated, role-restricted oauth2-proxy
 
-**Status:** Accepted
+**Status:** Superseded by ADR-0140
 **Date:** 2026-07-25
 **Deciders:** @stephane-segning
 
