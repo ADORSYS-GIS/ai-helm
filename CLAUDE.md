@@ -414,15 +414,12 @@ entry to make it user-reachable). Do NOT create a new chart per model.
 - GPU placement is a `nvidia.com/gpu: 1` REQUEST (+ toleration/nodeSelector/
   runtimeClass). ⚠️ **1 card ⇒ 1 model** since gpu-2 was removed (ADR-0138); a
   2nd enabled model queues `Pending`. ⚠️ The **seed Job**
-  needs the same nodeSelector/toleration despite needing no GPU — Longhorn runs
-  only on the GPU nodes (ADR-0092), and `storageClassName: longhorn` is mandatory
-  (not the cluster default; omitting it silently targets `hcloud-volumes` and never
-  binds). ⚠️ With gpu-2 gone Longhorn is a **ONE-node pool**, so its StorageClass
-  dropped to `defaultClassReplicaCount: 1` (ADR-0138) — a 2-replica volume is
-  unsatisfiable on one node and would sit permanently `degraded`. That means **no
-  redundancy**: the node's disk is the only copy. Tolerable only because these
-  volumes hold re-fetchable weights. A StorageClass change does NOT reach existing
-  volumes — those need a per-volume `spec.numberOfReplicas` patch. ⚠️ The CNP MUST allow `fromEntities: [host, remote-node, health]` or
+  needs the same nodeSelector/toleration despite needing no GPU. ⚠️ **Longhorn was removed
+  from hetzner-prod on 2026-10-30 (ADR-0140)**, so there is currently NO ReadWriteMany
+  StorageClass for the weights volume: `charts/inference-server` still defaults
+  `pvc.storageClassName` to `longhorn`, which no longer exists, and `hcloud-volumes` (the
+  cluster default) is ReadWriteOnce. Choose and set an RWX class in the fleet catalog before
+  re-enabling any model. ⚠️ The CNP MUST allow `fromEntities: [host, remote-node, health]` or
   KUBELET PROBES fail and the pod never goes Ready (looks like a crash-loop).
 - `check-model-catalogs.sh` fails if a cluster-local gateway backend has no server
   behind it. Serving *without* federating is allowed on purpose — that's how a
