@@ -81,6 +81,14 @@ rateLimitBudgeting: {}
 requestRate: {}
 
 # ── /v1/models/info catalog endpoint ──────────────────────────────────────
+# Besides `enabled`/`excludeKinds`, `modelsInfo.defaultPodOptions` (and the same
+# key under `openCodeWellKnown` below) is passed to the leaf's bjw-template
+# `defaultPodOptions`, e.g. pod placement on a dedicated node group:
+#   defaultPodOptions:
+#     nodeSelector: { workload: converse }
+#     tolerations:
+#       - { key: workload, operator: Equal, value: converse, effect: NoSchedule }
+# Unset = not passed, so the generated child values are unchanged.
 modelsInfo: {}
 
 # ── opencode well-known descriptor (ADR-0125) ─────────────────────────────

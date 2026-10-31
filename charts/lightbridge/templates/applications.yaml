@@ -1,7 +1,8 @@
 {{- /*
 lightbridge App-of-Apps orchestrator — renders three child Application CRs:
   • lightbridge-secrets — local ExternalSecrets leaf chart (single source).
-  • lightbridge-db      — local CNPG leaf chart (single source).
+  • lightbridge-db      — local CNPG leaf chart + a $values ref to its
+                          ai-helm-values file (lightbridge-db.yaml).
   • lightbridge-app     — upstream Lightbridge chart (deployed as an ArgoCD
                           source, like the old flat app) + the ingress
                           Certificates via the per-env kustomize overlay
@@ -55,13 +56,22 @@ metadata:
     {{- include "common.labels.standard" . | nindent 4 }}
 spec:
   project: {{ $a.project | quote }}
-  source:
+  sources:
     # OCI chart-float (ADR-0055): full chart path in repoURL + chart "." (#453).
-    repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.db.chartName | quote }}
-    chart: "."
-    targetRevision: {{ $a.chartVersionRange | quote }}
-    helm:
-      releaseName: {{ .Values.db.releaseName | quote }}
+    # Values from ai-helm-values (ADR-0056) via the $values ref below, so per-env
+    # knobs (pod placement: `placement.nodeSelector`/`placement.tolerations`) have
+    # somewhere to live. ignoreMissingValueFiles: an absent file = chart defaults.
+    - repoURL: {{ printf "%s/%s" $a.chartRegistry .Values.db.chartName | quote }}
+      chart: "."
+      targetRevision: {{ $a.chartVersionRange | quote }}
+      helm:
+        releaseName: {{ .Values.db.releaseName | quote }}
+        valueFiles:
+          - $values/environments/{{ $a.env | default "prod" }}/values/{{ .Values.db.appName }}.yaml
+        ignoreMissingValueFiles: true
+    - repoURL: {{ $a.repoURL | quote }}
+      targetRevision: {{ $a.targetRevision | quote }}
+      ref: values
   destination:
     {{- include "lightbridge.argocd.destinationClusterRef" $a.destination | nindent 4 }}
     namespace: {{ $a.destination.namespace | quote }}

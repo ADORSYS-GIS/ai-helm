@@ -29,6 +29,14 @@ spec:
         app: {{ .Values.mcp.name }}
         {{- include "common.labels.standard" . | nindent 8 }}
     spec:
+      {{- with .Values.mcp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcp.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ .Values.mcp.name }}
           image: {{ required "mcp.image is required in selfHosted mode" .Values.mcp.image | quote }}
@@ -120,6 +128,14 @@ spec:
         # Roll the pod when the Caddyfile changes (ConfigMap edits don't reload).
         checksum/caddyfile: {{ $caddyfile | sha256sum }}
     spec:
+      {{- with .Values.mcp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcp.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: caddy
           image: {{ .Values.mcp.image | default "docker.io/library/caddy:2-alpine" | quote }}

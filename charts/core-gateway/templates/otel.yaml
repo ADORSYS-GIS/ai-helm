@@ -4,6 +4,7 @@
 {{- $usageDebug := ((.Values.otelCollector | default dict).debug | default dict).usage | default dict -}}
 {{- $usageDebugEnabled := $usageDebug.enabled | default false -}}
 {{- $usageDebugVerbosity := $usageDebug.verbosity | default "basic" -}}
+{{- $otel := .Values.otelCollector | default dict -}}
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:
@@ -16,6 +17,16 @@ spec:
   # NOTE: `mode` is immutable on an existing collector — if one was already
   # created with empty/other mode, delete it once so ArgoCD recreates it.
   mode: {{ (.Values.otelCollector | default dict).mode | default "deployment" }}
+  {{- /* Pod placement (OpenTelemetryCollector spec.nodeSelector / spec.tolerations,
+         passed by the operator to the collector Deployment). Empty = unrendered. */}}
+  {{- with $otel.nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $otel.tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   config:
     receivers:
       otlp:
@@ -199,6 +210,16 @@ spec:
   # See the `mode` comment on the `-traces` collector above — same webhook
   # requirement applies here.
   mode: {{ (.Values.otelCollector | default dict).mode | default "deployment" }}
+  {{- /* Pod placement (OpenTelemetryCollector spec.nodeSelector / spec.tolerations,
+         passed by the operator to the collector Deployment). Empty = unrendered. */}}
+  {{- with $otel.nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $otel.tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   # `<fullname>-usage-ca` (certificate-usage-ca.yaml) chains to the same
   # ClusterIssuer (self-signed-ca) that signs lightbridge-authz-usage's own
   # `authz-tls` cert in the `converse` namespace — see that template for why

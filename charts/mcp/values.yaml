@@ -39,6 +39,15 @@ mcp:
     limits:
       cpu: 300m
       memory: 512Mi
+  # Pod placement for the in-cluster pod (selfHosted + proxiedExternal; external
+  # mode renders no pod). Copied verbatim into the Deployment's pod spec. Empty =
+  # schedule anywhere (the render is unchanged). A dedicated, tainted node group
+  # needs BOTH: the selector pins the pod there, the toleration admits it.
+  #   nodeSelector: { workload: converse }
+  #   tolerations:
+  #     - { key: workload, operator: Equal, value: converse, effect: NoSchedule }
+  nodeSelector: {}
+  tolerations: []
 
   # ── external / proxiedExternal: the upstream ───────────────────────────
   externalHost: "example.example.com"
