@@ -359,6 +359,15 @@ backendTrafficPolicy:
 # ────────────────────────────────────────────────────────────────────────
 otelCollector:
   mode: deployment
+  # Pod placement for BOTH collectors (-traces, -usage), rendered as the
+  # OpenTelemetryCollector's spec.nodeSelector / spec.tolerations; the operator
+  # copies them onto the collector Deployment. Empty = schedule anywhere (the
+  # render is unchanged). A dedicated, tainted node group needs BOTH keys.
+  #   nodeSelector: { workload: converse }
+  #   tolerations:
+  #     - { key: workload, operator: Equal, value: converse, effect: NoSchedule }
+  nodeSelector: {}
+  tolerations: []
   usageCa:
     issuer: self-signed-ca
     issuerKind: ClusterIssuer

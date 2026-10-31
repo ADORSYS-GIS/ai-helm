@@ -51,6 +51,15 @@ resources:
   limits:
     memory: 128Mi
 
+# Pod placement, copied verbatim into the Deployment's pod spec. Empty =
+# schedule anywhere (the render is unchanged). A dedicated, tainted node group
+# needs BOTH: the selector pins the pod there, the toleration admits it.
+#   nodeSelector: { workload: observability }
+#   tolerations:
+#     - { key: workload, operator: Equal, value: observability, effect: NoSchedule }
+nodeSelector: {}
+tolerations: []
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000

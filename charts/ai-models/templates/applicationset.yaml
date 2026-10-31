@@ -42,6 +42,13 @@ spec:
       "models" .Values.models
       "excludeKinds" .Values.modelsInfo.excludeKinds
 }}
+{{- /* Pod placement pass-through: `modelsInfo.defaultPodOptions` lands on the
+       leaf's bjw-template alias (`models-info.defaultPodOptions`), which applies
+       it to every pod the leaf renders. Only emitted when set, so an unset key
+       leaves this element's values byte-identical. */ -}}
+{{- with .Values.modelsInfo.defaultPodOptions }}
+{{- $_ := set $infoValues "models-info" (dict "defaultPodOptions" .) }}
+{{- end }}
 {{ $infoValues | toYaml | indent 14 }}
 {{- end }}
 {{- if .Values.openCodeWellKnown.enabled }}
@@ -58,6 +65,11 @@ spec:
             syncWave: "1"
             valuesYaml: |-
 {{- $wkValues := dict "models" .Values.models }}
+{{- /* Same pass-through as the info child, onto the leaf's `opencode-wellknown`
+       bjw-template alias. */ -}}
+{{- with .Values.openCodeWellKnown.defaultPodOptions }}
+{{- $_ := set $wkValues "opencode-wellknown" (dict "defaultPodOptions" .) }}
+{{- end }}
 {{ $wkValues | toYaml | indent 14 }}
 {{- end }}
 {{- /* ── Per-model request-rate ceiling (owner ruling 2026-09-06) ───────────
