@@ -55,6 +55,15 @@ rateLimitBudgeting:
 
 modelsInfo:
   enabled: true
+  # Exercises the defaultPodOptions pass-through to the leaf.
+  defaultPodOptions:
+    nodeSelector:
+      workload: converse
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: converse
+        effect: NoSchedule
 
 # Exercises the ADR-0125 well-known child + its catalog-derived reasoning caps.
 openCodeWellKnown:
