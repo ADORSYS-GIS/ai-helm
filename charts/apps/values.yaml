@@ -1005,6 +1005,32 @@ applications:
     chart: lightbridge-governance
     destination:
       namespace: governance
+    # The template's default syncOptions MINUS `Replace=true` (same opt-out as
+    # aisix / apprise-api / same-origin-proxy / opencode-k8s-agent). With
+    # Replace, the two public OpenTelemetryCollector CRs (ai-cli, opencode)
+    # stayed OutOfSync forever while every selfHeal sync "Succeeded":
+    #   - Replace syncs with a full-object PUT. The OTel operator's defaulting
+    #     webhook re-marshals the CR from Go structs and stamps zero values into
+    #     it: spec.initContainers[0].resources: {} and spec.ports[0].targetPort: 0
+    #     (`kubectl replace --dry-run=server` of the rendered CR returns both).
+    #   - Argo's server-side diff predicts live with an SSA dry-run instead, which
+    #     does NOT carry them (`kubectl apply --server-side --dry-run=server`
+    #     returns neither). Both lists are atomic in the CRD, so the predicted list
+    #     replaces live's whole and the two fields show up as live-only drift.
+    #   - A resource-level `sync-options: Replace=false` cannot opt out:
+    #     gitops-engine ORs the app-level flag in (shouldReplace := sc.replace ||
+    #     <annotation Replace=true>, sync_context.go in Argo CD v3.5.5).
+    # Server-side apply (forced conflicts) writes exactly what the diff predicts,
+    # so the app converges.
+    syncPolicy:
+      syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
+        - SkipDryRunOnMissingResource=true
+      automated:
+        enabled: true
+        prune: true
+        selfHeal: true
 
   # ── Lightbridge observability — Grafana dashboards-as-code (ADR-0046) ──
   # Deploys the dashboards-as-code chart that lives in the APPLICATION repo
