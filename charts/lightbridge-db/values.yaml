@@ -16,6 +16,18 @@
 # Namespace is `converse` (the orchestrator targets that namespace; these CRs
 # pin it explicitly to match the old flat-app behaviour).
 
+# Pod placement for every pod this chart produces: the CNPG Cluster's instances
+# (as spec.affinity.nodeSelector/tolerations) and the governance-ro-grant Job.
+# Empty = schedule anywhere (the render is unchanged). A dedicated, tainted node
+# group needs BOTH: the selector pins the pod there, the toleration admits it.
+# Set per environment in ai-helm-values environments/<env>/values/lightbridge-db.yaml.
+#   nodeSelector: { workload: converse }
+#   tolerations:
+#     - { key: workload, operator: Equal, value: converse, effect: NoSchedule }
+placement:
+  nodeSelector: {}
+  tolerations: []
+
 resources:
   # ────────────────────────────────────────────────────────────────────
   # The primary CNPG cluster. Spec verbatim from the old flat app's
@@ -34,6 +46,23 @@ resources:
     spec:
       instances: 2
       imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+      {{- with .Values.placement }}
+      {{- if or .nodeSelector .tolerations }}
+      # Pod placement (`placement` below). CNPG carries it under spec.affinity
+      # and stamps it on every instance pod; changing it rolls the instances
+      # (replica first, then the primary per primaryUpdateMethod; this Cluster
+      # leaves it at the operator default `restart`, i.e. no switchover).
+      affinity:
+        {{- with .nodeSelector }}
+        nodeSelector:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .tolerations }}
+        tolerations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- end }}
       storage:
         # 5Gi -> 20Gi. PRODUCTION OUTAGE 2026-08-29 ~10:05 UTC: the volume filled,
         # Postgres died with `PANIC: could not write to file`, and every service on this
@@ -522,6 +551,14 @@ resources:
       template:
         spec:
           restartPolicy: Never
+          {{- with .Values.placement.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.placement.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           # The cloudnative-pg postgres image already runs as the non-root
           # `postgres` user (uid 26 / gid 102) — pin it explicitly so the
           # Trivy KSV-0118 default-security-context check passes.
