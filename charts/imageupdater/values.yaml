@@ -6,7 +6,7 @@
 # CR needs.
 #
 # To opt a new continuous-delivery app in: add the write-back annotations to its
-# charts/apps entry (see lightbridge-code-intelligence for the canonical shape),
+# charts/apps entry (see console-ui for the canonical shape),
 # set `chart:` on it (OCI mode), then add an entry here:
 #
 #   - name: <app>
@@ -14,12 +14,6 @@
 #       - namePattern: aii-<app>      # `aii-` = charts/apps argocd.appNamePrefix
 #         useAnnotations: true
 imageUpdaters:
-  - name: lightbridge-code-intelligence
-    applicationRefs:
-      # The `aii-` prefix is charts/apps `argocd.appNamePrefix`. A bare pattern
-      # is an exact match.
-      - namePattern: aii-lightbridge-code-intelligence
-        useAnnotations: true
   # Lightbridge console image write-back to ai-helm-values (newest-build,
   # unsigned — same converse-frontends CI that used to build converse-ui, which
   # this app REPLACED (retired 2026-08-29; self-service.ai.camer.digital now 301s
@@ -53,12 +47,4 @@ imageUpdaters:
   - name: lightbridge-governance
     applicationRefs:
       - namePattern: aii-lightbridge-governance
-        useAnnotations: true
-  # apps/lci image write-back to ai-helm-values (newest-build, unsigned — converse-frontends'
-  # own CI). Annotations live on the aii-lci-ui Application (charts/apps/values.yaml). Entry
-  # required, annotations alone do nothing — see the lightbridge-governance entry above for the
-  # 6-hour incident this exact omission caused.
-  - name: lci-ui
-    applicationRefs:
-      - namePattern: aii-lci-ui
         useAnnotations: true
