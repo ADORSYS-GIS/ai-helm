@@ -127,7 +127,7 @@ instances:
   default:                           # → Authorino kuadrant-policies-default
     replicas: 2                      # HA — every gateway request hits Authorino
     supersedingHostSubsets: true     # let a "*" catch-all coexist with specific hosts
-    authConfigLabelSelectors: "another.vymalo.com/authorino notin (another)"   # optional
+    authConfigLabelSelectors: "authorino-instance notin (dedicated)"   # optional
     listener: { ... }                # verbatim
     oidcServer: { ... }              # verbatim
     volumes: { ... }                 # verbatim
@@ -140,12 +140,12 @@ wins (ADR-0021).
 `authConfigLabelSelectors` (optional, a Kubernetes label selector string) limits
 which AuthConfigs the instance reconciles; the operator passes it to Authorino as
 `--auth-config-label-selector`. Unset, the instance takes **every** AuthConfig it
-can see. On `home-remote` that includes vymalo/another-gitops's, which are served
-by Another's own Authorino and labelled `another.vymalo.com/authorino=another`.
-Without the exclusion our instance also reconciles them: it reads their secrets
-(the ledger's shared token) and the two Authorinos overwrite each other's
-`AuthConfig` status. A `notin` selector excludes exactly those and still matches
-every AuthConfig of ours, since none of ours carry that label.
+can see, cluster-wide. On a cluster that also runs a separate, namespace-scoped
+Authorino, that would include that instance's AuthConfigs too: ours would read
+the Secrets they reference and the two instances would overwrite each other's
+`AuthConfig` status. Label those AuthConfigs `authorino-instance: dedicated` and
+set `authorino-instance notin (dedicated)` here. A `notin` selector still matches
+every AuthConfig without the label, so nothing of ours drops out.
 
 ## `securityPolicies.<name>` — attach Authorino to the Gateway
 

@@ -18,10 +18,10 @@ spec:
   {{- with $config.authConfigLabelSelectors }}
   # Which AuthConfigs this instance reconciles (a k8s label selector, passed
   # to Authorino as --auth-config-label-selector). Unset = every AuthConfig it
-  # can see. home-remote is shared with vymalo/another-gitops, whose own
-  # Authorino serves AuthConfigs labelled another.vymalo.com/authorino=another;
-  # a `notin` selector keeps this instance off them while still matching every
-  # AuthConfig of ours (none carry that label).
+  # can see, cluster-wide. Set it when the cluster also runs a separate,
+  # namespace-scoped Authorino whose AuthConfigs this instance must leave
+  # alone; a `notin` selector excludes those and still matches every
+  # AuthConfig that lacks the label.
   authConfigLabelSelectors: {{ . | quote }}
   {{- end }}
   {{- with $config.replicas }}
