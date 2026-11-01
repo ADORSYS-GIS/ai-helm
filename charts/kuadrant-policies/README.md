@@ -127,6 +127,7 @@ instances:
   default:                           # → Authorino kuadrant-policies-default
     replicas: 2                      # HA — every gateway request hits Authorino
     supersedingHostSubsets: true     # let a "*" catch-all coexist with specific hosts
+    authConfigLabelSelectors: "another.vymalo.com/authorino notin (another)"   # optional
     listener: { ... }                # verbatim
     oidcServer: { ... }              # verbatim
     volumes: { ... }                 # verbatim
@@ -135,6 +136,16 @@ instances:
 `supersedingHostSubsets: true` is required for a deny-all catch-all AuthConfig
 to coexist with more specific per-host AuthConfigs — the most-specific host
 wins (ADR-0021).
+
+`authConfigLabelSelectors` (optional, a Kubernetes label selector string) limits
+which AuthConfigs the instance reconciles; the operator passes it to Authorino as
+`--auth-config-label-selector`. Unset, the instance takes **every** AuthConfig it
+can see. On `home-remote` that includes vymalo/another-gitops's, which are served
+by Another's own Authorino and labelled `another.vymalo.com/authorino=another`.
+Without the exclusion our instance also reconciles them: it reads their secrets
+(the ledger's shared token) and the two Authorinos overwrite each other's
+`AuthConfig` status. A `notin` selector excludes exactly those and still matches
+every AuthConfig of ours, since none of ours carry that label.
 
 ## `securityPolicies.<name>` — attach Authorino to the Gateway
 
