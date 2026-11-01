@@ -4,7 +4,7 @@
 # ObjectStore, which is modernised to Hetzner Object Storage (the old MinIO
 # s3.ssegning.me / ai-ops-backups is decommissioned). lightbridge-usage-db was
 # dropped by ADR-0026 and is restored below as a `usage` Database CR on this
-# same shared cluster (repoauth/codeintel/governance pattern) — NOT a
+# same shared cluster (repoauth/governance pattern) — NOT a
 # dedicated Cluster. `lightbridge-authz-usage` does not need TimescaleDB: its
 # bucketed aggregation uses stock PostgreSQL 14+ `date_bin`
 # (crates/lightbridge-authz-usage/src/repo.rs), and every Timescale statement
@@ -90,7 +90,8 @@ resources:
         # 20Gi -> 40Gi, raised again the same day and deliberately, not as a second
         # panic. 20Gi restored service but bought only ~6 weeks at the measured burn:
         #
-        #   codeintel.webhook_deliveries   947k rows / 71d / 5061 MB  ~150 MB/day
+        #   webhook_deliveries (the former Code Intelligence DB, decommissioned
+        #   2026-11-01)                    947k rows / 71d / 5061 MB  ~150 MB/day
         #   usage.usage_events             645k rows / 15d / 1499 MB  ~100 MB/day
         #   -> ~250 MB/day combined, against 10.5 GB free = ~42 days
         #
@@ -154,15 +155,6 @@ resources:
             login: true
             passwordSecret:
               name: repo-auth-db-role
-          # Dedicated login role for lightbridge-code-intelligence
-          # (charts/lightbridge-code-intelligence), isolated from `app`/`repoauth`.
-          # Owns the `codeintel` Database below; password from the basic-auth Secret
-          # `lightbridge-codeintel-db-role` (ESO-provisioned, below).
-          - name: codeintel
-            ensure: present
-            login: true
-            passwordSecret:
-              name: lightbridge-codeintel-db-role
           # Read-only login role for Grafana (the lightbridge-observability dashboards query Postgres
           # directly — agent runs are one-shot Jobs and can't be scraped, ADR-0046). Member of the
           # built-in `pg_read_all_data` role (PG14+) so it gets SELECT on every table with NO writes
@@ -201,7 +193,7 @@ resources:
               name: lightbridge-governance-ro-db-role
           # Dedicated login role for lightbridge-authz-usage
           # (ADORSYS-GIS/lightbridge-authz, crates/lightbridge-authz-usage),
-          # isolated from `app`/repoauth/codeintel/etc. Owns the `usage`
+          # isolated from `app`/repoauth/etc. Owns the `usage`
           # Database below; password from the basic-auth Secret
           # `lightbridge-usage-db-role` (ESO-provisioned, below). No
           # extensions required — see the top-of-file note on why this is a
@@ -364,71 +356,16 @@ resources:
             key: ai/camer/digital/prod/env
             property: repo_auth_db_password
   # ────────────────────────────────────────────────────────────────────
-  # lightbridge-code-intelligence: a `codeintel` Database owned by the
-  # managed `codeintel` role above, plus the role's basic-auth Secret
-  # (username + password) consumed by BOTH CNPG (passwordSecret) and the
-  # control plane. Mirrors the repoauth pattern (ADR-0047).
-  # pgvector: semantic search (charts/lightbridge-code-intelligence migration 0004) needs the
-  # `vector` extension. The `codeintel` role is NOT a superuser, so its `CREATE EXTENSION` is
-  # permission-denied — CNPG creates it as superuser via the Database CRD's declarative
-  # `spec.extensions` (the image bundles pgvector). With it present, the migration's
-  # `CREATE EXTENSION IF NOT EXISTS vector` is a no-op.
-  # ────────────────────────────────────────────────────────────────────
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Database
-    metadata:
-      name: codeintel
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
-        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    spec:
-      cluster:
-        name: lightbridge-main-db
-      name: codeintel
-      owner: codeintel
-      ensure: present
-      extensions:
-        - name: vector
-          ensure: present
-  - |
-    apiVersion: external-secrets.io/v1
-    kind: ExternalSecret
-    metadata:
-      name: lightbridge-codeintel-db-role
-      namespace: converse
-      annotations:
-        argocd.argoproj.io/sync-wave: "1"
-    spec:
-      refreshInterval: 1h
-      secretStoreRef:
-        kind: ClusterSecretStore
-        name: ssegning-aws
-      target:
-        name: lightbridge-codeintel-db-role
-        creationPolicy: Owner
-        template:
-          type: kubernetes.io/basic-auth
-          data:
-            username: "codeintel"
-            password: "{{ "{{ .password }}" }}"
-      data:
-        - secretKey: password
-          remoteRef:
-            key: ai/camer/digital/prod/env
-            property: codeintel_db_password
-  # ────────────────────────────────────────────────────────────────────
   # lightbridge-governance: a `governance` Database owned by the managed
   # `governance` role above, plus the role's basic-auth Secret (username +
-  # password) consumed by CNPG (passwordSecret). Mirrors the codeintel
+  # password) consumed by CNPG (passwordSecret). Mirrors the repoauth
   # pattern above. No extensions needed -- ADR-0009: cratestack is the sole
   # persistence layer, plain tables only.
   #
   # NOTE: the lightbridge-governance chart's own ExternalSecret takes ONE
   # opaque `governance_database_url` property (a pre-assembled connection
-  # string), not username+password assembled at the pod (unlike codeintel's
-  # bjw-template $(DB_PASSWORD) substitution). An operator must construct
+  # string), not username+password assembled at the pod (unlike the
+  # bjw-template $(DB_PASSWORD) substitution some apps use). An operator must construct
   # postgresql://governance:<governance_db_password>@lightbridge-main-db-rw.converse.svc.cluster.local:5432/governance
   # and write it into ai/camer/digital/prod/env as governance_database_url
   # once this role's password (below) is known -- see
@@ -608,8 +545,11 @@ resources:
   # to SET the role's password. The SAME password is also surfaced into the
   # `observability` namespace for the GrafanaDatasource (see ai-helm-values
   # environments/prod/deps/observability-secrets) — both read this one SM property.
-  # ⚠️ Requires a new `codeintel_grafana_ro_db_password` property in the
-  # ai/camer/digital/prod/env Secrets Manager bucket.
+  # ⚠️ Requires the `codeintel_grafana_ro_db_password` property in the
+  # ai/camer/digital/prod/env Secrets Manager bucket. The property name is a
+  # historical misnomer (it predates this role being shared): this is the one
+  # grafana_ro password, not a per-app one. Do NOT rename it without moving the
+  # SM value and the observability-secrets reader in ai-helm-values together.
   # ────────────────────────────────────────────────────────────────────
   - |
     apiVersion: external-secrets.io/v1
@@ -640,14 +580,13 @@ resources:
   # ────────────────────────────────────────────────────────────────────
   # lightbridge-authz-usage: a `usage` Database owned by the managed `usage`
   # role above, plus the role's basic-auth Secret (username + password)
-  # consumed by BOTH CNPG (passwordSecret) and the app. Mirrors the codeintel
+  # consumed by BOTH CNPG (passwordSecret) and the app. Mirrors the repoauth
   # pattern (ADR-0047) — a dedicated login role + dedicated Database on this
   # shared cluster, NOT a bootstrap-app-role/dedicated-cluster setup.
   # ai-helm-values assembles DATABASE_URL as
   # postgresql://usage:$(DB_PASSWORD)@lightbridge-main-db-rw.converse.svc.cluster.local:5432/usage,
-  # with $(DB_PASSWORD) sourced from this Secret's `password` key (same
-  # $(DB_PASSWORD) kubelet-interpolation pattern lightbridge-code-intelligence
-  # uses for codeintel).
+  # with $(DB_PASSWORD) sourced from this Secret's `password` key (the
+  # $(DB_PASSWORD) kubelet-interpolation pattern).
   #
   # ⚠️ Without TimescaleDB's `add_retention_policy`, `usage_events` has no
   # automatic pruning on this plain Postgres database — it grows unbounded.
