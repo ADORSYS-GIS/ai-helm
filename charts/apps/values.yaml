@@ -741,8 +741,8 @@ applications:
       argocd-image-updater.argoproj.io/api.allow-tags: regexp:^sha-[0-9a-f]+$
       argocd-image-updater.argoproj.io/api.force-update: "true"
       # GHCR read cred so tag detection survives ghcr.io/adorsys-gis/* going
-      # private -- same shared secret lightbridge-code-intelligence already
-      # uses (the dockerconfigjson is keyed on the ghcr.io host, not a repo).
+      # private -- same shared secret the other adorsys-gis workloads use
+      # (the dockerconfigjson is keyed on the ghcr.io host, not a repo).
       argocd-image-updater.argoproj.io/api.pull-secret: pullsecret:argocd/adorsys-gis-ghcr-pull
       argocd-image-updater.argoproj.io/api.helm.image-name: app-template.controllers.api.containers.main.image.repository
       argocd-image-updater.argoproj.io/api.helm.image-tag: app-template.controllers.api.containers.main.image.tag
@@ -758,9 +758,8 @@ applications:
       argocd-image-updater.argoproj.io/sync.signature-type: cosign
       argocd-image-updater.argoproj.io/sync.cosign.certificate-oidc-issuer: https://token.actions.githubusercontent.com
       argocd-image-updater.argoproj.io/sync.cosign.certificate-identity-regexp: ^https://github\.com/ADORSYS-GIS/lightbridge-governance/\.github/workflows/docker\.yml@.*$
-      # Write-back: git, to ai-helm-values, same shape as converse-ui /
-      # lightbridge-code-intelligence (ADR-0055). Without this the detected
-      # tag has nowhere to persist -- image-updater's default write-back
+      # Write-back: git, to ai-helm-values, same shape as converse-ui
+      # (ADR-0055). Without this the detected tag has nowhere to persist -- image-updater's default write-back
       # method is `argocd` (patches the Application's own parameter
       # overrides, not this repo), which is not what the values-repo file's
       # own comment promises and silently diverges from GitOps. Caught in
