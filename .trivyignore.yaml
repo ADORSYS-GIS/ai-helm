@@ -64,8 +64,6 @@ misconfigurations:
     #    subchart exposes no securityContext hook for it (see KSV-0118 below).
     # Existing exemptions (unchanged, same class):
     #  - librechat — writes winston logs (/app/api/logs) + upload staging.
-    #  - neo4j (lightbridge-code-intelligence `main`) — entrypoint renders config
-    #    to /var/lib/neo4j/conf at startup; /data persists on a PVC.
     # Tracked backlog (pre-existing, revealed by the new deterministic scan;
     # hardening deferred to a follow-up — see PR):
     #  - keycloak-baseline `main` (keycloak-config-cli CronJob) + keycloak-backup
@@ -73,7 +71,7 @@ misconfigurations:
     #  - lmcache `main` — the LMCache server Deployment.
     statement: >-
       Containers that require a writable rootfs at runtime (GPU compile/KV cache,
-      Caddy autosave, pip install, neo4j/keycloak config render, winston logs);
+      Caddy autosave, pip install, keycloak config render, winston logs);
       KSV-0118 is hardened for all in-scope workloads, only the read-only rootfs
       is exempt. The keycloak/lmcache entries are pre-existing hardening debt
       tracked as a follow-up.
@@ -90,7 +88,6 @@ misconfigurations:
       - "model-serving-qwen3-5.yaml"
       - "model-serving-qwen3-8b.yaml"
       - "librechat-app.yaml"
-      - "lightbridge-code-intelligence.yaml"
       - "keycloak-baseline.yaml"
       - "keycloak-backup.yaml"
       - "lmcache.yaml"
