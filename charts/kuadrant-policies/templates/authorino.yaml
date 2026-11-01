@@ -15,6 +15,15 @@ spec:
   # Required for the deny-all catch-all AuthConfig (ADR-0021).
   supersedingHostSubsets: {{ . }}
   {{- end }}
+  {{- with $config.authConfigLabelSelectors }}
+  # Which AuthConfigs this instance reconciles (a k8s label selector, passed
+  # to Authorino as --auth-config-label-selector). Unset = every AuthConfig it
+  # can see, cluster-wide. Set it when the cluster also runs a separate,
+  # namespace-scoped Authorino whose AuthConfigs this instance must leave
+  # alone; a `notin` selector excludes those and still matches every
+  # AuthConfig that lacks the label.
+  authConfigLabelSelectors: {{ . | quote }}
+  {{- end }}
   {{- with $config.replicas }}
   # HA: every request to the gateway hits Authorino (JWT verify + metadata
   # + authorization), so run more than one replica — no single point of
