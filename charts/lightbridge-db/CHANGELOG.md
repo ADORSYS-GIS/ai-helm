@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-db-v0.4.0...lightbridge-db-v0.5.0) (2026-11-01)
+
+
+### Features
+
+* **charts:** add nodeSelector/tolerations pass-throughs for node-group placement ([#1157](https://github.com/ADORSYS-GIS/ai-helm/issues/1157)) ([f7c433e](https://github.com/ADORSYS-GIS/ai-helm/commit/f7c433e31713f75899f16c3bddfcabf8d0f33958))
+* **lightbridge-db:** read-only governance_ro role + GRANT for the Grafana governance datasource ([#1133](https://github.com/ADORSYS-GIS/ai-helm/issues/1133)) ([decda84](https://github.com/ADORSYS-GIS/ai-helm/commit/decda8419a8bb9b2d5b0d7cf39e347e065365c64))
+
 ## [0.4.0](https://github.com/ADORSYS-GIS/ai-helm/compare/lightbridge-db-v0.3.0...lightbridge-db-v0.4.0) (2026-09-02)
 
 

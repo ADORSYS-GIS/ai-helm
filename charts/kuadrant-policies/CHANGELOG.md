@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/ADORSYS-GIS/ai-helm/compare/kuadrant-policies-v1.2.1...kuadrant-policies-v1.3.0) (2026-11-01)
+
+
+### Features
+
+* **core-gateway:** the Dynamic Budget Limiter's Lua filter, off by default ([#1095](https://github.com/ADORSYS-GIS/ai-helm/issues/1095)) ([9b327fb](https://github.com/ADORSYS-GIS/ai-helm/commit/9b327fbbaa823ede4caafe80e23df3371109d2ad))
+* **kuadrant-policies:** let an Authorino instance select its AuthConfigs ([#1160](https://github.com/ADORSYS-GIS/ai-helm/issues/1160)) ([6efacc1](https://github.com/ADORSYS-GIS/ai-helm/commit/6efacc1ad329d1098c7b3077e99d8428c04681b0))
+
 ## [1.2.1](https://github.com/ADORSYS-GIS/ai-helm/compare/kuadrant-policies-v1.2.0...kuadrant-policies-v1.2.1) (2026-09-02)
 
 
