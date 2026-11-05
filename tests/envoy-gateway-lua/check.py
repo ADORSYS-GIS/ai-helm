@@ -26,6 +26,13 @@ Asserts, for every case:
   1. every EnvoyExtensionPolicy is `Accepted: True`
   2. no route in the IR carries `directResponse.statusCode: 500`
 
+…and, for ONE deliberately broken case, the opposite: the exact line that caused the incident
+(`rawget(_G, "BUDGET_LIMITER_CONFIG")`) is re-injected into the rendered policy and the translator
+MUST reject it with the full incident signature (policy `Accepted: False` AND the probe route
+rewritten to 500). A gate that cannot fail is not a gate — if an Envoy Gateway bump ever relaxes
+the sandbox, or this script's assertions regress, that case turns red instead of everything
+quietly turning green.
+
 Invoked by run.sh, which supplies the egctl binary and renders THIS repo's own chart source.
 
 ai-helm-values' render-check (tools: resolve-chart-pin.sh + the envoy-gateway-lua job) instead
@@ -122,6 +129,34 @@ def translate(egctl: str, docs: list[dict]) -> dict:
     return json.loads(out.stdout)
 
 
+# The one line that took the gateway down on 2026-09-03 (ai-helm-values#367 / ai-helm#1098), and
+# what it was fixed to. Kept verbatim so the negative control reproduces the incident from the
+# shipped bytes rather than from a made-up error.
+FIXED_LINE = 'local CONFIG = BUDGET_LIMITER_CONFIG or {}'
+INCIDENT_LINE = 'local CONFIG = rawget(_G, "BUDGET_LIMITER_CONFIG") or {}'
+
+
+def reinject_incident(docs: list[dict]) -> list[dict]:
+    """Put the 2026-09-03 line back into every rendered `lua` entry that carries the fixed one."""
+    docs = copy.deepcopy(docs)
+    hits = 0
+    for d in docs:
+        if d["kind"] != "EnvoyExtensionPolicy":
+            continue
+        for entry in (d.get("spec") or {}).get("lua") or []:
+            body = entry.get("inline") or ""
+            if FIXED_LINE in body:
+                entry["inline"] = body.replace(FIXED_LINE, INCIDENT_LINE)
+                hits += 1
+    if hits == 0:
+        sys.exit(
+            "negative control could not find the fixed line to re-break — "
+            "budget-limiter.lua no longer contains "
+            f"{FIXED_LINE!r}; update FIXED_LINE/INCIDENT_LINE in check.py"
+        )
+    return docs
+
+
 def lua_entry_count(docs: list[dict]) -> int:
     return sum(len((d.get("spec") or {}).get("lua") or []) for d in docs
                if d["kind"] == "EnvoyExtensionPolicy")
@@ -205,9 +240,31 @@ def main() -> int:
         else:
             print(f"PASS  {label}  ({entries} lua entries accepted, no route forced to 500)")
 
+    # NEGATIVE CONTROL. The shadow render with the incident line put back must be REJECTED, with
+    # both halves of the incident signature present: a non-Accepted policy (the cause) and the
+    # probe route rewritten to 500 (the symptom every caller saw). Translating cleanly here means
+    # the gate can no longer see the class of defect it exists for.
+    label = "NEGATIVE CONTROL: incident line re-injected, gate must reject"
+    docs = reinject_incident(
+        render(["budgetLimiter.enabled=true", "budgetLimiter.shadowMode=true"],
+               args.chart, args.version, args.values)
+    )
+    problems = failures(translate(egctl, docs))
+    rejected = any(p.startswith("EnvoyExtensionPolicy/") and "Accepted=False" in p for p in problems)
+    forced_500 = any("directResponse 500" in p for p in problems)
+    if rejected and forced_500:
+        print(f"PASS  {label}  (Accepted=False + route forced to 500 — the incident reproduces)")
+    else:
+        failed += 1
+        print(f"FAIL  {label}")
+        print("      the translator ACCEPTED the line that took the gateway down on 2026-09-03 — "
+              "either Envoy Gateway's Lua sandbox changed, or this gate's assertions regressed")
+        for p in problems:
+            print(f"      {p}")
+
     print()
     print("═════════════════════════════════════════════════════════════════════════════")
-    print(f"cases: {len(cases)}   failed: {failed}")
+    print(f"cases: {len(cases) + 1}   failed: {failed}")
     return 1 if failed else 0
 
 
