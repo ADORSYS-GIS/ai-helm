@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> NoAccount
+    NoAccount --> AccountCommitted: tenancy commit
+    AccountCommitted --> Funded: starting grant commits
+    AccountCommitted --> Unfunded: starting grant fails; error logged
+    Unfunded --> Funded: operator repair or matching reset
+    Funded --> AwaitingReading: snapshot touch succeeds
+    AwaitingReading --> GatewayKnown: background refresh succeeds
+    note right of Funded
+        Funding and snapshot readiness are distinct.
+        Account creation is not rolled back on grant failure.
+    end note

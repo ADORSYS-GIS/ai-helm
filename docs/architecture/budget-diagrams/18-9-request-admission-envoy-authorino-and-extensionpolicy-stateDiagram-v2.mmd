@@ -1,0 +1,20 @@
+stateDiagram-v2
+    [*] --> Authentication
+    Authentication --> AuthDenied: invalid credential or authorization failure
+    Authentication --> ModelPolicy: ext_authz allows
+    ModelPolicy --> PolicyDenied: requested model forbidden
+    ModelPolicy --> BudgetCheck: model policy permits
+    BudgetCheck --> Continue: enforced=false
+    BudgetCheck --> Continue: known and remaining positive
+    BudgetCheck --> Budget402: known and remaining nonpositive
+    BudgetCheck --> Budget503: unknown or malformed
+    BudgetCheck --> Budget503: model request missing budget metadata
+    BudgetCheck --> Continue: no model context and no budget metadata
+    Continue --> UpstreamEligible: other gates allow
+    Continue --> Rate429: request-rate gate refuses
+    note right of Continue
+        Shadow mode would record refusals and continue.
+        Live shadow mode is false.
+        The state diagram separates logical gates;
+        it does not assert the RPM filter's physical position.
+    end note

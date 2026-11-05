@@ -1,0 +1,20 @@
+sequenceDiagram
+    autonumber
+    participant C as Console or admin
+    participant A as authz-api
+    participant T as Main DB tenancy tables
+    participant S as StartingGrantService in API
+    participant P as Schedules and policy tables
+    participant G as BudgetRepo in API
+    participant N as budget_remaining_snapshots
+    C->>A: createAccount or provisionAccount
+    A->>T: Create account and associated tenancy records
+    T-->>A: Account committed
+    A->>S: book(account_id, current month)
+    S->>P: Resolve winning schedule; otherwise active policy default
+    S->>G: automatic grant, budget-start-month-account key
+    G-->>S: Grant committed or existing grant returned
+    S->>N: UPSERT last_seen_at for background refresh
+    S-->>A: Success or error
+    Note over A,S: Failure is logged; the account is already committed
+    A-->>C: Account response
