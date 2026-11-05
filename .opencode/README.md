@@ -1,130 +1,49 @@
-# OpenCode Agent System
+# OpenCode setup in `ai-helm`
 
-This directory contains OpenCode-specific configuration for the multi-agent development system for this Azamra monorepo.
+This directory holds this repo's OpenCode configuration. It is **not** a
+multi-agent system for an app monorepo — the canonical agent and CI rules live in
+[`.github/workflows/opencode.yml`](../.github/workflows/opencode.yml), and
+repo-wide guidance lives in [`CLAUDE.md`](../CLAUDE.md). Read those; this file
+only points at them.
 
-## Agent Architecture
+## What is actually here
 
-The project uses 10 specialized agents designed for working in this codebase:
+**`.opencode/opencode.json`** defines one provider, **`lightbridge`**
+(`@ai-sdk/openai-compatible`). Its `baseURL` comes from the `LIGHTBRIDGE_BASE_URL`
+env var and its bearer key from `LIGHTBRIDGE_API_KEY`. It lists the available
+models with their context/output limits and (where set) per-token costs —
+families include GLM (`glm-5`, `glm-5p1`), Kimi (`kimi-k2.5`,
+`kimi-k2-thinking`, `kimi-k2-instruct-0905`), MiniMax (`minimax-m2p5`), Gemini
+(2.5 / 3 / 3.1 variants), GPT (`gpt-5-mini`, `gpt-5-nano`, `gpt-5-3-codex`,
+`gpt-5-1-codex-mini`), Qwen (`qwen3-8b`, `qwen3-vl-30b-a3b-*`) and DeepSeek
+(`deepseek-v3p2`).
 
-### Primary Agents (switch with Tab)
-- **mobile-agent** - Mobile app development (apps/mobile)
-- **kyc-manager-agent** - KYC Manager admin app (apps/kyc-mgr)
-- **orchestrator-agent** - Architecture coordination and reviews
+It also defines two **hidden primary agents**, both at `temperature: 0.1`:
 
-These three agents are configured with `mode: all`, so they can be selected directly and also invoked from other agents when cross-domain work is needed.
-
-### Shared Agents (invoke with @)
-- **ui-system-agent** - UI component system (packages/ui)
-- **hooks-agent** - Service layer hooks (packages/hooks)
-- **platform-agent** - Platform & security layer (packages/platform)
-- **api-agent** - API integration (packages/api-rest)
-- **shared-agent** - Cross-cutting concerns (i18n, contracts, tw-preset)
-- **code-reviewer** - General code reviews
-- **meta-agent** - Agent configuration updates
-
-## Commands
-
-Commands are invoked with `/` in the TUI:
-
-**Project-wide:**
-- `/test` - Run full test suite with coverage
-- `/lint` - Lint and format all code
-- `/typecheck` - Type check all TypeScript
-- `/check-architecture` - Verify architectural compliance
-
-**Testing:**
-- `/test-hooks` - Test hooks package
-- `/test-mobile` - Test mobile app
-- `/test-kyc` - Test KYC Manager
-- `/debug-test <file>` - Debug failing test
-
-**Development:**
-- `/create-component <name>` - Create new UI component
-- `/create-hook <name>` - Create new custom hook
-- `/create-screen <name>` - Create new mobile screen
-- `/find-bug <feature>` - Investigate and find bug
-
-**Maintenance:**
-- `/review-pr` - Review PR changes
-- `/update-codegen` - Regenerate API clients
-- `/update-agents` - Update agents from AGENTS.md
-- `/upgrade-deps` - Upgrade dependencies
-- `/clean-all` - Clean build artifacts
-
-## Agent Coordination
-
-The agents follow a layer structure:
-
-```
-Layer 1 (Foundation): platform-agent, api-agent, shared-agent
-        ↓
-Layer 2 (Shared): ui-system-agent, hooks-agent
-        ↓
-Layer 3 (Apps): mobile-agent, kyc-manager-agent
-        ↓
-orchestrator-agent (coordinates across layers)
-```
-
-Agents invoke each other via the Task tool. The orchestrator-agent coordinates breaking changes and ensures architectural compliance.
-
-## Agent Updates
-
-When AGENTS.md changes, run `/update-agents` to update agent configurations. The meta-agent will:
-1. Parse AGENTS.md for new conventions
-2. Update agent prompts
-3. Ensure consistency
-4. Report changes made
-
-## Configuration
-
-- **Agents**: `.opencode/agents/*.md` - Agent definitions
-- **Commands**: `.opencode/commands/*.md` - Command definitions
-- **Skills**: `.opencode/skills/<name>/SKILL.md` - Reusable behavior loaded on-demand
-
-## Skills
-
-Skills are Markdown files loaded on-demand by any agent via the native `skill`
-tool. The agent reads the `description` field to decide whether a skill is
-relevant, then loads the full body when needed.
-
-### Available skills
-
-| Name | Trigger | File |
+| Agent | Model | Trigger |
 |---|---|---|
-| `governance` | Creating or editing an Epic, User Story, Dev Ticket, PR, or ADR | `.opencode/skills/governance/SKILL.md` |
+| `auto-review` | `lightbridge/gemini-3.1-flash-lite` | PR open/sync |
+| `manual-review` | `lightbridge/kimi-k2.5` | `/oc` or `/opencode` |
 
-### Adding a skill
+**Root `opencode.json`** additionally describes the `camer-digital` provider
+(`https://api.ai.camer.digital/v1`, key from `CAMER_DIGITAL_API_KEY`) with the
+`adorsys-reviewer` / `adorsys-reviewer-pro` models.
 
-1. Create `.opencode/skills/<kebab-name>/SKILL.md`.
-2. Add YAML frontmatter with `name` (kebab-case, matches directory name) and
-   `description` (≤ 1024 chars — this is what the agent reads to decide
-   relevance; make it specific).
-3. Write the skill body in plain Markdown.
-4. Merge to `main` — OpenCode picks it up automatically on the next session
-   (no `opencode.json` change required).
+**`.roo/mcp.json`** exists but is an empty stub (`mcpServers` with no entries).
 
-See the [OpenCode Skills docs](https://opencode.ai/docs/skills/) for the full
-frontmatter spec.
+**`skills/`** (repo root) holds the LibreChat `SKILL.md` skills synced via
+`config.skillSync` — see [`skills/README.md`](../skills/README.md) for the
+frontmatter rules and layout.
 
-## Config Notes
-
-- Command frontmatter `agent:` must reference an OpenCode agent name such as `ui-system-agent` or `code-reviewer`, not a model id.
-- Models belong on agents and use the configured `cdigital-test` provider prefix, for example `cdigital-test/glm-5`.
-- Subagent-style commands use `subtask: true` so reviews and scoped workflows do not pollute the active session.
-
-## Usage
-
-1. **Start a session**: Run `opencode` in the project root
-2. **Switch agents**: Press Tab to cycle between primary agents
-3. **Invoke agents**: Type `@agent-name` (e.g., `@mobile-agent`)
-4. **Run commands**: Type `/command-name` (e.g., `/test`)
-
-## Model Assignments
-
-Each agent uses a model optimized for its domain on the `cdigital-test` provider:
-- **Complex UI/Security**: `cdigital-test/gemini-2.5-pro`
-- **Business Logic**: `cdigital-test/kimi-k2-thinking`
-- **API/Integration**: `cdigital-test/deepseek-v3p2`
-- **Shared/General**: `cdigital-test/qwen3-8b`, `cdigital-test/glm-5`
-
-See individual agent files for specific configurations.
+> The stale "Azamra monorepo" content is **not** confined to the predecessor of
+> this file: the git-tracked `.opencode/agents/` (10 files) and
+> `.opencode/commands/` (27 files) trees are remnants of that same unrelated
+> project. They reference paths and packages absent from this repo (`apps/mobile`,
+> `apps/kyc-mgr`, `packages/ui`, `@azamra/*`); all 10 `.opencode/agents/` files
+> name a `cdigital-test` provider that is defined nowhere here (the only providers
+> are `lightbridge` and `camer-digital`), while the `.opencode/commands/` files do
+> **not** reference it (they carry the stale paths/packages only). Those two
+> directories should **not** be
+> trusted or followed; the canonical rules in
+> [`.github/workflows/opencode.yml`](../.github/workflows/opencode.yml) and
+> [`CLAUDE.md`](../CLAUDE.md) are the authority.
