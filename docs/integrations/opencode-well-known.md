@@ -644,7 +644,7 @@ with the `refresh_token` grant (see the client config above).
 - [ADR-0141](../adr/0141-opencode-v2-cutover-of-the-wellknown.md) — the OpenCode
   v1 → v2 cutover of this descriptor (`@vymalo/*` 0.18.0); upstream guide:
   [toolbeit `docs/migration-v2.md`](https://github.com/ADORSYS-GIS/lightbridge-opencode-toolbeit/blob/main/docs/migration-v2.md)
-- ADR-0050 (historical pin; the line is now 0.18.0) — bump the `@vymalo/*` line to **0.8.0** (the "OpenCode Toolbelt"
+- ADR-0050 (historical pin; the line is now 0.18.1) — bump the `@vymalo/*` line to **0.8.0** (the "OpenCode Toolbelt"
   suite) + register the opt-in **`interactive`** browser group
   (`browser_request_feedback`, scoped to `@browser`)
 - ADR-0048 — the global browser plugin + closed-loop `@frontend`; removes
