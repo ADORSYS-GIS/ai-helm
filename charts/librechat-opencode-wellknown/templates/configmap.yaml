@@ -64,17 +64,20 @@ data:
   opencode: |
     {{- $wk := .Values.wellKnown | deepCopy -}}
     {{- $models := dict -}}
+    {{- /* OpenCode v2 model shape: per-model `settings` (v1 `options`) and
+           `variants` as an id-keyed LIST (v1: a map keyed by variant name).
+           Same shape OpenCode's own v1→v2 normaliser produces. */ -}}
     {{- range $name, $cfg := .Values.models -}}
       {{- if $cfg.reasoningEffort -}}
-        {{- $m := dict "options" (dict "reasoningEffort" $cfg.reasoningEffort) -}}
+        {{- $m := dict "settings" (dict "reasoningEffort" $cfg.reasoningEffort) -}}
         {{- if $cfg.reasoningEffortHigh -}}
-          {{- $_ := set $m "variants" (dict "thinking" (dict "reasoningEffort" $cfg.reasoningEffortHigh)) -}}
+          {{- $_ := set $m "variants" (list (dict "id" "thinking" "settings" (dict "reasoningEffort" $cfg.reasoningEffortHigh))) -}}
         {{- end -}}
         {{- $_ := set $models $name $m -}}
       {{- end -}}
     {{- end -}}
     {{- if $models -}}
-      {{- $prov := index $wk.config.provider "camer-digital" -}}
+      {{- $prov := index $wk.config.providers "camer-digital" -}}
       {{- $_ := set $prov "models" $models -}}
     {{- end -}}
     {{- $wk | toJson | nindent 4 }}

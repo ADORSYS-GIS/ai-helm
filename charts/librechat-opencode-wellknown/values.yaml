@@ -22,7 +22,7 @@
 wellKnown:
   auth:
     # Stub. The plugin manages auth; opencode never reads this token
-    # because the plugin's chat.headers hook overrides Authorization
+    # because the plugin's `model.request` session hook overrides Authorization
     # per request. Keep the field to satisfy opencode's auth-login
     # schema check.
     command:
@@ -46,7 +46,7 @@ wellKnown:
     # deny-baseline keeps MCP/browser tool schemas OFF all primaries and behind
     # subagents, so no primary carries the 27 browser_* schemas every turn.
     default_agent: assistant
-    plugin:
+    plugins:
       # THE credential for everything opencode sends outward: the gateway
       # bearer AND the OTLP export ride one device-code login, from one token
       # store (toolbeit ADR-0012/ADR-0017). This ONE entry replaces what used
@@ -56,7 +56,7 @@ wellKnown:
       #
       # ⚠️ `auth.id` IS the OpenCode provider id AND the token-cache identity,
       # simultaneously. Both roles must keep reading `camer-digital`:
-      #   • as a provider id, it must match the `provider:` key below, or
+      #   • as a provider id, it must match the `providers:` key below, or
       #     `register` creates a SECOND provider and the model picker doubles;
       #   • as a cache identity, it selects
       #     `<cacheRoot>/opencode-oauth2/opencode-oauth2-model-sync/<id>.json`
@@ -74,8 +74,9 @@ wellKnown:
       # is nothing to trade it for (ADR-0135). An exchange would also fail
       # outright: `opencode-cli` is registered with NO `token-exchange` grant,
       # so it would return `unauthorized_client`.
-      - - "@vymalo/opencode-lightbridge@0.17.0"
-        - auth:
+      - package: "@vymalo/opencode-lightbridge@0.18.0"
+        options:
+          auth:
             id: camer-digital
             issuer: "https://auth.ai.camer.digital"
             clientId: opencode-cli
@@ -95,11 +96,11 @@ wellKnown:
             authFlow: device_code
           # Registers the provider and keeps its model list in sync — what
           # `@vymalo/opencode-oauth2` used to do. It MERGES into the
-          # `provider.camer-digital` entry below rather than replacing it
-          # (`providers[id] ??= {}`, existing `options` carried through,
-          # existing `name` wins), which is why `baseURL`, the two timeouts
-          # and the whole `options.meta` block stay declared there and keep
-          # working for models-info and ratelimit.
+          # `providers.camer-digital` entry below rather than replacing it
+          # (provider-sync `upsertManagedProvider`: add if absent, otherwise
+          # update `package`/`name`/`settings` in place), which is why
+          # `baseURL`, the two timeouts and the models-info / ratelimit keys
+          # stay declared in that entry's `settings` and keep working.
           register:
             baseURL: "https://api.ai.camer.digital/v1"
             syncIntervalMinutes: 60
@@ -166,14 +167,14 @@ wellKnown:
               logs: "https://otel-opencode.ai.camer.digital/v1/logs"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.17.0"
+      - "@vymalo/opencode-models-info@0.18.0"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
-      # under the provider options below.
-      - "@vymalo/opencode-ratelimit@0.17.0"
+      # under the provider settings below.
+      - "@vymalo/opencode-ratelimit@0.18.0"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
@@ -185,11 +186,10 @@ wellKnown:
       # URL+token into it; a user without that setup just sees the tools fail
       # to connect (accepted, same trade-off the local MCP had). Needs Node
       # ≥22. CONFIG goes
-      # in the plugin TUPLE's second arg — this plugin reads its options from
-      # there (NOT from provider.options.meta like the others), i.e.
-      # opencode's `[name, {opts}]` install form, which toJson renders as a
-      # JSON 2-tuple. Part of the 0.12.0 vymalo line — pin matches the three
-      # above.
+      # in the plugin entry's `options` — this plugin reads its options from
+      # there (NOT from the provider's `settings` like models-info and
+      # ratelimit), i.e. OpenCode v2's `{ package, options }` entry form.
+      # Part of the 0.18.0 vymalo line — pin matches the three above.
       #
       # TWO independent token levers, at different scopes:
       #   • `groups` (here) = GLOBAL registration — only a registered tool can
@@ -206,16 +206,18 @@ wellKnown:
       #     BLOCKS up to 300s for the answer — a human-in-the-loop tool that fits
       #     the design loop. Far tamer than `debug` (no arbitrary JS); also
       #     scoped to `@browser` only (ADR-0050).
-      #   • per-agent `permission` (below) = PER-AGENT injection. opencode DOES
-      #     scope the injected tool set per agent (verified opencode 1.17.6:
-      #     session/llm/request.ts `resolveTools` → `Permission.disabled` drops
-      #     a tool from that agent's injected `tools`/`activeTools` when its
-      #     effective rule is a `*`-pattern DENY; the agent's own rules merge
-      #     LAST and win via findLast). A string-form `"glob": "deny"` → pattern
-      #     `*` → tool removed from injection; `"glob": "allow"` re-injects it.
-      #     Applies uniformly to built-in / MCP / PLUGIN tools by name. (Only the
-      #     *string* form gives pattern `*`; the nested `{sub: deny}` form would
-      #     gate execution but NOT remove from injection — we use string form.)
+      #   • per-agent `permissions` (below) = PER-AGENT injection. opencode DOES
+      #     scope the injected tool set per agent (verified OpenCode v2.2.6:
+      #     packages/core/src/tool.ts:381-384 `whollyDisabled` drops a tool when
+      #     the LAST rule matching its action has `resource: "*"` and
+      #     `effect: deny`; config/plugin/agent.ts:63-104 pushes the root
+      #     `permissions` first and the agent's own rules after, so the agent
+      #     wins via findLast, permission.ts:94-98). So a
+      #     `{action: "glob", resource: "*", effect: deny}` rule removes the tool
+      #     from injection and a later `effect: allow` one re-injects it.
+      #     Applies uniformly to built-in / MCP / PLUGIN tools by name. (Only a
+      #     `resource: "*"` rule counts; a rule on a narrower resource gates
+      #     execution but does NOT remove the tool from injection.)
       # ⇒ the deny-baseline genuinely keeps browser_* OUT of every agent that
       # doesn't re-allow it. The full page+control+debug+interactive surface (34
       # tools) is allowed ONLY on the `@browser` subagent below — NOT on the lean
@@ -230,8 +232,9 @@ wellKnown:
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
       # adapter saves screenshots to disk for the model to read. One source only.
-      - - "@vymalo/opencode-browser@0.17.0"
-        - port: 4517
+      - package: "@vymalo/opencode-browser@0.18.0"
+        options:
+          port: 4517
           groups:
             - page
             - control
@@ -255,11 +258,11 @@ wellKnown:
       # would auto-sync new skills but reintroduces non-determinism. Users
       # can opt into risk-filtering via an optional
       # ~/.config/opencode/skill-filter.jsonc (all skills load by default).
-      - "opencode-skills-collection@4.0.14"
-    provider:
+      - "opencode-skills-collection@4.1.40"
+    providers:
       camer-digital:
         name: "Camer Digital"
-        options:
+        settings:
           baseURL: "https://api.ai.camer.digital/v1"
           # The opencode-ratelimit plugin's `wait` tier (below) pauses
           # INSIDE this provider's fetch, so opencode's own
@@ -286,109 +289,112 @@ wellKnown:
           # `baseURL` and the two 90s timeouts (load-bearing — the ratelimit
           # `wait` tier pauses INSIDE this provider's fetch, so a default ~10s
           # timeout would abort a 60s burst-reset wait and turn a cooperative
-          # pause into a cancellation), plus `meta` for models-info and
-          # ratelimit. lightbridge's `register` MERGES into this entry rather
-          # than replacing it, so all of it survives.
-          meta:
-            # Relative path → resolves to baseURL + "models/info" =
-            # https://api.ai.camer.digital/v1/models/info (the
-            # ai-models-info chart serves this).
-            # NOT vanilla /v1/models — opencode-models-info needs the
-            # richer OpenRouter shape, not OpenAI's `id/object/owned_by`.
-            modelsInfoUrl: "models/info"
-            # TTL (24h default upstream); override if you want fresher
-            # catalogs:
-            # modelsInfoTtlSeconds: 3600
-            # ⚠️ Deliberately NOT setting modelsInfoHideTextOnly (#800,
-            # reverted #848). It was turned on as a plugin-side "second belt"
-            # for hiding internal-only models from the picker, but it filters
-            # on MODALITY (text-in/text-out), not on internal status — the
-            # two aren't the same thing. It hid every text-only model, internal or not,
-            # including legitimate external ones (glm-4.7-flash) and our own
-            # adorsys-coder/researcher/reviewer coding agents.
-            #
-            # Also NOT setting modelsInfoHideInternal (≥ 0.11.0) — it needs
-            # the catalog to actually emit `internal: true` on a model entry,
-            # which charts/ai-models-info deliberately does not do (it
-            # excludes disableExternal models outright rather than flagging
-            # them — re-including them, even flagged, would reintroduce the
-            # "advertised model that 404s" problem #797 fixed). Nothing in
-            # the catalog ever carries `internal: true`, so this flag would
-            # have zero entries to act on today.
-            #
-            # ⚠️ modelsInfoHideUnmatched IS set (≥ 0.12.0,
-            # vymalo/opencode-oauth2#79/#80). Removing modelsInfoHideTextOnly
-            # in #848 also silently removed the OTHER thing it did: making
-            # /v1/models/info authoritative for catalog MEMBERSHIP, not just
-            # modality — a model in a client's discovered `provider.models`
-            # that later drops out of the catalog (renamed, removed,
-            # access-scoped) used to get pruned; after #848 it never was.
-            # Real consequence, not theoretical: end users started seeing
-            # stale/dead model ids (pre-`-internal`-suffix names, fully
-            # retired models) in their opencode picker that the catalog
-            # hasn't listed in a while, and selecting one either 404s or
-            # errors. modelsInfoHideUnmatched reaches the exact same
-            # membership-pruning deletion path modelsInfoHideTextOnly used
-            # to, but WITHOUT its modality filtering — the correct fix,
-            # since disableExternal exclusion (#797) already makes the
-            # catalog itself the intersection point: shown = /v1/models ∩
-            # /v1/models/info.
-            modelsInfoHideUnmatched: true
-            # Force our endpoint's `name` to win over the normalized label
-            # the oauth2 plugin pre-stamps (vymalo/opencode-models-info#38,
-            # needs plugin ≥ 0.7.1 — pinned 0.8.0 above). models-info merges
-            # upstream-wins, and oauth2's model discovery auto-stamps a
-            # normalized `name` (e.g. id `adorsys-coder` → "Adorsys Coder")
-            # BEFORE the models-info hook runs; upstream-wins then can't tell
-            # that from handwritten config, so our `/v1/models/info` `name`
-            # (= each model's branded `info.displayName`, e.g. "Adorsys Coder
-            # (MiniMax M2.7)", ADR-0044) never landed — the UI showed the
-            # plain normalized label. Listing `name` here exempts ONLY that
-            # field from upstream-wins so the endpoint value replaces it. (A
-            # field only changes when the endpoint actually provides it; a
-            # missing value never blanks an existing one.)
-            modelsInfoOverwrite:
-              - name
-            # @vymalo/opencode-ratelimit config. Needs the `scope` + `tiers`
-            # schema (plugin ≥ 0.6.1; we pin 0.8.0 in the plugin list
-            # above). headerPrefix "x-ratelimit" matches
-            # Envoy's draft-03 header names — plugin default.
-            #
-            # `scope: model` keys rate-limit state per model, matching
-            # our per-model BackendTrafficPolicy buckets (every selector
-            # carries `x-ai-eg-model`, ADR-0021) — exhausting one model
-            # no longer gates the whole `camer-digital` provider.
-            #
-            # `tiers` resolve the burst-vs-budget ambiguity the plugin
-            # otherwise can't (both arrive only as `x-ratelimit-reset`).
-            # First tier whose maxResetSeconds ≥ the observed reset wins:
-            #   • ≤120s  → a per-minute burst (ADR-0021 burst buckets):
-            #     WAIT it out (up to 65s, bounded so it stays under the
-            #     90s header/chunk timeout above) and retry a few times.
-            #   • longer → a monthly *budget* reset (unit: Month, days
-            #     away, ADR-0021/0035) or anything else: ERROR FAST so
-            #     the 429 surfaces to the user immediately instead of
-            #     freezing.
-            rateLimit:
-              enabled: true
-              scope: model
-              headerPrefix: "x-ratelimit"
-              tiers:
-                - maxResetSeconds: 120
-                  action: wait
-                  maxWaitMs: 65000
-                  maxRetries: 3
-                - maxResetSeconds: null
-                  action: error
+          # pause into a cancellation), plus the models-info `modelsInfo*` and
+          # ratelimit `rateLimit` keys. 0.18 reads those FLAT from `settings`;
+          # 0.17 read them from `options.meta`, and a leftover `meta` block is
+          # silently ignored, not rejected (toolbeit docs/migration-v2.md §1.2).
+          # lightbridge's `register` MERGES into this entry rather than
+          # replacing it, so all of it survives.
+          #
+          # Relative path → resolves to baseURL + "models/info" =
+          # https://api.ai.camer.digital/v1/models/info (the
+          # ai-models-info chart serves this).
+          # NOT vanilla /v1/models — opencode-models-info needs the
+          # richer OpenRouter shape, not OpenAI's `id/object/owned_by`.
+          modelsInfoUrl: "models/info"
+          # TTL (24h default upstream); override if you want fresher
+          # catalogs:
+          # modelsInfoTtlSeconds: 3600
+          # ⚠️ Deliberately NOT setting modelsInfoHideTextOnly (#800,
+          # reverted #848). It was turned on as a plugin-side "second belt"
+          # for hiding internal-only models from the picker, but it filters
+          # on MODALITY (text-in/text-out), not on internal status — the
+          # two aren't the same thing. It hid every text-only model, internal or not,
+          # including legitimate external ones (glm-4.7-flash) and our own
+          # adorsys-coder/researcher/reviewer coding agents.
+          #
+          # Also NOT setting modelsInfoHideInternal (≥ 0.11.0) — it needs
+          # the catalog to actually emit `internal: true` on a model entry,
+          # which charts/ai-models-info deliberately does not do (it
+          # excludes disableExternal models outright rather than flagging
+          # them — re-including them, even flagged, would reintroduce the
+          # "advertised model that 404s" problem #797 fixed). Nothing in
+          # the catalog ever carries `internal: true`, so this flag would
+          # have zero entries to act on today.
+          #
+          # ⚠️ modelsInfoHideUnmatched IS set (≥ 0.12.0,
+          # vymalo/opencode-oauth2#79/#80). Removing modelsInfoHideTextOnly
+          # in #848 also silently removed the OTHER thing it did: making
+          # /v1/models/info authoritative for catalog MEMBERSHIP, not just
+          # modality — a model in a client's discovered `provider.models`
+          # that later drops out of the catalog (renamed, removed,
+          # access-scoped) used to get pruned; after #848 it never was.
+          # Real consequence, not theoretical: end users started seeing
+          # stale/dead model ids (pre-`-internal`-suffix names, fully
+          # retired models) in their opencode picker that the catalog
+          # hasn't listed in a while, and selecting one either 404s or
+          # errors. modelsInfoHideUnmatched reaches the exact same
+          # membership-pruning deletion path modelsInfoHideTextOnly used
+          # to, but WITHOUT its modality filtering — the correct fix,
+          # since disableExternal exclusion (#797) already makes the
+          # catalog itself the intersection point: shown = /v1/models ∩
+          # /v1/models/info.
+          modelsInfoHideUnmatched: true
+          # Force our endpoint's `name` to win over the normalized label
+          # the oauth2 plugin pre-stamps (vymalo/opencode-models-info#38,
+          # needs plugin ≥ 0.7.1 — pinned 0.8.0 above). models-info merges
+          # upstream-wins, and oauth2's model discovery auto-stamps a
+          # normalized `name` (e.g. id `adorsys-coder` → "Adorsys Coder")
+          # BEFORE the models-info hook runs; upstream-wins then can't tell
+          # that from handwritten config, so our `/v1/models/info` `name`
+          # (= each model's branded `info.displayName`, e.g. "Adorsys Coder
+          # (MiniMax M2.7)", ADR-0044) never landed — the UI showed the
+          # plain normalized label. Listing `name` here exempts ONLY that
+          # field from upstream-wins so the endpoint value replaces it. (A
+          # field only changes when the endpoint actually provides it; a
+          # missing value never blanks an existing one.)
+          modelsInfoOverwrite:
+            - name
+          # @vymalo/opencode-ratelimit config. Needs the `scope` + `tiers`
+          # schema (plugin ≥ 0.6.1; we pin 0.8.0 in the plugin list
+          # above). headerPrefix "x-ratelimit" matches
+          # Envoy's draft-03 header names — plugin default.
+          #
+          # `scope: model` keys rate-limit state per model, matching
+          # our per-model BackendTrafficPolicy buckets (every selector
+          # carries `x-ai-eg-model`, ADR-0021) — exhausting one model
+          # no longer gates the whole `camer-digital` provider.
+          #
+          # `tiers` resolve the burst-vs-budget ambiguity the plugin
+          # otherwise can't (both arrive only as `x-ratelimit-reset`).
+          # First tier whose maxResetSeconds ≥ the observed reset wins:
+          #   • ≤120s  → a per-minute burst (ADR-0021 burst buckets):
+          #     WAIT it out (up to 65s, bounded so it stays under the
+          #     90s header/chunk timeout above) and retry a few times.
+          #   • longer → a monthly *budget* reset (unit: Month, days
+          #     away, ADR-0021/0035) or anything else: ERROR FAST so
+          #     the 429 surfaces to the user immediately instead of
+          #     freezing.
+          rateLimit:
+            enabled: true
+            scope: model
+            headerPrefix: "x-ratelimit"
+            tiers:
+              - maxResetSeconds: 120
+                action: wait
+                maxWaitMs: 65000
+                maxRetries: 3
+              - maxResetSeconds: null
+                action: error
 
         # ────────────────────────────────────────────────────────────────
         # Reasoning effort — RESTORED as an explicit list at the root.
-        #
+    #
         # The `models:` section could not be auto-derived from the catalog because
         # ai-models is not a dependency of this chart, so `.Values.models` was empty.
         # We restored the explicit list at the ROOT of this file (bottom), and the
         # template loops over it to inject reasoning caps into the well-known JSON.
-        #
+    #
         # EXCLUDED from reasoning effort (deliberately, do not add):
         #   • kimi-k2.7-code, adorsys-frontend-pro → thinking is ALWAYS ON
         #     (Moonshot rejects a suppression/cap param on K2.7-Code).
@@ -404,23 +410,23 @@ wellKnown:
         #     (charts/inference/values.yaml `serving.reasoning: "off"`).
         # ────────────────────────────────────────────────────────────────
     # MCP servers (ADR-0042, scoping ADR-0044, OPT-IN default ADR-0074). Two axes:
-    #   • CONNECTIVITY — `enabled` here decides whether opencode connects to
+    #   • CONNECTIVITY — `disabled` here decides whether opencode connects to
     #     the server AT ALL. A tool only exists if its server is connected.
-    #     ⚠️ As of ADR-0074 EVERY server ships `enabled: false` — MCPs are now
+    #     ⚠️ As of ADR-0074 EVERY server ships `disabled: true` — MCPs are now
     #     OPT-IN. The org-wide well-known no longer auto-connects a dozen npx
     #     servers + remotes for every user; a user enables ONLY the servers a
     #     workflow needs (drop the JSON into their own opencode.json, or we
     #     flip one here when a team standardises on it). This keeps day-one
     #     startup lean (no cold `npx` installs, no remote OAuth prompts) and
-    #     the tool surface honest. The `agent` wiring below is kept INTACT so
+    #     the tool surface honest. The `agents` wiring below is kept INTACT so
     #     enabling a server is a one-line flip — its specialist subagent is
     #     already there to handle it.
     #   • ACCESS — WHO may call a connected tool is decided per-agent under
-    #     `config.agent.*.permission`, on top of the global `permission`
+    #     `config.agents.*.permissions`, on top of the global `permissions`
     #     deny-baseline that keeps the PRIMARY agents lean. So even once
     #     enabled, a server is NOT on a primary; it lives behind its specialist
     #     subagent (brave→web-search, context7→doc-research/iac,
-    #     terraform→iac). `enabled: false` (the default now) = not connected →
+    #     terraform→iac). `disabled: true` (the default now) = not connected →
     #     no agent can use it until a user opts in.
     mcp:
       # Remote — the gateway's /mcp/<name> routes (ADR-0038): Keycloak JWT
@@ -441,293 +447,299 @@ wellKnown:
       # Consequence while the two planes differ: the same `opencode-cli` id
       # names two different clients on two different IdPs, and enabling a
       # remote MCP costs a SECOND device-code login. Latent today — every
-      # remote below ships `enabled: false` (ADR-0074, opt-in).
-      brave:
-        type: remote
-        url: "https://api.ai.camer.digital/mcp/brave"
-        oauth: &mcpOAuth
-          clientId: opencode-cli
-          scope: "openid profile offline_access"
-        enabled: false           # OFF by default (opt-in); handled by the web-search agent
-      context7:
-        type: remote
-        url: "https://api.ai.camer.digital/mcp/context7"
-        oauth: *mcpOAuth
-        enabled: false           # OFF by default (opt-in); handled by doc-research + iac agents
-      refero:
-        type: remote
-        url: "https://api.ai.camer.digital/mcp/refero"
-        oauth: *mcpOAuth
-        enabled: false           # OFF by default (opt-in); handled by the @design subagent
-      firecrawl:
-        type: remote
-        url: "https://api.ai.camer.digital/mcp/firecrawl"
-        oauth: *mcpOAuth
-        enabled: false           # OFF by default (opt-in); handled by the @web-search subagent (scrape)
-      terraform:
-        type: remote
-        url: "https://api.ai.camer.digital/mcp/terraform"
-        oauth: *mcpOAuth
-        enabled: false           # OFF by default (opt-in); handled by the iac agent
+      # remote below ships `disabled: true` (ADR-0074, opt-in).
+      servers:
+        brave:
+          type: remote
+          url: "https://api.ai.camer.digital/mcp/brave"
+          oauth: &mcpOAuth
+            client_id: opencode-cli
+            scope: "openid profile offline_access"
+          disabled: true         # OFF by default (opt-in); handled by the web-search agent
+        context7:
+          type: remote
+          url: "https://api.ai.camer.digital/mcp/context7"
+          oauth: *mcpOAuth
+          disabled: true         # OFF by default (opt-in); handled by doc-research + iac agents
+        refero:
+          type: remote
+          url: "https://api.ai.camer.digital/mcp/refero"
+          oauth: *mcpOAuth
+          disabled: true         # OFF by default (opt-in); handled by the @design subagent
+        firecrawl:
+          type: remote
+          url: "https://api.ai.camer.digital/mcp/firecrawl"
+          oauth: *mcpOAuth
+          disabled: true         # OFF by default (opt-in); handled by the @web-search subagent (scrape)
+        terraform:
+          type: remote
+          url: "https://api.ai.camer.digital/mcp/terraform"
+          oauth: *mcpOAuth
+          disabled: true         # OFF by default (opt-in); handled by the iac agent
 
-      # ── Local servers (ADR-0071) ───────────────────────────────────────
-      # Run on the USER's own machine — opencode CLI spawns each via `npx`
-      # (`type: local`, stdout/stdin stdio transport), NOT through the gateway
-      # /mcp/* routes. So no OAuth anchor, no remote rate-limit — they're a
-      # client-side capability, same trade-off as @vymalo/opencode-browser
-      # (a user without the toolchain just sees the tool fail to spawn).
-      #
-      # NPM-ONLY batch (this ADR): every server here is a self-contained Node
-      # package runnable with bare `npx` — no Python, no API key. The
-      # Python-backed candidates the maintainer also asked about
-      # (mem0, MCP-Mathematics → `uvx`; pdfmux → npm wrapper that still needs
-      # `pip install pdfmux` + an LLM key) are DEFERRED to a later batch
-      # ("observe the python plugins then") — do NOT add them as local npx
-      # servers; they need a different (sidecar/uvx) packaging decision.
-      #
-      # NOT version-pinned (unlike the `plugin:` list, which is): MCP servers
-      # are separate processes behind a tool-protocol boundary (lower blast
-      # radius than in-process plugins), so they float to @latest like the
-      # remotes. Pin a `name@x.y.z` here if drift ever bites.
-      #
-      # Each ships `enabled: false` (opt-in, ADR-0074); when a user enables it
-      # it is still DENIED on the primaries by the baseline below and re-allowed
-      # ONLY on its dedicated subagent — so no primary ever carries these tool
-      # schemas (ADR-0044/0048 lean-context model, multi-primary by ADR-0074).
-      memory:
-        type: local
-        # Official knowledge-graph memory server. MEMORY_FILE_PATH points at
-        # opencode's DATA dir — `~/.local/share/opencode` is where opencode
-        # writes auth.json on `opencode auth login` (the step every user runs
-        # to GET this config), so the directory reliably exists before the
-        # first @memory write. (NOT `~/.config/opencode`: that's the OPTIONAL
-        # global-config dir, absent for a login-only user — and the memory
-        # server creates the file but not missing parent dirs → first write
-        # would ENOENT.) Stable PER-USER (cross-project) graph.
-        command:
-          - npx
-          - "-y"
-          - "@modelcontextprotocol/server-memory"
-        environment:
-          MEMORY_FILE_PATH: "{env:HOME}/.local/share/opencode/memory.json"
-        enabled: false           # OFF by default (opt-in); handled by the @memory subagent
-      sequentialthinking:
-        type: local
-        # Official structured-reasoning server (one tool). Scoped to @planner
-        # — the primary delegates hard "think this through / design X" problems
-        # to it instead of carrying the tool itself. (NOT named `plan`: that is
-        # an opencode BUILT-IN primary agent — see the @planner subagent.)
-        command:
-          - npx
-          - "-y"
-          - "@modelcontextprotocol/server-sequential-thinking"
-        enabled: false           # OFF by default (opt-in); handled by the @planner subagent
-      mobile:
-        type: local
-        # Mobile-Next: drives iOS Simulators / Android Emulators / physical
-        # devices via accessibility tree + screenshots. Needs the user's
-        # mobile toolchain (Xcode CLT / Android platform-tools) + Node ≥22 —
-        # users without it just see the tools fail to connect (accepted, same
-        # as the browser bridge). Returns screenshots → scoped to the @mobile
-        # subagent, which pins a multimodal model.
-        # `timeout` here is opencode's TOOL-FETCH timeout (initial tool listing
-        # from the server), default 5000ms — NOT a per-call timeout. Raised
-        # because mobile-mcp enumerates simulators/emulators/devices at startup
-        # (+ a possible cold `npx` install), which can exceed 5s and would
-        # otherwise drop the whole server before any tool is usable.
-        command:
-          - npx
-          - "-y"
-          - "@mobilenext/mobile-mcp@latest"
-        timeout: 60000
-        enabled: false           # OFF by default (opt-in); handled by the @mobile subagent
+        # ── Local servers (ADR-0071) ───────────────────────────────────────
+        # Run on the USER's own machine — opencode CLI spawns each via `npx`
+        # (`type: local`, stdout/stdin stdio transport), NOT through the gateway
+        # /mcp/* routes. So no OAuth anchor, no remote rate-limit — they're a
+        # client-side capability, same trade-off as @vymalo/opencode-browser
+        # (a user without the toolchain just sees the tool fail to spawn).
+        #
+        # NPM-ONLY batch (this ADR): every server here is a self-contained Node
+        # package runnable with bare `npx` — no Python, no API key. The
+        # Python-backed candidates the maintainer also asked about
+        # (mem0, MCP-Mathematics → `uvx`; pdfmux → npm wrapper that still needs
+        # `pip install pdfmux` + an LLM key) are DEFERRED to a later batch
+        # ("observe the python plugins then") — do NOT add them as local npx
+        # servers; they need a different (sidecar/uvx) packaging decision.
+        #
+        # NOT version-pinned (unlike the `plugins:` list, which is): MCP servers
+        # are separate processes behind a tool-protocol boundary (lower blast
+        # radius than in-process plugins), so they float to @latest like the
+        # remotes. Pin a `name@x.y.z` here if drift ever bites.
+        #
+        # Each ships `disabled: true` (opt-in, ADR-0074); when a user enables it
+        # it is still DENIED on the primaries by the baseline below and re-allowed
+        # ONLY on its dedicated subagent — so no primary ever carries these tool
+        # schemas (ADR-0044/0048 lean-context model, multi-primary by ADR-0074).
+        memory:
+          type: local
+          # Official knowledge-graph memory server. MEMORY_FILE_PATH points at
+          # opencode's DATA dir — `~/.local/share/opencode` is where opencode
+          # writes auth.json on `opencode auth login` (the step every user runs
+          # to GET this config), so the directory reliably exists before the
+          # first @memory write. (NOT `~/.config/opencode`: that's the OPTIONAL
+          # global-config dir, absent for a login-only user — and the memory
+          # server creates the file but not missing parent dirs → first write
+          # would ENOENT.) Stable PER-USER (cross-project) graph.
+          command:
+            - npx
+            - "-y"
+            - "@modelcontextprotocol/server-memory"
+          environment:
+            MEMORY_FILE_PATH: "{env:HOME}/.local/share/opencode/memory.json"
+          disabled: true         # OFF by default (opt-in); handled by the @memory subagent
+        sequentialthinking:
+          type: local
+          # Official structured-reasoning server (one tool). Scoped to @planner
+          # — the primary delegates hard "think this through / design X" problems
+          # to it instead of carrying the tool itself. (NOT named `plan`: that is
+          # an opencode BUILT-IN primary agent — see the @planner subagent.)
+          command:
+            - npx
+            - "-y"
+            - "@modelcontextprotocol/server-sequential-thinking"
+          disabled: true         # OFF by default (opt-in); handled by the @planner subagent
+        mobile:
+          type: local
+          # Mobile-Next: drives iOS Simulators / Android Emulators / physical
+          # devices via accessibility tree + screenshots. Needs the user's
+          # mobile toolchain (Xcode CLT / Android platform-tools) + Node ≥22 —
+          # users without it just see the tools fail to connect (accepted, same
+          # as the browser bridge). Returns screenshots → scoped to the @mobile
+          # subagent, which pins a multimodal model.
+          # `timeout` here is opencode's TOOL-FETCH timeout (initial tool listing
+          # from the server), default 5000ms — NOT a per-call timeout. Raised
+          # because mobile-mcp enumerates simulators/emulators/devices at startup
+          # (+ a possible cold `npx` install), which can exceed 5s and would
+          # otherwise drop the whole server before any tool is usable.
+          command:
+            - npx
+            - "-y"
+            - "@mobilenext/mobile-mcp@latest"
+          # v2 splits the one v1 `timeout` into three phases; all three keep
+          # the v1 value (exactly what OpenCode's own v1→v2 normaliser does).
+          timeout:
+            startup: 60000
+            catalog: 60000
+            execution: 60000
+          disabled: true         # OFF by default (opt-in); handled by the @mobile subagent
 
-      # ── No-key local batch (ADR-0072) ──────────────────────────────────
-      # Same `type: local` npx form as the ADR-0071 batch, but selected for
-      # ZERO setup: each runs with bare `npx` and needs NO API key / token /
-      # signup, so it works for EVERY user on day one (devs + marketing + PO)
-      # — the lowest-friction servers to push org-wide. Each is still denied
-      # on the lean primary and re-allowed only on its dedicated subagent.
-      # Verified npm-only + not deprecated (registry check 2026-06-29).
-      git:
-        type: local
-        # Local git on the working tree (status/diff/log/commit/branch/stash)
-        # as structured tools — shells out to the `git` binary (present
-        # everywhere). Fills the gap left by the DEPRECATED official GitHub
-        # npm server. Scoped to the @vcs subagent.
-        command:
-          - npx
-          - "-y"
-          - "@cyanheads/git-mcp-server"
-        enabled: false           # OFF by default (opt-in); handled by the @vcs subagent
-      drawio:
-        type: local
-        # OFFICIAL draw.io server — generates editable diagrams (XML / CSV /
-        # Mermaid syntax) and an editor URL; pure node, NO browser binary, NO
-        # token. Great for non-coder POs. Scoped to the @diagram subagent.
-        command:
-          - npx
-          - "-y"
-          - "@drawio/mcp"
-        enabled: false           # OFF by default (opt-in); handled by the @diagram subagent
-      shadcn:
-        type: local
-        # shadcn/ui v4 component source / usage / install metadata
-        # (React/Svelte/Vue/RN). Keyless (rate-limited); a user who exports
-        # GITHUB_PERSONAL_ACCESS_TOKEN locally gets the higher GitHub API
-        # limit automatically — we don't inject it (empty-string passthrough
-        # risk), it's an opt-in local env var. Scoped to the @ui subagent.
-        command:
-          - npx
-          - "-y"
-          - "@jpisnice/shadcn-ui-mcp-server"
-        enabled: false           # OFF by default (opt-in); handled by the @ui subagent
-      reddit:
-        type: local
-        # Reddit reader — anonymous READ mode needs no credentials (~10
-        # req/min); a user wanting higher limits / posting sets REDDIT_*
-        # locally. Social listening / audience research. Scoped to @content.
-        command:
-          - npx
-          - "-y"
-          - "reddit-mcp-server"
-        enabled: false           # OFF by default (opt-in); handled by the @content subagent
-      youtube:
-        type: local
-        # YouTube transcript fetcher (public transcript endpoints, no key) —
-        # repurpose video → blog/social/summaries. Scoped to @content.
-        command:
-          - npx
-          - "-y"
-          - "@sinco-lab/mcp-youtube-transcript"
-        enabled: false           # OFF by default (opt-in); handled by the @content subagent
-      rss:
-        type: local
-        # RSS/Atom feed reader (no key) — news monitoring, content curation,
-        # competitor-blog watching. Scoped to @content.
-        command:
-          - npx
-          - "-y"
-          - "rss-mcp"
-        enabled: false           # OFF by default (opt-in); handled by the @content subagent
+        # ── No-key local batch (ADR-0072) ──────────────────────────────────
+        # Same `type: local` npx form as the ADR-0071 batch, but selected for
+        # ZERO setup: each runs with bare `npx` and needs NO API key / token /
+        # signup, so it works for EVERY user on day one (devs + marketing + PO)
+        # — the lowest-friction servers to push org-wide. Each is still denied
+        # on the lean primary and re-allowed only on its dedicated subagent.
+        # Verified npm-only + not deprecated (registry check 2026-06-29).
+        git:
+          type: local
+          # Local git on the working tree (status/diff/log/commit/branch/stash)
+          # as structured tools — shells out to the `git` binary (present
+          # everywhere). Fills the gap left by the DEPRECATED official GitHub
+          # npm server. Scoped to the @vcs subagent.
+          command:
+            - npx
+            - "-y"
+            - "@cyanheads/git-mcp-server"
+          disabled: true         # OFF by default (opt-in); handled by the @vcs subagent
+        drawio:
+          type: local
+          # OFFICIAL draw.io server — generates editable diagrams (XML / CSV /
+          # Mermaid syntax) and an editor URL; pure node, NO browser binary, NO
+          # token. Great for non-coder POs. Scoped to the @diagram subagent.
+          command:
+            - npx
+            - "-y"
+            - "@drawio/mcp"
+          disabled: true         # OFF by default (opt-in); handled by the @diagram subagent
+        shadcn:
+          type: local
+          # shadcn/ui v4 component source / usage / install metadata
+          # (React/Svelte/Vue/RN). Keyless (rate-limited); a user who exports
+          # GITHUB_PERSONAL_ACCESS_TOKEN locally gets the higher GitHub API
+          # limit automatically — we don't inject it (empty-string passthrough
+          # risk), it's an opt-in local env var. Scoped to the @ui subagent.
+          command:
+            - npx
+            - "-y"
+            - "@jpisnice/shadcn-ui-mcp-server"
+          disabled: true         # OFF by default (opt-in); handled by the @ui subagent
+        reddit:
+          type: local
+          # Reddit reader — anonymous READ mode needs no credentials (~10
+          # req/min); a user wanting higher limits / posting sets REDDIT_*
+          # locally. Social listening / audience research. Scoped to @content.
+          command:
+            - npx
+            - "-y"
+            - "reddit-mcp-server"
+          disabled: true         # OFF by default (opt-in); handled by the @content subagent
+        youtube:
+          type: local
+          # YouTube transcript fetcher (public transcript endpoints, no key) —
+          # repurpose video → blog/social/summaries. Scoped to @content.
+          command:
+            - npx
+            - "-y"
+            - "@sinco-lab/mcp-youtube-transcript"
+          disabled: true         # OFF by default (opt-in); handled by the @content subagent
+        rss:
+          type: local
+          # RSS/Atom feed reader (no key) — news monitoring, content curation,
+          # competitor-blog watching. Scoped to @content.
+          command:
+            - npx
+            - "-y"
+            - "rss-mcp"
+          disabled: true         # OFF by default (opt-in); handled by the @content subagent
 
-      # ── Atlassian: per-user token local batch (ADR-0073) ───────────────
-      # Jira + Confluence as `type: local` npx servers (author @aashari). Per
-      # ADR-0073 these are PER-USER: the user exports their own Atlassian
-      # credentials and we pass them through with {env:...} — both servers
-      # share the SAME three vars, so the user sets them ONCE:
-      #   ATLASSIAN_SITE_NAME   (the "your-company" part of *.atlassian.net)
-      #   ATLASSIAN_USER_EMAIL  (their Atlassian account email)
-      #   ATLASSIAN_API_TOKEN   (id.atlassian.com → API tokens)
-      # A user who hasn't set them sees @atlassian fail when invoked (same
-      # accepted trade-off as the other local servers). GitHub is NOT here —
-      # it has no npx server (the official npm one is deprecated → Go binary),
-      # so it goes on a centralized gateway /mcp/github route backed by a
-      # GitHub App (ADR-0073 phase 2; out-of-band App + secret). Both servers
-      # scoped to the @atlassian subagent.
-      jira:
-        type: local
-        command:
-          - npx
-          - "-y"
-          - "@aashari/mcp-server-atlassian-jira"
-        environment:
-          ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
-          ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
-          ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
-        enabled: false           # OFF by default (opt-in); handled by the @atlassian subagent
-      confluence:
-        type: local
-        command:
-          - npx
-          - "-y"
-          - "@aashari/mcp-server-atlassian-confluence"
-        environment:
-          ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
-          ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
-          ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
-        enabled: false           # OFF by default (opt-in); handled by the @atlassian subagent
+        # ── Atlassian: per-user token local batch (ADR-0073) ───────────────
+        # Jira + Confluence as `type: local` npx servers (author @aashari). Per
+        # ADR-0073 these are PER-USER: the user exports their own Atlassian
+        # credentials and we pass them through with {env:...} — both servers
+        # share the SAME three vars, so the user sets them ONCE:
+        #   ATLASSIAN_SITE_NAME   (the "your-company" part of *.atlassian.net)
+        #   ATLASSIAN_USER_EMAIL  (their Atlassian account email)
+        #   ATLASSIAN_API_TOKEN   (id.atlassian.com → API tokens)
+        # A user who hasn't set them sees @atlassian fail when invoked (same
+        # accepted trade-off as the other local servers). GitHub is NOT here —
+        # it has no npx server (the official npm one is deprecated → Go binary),
+        # so it goes on a centralized gateway /mcp/github route backed by a
+        # GitHub App (ADR-0073 phase 2; out-of-band App + secret). Both servers
+        # scoped to the @atlassian subagent.
+        jira:
+          type: local
+          command:
+            - npx
+            - "-y"
+            - "@aashari/mcp-server-atlassian-jira"
+          environment:
+            ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
+            ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
+            ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
+          disabled: true         # OFF by default (opt-in); handled by the @atlassian subagent
+        confluence:
+          type: local
+          command:
+            - npx
+            - "-y"
+            - "@aashari/mcp-server-atlassian-confluence"
+          environment:
+            ATLASSIAN_SITE_NAME: "{env:ATLASSIAN_SITE_NAME}"
+            ATLASSIAN_USER_EMAIL: "{env:ATLASSIAN_USER_EMAIL}"
+            ATLASSIAN_API_TOKEN: "{env:ATLASSIAN_API_TOKEN}"
+          disabled: true         # OFF by default (opt-in); handled by the @atlassian subagent
 
-      # ── Mermaid: the ONE universally-available MCP (deliberate exception) ──
-      # Unlike every server above (opt-in per ADR-0074, scoped behind a
-      # subagent per ADR-0044), mermaid is enabled BY DEFAULT and available to
-      # ALL agents — it is intentionally NOT in the deny-baseline below, so its
-      # tool is injected into every primary AND every subagent. The maintainer's
-      # explicit call: diagram-as-explanation is a cross-cutting output style
-      # (see the global mermaid directive appended to every agent prompt), not a
-      # specialist capability, so it belongs everywhere rather than behind one
-      # role. Its schema is tiny (a single generate tool), so the lean-context
-      # cost of putting it on every agent is negligible — nothing like the
-      # 34-tool browser surface that stays scoped to @browser.
-      #
-      # `type: local` npx server (stdout/stdin stdio — bare `npx -y mcp-mermaid`
-      # defaults to stdio; the SSE/HTTP transports are off). NOT version-pinned,
-      # like the other local servers (float to @latest; pin `mcp-mermaid@x.y.z`
-      # if drift bites).
-      #
-      # ⚠️ SETUP CAVEAT: mcp-mermaid renders via `mermaid-isomorphic` +
-      # **playwright**, so turning a diagram into a PNG/SVG image needs a local
-      # chromium (playwright's browser download) — same accepted trade-off as
-      # @vymalo/opencode-browser and @mobile: a user without it sees the RENDER
-      # tool fail, not the whole agent. This does NOT block the core behaviour:
-      # every agent is instructed to explain via ```mermaid fenced code blocks,
-      # which the LibreChat / opencode UI renders CLIENT-SIDE with no tool call
-      # at all. The MCP is the value-add (validate the syntax, or render to a
-      # shareable image) on top of that always-works fenced-block path.
-      mermaid:
-        type: local
-        command:
-          - npx
-          - "-y"
-          - "mcp-mermaid"
-        enabled: true            # ON by default + not denied below → available to ALL agents
+        # ── Mermaid: the ONE universally-available MCP (deliberate exception) ──
+        # Unlike every server above (opt-in per ADR-0074, scoped behind a
+        # subagent per ADR-0044), mermaid is enabled BY DEFAULT and available to
+        # ALL agents — it is intentionally NOT in the deny-baseline below, so its
+        # tool is injected into every primary AND every subagent. The maintainer's
+        # explicit call: diagram-as-explanation is a cross-cutting output style
+        # (see the global mermaid directive appended to every agent prompt), not a
+        # specialist capability, so it belongs everywhere rather than behind one
+        # role. Its schema is tiny (a single generate tool), so the lean-context
+        # cost of putting it on every agent is negligible — nothing like the
+        # 34-tool browser surface that stays scoped to @browser.
+        #
+        # `type: local` npx server (stdout/stdin stdio — bare `npx -y mcp-mermaid`
+        # defaults to stdio; the SSE/HTTP transports are off). NOT version-pinned,
+        # like the other local servers (float to @latest; pin `mcp-mermaid@x.y.z`
+        # if drift bites).
+        #
+        # ⚠️ SETUP CAVEAT: mcp-mermaid renders via `mermaid-isomorphic` +
+        # **playwright**, so turning a diagram into a PNG/SVG image needs a local
+        # chromium (playwright's browser download) — same accepted trade-off as
+        # @vymalo/opencode-browser and @mobile: a user without it sees the RENDER
+        # tool fail, not the whole agent. This does NOT block the core behaviour:
+        # every agent is instructed to explain via ```mermaid fenced code blocks,
+        # which the LibreChat / opencode UI renders CLIENT-SIDE with no tool call
+        # at all. The MCP is the value-add (validate the syntax, or render to a
+        # shareable image) on top of that always-works fenced-block path.
+        mermaid:
+          type: local
+          command:
+            - npx
+            - "-y"
+            - "mcp-mermaid"
+          disabled: false        # ON by default + not denied below → available to ALL agents
 
     # ────────────────────────────────────────────────────────────────────
     # Global permission baseline (ADR-0044) — keeps EVERY primary agent LEAN:
     # every MCP/browser tool is denied at the root, so no primary carries them.
     # Each role subagent below re-allows exactly its own (agent permission
-    # overrides root via findLast). edit/bash keep opencode's defaults for
+    # overrides root via findLast). edit/shell keep opencode's defaults for
     # primaries (each primary further scopes its own). The denies are kept for
-    # ALL servers even though every one now ships `enabled: false` (ADR-0074,
+    # ALL servers even though every one now ships `disabled: true` (ADR-0074,
     # opt-in): the moment a user enables a server, this baseline still keeps it
     # off the primaries and behind its subagent — no edit needed to stay lean.
     # (`.env` reads are already denied by opencode.)
-    permission:
-      "brave_*": deny
-      "context7_*": deny
-      "terraform_*": deny
-      "refero_*": deny
-      # firecrawl is opt-in like the rest now (ADR-0074) — so it MUST be denied
-      # here too, else enabling it would inject `firecrawl_*` onto every primary
-      # (opencode tools default to enabled unless a rule restricts them). It's
-      # re-allowed only on @web-search (web fetch/scrape companion to brave).
-      "firecrawl_*": deny
+    permissions:
+      - {action: "brave_*", resource: "*", effect: deny}
       # Removes browser_* from the INJECTED tool set of every agent that doesn't
-      # re-allow it (request.ts `resolveTools` → `Permission.disabled`: a
-      # string-form `*`-deny drops the tool from `tools`/`activeTools`). Works
+      # re-allow it (OpenCode v2 tool.ts `whollyDisabled`: a `resource: "*"`
+      # deny as the last matching rule drops the tool from injection). Works
       # for plugin tools exactly as for MCP — keyed on tool name. Only the
       # `@browser` subagent re-allows it (the lean `frontend` primary does NOT).
       # (At call time plugin tools aren't ctx.ask-gated like MCP tools, but
       # that's moot for a denied tool — the model never receives it.)
-      "browser_*": deny
+      - {action: "browser_*", resource: "*", effect: deny}
+      - {action: "confluence_*", resource: "*", effect: deny}
+      - {action: "context7_*", resource: "*", effect: deny}
+      - {action: "drawio_*", resource: "*", effect: deny}
+      # firecrawl is opt-in like the rest now (ADR-0074) — so it MUST be denied
+      # here too, else enabling it would inject `firecrawl_*` onto every primary
+      # (opencode tools default to enabled unless a rule restricts them). It's
+      # re-allowed only on @web-search (web fetch/scrape companion to brave).
+      - {action: "firecrawl_*", resource: "*", effect: deny}
+      # No-key local batch (ADR-0072) — same deny-then-re-allow: off the
+      # primary, re-allowed only on @vcs / @diagram / @ui / @content.
+      - {action: "git_*", resource: "*", effect: deny}
+      # Atlassian per-user batch (ADR-0073) — off the primary, re-allowed
+      # only on @atlassian.
+      - {action: "jira_*", resource: "*", effect: deny}
       # Local npx servers (ADR-0071) — same deny-then-re-allow discipline as
       # the remotes: each stays OUT of the primary's injected toolset and is
       # re-allowed only on its dedicated subagent (@memory / @planner / @mobile).
-      "memory_*": deny
-      "sequentialthinking_*": deny
-      "mobile_*": deny
-      # No-key local batch (ADR-0072) — same deny-then-re-allow: off the
-      # primary, re-allowed only on @vcs / @diagram / @ui / @content.
-      "git_*": deny
-      "drawio_*": deny
-      "shadcn_*": deny
-      "reddit_*": deny
-      "youtube_*": deny
-      "rss_*": deny
-      # Atlassian per-user batch (ADR-0073) — off the primary, re-allowed
-      # only on @atlassian.
-      "jira_*": deny
-      "confluence_*": deny
+      - {action: "memory_*", resource: "*", effect: deny}
+      - {action: "mobile_*", resource: "*", effect: deny}
+      - {action: "reddit_*", resource: "*", effect: deny}
+      - {action: "refero_*", resource: "*", effect: deny}
+      - {action: "rss_*", resource: "*", effect: deny}
+      - {action: "sequentialthinking_*", resource: "*", effect: deny}
+      - {action: "shadcn_*", resource: "*", effect: deny}
+      - {action: "terraform_*", resource: "*", effect: deny}
+      - {action: "youtube_*", resource: "*", effect: deny}
       # ⚠️ mermaid is DELIBERATELY ABSENT from this deny-baseline. It is the one
       # universally-available MCP (see its block above): leaving `mermaid_*`
       # undenied lets opencode inject it into EVERY agent (tools default to
@@ -749,7 +761,7 @@ wellKnown:
     #    allows only its tools + its file/bash scope; everything else falls back
     #    to the deny-baseline above (which is why the tools never leak onto a
     #    primary). The subagent wiring is unchanged by ADR-0074 — only the
-    #    primary count grew + every MCP is now opt-in (enabled:false).
+    #    primary count grew + every MCP is now opt-in (disabled: true).
     #
     # MODELS — pin ONLY where vision is required (ADR-0048, no-risk rule):
     #  • An agent whose tools return IMAGES it must interpret PINS a multimodal
@@ -762,7 +774,7 @@ wellKnown:
     #    carries NO `model` and INHERITS the user's session model. (Simpler +
     #    risk-free; a role no longer forces a cheap model — it runs on whatever
     #    the user picks.) A user can override per agent locally.
-    agent:
+    agents:
       web-search:
         mode: subagent
         description: >-
@@ -771,8 +783,10 @@ wellKnown:
           never writes files or runs shell. Delegate for "look this up / find
           current info / scrape this page" tasks. (Both servers are opt-in;
           `@web-search` is inert until the user enables `brave`/`firecrawl`.)
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are a web-research specialist. Use the Brave MCP tools to search
           and read sources, and the Firecrawl MCP tools to scrape/extract a
           specific page's content when a search snippet isn't enough, then
@@ -783,20 +797,22 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          webfetch: allow
-          "brave_*": allow
-          "firecrawl_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: "brave_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "firecrawl_*", resource: "*", effect: allow}
+          - {action: webfetch, resource: "*", effect: allow}
       doc-research:
         mode: subagent
         description: >-
           Researches a topic (Context7 library docs + reading the repo) and
           writes documentation. May write ONLY under docs/. Delegate for
           "document X / update the docs" tasks.
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are a documentation specialist. Read freely and use the Context7
           MCP for authoritative library docs. You may create or edit files
           ONLY under docs/ — every other path is denied; do not edit code. When a diagram would make something clearer for the user —
@@ -805,20 +821,21 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit:
-            "*": deny
-            "docs/**": allow
-          bash: deny
-          "context7_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: "context7_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: edit, resource: "docs/**", effect: allow}
       iac:
         mode: subagent
         description: >-
           Authors and plans infrastructure-as-code (Terraform/OpenTofu). Read
           + write; runs terraform/tofu via shell with guardrails. Delegate for
           "write/plan the infrastructure" tasks.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are an infrastructure-as-code specialist. Use Context7 for
           provider docs and the Terraform MCP for registry lookups. You may
           edit files and run the SAFE terraform/tofu subcommands (init,
@@ -830,29 +847,28 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: allow
+        permissions:
           # Only the SAFE, read-only-ish subcommands auto-run; `apply` falls to
           # the `*: ask` default (needs human approval) and `destroy` is denied
           # outright — never auto-apply/destroy infra from an org-wide default.
-          bash:
-            "*": ask
-            "terraform init*": allow
-            "terraform validate*": allow
-            "terraform plan*": allow
-            "terraform fmt*": allow
-            "terraform show*": allow
-            "terraform output*": allow
-            "terraform providers*": allow
-            "tofu init*": allow
-            "tofu validate*": allow
-            "tofu plan*": allow
-            "tofu fmt*": allow
-            "terraform destroy*": deny
-            "tofu destroy*": deny
-            "rm *": deny
-          "context7_*": allow
-          "terraform_*": allow
+          - {action: shell, resource: "*", effect: ask}
+          - {action: shell, resource: "rm *", effect: deny}
+          - {action: shell, resource: "terraform destroy*", effect: deny}
+          - {action: shell, resource: "terraform fmt*", effect: allow}
+          - {action: shell, resource: "terraform init*", effect: allow}
+          - {action: shell, resource: "terraform output*", effect: allow}
+          - {action: shell, resource: "terraform plan*", effect: allow}
+          - {action: shell, resource: "terraform providers*", effect: allow}
+          - {action: shell, resource: "terraform show*", effect: allow}
+          - {action: shell, resource: "terraform validate*", effect: allow}
+          - {action: shell, resource: "tofu destroy*", effect: deny}
+          - {action: shell, resource: "tofu fmt*", effect: allow}
+          - {action: shell, resource: "tofu init*", effect: allow}
+          - {action: shell, resource: "tofu plan*", effect: allow}
+          - {action: shell, resource: "tofu validate*", effect: allow}
+          - {action: "context7_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: allow}
+          - {action: "terraform_*", resource: "*", effect: allow}
       reviewer:
         mode: subagent
         description: >-
@@ -862,8 +878,10 @@ wellKnown:
           `helm lint` to sanity-check chart syntax. Never edits files or runs
           mutating/exec commands. Delegate for "review this / what's wrong with X
           / review my changes" tasks.
-        temperature: 0.1
-        prompt: >-
+        request:
+          body:
+            temperature: 0.1
+        system: >-
           You are a code reviewer. Establish what changed FIRST — run
           `git status`/`git diff` (and `git log`/`git show` for context) to see
           the working diff — then read the changed files and the surrounding
@@ -877,8 +895,7 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
+        permissions:
           # Read-only inspection ONLY. `*` stays denied; only these exact
           # non-mutating, non-exec forms are allowed. Deliberately EXCLUDED:
           #  • `git branch*` — covers `git branch -d/-D/-m/-M` (delete/rename
@@ -886,18 +903,21 @@ wellKnown:
           #  • `helm template*` — `helm template --post-renderer <exe>` runs an
           #    arbitrary local executable (code-exec from a hostile repo). Use
           #    `helm lint` for syntax; a reviewer doesn't need to fully render.
-          #  (Can't gate those flags with a deny pattern — `toJson` sorts keys
-          #   and ` `<`*`, so a `helm template *post-renderer*` deny would sort
-          #   BEFORE `helm template*` and lose. So the command is dropped, not
-          #   flag-gated.)
-          bash:
-            "*": deny
-            "git status*": allow
-            "git diff*": allow
-            "git log*": allow
-            "git show*": allow
-            "helm lint*": allow
-          "context7_*": allow
+          #  (Under v1 those flags couldn't be gated with a deny pattern —
+          #   `toJson` sorted the map keys and ` `<`*`, so a
+          #   `helm template *post-renderer*` deny sorted BEFORE `helm template*`
+          #   and lost. v2 `permissions` is an ordered findLast list, so a later
+          #   deny rule now WOULD win; the commands stay dropped rather than
+          #   flag-gated anyway — fewer allow rules, nothing to get wrong. The
+          #   rules below keep the sorted order that was live under v1, ADR-0141.)
+          - {action: shell, resource: "*", effect: deny}
+          - {action: shell, resource: "git diff*", effect: allow}
+          - {action: shell, resource: "git log*", effect: allow}
+          - {action: shell, resource: "git show*", effect: allow}
+          - {action: shell, resource: "git status*", effect: allow}
+          - {action: shell, resource: "helm lint*", effect: allow}
+          - {action: "context7_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
       pr-review-triage:
         mode: subagent
         description: >-
@@ -924,8 +944,10 @@ wellKnown:
           trade-off is deliberate (see description above); if the user
           wants fire-and-forget instead, they should skip this delegation
           and re-invoke you later by hand.
-        temperature: 0.1
-        prompt: >-
+        request:
+          body:
+            temperature: 0.1
+        system: >-
           You ensure every lightbridge-assistant comment on a GitHub pull
           request has your reaction and an in-thread reason, using the `gh`
           CLI (you act as the invoking user's own GitHub identity — there is
@@ -988,59 +1010,60 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash:
-            "*": deny
-            # Bounded polling wait — see prompt. Harmless (no side effects);
-            # the ceiling that prevents an indefinite wait lives in the
-            # prompt's "~10 minute budget" instruction, not in this pattern.
-            "sleep *": allow
-            "gh auth status*": allow
-            "gh pr view*": allow
-            "gh pr list*": allow
-            # The "Lightbridge Review" check-run status poll (state/conclusion) —
-            # see prompt: the authoritative "review done yet?" signal.
-            "gh pr checks*": allow
-            # Listing a PR's review comments — GET .../pulls/{pr}/comments.
-            # ⚠️ NO trailing `*` here — fully anchored, exact match, zero
-            # extra characters permitted after the literal "comments". A
-            # first attempt at this fix (still caught in review — lightbridge-
-            # assistant, PR #1135, round 2) kept a trailing `*` after
-            # `--method GET repos/*/pulls/*/comments`, reasoning that
-            # `--method GET` made a create attempt (which needs `-f`/`-F`
-            # flags) textually distinguishable. That reasoning had a hole:
-            # the trailing `*` still let the STRING carry a SECOND, later
-            # `--method POST -f body=...` appended after the first — and
-            # `gh`/pflag's last-wins semantics on a repeated string flag mean
-            # that second `--method POST` is the one that actually executes,
-            # reaching the exact top-level-create endpoint this pattern
-            # exists to forbid, while still matching the allow pattern
-            # (prefix + trailing `*` swallows the appended flag). Dropping
-            # the trailing `*` entirely closes this: any suffix at all,
-            # including a duplicated `--method`, makes the string no longer
-            # match, so it falls to the `*: deny` baseline instead. Same
-            # "can't flag-gate, so make it unrepresentable" approach as the
-            # @reviewer subagent's `helm template*` / `--post-renderer` note
-            # above — but this time actually unrepresentable, not just
-            # apparently so.
-            "gh api --method GET repos/*/pulls/*/comments": allow
-            # Replying in-thread — POST .../pulls/{pr}/comments/{id}/replies.
-            # Unambiguous: nothing else shares this exact suffixed path, so
-            # a plain `*`-suffixed allow is safe here (unlike the bare
-            # .../comments form above).
-            "gh api repos/*/pulls/*/comments/*/replies*": allow
-            # Covers both reading and posting a review comment's reactions
-            # (GET/POST .../pulls/comments/{id}/reactions).
-            "gh api repos/*/pulls/comments/*/reactions*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          # Listing a PR's review comments — GET .../pulls/{pr}/comments.
+          # ⚠️ NO trailing `*` here — fully anchored, exact match, zero
+          # extra characters permitted after the literal "comments". A
+          # first attempt at this fix (still caught in review — lightbridge-
+          # assistant, PR #1135, round 2) kept a trailing `*` after
+          # `--method GET repos/*/pulls/*/comments`, reasoning that
+          # `--method GET` made a create attempt (which needs `-f`/`-F`
+          # flags) textually distinguishable. That reasoning had a hole:
+          # the trailing `*` still let the STRING carry a SECOND, later
+          # `--method POST -f body=...` appended after the first — and
+          # `gh`/pflag's last-wins semantics on a repeated string flag mean
+          # that second `--method POST` is the one that actually executes,
+          # reaching the exact top-level-create endpoint this pattern
+          # exists to forbid, while still matching the allow pattern
+          # (prefix + trailing `*` swallows the appended flag). Dropping
+          # the trailing `*` entirely closes this: any suffix at all,
+          # including a duplicated `--method`, makes the string no longer
+          # match, so it falls to the `*: deny` baseline instead. Same
+          # "can't flag-gate, so make it unrepresentable" approach as the
+          # @reviewer subagent's `helm template*` / `--post-renderer` note
+          # above — but this time actually unrepresentable, not just
+          # apparently so.
+          - {action: shell, resource: "gh api --method GET repos/*/pulls/*/comments", effect: allow}
+          # Replying in-thread — POST .../pulls/{pr}/comments/{id}/replies.
+          # Unambiguous: nothing else shares this exact suffixed path, so
+          # a plain `*`-suffixed allow is safe here (unlike the bare
+          # .../comments form above).
+          - {action: shell, resource: "gh api repos/*/pulls/*/comments/*/replies*", effect: allow}
+          # Covers both reading and posting a review comment's reactions
+          # (GET/POST .../pulls/comments/{id}/reactions).
+          - {action: shell, resource: "gh api repos/*/pulls/comments/*/reactions*", effect: allow}
+          - {action: shell, resource: "gh auth status*", effect: allow}
+          # The "Lightbridge Review" check-run status poll (state/conclusion) —
+          # see prompt: the authoritative "review done yet?" signal.
+          - {action: shell, resource: "gh pr checks*", effect: allow}
+          - {action: shell, resource: "gh pr list*", effect: allow}
+          - {action: shell, resource: "gh pr view*", effect: allow}
+          # Bounded polling wait — see prompt. Harmless (no side effects);
+          # the ceiling that prevents an indefinite wait lives in the
+          # prompt's "~10 minute budget" instruction, not in this pattern.
+          - {action: shell, resource: "sleep *", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
       test:
         mode: subagent
         description: >-
           Writes and runs tests (TDD): adds failing tests, makes them pass, and
           runs the suite. Can edit code but only AUTO-runs test commands.
           Delegate for "write tests / run the tests / TDD this" tasks.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are a test-driven-development specialist. Write a failing test
           first, then the minimal code to pass it, and run the suite to verify.
           Use Context7 for testing-library docs. You may run test commands
@@ -1050,34 +1073,35 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: allow
-          bash:
-            "*": ask
-            "npm test*": allow
-            "npm run test*": allow
-            "pnpm test*": allow
-            "pnpm run test*": allow
-            "bun test*": allow
-            "yarn test*": allow
-            "go test*": allow
-            "pytest*": allow
-            "uv run pytest*": allow
-            "cargo test*": allow
-            "vitest*": allow
-            "jest*": allow
-            "helm lint*": allow
-            "helm template*": allow
-            "rm *": deny
-          "context7_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: ask}
+          - {action: shell, resource: "bun test*", effect: allow}
+          - {action: shell, resource: "cargo test*", effect: allow}
+          - {action: shell, resource: "go test*", effect: allow}
+          - {action: shell, resource: "helm lint*", effect: allow}
+          - {action: shell, resource: "helm template*", effect: allow}
+          - {action: shell, resource: "jest*", effect: allow}
+          - {action: shell, resource: "npm run test*", effect: allow}
+          - {action: shell, resource: "npm test*", effect: allow}
+          - {action: shell, resource: "pnpm run test*", effect: allow}
+          - {action: shell, resource: "pnpm test*", effect: allow}
+          - {action: shell, resource: "pytest*", effect: allow}
+          - {action: shell, resource: "rm *", effect: deny}
+          - {action: shell, resource: "uv run pytest*", effect: allow}
+          - {action: shell, resource: "vitest*", effect: allow}
+          - {action: shell, resource: "yarn test*", effect: allow}
+          - {action: "context7_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: allow}
       skill:
         mode: subagent
         description: >-
           Authors and refines opencode skills (skill definitions) and helps pick
           the right skill for a task. Writes ONLY under the skills directory.
           Delegate for "write/refine a skill" tasks.
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are an opencode skill author. Create and refine skill definitions
           under the skills directory, and use the skill tool to test discovery.
           Use Context7 for any library facts a skill needs. You may write ONLY
@@ -1087,14 +1111,13 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit:
-            "*": deny
-            ".opencode/skills/**": allow
-            "skills/**": allow
-          bash: deny
-          skill: allow
-          "context7_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: "context7_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: edit, resource: ".opencode/skills/**", effect: allow}
+          - {action: edit, resource: "skills/**", effect: allow}
+          - {action: skill, resource: "*", effect: allow}
       # ── Local-MCP role subagents (ADR-0071). Non-visual → NO model pin,
       #    inherit the session model. Read-only on code (no edit/bash) so
       #    they stay safe to delegate to org-wide. ─────────────────────────
@@ -1105,8 +1128,10 @@ wellKnown:
           relations, observations) via the local Memory MCP. Read/write the
           GRAPH only — never edits files or runs shell. Delegate for
           "remember this / what do you know about X / recall …" tasks.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are a memory specialist backed by a knowledge-graph MCP. Use the
           memory_* tools to create/search/read entities, relations, and
           observations, and return a concise answer (or confirm what you
@@ -1119,10 +1144,10 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          "memory_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "memory_*", resource: "*", effect: allow}
       # NB: named `planner`, NOT `plan` — `plan` is an opencode BUILT-IN primary
       # agent (alongside `build`); defining `agent.plan` here would override/
       # demote the built-in read-only Plan primary for every user org-wide.
@@ -1133,8 +1158,10 @@ wellKnown:
           and returns a structured plan or analysis. READ-ONLY — never edits
           files or runs shell. Delegate for "design / plan / reason through /
           figure out the approach for X" tasks.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are a planning and reasoning specialist. Use the
           sequentialthinking tool to break a hard problem into ordered,
           revisable steps, and read the repo freely to ground your reasoning;
@@ -1147,11 +1174,11 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          "sequentialthinking_*": allow
-          "context7_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: "context7_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "sequentialthinking_*", resource: "*", effect: allow}
       # ── No-key local-MCP subagents (ADR-0072). All non-visual → NO model
       #    pin (inherit the session model). ────────────────────────────────
       vcs:
@@ -1161,8 +1188,10 @@ wellKnown:
           / stash) as structured tools via the Git MCP. Operates on the local
           repo only — does not edit source files itself. Delegate for "commit
           this / show the diff / branch / what changed" tasks.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are a version-control specialist. Use the git_* tools to inspect
           and operate the local git repository — review status/diff/log, stage,
           commit with a clear message, branch, and stash. Confirm the intended
@@ -1174,10 +1203,10 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          "git_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "git_*", resource: "*", effect: allow}
       ui:
         mode: subagent
         description: >-
@@ -1185,8 +1214,10 @@ wellKnown:
           (React/Svelte/Vue/RN) via the shadcn MCP and returns it for the
           primary to build with. READ-ONLY; never edits code or runs shell.
           Delegate for "how do I use / install the shadcn X component".
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are a shadcn/ui component specialist. Use the shadcn_* tools to
           fetch accurate component source, usage examples, and install commands
           for the requested components, then return a concise, actionable
@@ -1197,10 +1228,10 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          "shadcn_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "shadcn_*", resource: "*", effect: allow}
       diagram:
         mode: subagent
         description: >-
@@ -1208,8 +1239,10 @@ wellKnown:
           sequence) via the official draw.io MCP — accepts Mermaid/CSV/XML and
           returns the diagram plus an editor URL. No file edits, no shell.
           Delegate for "diagram this / draw the architecture / make a flowchart".
-        temperature: 0.4
-        prompt: >-
+        request:
+          body:
+            temperature: 0.4
+        system: >-
           You are a diagramming specialist. Use the drawio_* tools to turn the
           caller's description into a clear, editable diagram and return both
           the diagram data and the draw.io editor URL so a human can refine it.
@@ -1220,10 +1253,10 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          "drawio_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: "drawio_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
       content:
         mode: subagent
         description: >-
@@ -1232,8 +1265,10 @@ wellKnown:
           concise, cited digest. READ-ONLY; never edits files or runs shell.
           Delegate for "what are people saying about X / summarize this video /
           watch this feed".
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are a content-research specialist for marketing and growth. Use
           the reddit_* (social listening), youtube_* (video transcripts), and
           rss_* (feeds/news) tools, plus webfetch for article URLs, to gather
@@ -1244,13 +1279,13 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          webfetch: allow
-          "reddit_*": allow
-          "youtube_*": allow
-          "rss_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "reddit_*", resource: "*", effect: allow}
+          - {action: "rss_*", resource: "*", effect: allow}
+          - {action: webfetch, resource: "*", effect: allow}
+          - {action: "youtube_*", resource: "*", effect: allow}
       atlassian:
         mode: subagent
         description: >-
@@ -1260,8 +1295,10 @@ wellKnown:
           what's the status of X / look up the Confluence spec". Requires the
           user's own Atlassian credentials (ATLASSIAN_SITE_NAME /
           ATLASSIAN_USER_EMAIL / ATLASSIAN_API_TOKEN) in their environment.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are an Atlassian specialist. Use the jira_* tools (search issues
           via JQL, read issues + their linked dev info) and confluence_* tools
           (search spaces, read pages) to answer the caller's question, then
@@ -1273,11 +1310,11 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          "jira_*": allow
-          "confluence_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: "confluence_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "jira_*", resource: "*", effect: allow}
       # ── PRIMARIES — the selectable agent FLEET (ADR-0074, broadening the
       #    single lean primary of ADR-0048). Every entry below is `mode: primary`
       #    (a user picks one via the agent switcher / Tab); the org default is
@@ -1309,8 +1346,10 @@ wellKnown:
           then decides and iterates. Switch to a focused primary (@backend,
           @devops, @ux, @architect, @security, …) when the task has a clear
           shape.
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are the default, general-purpose primary. You IMPLEMENT directly:
           read and edit files and run the common toolchains — JS
           (pnpm/npm/bun/yarn), Rust (cargo), Go, Python (uv), and make/just.
@@ -1343,8 +1382,7 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: allow
+        permissions:
           # CURATED allowlist (not blanket wrappers) — assistant is the ORG-WIDE
           # DEFAULT, so it must not auto-run state-changing commands its prompt
           # says it gates: a blanket `make */just */uv *` would auto-approve
@@ -1352,67 +1390,67 @@ wellKnown:
           # `toJson`-sorts-keys reason as @backend (can't override a blanket
           # allow with a later narrow deny). Specific safe sub-commands win over
           # `*: ask`; everything else (deploys, migrations, …) falls to `ask`.
-          bash:
-            "*": ask
-            # JS / TS
-            "pnpm install*": allow
-            "pnpm build*": allow
-            "pnpm dev*": allow
-            "pnpm lint*": allow
-            "pnpm test*": allow
-            "pnpm run build*": allow
-            "pnpm run dev*": allow
-            "pnpm run lint*": allow
-            "pnpm run test*": allow
-            "npm install*": allow
-            "npm ci*": allow
-            "npm run build*": allow
-            "npm run dev*": allow
-            "npm run lint*": allow
-            "npm test*": allow
-            "npm run test*": allow
-            "bun install*": allow
-            "bun run build*": allow
-            "bun run dev*": allow
-            "bun test*": allow
-            "yarn install*": allow
-            "yarn build*": allow
-            "yarn dev*": allow
-            "yarn lint*": allow
-            "yarn test*": allow
-            # Rust / WASM
-            "cargo build*": allow
-            "cargo test*": allow
-            "cargo run*": allow
-            "cargo check*": allow
-            "cargo clippy*": allow
-            "cargo fmt*": allow
-            "trunk build*": allow
-            "trunk serve*": allow
-            # Go
-            "go build*": allow
-            "go test*": allow
-            "go run*": allow
-            "go vet*": allow
-            "go mod*": allow
-            "gofmt*": allow
-            # Python (uv-first; NOT blanket `uv run *` → wraps alembic upgrade)
-            "uv sync*": allow
-            "uv lock*": allow
-            "uv add*": allow
-            "uv run pytest*": allow
-            "pytest*": allow
-            "ruff*": allow
-            # Build orchestration — specific targets (NOT blanket `make */just *`
-            # which wrap `make migrate` / `just deploy`)
-            "make build*": allow
-            "make test*": allow
-            "make lint*": allow
-            "make fmt*": allow
-            "just build*": allow
-            "just test*": allow
-            "just lint*": allow
-            "rm *": ask
+          - {action: shell, resource: "*", effect: ask}
+          - {action: shell, resource: "bun install*", effect: allow}
+          - {action: shell, resource: "bun run build*", effect: allow}
+          - {action: shell, resource: "bun run dev*", effect: allow}
+          - {action: shell, resource: "bun test*", effect: allow}
+          # Rust / WASM
+          - {action: shell, resource: "cargo build*", effect: allow}
+          - {action: shell, resource: "cargo check*", effect: allow}
+          - {action: shell, resource: "cargo clippy*", effect: allow}
+          - {action: shell, resource: "cargo fmt*", effect: allow}
+          - {action: shell, resource: "cargo run*", effect: allow}
+          - {action: shell, resource: "cargo test*", effect: allow}
+          # Go
+          - {action: shell, resource: "go build*", effect: allow}
+          - {action: shell, resource: "go mod*", effect: allow}
+          - {action: shell, resource: "go run*", effect: allow}
+          - {action: shell, resource: "go test*", effect: allow}
+          - {action: shell, resource: "go vet*", effect: allow}
+          - {action: shell, resource: "gofmt*", effect: allow}
+          - {action: shell, resource: "just build*", effect: allow}
+          - {action: shell, resource: "just lint*", effect: allow}
+          - {action: shell, resource: "just test*", effect: allow}
+          # Build orchestration — specific targets (NOT blanket `make */just *`
+          # which wrap `make migrate` / `just deploy`)
+          - {action: shell, resource: "make build*", effect: allow}
+          - {action: shell, resource: "make fmt*", effect: allow}
+          - {action: shell, resource: "make lint*", effect: allow}
+          - {action: shell, resource: "make test*", effect: allow}
+          - {action: shell, resource: "npm ci*", effect: allow}
+          - {action: shell, resource: "npm install*", effect: allow}
+          - {action: shell, resource: "npm run build*", effect: allow}
+          - {action: shell, resource: "npm run dev*", effect: allow}
+          - {action: shell, resource: "npm run lint*", effect: allow}
+          - {action: shell, resource: "npm run test*", effect: allow}
+          - {action: shell, resource: "npm test*", effect: allow}
+          - {action: shell, resource: "pnpm build*", effect: allow}
+          - {action: shell, resource: "pnpm dev*", effect: allow}
+          # JS / TS
+          - {action: shell, resource: "pnpm install*", effect: allow}
+          - {action: shell, resource: "pnpm lint*", effect: allow}
+          - {action: shell, resource: "pnpm run build*", effect: allow}
+          - {action: shell, resource: "pnpm run dev*", effect: allow}
+          - {action: shell, resource: "pnpm run lint*", effect: allow}
+          - {action: shell, resource: "pnpm run test*", effect: allow}
+          - {action: shell, resource: "pnpm test*", effect: allow}
+          - {action: shell, resource: "pytest*", effect: allow}
+          - {action: shell, resource: "rm *", effect: ask}
+          - {action: shell, resource: "ruff*", effect: allow}
+          - {action: shell, resource: "trunk build*", effect: allow}
+          - {action: shell, resource: "trunk serve*", effect: allow}
+          - {action: shell, resource: "uv add*", effect: allow}
+          - {action: shell, resource: "uv lock*", effect: allow}
+          - {action: shell, resource: "uv run pytest*", effect: allow}
+          # Python (uv-first; NOT blanket `uv run *` → wraps alembic upgrade)
+          - {action: shell, resource: "uv sync*", effect: allow}
+          - {action: shell, resource: "yarn build*", effect: allow}
+          - {action: shell, resource: "yarn dev*", effect: allow}
+          - {action: shell, resource: "yarn install*", effect: allow}
+          - {action: shell, resource: "yarn lint*", effect: allow}
+          - {action: shell, resource: "yarn test*", effect: allow}
+          - {action: edit, resource: "*", effect: allow}
 
       # frontend — frontend-flavoured implementation primary (was the ADR-0048
       # org default; now one specialist among the fleet). Body kept verbatim.
@@ -1425,8 +1463,10 @@ wellKnown:
           (@browser), pulling design references (@design), and looking up
           library/framework docs (@doc-research) — to specialist subagents,
           then decides and iterates.
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are the primary agent, tuned for frontend work but capable across
           the stack. You IMPLEMENT directly: edit files and run the frontend
           toolchain — JS (pnpm/npm/bun/yarn) and Rust/WASM (cargo/trunk) — to
@@ -1463,28 +1503,27 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: allow
-          bash:
-            "*": ask
-            "pnpm *": allow
-            "npm *": allow
-            "bun *": allow
-            "yarn *": allow
-            "cargo *": allow
-            "trunk *": allow
-            # `rm` is gated by approval (ask), NOT hard-denied: a frontend build
-            # loop legitimately cleans artifacts (rm -rf dist, trunk/cargo
-            # output), so blocking rm outright is more annoying than safe.
-            # ⚠️ This is FRICTION, NOT A SANDBOX. opencode matches the command
-            # STRING, not what it does — so the allowed wrappers above are
-            # arbitrary-code escape hatches that defeat this gate: `npm run
-            # <script>` / `npm exec` / `pnpm exec` / `bun x` / `cargo run` /
-            # build.rs / a postinstall hook can all delete files without ever
-            # hitting `rm`. No per-command rule can close that. Real containment
-            # is the ENVIRONMENT (git-tracked worktree, ephemeral/sandboxed run),
-            # not these patterns. Keep `rm: ask` as a casual-mistake guard only.
-            "rm *": ask
+        permissions:
+          - {action: shell, resource: "*", effect: ask}
+          - {action: shell, resource: "bun *", effect: allow}
+          - {action: shell, resource: "cargo *", effect: allow}
+          - {action: shell, resource: "npm *", effect: allow}
+          - {action: shell, resource: "pnpm *", effect: allow}
+          # `rm` is gated by approval (ask), NOT hard-denied: a frontend build
+          # loop legitimately cleans artifacts (rm -rf dist, trunk/cargo
+          # output), so blocking rm outright is more annoying than safe.
+          # ⚠️ This is FRICTION, NOT A SANDBOX. opencode matches the command
+          # STRING, not what it does — so the allowed wrappers above are
+          # arbitrary-code escape hatches that defeat this gate: `npm run
+          # <script>` / `npm exec` / `pnpm exec` / `bun x` / `cargo run` /
+          # build.rs / a postinstall hook can all delete files without ever
+          # hitting `rm`. No per-command rule can close that. Real containment
+          # is the ENVIRONMENT (git-tracked worktree, ephemeral/sandboxed run),
+          # not these patterns. Keep `rm: ask` as a casual-mistake guard only.
+          - {action: shell, resource: "rm *", effect: ask}
+          - {action: shell, resource: "trunk *", effect: allow}
+          - {action: shell, resource: "yarn *", effect: allow}
+          - {action: edit, resource: "*", effect: allow}
           # NB: no browser_*/refero_*/context7_* re-allow here — they stay denied
           # by the baseline so they're NOT injected into the primary's context.
           # Delegated to @browser / @design / @doc-research below.
@@ -1499,8 +1538,10 @@ wellKnown:
           backend toolchains directly, and delegates the rest — library docs
           (@doc-research), git (@vcs), tests (@test), hard design (@planner),
           issue lookup (@atlassian) — to specialist subagents.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are a backend engineering primary: HTTP/gRPC services, data
           models, queries, migrations, and background jobs. You IMPLEMENT
           directly: edit code and run the backend toolchains — Go, Python (uv /
@@ -1516,8 +1557,7 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: allow
+        permissions:
           # ⚠️ CURATED ALLOWLIST, not blanket language wildcards — deliberately.
           # A migration (`npm run migrate`, `python manage.py migrate`,
           # `uv run alembic upgrade`, `make migrate`, `prisma migrate`) must hit
@@ -1534,67 +1574,67 @@ wellKnown:
           # over it for the commands they name — regardless of sort order.
           # Still FRICTION not a sandbox (a script can mutate without hitting a
           # named command); the real containment is the environment.
-          bash:
-            "*": ask
-            # Go / Rust — build/test/run/lint only
-            "go build*": allow
-            "go test*": allow
-            "go run*": allow
-            "go vet*": allow
-            "go mod*": allow
-            "gofmt*": allow
-            "cargo build*": allow
-            "cargo test*": allow
-            "cargo run*": allow
-            "cargo check*": allow
-            "cargo clippy*": allow
-            "cargo fmt*": allow
-            # Python — uv-first; NOT blanket `python *` / `uv run *` (they wrap
-            # `manage.py migrate` / `alembic upgrade`)
-            "uv sync*": allow
-            "uv lock*": allow
-            "uv add*": allow
-            "uv run pytest*": allow
-            "pytest*": allow
-            "ruff*": allow
-            # Node — install / build / dev / test / lint scripts; NOT blanket
-            # `npm *` (wraps `npm run migrate`)
-            "npm install*": allow
-            "npm ci*": allow
-            "npm run build*": allow
-            "npm run lint*": allow
-            "npm run dev*": allow
-            "npm run start*": allow
-            "npm test*": allow
-            "npm run test*": allow
-            "pnpm install*": allow
-            "pnpm build*": allow
-            "pnpm dev*": allow
-            "pnpm lint*": allow
-            "pnpm test*": allow
-            "pnpm run build*": allow
-            "pnpm run dev*": allow
-            "pnpm run test*": allow
-            "pnpm run lint*": allow
-            "bun install*": allow
-            "bun run build*": allow
-            "bun run dev*": allow
-            "bun test*": allow
-            "yarn install*": allow
-            "yarn build*": allow
-            "yarn dev*": allow
-            "yarn test*": allow
-            "yarn lint*": allow
-            # Build orchestration — specific targets only (NOT blanket `make *`,
-            # which would wrap `make migrate`)
-            "make build*": allow
-            "make test*": allow
-            "make lint*": allow
-            "make fmt*": allow
-            "just build*": allow
-            "just test*": allow
-            "just lint*": allow
-            "rm *": ask
+          - {action: shell, resource: "*", effect: ask}
+          - {action: shell, resource: "bun install*", effect: allow}
+          - {action: shell, resource: "bun run build*", effect: allow}
+          - {action: shell, resource: "bun run dev*", effect: allow}
+          - {action: shell, resource: "bun test*", effect: allow}
+          - {action: shell, resource: "cargo build*", effect: allow}
+          - {action: shell, resource: "cargo check*", effect: allow}
+          - {action: shell, resource: "cargo clippy*", effect: allow}
+          - {action: shell, resource: "cargo fmt*", effect: allow}
+          - {action: shell, resource: "cargo run*", effect: allow}
+          - {action: shell, resource: "cargo test*", effect: allow}
+          # Go / Rust — build/test/run/lint only
+          - {action: shell, resource: "go build*", effect: allow}
+          - {action: shell, resource: "go mod*", effect: allow}
+          - {action: shell, resource: "go run*", effect: allow}
+          - {action: shell, resource: "go test*", effect: allow}
+          - {action: shell, resource: "go vet*", effect: allow}
+          - {action: shell, resource: "gofmt*", effect: allow}
+          - {action: shell, resource: "just build*", effect: allow}
+          - {action: shell, resource: "just lint*", effect: allow}
+          - {action: shell, resource: "just test*", effect: allow}
+          # Build orchestration — specific targets only (NOT blanket `make *`,
+          # which would wrap `make migrate`)
+          - {action: shell, resource: "make build*", effect: allow}
+          - {action: shell, resource: "make fmt*", effect: allow}
+          - {action: shell, resource: "make lint*", effect: allow}
+          - {action: shell, resource: "make test*", effect: allow}
+          - {action: shell, resource: "npm ci*", effect: allow}
+          # Node — install / build / dev / test / lint scripts; NOT blanket
+          # `npm *` (wraps `npm run migrate`)
+          - {action: shell, resource: "npm install*", effect: allow}
+          - {action: shell, resource: "npm run build*", effect: allow}
+          - {action: shell, resource: "npm run dev*", effect: allow}
+          - {action: shell, resource: "npm run lint*", effect: allow}
+          - {action: shell, resource: "npm run start*", effect: allow}
+          - {action: shell, resource: "npm run test*", effect: allow}
+          - {action: shell, resource: "npm test*", effect: allow}
+          - {action: shell, resource: "pnpm build*", effect: allow}
+          - {action: shell, resource: "pnpm dev*", effect: allow}
+          - {action: shell, resource: "pnpm install*", effect: allow}
+          - {action: shell, resource: "pnpm lint*", effect: allow}
+          - {action: shell, resource: "pnpm run build*", effect: allow}
+          - {action: shell, resource: "pnpm run dev*", effect: allow}
+          - {action: shell, resource: "pnpm run lint*", effect: allow}
+          - {action: shell, resource: "pnpm run test*", effect: allow}
+          - {action: shell, resource: "pnpm test*", effect: allow}
+          - {action: shell, resource: "pytest*", effect: allow}
+          - {action: shell, resource: "rm *", effect: ask}
+          - {action: shell, resource: "ruff*", effect: allow}
+          - {action: shell, resource: "uv add*", effect: allow}
+          - {action: shell, resource: "uv lock*", effect: allow}
+          - {action: shell, resource: "uv run pytest*", effect: allow}
+          # Python — uv-first; NOT blanket `python *` / `uv run *` (they wrap
+          # `manage.py migrate` / `alembic upgrade`)
+          - {action: shell, resource: "uv sync*", effect: allow}
+          - {action: shell, resource: "yarn build*", effect: allow}
+          - {action: shell, resource: "yarn dev*", effect: allow}
+          - {action: shell, resource: "yarn install*", effect: allow}
+          - {action: shell, resource: "yarn lint*", effect: allow}
+          - {action: shell, resource: "yarn test*", effect: allow}
+          - {action: edit, resource: "*", effect: allow}
 
       # devops — k8s / Helm / Terraform / CI primary. Promotes the @iac role to
       # a full driver: runs the SAFE (read/plan) infra commands directly,
@@ -1608,8 +1648,10 @@ wellKnown:
           logs, terraform/tofu plan/validate) — never auto-applies or deletes —
           and delegates provider docs + registry lookups to @iac, git to @vcs,
           and architecture diagrams to @diagram.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are a DevOps / platform primary. You edit charts, manifests and
           pipelines and run ONLY the safe, read-only-ish infra commands
           yourself: helm lint/template/dep/show, kubectl get/describe/logs/
@@ -1626,37 +1668,36 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: allow
-          bash:
-            "*": ask
-            "helm lint*": allow
-            "helm template*": allow
-            "helm dep*": allow
-            "helm show*": allow
-            "kubectl get*": allow
-            "kubectl describe*": allow
-            "kubectl logs*": allow
-            "kubectl explain*": allow
-            "kubectl top*": allow
-            "terraform init*": allow
-            "terraform validate*": allow
-            "terraform plan*": allow
-            "terraform fmt*": allow
-            "terraform show*": allow
-            "terraform output*": allow
-            "terraform providers*": allow
-            "tofu init*": allow
-            "tofu validate*": allow
-            "tofu plan*": allow
-            "tofu fmt*": allow
-            "kustomize build*": allow
-            "yq *": allow
-            "jq *": allow
-            "terraform destroy*": deny
-            "tofu destroy*": deny
-            "kubectl delete*": deny
-            "rm *": ask
+        permissions:
+          - {action: shell, resource: "*", effect: ask}
+          - {action: shell, resource: "helm dep*", effect: allow}
+          - {action: shell, resource: "helm lint*", effect: allow}
+          - {action: shell, resource: "helm show*", effect: allow}
+          - {action: shell, resource: "helm template*", effect: allow}
+          - {action: shell, resource: "jq *", effect: allow}
+          - {action: shell, resource: "kubectl delete*", effect: deny}
+          - {action: shell, resource: "kubectl describe*", effect: allow}
+          - {action: shell, resource: "kubectl explain*", effect: allow}
+          - {action: shell, resource: "kubectl get*", effect: allow}
+          - {action: shell, resource: "kubectl logs*", effect: allow}
+          - {action: shell, resource: "kubectl top*", effect: allow}
+          - {action: shell, resource: "kustomize build*", effect: allow}
+          - {action: shell, resource: "rm *", effect: ask}
+          - {action: shell, resource: "terraform destroy*", effect: deny}
+          - {action: shell, resource: "terraform fmt*", effect: allow}
+          - {action: shell, resource: "terraform init*", effect: allow}
+          - {action: shell, resource: "terraform output*", effect: allow}
+          - {action: shell, resource: "terraform plan*", effect: allow}
+          - {action: shell, resource: "terraform providers*", effect: allow}
+          - {action: shell, resource: "terraform show*", effect: allow}
+          - {action: shell, resource: "terraform validate*", effect: allow}
+          - {action: shell, resource: "tofu destroy*", effect: deny}
+          - {action: shell, resource: "tofu fmt*", effect: allow}
+          - {action: shell, resource: "tofu init*", effect: allow}
+          - {action: shell, resource: "tofu plan*", effect: allow}
+          - {action: shell, resource: "tofu validate*", effect: allow}
+          - {action: shell, resource: "yq *", effect: allow}
+          - {action: edit, resource: "*", effect: allow}
 
       # marketing — non-dev content/research primary for marketing & PO users.
       # Writes only under docs/; delegates all gathering to subagents. (Named
@@ -1670,8 +1711,10 @@ wellKnown:
           Delegates the gathering — social/video/feeds (@content), web search
           (@web-search), design references (@design), diagrams (@diagram),
           library/product docs (@doc-research) — to subagents.
-        temperature: 0.5      # upper-"balanced": copywriting/brainstorm wants some spark
-        prompt: >-
+        request:              # upper-"balanced": copywriting/brainstorm wants some spark
+          body:
+            temperature: 0.5
+        system: >-
           You are a marketing / content primary for non-developers. You do NOT
           edit code or run shell — you may write Markdown ONLY under docs/. Your
           job is to gather source material and synthesise it: DELEGATE to
@@ -1686,22 +1729,20 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit:
-            "*": deny
-            "docs/**": allow
-          bash: deny
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: edit, resource: "docs/**", effect: allow}
           # Lock delegation (it claims "never edits code"): deny all, allow only
           # its gathering specialists + docs-scoped @doc-research. A code/shell
           # writer (@test/@iac/@vcs/@skill) stays denied so it can't be reached
-          # via the Task tool. (edit/bash deny alone DON'T gate `task`.)
-          task:
-            "*": deny
-            "content": allow
-            "web-search": allow
-            "design": allow
-            "diagram": allow
-            "doc-research": allow
+          # via the Task tool. (edit/shell deny alone DON'T gate `subagent`.)
+          - {action: subagent, resource: "*", effect: deny}
+          - {action: subagent, resource: "content", effect: allow}
+          - {action: subagent, resource: "design", effect: allow}
+          - {action: subagent, resource: "diagram", effect: allow}
+          - {action: subagent, resource: "doc-research", effect: allow}
+          - {action: subagent, resource: "web-search", effect: allow}
 
       # docs — documentation/technical-writing primary. Writes under docs/;
       # pulls authoritative facts via @doc-research, diagrams via @diagram.
@@ -1713,8 +1754,10 @@ wellKnown:
           authoritative library facts (@doc-research), diagrams (@diagram),
           current info (@web-search) and read-only git history (@reviewer) to
           subagents.
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are a technical-writing primary. Read the repo freely to ground
           what you write, and produce clear, accurate docs — guides, references,
           runbooks, ADRs — writing ONLY under docs/ (every other path is
@@ -1728,20 +1771,18 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit:
-            "*": deny
-            "docs/**": allow
-          bash: deny
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: edit, resource: "docs/**", effect: allow}
           # Lock delegation (no code edits): allow only read-only / docs-scoped
           # specialists. @vcs is EXCLUDED (it can git-commit) — read history via
           # @reviewer's read-only git instead.
-          task:
-            "*": deny
-            "doc-research": allow
-            "diagram": allow
-            "web-search": allow
-            "reviewer": allow
+          - {action: subagent, resource: "*", effect: deny}
+          - {action: subagent, resource: "diagram", effect: allow}
+          - {action: subagent, resource: "doc-research", effect: allow}
+          - {action: subagent, resource: "reviewer", effect: allow}
+          - {action: subagent, resource: "web-search", effect: allow}
 
       # ux — design/experience-led frontend primary. Implements UX changes and
       # leans HARD on the visual subagents (@design references, @browser to
@@ -1755,8 +1796,10 @@ wellKnown:
           visual subagents — design references (@design), real-browser
           verification (@browser), components (@ui), device checks (@mobile),
           diagrams (@diagram).
-        temperature: 0.4      # balanced, leaning creative: design exploration
-        prompt: >-
+        request:              # balanced, leaning creative: design exploration
+          body:
+            temperature: 0.4
+        system: >-
           You are a UX / design-led primary. You judge and improve the user
           experience — hierarchy, spacing, states, accessibility, copy — and
           can IMPLEMENT the frontend changes (edit + JS toolchain:
@@ -1773,15 +1816,14 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: allow
-          bash:
-            "*": ask
-            "pnpm *": allow
-            "npm *": allow
-            "bun *": allow
-            "yarn *": allow
-            "rm *": ask
+        permissions:
+          - {action: shell, resource: "*", effect: ask}
+          - {action: shell, resource: "bun *", effect: allow}
+          - {action: shell, resource: "npm *", effect: allow}
+          - {action: shell, resource: "pnpm *", effect: allow}
+          - {action: shell, resource: "rm *", effect: ask}
+          - {action: shell, resource: "yarn *", effect: allow}
+          - {action: edit, resource: "*", effect: allow}
 
       # architect — deep code / systems architecture primary. READ-heavy
       # analysis; writes ONLY ADRs/docs under docs/. Delegates reasoning,
@@ -1795,8 +1837,10 @@ wellKnown:
           delegates step-by-step reasoning (@planner), library facts
           (@doc-research), a critical second pass (@reviewer), diagrams
           (@diagram) and read-only git history (@reviewer).
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are a software architect. Read the codebase broadly to build an
           accurate model before proposing anything; reason about structure,
           coupling, failure modes, trade-offs and blast radius. You do NOT edit
@@ -1812,24 +1856,22 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit:
-            "*": deny
-            "docs/**": allow
-          bash: deny
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: edit, resource: "docs/**", effect: allow}
           # Lock delegation (read-only on code): only read-only / docs-scoped
           # specialists. @vcs excluded (can commit) — history via @reviewer.
-          task:
-            "*": deny
-            "planner": allow
-            "doc-research": allow
-            "reviewer": allow
-            "diagram": allow
-            "web-search": allow
+          - {action: subagent, resource: "*", effect: deny}
+          - {action: subagent, resource: "diagram", effect: allow}
+          - {action: subagent, resource: "doc-research", effect: allow}
+          - {action: subagent, resource: "planner", effect: allow}
+          - {action: subagent, resource: "reviewer", effect: allow}
+          - {action: subagent, resource: "web-search", effect: allow}
 
       # enemy — hard adversarial red-team primary. Assumes the work is WRONG and
       # hunts the worst failure modes. READ-ONLY (no edit, no shell) — and the
-      # read-only intent is ENFORCED, not just promised: `permission.task` locks
+      # read-only intent is ENFORCED, not just promised: its `subagent` rules lock
       # delegation to READ-ONLY subagents, so it can't launder a write through a
       # writable one (e.g. @test, which has edit:allow).
       enemy:
@@ -1842,8 +1884,10 @@ wellKnown:
           subagents that cannot touch the repo: a structured critique
           (@reviewer), step-by-step attack reasoning (@planner), known-CVE /
           prior-art lookup (@web-search).
-        temperature: 0.6
-        prompt: >-
+        request:
+          body:
+            temperature: 0.6
+        system: >-
           You are the adversary. Your job is to BREAK the code or design on
           paper, not to be agreeable. Assume it is wrong until proven otherwise
           and attack it hard: enumerate the nastiest edge cases, race
@@ -1863,9 +1907,9 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
           # Enforce read-only: deny all delegation, then re-allow ONLY subagents
           # that cannot mutate the repo. NOTE @doc-research is EXCLUDED — it has
           # `edit: docs/**` (writable), so an adversary could mutate docs/ by
@@ -1873,11 +1917,10 @@ wellKnown:
           # web-search (all edit:deny, no repo writes). @test/@vcs/@iac/@skill/
           # @general and writable primaries stay denied. Order-independent
           # (`*` sorts first under toJson, names after).
-          task:
-            "*": deny
-            "reviewer": allow
-            "planner": allow
-            "web-search": allow
+          - {action: subagent, resource: "*", effect: deny}
+          - {action: subagent, resource: "planner", effect: allow}
+          - {action: subagent, resource: "reviewer", effect: allow}
+          - {action: subagent, resource: "web-search", effect: allow}
 
       # tester — TDD primary. Edits code and AUTO-runs ONLY test commands.
       # (The @test subagent stays for delegation from other primaries.)
@@ -1888,8 +1931,10 @@ wellKnown:
           the minimal code to pass them, and runs the suite. Edits code but
           AUTO-runs only test commands; delegates testing-library docs to
           @doc-research and git to @vcs.
-        temperature: 0.2
-        prompt: >-
+        request:
+          body:
+            temperature: 0.2
+        system: >-
           You are a TDD primary. Write a failing test that captures the intended
           behaviour first, then the minimal code to make it pass, then run the
           suite to verify — red, green, refactor. You may run test commands
@@ -1903,26 +1948,25 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: allow
-          bash:
-            "*": ask
-            "npm test*": allow
-            "npm run test*": allow
-            "pnpm test*": allow
-            "pnpm run test*": allow
-            "bun test*": allow
-            "yarn test*": allow
-            "go test*": allow
-            "pytest*": allow
-            "uv run pytest*": allow
-            "cargo test*": allow
-            "vitest*": allow
-            "jest*": allow
-            "playwright test*": allow
-            "helm lint*": allow
-            "helm template*": allow
-            "rm *": deny
+        permissions:
+          - {action: shell, resource: "*", effect: ask}
+          - {action: shell, resource: "bun test*", effect: allow}
+          - {action: shell, resource: "cargo test*", effect: allow}
+          - {action: shell, resource: "go test*", effect: allow}
+          - {action: shell, resource: "helm lint*", effect: allow}
+          - {action: shell, resource: "helm template*", effect: allow}
+          - {action: shell, resource: "jest*", effect: allow}
+          - {action: shell, resource: "npm run test*", effect: allow}
+          - {action: shell, resource: "npm test*", effect: allow}
+          - {action: shell, resource: "playwright test*", effect: allow}
+          - {action: shell, resource: "pnpm run test*", effect: allow}
+          - {action: shell, resource: "pnpm test*", effect: allow}
+          - {action: shell, resource: "pytest*", effect: allow}
+          - {action: shell, resource: "rm *", effect: deny}
+          - {action: shell, resource: "uv run pytest*", effect: allow}
+          - {action: shell, resource: "vitest*", effect: allow}
+          - {action: shell, resource: "yarn test*", effect: allow}
+          - {action: edit, resource: "*", effect: allow}
 
       # security — security review & reporting primary. READ-ONLY on code;
       # writes findings ONLY under docs/ (e.g. docs/security/). Delegates
@@ -1936,8 +1980,10 @@ wellKnown:
           under docs/); delegates a correctness/security pass (@reviewer),
           CVE/advisory lookup (@web-search), library facts (@doc-research) and
           read-only git history (@reviewer).
-        temperature: 0.1
-        prompt: >-
+        request:
+          body:
+            temperature: 0.1
+        system: >-
           You are a security-review and reporting primary. Audit the code and
           configuration for real vulnerabilities — injection, authn/authz
           gaps, SSRF, secret exposure, unsafe deserialization, supply-chain and
@@ -1955,19 +2001,17 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit:
-            "*": deny
-            "docs/**": allow
-          bash: deny
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: edit, resource: "docs/**", effect: allow}
           # Lock delegation (read-only on code): only read-only / docs-scoped
           # specialists. @vcs excluded (can commit) — history via @reviewer.
-          task:
-            "*": deny
-            "reviewer": allow
-            "web-search": allow
-            "doc-research": allow
-            "diagram": allow
+          - {action: subagent, resource: "*", effect: deny}
+          - {action: subagent, resource: "diagram", effect: allow}
+          - {action: subagent, resource: "doc-research", effect: allow}
+          - {action: subagent, resource: "reviewer", effect: allow}
+          - {action: subagent, resource: "web-search", effect: allow}
       # ── Split-off VISUAL specialist subagents. These own the tools lifted
       #    off the lean primary, and because their tools return IMAGES the
       #    agent must interpret (browser_screenshot, refero_get_screen_image),
@@ -1977,7 +2021,7 @@ wellKnown:
       #    session model. ─────────────────────────────────────────────────────
       browser:
         mode: subagent
-        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads screenshots
+        model: {providerID: camer-digital, model: adorsys-frontend} # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads screenshots
         description: >-
           Drives a REAL browser through the @vymalo/opencode-browser bridge —
           opens tabs (named groups), navigates, clicks, types, fills, scrolls,
@@ -1986,8 +2030,10 @@ wellKnown:
           code or runs shell. Delegate for "open / navigate / interact with /
           screenshot this page". Requires the companion browser extension
           connected to the local bridge.
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are a browser-automation specialist. Use the browser_* tools to
           open/reload tabs (in named groups), observe (snapshot / get_text /
           get_html / query), interact (click / type / fill / scroll), and
@@ -2007,23 +2053,25 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
           # The full registered surface (page + control + debug + interactive).
           # Injected into THIS subagent only (the primary denies it), so the
           # heavy 34-tool set never loads into the default context.
-          "browser_*": allow
+          - {action: "browser_*", resource: "*", effect: allow}
+          - {action: edit, resource: "*", effect: deny}
       design:
         mode: subagent
-        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads refero screen images
+        model: {providerID: camer-digital, model: adorsys-frontend} # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads refero screen images
         description: >-
           Fetches design references and visual targets from the Refero MCP and
           returns them (screens, flows, styles) for the primary to build
           against. READ-ONLY; never edits code or runs shell. Delegate for
           "find a design reference / what should this look like".
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are a design-reference specialist. Use the Refero MCP tools to
           search and fetch screens, flows, and styles, then return a concise,
           actionable summary (with the key visual details and any image refs)
@@ -2034,13 +2082,13 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          "refero_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "refero_*", resource: "*", effect: allow}
       mobile:
         mode: subagent
-        model: "camer-digital/adorsys-frontend"    # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads device screenshots
+        model: {providerID: camer-digital, model: adorsys-frontend} # Adorsys Frontend (→Nemotron Omni) — MULTIMODAL; reads device screenshots
         description: >-
           Drives a mobile device through the local Mobile-Next MCP — lists and
           launches apps, taps/swipes/types by accessibility element or
@@ -2051,8 +2099,10 @@ wellKnown:
           screenshot the app on a phone". Requires the user's mobile
           toolchain (Xcode CLT / Android platform-tools) + a running
           simulator/emulator or connected device.
-        temperature: 0.3
-        prompt: >-
+        request:
+          body:
+            temperature: 0.3
+        system: >-
           You are a mobile-automation specialist. Use the mobile_* tools to
           list/launch apps, read the on-screen elements (accessibility tree),
           tap/type/swipe (by element ref where available, else by
@@ -2066,10 +2116,10 @@ wellKnown:
           block (the chat UI renders it live) instead of prose alone, and
           use the mermaid_* tool to validate or render it to a shareable
           image when that helps.
-        permission:
-          edit: deny
-          bash: deny
-          "mobile_*": allow
+        permissions:
+          - {action: shell, resource: "*", effect: deny}
+          - {action: edit, resource: "*", effect: deny}
+          - {action: "mobile_*", resource: "*", effect: allow}
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
@@ -2232,14 +2282,15 @@ opencode-wellknown:
 # which passes its catalog straight through — that is the entire reason this
 # chart moved under that ApplicationSet. templates/configmap.yaml turns each
 # entry's `reasoningEffort` / `reasoningEffortHigh` into the descriptor's
-# `provider.camer-digital.models.<id>.options.reasoningEffort` (+ the `thinking`
-# variant), so the catalog is the single source and this file holds no copy.
+# `providers.camer-digital.models.<id>.settings.reasoningEffort` (+ a `thinking`
+# entry in its `variants` list), so the catalog is the single source and this
+# file holds no copy.
 #
 # ⚠️ Do NOT reintroduce a `models:` map here. The orchestrator's value would
 # override it anyway, so a list here is not a fallback — it is silent dead
 # config, which is exactly what an earlier revision of this change shipped.
 # A model opts into a reasoning cap by carrying `reasoningEffort` in the
 # catalog (ai-helm-values environments/prod/values/models.yaml); a model that
-# carries none gets no `options` block, which is how the exclusions above are
+# carries none gets no `settings` block, which is how the exclusions above are
 # expressed now.
 models: {}
