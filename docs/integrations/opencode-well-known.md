@@ -12,8 +12,9 @@ our stack, and what's required end-to-end to make it land.
 ## OpenCode v2 required (ADR-0141)
 
 The descriptor is written in the native **OpenCode v2** config shape (v2.2.6) and
-the `@vymalo/*` plugins are on the **0.18.1** line (the toolbeit's v2 release;
-`opencode-skills-collection` is on 4.1.40, since 4.0.14 is v1-only).
+the `@vymalo/*` plugins are on the **0.19.0** line (the toolbeit's v2 line, which
+began at 0.18.0; `opencode-skills-collection` is on 4.1.40, since 4.0.14 is
+v1-only).
 
 What this means for end users:
 
@@ -76,7 +77,7 @@ $ opencode auth login \
     │  (user opens URL in browser, authenticates, approves)
     │
     │  Polls /token until user approves              ◄──────────────  { access_token, refresh_token }
-    │  Caches token at ~/Library/Caches/opencode-oauth2/...
+    │  Stores token at ~/Library/Application Support/opencode-oauth2/...
     │
     │  GET https://api.ai.camer.digital/v1/models    ───────────────►  Envoy AI Gateway
     │  Authorization: Bearer <access_token>           (passes Authorino,
@@ -371,7 +372,7 @@ Spot-check the v2 keys (jq paths below are the v2 shape, not v1):
 
 ```bash
 U=https://ai.camer.digital/opencode/.well-known/opencode
-curl -fsSL $U | jq '.config.plugins'                                  # 0.18.1 pins
+curl -fsSL $U | jq '.config.plugins'                                  # 0.19.0 pins
 curl -fsSL $U | jq '.config.providers["camer-digital"].settings'      # baseURL, timeouts, modelsInfo*, rateLimit
 curl -fsSL $U | jq '.config.mcp.servers | keys'
 curl -fsSL $U | jq '.config.permissions | length'
@@ -392,7 +393,7 @@ Expected (abridged — the lightbridge `options` carries more keys, see
     "default_agent": "assistant",
     "plugins": [
       {
-        "package": "@vymalo/opencode-lightbridge@0.18.1",
+        "package": "@vymalo/opencode-lightbridge@0.19.0",
         "options": {
           "auth": {
             "id": "camer-digital",
@@ -409,9 +410,9 @@ Expected (abridged — the lightbridge `options` carries more keys, see
           "gateway": { "providers": ["camer-digital"], "exchange": false }
         }
       },
-      "@vymalo/opencode-models-info@0.18.1",
-      "@vymalo/opencode-ratelimit@0.18.1",
-      { "package": "@vymalo/opencode-browser@0.18.1", "options": { "port": 4517, "groups": ["page", "control", "debug", "interactive"] } },
+      "@vymalo/opencode-models-info@0.19.0",
+      "@vymalo/opencode-ratelimit@0.19.0",
+      { "package": "@vymalo/opencode-browser@0.19.0", "options": { "port": 4517, "groups": ["page", "control", "debug", "interactive"] } },
       "opencode-skills-collection@4.1.40"
     ],
     "providers": {
@@ -558,7 +559,7 @@ That's it. opencode:
 
 1. Fetches `https://ai.camer.digital/opencode/.well-known/opencode`.
 2. Reads the `config.plugins` list (currently `@vymalo/opencode-lightbridge`,
-   `-models-info`, `-ratelimit`, `-browser`, all `@0.18.1`, plus
+   `-models-info`, `-ratelimit`, `-browser`, all `@0.19.0`, plus
    `opencode-skills-collection@4.1.40`) and runs `bun install` automatically — the packages are cached under
    `~/.cache/opencode/node_modules/` so this only happens once per
    plugin per machine.
@@ -572,11 +573,18 @@ That's it. opencode:
    served by [`charts/ai-models-info`](../../charts/ai-models-info)) and
    enriches every model with context length, pricing, modalities, and
    capability flags. Cached locally for 24h.
-5. Plugin caches the resulting tokens at:
-   - macOS: `~/Library/Caches/opencode-oauth2/<namespace>/camer-digital.json`
-   - Linux: `$XDG_CACHE_HOME/opencode-oauth2/<namespace>/camer-digital.json`
+5. Plugin stores the resulting tokens in the durable **state** dir (ADR-0022,
+   plugins 0.19.0 — it used to be the OS **cache** dir):
+   - macOS: `~/Library/Application Support/opencode-oauth2/<namespace>/camer-digital.json`
+   - Linux: `$XDG_STATE_HOME/opencode-oauth2/<namespace>/camer-digital.json`,
+     falling back to `~/.local/state/...` (a relative `XDG_STATE_HOME` is ignored)
 
-The cache file is mode `0700` and contains the refresh token. **Treat it
+   ⚠️ Only the ROOT moved; the relative path is unchanged. The old
+   `~/Library/Caches/opencode-oauth2/...` location is **not migrated** — the
+   first start on 0.19.0 finds no credential there and triggers one device-code
+   login per user. The discovered-model list stays in the cache root.
+
+The credential file is mode `0700` and contains the refresh token. **Treat it
 as a credential** — don't commit it, don't sync via Dropbox.
 
 > No manual `opencode plugin add` or `npm install` is required. The
@@ -644,7 +652,7 @@ with the `refresh_token` grant (see the client config above).
 - [ADR-0141](../adr/0141-opencode-v2-cutover-of-the-wellknown.md) — the OpenCode
   v1 → v2 cutover of this descriptor (`@vymalo/*` 0.18.0); upstream guide:
   [toolbeit `docs/migration-v2.md`](https://github.com/ADORSYS-GIS/lightbridge-opencode-toolbeit/blob/main/docs/migration-v2.md)
-- ADR-0050 (historical pin; the line is now 0.18.1) — bump the `@vymalo/*` line to **0.8.0** (the "OpenCode Toolbelt"
+- ADR-0050 (historical pin; the line is now 0.19.0) — bump the `@vymalo/*` line to **0.8.0** (the "OpenCode Toolbelt"
   suite) + register the opt-in **`interactive`** browser group
   (`browser_request_feedback`, scoped to `@browser`)
 - ADR-0048 — the global browser plugin + closed-loop `@frontend`; removes

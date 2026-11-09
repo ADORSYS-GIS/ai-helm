@@ -58,8 +58,13 @@ wellKnown:
       # simultaneously. Both roles must keep reading `camer-digital`:
       #   • as a provider id, it must match the `providers:` key below, or
       #     `register` creates a SECOND provider and the model picker doubles;
-      #   • as a cache identity, it selects
-      #     `<cacheRoot>/opencode-oauth2/opencode-oauth2-model-sync/<id>.json`
+      #   • as a credential identity, it selects
+      #     `<stateRoot>/opencode-oauth2/opencode-oauth2-model-sync/<id>.json`
+      #     (ADR-0022 / plugins 0.19.0 moved the ROOT from the OS cache dir to
+      #     the durable state dir — `~/Library/Application Support` on macOS,
+      #     `$XDG_STATE_HOME` else `~/.local/state` on Linux — because macOS
+      #     purges Caches under disk pressure and wiped live credentials. The
+      #     relative path below the root is UNCHANGED.)
       #     — the exact file `@vymalo/opencode-oauth2` already wrote (verified
       #     on a real machine at cutover: that path existed, keyed
       #     `camer-digital`). That equality is the ONLY reason this swap does
@@ -74,7 +79,7 @@ wellKnown:
       # is nothing to trade it for (ADR-0135). An exchange would also fail
       # outright: `opencode-cli` is registered with NO `token-exchange` grant,
       # so it would return `unauthorized_client`.
-      - package: "@vymalo/opencode-lightbridge@0.18.1"
+      - package: "@vymalo/opencode-lightbridge@0.19.0"
         options:
           auth:
             id: camer-digital
@@ -167,14 +172,14 @@ wellKnown:
               logs: "https://otel-opencode.ai.camer.digital/v1/logs"
       # Enriches the model catalog with context length, pricing,
       # modalities, capability flags. See ADR-0015.
-      - "@vymalo/opencode-models-info@0.18.1"
+      - "@vymalo/opencode-models-info@0.19.0"
       # Reads the IETF draft-03 `x-ratelimit-*` response headers our
       # Envoy AI Gateway emits (the per-model BackendTrafficPolicy,
       # ADR-0021) and makes opencode rate-limit-aware: on a short burst
       # reset it waits the quota out, and on a days-away monthly-budget
       # reset it fails fast — see the per-model-scoped `rateLimit.tiers`
       # under the provider settings below.
-      - "@vymalo/opencode-ratelimit@0.18.1"
+      - "@vymalo/opencode-ratelimit@0.19.0"
       # Gives an agent a real browser: registers `browser_*` tools (open
       # tabs, click, type, scroll, screenshot — in named tab groups) backed
       # by a localhost WebSocket bridge a companion browser EXTENSION dials
@@ -189,7 +194,7 @@ wellKnown:
       # in the plugin entry's `options` — this plugin reads its options from
       # there (NOT from the provider's `settings` like models-info and
       # ratelimit), i.e. OpenCode v2's `{ package, options }` entry form.
-      # Part of the 0.18.x vymalo line — pin matches the three above.
+      # Part of the 0.19.x vymalo line — pin matches the three above.
       #
       # TWO independent token levers, at different scopes:
       #   • `groups` (here) = GLOBAL registration — only a registered tool can
@@ -232,7 +237,7 @@ wellKnown:
       # right form here: it's local-only (bridge + extension on the user's box,
       # so it can't ride the remote gateway /mcp/* routes anyway) and its opencode
       # adapter saves screenshots to disk for the model to read. One source only.
-      - package: "@vymalo/opencode-browser@0.18.1"
+      - package: "@vymalo/opencode-browser@0.19.0"
         options:
           port: 4517
           groups:
