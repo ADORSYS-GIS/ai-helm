@@ -12,7 +12,7 @@ our stack, and what's required end-to-end to make it land.
 ## OpenCode v2 required (ADR-0141)
 
 The descriptor is written in the native **OpenCode v2** config shape (v2.2.6) and
-the `@vymalo/*` plugins are on the **0.18.0** line (the toolbeit's v2 release;
+the `@vymalo/*` plugins are on the **0.18.1** line (the toolbeit's v2 release;
 `opencode-skills-collection` is on 4.1.40, since 4.0.14 is v1-only).
 
 What this means for end users:
@@ -371,7 +371,7 @@ Spot-check the v2 keys (jq paths below are the v2 shape, not v1):
 
 ```bash
 U=https://ai.camer.digital/opencode/.well-known/opencode
-curl -fsSL $U | jq '.config.plugins'                                  # 0.18.0 pins
+curl -fsSL $U | jq '.config.plugins'                                  # 0.18.1 pins
 curl -fsSL $U | jq '.config.providers["camer-digital"].settings'      # baseURL, timeouts, modelsInfo*, rateLimit
 curl -fsSL $U | jq '.config.mcp.servers | keys'
 curl -fsSL $U | jq '.config.permissions | length'
@@ -392,7 +392,7 @@ Expected (abridged — the lightbridge `options` carries more keys, see
     "default_agent": "assistant",
     "plugins": [
       {
-        "package": "@vymalo/opencode-lightbridge@0.18.0",
+        "package": "@vymalo/opencode-lightbridge@0.18.1",
         "options": {
           "auth": {
             "id": "camer-digital",
@@ -409,9 +409,9 @@ Expected (abridged — the lightbridge `options` carries more keys, see
           "gateway": { "providers": ["camer-digital"], "exchange": false }
         }
       },
-      "@vymalo/opencode-models-info@0.18.0",
-      "@vymalo/opencode-ratelimit@0.18.0",
-      { "package": "@vymalo/opencode-browser@0.18.0", "options": { "port": 4517, "groups": ["page", "control", "debug", "interactive"] } },
+      "@vymalo/opencode-models-info@0.18.1",
+      "@vymalo/opencode-ratelimit@0.18.1",
+      { "package": "@vymalo/opencode-browser@0.18.1", "options": { "port": 4517, "groups": ["page", "control", "debug", "interactive"] } },
       "opencode-skills-collection@4.1.40"
     ],
     "providers": {
@@ -558,7 +558,7 @@ That's it. opencode:
 
 1. Fetches `https://ai.camer.digital/opencode/.well-known/opencode`.
 2. Reads the `config.plugins` list (currently `@vymalo/opencode-lightbridge`,
-   `-models-info`, `-ratelimit`, `-browser`, all `@0.18.0`, plus
+   `-models-info`, `-ratelimit`, `-browser`, all `@0.18.1`, plus
    `opencode-skills-collection@4.1.40`) and runs `bun install` automatically — the packages are cached under
    `~/.cache/opencode/node_modules/` so this only happens once per
    plugin per machine.
