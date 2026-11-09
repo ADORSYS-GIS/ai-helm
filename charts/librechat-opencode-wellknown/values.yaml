@@ -2128,11 +2128,11 @@ wellKnown:
 
 # ────────────────────────────────────────────────────────────────────────
 # bjw-s app-template (aliased to `opencode-wellknown`). Renders the
-# Deployment + Service + Ingress. The two ConfigMaps that hold the
-# nginx config and the well-known JSON are emitted by this chart's
-# own `templates/configmap.yaml` (the JSON content is built from
-# `.Values.wellKnown` above and can't be expressed as plain string data
-# in app-template values).
+# Deployment + Service + Ingress + the nginx-config ConfigMap (below,
+# so a config change rolls the pods). The well-known JSON ConfigMap is
+# emitted by this chart's own `templates/configmap.yaml` (it is built
+# from `.Values.wellKnown` and the model catalog, which can't be
+# expressed as plain string data in app-template values).
 # ────────────────────────────────────────────────────────────────────────
 opencode-wellknown:
   controllers:
@@ -2232,16 +2232,74 @@ opencode-wellknown:
           hosts:
             - ai.camer.digital
 
-  # Mount the two externally-rendered ConfigMaps + nginx-unprivileged's
-  # required writable scratch dirs.
+  # nginx server block. Declared HERE (bjw-template `configMaps`), not in
+  # templates/configmap.yaml, so bjw stamps its `checksum/configMaps` pod
+  # annotation and a config change rolls the pods. nginx reads default.conf
+  # only at start. Its data goes through bjw's `tpl`, so keep it free of
+  # Go-template double braces.
+  configMaps:
+    nginx-config:
+      enabled: true
+      # Keeps the name it had when templates/configmap.yaml emitted it
+      # (`<release>-nginx-config`), so ArgoCD updates it in place.
+      suffix: nginx-config
+      data:
+        default.conf: |
+          server {
+            listen       8080;
+            server_name  _;
+
+            # The well-known file is mounted under /usr/share/nginx/html/opencode/...
+            # This custom server block REPLACES the stock default.conf (which set
+            # `root /usr/share/nginx/html`), so we must set root again — otherwise
+            # try_files resolves against nginx's compiled-in default root
+            # (/etc/nginx/html) and the file is never found → 404.
+            root /usr/share/nginx/html;
+
+            # The well-known file has no extension; force JSON Content-Type.
+            types { application/json json; }
+            default_type application/json;
+
+            # Health probe.
+            location = /healthz {
+              access_log off;
+              add_header Content-Type "text/plain";
+              return 200 "ok\n";
+            }
+
+            # Exact-match for the opencode well-known endpoint.
+            # File lives at /usr/share/nginx/html/opencode/.well-known/opencode
+            # (mounted by the Deployment from the content ConfigMap).
+            location = /opencode/.well-known/opencode {
+              add_header Cache-Control "no-store" always;
+              try_files /opencode/.well-known/opencode =404;
+            }
+
+            # TEMPORARY OpenCode v1 bridge (ADR-0142): a v1 client runs
+            # `opencode auth login https://ai.camer.digital/opencode-v1`. Its file
+            # is the `opencode-v1` key of the same content ConfigMap, so it sits
+            # beside the v2 file in the one mounted directory. Remove with the bridge.
+            location = /opencode-v1/.well-known/opencode {
+              add_header Cache-Control "no-store" always;
+              try_files /opencode/.well-known/opencode-v1 =404;
+            }
+
+            # Everything else 404s — this nginx serves exactly these endpoints.
+            location / {
+              return 404;
+            }
+          }
+
+  # Mount the nginx-config ConfigMap (above), the externally-rendered
+  # content ConfigMap, and nginx-unprivileged's writable scratch dirs.
   persistence:
     # The nginx server block (custom default.conf with the right
     # Content-Type and exact-match location for the well-known URL).
-    # Name matches what templates/configmap.yaml emits.
+    # `identifier` resolves to the bjw-rendered ConfigMap above.
     nginx-config:
       enabled: true
       type: configMap
-      name: '{{ .Release.Name }}-nginx-config'
+      identifier: nginx-config
       advancedMounts:
         main:
           nginx:
