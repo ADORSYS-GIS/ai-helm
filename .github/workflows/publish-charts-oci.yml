@@ -70,8 +70,14 @@ jobs:
       # fails at image pull. $RUNNER_TEMP avoids needing sudo/system-dir write access.
       - name: Set up yq
         run: |
-          curl -sSL -o "$RUNNER_TEMP/yq" "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+          # --fail: an HTTP error must fail HERE, not save GitHub's HTML error page as
+          # "yq" and blow up a step later as a bash syntax error (2026-11-09, during a
+          # GitHub release-download incident). --retry-all-errors also retries the 5xx
+          # and connection resets an anonymous release download hits under load.
+          curl -fsSL --retry 8 --retry-delay 10 --retry-all-errors \
+            -o "$RUNNER_TEMP/yq" "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
           chmod +x "$RUNNER_TEMP/yq"
+          "$RUNNER_TEMP/yq" --version
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Determine charts to publish
