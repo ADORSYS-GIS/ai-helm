@@ -44,7 +44,16 @@ data:
         try_files /opencode/.well-known/opencode =404;
       }
 
-      # Everything else 404s — this nginx serves exactly one endpoint.
+      # TEMPORARY OpenCode v1 bridge (ADR-0142): a v1 client runs
+      # `opencode auth login https://ai.camer.digital/opencode-v1`. Its file
+      # is the `opencode-v1` key of the same content ConfigMap, so it sits
+      # beside the v2 file in the one mounted directory. Remove with the bridge.
+      location = /opencode-v1/.well-known/opencode {
+        add_header Cache-Control "no-store" always;
+        try_files /opencode/.well-known/opencode-v1 =404;
+      }
+
+      # Everything else 404s — this nginx serves exactly these endpoints.
       location / {
         return 404;
       }
@@ -81,3 +90,23 @@ data:
       {{- $_ := set $prov "models" $models -}}
     {{- end -}}
     {{- $wk | toJson | nindent 4 }}
+  # TEMPORARY OpenCode v1 bridge (ADR-0142). The frozen pre-cutover descriptor
+  # (files/wellknown-v1.yaml), with the same catalog-derived reasoning caps in
+  # the v1 model shape: per-model `options`, `variants` as a name-keyed MAP.
+  # This is the template as it stood before ADR-0141. Remove with the bridge.
+  opencode-v1: |
+    {{- $v1 := (.Files.Get "files/wellknown-v1.yaml" | fromYaml).wellKnown -}}
+    {{- $v1models := dict -}}
+    {{- range $name, $cfg := .Values.models -}}
+      {{- if $cfg.reasoningEffort -}}
+        {{- $m := dict "options" (dict "reasoningEffort" $cfg.reasoningEffort) -}}
+        {{- if $cfg.reasoningEffortHigh -}}
+          {{- $_ := set $m "variants" (dict "thinking" (dict "reasoningEffort" $cfg.reasoningEffortHigh)) -}}
+        {{- end -}}
+        {{- $_ := set $v1models $name $m -}}
+      {{- end -}}
+    {{- end -}}
+    {{- if $v1models -}}
+      {{- $_ := set (index $v1.config.provider "camer-digital") "models" $v1models -}}
+    {{- end -}}
+    {{- $v1 | toJson | nindent 4 }}

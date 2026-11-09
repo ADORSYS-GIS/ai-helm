@@ -44,6 +44,25 @@ For maintainers, the v1 → v2 key mapping used in this chart:
 The `auth` block (`command` stub + `env`) is unchanged. In v2 the manifest is
 `{auth?, config?, remote_config?}` and a well-known origin becomes an Integration.
 
+### Temporary v1 bridge (ADR-0142), until 2026-12-09
+
+If you can't move to v2 yet, register the **frozen v1 descriptor** instead:
+
+```bash
+opencode auth login https://ai.camer.digital/opencode-v1
+```
+
+It's the descriptor exactly as it was live before the cutover (`@vymalo/*@0.17.0`,
+`files/wellknown-v1.yaml` in the chart), served by the same pod. It's **frozen**: new
+agents, permissions, MCPs and plugin fixes land on v2 only. Only the catalog-derived
+reasoning caps still flow in. Register one URL or the other, not both. After
+**2026-12-09** the path returns 404, so upgrade to v2 and log in at
+`https://ai.camer.digital/opencode`.
+
+For maintainers: every bridge-only line (the file, the `opencode-v1` ConfigMap key,
+the nginx `location`, the Ingress path) is marked `TEMPORARY … (ADR-0142)`. Removal
+is one PR. Don't edit the frozen file; change v2.
+
 ## End-to-end flow
 
 ```
@@ -377,6 +396,9 @@ curl -fsSL $U | jq '.config.providers["camer-digital"].settings'      # baseURL,
 curl -fsSL $U | jq '.config.mcp.servers | keys'
 curl -fsSL $U | jq '.config.permissions | length'
 curl -fsSL $U | jq '.config.agents | keys'
+
+# Temporary v1 bridge (ADR-0142): v1 keys, frozen 0.17.0 pins
+curl -fsSL https://ai.camer.digital/opencode-v1/.well-known/opencode | jq '.config.plugin'
 ```
 
 Expected (abridged — the lightbridge `options` carries more keys, see
@@ -636,7 +658,7 @@ with the `refresh_token` grant (see the client config above).
 |---|---|---|
 | `opencode auth login` errors "fetch failed" | Endpoint not reachable | `curl -v https://ai.camer.digital/opencode/.well-known/opencode` from the user's machine. Check DNS / cert / Traefik route. |
 | `bun install` fails (no network, registry unreachable) | Auto-install of `@vymalo/opencode-lightbridge` blocked | Confirm npm registry reachable. Worst case, pre-seed `~/.cache/opencode/node_modules/@vymalo/opencode-lightbridge/` from a known-good machine. |
-| Plugins don't load / empty model picker / `plugins`, `providers`, `permissions` ignored | The client is OpenCode **v1** (ADR-0141): the 0.18 plugins and the v2 config shape do not load on v1 | `opencode --version`; upgrade to OpenCode v2 (2.2.6), then re-run `opencode auth login https://ai.camer.digital/opencode` if the login did not carry over. |
+| Plugins don't load / empty model picker / `plugins`, `providers`, `permissions` ignored | The client is OpenCode **v1** (ADR-0141): the 0.18 plugins and the v2 config shape do not load on v1 | `opencode --version`; upgrade to OpenCode v2 (2.2.6), then re-run `opencode auth login https://ai.camer.digital/opencode` if the login did not carry over. Can't upgrade yet? Until 2026-12-09, log in at the v1 bridge `https://ai.camer.digital/opencode-v1` (ADR-0142). |
 | `opencode auth login` fails `invalid_client` | The `opencode-cli` client is not registered on `authz-idp` | Values-repo-first violation: the client must be on `ai-helm-values` `main` before the chart ships. See prereq 1. |
 | `opencode auth login` succeeds but `opencode chat` 403s | The gateway's revocation gate denied | The token carries `api_key_id` (= session id), so Authorino's `lightbridgeintrospect` step runs. It should resolve via `introspect_exchange_token`; a 403 means it did not. Check the Authorino + `lightbridge-opa` logs. |
 | Plugin says "discovery failed" | Issuer URL wrong or `authz-idp` down | Try `curl https://auth.ai.camer.digital/.well-known/openid-configuration`. |
@@ -652,6 +674,8 @@ with the `refresh_token` grant (see the client config above).
 - [ADR-0141](../adr/0141-opencode-v2-cutover-of-the-wellknown.md) — the OpenCode
   v1 → v2 cutover of this descriptor (`@vymalo/*` 0.18.0); upstream guide:
   [toolbeit `docs/migration-v2.md`](https://github.com/ADORSYS-GIS/lightbridge-opencode-toolbeit/blob/main/docs/migration-v2.md)
+- [ADR-0142](../adr/0142-temporary-opencode-v1-bridge-descriptor.md) — the frozen v1
+  bridge at `/opencode-v1/.well-known/opencode`, sunset 2026-12-09
 - ADR-0050 (historical pin; the line is now 0.19.0) — bump the `@vymalo/*` line to **0.8.0** (the "OpenCode Toolbelt"
   suite) + register the opt-in **`interactive`** browser group
   (`browser_request_feedback`, scoped to `@browser`)
