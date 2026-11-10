@@ -598,6 +598,9 @@ That's it. opencode:
    URL when clicked; the user approves in any browser (laptop, phone).
    Nothing is printed to the terminal any more (OpenCode v2 hides plugin
    stderr, which is why users never saw the code on 0.18/0.19).
+   Terminal-only (TUI, SSH)? `opencode auth login camer-digital` runs the
+   same sign-in from the CLI; see [Two logins, one of them is not a
+   login](#two-logins-one-of-them-is-not-a-login).
 4. Loads the models-info plugin, which fetches the OpenRouter-shape
    catalog at `https://api.ai.camer.digital/v1/models/info` (ADR-0015,
    served by [`charts/ai-models-info`](../../charts/ai-models-info)) and
@@ -622,6 +625,57 @@ as a credential** — don't commit it, don't sync via Dropbox.
 > <https://opencode.ai/docs/plugins/> ("npm plugins are installed
 > automatically using Bun at startup").
 
+## Two logins, one of them is not a login
+
+After the steps above `opencode auth list` (and Settings → Providers) shows
+two rows. Both are needed.
+
+```mermaid
+flowchart LR
+  WK["ai.camer.digital<br/>API key ('plugin-managed')"] -->|"host fetches the manifest each launch"| MAN["plugins + camer-digital provider"]
+  ACC["Camer Digital<br/>you@example.com"] -.->|"marker only"| TOK["lightbridge token file<br/>(access + refresh)"]
+  TOK -->|"Authorization: Bearer"| GW["api.ai.camer.digital"]
+```
+
+| Row | Comes from | Purpose | Remove it? |
+|---|---|---|---|
+| `ai.camer.digital` · API key | `opencode auth login https://ai.camer.digital/opencode` | Manifest subscription. The "key" is the stub string from `auth.command` ([below](#why-authcommand-is-a-stub)). OpenCode fetches the manifest only while the newest credential on this integration is a key. | **No.** Without it the host logs `No usable wellknown credential` and keeps running on its cached config; plugin and model updates stop arriving. |
+| `Camer Digital` · your email | Signing in | The real OAuth login against `authz-idp`. OpenCode stores a marker; the tokens live in the lightbridge state file (step 5 above). | Yes, to sign out or clear duplicates. |
+
+### Sign in from a terminal
+
+```bash
+opencode auth login camer-digital
+```
+
+Prints the user code and verification URL, waits for the approval, then
+`Connected to Camer Digital`. Same flow as the **Sign in** button; use it over
+SSH or when only the TUI is available.
+
+### Duplicates and signing out
+
+```mermaid
+stateDiagram-v2
+  [*] --> SignedOut
+  SignedOut --> SignedIn: Sign in (dialog or CLI)
+  SignedIn --> SignedIn: Sign in again (adds a duplicate row)
+  SignedIn --> SignedIn: logout one row, another remains
+  SignedIn --> SignedOut: logout the last row
+```
+
+- Every sign-in **adds** a `Camer Digital` row; it never replaces the previous
+  one. Duplicates are harmless: there is one token file, overwritten by each
+  sign-in, so the rows are not separate identities.
+- Remove a row with `opencode auth logout camer-digital` (account picker).
+- Removing the **last** `Camer Digital` row signs the plugin out: it deletes
+  its token file and requests fail until the next sign-in. Do **not** log out
+  of `ai.camer.digital` to "sign out"; that only unsubscribes the manifest.
+- Users who logged in before plugins 0.20.0 have a working token and **no**
+  `Camer Digital` row. That is fine; the row appears after the next sign-in.
+
+Plugin-side reference: toolbeit
+[`docs/lightbridge.md` → Signing in and out](https://github.com/ADORSYS-GIS/lightbridge-opencode-toolbeit/blob/main/docs/lightbridge.md#signing-in-and-out).
+
 ## Why `auth.command` is a stub
 
 opencode's `.well-known/opencode` schema requires `auth.command` for
@@ -634,7 +688,9 @@ consulted**. The plugin's `model.request` session hook overrides the
 `Authorization` header per request from its own per-OS cache (see
 above). The stub `auth.command` (`sh -c 'echo plugin-managed'`) writes
 the literal string `plugin-managed` to opencode's auth.json — harmless,
-unused.
+unused as a bearer. It is **not** removable, though: that stored key is
+what makes OpenCode re-fetch this manifest on every launch (see
+[Two logins](#two-logins-one-of-them-is-not-a-login)).
 
 If a future opencode version validates the token shape, we'll switch
 the stub to emit something parseable. Today it's enough.
@@ -672,6 +728,9 @@ with the `refresh_token` grant (see the client config above).
 | Plugin says "discovery failed" | Issuer URL wrong or `authz-idp` down | Try `curl https://auth.ai.camer.digital/.well-known/openid-configuration`. |
 | "device authorization not enabled" | Client misconfigured on `authz-idp` | The registered client needs the `urn:ietf:params:oauth:grant-type:device_code` grant (see prereq 1). |
 | Plugin loop on token refresh | `offline_access` scope not granted | Add to default scopes on the `opencode-cli` client. |
+| Two rows in `opencode auth list` (`ai.camer.digital` API key + `Camer Digital`) | Expected: manifest subscription + the real login | Keep both. See [Two logins](#two-logins-one-of-them-is-not-a-login). |
+| `Camer Digital` listed twice | Each sign-in adds a row | `opencode auth logout camer-digital`, pick the extra one. Keep one. |
+| No **Sign in** button reachable (TUI / SSH only) | The dialog is a desktop/web surface | `opencode auth login camer-digital` |
 | User-Code URL prints to terminal but never authenticates | User didn't open the URL / approved the wrong device | Re-run `opencode auth login`. |
 | 502/504 at `/opencode/.well-known/opencode` | Endpoint pod down | `kubectl get pods -n converse -l app.kubernetes.io/name=librechat-opencode-wellknown` |
 | Stale JSON served | Almost never the pod — the content ConfigMap is a plain directory mount, so the kubelet syncs it in place and nginx re-reads the file per request (ADR-0135 cutover: content changed live, pods stayed 19 days old). Check ArgoCD actually applied the change first. | If the ConfigMap itself is current but the endpoint is stale, delete the pods: `kubectl delete pod -n converse -l app.kubernetes.io/name=opencode-wellknown`. ⚠️ NOT `kubectl rollout restart` — the annotation it writes is git-drift and ArgoCD selfHeal reverts it. |
