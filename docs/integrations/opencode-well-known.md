@@ -12,7 +12,7 @@ our stack, and what's required end-to-end to make it land.
 ## OpenCode v2 required (ADR-0141)
 
 The descriptor is written in the native **OpenCode v2** config shape (v2.2.6) and
-the `@vymalo/*` plugins are on the **0.19.0** line (the toolbeit's v2 line, which
+the `@vymalo/*` plugins are on the **0.20.0** line (the toolbeit's v2 line, which
 began at 0.18.0; `opencode-skills-collection` is on 4.1.40, since 4.0.14 is
 v1-only).
 
@@ -88,10 +88,15 @@ $ opencode auth login \
     │
     │  loads @vymalo/opencode-lightbridge plugin
     │
-    │  plugin sees authFlow=device_code, starts RFC 8628 flow
+    │  plugin sees authFlow=device_code, registers a "Sign in" method on the
+    │  `camer-digital` integration (plugins 0.20.0, toolbeit ADR-0023); no
+    │  token yet → logs `lightbridge_sign_in_required` naming the path below
+    │
+    │  user: Settings → Providers → Show more providers → search
+    │  "camer-digital" → Sign in
     │  POST /protocol/openid-connect/auth/device  ───────────────►
     │                                              ◄──────────────  { device_code, user_code, verification_uri }
-    │  Prints user_code + URL to terminal
+    │  OpenCode's Connect dialog shows user_code; browser opens the URL on click
     │
     │  (user opens URL in browser, authenticates, approves)
     │
@@ -391,7 +396,7 @@ Spot-check the v2 keys (jq paths below are the v2 shape, not v1):
 
 ```bash
 U=https://ai.camer.digital/opencode/.well-known/opencode
-curl -fsSL $U | jq '.config.plugins'                                  # 0.19.0 pins
+curl -fsSL $U | jq '.config.plugins'                                  # 0.20.0 pins
 curl -fsSL $U | jq '.config.providers["camer-digital"].settings'      # baseURL, timeouts, modelsInfo*, rateLimit
 curl -fsSL $U | jq '.config.mcp.servers | keys'
 curl -fsSL $U | jq '.config.permissions | length'
@@ -415,7 +420,7 @@ Expected (abridged — the lightbridge `options` carries more keys, see
     "default_agent": "assistant",
     "plugins": [
       {
-        "package": "@vymalo/opencode-lightbridge@0.19.0",
+        "package": "@vymalo/opencode-lightbridge@0.20.0",
         "options": {
           "auth": {
             "id": "camer-digital",
@@ -432,9 +437,9 @@ Expected (abridged — the lightbridge `options` carries more keys, see
           "gateway": { "providers": ["camer-digital"], "exchange": false }
         }
       },
-      "@vymalo/opencode-models-info@0.19.0",
-      "@vymalo/opencode-ratelimit@0.19.0",
-      { "package": "@vymalo/opencode-browser@0.19.0", "options": { "port": 4517, "groups": ["page", "control", "debug", "interactive"] } },
+      "@vymalo/opencode-models-info@0.20.0",
+      "@vymalo/opencode-ratelimit@0.20.0",
+      { "package": "@vymalo/opencode-browser@0.20.0", "options": { "port": 4517, "groups": ["page", "control", "debug", "interactive"] } },
       "opencode-skills-collection@4.1.40"
     ],
     "providers": {
@@ -581,15 +586,18 @@ That's it. opencode:
 
 1. Fetches `https://ai.camer.digital/opencode/.well-known/opencode`.
 2. Reads the `config.plugins` list (currently `@vymalo/opencode-lightbridge`,
-   `-models-info`, `-ratelimit`, `-browser`, all `@0.19.0`, plus
+   `-models-info`, `-ratelimit`, `-browser`, all `@0.20.0`, plus
    `opencode-skills-collection@4.1.40`) and runs `bun install` automatically — the packages are cached under
    `~/.cache/opencode/node_modules/` so this only happens once per
    plugin per machine.
 3. Loads the lightbridge plugin, which kicks off the OAuth 2.0
-   device-authorization flow against `authz-idp` (ADR-0135).
-   User code + verification
-   URL print to the terminal; user opens the URL in any browser (laptop,
-   phone), enters the code, approves.
+   device-authorization flow against `authz-idp` (ADR-0135) — but only
+   from OpenCode's own Connect dialog (plugins 0.20.0, toolbeit ADR-0023):
+   Settings → Providers → Show more providers → search `camer-digital` →
+   **Sign in**. The dialog shows the user code and opens the verification
+   URL when clicked; the user approves in any browser (laptop, phone).
+   Nothing is printed to the terminal any more (OpenCode v2 hides plugin
+   stderr, which is why users never saw the code on 0.18/0.19).
 4. Loads the models-info plugin, which fetches the OpenRouter-shape
    catalog at `https://api.ai.camer.digital/v1/models/info` (ADR-0015,
    served by [`charts/ai-models-info`](../../charts/ai-models-info)) and
@@ -641,10 +649,10 @@ HTTP server to receive the OAuth redirect. That breaks:
 - WSL on Windows (port-binding gymnastics)
 - Any environment where the user can't easily click a browser link
 
-`device_code` (RFC 8628) prints `https://auth.../device?user_code=ABCD-1234`
-to the terminal. The user opens that URL in any browser (including on
-their phone), enters the code, and the CLI's poll picks up the token.
-Works everywhere.
+`device_code` (RFC 8628) shows `https://auth.../device?user_code=ABCD-1234`
+and the code in OpenCode's Connect dialog (plugins 0.20.0). The user opens
+that URL in any browser (including on their phone), enters the code, and
+the plugin's poll picks up the token. Works everywhere.
 
 Trade-off: `device_code` requires the issuer to expose a device-authorization
 endpoint — `authz-idp` mounts it unconditionally (lightbridge-authz ADR-0023),
@@ -676,7 +684,7 @@ with the `refresh_token` grant (see the client config above).
   [toolbeit `docs/migration-v2.md`](https://github.com/ADORSYS-GIS/lightbridge-opencode-toolbeit/blob/main/docs/migration-v2.md)
 - [ADR-0142](../adr/0142-temporary-opencode-v1-bridge-descriptor.md) — the frozen v1
   bridge at `/opencode-v1/.well-known/opencode`, sunset 2026-12-09
-- ADR-0050 (historical pin; the line is now 0.19.0) — bump the `@vymalo/*` line to **0.8.0** (the "OpenCode Toolbelt"
+- ADR-0050 (historical pin; the line is now 0.20.0) — bump the `@vymalo/*` line to **0.8.0** (the "OpenCode Toolbelt"
   suite) + register the opt-in **`interactive`** browser group
   (`browser_request_feedback`, scoped to `@browser`)
 - ADR-0048 — the global browser plugin + closed-loop `@frontend`; removes
