@@ -12,7 +12,7 @@ our stack, and what's required end-to-end to make it land.
 ## OpenCode v2 required (ADR-0141)
 
 The descriptor is written in the native **OpenCode v2** config shape (v2.2.6) and
-the `@vymalo/*` plugins are on the **0.20.0** line (the toolbeit's v2 line, which
+the `@vymalo/*` plugins are on the **0.20.x** line (the toolbeit's v2 line, which
 began at 0.18.0; `opencode-skills-collection` is on 4.1.40, since 4.0.14 is
 v1-only).
 
@@ -89,7 +89,7 @@ $ opencode auth login \
     │  loads @vymalo/opencode-lightbridge plugin
     │
     │  plugin sees authFlow=device_code, registers a "Sign in" method on the
-    │  `camer-digital` integration (plugins 0.20.0, toolbeit ADR-0023); no
+    │  `camer-digital` integration (plugins 0.20.1, toolbeit ADR-0023); no
     │  token yet → logs `lightbridge_sign_in_required` naming the path below
     │
     │  user: Settings → Providers → Show more providers → search
@@ -396,7 +396,7 @@ Spot-check the v2 keys (jq paths below are the v2 shape, not v1):
 
 ```bash
 U=https://ai.camer.digital/opencode/.well-known/opencode
-curl -fsSL $U | jq '.config.plugins'                                  # 0.20.0 pins
+curl -fsSL $U | jq '.config.plugins'                                  # 0.20.1 pins
 curl -fsSL $U | jq '.config.providers["camer-digital"].settings'      # baseURL, timeouts, modelsInfo*, rateLimit
 curl -fsSL $U | jq '.config.mcp.servers | keys'
 curl -fsSL $U | jq '.config.permissions | length'
@@ -420,7 +420,7 @@ Expected (abridged — the lightbridge `options` carries more keys, see
     "default_agent": "assistant",
     "plugins": [
       {
-        "package": "@vymalo/opencode-lightbridge@0.20.0",
+        "package": "@vymalo/opencode-lightbridge@0.20.1",
         "options": {
           "auth": {
             "id": "camer-digital",
