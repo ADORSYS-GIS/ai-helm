@@ -91,7 +91,7 @@ $ opencode auth login \
     │  loads @vymalo/opencode-lightbridge plugin
     │
     │  plugin sees authFlow=device_code, registers a "Sign in" method on the
-    │  `camer-digital` integration (plugins 0.20.1, toolbeit ADR-0023); no
+    │  `camer-digital` integration (plugins 0.20.2, toolbeit ADR-0023); no
     │  token yet → logs `lightbridge_sign_in_required` naming the path below
     │
     │  user: Settings → Providers → Show more providers → search
@@ -234,7 +234,7 @@ catalog; the rendered descriptor's `config.mcp.servers` should match the table a
 ## Session wake (`@vymalo/opencode-session-wake`)
 
 The fifth `@vymalo/*` plugin in the descriptor, pinned
-**`@vymalo/opencode-session-wake@0.20.1`** (the 0.20.x line; published on npm).
+**`@vymalo/opencode-session-wake@0.20.2`** (the 0.20.x line; published on npm).
 It watches a GitHub issue or PR and **wakes the session that subscribed to it**
 when something changes — no webhook, no relay, and **no GitHub write path**: the
 plugin only ever reads.
@@ -278,7 +278,7 @@ plugin only ever reads.
   readable) and reports `loop_suspected` in `wake_list` instead of looping.
 
 So `config.plugins` is six entries: `lightbridge`, `models-info`, `ratelimit`,
-`browser`, `session-wake` (all `@0.20.1`) and `opencode-skills-collection@4.1.40`.
+`browser`, `session-wake` (all `@0.20.2`) and `opencode-skills-collection@4.1.40`.
 
 ## Agents & tool scoping (ADR-0044, token model corrected in ADR-0048)
 
@@ -447,7 +447,7 @@ Spot-check the v2 keys (jq paths below are the v2 shape, not v1):
 
 ```bash
 U=https://ai.camer.digital/opencode/.well-known/opencode
-curl -fsSL $U | jq '.config.plugins'                                  # 0.20.1 pins
+curl -fsSL $U | jq '.config.plugins'                                  # 0.20.2 pins
 curl -fsSL $U | jq '.config.providers["camer-digital"].settings'      # baseURL, timeouts, modelsInfo*, rateLimit
 curl -fsSL $U | jq '.config.mcp.servers | keys'
 curl -fsSL $U | jq '.config.permissions | length'
@@ -471,7 +471,7 @@ Expected (abridged — the lightbridge `options` carries more keys, see
     "default_agent": "assistant",
     "plugins": [
       {
-        "package": "@vymalo/opencode-lightbridge@0.20.1",
+        "package": "@vymalo/opencode-lightbridge@0.20.2",
         "options": {
           "auth": {
             "id": "camer-digital",
@@ -488,10 +488,10 @@ Expected (abridged — the lightbridge `options` carries more keys, see
           "gateway": { "providers": ["camer-digital"], "exchange": false }
         }
       },
-      "@vymalo/opencode-models-info@0.20.1",
-      "@vymalo/opencode-ratelimit@0.20.1",
-      { "package": "@vymalo/opencode-browser@0.20.1", "options": { "port": 4517, "groups": ["page", "control", "debug", "interactive"] } },
-      { "package": "@vymalo/opencode-session-wake@0.20.1", "options": { "intervalMs": 60000, "minIntervalMs": 15000, "maxIntervalMs": 3600000 } },
+      "@vymalo/opencode-models-info@0.20.2",
+      "@vymalo/opencode-ratelimit@0.20.2",
+      { "package": "@vymalo/opencode-browser@0.20.2", "options": { "port": 4517, "groups": ["page", "control", "debug", "interactive"] } },
+      { "package": "@vymalo/opencode-session-wake@0.20.2", "options": { "intervalMs": 60000, "minIntervalMs": 15000, "maxIntervalMs": 3600000 } },
       "opencode-skills-collection@4.1.40"
     ],
     "providers": {
@@ -638,7 +638,7 @@ That's it. opencode:
 
 1. Fetches `https://ai.camer.digital/opencode/.well-known/opencode`.
 2. Reads the `config.plugins` list (currently `@vymalo/opencode-lightbridge`,
-   `-models-info`, `-ratelimit`, `-browser`, `-session-wake`, all `@0.20.1`, plus
+   `-models-info`, `-ratelimit`, `-browser`, `-session-wake`, all `@0.20.2`, plus
    `opencode-skills-collection@4.1.40`) and runs `bun install` automatically — the packages are cached under
    `~/.cache/opencode/node_modules/` so this only happens once per
    plugin per machine.
