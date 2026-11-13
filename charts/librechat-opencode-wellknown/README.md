@@ -12,10 +12,13 @@ Tiny nginx serving a static JSON at
 
 The Deployment, Service, and Ingress come from
 [`bjw-s app-template` v4.6.2](https://bjw-s-labs.github.io/helm-charts/docs/app-template/)
-(aliased as `opencode-wellknown` in `Chart.yaml`). The two ConfigMaps
-are emitted by this chart's own `templates/configmap.yaml` because their
-content is computed from `.Values.wellKnown` at Helm-render time —
-app-template's `configMaps:` block expects static string data.
+(aliased as `opencode-wellknown` in `Chart.yaml`), and so does the static
+nginx-config ConfigMap, so app-template's `checksum/configMaps` pod
+annotation rolls the pods when the nginx config changes (nginx reads it
+only at start). The content ConfigMap is emitted by this chart's own
+`templates/configmap.yaml`, because it is computed from `.Values.wellKnown`
+and the model catalog at render time. It needs no restart: the kubelet
+syncs the directory mount in place.
 
 - `Deployment` (app-template) — `nginxinc/nginx-unprivileged:1.27-alpine`,
   2 replicas, 10m / 16Mi requests. Hardened: `runAsNonRoot`,
@@ -24,14 +27,17 @@ app-template's `configMaps:` block expects static string data.
   + scratch dirs come in via the `persistence:` block.
 - `Service` (app-template) — ClusterIP, port 80 → 8080
 - `Ingress` (app-template) — Traefik, exact-match
-  `/opencode/.well-known/opencode` on `ai.camer.digital`, same TLS cert
+  `/opencode/.well-known/opencode` (plus the temporary ADR-0142 v1 bridge
+  `/opencode-v1/.well-known/opencode`) on `ai.camer.digital`, same TLS cert
   as LibreChat (longest-path-wins routing means this doesn't conflict
   with the `/` ingress)
-- Two `ConfigMap`s (this chart's `templates/configmap.yaml`):
-  - `nginx-config` — custom `default.conf` with one exact-match
-    location, `Content-Type: application/json`, `Cache-Control: no-store`
-  - `content` — the well-known JSON itself, rendered via `toJson`
-    (compact, deterministic) from `.Values.wellKnown`
+- Two `ConfigMap`s:
+  - `nginx-config` (app-template `configMaps:`) — custom `default.conf` with
+    exact-match locations, `Content-Type: application/json`,
+    `Cache-Control: no-store`
+  - `content` (this chart's `templates/configmap.yaml`) — the well-known JSON,
+    rendered via `toJson` (compact, deterministic) from `.Values.wellKnown`,
+    plus the frozen v1 bridge key `opencode-v1` (ADR-0142)
 
 ## The contract
 
