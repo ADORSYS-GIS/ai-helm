@@ -438,26 +438,18 @@ wellKnown:
                 action: error
 
         # ────────────────────────────────────────────────────────────────
-        # Reasoning effort — RESTORED as an explicit list at the root.
-    #
-        # The `models:` section could not be auto-derived from the catalog because
-        # ai-models is not a dependency of this chart, so `.Values.models` was empty.
-        # We restored the explicit list at the ROOT of this file (bottom), and the
-        # template loops over it to inject reasoning caps into the well-known JSON.
-    #
-        # EXCLUDED from reasoning effort (deliberately, do not add):
-        #   • kimi-k2.7-code, adorsys-frontend-pro → thinking is ALWAYS ON
-        #     (Moonshot rejects a suppression/cap param on K2.7-Code).
-        #   • deepseek-r1-1-5b-local → pure R1 distill; CoT is intrinsic, no
-        #     effort knob to cap.
-        #   • claude-sonnet-5, claude-fable-5 → Anthropic resold via DeepInfra.
-        #     DeepInfra maps `reasoning_effort` onto the DEPRECATED Anthropic
-        #     `thinking.type.enabled`, which Sonnet 5 rejects with a 500
-        #     ("use thinking.type.adaptive and output_config.effort").
-        #   • gemma-4 → no exposed thinking mode (*spStandard), Gemma rejects
-        #     reasoning_effort with 400.
-        #   • qwen3-4b-local → llama.cpp reasoning is OFF at the server
-        #     (charts/inference/values.yaml `serving.reasoning: "off"`).
+        # Reasoning effort — NOT configured here.
+        #
+        # `models:` (bottom of this file) is injected by the ai-models orchestrator
+        # from the catalog (ADR-0125); templates/configmap.yaml turns each entry's
+        # `reasoningEffort` / `reasoningLevels` into the descriptor (ADR-0143).
+        # A model opts in by carrying `reasoningEffort` in the catalog.
+        #
+        # Which models are deliberately left WITHOUT it (always-on thinking, a
+        # backend that rejects the parameter) and why is recorded next to each
+        # entry in the catalog: ai-helm-values `environments/prod/values/models.yaml`.
+        # A list kept here went stale (it still named models the catalog had since
+        # capped or dropped), so there is none.
         # ────────────────────────────────────────────────────────────────
     # MCP servers (ADR-0042, scoping ADR-0044, OPT-IN default ADR-0074). Two axes:
     #   • CONNECTIVITY — `disabled` here decides whether opencode connects to
@@ -2370,10 +2362,21 @@ opencode-wellknown:
 # `models:` is NOT set here. It is injected by the `ai-models` orchestrator,
 # which passes its catalog straight through — that is the entire reason this
 # chart moved under that ApplicationSet. templates/configmap.yaml turns each
-# entry's `reasoningEffort` / `reasoningEffortHigh` into the descriptor's
-# `providers.camer-digital.models.<id>.settings.reasoningEffort` (+ a `thinking`
-# entry in its `variants` list), so the catalog is the single source and this
-# file holds no copy.
+# entry's `reasoningEffort` / `reasoningLevels` (ADR-0143) into the descriptor's
+# `providers.camer-digital.models.<id>.settings.reasoningEffort` (the default,
+# the client menu's "Default" entry) plus one `variants` entry per level — id and
+# effort are both the level string — so the catalog is the single source and this
+# file holds no copy:
+#
+#     reasoningEffort: low                      # default effort
+#     reasoningLevels: [none, low, high, max]   # selectable levels, in menu order
+#
+# Render-time guards (templates/_helpers.tpl) FAIL the render rather than ship a
+# descriptor with a cap quietly missing: the removed `reasoningEffortHigh` key
+# (stale catalog); `reasoningLevels` without `reasoningEffort`; a non-string
+# `reasoningEffort`; a `reasoningLevels` that is not a non-empty list; a non-string
+# or duplicate entry. QUOTE level names that YAML 1.1 reads as booleans or numbers
+# ("off", "on", "yes", "no", "50") — unquoted, Helm parses them as bool/number.
 #
 # ⚠️ Do NOT reintroduce a `models:` map here. The orchestrator's value would
 # override it anyway, so a list here is not a fallback — it is silent dead

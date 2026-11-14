@@ -1,0 +1,54 @@
+name: OpenCode well-known reasoning levels
+
+# Guards the catalog-derived reasoning levels in charts/librechat-opencode-wellknown
+# (ADR-0143): parsed-JSON assertions on both ConfigMap documents (v2 `opencode`, v1
+# bridge `opencode-v1`) and one failing render per validation guard.
+#
+# No cluster, no Docker, no credentials — tests/opencode-wellknown-reasoning/run.sh
+# only needs helm, yq v4 and python3 (stdlib).
+
+on:
+  pull_request:
+    paths:
+      - "charts/librechat-opencode-wellknown/**"
+      - "tests/opencode-wellknown-reasoning/**"
+      - ".github/workflows/opencode-wellknown-reasoning.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/librechat-opencode-wellknown/**"
+      - "tests/opencode-wellknown-reasoning/**"
+
+permissions:
+  contents: read
+
+jobs:
+  reasoning-levels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # run.sh is `#!/usr/bin/env zsh` (`${0:a:h}`, `$'...'`) and ubuntu-latest does not ship zsh.
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.15.4 # aligned with helm-lint.yaml / release-helm-charts.yml
+
+      # Native binary, not the mikefarah/yq Docker action: the runners have no Docker daemon
+      # (see helm-lint.yaml). --fail so an HTTP error fails HERE, not as a bash syntax error later.
+      - name: Install yq
+        run: |
+          curl -fsSL --retry 8 --retry-delay 10 --retry-all-errors \
+            -o "$RUNNER_TEMP/yq" "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+          chmod +x "$RUNNER_TEMP/yq"
+          "$RUNNER_TEMP/yq" --version
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Vendor chart dependencies
+        run: helm dependency update charts/librechat-opencode-wellknown
+
+      - name: Run the tests
+        run: ./tests/opencode-wellknown-reasoning/run.sh

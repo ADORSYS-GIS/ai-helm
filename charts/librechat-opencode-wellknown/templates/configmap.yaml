@@ -72,18 +72,25 @@ data:
   # change the serialized output. Auto-derive reasoning models from the catalog.
   opencode: |
     {{- $wk := .Values.wellKnown | deepCopy -}}
+    {{- $reasoning := include "wellknown.reasoning" .Values.models | fromJson -}}
     {{- $models := dict -}}
     {{- /* OpenCode v2 model shape: per-model `settings` (v1 `options`) and
            `variants` as an id-keyed LIST (v1: a map keyed by variant name).
-           Same shape OpenCode's own v1→v2 normaliser produces. */ -}}
-    {{- range $name, $cfg := .Values.models -}}
-      {{- if $cfg.reasoningEffort -}}
-        {{- $m := dict "settings" (dict "reasoningEffort" $cfg.reasoningEffort) -}}
-        {{- if $cfg.reasoningEffortHigh -}}
-          {{- $_ := set $m "variants" (list (dict "id" "thinking" "settings" (dict "reasoningEffort" $cfg.reasoningEffortHigh))) -}}
+           Same shape OpenCode's own v1→v2 normaliser produces. The default
+           effort is `settings`; each `reasoningLevels` entry becomes one
+           variant whose id AND effort are that level string (ADR-0143). The
+           validation lives in the `wellknown.reasoning` helper, shared with
+           the v1 block below. */ -}}
+    {{- range $name, $r := $reasoning -}}
+      {{- $m := dict "settings" (dict "reasoningEffort" $r.effort) -}}
+      {{- if $r.levels -}}
+        {{- $variants := list -}}
+        {{- range $r.levels -}}
+          {{- $variants = append $variants (dict "id" . "settings" (dict "reasoningEffort" .)) -}}
         {{- end -}}
-        {{- $_ := set $models $name $m -}}
+        {{- $_ := set $m "variants" $variants -}}
       {{- end -}}
+      {{- $_ := set $models $name $m -}}
     {{- end -}}
     {{- if $models -}}
       {{- $prov := index $wk.config.providers "camer-digital" -}}
@@ -93,18 +100,22 @@ data:
   # TEMPORARY OpenCode v1 bridge (ADR-0142). The frozen pre-cutover descriptor
   # (files/wellknown-v1.yaml), with the same catalog-derived reasoning caps in
   # the v1 model shape: per-model `options`, `variants` as a name-keyed MAP.
-  # This is the template as it stood before ADR-0141. Remove with the bridge.
+  # The reasoning block is the current one (ADR-0143, shared `wellknown.reasoning`
+  # validation); only the v1 output shape differs. Remove with the bridge.
   opencode-v1: |
     {{- $v1 := (.Files.Get "files/wellknown-v1.yaml" | fromYaml).wellKnown -}}
+    {{- $v1reasoning := include "wellknown.reasoning" .Values.models | fromJson -}}
     {{- $v1models := dict -}}
-    {{- range $name, $cfg := .Values.models -}}
-      {{- if $cfg.reasoningEffort -}}
-        {{- $m := dict "options" (dict "reasoningEffort" $cfg.reasoningEffort) -}}
-        {{- if $cfg.reasoningEffortHigh -}}
-          {{- $_ := set $m "variants" (dict "thinking" (dict "reasoningEffort" $cfg.reasoningEffortHigh)) -}}
+    {{- range $name, $r := $v1reasoning -}}
+      {{- $m := dict "options" (dict "reasoningEffort" $r.effort) -}}
+      {{- if $r.levels -}}
+        {{- $variants := dict -}}
+        {{- range $r.levels -}}
+          {{- $_ := set $variants . (dict "reasoningEffort" .) -}}
         {{- end -}}
-        {{- $_ := set $v1models $name $m -}}
+        {{- $_ := set $m "variants" $variants -}}
       {{- end -}}
+      {{- $_ := set $v1models $name $m -}}
     {{- end -}}
     {{- if $v1models -}}
       {{- $_ := set (index $v1.config.provider "camer-digital") "models" $v1models -}}

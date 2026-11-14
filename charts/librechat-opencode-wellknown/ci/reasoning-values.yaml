@@ -1,0 +1,16 @@
+# Render fixture for helm-lint.yaml (ADR-0143). In production `models:` is
+# injected by the ai-models orchestrator from the private catalog; the default
+# values.yaml leaves it empty, so without this fixture CI never renders the
+# reasoning branch at all. tests/opencode-wellknown-reasoning/run.sh asserts on
+# exactly this shape — keep the two in step.
+models:
+  # Default + several selectable levels → settings AND variants.
+  ci-levels:
+    reasoningEffort: low
+    reasoningLevels: [none, low, high, max]
+  # Default only → settings, NO variants key.
+  ci-default-only:
+    reasoningEffort: medium
+  # Neither key → deliberately uncapped, must stay absent from `models`.
+  ci-uncapped:
+    kind: text
