@@ -78,7 +78,10 @@ reasoningLevels: [none, low, high, max]   # one menu entry each, in this order
 
 Each level becomes a variant whose id **and** `reasoning_effort` are the level
 string; the host sends it verbatim, so list only levels that model's backend
-accepts (DeepInfra `none|low|medium|high`; DeepSeek and GLM-5.3 `low|high|max`).
+accepts. DeepInfra's request schema takes `none|minimal|low|medium|high|xhigh|max`;
+Google's OpenAI-compatible API takes `minimal|low|medium|high` and cannot disable
+reasoning on Gemini 3. A schema accepting a level does not mean a given model
+honours it: confirm with ai-helm-values `tools/probe-reasoning-levels.sh`.
 A model with `reasoningEffort` and no `reasoningLevels` gets only the default; a
 model with neither stays uncapped. The render **fails** (rather than dropping the
 cap) on the removed `reasoningEffortHigh` key, a null or non-string effort or

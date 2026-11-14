@@ -18,9 +18,16 @@ several levels, from off to maximum. The host sends a variant's
 `settings.reasoningEffort` verbatim as `reasoning_effort` and silently drops
 non-string values.
 
-Backends do not share one effort vocabulary: DeepInfra documents
-`none | low | medium | high`; DeepSeek and GLM-5.3 document `low | high | max`; some
-models reject `reasoning_effort` altogether and are deliberately uncapped.
+Backends do not share one effort vocabulary, and what a request schema accepts is
+not what a model honours. DeepInfra's request schema (public OpenAPI,
+`OpenAIChatCompletionsIn.reasoning_effort`, read 2026-11-14) accepts
+`none | minimal | low | medium | high | xhigh | max` and says `none` disables
+reasoning "if the model supports". Google's OpenAI-compatible API (read 2026-11-14)
+accepts `minimal | low | medium | high` and cannot turn reasoning off on Gemini 3
+models. Some models reject `reasoning_effort` altogether and are deliberately
+uncapped. When this was decided only `low` and `high` had been exercised in
+production; every other level in a catalog list is unprobed until someone runs
+ai-helm-values `tools/probe-reasoning-levels.sh` against it.
 
 A second problem sits underneath: `values.yaml` is parsed as YAML 1.1 by Helm, so an
 unquoted `reasoningEffort: off` is the boolean `false`, and the old template's
@@ -98,7 +105,7 @@ stateDiagram-v2
 
 **Positive**
 - Users choose the level they want per model; the menu shows exactly the catalog's list.
-- The catalog author owns each model's vocabulary, so `max` is only offered where the backend accepts it.
+- The catalog author owns each model's level list, so a level such as `max` or `none` is offered only on the models chosen for it.
 - A mistyped or stale catalog fails loudly at render instead of silently losing a cap.
 - v1 bridge and v2 cannot disagree: one validated structure feeds both.
 
@@ -107,14 +114,14 @@ stateDiagram-v2
 - Rollout order matters. This chart must be published **before** the catalog switches keys. Between the two merges ArgoCD cannot generate the well-known Application's manifests: it shows a `ComparisonError` condition with sync status `Unknown`, while health comes from the live resources and stays Healthy. The previously synced ConfigMap keeps being served, so nothing breaks for users, but the Application cannot sync until the catalog lands. The reverse order (catalog first) leaves the old chart ignoring `reasoningLevels` and rendering no thinking variant at all for that window.
 - A level a backend rejects only affects a user who selects it; Default is never affected. Nothing in the chart can check a level against a backend, so the catalog author must.
 - Helm's `toJson` sorts map keys by byte order, so the v1 variants are sorted by key, not catalog order (v2 keeps catalog order). Acceptable for a bridge that sunsets 2026-12-09.
-- Nothing in CI of either repo renders this chart against the REAL catalog at the time of this decision. Until such a check exists, a stale or mistyped catalog is caught at ArgoCD sync, not in a PR check. The natural home for it is ai-helm-values `render-check.yml`, which already renders the other charts against their values files; it is not part of this change.
+- This repo's CI cannot render the chart against the REAL catalog, which lives in ai-helm-values. The companion ai-helm-values change adds that check (`tools/check-opencode-wellknown.sh`, run by its `render-check.yml`, asserting both documents against the catalog); until it merges, a stale or mistyped catalog is caught at ArgoCD sync, not in a PR check. That check is red whenever chart and catalog disagree, which includes the window between the two merges.
 
 **Neutral / follow-ups**
 - Tested by `tests/opencode-wellknown-reasoning/run.sh` (CI: `opencode-wellknown-reasoning.yml`) and the `ci/reasoning-values.yaml` fixture rendered by `helm-lint.yaml`.
 
 ## Alternatives considered
 
-- **A fixed global level list for every model** — rejected: backends document different vocabularies, and several models reject `reasoning_effort` entirely. A global list would offer levels that error.
+- **A fixed global level list for every model** — rejected: backends accept different vocabularies (Gemini 3 has no `none`), and several models reject `reasoning_effort` entirely. A global list would offer levels that error.
 - **Keep `thinking` and add more ids** — rejected: two naming schemes in one menu, and `thinking` says nothing about how much. Id = level is self-describing since hosts label by id.
 - **Silently ignore the stale `reasoningEffortHigh` key** — rejected: the cap or levels would vanish with no signal, the same failure mode as the YAML 1.1 `off` boolean. A failed sync serving the previous ConfigMap is the safer failure.
 
