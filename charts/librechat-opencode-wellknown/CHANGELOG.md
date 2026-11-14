@@ -1,5 +1,36 @@
 # Changelog
 
+## [3.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-opencode-wellknown-v2.2.1...librechat-opencode-wellknown-v3.0.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **librechat-opencode-wellknown:** the catalog key `reasoningEffortHigh` is removed and the `thinking` variant id disappears. A catalog still carrying `reasoningEffortHigh` fails to render; publish this chart before switching the catalog to `reasoningLevels`.
+* **librechat-opencode-wellknown:** every gateway user logs in once after this is deployed. There is no migration from the old cache location, so the first start on 0.19.0 finds no credential and runs one device-code login per user. Nothing is lost beyond the session; `opencode auth login` is not needed — the normal startup flow prints the code.
+* **librechat-opencode-wellknown:** cut the descriptor over to OpenCode v2 and the 0.18 plugins ([#1166](https://github.com/ADORSYS-GIS/ai-helm/issues/1166))
+* **librechat-opencode-wellknown:** swap oauth2 + otel for lightbridge ([#1115](https://github.com/ADORSYS-GIS/ai-helm/issues/1115))
+
+### Features
+
+* **librechat-opencode-wellknown:** add pr-review-triage subagent for lightbridge-assistant reviews ([#1135](https://github.com/ADORSYS-GIS/ai-helm/issues/1135)) ([0976909](https://github.com/ADORSYS-GIS/ai-helm/commit/09769096b93f6742d4b5ea538cacc84f66720187))
+* **librechat-opencode-wellknown:** bump the [@vymalo](https://github.com/vymalo) plugins to 0.19.0 ([#1171](https://github.com/ADORSYS-GIS/ai-helm/issues/1171)) ([3b9ecae](https://github.com/ADORSYS-GIS/ai-helm/commit/3b9ecae5e96e1588f4618a95b36021f1831f78b7))
+* **librechat-opencode-wellknown:** bump the [@vymalo](https://github.com/vymalo) plugins to 0.20.0 ([#1174](https://github.com/ADORSYS-GIS/ai-helm/issues/1174)) ([e8f46f1](https://github.com/ADORSYS-GIS/ai-helm/commit/e8f46f1c90581e33bf4a1da80a094a6a3970ea91))
+* **librechat-opencode-wellknown:** cut the descriptor over to OpenCode v2 and the 0.18 plugins ([#1166](https://github.com/ADORSYS-GIS/ai-helm/issues/1166)) ([63c6bf5](https://github.com/ADORSYS-GIS/ai-helm/commit/63c6bf577619abd39f53e7378196079b3669e9e0))
+* **librechat-opencode-wellknown:** pin the toolbelt plugins to 0.20.1 ([#1176](https://github.com/ADORSYS-GIS/ai-helm/issues/1176)) ([ac75e2f](https://github.com/ADORSYS-GIS/ai-helm/commit/ac75e2ff9cb6807dea44507e42a17bbb736a0c6e))
+* **librechat-opencode-wellknown:** render one OpenCode variant per catalog reasoning level ([#1179](https://github.com/ADORSYS-GIS/ai-helm/issues/1179)) ([0601ab1](https://github.com/ADORSYS-GIS/ai-helm/commit/0601ab1367520ba7904823e66cbd8f506a09deb7))
+* **librechat-opencode-wellknown:** serve a temporary frozen OpenCode v1 bridge descriptor (ADR-0142) ([#1172](https://github.com/ADORSYS-GIS/ai-helm/issues/1172)) ([d18d620](https://github.com/ADORSYS-GIS/ai-helm/commit/d18d620744b17590a0eee72002c332a3c7cdc1a4))
+* **librechat-opencode-wellknown:** swap oauth2 + otel for lightbridge ([#1115](https://github.com/ADORSYS-GIS/ai-helm/issues/1115)) ([fc59776](https://github.com/ADORSYS-GIS/ai-helm/commit/fc59776c922637957991b2334fdcb22b7efe1f30))
+
+
+### Bug Fixes
+
+* **librechat-opencode-wellknown:** pin the [@vymalo](https://github.com/vymalo) plugins to 0.18.1 ([#1169](https://github.com/ADORSYS-GIS/ai-helm/issues/1169)) ([f98b66b](https://github.com/ADORSYS-GIS/ai-helm/commit/f98b66b66972f521c2d718e73463b03058a1c284))
+
+
+### Documentation
+
+* **librechat-opencode-wellknown:** warn about wake_resume, list the 0.20.2 wake tools ([#1178](https://github.com/ADORSYS-GIS/ai-helm/issues/1178)) ([4006d90](https://github.com/ADORSYS-GIS/ai-helm/commit/4006d90d6ef0afcbb7d1dd4a706c1515fca3517e))
+
 ## [2.2.1](https://github.com/ADORSYS-GIS/ai-helm/compare/librechat-opencode-wellknown-v2.2.0...librechat-opencode-wellknown-v2.2.1) (2026-09-02)
 
 

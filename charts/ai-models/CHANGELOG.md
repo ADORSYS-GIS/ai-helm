@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.0.0](https://github.com/ADORSYS-GIS/ai-helm/compare/ai-models-v4.0.1...ai-models-v5.0.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **librechat-opencode-wellknown:** the catalog key `reasoningEffortHigh` is removed and the `thinking` variant id disappears. A catalog still carrying `reasoningEffortHigh` fails to render; publish this chart before switching the catalog to `reasoningLevels`.
+
+### Features
+
+* **ai-model:** per-model requests/min ceiling (rpmPerKey), keyed on API-key id ([#1120](https://github.com/ADORSYS-GIS/ai-helm/issues/1120)) ([c5c8ddf](https://github.com/ADORSYS-GIS/ai-helm/commit/c5c8ddf5d3640f012d40f7a86c876b22bfb991c6))
+* **charts:** add nodeSelector/tolerations pass-throughs for node-group placement ([#1157](https://github.com/ADORSYS-GIS/ai-helm/issues/1157)) ([f7c433e](https://github.com/ADORSYS-GIS/ai-helm/commit/f7c433e31713f75899f16c3bddfcabf8d0f33958))
+* **librechat-opencode-wellknown:** render one OpenCode variant per catalog reasoning level ([#1179](https://github.com/ADORSYS-GIS/ai-helm/issues/1179)) ([0601ab1](https://github.com/ADORSYS-GIS/ai-helm/commit/0601ab1367520ba7904823e66cbd8f506a09deb7))
+
 ## [4.0.1](https://github.com/ADORSYS-GIS/ai-helm/compare/ai-models-v4.0.0...ai-models-v4.0.1) (2026-09-02)
 
 
