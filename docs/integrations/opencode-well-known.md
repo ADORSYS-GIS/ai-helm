@@ -38,7 +38,7 @@ For maintainers, the v1 → v2 key mapping used in this chart:
 | `plugin: [...]`, tuple `["pkg", {opts}]` | `plugins: [...]`, `{package: "pkg", options: {...}}` |
 | `provider`, provider `options` | `providers`, provider `settings` |
 | `options.meta.{modelsInfoUrl,modelsInfoHideUnmatched,modelsInfoOverwrite,rateLimit}` | the same keys, FLAT on `settings` (a leftover `meta` block is silently ignored by 0.18) |
-| per-model `options.reasoningEffort`, `variants` map | `settings.reasoningEffort`, `variants: [{id: thinking, settings: {...}}]` |
+| per-model `options.reasoningEffort`, `variants` map | `settings.reasoningEffort`, `variants: [{id: <level>, settings: {reasoningEffort: <level>}}, …]` — one entry per catalog `reasoningLevels` item (ADR-0143; the v1 bridge keeps the map: `variants: {<level>: {reasoningEffort: <level>}}`) |
 | `mcp: {name: ...}`, `enabled: false`, `oauth.clientId`, `timeout: N` | `mcp: {servers: {name: ...}}`, `disabled: true`, `oauth.client_id`, `timeout: {startup, catalog, execution}` |
 | `permission` map (`bash`, `task`, `write`/`patch`) | `permissions` ordered list of `{action, resource, effect}` (`shell`, `subagent`, `edit`) |
 | `agent`, agent `prompt`, `temperature`, `model: "camer-digital/x"` | `agents`, `system`, `request.body.temperature`, `model: {providerID, model}` |
@@ -57,13 +57,39 @@ opencode auth login https://ai.camer.digital/opencode-v1
 It's the descriptor exactly as it was live before the cutover (`@vymalo/*@0.17.0`,
 `files/wellknown-v1.yaml` in the chart), served by the same pod. It's **frozen**: new
 agents, permissions, MCPs and plugin fixes land on v2 only. Only the catalog-derived
-reasoning caps still flow in. Register one URL or the other, not both. After
+reasoning caps and levels still flow in. Register one URL or the other, not both. After
 **2026-12-09** the path returns 404, so upgrade to v2 and log in at
 `https://ai.camer.digital/opencode`.
 
 For maintainers: every bridge-only line (the file, the `opencode-v1` ConfigMap key,
 the nginx `location`, the Ingress path) is marked `TEMPORARY … (ADR-0142)`. Removal
 is one PR. Don't edit the frozen file; change v2.
+
+## Reasoning levels (ADR-0143)
+
+The client's model menu lists a fixed **Default** entry plus one entry per
+`variants` item, labelled with the variant id. The chart builds both from each
+catalog model's keys (`ai-helm-values` `environments/prod/values/models.yaml`):
+
+```yaml
+reasoningEffort: low                      # the default effort ("Default" in the menu)
+reasoningLevels: [none, low, high, max]   # one menu entry each, in this order
+```
+
+Each level becomes a variant whose id **and** `reasoning_effort` are the level
+string; the host sends it verbatim, so list only levels that model's backend
+accepts (DeepInfra `none|low|medium|high`; DeepSeek and GLM-5.3 `low|high|max`).
+A model with `reasoningEffort` and no `reasoningLevels` gets only the default; a
+model with neither stays uncapped. The render **fails** (rather than dropping the
+cap) on the removed `reasoningEffortHigh` key, a null or non-string effort or
+level (quote `"off"`, `"on"`, `"yes"`, `"no"`, `"50"` — YAML 1.1 reads them as
+boolean/number), a value that is empty or has leading/trailing whitespace, an
+empty or duplicate `reasoningLevels` (duplicates compare case-insensitively:
+`High` and `high` are one level; the emitted value is never lowercased), or
+`reasoningLevels` without `reasoningEffort`. It reports **every** problem across
+**all** models in one failure, one line per problem (ArgoCD shows only that
+message, so a catalog with many bad models is fixed in one pass).
+Tests: `tests/opencode-wellknown-reasoning/run.sh`.
 
 ## End-to-end flow
 

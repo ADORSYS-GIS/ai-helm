@@ -114,11 +114,13 @@ models:
   ci-weighted:
     kind: text
     minBackends: 1
-    # ADR-0125: opts this model into an opencode reasoning cap. A model with no
-    # reasoningEffort gets no `options` block in the descriptor — that is how the
+    # ADR-0125 / ADR-0143: opts this model into an opencode reasoning cap.
+    # `reasoningEffort` is the default; `reasoningLevels` are the extra menu entries
+    # (one OpenCode variant each, id = level). A model with no reasoningEffort is
+    # absent from the descriptor's `models` entirely — that is how the
     # always-on-thinking exclusions are expressed.
     reasoningEffort: low
-    reasoningEffortHigh: high
+    reasoningLevels: [none, low, high]
     info:
       displayName: "CI Weighted"
       contextLength: 131072
