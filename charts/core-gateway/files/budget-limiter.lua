@@ -156,21 +156,50 @@ local function deny(handle, status, body, reason, remaining, snapshotAge)
   handle:respond({ [":status"] = status, ["content-type"] = "application/json" }, body)
 end
 
+-- THE REFUSAL BODIES ARE OPENAI-SHAPED. Every client in front of this gateway speaks the OpenAI API,
+-- and its SDK reads a failed call's `error` as an OBJECT and shows `error.message`. Until 2026-11-19
+-- `error` was the bare code: OpenCode v2 (AI SDK) showed only "budget_exhausted", OpenCode v1 showed
+-- the message but not the refill link, and no client reads a top-level `refill_url`. So the link is
+-- written INTO the message, the code moves to `error.code`, and the fields a program reads
+-- (account_id, remaining_micros, next_reset_at, refill_url, reason) stay at the top.
+--
+--   402 {"error":{"message":"...","type":"insufficient_quota","code":"budget_exhausted"},
+--        "account_id":...,"remaining_micros":0,"next_reset_at":...,"refill_url":...}
+--   503 {"error":{"message":"...","type":"service_unavailable","code":"budget_unavailable"},
+--        "reason":...}
+
+local function errorObject(message, errorType, code)
+  return '{"error":{"message":"' .. jsonEscape(message) .. '"' ..
+    ',"type":"' .. errorType .. '","code":"' .. code .. '"}'
+end
+
+-- "Top up at <url>, or wait for the next reset." The link only when one is configured. No date:
+-- the reset is the account's own schedule, and `next_reset_at` carries it for a program to read.
+local function exhaustedMessage()
+  local topUp = "Top up"
+  if REFILL_URL ~= "" then
+    topUp = "Top up at " .. REFILL_URL
+  end
+  return "This account has no budget left for the current period. " ..
+    topUp .. ", or wait for the next reset."
+end
+
 local function exhaustedBody(accountId, nextResetAt)
-  return '{"error":"budget_exhausted"' ..
+  return errorObject(exhaustedMessage(), "insufficient_quota", "budget_exhausted") ..
     ',"account_id":"' .. jsonEscape(accountId) .. '"' ..
     ',"remaining_micros":0' ..
     ',"next_reset_at":"' .. jsonEscape(nextResetAt) .. '"' ..
-    ',"refill_url":"' .. jsonEscape(REFILL_URL) .. '"' ..
-    ',"message":"This account has no budget left for the current period. ' ..
-    'Top up, or wait for the next reset."}'
+    ',"refill_url":"' .. jsonEscape(REFILL_URL) .. '"}'
 end
 
 local function unavailableBody(reason)
-  return '{"error":"budget_unavailable"' ..
-    ',"reason":"' .. jsonEscape(reason) .. '"' ..
-    ',"message":"The remaining budget for this account could not be determined. ' ..
-    'This is not a spending limit; retry shortly."}'
+  return errorObject(
+      "The remaining budget for this account could not be determined. " ..
+      "This is not a spending limit; retry shortly.",
+      "service_unavailable",
+      "budget_unavailable"
+    ) ..
+    ',"reason":"' .. jsonEscape(reason) .. '"}'
 end
 
 -- Returns the budget metadata table, or nil when the ext_authz filter published none.

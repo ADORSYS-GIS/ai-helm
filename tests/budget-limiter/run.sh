@@ -145,12 +145,14 @@ if printf '%s' "$body" | python3 -c '
 import json,sys
 d = json.load(sys.stdin)
 assert "injected" not in d, d
-assert d["error"] == "budget_exhausted", d
+e = d["error"]
+assert e["code"] == "budget_exhausted" and e["type"] == "insufficient_quota", d
+assert e["message"] == ("This account has no budget left for the current period. "
+                        "Top up at https://example.test/budget, or wait for the next reset."), d
 assert d["remaining_micros"] == 0, d
 assert d["refill_url"] == "https://example.test/budget", d
 assert d["next_reset_at"] == "2026-10-01T00:00:00Z", d
-assert d["message"], d
-print("PASS  402 body parses as JSON, carries the contract, and no injected key")
+print("PASS  402 body parses as JSON, is OpenAI-shaped with the refill link in error.message, and no injected key")
 ' 2>/dev/null; then
   ((pass++))
 else
@@ -165,9 +167,12 @@ echo "$body"
 if printf '%s' "$body" | python3 -c '
 import json,sys
 d = json.load(sys.stdin)
-assert d["error"] == "budget_unavailable", d
+e = d["error"]
+assert e["code"] == "budget_unavailable" and e["type"] == "service_unavailable", d
+assert "not a spending limit" in e["message"], d
+assert d["reason"] == "budget_unknown", d
 assert "remaining_micros" not in d, d
-print("PASS  503 body says budget_unavailable and carries no balance")
+print("PASS  503 body is OpenAI-shaped budget_unavailable, keeps its reason, and carries no balance")
 ' 2>/dev/null; then
   ((pass++))
 else
