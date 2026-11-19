@@ -88,18 +88,32 @@ The filter reads one thing — dynamic metadata, namespace `envoy.filters.http.e
 top up or wait for the reset". A `503` means "we could not tell", and no amount of money fixes it.
 Anything that blurs the two teaches clients to retry-with-a-credit-card against our own outages.
 
-The `402` body:
+The `402` body is **OpenAI-shaped**: every client in front of the gateway speaks the OpenAI API,
+and its SDK reads a failed call's `error` as an object and shows `error.message`. So the refill link
+is written into that message (it reads "Top up, or wait for the next reset." when no
+`budgetLimiter.refillUrl` is set), the code is `error.code`, and the fields a program reads stay at
+the top level:
 
 ```json
 {
-  "error": "budget_exhausted",
+  "error": {
+    "message": "This account has no budget left for the current period. Top up at <budgetLimiter.refillUrl>, or wait for the next reset.",
+    "type": "insufficient_quota",
+    "code": "budget_exhausted"
+  },
   "account_id": "<the account_id claim, not sub>",
   "remaining_micros": 0,
   "next_reset_at": "<RFC3339>",
-  "refill_url": "<budgetLimiter.refillUrl>",
-  "message": "This account has no budget left for the current period. Top up, or wait for the next reset."
+  "refill_url": "<budgetLimiter.refillUrl>"
 }
 ```
+
+Every `503` has the same shape, with `"type": "service_unavailable"`, `"code": "budget_unavailable"`
+and the table's reason in a top-level `"reason"`.
+
+Until 2026-11-19 `error` was the bare code string and the message sat at the top level: an AI SDK
+client (OpenCode v2) showed only `budget_exhausted`, OpenCode v1 showed the message without a link,
+and nothing read `refill_url`.
 
 Two fields regularly get misread:
 
