@@ -1,64 +1,16 @@
 {{- /*
-Two ConfigMaps:
-  1. nginx-config — custom default.conf so the served file gets the
-     right Content-Type (no file extension on the well-known URL).
-  2. content — the well-known JSON itself, materialised at the path
-     the deployment volume-mounts.
+One ConfigMap: `content`, the well-known JSON itself (v2 + the temporary v1
+bridge), materialised at the path the deployment volume-mounts. Content
+changes need no pod restart: the kubelet syncs the directory mount in place
+and nginx re-reads the file per request.
+
+The nginx `default.conf` is NOT here any more: it lives in bjw-template's own
+`configMaps.nginx-config` (values.yaml), so bjw adds its `checksum/configMaps`
+pod annotation and the pods roll whenever the config changes. nginx reads
+its config only at start, and a ConfigMap rendered here would not feed that
+checksum: that is how the ADR-0142 `location` went live without taking
+effect until the pods were deleted by hand.
 */ -}}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .Release.Name }}-nginx-config
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "common.labels.standard" . | nindent 4 }}
-data:
-  default.conf: |
-    server {
-      listen       8080;
-      server_name  _;
-
-      # The well-known file is mounted under /usr/share/nginx/html/opencode/...
-      # This custom server block REPLACES the stock default.conf (which set
-      # `root /usr/share/nginx/html`), so we must set root again — otherwise
-      # try_files resolves against nginx's compiled-in default root
-      # (/etc/nginx/html) and the file is never found → 404.
-      root /usr/share/nginx/html;
-
-      # The well-known file has no extension; force JSON Content-Type.
-      types { application/json json; }
-      default_type application/json;
-
-      # Health probe.
-      location = /healthz {
-        access_log off;
-        add_header Content-Type "text/plain";
-        return 200 "ok\n";
-      }
-
-      # Exact-match for the opencode well-known endpoint.
-      # File lives at /usr/share/nginx/html/opencode/.well-known/opencode
-      # (mounted by the Deployment from the content ConfigMap).
-      location = /opencode/.well-known/opencode {
-        add_header Cache-Control "no-store" always;
-        try_files /opencode/.well-known/opencode =404;
-      }
-
-      # TEMPORARY OpenCode v1 bridge (ADR-0142): a v1 client runs
-      # `opencode auth login https://ai.camer.digital/opencode-v1`. Its file
-      # is the `opencode-v1` key of the same content ConfigMap, so it sits
-      # beside the v2 file in the one mounted directory. Remove with the bridge.
-      location = /opencode-v1/.well-known/opencode {
-        add_header Cache-Control "no-store" always;
-        try_files /opencode/.well-known/opencode-v1 =404;
-      }
-
-      # Everything else 404s — this nginx serves exactly these endpoints.
-      location / {
-        return 404;
-      }
-    }
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
