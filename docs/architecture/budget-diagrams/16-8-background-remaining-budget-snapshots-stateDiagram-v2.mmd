@@ -1,0 +1,23 @@
+stateDiagram-v2
+    [*] --> NoRow
+    NoRow --> Uncomputed: seed or activity touch
+    Uncomputed --> Known: successful refresh
+    Known --> Known: grant transaction applies eligible delta
+    Known --> SlowLane: activity ages past fast-lane window
+    SlowLane --> Known: activity touch and next refresh
+    Known --> StaleKnown: usage service unreachable
+    SlowLane --> StaleKnown: usage service unreachable
+    StaleKnown --> Known: refresh succeeds
+    Known --> WrongPeriod: UTC month changes
+    StaleKnown --> WrongPeriod: UTC month changes
+    WrongPeriod --> Known: new-period refresh succeeds
+    SlowLane --> OutsideActiveWindow: idle too long
+    OutsideActiveWindow --> SlowLane: eligible seed re-arms; existing reading retained
+    note right of StaleKnown
+        Existing current-period reading remains usable.
+        Snapshot age alone does not cause a gateway refusal.
+    end note
+    note right of WrongPeriod
+        Introspection omits budget fields until refreshed.
+        Unknown is not a fabricated zero balance.
+    end note

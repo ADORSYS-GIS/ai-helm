@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    participant W as API, budget service, scheduler, or CLI
+    participant R as BudgetRepo in caller process
+    participant B as budget_balances
+    participant G as budget_grants
+    participant S as budget_remaining_snapshots
+    W->>R: grant(target, actor account, month, amount, source, key)
+    R->>R: Validate amount sign and source
+    rect rgb(235,245,255)
+        Note over R,S: ONE database transaction
+        R->>B: INSERT if missing; SELECT FOR UPDATE
+        R->>G: INSERT with idempotency handling
+        alt New grant
+            R->>B: Add amount, source totals and counts; advance version
+            R->>S: Add amount to ceiling and remaining if reading eligible
+        else Existing idempotency key
+            G-->>R: Existing grant; do not credit again
+        end
+        R->>R: COMMIT
+    end
+    R-->>W: Grant result

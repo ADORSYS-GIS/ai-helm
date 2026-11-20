@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> Proposed
+    Proposed --> Rejected: invalid amount or source
+    Proposed --> Existing: idempotent replay
+    Proposed --> Committed: new row and projections commit
+    Committed --> Committed: audit reads; original row retained
+    Committed --> Compensated: separate correction row committed
+    Committed --> ExpiredForCeiling: expires_at passes
+    note right of Compensated
+        A derived condition, not an UPDATE to the original grant.
+        Direct UPDATE and DELETE of ledger rows are blocked.
+    end note

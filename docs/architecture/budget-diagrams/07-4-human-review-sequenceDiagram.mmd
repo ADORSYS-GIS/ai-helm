@@ -1,0 +1,20 @@
+sequenceDiagram
+    autonumber
+    participant C as Admin console
+    participant B as authz-budget / ReviewService
+    participant Q as budget_augmentation_requests
+    participant G as BudgetRepo
+    C->>B: approve or reject(request_id)
+    B->>B: Check budget review permission
+    B->>Q: Acquire advisory transaction lock for request_id
+    B->>Q: Read request; require pending_review
+    alt Approve
+        B->>G: manual_approval grant, augmentation-approval:request_id
+        G-->>B: Committed grant or idempotent existing grant
+        B->>Q: UPDATE approved, grant_id and review audit
+    else Reject
+        B->>B: Require nonempty rejection reason
+        B->>Q: UPDATE denied and review audit
+    end
+    B->>Q: Release advisory lock
+    B-->>C: Review outcome

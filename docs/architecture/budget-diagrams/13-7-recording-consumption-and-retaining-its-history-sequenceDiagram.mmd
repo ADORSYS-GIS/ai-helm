@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    participant M as Model backend
+    participant E as Envoy and AI Gateway processing
+    participant C as Usage OTEL collector
+    participant U as authz-usage ingest
+    participant R as usage_events
+    participant D as usage_events_daily
+    participant T as usage_retention_state
+    M-->>E: Response and usage token counts
+    E->>E: Expose computed cost and attribution in access log
+    E-->>C: OTLP completed-request log
+    C->>U: POST /v1/otel/logs
+    alt Historical failure mode observed on 2026-09-15: no X-Source header
+        U-->>C: 400; required source missing in deployed handler
+        C->>C: Permanent export failure; drop batch
+    else Required source supplied and record accepted
+        U->>R: INSERT normalized usage events
+    end
+    opt Retention enabled by operator; disabled in observed config
+        U->>R: DELETE aged rows RETURNING their values
+        U->>D: UPSERT daily aggregates in same atomic statement
+        U->>D: Purge aggregates beyond retention horizon
+        U->>T: Record successful purge cutoff
+    end
