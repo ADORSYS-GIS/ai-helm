@@ -147,19 +147,49 @@ Example: [`tools/dashboards/`](tools/dashboards/).
 
 ## CI
 
-Five workflows under `.github/workflows/`:
+Ten workflows under `.github/workflows/`:
 
 | Workflow | Triggers on | What it does |
 |---|---|---|
-| `helm-lint.yaml` | every push + PR | `helm lint --strict` + `helm template --dry-run` per chart |
-| `dashboards-drift.yml` | changes under `tools/dashboards/` or `**/files/**/*.json` | re-runs the Python generator, fails if committed JSON differs |
-| `opencode.yml` | PRs + comment `/oc` or `/opencode` | runs OpenCode auto-review (or manual-review on demand) |
-| `release-helm-charts.yml` | manual dispatch + branch pushes touching `charts/` | trivy config scan, then `helm/chart-releaser-action` on dispatch |
-| `security.yml` | every push | reusable workflow at `ADORSYS-GIS/ai-ops` for trivy + dep scan |
+| `helm-lint.yaml` | every push + PR (all branches) | per-chart `helm lint` + `helm template --dry-run`; `--strict` only for charts with own `templates/` (see below) |
+| `commit-lint.yml` | PR opened/edited/synchronized/reopened | validates the PR title + every non-merge commit against Conventional Commits via `tools/commit-lint.sh` (no third-party action) |
+| `governance.yml` | PR opened/edited/synchronized/reopened | delegates to `ADORSYS-GIS/ai-governance/.github/workflows/governance-check.yml` at SHA `959d8565041ddef86d3a10001b64393a6d4a60a2` (v1.0.0); fails the PR if the body lacks an AI Usage Declaration, source-of-truth link, or verification evidence |
+| `security.yml` | every push + PRs targeting `main` | delegates to `ADORSYS-GIS/ai-governance/.github/workflows/security-gates.yml@f1735f92f24dd86c7707ed990a3f3ecb51e2ea9b` with `trivy-scan-type: config`, `trivy-target: charts/` (trivy + dep scan) |
+| `dashboards-drift.yml` | PR paths `tools/dashboards/**` or dashboard JSON; push to `main` on the same paths | ruff format/lint the generator, then `uv run dashboards check` — fails if committed JSON differs |
+| `envoy-gateway-lua.yml` | PR/push paths `charts/core-gateway/**` or `tests/envoy-gateway-lua/**` | runs `tests/envoy-gateway-lua/run.sh`, which translates every rendered Lua entry through Envoy Gateway's own `egctl x translate` (pinned `EG_VERSION=v1.8.2`) |
+| `opencode.yml` | PR opened/synchronize, issue comments, review comments | OpenCode auto-review (manual-review on `/oc` or `/opencode`); no-op unless `OPENCODE_GATEWAY_AUDIENCE` is set |
+| `release-helm-charts.yml` | push to any branch touching `charts/**` + manual dispatch | non-strict lint, renders charts, Trivy config scan; `helm/chart-releaser-action` runs only on dispatch |
+| `publish-charts-oci.yml` | push to `main` touching `charts/**` + manual dispatch | publishes changed charts to `oci://ghcr.io/adorsys-gis/charts` with auto-semver (ADR-0055), cosign-signed |
+| `release-please.yml` | push to `main` + manual dispatch | `googleapis/release-please-action@v5` maintains one changelog/version PR (ADR-0082) |
 
-A PR is mergeable when **helm-lint** + **dashboards-drift** (when
-relevant) + **security** are green. **opencode** is informational —
-its review surfaces issues to think about; humans decide.
+**The `helm-lint` strictness rule matters most to chart authors.** The workflow
+reads the `ai-helm.adorsys-gis.github.io/lint-mode` annotation and decides three
+ways:
+
+- A chart with its **own `templates/` directory** is linted with `--strict`.
+- A **subchart-only** chart (no own `templates/`, e.g. `bjw-template`) is linted
+  **non-strict** — `--strict` would false-trip on `templates/: directory not
+  found` even though it renders fine.
+- A chart annotated `lint-mode: ci-values` (render-only leaves such as
+  `ai-model`) is **linted AND rendered against each `ci/*-values.yaml` fixture**
+  instead of its default values. If such a chart has **no** fixture, the job
+  **fails**.
+
+**The `security` gate delegates to `ADORSYS-GIS/ai-governance`, not
+`ADORSYS-GIS/ai-ops`.** The reusable workflow is pinned to an immutable commit
+SHA (`f1735f92f24dd86c7707ed990a3f3ecb51e2ea9b`), not `@main` or a movable tag:
+a future push to `ai-governance` — or a moved tag — cannot change what runs here.
+It lives in `ai-governance` (public) rather than `ai-ops` (private) because
+ai-ops's Actions "Access" setting blocks external callers. Note this gate does a
+bare checkout and scans `charts/` without `helm dependency build`, so charts
+with subchart dependencies are skipped; the authoritative chart-config scan is
+in `release-helm-charts.yml`.
+
+**PR gates** are **helm-lint** + **commit-lint** + **governance** + **security**;
+**dashboards-drift** and **envoy-gateway-lua** also gate a PR when its paths are
+touched. **publish-charts-oci** and **release-please** are **not** PR gates —
+they run only on push to `main`. **opencode** is informational — its review
+surfaces issues to think about; humans decide.
 
 Dashboard drift specifically: if you edit a `tools/dashboards/<area>/*.py`
 file, you MUST run `uv run dashboards build` and commit the
