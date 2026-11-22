@@ -371,8 +371,19 @@ children:
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "-2"
     source:
-      repoURL: https://grafana.github.io/helm-charts
-      targetRevision: 7.0.0
+      # grafana-community.github.io/helm-charts — see the tempo entry above.
+      # ⚠️ 9.4.0 is NOT an arbitrary target: it is the LOWEST community version whose
+      # bundled rollout-operator is still 0.47.0 (appVersion v0.36.1), i.e. exactly
+      # what 7.0.0 deploys. Every community version below it (7.0.0, 8.x, 9.0-9.2,
+      # 9.3.0) bundles an OLDER operator (0.45.0/0.46.0) — a same-or-lower version
+      # would silently DOWNGRADE it. Verified by downloading tarballs and reading
+      # charts/rollout-operator/Chart.yaml, since the version number alone cannot
+      # tell you this. Loki app moves 3.6.7 -> 3.7.1 (one minor).
+      # Values cutover: NONE needed — environments/prod/values/loki.yaml has 0 keys
+      # removed between the two chart defaults and renders clean against 9.4.0
+      # (ADR-0056 precondition satisfied).
+      repoURL: https://grafana-community.github.io/helm-charts
+      targetRevision: 9.4.0
       chart: loki
       helm:
         releaseName: loki
