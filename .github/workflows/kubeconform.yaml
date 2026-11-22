@@ -13,9 +13,9 @@ name: Validate rendered manifests
 #     resources and only the Service is a built-in kind — 18 are CRs.
 #
 # `-strict` rejects unknown properties, which is the whole point (a `bogusField: true`
-# added to a Service fails here and nowhere else). Kinds with no public schema go in
-# SKIP_KINDS below, by name, so a NEW unvalidated kind fails the job instead of
-# silently joining the unwashed.
+# added to a Service fails here and nowhere else). Resources with no public schema are
+# named in SKIP_GVKS below by exact group/version/kind, so a NEW unvalidated kind — or the
+# same kind at another version — fails the job instead of silently joining the unwashed.
 
 on:
   # Only `main` on push. A `push: branches: ["**"]` trigger alongside `pull_request`
@@ -74,15 +74,15 @@ jobs:
           # minor legitimately rejects fields the previous one accepted, so this must move
           # with the cluster — it was 1.31.0 (four minors behind) on the first run.
           KUBERNETES_VERSION: "1.35.0"
-          # Kinds we render for which no public schema exists. `-skip` is what keeps the
-          # lookup strict for every OTHER kind: a new schema-less kind must still fail.
-          #   GatewayConfigList — a first-party CRD (aigateway.envoyproxy.io/v1beta1) with
-          #   no published JSON schema.
-          # ⚠️ THE COROLLARY, which the flag's own name hides: `-skip` matches on KIND
-          # only (GVK forms were tried and do not match in this build), so any NEW USE of
-          # GatewayConfigList, in any chart, passes silently forever. It is a standing hole
-          # of that kind's width, repo-wide — not scoped to the chart that needed it.
-          SKIP_KINDS: "GatewayConfigList"
+          # Resources we render for which no public schema exists. Narrowed to the exact
+          # GROUP/VERSION/KIND — the working form is `group/version/kind`; the unversioned
+          # `group/kind` matches nothing (measured on v0.8.0, the version pinned above).
+          #   aigateway.envoyproxy.io/v1beta1/GatewayConfigList — a first-party CRD with no
+          #   published JSON schema.
+          # Scoping to the GVK is what keeps the hole shut: the same kind at a DIFFERENT
+          # group/version is NOT skipped (verified: Errors: 1), and a new schema-less kind
+          # anywhere still fails.
+          SKIP_GVKS: "aigateway.envoyproxy.io/v1beta1/GatewayConfigList"
           # Charts that legitimately render NOTHING under default values, because every
           # template is gated on values the orchestrator injects. Empty renders outside this
           # list are fatal, which is the property worth keeping: a chart that used to emit
@@ -193,7 +193,7 @@ jobs:
               printf '%s\n' "$rendered" | kubeconform \
                 -strict -summary \
                 -kubernetes-version "$KUBERNETES_VERSION" \
-                -skip "$SKIP_KINDS" \
+                -skip "$SKIP_GVKS" \
                 "${schema_args[@]}" -
               echo "  ✅ $label"
             }
