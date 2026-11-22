@@ -603,11 +603,13 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://kuadrant.io/helm-charts
-      # 0.23.1 — latest published at kuadrant.io/helm-charts (0.24.0 was a
-      # bad pin: ArgoCD ComparisonError "chart … version 0.24.0 not found").
+      # Bumped from 0.23.1 (punch list item 2). The old note claiming 0.24.0 was
+      # unpublished was wrong — it was a bad ArgoCD comparison, not a missing chart:
+      # the registry now serves the whole 0.24–0.26 line (and 0.27.0, taken later).
       # Bundles AuthConfig v1beta3 + Authorino v1beta1, which security-policies
-      # depends on. Verify with `helm show chart` before bumping.
-      targetRevision: 0.23.1
+      # depends on. Verify with `helm show chart authorino-operator --repo
+      # https://kuadrant.io/helm-charts --version <v>` before bumping.
+      targetRevision: 0.26.0
       chart: authorino-operator
       helm:
         releaseName: authorino-operator
