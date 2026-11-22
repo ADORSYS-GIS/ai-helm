@@ -67,9 +67,10 @@ jobs:
 
       - name: Render and validate
         env:
-          # Pinned: a new Kubernetes minor legitimately rejects fields the previous one
-          # accepted, so this must move deliberately (bump it with the cluster).
-          KUBERNETES_VERSION: "1.31.0"
+          # Pinned to the FLEET's minor (hetzner-prod runs v1.35.3+k3s1). A new Kubernetes
+          # minor legitimately rejects fields the previous one accepted, so this must move
+          # with the cluster — it was 1.31.0 (four minors behind) on the first run.
+          KUBERNETES_VERSION: "1.35.0"
           # Kinds we render for which no public schema exists. With
           # -ignore-missing-schemas a schema-less kind is skipped rather than fatal; this
           # list documents the ones we know about.
