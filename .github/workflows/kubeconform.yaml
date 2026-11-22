@@ -130,7 +130,13 @@ jobs:
           empty_allow=",${EMPTY_RENDER_ALLOW// /,},"
           removed_allow=",${REMOVED_API_ALLOW// /,},"
 
-          find ./charts -name "Chart.yaml" -type f | while read -r chart_file; do
+          # `sort` is deliberate: bare `find` is filesystem order, which is neither
+          # alphabetical nor reproducible across runners. With several defects present the
+          # job only ever reports the FIRST one it reaches, so an unsorted loop makes the
+          # reported failure depend on directory layout — it cost a reviewer an incorrect
+          # retraction to work that out. Sorting changes which failure you see first, never
+          # what is validated.
+          find ./charts -name "Chart.yaml" -type f | sort | while read -r chart_file; do
             chart_dir=$(dirname "$chart_file")
             chart_name=$(yq eval '.name' "$chart_file")
             chart_version=$(yq eval '.version' "$chart_file")
