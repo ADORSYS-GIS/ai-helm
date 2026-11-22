@@ -82,6 +82,15 @@ jobs:
           # Scoping to the GVK is what keeps the hole shut: the same kind at a DIFFERENT
           # group/version is NOT skipped (verified: Errors: 1), and a new schema-less kind
           # anywhere still fails.
+          #
+          # ⚠️ THE FORM MATTERS, AND THE OBVIOUS-LOOKING ONE IS WRONG. Verified on the
+          # kubeconform v0.8.0 binary pinned above (downloaded, not a dev build):
+          #   group/version/kind   authorino.kuadrant.io/v1beta3/AuthConfig   -> skipped  ✅
+          #   kind.version.group   AuthConfig.v1beta3.authorino.kuadrant.io   -> NO MATCH ❌
+          #   unversioned          authorino.kuadrant.io/AuthConfig           -> NO MATCH ❌
+          # `-skip`'s help text only says "kinds or GVKs" and the widely-cited form is
+          # `Kind.version.group`, which matches nothing here and fails the job 24 minutes
+          # later. Do not "fix" the order without running it.
           SKIP_GVKS: "aigateway.envoyproxy.io/v1beta1/GatewayConfigList,authorino.kuadrant.io/v1beta3/AuthConfig,operator.authorino.kuadrant.io/v1beta1/Authorino"
           # Charts that legitimately render NOTHING under default values, because every
           # template is gated on values the orchestrator injects. Empty renders outside this
