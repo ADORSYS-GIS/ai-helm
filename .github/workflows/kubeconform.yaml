@@ -49,7 +49,7 @@ jobs:
       - name: Setup Helm
         uses: azure/setup-helm@v5
         with:
-          version: v3.15.4
+          version: v3.19.4
 
       # Native binaries, not container-based actions: adorsys-gis-runner has no Docker
       # daemon, so a `docker://` step fails at image pull (same constraint documented in
@@ -125,7 +125,8 @@ jobs:
           # when a chart renders a version it would not otherwise pick.
           #
           # ⚠️ MUST BE THE FULL GVK, and a partial value fails SILENTLY — same trap as
-          # `-skip`. Measured on Helm 3.15.4 (the pin above) and 3.16.1:
+          # `-skip`. Measured on Helm 3.15.4 and 3.16.1 — both before this pin moved
+          # to 3.19.4, so re-measure if a partial value ever starts failing loudly:
           #   --api-versions gateway.networking.k8s.io/v1/HTTPRoute  -> v1        ✅
           #   --api-versions gateway.networking.k8s.io/v1            -> v1alpha2  ❌ ignored
           # The wrong form does still fail the job, but only via the removed-API guard,
