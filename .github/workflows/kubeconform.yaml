@@ -1,0 +1,132 @@
+name: Validate rendered manifests
+
+# Catches schema drift that `helm lint` / `helm template` cannot: a render can be
+# syntactically fine and still be invalid against the target API (a renamed field, a
+# removed property, a value that moved into a different type). kubeconform validates
+# the RENDERED output against the Kubernetes JSON schemas.
+#
+# Two schema sources, both needed:
+#   * `default` — the upstream Kubernetes schemas (yannh/kubernetes-json-schema).
+#   * datreeio/CRDs-catalog — schemas for the CRs we actually ship (Gateway API,
+#     Certificate, ExternalSecret, Envoy Gateway, OpenTelemetry, PodMonitor, ...).
+#     Without it this job validates almost NOTHING: a core-gateway render is 19
+#     resources and only the Service is a built-in kind — 18 are CRs.
+#
+# `-strict` rejects unknown properties, which is the whole point (a `bogusField: true`
+# added to a Service fails here and nowhere else). Kinds with no public schema go in
+# SKIP_KINDS below, by name, so a NEW unvalidated kind fails the job instead of
+# silently joining the unwashed.
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  kubeconform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.15.4
+
+      # Native binaries, not container-based actions: adorsys-gis-runner has no Docker
+      # daemon, so a `docker://` step fails at image pull (same constraint documented in
+      # helm-lint.yaml). $RUNNER_TEMP avoids needing sudo or a system-dir write.
+      - name: Install yq
+        run: |
+          # --fail: an HTTP error must fail HERE, not save GitHub's HTML error page as
+          # "yq" and blow up later as a bash syntax error.
+          curl -fsSL --retry 8 --retry-delay 10 --retry-all-errors \
+            -o "$RUNNER_TEMP/yq" "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+          chmod +x "$RUNNER_TEMP/yq"
+          "$RUNNER_TEMP/yq" --version
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL --retry 8 --retry-delay 10 --retry-all-errors \
+            -o "$RUNNER_TEMP/kubeconform.tgz" \
+            "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz"
+          tar -xzf "$RUNNER_TEMP/kubeconform.tgz" -C "$RUNNER_TEMP" kubeconform
+          chmod +x "$RUNNER_TEMP/kubeconform"
+          "$RUNNER_TEMP/kubeconform" -v
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Cache Helm
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/helm
+          key: ${{ runner.os }}-helm-${{ hashFiles('**/Chart.yaml') }}
+
+      - name: Render and validate
+        env:
+          # Pinned: a new Kubernetes minor legitimately rejects fields the previous one
+          # accepted, so this must move deliberately (bump it with the cluster).
+          KUBERNETES_VERSION: "1.31.0"
+          # Kinds we render for which no public schema exists. Every entry is a kind that
+          # consequently stops being validated — keep this list short and justify each.
+          #   GatewayConfigList — a first-party CRD with no published JSON schema.
+          SKIP_KINDS: "GatewayConfigList"
+        run: |
+          set -euo pipefail
+          schema_args=(
+            -schema-location default
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          )
+
+          find ./charts -name "Chart.yaml" -type f | while read -r chart_file; do
+            chart_dir=$(dirname "$chart_file")
+            chart_name=$(yq eval '.name' "$chart_file")
+            chart_version=$(yq eval '.version' "$chart_file")
+            chart_type=$(yq eval '.type // "application"' "$chart_file")
+            lint_mode=$(yq eval '.annotations."ai-helm.adorsys-gis.github.io/lint-mode" // ""' "$chart_file")
+
+            if [[ "$chart_type" == "library" ]]; then
+              echo "⏭️  $chart_name (library chart - nothing to validate)"
+              continue
+            fi
+
+            echo "🔍 $chart_name ($chart_version)"
+            helm dependency update "$chart_dir"
+
+            render_and_check() {
+              local label=$1; shift
+              local rendered
+              rendered=$(helm template "$chart_name" "$chart_dir" "$@" --dry-run)
+              if [[ -z "${rendered// }" ]]; then
+                echo "  ⚠️  $label rendered no manifests - nothing to validate"
+                return 0
+              fi
+              printf '%s\n' "$rendered" | kubeconform \
+                -strict -summary \
+                -kubernetes-version "$KUBERNETES_VERSION" \
+                -skip "$SKIP_KINDS" \
+                "${schema_args[@]}" -
+              echo "  ✅ $label"
+            }
+
+            # Render-only LEAF charts guard on per-model values the orchestrator injects,
+            # so they cannot render with the default values.yaml — validate their
+            # ci/*-values.yaml fixtures instead (same rule as helm-lint).
+            if [[ "$lint_mode" == "ci-values" ]]; then
+              shopt -s nullglob
+              fixtures=("$chart_dir"/ci/*-values.yaml)
+              shopt -u nullglob
+              if [[ ${#fixtures[@]} -eq 0 ]]; then
+                echo "❌ $chart_name has lint-mode=ci-values but no ci/*-values.yaml fixtures"
+                exit 1
+              fi
+              for vf in "${fixtures[@]}"; do
+                render_and_check "fixture $(basename "$vf")" -f "$vf"
+              done
+            else
+              render_and_check "default values"
+            fi
+          done
