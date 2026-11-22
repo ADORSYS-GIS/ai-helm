@@ -168,8 +168,13 @@ jobs:
                   echo "- ${chart_name} / ${label}: renders nothing by design (values-gated) — NOT validated" >> "$skipped_report"
                   return 0
                 fi
-                echo "  ⚠️  $label rendered no manifests - nothing to validate"
-                return 0
+                # A ci/*-values.yaml fixture that renders NOTHING is a dead fixture: it
+                # exercises no template. Measured repo-wide (station st_beba75ed18): every
+                # fixture currently emits at least one resource (1..8), so this costs nothing
+                # today and only fires when a fixture silently stops selecting anything.
+                # A "nothing renders" assertion, if ever wanted, is a different test.
+                echo "  ❌ $label rendered NO manifests — a fixture that renders nothing exercises nothing"
+                exit 1
               fi
               # No schema can exist for an API version upstream has REMOVED, so a missing
               # schema would hide it. Assert the removals we know about explicitly, and
