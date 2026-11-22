@@ -28,6 +28,18 @@ on:
     branches:
       - "**"
 
+# One run per ref. A push during a 24-minute run would otherwise queue a second full
+# sweep (or, worse, leave the older one stalled — measured: three heads sat at 3-4 s of
+# progress for minutes while newer heads ran to completion), and any verdict on the old
+# head is worthless the moment the branch moves. Cancelling superseded PR runs is the
+# point; `main` is never cancelled, because there the full sweep is the record.
+#
+# This is a *reliability* fix, not a cost one: without it, "wait for the verdict" is not
+# a well-defined instruction on a branch under active iteration.
+concurrency:
+  group: kubeconform-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   kubeconform:
     runs-on: ubuntu-latest
