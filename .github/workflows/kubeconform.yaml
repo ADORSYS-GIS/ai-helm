@@ -124,14 +124,23 @@ jobs:
               for removed in "gateway.networking.k8s.io/v1alpha2"; do
                 if grep -q "apiVersion: ${removed}$" <<<"$rendered"; then
                   if [[ ",${REMOVED_API_ALLOW}," == *",${chart_name},"* ]]; then
-                    # Skip this CHART wholesale rather than loosening the schema lookup.
-                    # The register entry is keyed on the chart name, so it excuses any
-                    # removed-API finding in that chart — the defect is the chart's, and
-                    # the fix (tracked as AIH-9) is to stop rendering the removed version.
-                    echo "  ⏭️  $label: SKIPPING THIS CHART — renders REMOVED ${removed}, allow-listed (AIH-9). NOT validated."
+                    # Skip THIS RENDER rather than loosening the schema lookup: on a
+                    # ci-values chart the other fixtures still validate, so the message
+                    # names the render, not the whole chart.
+                    #
+                    # RESIDUAL, and it is the price of this design: the exemption is
+                    # chart-wide, so while this chart sits in the register a DIFFERENT
+                    # defect in it (a bogus field on its Deployment, a renamed key) also
+                    # passes. Correct trade, but state it: deleting the entry — the AIH-9
+                    # fix — is what restores coverage. Otherwise "we have a gate" quietly
+                    # means "a gate for everything except the chart that already broke".
+                    echo "  ⏭️  $label: SKIPPING THIS RENDER — renders REMOVED ${removed}, chart allow-listed (AIH-9). NOT validated."
                     return 0
                   else
                     echo "  ❌ $label renders the REMOVED API version ${removed}"
+                    # `grep -n … | head -5` is safe under `set -o pipefail` only because
+                    # grep's SIGPIPE is not the last command's status here; if this moves
+                    # into a pipeline that ends differently, drop the `head`.
                     grep -n "apiVersion: ${removed}" <<<"$rendered" | head -5
                     exit 1
                   fi
