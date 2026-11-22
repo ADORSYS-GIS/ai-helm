@@ -396,9 +396,13 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://nvidia.github.io/k8s-device-plugin
-      # (matches the manual DaemonSet being replaced). Verify before bumping:
+      # Exact pin, not a float: this chart shipped SILENT breaking changes inside
+      # its own `0.*` range (see punch list item 5 in
+      # docs/migrations/2026-currency-audit.md). 0.20.2 is the top of the range
+      # the float resolved to, so this is expected to be a no-op in the cluster.
+      # Verify before bumping:
       # `helm show chart nvidia-device-plugin --repo https://nvidia.github.io/k8s-device-plugin --version <v>`
-      targetRevision: "0.*"
+      targetRevision: "0.20.2"
       chart: nvidia-device-plugin
       helm:
         releaseName: nvidia-device-plugin
@@ -453,9 +457,13 @@ applications:
       - resources-finalizer.argocd.argoproj.io
     source:
       repoURL: https://nvidia.github.io/dcgm-exporter/helm-charts
+      # Exact pin, not a float: this chart shipped SILENT breaking changes inside
+      # its own `4.*` range (punch list item 5 in
+      # docs/migrations/2026-currency-audit.md). 4.9.0 is the top of the range the
+      # float resolved to, so this is expected to be a no-op in the cluster.
       # Verify before bumping:
       # `helm show chart dcgm-exporter --repo https://nvidia.github.io/dcgm-exporter/helm-charts --version <v>`
-      targetRevision: "4.*"
+      targetRevision: "4.9.0"
       chart: dcgm-exporter
       helm:
         releaseName: dcgm-exporter
