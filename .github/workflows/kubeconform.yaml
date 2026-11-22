@@ -71,25 +71,20 @@ jobs:
           # minor legitimately rejects fields the previous one accepted, so this must move
           # with the cluster — it was 1.31.0 (four minors behind) on the first run.
           KUBERNETES_VERSION: "1.35.0"
-          # Kinds we render for which no public schema exists. With
-          # -ignore-missing-schemas a schema-less kind is skipped rather than fatal; this
-          # list documents the ones we know about.
+          # Kinds we render for which no public schema exists. `-skip` is what keeps the
+          # lookup strict for every OTHER kind: a new schema-less kind must still fail.
           #   GatewayConfigList — a first-party CRD with no published JSON schema.
           SKIP_KINDS: "GatewayConfigList"
           # Charts that still render an API version upstream REMOVED. Each entry means a
-          # real defect that the gate is deliberately not failing on yet; the chart must
-          # be fixed and its name deleted from here.
+          # real defect that the gate is deliberately not failing on yet, and the chart is
+          # skipped WHOLESALE (not validated at all) rather than the schema lookup being
+          # weakened. Fix the chart and delete its name from here.
           #   ai-models-info — renders gateway.networking.k8s.io/v1alpha2 HTTPRoute, which
           #   Gateway API v1.0 removed. Needs the upstream chart moved to v1.
           REMOVED_API_ALLOW: "ai-models-info"
         run: |
           set -euo pipefail
           schema_args=(
-            # A kind with no published schema is SKIPPED, not failed. Without this the job
-            # cannot be strict about what it CAN check, because some charts render CRD
-            # versions that no schema source carries (see the removed-API guard below).
-            # Invalid resources still fail — that is the point.
-            -ignore-missing-schemas
             -schema-location default
             -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           )
@@ -118,13 +113,23 @@ jobs:
                 return 0
               fi
               # No schema can exist for an API version upstream has REMOVED, so a missing
-              # schema would silently hide it. Assert the removals we know about explicitly.
+              # schema would hide it. Assert the removals we know about explicitly, and
+              # keep the lookup STRICT for everyone: do not reach for
+              # -ignore-missing-schemas, which would also stop a *new* schema-less kind
+              # from failing the job (verified: a made-up kind + policy/v1beta1
+              # PodSecurityPolicy goes from exit 1 to "Skipped: 2, exit 0").
+              #
               # gateway.networking.k8s.io/v1alpha2 (HTTPRoute/TLSRoute) was removed in
               # Gateway API v1.0.
               for removed in "gateway.networking.k8s.io/v1alpha2"; do
                 if grep -q "apiVersion: ${removed}$" <<<"$rendered"; then
                   if [[ ",${REMOVED_API_ALLOW}," == *",${chart_name},"* ]]; then
-                    echo "  ⚠️  $label still renders REMOVED ${removed} — allow-listed, fix tracked in the loki/observability follow-up"
+                    # Skip this CHART wholesale rather than loosening the schema lookup.
+                    # The register entry is keyed on the chart name, so it excuses any
+                    # removed-API finding in that chart — the defect is the chart's, and
+                    # the fix (tracked as AIH-9) is to stop rendering the removed version.
+                    echo "  ⏭️  $label: SKIPPING THIS CHART — renders REMOVED ${removed}, allow-listed (AIH-9). NOT validated."
+                    return 0
                   else
                     echo "  ❌ $label renders the REMOVED API version ${removed}"
                     grep -n "apiVersion: ${removed}" <<<"$rendered" | head -5
