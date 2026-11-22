@@ -82,12 +82,16 @@ jobs:
           # Scoping to the GVK is what keeps the hole shut: the same kind at a DIFFERENT
           # group/version is NOT skipped (verified: Errors: 1), and a new schema-less kind
           # anywhere still fails.
-          SKIP_GVKS: "aigateway.envoyproxy.io/v1beta1/GatewayConfigList"
+          SKIP_GVKS: "aigateway.envoyproxy.io/v1beta1/GatewayConfigList,authorino.kuadrant.io/v1beta3/AuthConfig,operator.authorino.kuadrant.io/v1beta1/Authorino"
           # Charts that legitimately render NOTHING under default values, because every
           # template is gated on values the orchestrator injects. Empty renders outside this
           # list are fatal, which is the property worth keeping: a chart that used to emit
           # and stops is caught; the three that never emitted are named and loud.
-          #   bjw-template, ai-models-backends, kuadrant-policies
+          #   bjw-template, ai-models-backends
+          # TEMPORARY: `kuadrant-policies` is here only because this branch predates its
+          # ci/*-values.yaml fixture (separate PR). Once that lands, delete it from this
+          # list — real coverage beats an exemption, and the SKIP_GVKS entries above are
+          # already prepared for the two CRDs the fixture renders.
           EMPTY_RENDER_ALLOW: "bjw-template ai-models-backends kuadrant-policies"
           # Charts that still render an API version upstream REMOVED. Each entry means a
           # real defect that the gate is deliberately not failing on yet, and the chart is
