@@ -83,6 +83,12 @@ jobs:
           # GatewayConfigList, in any chart, passes silently forever. It is a standing hole
           # of that kind's width, repo-wide — not scoped to the chart that needed it.
           SKIP_KINDS: "GatewayConfigList"
+          # Charts that legitimately render NOTHING under default values, because every
+          # template is gated on values the orchestrator injects. Empty renders outside this
+          # list are fatal, which is the property worth keeping: a chart that used to emit
+          # and stops is caught; the three that never emitted are named and loud.
+          #   bjw-template, ai-models-backends, kuadrant-policies
+          EMPTY_RENDER_ALLOW: "bjw-template ai-models-backends kuadrant-policies"
           # Charts that still render an API version upstream REMOVED. Each entry means a
           # real defect that the gate is deliberately not failing on yet, and the chart is
           # skipped WHOLESALE (not validated at all) rather than the schema lookup being
@@ -101,6 +107,11 @@ jobs:
           # rather than a variable, and printed once at the end: on a 40+ chart loop a
           # single "NOT validated" line is easy to lose.
           skipped_report=$(mktemp)
+
+          # Registers are space-separated for readability but compared comma-delimited, so
+          # a name cannot match as a substring of another.
+          empty_allow=",${EMPTY_RENDER_ALLOW// /,},"
+          removed_allow=",${REMOVED_API_ALLOW// /,},"
 
           find ./charts -name "Chart.yaml" -type f | while read -r chart_file; do
             chart_dir=$(dirname "$chart_file")
@@ -122,12 +133,24 @@ jobs:
               local rendered
               rendered=$(helm template "$chart_name" "$chart_dir" "$@" --dry-run)
               if [[ -z "${rendered// }" ]]; then
-                # An empty render is a regression on a default-values chart, not a pass:
-                # it means the chart silently stopped producing anything. On a ci-values
-                # fixture a partial selection is legitimate, so there it stays a warning.
-                if [[ "$label" == "default values" ]]; then
-                  echo "  ❌ $label rendered NO manifests — an empty render is a failure here"
+                # An empty render is a regression on a chart that is expected to emit
+                # resources — it means the chart silently stopped producing anything. It is
+                # NOT a regression on the three charts whose templates are values-gated and
+                # emit nothing with default values (measured: rc=0, 0 bytes, deps resolved):
+                #   bjw-template        — templates/common.yaml is the bjw-s loader, inert
+                #                         without app values
+                #   ai-models-backends  — every template is `range .Values.backends`
+                #   kuadrant-policies   — gated on `if .Values.authConfigs` / `.instances`
+                # A `templates/`-presence heuristic does not separate them: all three have
+                # templates, they are simply conditional.
+                if [[ "$label" == "default values" ]] && [[ "${empty_allow}" != *",${chart_name},"* ]]; then
+                  echo "  ❌ $label rendered NO manifests — this chart is expected to emit resources"
                   exit 1
+                fi
+                if [[ "$label" == "default values" ]]; then
+                  echo "  ⏭️  $label: renders nothing by design — allow-listed, NOT validated"
+                  echo "- ${chart_name} / ${label}: renders nothing by design (values-gated) — NOT validated" >> "$skipped_report"
+                  return 0
                 fi
                 echo "  ⚠️  $label rendered no manifests - nothing to validate"
                 return 0
@@ -143,7 +166,7 @@ jobs:
               # Gateway API v1.0.
               for removed in "gateway.networking.k8s.io/v1alpha2"; do
                 if grep -q "apiVersion: ${removed}$" <<<"$rendered"; then
-                  if [[ ",${REMOVED_API_ALLOW}," == *",${chart_name},"* ]]; then
+                  if [[ "${removed_allow}" == *",${chart_name},"* ]]; then
                     # Skip THIS RENDER rather than loosening the schema lookup: on a
                     # ci-values chart the other fixtures still validate, so the message
                     # names the render, not the whole chart.
@@ -196,7 +219,7 @@ jobs:
 
           if [[ -s "$skipped_report" ]]; then
             echo
-            echo "⚠️  Charts NOT validated in this run (REMOVED API version, allow-listed):"
+            echo "⚠️  Charts NOT validated in this run (allow-listed exemptions below):"
             cat "$skipped_report"
             echo "   Deleting the chart's name from REMOVED_API_ALLOW is what restores coverage."
             # Also surface it in the run summary, where it is hard to miss.
