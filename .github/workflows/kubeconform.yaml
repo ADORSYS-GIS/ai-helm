@@ -118,14 +118,19 @@ jobs:
           # real defect that the gate is deliberately not failing on yet, and the chart is
           # skipped WHOLESALE (not validated at all) rather than the schema lookup being
           # weakened. Fix the chart and delete its name from here.
-          #   ai-models-info — renders gateway.networking.k8s.io/v1alpha2 HTTPRoute, which
-          #   Gateway API v1.0 removed. Needs the upstream chart moved to v1.
+          #
+          # EMPTY, and it should stay empty. `ai-models-info` was the only entry: it
+          # rendered gateway.networking.k8s.io/v1alpha2, which Gateway API v1.0 removed —
+          # but the chart never hardcoded that version, it took it from Helm capabilities,
+          # so SERVED_API_VERSIONS below is the fix and the chart now validates 6/6. If a
+          # name reappears here, the first question is whether some chart is genuinely
+          # hardcoding a removed version, not whether the render harness is lying again.
           # What the cluster actually serves, so charts that CHOOSE an apiVersion from
           # capabilities render what ships. Kept deliberately short: add a GVK here only
           # when a chart renders a version it would not otherwise pick.
           #
           # ⚠️ MUST BE THE FULL GVK, and a partial value fails SILENTLY — same trap as
-          # `-skip`. Measured on Helm 3.15.4 (the pin above) and 3.16.1:
+          # `-skip`. Measured on Helm 3.15.4 and 3.16.1 (named, not "the pin above", which moves):
           #   --api-versions gateway.networking.k8s.io/v1/HTTPRoute  -> v1        ✅
           #   --api-versions gateway.networking.k8s.io/v1            -> v1alpha2  ❌ ignored
           # The wrong form does still fail the job, but only via the removed-API guard,
