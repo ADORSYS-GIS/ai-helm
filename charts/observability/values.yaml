@@ -403,7 +403,10 @@ children:
     additionalAnnotations:
       argocd.argoproj.io/sync-wave: "-2"
     source:
-      repoURL: https://grafana.github.io/helm-charts
+      # grafana-community.github.io/helm-charts — the successor index: grafana.github.io froze
+      # on 2026-01-30 (punch list item 1). 1.24.4 is the SAME digest on both indexes
+      # (f1f6e318…), so this is a pure repoURL move: same chart, same bundled Tempo 2.9.0.
+      repoURL: https://grafana-community.github.io/helm-charts
       targetRevision: 1.24.4
       chart: tempo
       helm:
@@ -439,10 +442,12 @@ children:
     # Umbrella (ADR-0018): app-scoped ingress Certificate via the overlay.
     depsOverlay: environments/prod/deps/grafana
     source:
-      repoURL: https://grafana.github.io/helm-charts
-      # 10.5.15 — latest. Chart major 9→10 is mostly template changes; the
-      # bundled Grafana app only moves 12.1.1 → 12.3.1 (we don't pin image.tag),
-      # and our valuesObject renders clean against it.
+      # grafana-community.github.io/helm-charts — see the tempo entry above.
+      # 10.5.15 is the SAME digest on both indexes (c08c8796…), so this is a pure repoURL
+      # move: same chart, same bundled Grafana 12.3.1, no values drift. The community index
+      # continues this chart at 14.5.0 (Grafana 13.3.1) — that is punch list item 11, not
+      # this migration (it needs the values cutover in ai-helm-values first, ADR-0056).
+      repoURL: https://grafana-community.github.io/helm-charts
       targetRevision: 10.5.15
       chart: grafana
       helm:
