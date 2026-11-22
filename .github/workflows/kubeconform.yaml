@@ -111,6 +111,13 @@ jobs:
           # What the cluster actually serves, so charts that CHOOSE an apiVersion from
           # capabilities render what ships. Kept deliberately short: add a GVK here only
           # when a chart renders a version it would not otherwise pick.
+          #
+          # ⚠️ MUST BE THE FULL GVK, and a partial value fails SILENTLY — same trap as
+          # `-skip`. Measured on Helm 3.15.4 (the pin above) and 3.16.1:
+          #   --api-versions gateway.networking.k8s.io/v1/HTTPRoute  -> v1        ✅
+          #   --api-versions gateway.networking.k8s.io/v1            -> v1alpha2  ❌ ignored
+          # The wrong form does still fail the job, but only via the removed-API guard,
+          # which reads like a chart defect rather than a typo in this list.
           SERVED_API_VERSIONS: "gateway.networking.k8s.io/v1/HTTPRoute,gateway.networking.k8s.io/v1/Gateway"
           REMOVED_API_ALLOW: ""
         run: |
