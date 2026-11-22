@@ -99,7 +99,11 @@ jobs:
           # weakened. Fix the chart and delete its name from here.
           #   ai-models-info — renders gateway.networking.k8s.io/v1alpha2 HTTPRoute, which
           #   Gateway API v1.0 removed. Needs the upstream chart moved to v1.
-          REMOVED_API_ALLOW: "ai-models-info"
+          # What the cluster actually serves, so charts that CHOOSE an apiVersion from
+          # capabilities render what ships. Kept deliberately short: add a GVK here only
+          # when a chart renders a version it would not otherwise pick.
+          SERVED_API_VERSIONS: "gateway.networking.k8s.io/v1/HTTPRoute,gateway.networking.k8s.io/v1/Gateway"
+          REMOVED_API_ALLOW: ""
         run: |
           set -euo pipefail
           schema_args=(
@@ -135,7 +139,15 @@ jobs:
             render_and_check() {
               local label=$1; shift
               local rendered
-              rendered=$(helm template "$chart_name" "$chart_dir" "$@" --dry-run)
+              # `--api-versions` is NOT cosmetic: library charts (bjw-s) pick the apiVersion
+              # of the object they emit from Helm capabilities. Without it a chart renders
+              # gateway.networking.k8s.io/v1alpha2 (removed in Gateway API v1.0) where a real
+              # cluster serves v1 — a REMOVED apiVersion that no chart actually hardcodes.
+              # Measured: ai-models-info rendered v1alpha2 bare and v1 with this flag, and the
+              # v1 render validates 6/6 against the catalog instead of being exempted.
+              local api_version_args=()
+              for av in ${SERVED_API_VERSIONS//,/ }; do api_version_args+=(--api-versions "$av"); done
+              rendered=$(helm template "$chart_name" "$chart_dir" "$@" --dry-run "${api_version_args[@]}")
               if [[ -z "${rendered// }" ]]; then
                 # An empty render is a regression on a chart that is expected to emit
                 # resources — it means the chart silently stopped producing anything. It is
