@@ -48,7 +48,7 @@ Env field used by the container.
         {{- $envValue := get $envValues $name -}}
 
         {{- if kindIs "map" $envValue -}}
-          {{- $envItem := merge $envItem (omit $envValue "dependsOn") -}}
+          {{- $envItem = merge $envItem (omit $envValue "dependsOn") -}}
         {{- else -}}
           {{- $_ := set $envItem "value" $envValue -}}
         {{- end -}}
