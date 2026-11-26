@@ -151,6 +151,17 @@ of which are now resolved or obsolete — see the Helm charts table):**
 | 14 | CI: `kubeconform` (and optionally Kyverno) | S | Low | Not reassessed this pass — carried over from May, still open |
 | 15 | Re-verify Helm 4 / ArgoCD renderer status | — | — | Not actionable now — re-check once ArgoCD v3.5.0 GA ships (currently `rc3`) |
 
+### Status 2026-11-22 — punch list #1 (grafana/loki/tempo `repoURL`)
+
+Verified by digest against both `index.yaml` files, not by version number:
+
+- **grafana 10.5.15 — moved.** Same digest `c08c8796…` on both indexes: same chart, same bundled Grafana 12.3.1. Pure `repoURL` change.
+- **tempo 1.24.4 — moved.** Same digest `f1f6e318…`: same chart, same bundled Tempo 2.9.0. Pure move.
+- **loki 7.0.0 — HELD on the dead index.** The community index's `7.0.0` is a *different, older* package: digest `9289e371…` vs `5eaa28e3…`, Chart.lock generated 2026-03-17 vs 2026-04-04, and it bundles **rollout-operator 0.45.0 (`appVersion v0.35.0`) instead of 0.47.0 (`v0.36.1`)**. Moving at the same version number would silently downgrade the operator, not just relocate a tarball. Needs a *version* decision (bump to a community line ≥ the same operator, with the `ai-helm-values` cutover that ADR-0056 requires first) — not a `repoURL` swap.
+- **`alloy` 1.8.2 and `mimir-distributed` 5.8.0 are absent from the community index entirely**, so the dead `grafana.github.io` index cannot be retired wholesale yet: those two, plus loki until the bump above, still resolve from it. Community lines: alloy → latest `1.11.0`-era, mimir → `6.1.0` (that is punch list #4).
+
+`helm lint charts/observability --strict` and `helm template` both pass with grafana+tempo moved (14 Applications render; the hatched three still resolve from the old index).
+
 ## Decisions taken from this audit (in subsequent commits)
 
 **From the 2026-05-24 pass:**
