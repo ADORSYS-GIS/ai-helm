@@ -1,0 +1,295 @@
+name: Validate rendered manifests
+
+# Catches schema drift that `helm lint` / `helm template` cannot: a render can be
+# syntactically fine and still be invalid against the target API (a renamed field, a
+# removed property, a value that moved into a different type). kubeconform validates
+# the RENDERED output against the Kubernetes JSON schemas.
+#
+# Two schema sources, both needed:
+#   * `default` — the upstream Kubernetes schemas (yannh/kubernetes-json-schema).
+#   * datreeio/CRDs-catalog — schemas for the CRs we actually ship (Gateway API,
+#     Certificate, ExternalSecret, Envoy Gateway, OpenTelemetry, PodMonitor, ...).
+#     Without it this job validates almost NOTHING: a core-gateway render is 19
+#     resources and only the Service is a built-in kind — 18 are CRs.
+#
+# `-strict` rejects unknown properties, which is the whole point (a `bogusField: true`
+# added to a Service fails here and nowhere else). Resources with no public schema are
+# named in SKIP_GVKS below by exact group/version/kind, so a NEW unvalidated kind — or the
+# same kind at another version — fails the job instead of silently joining the unwashed.
+
+on:
+  # Only `main` on push. A `push: branches: ["**"]` trigger alongside `pull_request`
+  # fires this TWICE on every PR branch push — and this job renders every chart, ~18 min
+  # a run. A reviewer measured the duplication on six PRs before it was fixed.
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - "**"
+
+# One run per ref. A push during a 24-minute run would otherwise queue a second full
+# sweep (or, worse, leave the older one stalled — measured: three heads sat at 3-4 s of
+# progress for minutes while newer heads ran to completion), and any verdict on the old
+# head is worthless the moment the branch moves. Cancelling superseded PR runs is the
+# point; `main` is never cancelled, because there the full sweep is the record.
+#
+# This is a *reliability* fix, not a cost one: without it, "wait for the verdict" is not
+# a well-defined instruction on a branch under active iteration.
+concurrency:
+  group: kubeconform-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  kubeconform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.15.4
+
+      # Native binaries, not container-based actions: adorsys-gis-runner has no Docker
+      # daemon, so a `docker://` step fails at image pull (same constraint documented in
+      # helm-lint.yaml). $RUNNER_TEMP avoids needing sudo or a system-dir write.
+      - name: Install yq
+        run: |
+          # --fail: an HTTP error must fail HERE, not save GitHub's HTML error page as
+          # "yq" and blow up later as a bash syntax error.
+          curl -fsSL --retry 8 --retry-delay 10 --retry-all-errors \
+            -o "$RUNNER_TEMP/yq" "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+          chmod +x "$RUNNER_TEMP/yq"
+          "$RUNNER_TEMP/yq" --version
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL --retry 8 --retry-delay 10 --retry-all-errors \
+            -o "$RUNNER_TEMP/kubeconform.tgz" \
+            "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz"
+          tar -xzf "$RUNNER_TEMP/kubeconform.tgz" -C "$RUNNER_TEMP" kubeconform
+          chmod +x "$RUNNER_TEMP/kubeconform"
+          "$RUNNER_TEMP/kubeconform" -v
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Cache Helm
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/helm
+          key: ${{ runner.os }}-helm-${{ hashFiles('**/Chart.yaml') }}
+
+      - name: Render and validate
+        env:
+          # Pinned to the FLEET's minor (hetzner-prod runs v1.35.3+k3s1). A new Kubernetes
+          # minor legitimately rejects fields the previous one accepted, so this must move
+          # with the cluster — it was 1.31.0 (four minors behind) on the first run.
+          KUBERNETES_VERSION: "1.35.0"
+          # Resources we render for which no public schema exists. Narrowed to the exact
+          # GROUP/VERSION/KIND — the working form is `group/version/kind`; the unversioned
+          # `group/kind` matches nothing (measured on v0.8.0, the version pinned above).
+          #   aigateway.envoyproxy.io/v1beta1/GatewayConfigList — a first-party CRD with no
+          #   published JSON schema.
+          # Scoping to the GVK is what keeps the hole shut: the same kind at a DIFFERENT
+          # group/version is NOT skipped (verified: Errors: 1), and a new schema-less kind
+          # anywhere still fails.
+          #
+          # ⚠️ THE FORM MATTERS, AND THE OBVIOUS-LOOKING ONE IS WRONG. Verified on the
+          # kubeconform v0.8.0 binary pinned above (downloaded, not a dev build):
+          #   group/version/kind   authorino.kuadrant.io/v1beta3/AuthConfig   -> skipped  ✅
+          #   kind.version.group   AuthConfig.v1beta3.authorino.kuadrant.io   -> NO MATCH ❌
+          #   unversioned          authorino.kuadrant.io/AuthConfig           -> NO MATCH ❌
+          # `-skip`'s help text only says "kinds or GVKs" and the widely-cited form is
+          # `Kind.version.group`, which matches nothing here and fails the job 24 minutes
+          # later. Do not "fix" the order without running it.
+          SKIP_GVKS: "aigateway.envoyproxy.io/v1beta1/GatewayConfigList,authorino.kuadrant.io/v1beta3/AuthConfig,operator.authorino.kuadrant.io/v1beta1/Authorino"
+          # Charts that legitimately render NOTHING under default values, because every
+          # template is gated on values the orchestrator injects. Empty renders outside this
+          # list are fatal, which is the property worth keeping: a chart that used to emit
+          # and stops is caught; the three that never emitted are named and loud.
+          #   bjw-template, ai-models-backends
+          # TEMPORARY: `kuadrant-policies` is here only because this branch predates its
+          # ci/*-values.yaml fixture (separate PR). Once that lands, delete it from this
+          # list — real coverage beats an exemption, and the SKIP_GVKS entries above are
+          # already prepared for the two CRDs the fixture renders.
+          EMPTY_RENDER_ALLOW: "bjw-template ai-models-backends kuadrant-policies"
+          # Charts that still render an API version upstream REMOVED. Each entry means a
+          # real defect that the gate is deliberately not failing on yet, and the chart is
+          # skipped WHOLESALE (not validated at all) rather than the schema lookup being
+          # weakened. Fix the chart and delete its name from here.
+          #
+          # EMPTY, and it should stay empty. `ai-models-info` was the only entry: it
+          # rendered gateway.networking.k8s.io/v1alpha2, which Gateway API v1.0 removed —
+          # but the chart never hardcoded that version, it took it from Helm capabilities,
+          # so SERVED_API_VERSIONS below is the fix and the chart now validates 6/6. If a
+          # name reappears here, the first question is whether some chart is genuinely
+          # hardcoding a removed version, not whether the render harness is lying again.
+          # What the cluster actually serves, so charts that CHOOSE an apiVersion from
+          # capabilities render what ships. Kept deliberately short: add a GVK here only
+          # when a chart renders a version it would not otherwise pick.
+          #
+          # ⚠️ MUST BE THE FULL GVK, and a partial value fails SILENTLY — same trap as
+          # `-skip`. Measured on Helm 3.15.4 and 3.16.1 (named, not "the pin above", which moves):
+          #   --api-versions gateway.networking.k8s.io/v1/HTTPRoute  -> v1        ✅
+          #   --api-versions gateway.networking.k8s.io/v1            -> v1alpha2  ❌ ignored
+          # The wrong form does still fail the job, but only via the removed-API guard,
+          # which reads like a chart defect rather than a typo in this list.
+          SERVED_API_VERSIONS: "gateway.networking.k8s.io/v1/HTTPRoute,gateway.networking.k8s.io/v1/Gateway"
+          REMOVED_API_ALLOW: ""
+        run: |
+          set -euo pipefail
+          schema_args=(
+            -schema-location default
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          )
+
+          # `while read` runs in a subshell, so the skip register is collected in a file
+          # rather than a variable, and printed once at the end: on a 40+ chart loop a
+          # single "NOT validated" line is easy to lose.
+          skipped_report=$(mktemp)
+
+          # Registers are space-separated for readability but compared comma-delimited, so
+          # a name cannot match as a substring of another.
+          empty_allow=",${EMPTY_RENDER_ALLOW// /,},"
+          removed_allow=",${REMOVED_API_ALLOW// /,},"
+
+          # `sort` is deliberate: bare `find` is filesystem order, which is neither
+          # alphabetical nor reproducible across runners. With several defects present the
+          # job only ever reports the FIRST one it reaches, so an unsorted loop makes the
+          # reported failure depend on directory layout — it cost a reviewer an incorrect
+          # retraction to work that out. Sorting changes which failure you see first, never
+          # what is validated.
+          find ./charts -name "Chart.yaml" -type f | sort | while read -r chart_file; do
+            chart_dir=$(dirname "$chart_file")
+            chart_name=$(yq eval '.name' "$chart_file")
+            chart_version=$(yq eval '.version' "$chart_file")
+            chart_type=$(yq eval '.type // "application"' "$chart_file")
+            lint_mode=$(yq eval '.annotations."ai-helm.adorsys-gis.github.io/lint-mode" // ""' "$chart_file")
+
+            if [[ "$chart_type" == "library" ]]; then
+              echo "⏭️  $chart_name (library chart - nothing to validate)"
+              continue
+            fi
+
+            echo "🔍 $chart_name ($chart_version)"
+            helm dependency update "$chart_dir"
+
+            render_and_check() {
+              local label=$1; shift
+              local rendered
+              # `--api-versions` is NOT cosmetic: library charts (bjw-s) pick the apiVersion
+              # of the object they emit from Helm capabilities. Without it a chart renders
+              # gateway.networking.k8s.io/v1alpha2 (removed in Gateway API v1.0) where a real
+              # cluster serves v1 — a REMOVED apiVersion that no chart actually hardcodes.
+              # Measured: ai-models-info rendered v1alpha2 bare and v1 with this flag, and the
+              # v1 render validates 6/6 against the catalog instead of being exempted.
+              local api_version_args=()
+              for av in ${SERVED_API_VERSIONS//,/ }; do api_version_args+=(--api-versions "$av"); done
+              rendered=$(helm template "$chart_name" "$chart_dir" "$@" --dry-run "${api_version_args[@]}")
+              if [[ -z "${rendered// }" ]]; then
+                # An empty render is a regression on a chart that is expected to emit
+                # resources — it means the chart silently stopped producing anything. It is
+                # NOT a regression on the three charts whose templates are values-gated and
+                # emit nothing with default values (measured: rc=0, 0 bytes, deps resolved):
+                #   bjw-template        — templates/common.yaml is the bjw-s loader, inert
+                #                         without app values
+                #   ai-models-backends  — every template is `range .Values.backends`
+                #   kuadrant-policies   — gated on `if .Values.authConfigs` / `.instances`
+                # A `templates/`-presence heuristic does not separate them: all three have
+                # templates, they are simply conditional.
+                if [[ "$label" == "default values" ]] && [[ "${empty_allow}" != *",${chart_name},"* ]]; then
+                  echo "  ❌ $label rendered NO manifests — this chart is expected to emit resources"
+                  exit 1
+                fi
+                if [[ "$label" == "default values" ]]; then
+                  echo "  ⏭️  $label: renders nothing by design — allow-listed, NOT validated"
+                  echo "- ${chart_name} / ${label}: renders nothing by design (values-gated) — NOT validated" >> "$skipped_report"
+                  return 0
+                fi
+                # A ci/*-values.yaml fixture that renders NOTHING is a dead fixture: it
+                # exercises no template. Measured repo-wide (station st_beba75ed18): every
+                # fixture currently emits at least one resource (1..8), so this costs nothing
+                # today and only fires when a fixture silently stops selecting anything.
+                # A "nothing renders" assertion, if ever wanted, is a different test.
+                echo "  ❌ $label rendered NO manifests — a fixture that renders nothing exercises nothing"
+                exit 1
+              fi
+              # No schema can exist for an API version upstream has REMOVED, so a missing
+              # schema would hide it. Assert the removals we know about explicitly, and
+              # keep the lookup STRICT for everyone: do not reach for
+              # -ignore-missing-schemas, which would also stop a *new* schema-less kind
+              # from failing the job (verified: a made-up kind + policy/v1beta1
+              # PodSecurityPolicy goes from exit 1 to "Skipped: 2, exit 0").
+              #
+              # gateway.networking.k8s.io/v1alpha2 (HTTPRoute/TLSRoute) was removed in
+              # Gateway API v1.0.
+              for removed in "gateway.networking.k8s.io/v1alpha2"; do
+                if grep -q "apiVersion: ${removed}$" <<<"$rendered"; then
+                  if [[ "${removed_allow}" == *",${chart_name},"* ]]; then
+                    # Skip THIS RENDER rather than loosening the schema lookup: on a
+                    # ci-values chart the other fixtures still validate, so the message
+                    # names the render, not the whole chart.
+                    #
+                    # RESIDUAL, and it is the price of this design: the exemption is
+                    # chart-wide, so while this chart sits in the register a DIFFERENT
+                    # defect in it (a bogus field on its Deployment, a renamed key) also
+                    # passes. Correct trade, but state it: deleting the entry — the AIH-9
+                    # fix — is what restores coverage. Otherwise "we have a gate" quietly
+                    # means "a gate for everything except the chart that already broke".
+                    echo "  ⏭️  $label: SKIPPING THIS RENDER — renders REMOVED ${removed}, chart allow-listed (AIH-9). NOT validated."
+                    echo "- ${chart_name} / ${label}: renders ${removed} — NOT validated (AIH-9)" >> "$skipped_report"
+                    return 0
+                  else
+                    echo "  ❌ $label renders the REMOVED API version ${removed}"
+                    # `grep -n … | head -5` is safe under `set -o pipefail` only because
+                    # grep's SIGPIPE is not the last command's status here; if this moves
+                    # into a pipeline that ends differently, drop the `head`.
+                    grep -n "apiVersion: ${removed}" <<<"$rendered" | head -5
+                    exit 1
+                  fi
+                fi
+              done
+              printf '%s\n' "$rendered" | kubeconform \
+                -strict -summary \
+                -kubernetes-version "$KUBERNETES_VERSION" \
+                -skip "$SKIP_GVKS" \
+                "${schema_args[@]}" -
+              echo "  ✅ $label"
+            }
+
+            # Render-only LEAF charts guard on per-model values the orchestrator injects,
+            # so they cannot render with the default values.yaml — validate their
+            # ci/*-values.yaml fixtures instead (same rule as helm-lint).
+            if [[ "$lint_mode" == "ci-values" ]]; then
+              shopt -s nullglob
+              fixtures=("$chart_dir"/ci/*-values.yaml)
+              shopt -u nullglob
+              if [[ ${#fixtures[@]} -eq 0 ]]; then
+                echo "❌ $chart_name has lint-mode=ci-values but no ci/*-values.yaml fixtures"
+                exit 1
+              fi
+              for vf in "${fixtures[@]}"; do
+                render_and_check "fixture $(basename "$vf")" -f "$vf"
+              done
+            else
+              render_and_check "default values"
+            fi
+          done
+
+          if [[ -s "$skipped_report" ]]; then
+            echo
+            echo "⚠️  Charts NOT validated in this run (allow-listed exemptions below):"
+            cat "$skipped_report"
+            echo "   Deleting the chart's name from REMOVED_API_ALLOW is what restores coverage."
+            # Also surface it in the run summary, where it is hard to miss.
+            if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+              {
+                echo "### ⚠️ Charts skipped wholesale"
+                cat "$skipped_report"
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo
+            echo "All charts validated (no allow-listed exemptions hit)."
+          fi
